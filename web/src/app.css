@@ -11,6 +11,20 @@ a {
   cursor: pointer;
 }
 
+/* Hide scrollbars globally across all phone UI containers */
+*,
+*::before,
+*::after {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+*::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }

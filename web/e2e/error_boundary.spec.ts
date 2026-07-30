@@ -7,7 +7,7 @@ test.describe('App Isolation & Error Boundaries', () => {
 
   test('handles crashing third-party app without breaking OS navigation', async ({ page }) => {
     // Verify home screen is visible
-    await expect(page.locator('h1', { hasText: 'gphone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
 
     // Register a faulty app dynamically
     await page.evaluate(() => {
@@ -37,7 +37,7 @@ test.describe('App Isolation & Error Boundaries', () => {
       await page.click('button:has-text("Return to Home Screen")');
 
       // Verify user is back on home screen
-      await expect(page.locator('h1', { hasText: 'gphone' })).toBeVisible();
+      await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
     }
   });
 
@@ -68,7 +68,7 @@ test.describe('App Isolation & Error Boundaries', () => {
       await page.keyboard.press('Escape');
 
       // Verify user is safely returned to Home screen
-      await expect(page.locator('h1', { hasText: 'gphone' })).toBeVisible();
+      await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
     }
   });
 });

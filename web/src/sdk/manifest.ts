@@ -34,7 +34,11 @@ export interface AppManifest {
   isRemote?: boolean;
   /** Remote bundle URL if dynamically loaded */
   bundleUrl?: string;
+  /** Explicit flag indicating whether app is a protected system core app */
+  isSystem?: boolean;
 }
+
+import { MICA_VERSION } from "./version";
 
 /**
  * Helper function to define and validate a gPhone application manifest.
@@ -48,11 +52,14 @@ export function defineApp(manifest: AppManifest): AppManifest {
     throw new Error("gPhone App Manifest error: 'name' is required and must be a string.");
   }
 
+  const isSystem = manifest.isSystem ?? (!manifest.isRemote && manifest.author !== "Community");
+
   return {
-    version: "1.0.0",
-    author: "Community",
+    version: isSystem ? MICA_VERSION : (manifest.version || MICA_VERSION),
+    author: isSystem ? "gPhone" : (manifest.author || "Community"),
     permissions: [],
     defaultProps: {},
+    isSystem,
     ...manifest,
   };
 }

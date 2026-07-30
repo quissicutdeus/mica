@@ -9,7 +9,7 @@ import { appRegistryStore } from "../store/registry";
 import type { AppManifest } from "./manifest";
 
 /**
- * Executes a callback when the application component mounts into the gPhone OS shell.
+ * Executes a callback when the application component mounts into the gPhone shell.
  */
 export function onAppMount(handler: () => void): void {
   try {

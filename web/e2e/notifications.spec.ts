@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Interactive Toast Notifications E2E', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('h1', { hasText: 'gphone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
   });
 
   test('handles incoming message toast with interactive inline reply input box', async ({ page }) => {

@@ -11,6 +11,7 @@ export interface Transaction {
 export const bankBalance = writable<number>(0);
 export const transactions = writable<Transaction[]>([]);
 export const citizenid = writable<string>("");
+export const myPhoneNumber = writable<string>("555-0199");
 
 export const fetchCitizenId = async () => {
     try {
@@ -20,6 +21,18 @@ export const fetchCitizenId = async () => {
     } catch (error) {
         console.error("Failed to fetch citizenid:", error);
         return "";
+    }
+};
+
+export const fetchPhoneNumber = async () => {
+    try {
+        const phone = await fetchNui<string>("getPhoneNumber", null, { defaultValue: "555-0199" });
+        const val = phone || "555-0199";
+        myPhoneNumber.set(val);
+        return val;
+    } catch (error) {
+        console.error("Failed to fetch phone number:", error);
+        return "555-0199";
     }
 };
 

@@ -13,7 +13,7 @@
   let error = $state<Error | null>(null);
 
   function handleError(e: unknown) {
-    console.error(`[gPhone OS] ErrorBoundary caught crash in '${appName}':`, e);
+    console.error(`[gPhone] ErrorBoundary caught crash in '${appName}':`, e);
     error = e instanceof Error ? e : new Error(String(e));
   }
 

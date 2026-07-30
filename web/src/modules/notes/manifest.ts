@@ -8,4 +8,6 @@ export default defineApp({
     icon: Icon,
     description: "Create and store personal notes",
     permissions: ["storage"],
+    author: "Community",
+    isSystem: false,
 });

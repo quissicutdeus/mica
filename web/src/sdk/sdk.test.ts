@@ -40,6 +40,12 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       expect(app.defaultProps).toEqual({});
     });
 
+    it('exports MICA_VERSION and MICA_BUILD_INFO constants', () => {
+      const { MICA_VERSION, MICA_BUILD_INFO } = require('./index');
+      expect(MICA_VERSION).toBeDefined();
+      expect(MICA_BUILD_INFO).toBeDefined();
+    });
+
     it('throws error when required manifest fields are missing', () => {
       expect(() => defineApp({ id: '', name: 'Test', color: 'red', icon: null } as any)).toThrow(
         "gPhone App Manifest error: 'id' is required"

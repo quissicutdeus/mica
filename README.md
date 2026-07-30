@@ -24,13 +24,17 @@
 - **Photos & Camera**: In-game screenshot/camera integration, automatic image compression, gallery view, and attachment sharing.
 - **Notes**: Full-featured note-taking app with instant saving.
 - **Calculator**: Full mathematical calculator with an optimized touchscreen keypad layout.
-- **Settings & Status**: Dynamic battery drain lifecycle with dead phone states, custom wallpaper support, and audio toggles.
+- **Store Application**: Built-in app marketplace to browse, install, and manage community add-on apps. Features a permissions inspector (camera, contacts, notifications, storage, network, location, media) and estimated app storage footprint metrics.
+- **Settings & Status**: Settings application with an **About** section (phone number, software name, OS version, and smart git build/commit info), 24-hour time toggles, dynamic battery drain lifecycle with dead phone states, and developer controls.
+- **Home Screen Edit Mode**: Right-click icon gesture to trigger Edit Mode, swapping unread notification badges for grey minus action buttons on removable add-on apps with automatic Edit Mode exit when no add-on apps remain.
 
 ### 🛠️ Backend & Core Architecture
-- **Third-Party App SDK (`@gphone/sdk`)**: Type-safe app builder (`defineApp`), lifecycle hooks (`onAppMount`, `onAppUnmount`), OS service accessors (`usePhoneNotification`, `useContacts`, `useCamera`, `useNuiBridge`, `useAppRegistry`), and dynamic ES module remote bundle loader (`loadRemoteApp`).
+- **Third-Party App SDK (`@gphone/sdk`)**: Type-safe app builder (`defineApp`), lifecycle hooks (`onAppMount`, `onAppUnmount`), OS service accessors (`usePhoneNotification`, `useContacts`, `useCamera`, `useNuiBridge`, `useAppRegistry`), and dynamic app loading (`loadRemoteApp`, `registerApp`, `unregisterApp`).
+- **System vs. Add-on Protection Engine**: Immutable System App protection for core OS apps alongside dynamic Add-on app management and granular permission auditing.
 - **App Isolation & Guardrails**: Wrapped dynamic app rendering with Svelte 5 `<svelte:boundary>` (`ErrorBoundary.svelte`) preventing third-party app runtime exceptions from locking FiveM NUI mouse focus or breaking OS navigation.
 - **Dual-Runtime Transport Abstraction**: Pluggable `ITransportAdapter` layer (`NuiTransportAdapter`, `MockTransportAdapter`, `WebSocketTransportAdapter`) cleanly separating FiveM CEF callbacks from browser mock engines and external WebSocket device sync.
 - **Interactive Browser Mock DevTools & Volume HUD**: Floating developer control panel (`MockDevTools.svelte`) for standalone browser testing (power button, volume HUD overlay, battery drain, signal levels, call/SMS/email simulation).
+- **Click & Drag Touch/Mouse Scrolling**: Universal pointer drag-scrolling delegation across all phone screens and scrollable containers with hidden scrollbar styling.
 - **Dynamic App Registry**: Reactive `appRegistryStore` supporting runtime third-party app registration (`registerApp`, `unregisterApp`) and home screen grid updates.
 - **Framework Bridge**: Built-in support for **QBX Core** (`qbx_core`) and **QBCore** (`qb-core`) with automatic player lookup and money handlers.
 - **Inventory Integration**: Out-of-the-box support for `ox_inventory` item registration and removal.
@@ -104,7 +108,7 @@ pnpm typecheck
 ```
 
 ### Testing & Quality Assurance
-Run unit and Playwright End-to-End (E2E) test suites:
+Run unit test suites (Vitest for all stores, utilities, SDK helpers, and transport bridge adapters) and Playwright End-to-End (E2E) test suites:
 ```sh
 # Run all unit tests (Vitest)
 pnpm test:unit

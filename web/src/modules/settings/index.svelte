@@ -3,8 +3,15 @@
     import { isBrowser } from "../../utils/isBrowser";
     import { devToolsVisible, toggleDevTools } from "../../store/dev";
     import Screen from "../../components/Screen.svelte";
+    import { MICA_VERSION, MICA_BUILD_INFO } from "@gphone/sdk";
+    import { myPhoneNumber, fetchPhoneNumber } from "../../store/account";
+    import { onMount } from "svelte";
 
-    let { onback } = $props();
+    let { onback } = $props<{ onback?: () => void }>();
+
+    onMount(() => {
+        fetchPhoneNumber();
+    });
 
     const toggleTimeFormat = () => {
         is24Hour.update((v) => !v);
@@ -45,6 +52,41 @@
                         ></span>
                     </div>
                 </button>
+            </div>
+        </div>
+
+        <!-- About Section -->
+        <div>
+            <h2
+                class="text-sm font-medium text-gray-400 uppercase tracking-wider mb-2 px-2"
+            >
+                About
+            </h2>
+            <div
+                class="bg-gray-800 rounded-xl overflow-hidden divide-y divide-gray-700/50 text-sm"
+            >
+                <div class="flex items-center justify-between p-4">
+                    <span class="text-gray-300 font-medium">Phone Number</span>
+                    <span class="font-mono text-gray-200">{$myPhoneNumber}</span
+                    >
+                </div>
+                <div class="flex items-center justify-between p-4">
+                    <span class="text-gray-300 font-medium">Software</span>
+                    <span class="font-semibold text-white">gPhone</span>
+                </div>
+                <div class="flex items-center justify-between p-4">
+                    <span class="text-gray-300 font-medium">OS Version</span>
+                    <span class="font-mono text-indigo-400"
+                        >v{MICA_VERSION}</span
+                    >
+                </div>
+                <div class="flex items-center justify-between p-4">
+                    <span class="text-gray-300 font-medium">Build / Commit</span
+                    >
+                    <span class="font-mono text-xs text-gray-400"
+                        >{MICA_BUILD_INFO}</span
+                    >
+                </div>
             </div>
         </div>
 

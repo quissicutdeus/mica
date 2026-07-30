@@ -43,6 +43,6 @@ if (isBrowser()) {
     };
     (window as any).setDrainSpeed = (multiplier: number) => {
         drainMultiplier = multiplier;
-        console.log(`[gphone] Battery drain speed set to ${multiplier}x`);
+        console.log(`[gPhone] Battery drain speed set to ${multiplier}x`);
     };
 }

@@ -1,15 +1,24 @@
 <script lang="ts">
+    import { onMount } from "svelte";
     import { fly } from "svelte/transition";
     import { formattedTime } from "../store/time";
     import { goHome } from "../store/navigation";
     import { displayCharge, isDead } from "../store/charge";
     import { clampedSignalLevel } from "../store/signal";
     import { adjustVolume } from "../store/sound";
+    import { enableDragScroll } from "../utils/dragScroll";
     import LightningWarningIcon from "./icons/LightningWarningIcon.svelte";
     import SignalIcon from "./icons/SignalIcon.svelte";
     import VolumeHud from "./VolumeHud.svelte";
 
     let { transparent = false, onClose, children } = $props();
+    let screenElement = $state<HTMLElement | null>(null);
+
+    onMount(() => {
+        if (screenElement) {
+            return enableDragScroll(screenElement);
+        }
+    });
 </script>
 
 <!-- Phone Frame -->
@@ -44,6 +53,7 @@
 
     <!-- Screen -->
     <div
+        bind:this={screenElement}
         class="relative h-full w-full overflow-hidden rounded-[3rem] transition-colors duration-200"
         class:bg-gray-900={!transparent && !$isDead}
         class:bg-black={$isDead}

@@ -15,12 +15,16 @@ for (const path in manifestFiles) {
     const rawManifest = (manifestFiles[path] as any).default as AppManifest;
     if (rawManifest && rawManifest.id) {
         const manifest = defineApp(rawManifest);
-        loadedApps.push(manifest);
-
         // Find corresponding component
         const componentPath = path.replace("manifest.ts", "index.svelte");
         if (appComponents[componentPath]) {
             componentRegistry[manifest.id] = (appComponents[componentPath] as any).default;
+        }
+
+        // System core apps start installed on OS startup.
+        // Community add-on apps start uninstalled by default to allow installation/uninstallation via App Store.
+        if (manifest.isSystem !== false) {
+            loadedApps.push(manifest);
         }
     }
 }
@@ -28,7 +32,7 @@ for (const path in manifestFiles) {
 export const registeredApps = loadedApps;
 export const registeredComponents = componentRegistry;
 
-const SYSTEM_APP_IDS = new Set(loadedApps.map((a) => a.id));
+const SYSTEM_APP_IDS = new Set(loadedApps.filter((a) => a.isSystem !== false).map((a) => a.id));
 const LOCAL_STORAGE_KEY = "gphone_installed_remote_apps";
 
 function getSavedRemoteAppUrls(): string[] {

@@ -125,6 +125,7 @@ nothing," with no error anywhere. Theme customization goes in CSS: `@import "tai
 - Utility classes only. A `<style>` block is acceptable *only* for keyframes and pseudo-element
   cases Tailwind cannot express. No CSS modules, no styled-components.
 - Prefer scale tokens over arbitrary values (`p-4`, not `p-[17px]`) unless matching a fixed design.
+- **No visible scrollbars.** Scrollbars must never be visible anywhere inside the phone interface. Global CSS rules in `web/src/app.css` (`scrollbar-width: none` / `::-webkit-scrollbar { display: none }`) enforce this across all scrollable containers.
 - **Read §6 before writing any color, layout, or variant utility.** Tailwind 4 targets a browser
   several years newer than the one this UI actually runs in.
 

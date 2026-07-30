@@ -38,4 +38,14 @@ export class FrameworkBridge {
             return null;
         }
     }
+
+    public static getPhoneNumber(): string | null {
+        try {
+            const playerData = FrameworkBridge.getPlayerData();
+            return playerData?.charinfo?.phone ?? null;
+        } catch (error) {
+            console.error('[FrameworkBridge] Error getting phone number:', error);
+            return null;
+        }
+    }
 }

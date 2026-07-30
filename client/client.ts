@@ -91,6 +91,13 @@ on('__cfx_nui:getCitizenId', (_: any, cb: Function) => {
   cb(citizenId);
 });
 
+// NUI Callback to get phone number
+RegisterNuiCallbackType('getPhoneNumber');
+on('__cfx_nui:getPhoneNumber', (_: any, cb: Function) => {
+  const phone = FrameworkBridge.getPhoneNumber();
+  cb(phone || '867-5309');
+});
+
 // Time Sync Loop
 setInterval(() => {
   if (isPhoneOpen) {

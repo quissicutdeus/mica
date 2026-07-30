@@ -166,6 +166,7 @@ export const mockRegistry: Record<string, MockHandler> = {
 
     // Account
     "getCitizenId": () => "my-id",
+    "getPhoneNumber": () => "555-0199",
     "getBankBalance": () => 12450,
     "getTransactions": () => [
         { message: "Store Purchase", amount: -45, time: Math.floor(Date.now() / 1000), title: "Store" },
