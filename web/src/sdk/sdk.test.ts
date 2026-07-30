@@ -27,6 +27,7 @@ describe('gPhone SDK (@gphone/sdk)', () => {
         name: 'Crypto Tracker',
         color: 'bg-yellow-500',
         icon: 'BitcoinIcon',
+        author: 'Community',
       };
 
       const app = defineApp(rawManifest);
@@ -40,8 +41,8 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       expect(app.defaultProps).toEqual({});
     });
 
-    it('exports MICA_VERSION and MICA_BUILD_INFO constants', () => {
-      const { MICA_VERSION, MICA_BUILD_INFO } = require('./index');
+    it('exports MICA_VERSION and MICA_BUILD_INFO constants', async () => {
+      const { MICA_VERSION, MICA_BUILD_INFO } = await import('./index');
       expect(MICA_VERSION).toBeDefined();
       expect(MICA_BUILD_INFO).toBeDefined();
     });

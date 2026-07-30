@@ -24,7 +24,7 @@
 <!-- Phone Frame -->
 <div
     transition:fly={{ y: 1000, duration: 500 }}
-    class="relative h-[850px] w-[400px] rounded-[3.5rem] border-[8px] border-gray-900 bg-gray-900 shadow-2xl ring-1 ring-gray-700 transition-colors duration-200"
+    class="relative h-[850px] w-[400px] rounded-[3.5rem] border-[8px] border-gray-950 bg-gray-950 shadow-2xl ring-1 ring-gray-600 transition-colors duration-200"
 >
     <!-- Hardware Side Buttons -->
     <!-- Power / Screen Off Button -->

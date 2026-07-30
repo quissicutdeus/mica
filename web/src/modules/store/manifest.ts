@@ -6,6 +6,7 @@ export default defineApp({
     name: "Store",
     color: "bg-indigo-600",
     icon: Icon,
+    author: "gPhone",
     description: "Browse, install, and manage gPhone community apps and permissions",
     permissions: ["storage", "network"],
 });

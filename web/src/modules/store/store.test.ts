@@ -13,6 +13,7 @@ describe("Store Module", () => {
   });
 
   it("is registered in appRegistryStore automatically", () => {
+    appRegistryStore.registerApp(manifest, {});
     const apps = get(appRegistryStore);
     const storeApp = apps.find((a) => a.id === "store");
     expect(storeApp).toBeDefined();
@@ -20,6 +21,7 @@ describe("Store Module", () => {
   });
 
   it("prohibits unregistering the Store system app", () => {
+    appRegistryStore.registerApp(manifest, {});
     expect(() => appRegistryStore.unregisterApp("store")).toThrow(
       "gPhone App Registry error: Unregistering system app 'store' is prohibited."
     );

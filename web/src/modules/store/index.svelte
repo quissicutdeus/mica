@@ -15,20 +15,8 @@
   let installedFilter = $state<"all" | "system" | "addon">("all");
   let selectedApp = $state<AppManifest | null>(null);
 
-  // Available community catalog apps
+  // Available community catalog apps (sorted alphabetically by name)
   const catalogApps: AppManifest[] = [
-    {
-      id: "crypto_tracker",
-      name: "Crypto Tracker",
-      color: "bg-amber-500",
-      icon: "https://raw.githubusercontent.com/feathericons/feather/master/icons/trending-up.svg",
-      version: "1.2.0",
-      author: "Satoshi Labs",
-      description:
-        "Real-time cryptocurrency prices, portfolio tracking, and market analytics.",
-      permissions: ["network", "storage"],
-      isRemote: true,
-    },
     {
       id: "chirper_social",
       name: "Chirper",
@@ -39,6 +27,18 @@
       description:
         "Social media networking app to post updates, photos, and follow friends.",
       permissions: ["notifications", "media", "network", "storage"],
+      isRemote: true,
+    },
+    {
+      id: "crypto_tracker",
+      name: "Crypto Tracker",
+      color: "bg-amber-500",
+      icon: "https://raw.githubusercontent.com/feathericons/feather/master/icons/trending-up.svg",
+      version: "1.2.0",
+      author: "Satoshi Labs",
+      description:
+        "Real-time cryptocurrency prices, portfolio tracking, and market analytics.",
+      permissions: ["network", "storage"],
       isRemote: true,
     },
     {

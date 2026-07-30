@@ -28,6 +28,7 @@ for (const path in manifestFiles) {
         }
     }
 }
+loadedApps.sort((a, b) => a.name.localeCompare(b.name));
 
 export const registeredApps = loadedApps;
 export const registeredComponents = componentRegistry;
@@ -83,15 +84,27 @@ function createAppRegistry() {
             componentRegistry[validatedManifest.id] = component;
             update((apps) => {
                 const existingIndex = apps.findIndex((a) => a.id === validatedManifest.id);
+                let updated: AppManifest[];
                 if (existingIndex >= 0) {
-                    apps[existingIndex] = validatedManifest;
-                    return [...apps];
+                    updated = [...apps];
+                    updated[existingIndex] = validatedManifest;
+                } else {
+                    updated = [...apps, validatedManifest];
                 }
-                return [...apps, validatedManifest];
+                return updated.sort((a, b) => a.name.localeCompare(b.name));
             });
         },
         unregisterApp: (appId: string) => {
-            if (SYSTEM_APP_IDS.has(appId)) {
+            let isSystemApp = SYSTEM_APP_IDS.has(appId);
+            if (!isSystemApp) {
+                let currentApps: AppManifest[] = [];
+                subscribe((apps) => (currentApps = apps))();
+                const app = currentApps.find((a) => a.id === appId);
+                if (app && app.isSystem !== false) {
+                    isSystemApp = true;
+                }
+            }
+            if (isSystemApp) {
                 throw new Error(`gPhone App Registry error: Unregistering system app '${appId}' is prohibited.`);
             }
             const app = loadedApps.find((a) => a.id === appId);
