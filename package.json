@@ -17,7 +17,10 @@
     "watch": "pnpm clearbuild && node scripts/generate-manifests.js && cross-env IS_WATCH_MODE=1 node build/build-bundle.js",
     "watch:web": "pnpm --filter web dev",
     "test": "pnpm test:unit && pnpm test:e2e",
-    "test:unit": "pnpm --filter web test:unit",
+    "test:unit": "concurrently -c \"cyan,magenta\" -n \"web,server\" \"pnpm:test:unit:web\" \"pnpm:test:unit:server\"",
+    "test:unit:web": "pnpm --filter web test:unit",
+    "test:unit:server": "vitest run",
+    "test:watch:server": "vitest",
     "test:e2e:install": "pnpm --filter web test:e2e:install",
     "test:e2e": "pnpm --filter web test:e2e",
     "test:e2e:headed": "pnpm --filter web test:e2e:headed",
@@ -37,6 +40,7 @@
     "prettier": "^3.9.6",
     "prettier-plugin-svelte": "^4.1.1",
     "prettier-plugin-tailwindcss": "^0.8.1",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   }
 }

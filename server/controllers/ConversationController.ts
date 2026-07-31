@@ -160,7 +160,14 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
 });
 
 // Delete/Leave
-app.registerEvent('delete', async (source, cbId, id, citizenid) => {
+app.registerEvent('delete', async (source, cbId, data, citizenid) => {
+  // The UI sends `{ conversation_id }`; a bare id is accepted too.
+  const raw = data && typeof data === 'object' ? (data.conversation_id ?? data.id) : data;
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error('A valid conversation_id is required.');
+  }
+
   // Check role
   const participants = await conversationRepo.findParticipants(id);
   const self = participants.find((p) => p.citizenid === citizenid);
@@ -168,16 +175,16 @@ app.registerEvent('delete', async (source, cbId, id, citizenid) => {
   if (!self) throw new Error('Not a participant');
 
   if (self.role === 'admin') {
-    // Admin deletes (soft delete)
-    // Update conversation status = 'deleted'
-    const success = await conversationRepo.update(id, { status: 'deleted' });
+    // Admin deletes (soft delete) on behalf of the whole thread, so this is a
+    // privileged write: the actor is not necessarily the row's citizenid.
+    const success = await conversationRepo.markDeletedByAdmin(id);
     if (success) {
       await AuditLogger.log({
         citizenid,
         action: 'deleted',
         controller: 'ConversationController',
         method: 'delete',
-        targetId: Number(id),
+        targetId: id,
         targetTable: 'gphone_messages_conversations'
       });
     }
@@ -190,7 +197,7 @@ app.registerEvent('delete', async (source, cbId, id, citizenid) => {
       action: 'left',
       controller: 'ConversationController',
       method: 'delete',
-      targetId: Number(id),
+      targetId: id,
       targetTable: 'gphone_messages_participants'
     });
     return true;

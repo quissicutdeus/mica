@@ -5,6 +5,20 @@ import { Message } from '@shared/types';
 export class MessageRepository extends Repository<Message> {
   protected tableName = 'gphone_messages';
 
+  protected columns = [
+    'id',
+    'conversation_id',
+    'citizenid',
+    'status',
+    'message',
+    'created_at',
+    'updated_at'
+  ];
+
+  // Sending is a custom action that has to authorize conversation membership
+  // first, so there is no generic client write path into this table.
+  protected clientWritable: readonly string[] = [];
+
   async create(data: Partial<Message>): Promise<number> {
     // 1. Insert Message
     const messageId = await super.create({

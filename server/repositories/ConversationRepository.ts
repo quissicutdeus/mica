@@ -5,8 +5,41 @@ import { Database } from '../lib/Database';
 export class ConversationRepository extends Repository<Conversation> {
   protected tableName = 'gphone_messages_conversations';
 
+  protected columns = ['id', 'citizenid', 'is_group', 'name', 'status', 'created_at', 'updated_at'];
+
+  // Renaming is the only generic write, and `update` scopes it to the creator.
+  protected clientWritable = ['name'];
+
   async createConversation(data: Partial<Conversation>): Promise<number> {
     return await this.create(data as Conversation);
+  }
+
+  /**
+   * Is this player currently in the conversation?
+   *
+   * The authorization primitive for everything conversation-scoped. Rows here are
+   * shared between players, so ownership by `citizenid` is not the right question —
+   * membership is.
+   */
+  async isParticipant(conversationId: number, citizenid: string): Promise<boolean> {
+    const query = `
+            SELECT 1 FROM gphone_messages_participants
+            WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL
+            LIMIT 1
+        `;
+    const result = await Database.single<unknown>(query, [conversationId, citizenid]);
+    return Boolean(result);
+  }
+
+  /**
+   * Soft-delete a conversation for everyone in it.
+   *
+   * Privileged: the caller must have already confirmed the actor is an admin
+   * participant. Named method rather than a raw unscoped update, because the
+   * actor is not necessarily the row's `citizenid`.
+   */
+  async markDeletedByAdmin(conversationId: number): Promise<boolean> {
+    return await this.updateUnscoped(conversationId, { status: 'deleted' });
   }
 
   async addParticipant(

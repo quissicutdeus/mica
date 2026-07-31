@@ -3,3 +3,8 @@ dist
 .svelte-kit
 build
 pnpm-lock.yaml
+
+# Playwright output. Gitignored, but Prettier does not read .gitignore, so a
+# failed run leaves an error-context.md that turns `pnpm format:check` red.
+playwright-report
+test-results

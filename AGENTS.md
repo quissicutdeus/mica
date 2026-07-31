@@ -29,7 +29,8 @@ Run from the **repo root** unless noted.
 | Format (check)               | `pnpm format:check`                          | Yes                      |
 | Typecheck **everything**     | `pnpm typecheck`                             | Yes                      |
 | Typecheck one target         | `pnpm typecheck:client` · `:server` · `:web` | Yes                      |
-| Unit tests                   | `pnpm test:unit`                             | Yes                      |
+| Unit tests **everything**    | `pnpm test:unit`                             | Yes                      |
+| Unit tests one project       | `pnpm test:unit:web` · `:server`             | Yes                      |
 | E2E tests                    | `pnpm test:e2e`                              | Yes                      |
 | Install browsers (first run) | `pnpm test:e2e:install`                      | Yes                      |
 | Full build                   | `pnpm build`                                 | Yes                      |
@@ -39,6 +40,24 @@ Run from the **repo root** unless noted.
 `pnpm typecheck` fans out to all three targets via `concurrently`. **Use it, not `pnpm typecheck:web`** —
 the targets run _different TypeScript versions_ (§3), so a web-only check proves nothing about
 `client/` or `server/`.
+
+`pnpm test:unit` likewise fans out to **two separate Vitest projects**, and they are not
+interchangeable:
+
+| Project   | Config               | Tests live in          | Environment                        |
+| --------- | -------------------- | ---------------------- | ---------------------------------- |
+| `web/`    | `web/vite.config.ts` | `web/src/**/*.test.ts` | jsdom, Svelte plugin, globals on   |
+| `server/` | `vitest.config.ts`   | `server/__tests__/`    | node, no plugins, explicit imports |
+
+Server tests live in `server/__tests__/` because both `server/tsconfig.json` and
+`client/tsconfig.json` already exclude that directory — so `pnpm typecheck` stays a check of
+shipping code only, and the test files need no ambient Vitest types. The trade-off is that server
+tests are **not** typechecked; `pnpm test:unit:server` is what validates them.
+
+`server/__tests__/setup.ts` stubs the FiveM globals (`exports`, `onNet`, `emitNet`, `source`).
+Server modules touch these at import time, so a suite that forgets the setup file fails on import,
+not on assertion. Mock `../lib/Database` in any suite that loads a repository — `Database` reads
+`exports.oxmysql` in module scope and must never reach a real connection from a test.
 
 Commands the **user** runs, not you — suggest, don't invoke:
 
@@ -66,6 +85,23 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
    `scripts/generate-manifests.js` output paths without asking.
 7. **SDK First.** All applications inside `web/src/modules/` and external add-ons must consume OS services (navigation, notifications, contacts, camera, registry, NUI bridge) strictly via `@gphone/sdk` hooks (`useNavigation`, `usePhoneNotification`, `useContacts`, `useCamera`, `useAppRegistry`, `useNuiBridge`). Direct relative imports into internal `web/src/store/` files from app modules are prohibited — reaching into internal shell paths breaks standalone SDK app compatibility.
 8. **Never report work complete without running the §9 checklist.**
+9. **Trust no NUI payload on the server.** Every field, and every row id, in a
+   `gphone:server:*` payload is attacker-controlled — CEF XSS can `fetch` any registered callback
+   (§7), so a NUI request is not proof of intent. Two rules follow, both enforced in
+   `server/lib/Repository.ts`:
+   - **Never interpolate a payload key into SQL.** Column lists are built from object keys and MySQL
+     cannot parameterize an identifier. Every key is checked against the repository's `columns`
+     allowlist first. Declare `columns` on every new repository.
+   - **Never mutate a row without an ownership predicate.** `update` and `delete` require a
+     `citizenid` and put it in the `WHERE`; a row id alone is never authorization. For rows shared
+     between players (conversations, messages) ownership is the wrong question — check membership,
+     e.g. `ConversationRepository.isParticipant`. Privileged writes go through a **named** repository
+     method built on the `protected updateUnscoped`, never a controller-level bypass.
+
+   Client-writable fields are declared per table via `clientWritable`; `ServerApp` reduces the
+   payload to that set before it reaches SQL. `id`, `citizenid`, `created_at`, `updated_at` are never
+   client-writable, and `status` is deliberately excluded everywhere — moderation and soft-delete
+   state is not the client's to set.
 
 ---
 
