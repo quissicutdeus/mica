@@ -5,36 +5,18 @@
     "target": "ES2021",
     "useDefineForClassFields": true,
     "module": "ESNext",
-    "types": [
-      "node",
-      "svelte",
-      "vite/client"
-    ],
+    "moduleResolution": "bundler",
+    "typeRoots": ["./node_modules/@types", "../node_modules/@types"],
+    "types": ["node", "svelte", "vite/client"],
     "noEmit": true,
-    /**
-     * Typecheck JS in `.svelte` and `.js` files by default.
-     * Disable checkJs if you'd like to use dynamic types in JS.
-     * Note that setting allowJs false does not prevent the use
-     * of JS in `.svelte` files.
-     */
     "allowJs": true,
     "checkJs": true,
     "moduleDetection": "force",
     "paths": {
-      "@shared/*": [
-        "../shared/*"
-      ],
-      "@gphone/sdk": [
-        "./src/sdk/index.ts"
-      ],
-      "@gphone/sdk/*": [
-        "./src/sdk/*"
-      ]
+      "@shared/*": ["../shared/*"],
+      "@gphone/sdk": ["./src/sdk/index.ts"],
+      "@gphone/sdk/*": ["./src/sdk/*"]
     }
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.js",
-    "src/**/*.svelte"
-  ]
+  "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte"]
 }

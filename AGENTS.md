@@ -7,11 +7,11 @@
 
 pnpm workspace, three build targets:
 
-| Target | Source | Built by | Runtime |
-|---|---|---|---|
-| Game client | `client/` | esbuild via `build/build-bundle.js` | FiveM client |
-| Game server | `server/` | esbuild via `build/build-bundle.js` | FiveM server |
-| UI | `web/` | Vite | CEF **and** a plain browser — see §6 |
+| Target      | Source    | Built by                            | Runtime                              |
+| ----------- | --------- | ----------------------------------- | ------------------------------------ |
+| Game client | `client/` | esbuild via `build/build-bundle.js` | FiveM client                         |
+| Game server | `server/` | esbuild via `build/build-bundle.js` | FiveM server                         |
+| UI          | `web/`    | Vite                                | CEF **and** a plain browser — see §6 |
 
 Node 26 · Svelte **5** · Tailwind **4** · Vite 8 · Vitest 4 · Playwright 1.x
 TypeScript is **split by package** — see §3. Exact versions: `pnpm list`.
@@ -25,28 +25,30 @@ TypeScript is **split by package** — see §3. Exact versions: `pnpm list`.
 
 Run from the **repo root** unless noted.
 
-| Task | Command | Pre-approved? |
-|---|---|---|
-| Install | `pnpm install --frozen-lockfile` | Yes |
-| Typecheck **everything** | `pnpm typecheck` | Yes |
-| Typecheck one target | `pnpm typecheck:client` · `:server` · `:web` | Yes |
-| Unit tests | `pnpm test:unit` | Yes |
-| E2E tests | `pnpm test:e2e` | Yes |
-| Install browsers (first run) | `pnpm test:e2e:install` | Yes |
-| Full build | `pnpm build` | Yes |
-| Dev (both watchers) | `pnpm dev` | Ask first — long-running |
-| Any mutating git | — | **No. See §2.** |
+| Task                         | Command                                      | Pre-approved?            |
+| ---------------------------- | -------------------------------------------- | ------------------------ |
+| Install                      | `pnpm install --frozen-lockfile`             | Yes                      |
+| Format (write)               | `pnpm format`                                | Yes                      |
+| Format (check)               | `pnpm format:check`                          | Yes                      |
+| Typecheck **everything**     | `pnpm typecheck`                             | Yes                      |
+| Typecheck one target         | `pnpm typecheck:client` · `:server` · `:web` | Yes                      |
+| Unit tests                   | `pnpm test:unit`                             | Yes                      |
+| E2E tests                    | `pnpm test:e2e`                              | Yes                      |
+| Install browsers (first run) | `pnpm test:e2e:install`                      | Yes                      |
+| Full build                   | `pnpm build`                                 | Yes                      |
+| Dev (both watchers)          | `pnpm dev`                                   | Ask first — long-running |
+| Any mutating git             | —                                            | **No. See §2.**          |
 
 `pnpm typecheck` fans out to all three targets via `run-p`. **Use it, not `pnpm typecheck:web`** —
-the targets run *different TypeScript versions* (§3), so a web-only check proves nothing about
+the targets run _different TypeScript versions_ (§3), so a web-only check proves nothing about
 `client/` or `server/`.
 
 Commands the **user** runs, not you — suggest, don't invoke:
+
 - `pnpm test:e2e:report` — HTML report
 - `pnpm test:e2e:headed` — live visual run, single worker
 
-**There is no linter or formatter in this repo.** Do not invent `pnpm lint` or `pnpm format`, and do
-not add one without asking.
+**Formatting**: Prettier is configured root-wide with `prettier-plugin-svelte` and `prettier-plugin-tailwindcss`. Run `pnpm format` to format code across the workspace.
 
 ---
 
@@ -71,10 +73,10 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
 
 ## 3. TypeScript is split by package — on purpose
 
-| Package | Version | Checked by |
-|---|---|---|
-| root (`client/`, `server/`) | **7.x** (Go-native) | `tsc --noEmit -p <target>/tsconfig.json` |
-| `web/` | **6.x** (JS-based) | `svelte-check` + `tsc -p tsconfig.node.json` |
+| Package                     | Version             | Checked by                                   |
+| --------------------------- | ------------------- | -------------------------------------------- |
+| root (`client/`, `server/`) | **7.x** (Go-native) | `tsc --noEmit -p <target>/tsconfig.json`     |
+| `web/`                      | **6.x** (JS-based)  | `svelte-check` + `tsc -p tsconfig.node.json` |
 
 Deliberate, not drift. TypeScript 7.0 ships without a stable programmatic compiler API, and
 `svelte-check` (via `svelte2tsx`) requires it; that API lands in 7.1. `client/` and `server/` are
@@ -122,7 +124,7 @@ one** — a JS config in a v4 CSS-first project is ignored, so the symptom is "m
 nothing," with no error anywhere. Theme customization goes in CSS: `@import "tailwindcss"` plus
 `@theme { ... }`.
 
-- Utility classes only. A `<style>` block is acceptable *only* for keyframes and pseudo-element
+- Utility classes only. A `<style>` block is acceptable _only_ for keyframes and pseudo-element
   cases Tailwind cannot express. No CSS modules, no styled-components.
 - Prefer scale tokens over arbitrary values (`p-4`, not `p-[17px]`) unless matching a fixed design.
 - **No visible scrollbars.** Scrollbars must never be visible anywhere inside the phone interface. Global CSS rules in `web/src/app.css` (`scrollbar-width: none` / `::-webkit-scrollbar { display: none }`) enforce this across all scrollable containers.
@@ -148,13 +150,13 @@ with `preserve: true` so modern engines still get the original. It is the only r
 in-game. Load-bearing infrastructure, not leftover Tailwind 3 config. `autoprefixer` alongside it is
 mostly redundant under Tailwind 4 but harmless; leave it.
 
-### Known gaps the postcss config does *not* cover
+### Known gaps the postcss config does _not_ cover
 
-| Feature | Needs | Tailwind 4 uses it for |
-|---|---|---|
-| `color-mix()` | Chrome 111 | **Every opacity modifier** — `bg-white/10`, `text-black/70` |
-| `:has()` | Chrome 105 | `has-*`, `group-has-*` variants |
-| Container queries | Chrome 105 | `@container`, `@min-*`, `@max-*` variants |
+| Feature           | Needs      | Tailwind 4 uses it for                                      |
+| ----------------- | ---------- | ----------------------------------------------------------- |
+| `color-mix()`     | Chrome 111 | **Every opacity modifier** — `bg-white/10`, `text-black/70` |
+| `:has()`          | Chrome 105 | `has-*`, `group-has-*` variants                             |
+| Container queries | Chrome 105 | `@container`, `@min-*`, `@max-*` variants                   |
 
 `postcss-preset-env` has a `color-mix-function` transform, but it computes only static fallbacks.
 Tailwind passes `var(--color-*)` arguments that cannot be resolved at build time, so the polyfill
@@ -168,7 +170,7 @@ instead of CSS.
 
 Nothing in the automated suite catches this class of bug — Playwright drives a modern Chromium.
 Verification is manual: `nui_devTools` in the F8 console (developer mode on), or
-`http://localhost:13172/` while the game runs. Inspect the element and confirm the *computed* value
+`http://localhost:13172/` while the game runs. Inspect the element and confirm the _computed_ value
 resolved, not just that the declaration is present.
 
 A CEF upgrade (M140/M144) is in progress upstream but not in the release client. Until it ships,
@@ -231,11 +233,12 @@ Place new UI code by asking: reusable across apps (`components/`), specific to o
 (`modules/<app>/`), or global state (`store/`)?
 
 **NUI communication**
+
 - All calls to the game go through `fetchNui()` in `web/src/utils/fetchNui.ts`, which wraps
   `fetch('https://<resource>/<event>')`. Never call `fetch` at a game endpoint directly.
 - When `isBrowser()` is true, `fetchNui` resolves from the MockRegistry in
   `web/src/mocks/registry.ts`.
-- **Adding a NUI event is a two-file change**: the call site *and* a handler in `registry.ts`. A
+- **Adding a NUI event is a two-file change**: the call site _and_ a handler in `registry.ts`. A
   missing handler makes the feature untestable in browser mode and invisible to Playwright.
   Fixtures go in `web/src/mocks/data.ts`.
 
@@ -243,6 +246,7 @@ Place new UI code by asking: reusable across apps (`components/`), specific to o
 New store logic and new `fetchNui` handlers get tests.
 
 **E2E and the dev server**
+
 - Config is `web/playwright.config.ts` — read it rather than assuming ports or flags. Locally it
   reuses an already-running dev server; in CI it always spawns its own.
 - **Never kill or restart a dev server you did not start.** The user may have one running.
@@ -254,6 +258,7 @@ New store logic and new `fetchNui` handlers get tests.
 - Assume standard `localhost` routing (WSL2 NAT).
 
 **Build-output coupling**
+
 - Vite's `build.outDir` must stay in sync with the `ui_page` and `files[]` values that
   `scripts/generate-manifests.js` writes into `fxmanifest.lua`. A mismatch produces a blank phone
   in-game with **no console error**.
@@ -280,7 +285,7 @@ Before reporting any task complete, run these and report the actual output:
 **Read the full output, including individual failure traces.** Do not infer success from the absence
 of a crash, from an exit code alone, or from a truncated log. If you did not see `0 failed`, the
 tests did not pass. Note that `run-p` interleaves output from three typecheckers running two
-different TypeScript versions — scan for errors from *each* one, not just the last block printed.
+different TypeScript versions — scan for errors from _each_ one, not just the last block printed.
 
 Report honestly: what you ran, what passed, what failed, what you did not verify. An accurate
 "typecheck clean, unit tests pass, E2E has one failure in contacts.spec.ts" is far more useful than

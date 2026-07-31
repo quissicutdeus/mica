@@ -1,0 +1,18 @@
+# Force all text files to use LF line endings in the repository and working tree
+* text=auto eol=lf
+
+# Force scripts to LF regardless of OS
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Common binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
