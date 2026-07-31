@@ -46,10 +46,10 @@ the targets run _different TypeScript versions_ (§3), so a web-only check prove
 `pnpm test:unit` likewise fans out to **two separate Vitest projects**, and they are not
 interchangeable:
 
-| Project   | Config               | Tests live in          | Environment                        |
-| --------- | -------------------- | ---------------------- | ---------------------------------- |
-| `web/`    | `web/vite.config.ts` | `web/src/**/*.test.ts` | jsdom, Svelte plugin, globals on   |
-| `server/` | `vitest.config.ts`   | `server/__tests__/`    | node, no plugins, explicit imports |
+| Project   | Config               | Tests live in                               | Environment                        |
+| --------- | -------------------- | ------------------------------------------- | ---------------------------------- |
+| `web/`    | `web/vite.config.ts` | `web/src/**/*.test.ts`                      | jsdom, Svelte plugin, globals on   |
+| `server/` | `vitest.config.ts`   | `server/__tests__/` and `client/__tests__/` | node, no plugins, explicit imports |
 
 Server tests live in `server/__tests__/` because both `server/tsconfig.json` and
 `client/tsconfig.json` already exclude that directory — so `pnpm typecheck` stays a check of
@@ -304,10 +304,11 @@ Two traps:
   feature with no client/server wiring works perfectly in `pnpm dev` and in Playwright, and is dead
   in game. When adding an endpoint, add all three layers _and_ the mock. When touching an existing
   one, grep `client/` and `server/` for the action name before assuming it is wired.
-- **Custom actions need an explicit response listener.** `ClientApp` auto-listens on
-  `receive`/`created`/`updated`/`deleted` only. Any other action name needs
-  `app.registerResponseListener('<action>')`, or the reply never resolves and the callback times out
-  after 15s.
+- **Response events are derived, never written by hand.** `shared/rpc.ts` owns
+  `requestEventFor` / `responseEventFor`, and both `ServerApp` and `ClientApp` import them, so the
+  two cannot disagree. `ClientApp.registerCallback` subscribes the derived reply itself. Previously
+  the client subscribed a fixed set of four CRUD reply names and every custom action needed an
+  explicit opt-in — all four mail actions were missing it and timed out after 15s, silently.
 
 Payload shape: the generic CRUD path reads the row id from `data.id`. Conversation-scoped custom
 actions accept `conversation_id`, `id`, or a bare id via `conversationIdFrom` in `server/lib/payload.ts`.

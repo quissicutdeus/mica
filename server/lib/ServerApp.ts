@@ -1,6 +1,7 @@
 import { Repository } from './Repository';
 import { AuditLogger } from './AuditLogger';
 import { requirePositiveInt } from './payload';
+import { requestEventFor, responseEventFor } from '@shared/rpc';
 import { FrameworkBridge, FrameworkPlayer } from './FrameworkBridge';
 
 export interface ServerAppOptions {
@@ -183,8 +184,9 @@ export class ServerApp<T> {
       player: FrameworkPlayer
     ) => Promise<any>
   ) {
-    const eventName = `gphone:server:${this.appName}:${action}`;
-    const clientEventName = `gphone:client:${this.appName}:${action === 'get' ? 'receive' : action === 'create' ? 'created' : action === 'update' ? 'updated' : action === 'delete' ? 'deleted' : action}`;
+    // Both names come from shared/rpc.ts so the client derives exactly the same ones.
+    const eventName = requestEventFor(this.appName, action);
+    const clientEventName = responseEventFor(this.appName, action);
 
     onNet(eventName, async (cbId: any, data: any) => {
       const src = source;

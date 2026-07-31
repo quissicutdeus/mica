@@ -10,7 +10,3 @@ app.registerCallback('readConversation', 'gphone:server:conversations:read');
 // Rename rides the generic update: `clientWritable` on the conversations repo is
 // ['name'], and `update` is ownership-scoped, so only the creator can rename.
 app.registerCallback('renameConversation', 'gphone:server:conversations:update');
-
-// 'read' is a custom action, so its response lands on `...:read` rather than one of
-// the four names ClientApp listens for by default.
-app.registerResponseListener('read');

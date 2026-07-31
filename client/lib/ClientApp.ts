@@ -1,22 +1,17 @@
+import { parseRequestEvent, requestEventFor, responseEventFor } from '@shared/rpc';
+
 export class ClientApp {
   private pendingCallbacks = new Map<string, Function>();
   private pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private idCounter = 0;
+  /** Response events already subscribed, so several routes can share one. */
+  private subscribed = new Set<string>();
 
-  constructor(private appName: string) {
-    this.registerDefaultResponseListeners();
-  }
+  constructor(private appName: string) {}
 
   private generateId(): string {
     this.idCounter = (this.idCounter + 1) % 100000;
     return `${Date.now()}-${this.idCounter}`;
-  }
-
-  private registerDefaultResponseListeners() {
-    this.onResponse('receive', (cbId, data) => this.handleResponse(cbId, data));
-    this.onResponse('created', (cbId, data) => this.handleResponse(cbId, data));
-    this.onResponse('updated', (cbId, data) => this.handleResponse(cbId, data));
-    this.onResponse('deleted', (cbId, data) => this.handleResponse(cbId, data));
   }
 
   private handleResponse(cbId: string, data: any) {
@@ -39,9 +34,39 @@ export class ClientApp {
     }
   }
 
+  /**
+   * Subscribe the event the server will reply on. Idempotent, because several NUI
+   * actions can map to one server action — `deleteConversation` and `leaveConversation`
+   * both reply on `gphone:client:conversations:deleted`.
+   */
+  private subscribeResponse(responseEvent: string) {
+    if (this.subscribed.has(responseEvent)) return;
+    this.subscribed.add(responseEvent);
+    onNet(responseEvent, (cbId: string, data: any) => this.handleResponse(cbId, data));
+  }
+
+  /**
+   * Wire a NUI action to a server event, and subscribe the reply.
+   *
+   * The response event is **derived** from the server event rather than registered
+   * separately. Previously each app subscribed a fixed set of four CRUD reply names and
+   * had to opt into anything else by hand; every custom action whose author forgot —
+   * all four mail actions — timed out after 15 seconds with no error surfaced anywhere.
+   */
   public registerCallback(action: string, customServerEvent?: string) {
     const nuiEvent = action;
-    const serverEvent = customServerEvent || `gphone:server:${this.appName}:${action}`;
+    const serverEvent = customServerEvent || requestEventFor(this.appName, action);
+
+    const target = parseRequestEvent(serverEvent);
+    if (!target) {
+      // A server event outside the gphone:server:<app>:<action> convention has no
+      // derivable reply, so a caller would hang. Refuse loudly at startup instead.
+      throw new Error(
+        `[ClientApp:${this.appName}] '${serverEvent}' does not match ` +
+          'gphone:server:<app>:<action>, so its response event cannot be derived.'
+      );
+    }
+    this.subscribeResponse(responseEventFor(target.app, target.action));
 
     RegisterNuiCallbackType(nuiEvent);
     on(`__cfx_nui:${nuiEvent}`, (data: any, cb: Function) => {
@@ -67,14 +92,5 @@ export class ClientApp {
 
       emitNet(serverEvent, cbId, data);
     });
-  }
-
-  public onResponse(action: string, handler: (cbId: string, data: any) => void) {
-    const clientEvent = `gphone:client:${this.appName}:${action}`;
-    onNet(clientEvent, handler);
-  }
-
-  public registerResponseListener(action: string) {
-    this.onResponse(action, (cbId, data) => this.handleResponse(cbId, data));
   }
 }

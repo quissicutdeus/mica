@@ -1,7 +1,7 @@
-import { ClientApp } from '../lib/ClientApp';
-
-// We don't use ClientApp for everything here because we need custom Native NUI callbacks
-// But for consistency let's use it for Net Events if wrapper supports it, or just use `onNet`.
+// Calls do not use ClientApp: these are fire-and-forget NUI callbacks with no cbId to
+// correlate and no server reply to await, so the request/response machinery does not
+// apply. They answer the NUI callback immediately and let the server push state changes
+// back through the `gphone:client:*` events below.
 
 // NUI Callbacks
 RegisterNuiCallbackType('startCall');
@@ -18,6 +18,15 @@ on('__cfx_nui:answerCall', (_: any, cb: Function) => {
 
 RegisterNuiCallbackType('endCall');
 on('__cfx_nui:endCall', (_: any, cb: Function) => {
+  TriggerServerEvent('gphone:server:endCall');
+  cb({ status: 'idle' });
+});
+
+// Declining an incoming call is the same client-side action as hanging up: the server
+// tears the call down for both parties. Was called by the incoming-call toast and by
+// Settings' DevTools but registered nowhere, so declining silently did nothing.
+RegisterNuiCallbackType('rejectCall');
+on('__cfx_nui:rejectCall', (_: any, cb: Function) => {
   TriggerServerEvent('gphone:server:endCall');
   cb({ status: 'idle' });
 });
