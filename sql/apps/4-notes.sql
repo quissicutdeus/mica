@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS `gphone_notes` (
     PRIMARY KEY (`id`),
     KEY `status` (`status`),
     KEY `citizenid_status` (`citizenid`, `status`),
-    KEY `citizenid_status_updated_at` (`citizenid`, `status`, `updated_at`),
+    KEY `citizenid_status_updated` (`citizenid`, `status`, `updated_at`),
     CONSTRAINT `fk_notes_citizenid` FOREIGN KEY (`citizenid`)
         REFERENCES `players` (`citizenid`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;

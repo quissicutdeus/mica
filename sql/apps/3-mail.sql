@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS `gphone_mail` (
     PRIMARY KEY (`id`),
     KEY `status` (`status`),
     KEY `citizenid_status` (`citizenid`, `status`),
-    KEY `citizenid_status_created_at` (`citizenid`, `status`, `created_at`),
+    KEY `citizenid_status_created` (`citizenid`, `status`, `created_at`),
     KEY `citizenid_read_status` (`citizenid`, `read`, `status`),
     CONSTRAINT `fk_mail_citizenid` FOREIGN KEY (`citizenid`)
         REFERENCES `players` (`citizenid`) ON DELETE CASCADE

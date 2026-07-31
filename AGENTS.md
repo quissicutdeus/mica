@@ -34,6 +34,7 @@ Run from the **repo root** unless noted.
 | E2E tests                    | `pnpm test:e2e`                              | Yes                      |
 | Install browsers (first run) | `pnpm test:e2e:install`                      | Yes                      |
 | Generate per-app SQL         | `pnpm generate:sql`                          | Yes                      |
+| Generate + dev reset SQL     | `pnpm generate:sql:reset`                    | Ask first — destructive  |
 | Full build                   | `pnpm build`                                 | Yes                      |
 | Dev (both watchers)          | `pnpm dev`                                   | Ask first — long-running |
 | Any mutating git             | —                                            | **No. See §2.**          |
@@ -273,6 +274,7 @@ effects. XSS here is privilege escalation, not just defacement.
 | `server/lib/`          | FiveM server | `ServerApp`, `Repository`, `Database`, `AuditLogger`, `payload`  |
 | `server/repositories/` | FiveM server | Hand-written repos, for tables not yet migrated to §10           |
 | `sql/apps/`            | generated    | Per-app DDL from `pnpm generate:sql`; committed, applied by hand |
+| `gphone.sql`           | hand-written | Framework schema only — the moderation audit ledger              |
 | `server/__tests__/`    | Vitest/node  | Excluded from `tsc`; see §1                                      |
 | `shared/types.ts`      | both         | `@shared/types` path alias, not a workspace package (§3)         |
 | `web/src/core/`        | CEF+browser  | Transport adapters — the only place that knows about `fetch`     |
@@ -388,11 +390,50 @@ a silent divergence breaks either security or writes. One schema drives both, pl
   from a job, a dispatch, a bank alert. Nothing becomes client-writable and create/update are not
   registered. Distinct from `shared`: the row still belongs to exactly one citizenid, so reads and
   deletes stay ownership-scoped and remain available.
-- `indexes` takes full ordered column lists. Use it: a per-column flag cannot express the composite
-  indexes the existing tables rely on, and omitting them silently drops indexes on migration.
+- `indexes` takes full ordered column lists, either bare (`['citizenid', 'status']`, named by joining)
+  or explicit (`{ name: 'citizenid_status_updated', columns: [...] }`). Prefer explicit: the derived
+  name is what appears in EXPLAIN output, and MySQL caps index names at 64 characters. A name that
+  collides with one the primary table already emits (`status`, `citizenid_status`) is rejected at
+  declaration time — it would otherwise be MySQL error 1061 at apply time.
 - `default` on a field emits a SQL default. Set it when migrating an existing table —
   `favorite tinyint(1) DEFAULT 0` behaves differently from `DEFAULT NULL` once anything aggregates.
 - Two apps may not declare the same table.
+
+### Apps that own more than one table
+
+The primary `schema` describes a table in the standard gPhone shape: `id`, `citizenid`, `status`,
+`created_at`, `updated_at` supplied by the framework. Join and attachment tables do not fit that —
+`gphone_messages_participants` carries `role`, its own status enum and two nullable timestamps;
+`gphone_messages_attachments` carries neither `status` nor timestamps. Declare them as `childTables`:
+
+```ts
+childTables: [
+  {
+    name: 'gphone_messages_attachments',
+    columns: {
+      message_id: {
+        type: 'int',
+        notNull: true,
+        references: { table: 'gphone_messages', column: 'id' }
+      },
+      photo_id: { type: 'int', notNull: true, references: { table: 'gphone_photos', column: 'id' } }
+    },
+    indexes: [['message_id']]
+  }
+];
+```
+
+- **DDL-only.** No repository is derived and no events are registered — a child table is reached
+  through named methods on the primary repository. Its point is that `pnpm generate:sql` emits a
+  **complete** schema; without it the generated file looks authoritative while leaving dangling
+  foreign keys, which is worse than no file.
+- **Nothing is implicit.** Declare every column. `autoIncrementId: false` drops even the `id`.
+- Child tables are emitted after the primary table so foreign keys resolve.
+
+Use the full column vocabulary when mirroring an existing table, or the generated DDL is quietly
+weaker than the real one: `type: 'enum'` with `values` (a varchar stand-in drops the database-level
+constraint), `defaultNow` and `onUpdateNow` for timestamps (omitting `onUpdateNow` on an `updated_at`
+produces a column that never moves), and `references` for any FK that is not `citizenid`.
 
 ### When an app needs custom repository behaviour
 
@@ -414,14 +455,35 @@ would cross NUI as `{type:'Buffer',data:[...]}` and render as nothing.
 
 ### Schema changes do not touch the database
 
+**`gphone.sql` must not contain app tables.** It holds only framework infrastructure — currently just
+`gphone_audit_logs`, which has no owning module and does not fit the app-table shape. Every app table
+lives in `sql/apps/`, generated. Duplicating DDL into `gphone.sql` reintroduces exactly the drift this
+phase removed, and a stale copy there silently breaks the `columns` allowlist's safety property (§2.9).
+
+#### The dev reset
+
+`pnpm generate:sql:reset` additionally writes `sql/dev-reset.sql`: a single file that **drops every
+`gphone_`-prefixed table in the schema it is run against** — audit ledger included — then recreates the
+whole schema. Development only.
+
+- It discovers tables at apply time from `information_schema` rather than listing the declared ones,
+  because the point is to clear orphans left by a renamed or deleted declaration.
+- Scoped by `table_schema = DATABASE()`, so it cannot reach another schema, and it no-ops if no
+  database is selected.
+- **Gitignored on purpose.** A committed "wipe everything" file is a footgun for anyone who clones the
+  repo. Regenerate it when you need it.
+- Never emitted by plain `pnpm generate:sql` — the flag is required.
+- Nothing in this repo connects to a database. Apply the file yourself in a DB client; it uses
+  `PREPARE`/`EXECUTE`, so it will not run through oxmysql.
+
 `pnpm generate:sql` writes `sql/apps/<id>.sql`, which is **committed and applied by hand**. There is
 deliberately no runtime DDL: `CREATE TABLE IF NOT EXISTS` silently does nothing against an existing
 table, so a schema change would be a no-op with no error — the same silent-failure shape as a missing
 NUI layer (§8). Regenerate and review the diff.
 
-Tables still on hand-written repositories in `server/repositories/` are being migrated incrementally.
-Both styles coexist; a hand-written repository must still declare `columns` and `clientWritable`
-itself.
+Every gPhone-owned table is now declared. `server/repositories/` holds `SchemaRepository` subclasses
+for the two apps with multi-table queries — the declaration owns the schema, the subclass owns the
+joins the single-table generic path cannot express.
 
 ### Never read another resource's tables
 
