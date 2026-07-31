@@ -9,6 +9,7 @@
     "build": "pnpm clearbuild && pnpm typecheck && node scripts/generate-manifests.js && node build/build-bundle.js && pnpm build:web",
     "build:web": "pnpm --filter web build",
     "clearbuild": "node scripts/clear-build.js",
+    "generate:sql": "node scripts/generate-sql.js",
     "dev": "concurrently -c \"cyan,magenta\" -n \"fivem,vite\" \"pnpm watch\" \"pnpm watch:web\"",
     "typecheck:client": "tsc --noEmit -p client/tsconfig.json",
     "typecheck:server": "tsc --noEmit -p server/tsconfig.json",

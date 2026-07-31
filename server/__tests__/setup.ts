@@ -9,7 +9,10 @@
 const noop = () => {};
 
 const fivemGlobals: Record<string, unknown> = {
-  exports: {},
+  // Dual-purpose in FiveM: indexed to reach another resource (`exports['qbx_core']`)
+  // and called to publish one (`exports('SendSystemEmail', fn)` in MailController).
+  // A function satisfies both, since a function is also an object.
+  exports: function () {},
   onNet: noop,
   emitNet: noop,
   on: noop,

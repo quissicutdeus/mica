@@ -17,7 +17,8 @@ import { ContactRepository } from '../repositories/ContactRepository';
 import { ConversationRepository } from '../repositories/ConversationRepository';
 import { MailRepository } from '../repositories/MailRepository';
 import { MessageRepository } from '../repositories/MessageRepository';
-import { NoteRepository } from '../repositories/NoteRepository';
+// Notes has migrated to a defineServerApp declaration; its repository is derived.
+import { notes } from '../controllers/NoteController';
 import { PhotoRepository } from '../repositories/PhotoRepository';
 import { TransactionRepository } from '../repositories/TransactionRepository';
 
@@ -33,7 +34,7 @@ const ALL = [
   { name: 'conversations', repo: new ConversationRepository() },
   { name: 'mail', repo: new MailRepository() },
   { name: 'messages', repo: new MessageRepository() },
-  { name: 'notes', repo: new NoteRepository() },
+  { name: 'notes', repo: notes.repo },
   { name: 'photos', repo: new PhotoRepository() },
   { name: 'transactions', repo: new TransactionRepository() }
 ] satisfies { name: string; repo: Repository<any> }[];

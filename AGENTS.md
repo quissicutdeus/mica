@@ -33,6 +33,7 @@ Run from the **repo root** unless noted.
 | Unit tests one project       | `pnpm test:unit:web` · `:server`             | Yes                      |
 | E2E tests                    | `pnpm test:e2e`                              | Yes                      |
 | Install browsers (first run) | `pnpm test:e2e:install`                      | Yes                      |
+| Generate per-app SQL         | `pnpm generate:sql`                          | Yes                      |
 | Full build                   | `pnpm build`                                 | Yes                      |
 | Dev (both watchers)          | `pnpm dev`                                   | Ask first — long-running |
 | Any mutating git             | —                                            | **No. See §2.**          |
@@ -91,15 +92,17 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
    `server/lib/Repository.ts`:
    - **Never interpolate a payload key into SQL.** Column lists are built from object keys and MySQL
      cannot parameterize an identifier. Every key is checked against the repository's `columns`
-     allowlist first. Declare `columns` on every new repository.
+     allowlist first. New apps get this from their `defineServerApp` schema (§10); a hand-written
+     repository must declare `columns` itself.
    - **Never mutate a row without an ownership predicate.** `update` and `delete` require a
      `citizenid` and put it in the `WHERE`; a row id alone is never authorization. For rows shared
      between players (conversations, messages) ownership is the wrong question — check membership,
      e.g. `ConversationRepository.isParticipant`. Privileged writes go through a **named** repository
      method built on the `protected updateUnscoped`, never a controller-level bypass.
 
-   Client-writable fields are declared per table via `clientWritable`; `ServerApp` reduces the
-   payload to that set before it reaches SQL. `id`, `citizenid`, `created_at`, `updated_at` are never
+   Client-writable fields are declared per table via `clientWritable` — derived from the schema for
+   declared apps (§10), hand-written otherwise; `ServerApp` reduces the payload to that set before it
+   reaches SQL. `id`, `citizenid`, `created_at`, `updated_at` are never
    client-writable, and `status` is deliberately excluded everywhere — moderation and soft-delete
    state is not the client's to set.
 
@@ -262,20 +265,21 @@ effects. XSS here is privilege escalation, not just defacement.
 
 ### Layout
 
-| Path                   | Runs in      | Notes                                                           |
-| ---------------------- | ------------ | --------------------------------------------------------------- |
-| `client/controllers/`  | FiveM client | One file per domain, auto-indexed by the manifest generator     |
-| `client/lib/`          | FiveM client | `ClientApp` (NUI↔server relay), `FrameworkBridge`, `NuiUtils`   |
-| `server/controllers/`  | FiveM server | One file per domain, auto-indexed                               |
-| `server/lib/`          | FiveM server | `ServerApp`, `Repository`, `Database`, `AuditLogger`, `payload` |
-| `server/repositories/` | FiveM server | One per table; declares `columns` and `clientWritable` (§2.9)   |
-| `server/__tests__/`    | Vitest/node  | Excluded from `tsc`; see §1                                     |
-| `shared/types.ts`      | both         | `@shared/types` path alias, not a workspace package (§3)        |
-| `web/src/core/`        | CEF+browser  | Transport adapters — the only place that knows about `fetch`    |
-| `web/src/store/`       | CEF+browser  | Global state, one file per domain. Internal; apps use the SDK   |
-| `web/src/sdk/`         | CEF+browser  | `@gphone/sdk` — the public surface for apps (§2.7)              |
-| `web/src/modules/`     | CEF+browser  | One dir per app: `manifest.ts` + `index.svelte` + `Icon.svelte` |
-| `web/src/mocks/`       | browser only | Mock NUI responses so `pnpm dev` works with no game running     |
+| Path                   | Runs in      | Notes                                                            |
+| ---------------------- | ------------ | ---------------------------------------------------------------- |
+| `client/controllers/`  | FiveM client | One file per domain, auto-indexed by the manifest generator      |
+| `client/lib/`          | FiveM client | `ClientApp` (NUI↔server relay), `FrameworkBridge`, `NuiUtils`    |
+| `server/controllers/`  | FiveM server | One file per domain, auto-indexed                                |
+| `server/lib/`          | FiveM server | `ServerApp`, `Repository`, `Database`, `AuditLogger`, `payload`  |
+| `server/repositories/` | FiveM server | Hand-written repos, for tables not yet migrated to §10           |
+| `sql/apps/`            | generated    | Per-app DDL from `pnpm generate:sql`; committed, applied by hand |
+| `server/__tests__/`    | Vitest/node  | Excluded from `tsc`; see §1                                      |
+| `shared/types.ts`      | both         | `@shared/types` path alias, not a workspace package (§3)         |
+| `web/src/core/`        | CEF+browser  | Transport adapters — the only place that knows about `fetch`     |
+| `web/src/store/`       | CEF+browser  | Global state, one file per domain. Internal; apps use the SDK    |
+| `web/src/sdk/`         | CEF+browser  | `@gphone/sdk` — the public surface for apps (§2.7)               |
+| `web/src/modules/`     | CEF+browser  | One dir per app: `manifest.ts` + `index.svelte` + `Icon.svelte`  |
+| `web/src/mocks/`       | browser only | Mock NUI responses so `pnpm dev` works with no game running      |
 
 `client/controllers/index.ts`, `server/controllers/index.ts` and `web/src/sdk/hooks/index.ts` are
 **generated** by `scripts/generate-manifests.js`. Add a file to the directory; do not edit the index.
@@ -348,3 +352,49 @@ Then, before saying it works:
   outside the suites. Say so rather than implying coverage.
 - **Untracked files are not staged.** New directories need an explicit `git add`; `git add -u` misses
   them.
+
+---
+
+## 10. Declaring an app's server half
+
+New apps declare their server side once instead of hand-writing a repository and a controller.
+`server/lib/defineServerApp.ts` derives everything from one schema:
+
+```ts
+export const notes = defineServerApp<Note>({
+  id: 'notes', // matches the web module's manifest id
+  scope: 'owner',
+  statuses: ['active', 'archived', 'deleted', 'moderated'],
+  schema: {
+    title: { type: 'string', length: 255 },
+    content: 'text'
+  },
+  indexes: [['citizenid', 'status', 'updated_at']]
+});
+```
+
+**Why one declaration and not two lists.** The `columns` allowlist from §2.9 is only _safe_ if it
+matches the real table. Keeping `gphone.sql` and a hand-written `columns` array in sync by hand means
+a silent divergence breaks either security or writes. One schema drives both, plus the generated DDL.
+
+- `id, citizenid, status, created_at, updated_at` are **supplied by the framework**. Declaring any of
+  them in `schema` is an error.
+- Declared fields are client-writable by default; opt out with `clientWritable: false`. Filtering is
+  opt-in via `clientFilterable: true`.
+- **`scope: 'shared'`** disables the generic create/update/delete events entirely, because ownership
+  by `citizenid` is not a valid authorization check for rows several players can see. A shared app
+  writes its own actions with an explicit membership check — see `ConversationRepository.isParticipant`.
+- `indexes` takes full ordered column lists. Use it: a per-column flag cannot express the composite
+  indexes the existing tables rely on, and omitting them silently drops indexes on migration.
+- Two apps may not declare the same table.
+
+### Schema changes do not touch the database
+
+`pnpm generate:sql` writes `sql/apps/<id>.sql`, which is **committed and applied by hand**. There is
+deliberately no runtime DDL: `CREATE TABLE IF NOT EXISTS` silently does nothing against an existing
+table, so a schema change would be a no-op with no error — the same silent-failure shape as a missing
+NUI layer (§8). Regenerate and review the diff.
+
+Tables still on hand-written repositories in `server/repositories/` are being migrated incrementally.
+Both styles coexist; a hand-written repository must still declare `columns` and `clientWritable`
+itself.
