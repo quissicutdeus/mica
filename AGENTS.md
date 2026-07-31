@@ -36,7 +36,7 @@ Run from the **repo root** unless noted.
 | Dev (both watchers)          | `pnpm dev`                                   | Ask first — long-running |
 | Any mutating git             | —                                            | **No. See §2.**          |
 
-`pnpm typecheck` fans out to all three targets via `run-p`. **Use it, not `pnpm typecheck:web`** —
+`pnpm typecheck` fans out to all three targets via `concurrently`. **Use it, not `pnpm typecheck:web`** —
 the targets run _different TypeScript versions_ (§3), so a web-only check proves nothing about
 `client/` or `server/`.
 

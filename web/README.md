@@ -23,8 +23,7 @@ web/
 │   ├── error_boundary.spec.ts
 │   ├── navigation.spec.ts
 │   ├── notifications.spec.ts
-│   ├── nui.spec.ts
-│   └── visual.spec.ts
+│   └── nui.spec.ts
 ├── src/
 │   ├── components/     # Core OS UI components (PhoneFrame, ErrorBoundary, VolumeHud, ToastContainer)
 │   ├── core/           # Core OS architecture & bridge adapters
