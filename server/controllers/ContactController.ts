@@ -1,6 +1,26 @@
-import { ContactRepository } from '../repositories/ContactRepository';
-import { ServerApp } from '../lib/ServerApp';
+import { defineServerApp } from '../lib/defineServerApp';
 import { Contact } from '@shared/types';
 
-const contactRepo = new ContactRepository();
-const app = new ServerApp<Contact>('contacts', contactRepo);
+/**
+ * Contacts: owner-scoped address book, all four generic CRUD actions.
+ *
+ * `phone` and `favorite` are the only filterable fields — the address-book UI
+ * looks contacts up by number and filters the favourites list. Nothing else needs
+ * to be, and every filterable column is one more thing a client can probe.
+ */
+export const contacts = defineServerApp<Contact>({
+  id: 'contacts',
+  scope: 'owner',
+  statuses: ['active', 'deleted', 'moderated'],
+  schema: {
+    firstname: { type: 'string', length: 50, notNull: true },
+    lastname: { type: 'string', length: 50 },
+    phone: { type: 'string', length: 20, notNull: true, clientFilterable: true },
+    email: { type: 'string', length: 100 },
+    // Base64 image data. Blob rather than text to match the existing table.
+    avatar: 'blob',
+    favorite: { type: 'bool', default: 0, clientFilterable: true }
+  },
+  // Mirrors the indexes the hand-written gphone_contacts table already carries.
+  indexes: [['phone'], ['citizenid', 'phone'], ['citizenid', 'favorite', 'status']]
+});

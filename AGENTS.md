@@ -386,7 +386,27 @@ a silent divergence breaks either security or writes. One schema drives both, pl
   writes its own actions with an explicit membership check — see `ConversationRepository.isParticipant`.
 - `indexes` takes full ordered column lists. Use it: a per-column flag cannot express the composite
   indexes the existing tables rely on, and omitting them silently drops indexes on migration.
+- `default` on a field emits a SQL default. Set it when migrating an existing table —
+  `favorite tinyint(1) DEFAULT 0` behaves differently from `DEFAULT NULL` once anything aggregates.
 - Two apps may not declare the same table.
+
+### When an app needs custom repository behaviour
+
+`repositoryFactory` receives the resolved schema; subclass the exported `SchemaRepository` so the
+result still inherits the identifier allowlist and the ownership scoping. Overriding a read is
+additive — it is not a way around §2.9, and there are tests asserting that.
+
+```ts
+repositoryFactory: (resolved) =>
+  new (class extends SchemaRepository<Photo> {
+    async findAll(where: Partial<Photo> = {}) {
+      return (await super.findAll(where)).map(coerceImage);
+    }
+  })(resolved);
+```
+
+Photos uses this because `image` can come back as a Buffer depending on driver and column type, which
+would cross NUI as `{type:'Buffer',data:[...]}` and render as nothing.
 
 ### Schema changes do not touch the database
 

@@ -35,6 +35,12 @@ export interface ColumnDef {
   clientFilterable?: boolean;
   /** Index this column alongside citizenid. */
   index?: boolean;
+  /**
+   * SQL default. Omit for `DEFAULT NULL` on a nullable column. Needed for
+   * faithfulness: `favorite tinyint(1) DEFAULT 0` reads very differently from
+   * `DEFAULT NULL` once anything aggregates on it.
+   */
+  default?: string | number | boolean | null;
 }
 
 /** `{ title: 'string' }` is shorthand for `{ title: { type: 'string' } }`. */
@@ -67,6 +73,13 @@ export interface ServerAppDefinition {
   indexes?: readonly (readonly string[])[];
   /** Passed through to ServerApp — e.g. `{ disableUpdate: true }`. */
   options?: ServerAppOptions;
+  /**
+   * Escape hatch for apps that need custom read shaping — e.g. coercing a blob
+   * column to a string before it crosses NUI. Subclass `SchemaRepository` so the
+   * result still inherits the `columns` allowlist and the ownership scoping;
+   * overriding a method is additive, not a way around §2.9.
+   */
+  repositoryFactory?: (resolved: ResolvedAppSchema) => Repository<any>;
 }
 
 /** Columns every gPhone table carries. Declared by the framework, not by an app. */
@@ -167,15 +180,31 @@ export function resolveAppSchema(definition: ServerAppDefinition): ResolvedAppSc
   };
 }
 
+/**
+ * A Repository whose allowlists come from a resolved schema.
+ *
+ * A concrete, exported class rather than a generated one, so an app that needs
+ * custom read shaping can `extends SchemaRepository<T>` and still inherit every
+ * Phase 1 guarantee — the identifier allowlist and the ownership scoping.
+ */
+export class SchemaRepository<T> extends Repository<T> {
+  protected tableName: string;
+  protected columns: readonly string[];
+  protected clientWritable: readonly string[];
+  protected clientFilterable: readonly string[];
+
+  constructor(resolved: ResolvedAppSchema) {
+    super();
+    this.tableName = resolved.table;
+    this.columns = resolved.columns;
+    this.clientWritable = resolved.clientWritable;
+    this.clientFilterable = resolved.clientFilterable;
+  }
+}
+
 /** Build a Repository bound to a resolved schema. */
 export function buildRepository<T>(resolved: ResolvedAppSchema): Repository<T> {
-  class SchemaRepository extends Repository<T> {
-    protected tableName = resolved.table;
-    protected columns = resolved.columns;
-    protected clientWritable = resolved.clientWritable;
-    protected clientFilterable = resolved.clientFilterable;
-  }
-  return new SchemaRepository();
+  return new SchemaRepository<T>(resolved);
 }
 
 export interface ServerAppHandle<T> {
@@ -200,7 +229,9 @@ export const declaredApps: ResolvedAppSchema[] = [];
  */
 export function defineServerApp<T>(definition: ServerAppDefinition): ServerAppHandle<T> {
   const resolved = resolveAppSchema(definition);
-  const repo = buildRepository<T>(resolved);
+  const repo = definition.repositoryFactory
+    ? (definition.repositoryFactory(resolved) as Repository<T>)
+    : buildRepository<T>(resolved);
 
   if (declaredApps.some((existing) => existing.table === resolved.table)) {
     throw new Error(

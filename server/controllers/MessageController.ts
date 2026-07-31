@@ -1,13 +1,15 @@
 import { MessageRepository } from '../repositories/MessageRepository';
 import { ConversationRepository } from '../repositories/ConversationRepository';
-import { PhotoRepository } from '../repositories/PhotoRepository';
+// Photos is a declared app; reuse its derived repository rather than a second
+// instance, so the attachment-ownership check runs against the same allowlist.
+import { photos } from './PhotoController';
 import { ServerApp } from '../lib/ServerApp';
 import { conversationIdFrom } from '../lib/payload';
 import { Message } from '@shared/types';
 
 const messageRepo = new MessageRepository();
 const conversationRepo = new ConversationRepository();
-const photoRepo = new PhotoRepository();
+const photoRepo = photos.repo;
 
 const app = new ServerApp<Message>('messages', messageRepo, {
   disableGet: true,

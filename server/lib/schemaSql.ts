@@ -23,13 +23,28 @@ const SQL_TYPES: Record<ColumnType, (def: ColumnDef) => string> = {
   blob: () => 'mediumblob'
 };
 
+const sqlLiteral = (value: string | number | boolean | null): string => {
+  if (value === null) return 'NULL';
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  if (typeof value === 'number') return String(value);
+  return `'${value.replace(/'/g, "''")}'`;
+};
+
 const columnSql = (name: string, def: ColumnDef): string => {
   const type = SQL_TYPES[def.type];
   if (!type) {
     throw new Error(`schemaSql: unknown column type '${def.type}' on '${name}'.`);
   }
-  const nullability = def.notNull ? 'NOT NULL' : 'DEFAULT NULL';
-  return `    \`${name}\` ${type(def)} ${nullability}`;
+
+  const parts = [`\`${name}\``, type(def)];
+  if (def.notNull) parts.push('NOT NULL');
+  if (def.default !== undefined) {
+    parts.push(`DEFAULT ${sqlLiteral(def.default)}`);
+  } else if (!def.notNull) {
+    parts.push('DEFAULT NULL');
+  }
+
+  return `    ${parts.join(' ')}`;
 };
 
 /**

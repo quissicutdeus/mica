@@ -21,6 +21,7 @@ import {
   buildRepository,
   defineServerApp,
   declaredApps,
+  SchemaRepository,
   type ServerAppDefinition
 } from '../lib/defineServerApp';
 import { toCreateTableSql, toSqlFile } from '../lib/schemaSql';
@@ -229,6 +230,46 @@ describe('defineServerApp — event registration', () => {
   });
 });
 
+describe('defineServerApp — repositoryFactory', () => {
+  it('lets an app subclass the derived repository for custom read shaping', async () => {
+    (globalThis as Record<string, unknown>).onNet = () => {};
+    dbMock.query.mockResolvedValue([{ id: 1, blobbed: Buffer.from('hello', 'utf8') }]);
+
+    const { repo } = defineServerApp<any>({
+      id: 'shaped',
+      schema: { blobbed: 'blob' },
+      repositoryFactory: (resolved) =>
+        new (class extends SchemaRepository<any> {
+          async findAll(where: any = {}) {
+            const rows = await super.findAll(where);
+            return rows.map((row: any) => ({ ...row, blobbed: String(row.blobbed) }));
+          }
+        })(resolved)
+    });
+
+    const rows = (await repo.findAll({} as any)) as any[];
+    expect(rows[0].blobbed).toBe('hello');
+  });
+
+  it('keeps the allowlist and ownership scoping through the subclass', async () => {
+    (globalThis as Record<string, unknown>).onNet = () => {};
+    dbMock.update.mockResolvedValue(true);
+
+    const { repo } = defineServerApp<any>({
+      id: 'shaped_two',
+      schema: { label: 'string' },
+      repositoryFactory: (resolved) => new (class extends SchemaRepository<any> {})(resolved)
+    });
+
+    // Subclassing must not become a way around §2.9.
+    await expect(repo.create({ evil: 1 } as any)).rejects.toThrow(/rejected unknown column/);
+
+    dbMock.update.mockClear();
+    await repo.update(3, { label: 'x' } as any, 'CIT_A');
+    expect(String(dbMock.update.mock.calls[0][0])).toContain('`citizenid` = ?');
+  });
+});
+
 describe('toSqlFile', () => {
   it('marks the output generated so nobody hand-edits it', () => {
     const file = toSqlFile(resolveAppSchema(notesDefinition));
@@ -300,6 +341,38 @@ describe('toCreateTableSql', () => {
     expect(out).toContain('KEY `citizenid_phone` (`citizenid`, `phone`)');
     expect(out).toContain('`avatar` mediumblob DEFAULT NULL');
     expect(out).toContain('`payload` longtext DEFAULT NULL');
+  });
+
+  it.each([
+    ['a numeric default', 0, 'DEFAULT 0'],
+    ['a string default', 'pending', "DEFAULT 'pending'"],
+    ['a boolean default', true, 'DEFAULT 1'],
+    ['an explicit null default', null, 'DEFAULT NULL']
+  ])('renders %s', (_label, value, expected) => {
+    const out = toCreateTableSql(
+      resolveAppSchema({ id: 'defaults', schema: { field: { type: 'int', default: value } } })
+    );
+
+    expect(out).toContain(`\`field\` int(11) ${expected}`);
+  });
+
+  it('combines notNull with a default', () => {
+    const out = toCreateTableSql(
+      resolveAppSchema({
+        id: 'nn',
+        schema: { flag: { type: 'bool', notNull: true, default: 0 } }
+      })
+    );
+
+    expect(out).toContain('`flag` tinyint(1) NOT NULL DEFAULT 0');
+  });
+
+  it('escapes a quote in a string default', () => {
+    const out = toCreateTableSql(
+      resolveAppSchema({ id: 'q', schema: { label: { type: 'string', default: "it's" } } })
+    );
+
+    expect(out).toContain("DEFAULT 'it''s'");
   });
 
   it.each([

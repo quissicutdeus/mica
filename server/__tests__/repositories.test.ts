@@ -13,13 +13,13 @@ const { dbMock } = vi.hoisted(() => ({
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import { Repository } from '../lib/Repository';
-import { ContactRepository } from '../repositories/ContactRepository';
+import { contacts } from '../controllers/ContactController';
 import { ConversationRepository } from '../repositories/ConversationRepository';
 import { MailRepository } from '../repositories/MailRepository';
 import { MessageRepository } from '../repositories/MessageRepository';
 // Notes has migrated to a defineServerApp declaration; its repository is derived.
 import { notes } from '../controllers/NoteController';
-import { PhotoRepository } from '../repositories/PhotoRepository';
+import { photos } from '../controllers/PhotoController';
 import { TransactionRepository } from '../repositories/TransactionRepository';
 
 /**
@@ -30,12 +30,12 @@ import { TransactionRepository } from '../repositories/TransactionRepository';
  * consequence of editing a repository.
  */
 const ALL = [
-  { name: 'contacts', repo: new ContactRepository() },
+  { name: 'contacts', repo: contacts.repo },
   { name: 'conversations', repo: new ConversationRepository() },
   { name: 'mail', repo: new MailRepository() },
   { name: 'messages', repo: new MessageRepository() },
   { name: 'notes', repo: notes.repo },
-  { name: 'photos', repo: new PhotoRepository() },
+  { name: 'photos', repo: photos.repo },
   { name: 'transactions', repo: new TransactionRepository() }
 ] satisfies { name: string; repo: Repository<any> }[];
 
