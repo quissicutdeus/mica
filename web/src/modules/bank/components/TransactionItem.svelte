@@ -32,7 +32,12 @@
       </div>
     </div>
   </div>
-  <span class={`font-medium ${transaction.amount < 0 ? 'text-red-400' : 'text-green-400'}`}>
-    {transaction.amount < 0 ? '-' : '+'}${formatCurrency(Math.abs(transaction.amount))}
+  <!-- Direction comes from `direction`, never from the sign of `amount`. Banking
+       resources store positive magnitudes, so a sign check shows every withdrawal
+       as a credit. -->
+  <span
+    class={`font-medium ${transaction.direction === 'out' ? 'text-red-400' : 'text-green-400'}`}
+  >
+    {transaction.direction === 'out' ? '-' : '+'}${formatCurrency(transaction.amount)}
   </span>
 </div>

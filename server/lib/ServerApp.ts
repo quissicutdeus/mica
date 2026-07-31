@@ -15,10 +15,25 @@ export interface ServerAppOptions {
 export class ServerApp<T> {
   constructor(
     private appName: string,
-    private repo: Repository<T>,
+    /**
+     * Null for an app with no gPhone-owned table — Bank reads another resource's
+     * export instead. Such an app must disable every generic CRUD action.
+     */
+    private repo: Repository<T> | null,
     private options: ServerAppOptions = {}
   ) {
     this.registerCrudEvents();
+  }
+
+  /** The repository, or a loud failure if a generic action was left enabled without one. */
+  private get repository(): Repository<T> {
+    if (!this.repo) {
+      throw new Error(
+        `ServerApp('${this.appName}') has no repository, so generic CRUD is unavailable. ` +
+          'Disable get/create/update/delete, or supply a repository.'
+      );
+    }
+    return this.repo;
   }
 
   /**
@@ -53,12 +68,12 @@ export class ServerApp<T> {
 
   /** Reduce a raw NUI payload to the columns this table lets clients write. */
   private sanitizeWrite(data: any): Record<string, unknown> {
-    return this.pickColumns(data, this.repo.writableColumns);
+    return this.pickColumns(data, this.repository.writableColumns);
   }
 
   /** Reduce a raw NUI payload to the columns this table lets clients filter on. */
   private sanitizeFilter(data: any): Record<string, unknown> {
-    return this.pickColumns(data, this.repo.filterableColumns);
+    return this.pickColumns(data, this.repository.filterableColumns);
   }
 
   /** Pull a usable row id out of a payload, accepting `{ id }` or a bare id. */
@@ -78,7 +93,7 @@ export class ServerApp<T> {
   private serverStampedFields(): Record<string, unknown> {
     const now = new Date().toISOString();
     const stamped: Record<string, unknown> = {};
-    const columns = this.repo.tableColumns;
+    const columns = this.repository.tableColumns;
 
     if (columns.includes('status')) stamped.status = 'active';
     if (columns.includes('created_at')) stamped.created_at = now;
@@ -90,7 +105,10 @@ export class ServerApp<T> {
     // Read (All or partial)
     if (!this.options.disableGet) {
       this.registerEvent('get', async (source: number, cbId: any, data: any, citizenid: string) => {
-        const result = await this.repo.findAll({ ...this.sanitizeFilter(data), citizenid } as any);
+        const result = await this.repository.findAll({
+          ...this.sanitizeFilter(data),
+          citizenid
+        } as any);
         return result;
       });
     }
@@ -106,7 +124,7 @@ export class ServerApp<T> {
           }
 
           const newItem = { ...fields, citizenid };
-          const id = await this.repo.create(newItem as any);
+          const id = await this.repository.create(newItem as any);
           return { ...this.serverStampedFields(), ...newItem, id };
         }
       );
@@ -123,7 +141,7 @@ export class ServerApp<T> {
             throw new Error(`No writable fields supplied for ${this.appName} update.`);
           }
 
-          const success = await this.repo.update(id, fields as any, citizenid);
+          const success = await this.repository.update(id, fields as any, citizenid);
           return success;
         }
       );
@@ -135,7 +153,7 @@ export class ServerApp<T> {
         'delete',
         async (source: number, cbId: any, data: any, citizenid: string) => {
           const id = this.requireId(data);
-          const success = await this.repo.delete(id, citizenid);
+          const success = await this.repository.delete(id, citizenid);
           if (success) {
             await AuditLogger.log({
               citizenid,

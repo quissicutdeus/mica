@@ -49,18 +49,27 @@ export interface Message {
   attachments?: { id?: number; attachment?: string; photo_id?: number }[]; // attachment is base64 for read, photo_id for creation
 }
 
-export interface PlayerTransaction {
-  id: number;
-  citizenid: string;
-  transactions: Transaction[];
-}
-
+/**
+ * A bank transaction, normalized by `BankingBridge` from whatever the server's
+ * banking resource stores.
+ *
+ * `amount` is always a positive magnitude and `direction` carries in/out. Banking
+ * scripts disagree here — Renewed-Banking stores positive amounts with the
+ * direction in a separate field — so inferring direction from a negative amount
+ * renders every withdrawal as a credit.
+ */
 export interface Transaction {
-  type: 'inbound' | 'outbound';
+  /** The banking resource's own transaction id. A string; not a row id. */
+  id: string;
+  /** Positive magnitude. Never signed. */
   amount: number;
-  id: number;
+  direction: 'in' | 'out';
+  /** Epoch seconds. */
   time: number;
-  reason: string;
+  title?: string;
+  message?: string;
+  issuer?: string;
+  receiver?: string;
 }
 
 export interface Note {

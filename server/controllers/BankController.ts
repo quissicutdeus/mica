@@ -1,9 +1,18 @@
-import { TransactionRepository } from '../repositories/TransactionRepository';
 import { ServerApp } from '../lib/ServerApp';
-import { PlayerTransaction } from '@shared/types';
+import { BankingBridge } from '../lib/BankingBridge';
+import { Transaction } from '@shared/types';
 
-const transactionRepo = new TransactionRepository();
-const app = new ServerApp<PlayerTransaction>('bank', transactionRepo, {
+/**
+ * Bank: read-only, and backed by the banking resource's own export rather than its
+ * database.
+ *
+ * There is no repository and no `defineServerApp` declaration here on purpose.
+ * `player_transactions` belongs to the banking script, not to gPhone — declaring it
+ * would generate DDL for someone else's table, and querying it directly would couple
+ * the phone to their schema and read data their in-memory cache has already moved
+ * past. `BankingBridge` adapts, the same way `FrameworkBridge` does for cores.
+ */
+const app = new ServerApp<Transaction>('bank', null, {
   disableGet: true,
   disableCreate: true,
   disableUpdate: true,
@@ -11,14 +20,5 @@ const app = new ServerApp<PlayerTransaction>('bank', transactionRepo, {
 });
 
 app.registerEvent('getTransactions', async (source, cbId, data, citizenid) => {
-  const result = await transactionRepo.findByCitizenId(citizenid);
-
-  let transactions = [];
-  if (result && result.transactions) {
-    const rawTransactions = result.transactions;
-    transactions =
-      typeof rawTransactions === 'string' ? JSON.parse(rawTransactions) : rawTransactions;
-    transactions.sort((a: any, b: any) => b.time - a.time);
-  }
-  return transactions;
+  return BankingBridge.getTransactions(citizenid);
 });

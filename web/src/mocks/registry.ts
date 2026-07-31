@@ -7,7 +7,7 @@ import {
   mockPhotos,
   sampleAvatars
 } from './data';
-import type { Contact, Conversation, Mail, Message, Note, Photo } from '@shared/types';
+import type { Contact, Conversation, Mail, Message, Note, Photo, Transaction } from '@shared/types';
 
 // Helper to simulate delays
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -176,14 +176,33 @@ export const mockRegistry: Record<string, MockHandler> = {
   getCitizenId: () => 'my-id',
   getPhoneNumber: () => '867-5309',
   getBankBalance: () => 12450,
-  getTransactions: () => [
-    { message: 'Store Purchase', amount: -45, time: Math.floor(Date.now() / 1000), title: 'Store' },
-    { message: 'Salary', amount: 1500, time: Math.floor(Date.now() / 1000) - 86400, title: 'Job' },
+  // Shaped exactly like BankingBridge output: positive magnitudes with an explicit
+  // direction. The previous mock used signed amounts, which no banking resource
+  // produces — so red/green rendering worked here and was wrong in game.
+  getTransactions: (): Transaction[] => [
     {
+      id: 'mock-1',
+      title: 'Store',
+      message: 'Store Purchase',
+      amount: 45,
+      direction: 'out',
+      time: Math.floor(Date.now() / 1000)
+    },
+    {
+      id: 'mock-2',
+      title: 'Job',
+      message: 'Salary',
+      amount: 1500,
+      direction: 'in',
+      time: Math.floor(Date.now() / 1000) - 86400
+    },
+    {
+      id: 'mock-3',
+      title: 'Transfer',
       message: 'Transfer',
-      amount: -200,
-      time: Math.floor(Date.now() / 1000) - 172800,
-      title: 'Transfer'
+      amount: 200,
+      direction: 'out',
+      time: Math.floor(Date.now() / 1000) - 172800
     }
   ],
 

@@ -422,3 +422,21 @@ NUI layer (§8). Regenerate and review the diff.
 Tables still on hand-written repositories in `server/repositories/` are being migrated incrementally.
 Both styles coexist; a hand-written repository must still declare `columns` and `clientWritable`
 itself.
+
+### Never read another resource's tables
+
+Some data gPhone displays belongs to a different resource — bank transactions to the banking script,
+character data to the core. **Go through that resource's exports, behind a `*Bridge` in `server/lib/`.**
+Querying their tables directly couples gPhone to a schema it does not own, breaks on their migrations,
+and can read stale data: Renewed-Banking keeps transactions in an in-memory cache that
+`player_transactions` lags behind, so the export is both correct and fresher than the table.
+
+A bridge's other job is to **normalize**, because these resources disagree in ways that fail silently.
+Renewed stores `amount` as a positive magnitude with the direction in `trans_type`; anything inferring
+direction from a negative amount renders every withdrawal as a credit. Normalize onto the
+`shared/types.ts` shape at the boundary, keep the pure mapping in an exported function so it is
+testable without a running server, and make the mock emit the same normalized shape — otherwise `pnpm
+dev` disagrees with production and hides the bug (§8).
+
+Such an app has **no table and no declaration**: pass `null` as the repository to `ServerApp` and
+disable every generic CRUD action. `Bank` is the worked example.

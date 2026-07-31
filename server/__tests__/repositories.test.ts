@@ -20,7 +20,6 @@ import { MessageRepository } from '../repositories/MessageRepository';
 // Notes has migrated to a defineServerApp declaration; its repository is derived.
 import { notes } from '../controllers/NoteController';
 import { photos } from '../controllers/PhotoController';
-import { TransactionRepository } from '../repositories/TransactionRepository';
 
 /**
  * The shipped write policy, table by table.
@@ -35,8 +34,7 @@ const ALL = [
   { name: 'mail', repo: mail.repo },
   { name: 'messages', repo: new MessageRepository() },
   { name: 'notes', repo: notes.repo },
-  { name: 'photos', repo: photos.repo },
-  { name: 'transactions', repo: new TransactionRepository() }
+  { name: 'photos', repo: photos.repo }
 ] satisfies { name: string; repo: Repository<any> }[];
 
 describe('shipped repositories — declared client write policy', () => {
@@ -47,8 +45,7 @@ describe('shipped repositories — declared client write policy', () => {
     ['photos', ['image']],
     // Every mutation on these goes through a named, authorizing method.
     ['mail', []],
-    ['messages', []],
-    ['transactions', []]
+    ['messages', []]
   ])('%s exposes exactly the expected writable columns', (name, expected) => {
     const entry = ALL.find((candidate) => candidate.name === name)!;
     expect(entry.repo.writableColumns).toEqual(expected);
@@ -93,12 +90,6 @@ describe('shipped repositories — inherited guarantees', () => {
     await mail.repo.delete(4, 'CIT_OWNER');
     expect(String(dbMock.update.mock.calls[0][0])).toContain('`citizenid` = ?');
     expect(dbMock.update.mock.calls[0][1]).toEqual(['deleted', 4, 'CIT_OWNER']);
-  });
-
-  it('transactions cannot be soft-deleted: the framework table has no status column', async () => {
-    await expect(new TransactionRepository().delete(1, 'CIT_A')).rejects.toThrow(
-      /requires a 'status' column/
-    );
   });
 
   it('conversation membership is a positive check, not an absence of error', async () => {
