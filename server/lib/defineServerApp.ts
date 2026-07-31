@@ -18,7 +18,16 @@ import { ServerApp, ServerAppOptions } from './ServerApp';
  * layout is a file move rather than a rewrite.
  */
 
-export type ColumnType = 'string' | 'text' | 'mediumtext' | 'int' | 'bool' | 'json' | 'blob';
+export type ColumnType =
+  'string' | 'text' | 'mediumtext' | 'int' | 'bool' | 'json' | 'blob' | 'timestamp' | 'enum';
+
+/** A foreign key onto another table. `players` is implied for `citizenid`. */
+export interface ColumnReference {
+  table: string;
+  column: string;
+  /** Defaults to CASCADE, matching every existing gphone FK. */
+  onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT';
+}
 
 export interface ColumnDef {
   type: ColumnType;
@@ -41,7 +50,63 @@ export interface ColumnDef {
    * `DEFAULT NULL` once anything aggregates on it.
    */
   default?: string | number | boolean | null;
+  /** Emit `DEFAULT CURRENT_TIMESTAMP`. Only meaningful for `timestamp`. */
+  defaultNow?: boolean;
+  /**
+   * Emit `ON UPDATE CURRENT_TIMESTAMP`. Only meaningful for `timestamp`. Omitting it
+   * on an `updated_at` column silently produces a table whose timestamp never moves.
+   */
+  onUpdateNow?: boolean;
+  /**
+   * Permitted values for `type: 'enum'`. A varchar stand-in would drop the
+   * database-level constraint, so this is required when the type is `enum`.
+   */
+  values?: readonly string[];
+  /** Foreign key onto another table. */
+  references?: ColumnReference;
 }
+
+/**
+ * A table an app owns besides its primary one — a join table, an attachment table.
+ *
+ * DDL-only: no repository is derived and no generic events are registered. It exists
+ * so `pnpm generate:sql` emits a **complete** schema for the app. Without it, an app
+ * with child tables would generate a file that looks authoritative while leaving
+ * dangling foreign keys, which is worse than no file at all.
+ *
+ * Unlike the primary schema, nothing is implicit here: declare every column,
+ * including `id` if you want one. Child tables in this codebase disagree about
+ * whether they carry `status` or timestamps at all.
+ */
+export interface ChildTableDefinition {
+  /** Full table name; no `gphone_` prefix is added. */
+  name: string;
+  columns: Record<string, ColumnType | ColumnDef>;
+  /** Emit `id int(11) NOT NULL AUTO_INCREMENT` + PRIMARY KEY. Defaults to true. */
+  autoIncrementId?: boolean;
+  indexes?: readonly IndexDefinition[];
+}
+
+/**
+ * An index: either a bare column list (named by joining the columns) or an explicit
+ * name. Name them when the derived one would be unwieldy or unclear — MySQL caps
+ * index names at 64 characters, and a name is what shows up in EXPLAIN output.
+ */
+export type IndexDefinition =
+  readonly string[] | { readonly name: string; readonly columns: readonly string[] };
+
+export interface ResolvedIndex {
+  name: string;
+  columns: readonly string[];
+}
+
+export const normalizeIndex = (index: IndexDefinition): ResolvedIndex =>
+  Array.isArray(index)
+    ? { name: index.join('_'), columns: index }
+    : {
+        name: (index as { name: string }).name,
+        columns: (index as { columns: readonly string[] }).columns
+      };
 
 /** `{ title: 'string' }` is shorthand for `{ title: { type: 'string' } }`. */
 export type AppSchema = Record<string, ColumnType | ColumnDef>;
@@ -80,7 +145,13 @@ export interface ServerAppDefinition {
    * flag cannot express the multi-column indexes the existing tables rely on, and a
    * declaration that cannot express them would silently drop them on migration.
    */
-  indexes?: readonly (readonly string[])[];
+  indexes?: readonly IndexDefinition[];
+  /**
+   * Other tables this app owns — join tables, attachment tables. DDL-only, emitted
+   * after the primary table so the generated schema is complete and its foreign keys
+   * resolve.
+   */
+  childTables?: readonly ChildTableDefinition[];
   /** Passed through to ServerApp — e.g. `{ disableUpdate: true }`. */
   options?: ServerAppOptions;
   /**
@@ -118,7 +189,8 @@ export interface ResolvedAppSchema {
   columns: string[];
   clientWritable: string[];
   clientFilterable: string[];
-  indexes: readonly (readonly string[])[];
+  indexes: readonly ResolvedIndex[];
+  childTables: readonly ChildTableDefinition[];
 }
 
 /**
@@ -166,17 +238,77 @@ export function resolveAppSchema(definition: ServerAppDefinition): ResolvedAppSc
 
   const columns = [...IMPLICIT_COLUMNS, ...fields.map((f) => f.name)] as string[];
 
-  const indexes = definition.indexes ?? [];
+  const indexes = (definition.indexes ?? []).map(normalizeIndex);
   for (const index of indexes) {
-    if (index.length === 0) {
+    if (index.columns.length === 0) {
       throw new Error(`defineServerApp('${id}'): an index must name at least one column.`);
     }
-    for (const column of index) {
+    if (!/^[a-z][a-z0-9_]*$/.test(index.name)) {
+      throw new Error(
+        `defineServerApp('${id}'): index name '${index.name}' must be lower_snake_case.`
+      );
+    }
+    for (const column of index.columns) {
       if (!columns.includes(column)) {
         throw new Error(
           `defineServerApp('${id}'): index references '${column}', which is not a column.`
         );
       }
+    }
+  }
+
+  // Every index name the primary table will emit. A duplicate is MySQL error 1061,
+  // and it would only surface when somebody applies the generated file — so catch it
+  // at declaration time instead.
+  const emittedIndexNames = [
+    'status',
+    'citizenid_status',
+    ...fields.filter((f) => f.def.index).map((f) => `citizenid_${f.name}`),
+    ...indexes.map((index) => index.name)
+  ];
+  const duplicateIndex = emittedIndexNames.find((name, i) => emittedIndexNames.indexOf(name) !== i);
+  if (duplicateIndex) {
+    throw new Error(
+      `defineServerApp('${id}'): index name '${duplicateIndex}' is emitted twice on ` +
+        `'${table}'. The primary table always carries \`status\` and \`citizenid_status\`; ` +
+        'do not redeclare them.'
+    );
+  }
+
+  const childTables = definition.childTables ?? [];
+  for (const child of childTables) {
+    if (!child.name || !/^[a-z][a-z0-9_]*$/.test(child.name)) {
+      throw new Error(
+        `defineServerApp('${id}'): child table name '${child.name}' must be lower_snake_case.`
+      );
+    }
+    if (!child.columns || Object.keys(child.columns).length === 0) {
+      throw new Error(
+        `defineServerApp('${id}'): child table '${child.name}' must declare at least one column.`
+      );
+    }
+    for (const column of Object.keys(child.columns)) {
+      if (!/^[a-z][a-z0-9_]*$/.test(column)) {
+        throw new Error(
+          `defineServerApp('${id}'): child table '${child.name}' column '${column}' must be ` +
+            'lower_snake_case — it becomes a SQL identifier.'
+        );
+      }
+    }
+    const childIndexNames = (child.indexes ?? []).map((i) => normalizeIndex(i).name);
+    const duplicateChildIndex = childIndexNames.find(
+      (name, i) => childIndexNames.indexOf(name) !== i
+    );
+    if (duplicateChildIndex) {
+      throw new Error(
+        `defineServerApp('${id}'): child table '${child.name}' emits index name ` +
+          `'${duplicateChildIndex}' twice.`
+      );
+    }
+    if (child.name === table) {
+      throw new Error(
+        `defineServerApp('${id}'): child table '${child.name}' collides with the primary table.`
+      );
     }
   }
 
@@ -188,6 +320,7 @@ export function resolveAppSchema(definition: ServerAppDefinition): ResolvedAppSc
     statuses,
     fields,
     indexes,
+    childTables,
     columns,
     clientWritable: fields
       .filter((f) => isClientWritable(f.def, scope, serverAuthored))

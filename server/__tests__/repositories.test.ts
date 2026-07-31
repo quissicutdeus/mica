@@ -14,9 +14,9 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import { Repository } from '../lib/Repository';
 import { contacts } from '../controllers/ContactController';
-import { ConversationRepository } from '../repositories/ConversationRepository';
 import { mail } from '../controllers/MailController';
-import { MessageRepository } from '../repositories/MessageRepository';
+import { conversations } from '../controllers/ConversationController';
+import { messages } from '../controllers/MessageController';
 // Notes has migrated to a defineServerApp declaration; its repository is derived.
 import { notes } from '../controllers/NoteController';
 import { photos } from '../controllers/PhotoController';
@@ -30,9 +30,9 @@ import { photos } from '../controllers/PhotoController';
  */
 const ALL = [
   { name: 'contacts', repo: contacts.repo },
-  { name: 'conversations', repo: new ConversationRepository() },
+  { name: 'conversations', repo: conversations.repo },
   { name: 'mail', repo: mail.repo },
-  { name: 'messages', repo: new MessageRepository() },
+  { name: 'messages', repo: messages.repo },
   { name: 'notes', repo: notes.repo },
   { name: 'photos', repo: photos.repo }
 ] satisfies { name: string; repo: Repository<any> }[];
@@ -93,21 +93,18 @@ describe('shipped repositories — inherited guarantees', () => {
   });
 
   it('conversation membership is a positive check, not an absence of error', async () => {
-    const conversations = new ConversationRepository();
-
     dbMock.single.mockResolvedValueOnce({ 1: 1 });
-    await expect(conversations.isParticipant(3, 'CIT_A')).resolves.toBe(true);
+    await expect((conversations.repo as any).isParticipant(3, 'CIT_A')).resolves.toBe(true);
 
     dbMock.single.mockResolvedValueOnce(null);
-    await expect(conversations.isParticipant(3, 'CIT_STRANGER')).resolves.toBe(false);
+    await expect((conversations.repo as any).isParticipant(3, 'CIT_STRANGER')).resolves.toBe(false);
   });
 
   it('markRead only moves the caller own read cursor, and only while still joined', async () => {
-    const conversations = new ConversationRepository();
     dbMock.update.mockResolvedValue(true);
     dbMock.update.mockClear();
 
-    await conversations.markRead(3, 'CIT_A');
+    await (conversations.repo as any).markRead(3, 'CIT_A');
 
     const sql = String(dbMock.update.mock.calls[0][0]).replace(/\s+/g, ' ').trim();
     expect(sql).toBe(
@@ -118,11 +115,10 @@ describe('shipped repositories — inherited guarantees', () => {
   });
 
   it('findForCitizen computes unread_count from the caller own last_read', async () => {
-    const conversations = new ConversationRepository();
     dbMock.query.mockResolvedValue([]);
     dbMock.query.mockClear();
 
-    await conversations.findForCitizen('CIT_A');
+    await (conversations.repo as any).findForCitizen('CIT_A');
 
     const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
     // Joins the caller's own participant row so last_read is in scope...
@@ -137,11 +133,10 @@ describe('shipped repositories — inherited guarantees', () => {
   });
 
   it('admin conversation deletion is a named privileged write, scoped to the row id', async () => {
-    const conversations = new ConversationRepository();
     dbMock.update.mockResolvedValue(true);
     dbMock.update.mockClear();
 
-    await conversations.markDeletedByAdmin(12);
+    await (conversations.repo as any).markDeletedByAdmin(12);
 
     const sql = String(dbMock.update.mock.calls[0][0]).replace(/\s+/g, ' ');
     // No ownership predicate — the caller authorized via participant role — but

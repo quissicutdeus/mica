@@ -16,6 +16,5 @@ export const notes = defineServerApp<Note>({
     title: { type: 'string', length: 255 },
     content: 'text'
   },
-  // Matches the index the hand-written gphone_notes table already carries.
-  indexes: [['citizenid', 'status', 'updated_at']]
+  indexes: [{ name: 'citizenid_status_updated', columns: ['citizenid', 'status', 'updated_at'] }]
 });

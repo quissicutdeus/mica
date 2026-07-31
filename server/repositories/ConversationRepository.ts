@@ -1,15 +1,17 @@
-import { Repository } from '../lib/Repository';
+import { SchemaRepository } from '../lib/defineServerApp';
 import { Conversation, Participant } from '@shared/types';
 import { Database } from '../lib/Database';
 
-export class ConversationRepository extends Repository<Conversation> {
-  protected tableName = 'gphone_messages_conversations';
-
-  protected columns = ['id', 'citizenid', 'is_group', 'name', 'status', 'created_at', 'updated_at'];
-
-  // Renaming is the only generic write, and `update` scopes it to the creator.
-  protected clientWritable = ['name'];
-
+/**
+ * Bespoke queries for conversations. The schema and both allowlists come from the
+ * declaration in ConversationController via `SchemaRepository`.
+ *
+ * Nine of the methods below read or join `gphone_messages_participants`, which is why
+ * this class exists: membership lives in a join table that the generic single-table
+ * path cannot reach. The join table's DDL is declared as a child table on the
+ * conversations app so the generated schema stays complete.
+ */
+export class ConversationRepository extends SchemaRepository<Conversation> {
   async createConversation(data: Partial<Conversation>): Promise<number> {
     return await this.create(data as Conversation);
   }

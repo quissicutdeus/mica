@@ -24,7 +24,7 @@ import {
   SchemaRepository,
   type ServerAppDefinition
 } from '../lib/defineServerApp';
-import { toCreateTableSql, toSqlFile } from '../lib/schemaSql';
+import { toCreateTableSql, toChildTableSql, toSqlFile } from '../lib/schemaSql';
 
 const notesDefinition: ServerAppDefinition = {
   id: 'notes',
@@ -300,6 +300,155 @@ describe('defineServerApp — repositoryFactory', () => {
   });
 });
 
+describe('child tables', () => {
+  const messagesish = {
+    id: 'threads',
+    schema: { body: 'text' },
+    childTables: [
+      {
+        name: 'thread_attachments',
+        columns: {
+          message_id: {
+            type: 'int' as const,
+            notNull: true,
+            references: { table: 'gphone_messages', column: 'id' }
+          },
+          kind: { type: 'enum' as const, values: ['photo', 'file'], notNull: true },
+          seen_at: { type: 'timestamp' as const },
+          touched_at: {
+            type: 'timestamp' as const,
+            notNull: true,
+            defaultNow: true,
+            onUpdateNow: true
+          }
+        },
+        indexes: [['message_id']]
+      }
+    ]
+  };
+
+  it('emits the child table after the primary one, so foreign keys resolve', () => {
+    const file = toSqlFile(resolveAppSchema(messagesish));
+
+    expect(file.indexOf('`gphone_threads`')).toBeLessThan(file.indexOf('`thread_attachments`'));
+  });
+
+  it('gives a child table no implicit status or citizenid', () => {
+    // The whole reason child tables exist: these tables disagree about whether they
+    // carry the framework columns at all.
+    const sql = toChildTableSql(messagesish.childTables[0]);
+
+    expect(sql).not.toContain('`status` ENUM');
+    expect(sql).not.toContain('`citizenid`');
+    expect(sql).toContain('`id` int(11) NOT NULL AUTO_INCREMENT');
+    expect(sql).toContain('PRIMARY KEY (`id`)');
+  });
+
+  it('can omit the auto-increment id entirely', () => {
+    const sql = toChildTableSql({
+      name: 'plain',
+      autoIncrementId: false,
+      columns: { label: 'string' }
+    });
+
+    expect(sql).not.toContain('AUTO_INCREMENT');
+    expect(sql).not.toContain('PRIMARY KEY');
+    expect(sql).toContain('`label` varchar(255) DEFAULT NULL');
+  });
+
+  it('emits a foreign key onto an arbitrary table', () => {
+    const sql = toChildTableSql(messagesish.childTables[0]);
+
+    expect(sql).toContain(
+      'CONSTRAINT `fk_thread_attachments_message_id` FOREIGN KEY (`message_id`)'
+    );
+    expect(sql).toContain('REFERENCES `gphone_messages` (`id`) ON DELETE CASCADE');
+  });
+
+  it('honours a non-cascading onDelete', () => {
+    const sql = toChildTableSql({
+      name: 'soft',
+      columns: {
+        owner: {
+          type: 'string' as const,
+          references: { table: 'players', column: 'citizenid', onDelete: 'SET NULL' as const }
+        }
+      }
+    });
+
+    expect(sql).toContain('ON DELETE SET NULL');
+  });
+
+  it('closes the statement without a trailing comma', () => {
+    const sql = toChildTableSql(messagesish.childTables[0]);
+    expect(sql).not.toMatch(/,\s*\)\s*ENGINE/);
+  });
+
+  it.each([
+    ['a name that is not lower_snake_case', { name: 'BadName', columns: { a: 'string' as const } }],
+    ['no columns', { name: 'empty', columns: {} }],
+    [
+      'a column name that is not a safe identifier',
+      { name: 'ok', columns: { 'DROP TABLE': 'string' as const } }
+    ]
+  ])('rejects a child table with %s', (_label, child) => {
+    expect(() =>
+      resolveAppSchema({ id: 'x', schema: { a: 'string' }, childTables: [child as any] })
+    ).toThrow();
+  });
+
+  it('rejects a child table that collides with the primary table', () => {
+    expect(() =>
+      resolveAppSchema({
+        id: 'x',
+        schema: { a: 'string' },
+        childTables: [{ name: 'gphone_x', columns: { b: 'string' } }]
+      })
+    ).toThrow(/collides with the primary table/);
+  });
+});
+
+describe('timestamp and enum columns', () => {
+  it('emits ON UPDATE CURRENT_TIMESTAMP only when asked', () => {
+    const withOnUpdate = toChildTableSql({
+      name: 't1',
+      columns: { at: { type: 'timestamp', notNull: true, defaultNow: true, onUpdateNow: true } }
+    });
+    const without = toChildTableSql({
+      name: 't2',
+      columns: { at: { type: 'timestamp', notNull: true, defaultNow: true } }
+    });
+
+    // Omitting this on an updated_at column silently produces a table whose
+    // timestamp never moves.
+    expect(withOnUpdate).toContain('DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
+    expect(without).toContain('DEFAULT CURRENT_TIMESTAMP');
+    expect(without).not.toContain('ON UPDATE');
+  });
+
+  it('renders a nullable timestamp as DEFAULT NULL', () => {
+    const sql = toChildTableSql({ name: 't3', columns: { left_at: 'timestamp' } });
+    expect(sql).toContain('`left_at` timestamp DEFAULT NULL');
+  });
+
+  it('renders an enum with its values, not a varchar stand-in', () => {
+    const sql = toChildTableSql({
+      name: 't4',
+      columns: {
+        state: { type: 'enum', values: ['active', 'left'], notNull: true, default: 'active' }
+      }
+    });
+
+    expect(sql).toContain("`state` ENUM('active', 'left') NOT NULL DEFAULT 'active'");
+  });
+
+  it('refuses an enum with no values rather than emitting ENUM()', () => {
+    expect(() => toChildTableSql({ name: 't5', columns: { s: { type: 'enum' } } })).toThrow(
+      /requires a non-empty `values` list/
+    );
+  });
+});
+
 describe('toSqlFile', () => {
   it('marks the output generated so nobody hand-edits it', () => {
     const file = toSqlFile(resolveAppSchema(notesDefinition));
@@ -344,6 +493,26 @@ describe('toCreateTableSql', () => {
     expect(out).toContain(
       'KEY `citizenid_status_updated_at` (`citizenid`, `status`, `updated_at`)'
     );
+  });
+
+  it('rejects redeclaring an index the primary table already emits', () => {
+    // MySQL error 1061 otherwise, and only at apply time. The primary table always
+    // carries `status` and `citizenid_status`.
+    for (const collide of [['status'], ['citizenid', 'status']]) {
+      expect(() => resolveAppSchema({ ...notesDefinition, indexes: [collide] })).toThrow(
+        /is emitted twice/
+      );
+    }
+  });
+
+  it('rejects two child-table indexes with the same name', () => {
+    expect(() =>
+      resolveAppSchema({
+        id: 'x',
+        schema: { a: 'string' },
+        childTables: [{ name: 'kid', columns: { b: 'int' }, indexes: [['b'], ['b']] }]
+      })
+    ).toThrow(/emits index name 'b' twice/);
   });
 
   it('rejects an index naming a column that does not exist', () => {

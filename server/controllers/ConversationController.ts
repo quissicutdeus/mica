@@ -1,24 +1,96 @@
 import { ConversationRepository } from '../repositories/ConversationRepository';
-import { ServerApp } from '../lib/ServerApp';
+import { defineServerApp } from '../lib/defineServerApp';
 import { Conversation } from '@shared/types';
 import { Database } from '../lib/Database';
 import { AuditLogger } from '../lib/AuditLogger';
 import { conversationIdFrom } from '../lib/payload';
 
-const conversationRepo = new ConversationRepository();
-
-const app = new ServerApp<Conversation>('conversations', conversationRepo, {
-  disableGet: true,
-  disableCreate: true, // Custom logic needed
-  disableUpdate: false, // Default update is fine (renaming)
-  disableDelete: true // Custom logic for soft delete/leave
+/**
+ * Conversations: owner scope, deliberately not `shared`.
+ *
+ * The row genuinely has an owner — `citizenid` is the creator — and renaming is
+ * correctly restricted to them by the ownership-scoped generic update. What is shared
+ * is *visibility*, and that is decided by the participants join table, which every
+ * custom action below checks. Declaring this `shared` would disable the generic
+ * update and silently break rename.
+ *
+ * The participants join table is declared as a child table so `pnpm generate:sql`
+ * emits a complete schema: it carries `role`, a different status enum, and two
+ * nullable timestamps, none of which fit the primary-table shape.
+ */
+export const conversations = defineServerApp<Conversation>({
+  id: 'conversations',
+  table: 'gphone_messages_conversations',
+  scope: 'owner',
+  statuses: ['active', 'archived', 'deleted', 'moderated'],
+  schema: {
+    // Set by the custom create; never client-writable.
+    is_group: { type: 'bool', notNull: true, default: 0, clientWritable: false },
+    // The only generic write. `update` scopes it to the creator.
+    name: { type: 'string', length: 50 }
+  },
+  indexes: [
+    { name: 'citizenid_status_updated', columns: ['citizenid', 'status', 'updated_at'] },
+    { name: 'updated_at', columns: ['updated_at'] }
+  ],
+  childTables: [
+    {
+      name: 'gphone_messages_participants',
+      columns: {
+        conversation_id: {
+          type: 'int',
+          notNull: true,
+          references: { table: 'gphone_messages_conversations', column: 'id' }
+        },
+        citizenid: {
+          type: 'string',
+          length: 50,
+          notNull: true,
+          references: { table: 'players', column: 'citizenid' }
+        },
+        role: { type: 'string', length: 20, notNull: true, default: 'member' },
+        status: {
+          type: 'enum',
+          values: ['active', 'left', 'removed', 'moderated'],
+          notNull: true,
+          default: 'active'
+        },
+        last_read: { type: 'timestamp', notNull: true, defaultNow: true },
+        created_at: { type: 'timestamp', notNull: true, defaultNow: true },
+        // Null means "still in the thread" — every membership check filters on it.
+        left_at: { type: 'timestamp' },
+        updated_at: { type: 'timestamp', notNull: true, defaultNow: true, onUpdateNow: true }
+      },
+      indexes: [
+        { name: 'status', columns: ['status'] },
+        { name: 'conversation_participant', columns: ['conversation_id', 'citizenid'] },
+        { name: 'citizenid_status', columns: ['citizenid', 'status'] },
+        { name: 'conversation_status', columns: ['conversation_id', 'status'] },
+        { name: 'participant_last_read', columns: ['citizenid', 'last_read'] }
+      ]
+    }
+  ],
+  options: {
+    disableGet: true, // Custom: hydrates participants and unread counts
+    disableCreate: true, // Custom: resolves a phone number to a citizenid
+    disableDelete: true // Custom: admin soft-deletes, everyone else leaves
+  },
+  repositoryFactory: (resolved) => new ConversationRepository(resolved)
 });
+
+/** So other controllers can reach the bespoke membership queries with types intact. */
+export type ConversationRepo = ConversationRepository;
+
+const app = conversations.app;
+const conversationRepo = conversations.repo as ConversationRepository;
 
 // Get all conversations for the user
 app.registerEvent('get', async (source, cbId, data, citizenid) => {
-  const conversations = await conversationRepo.findForCitizen(citizenid);
+  // Named `list`, not `conversations`: the module-level export of that name is the
+  // app handle, and shadowing it here would be a trap for the next reader.
+  const list = await conversationRepo.findForCitizen(citizenid);
   // Hydrate names for 1:1 logic
-  for (const conv of conversations) {
+  for (const conv of list) {
     const participants = await hydrateParticipants(conv.id);
     // Map simplified participants with names
     conv.participants = participants.map((p) => ({
@@ -35,7 +107,7 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
       } // Mocking contact structure for UI convenience
     }));
   }
-  return conversations;
+  return list;
 });
 
 // Helper to find citizenid by phone (Offline fallback)

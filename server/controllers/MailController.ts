@@ -57,10 +57,9 @@ export const mail = defineServerApp<Mail>({
     content: { type: 'text', notNull: true },
     read: { type: 'bool', notNull: true, default: 0 }
   },
-  // Mirrors the indexes the hand-written gphone_mail table already carries.
   indexes: [
-    ['citizenid', 'status', 'created_at'],
-    ['citizenid', 'read', 'status']
+    { name: 'citizenid_status_created', columns: ['citizenid', 'status', 'created_at'] },
+    { name: 'citizenid_read_status', columns: ['citizenid', 'read', 'status'] }
   ],
   // Reads and deletes are custom below: the list needs an explicit ORDER BY, and
   // delete/archive carry their own audit entries.

@@ -21,7 +21,7 @@ export const photos = defineServerApp<Photo>({
   schema: {
     image: { type: 'mediumtext', notNull: true }
   },
-  indexes: [['citizenid', 'status', 'created_at']],
+  indexes: [{ name: 'citizenid_status_created', columns: ['citizenid', 'status', 'created_at'] }],
   options: { disableUpdate: true },
   repositoryFactory: (resolved) =>
     new (class extends SchemaRepository<Photo> {

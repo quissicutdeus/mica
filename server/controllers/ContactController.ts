@@ -21,6 +21,9 @@ export const contacts = defineServerApp<Contact>({
     avatar: 'blob',
     favorite: { type: 'bool', default: 0, clientFilterable: true }
   },
-  // Mirrors the indexes the hand-written gphone_contacts table already carries.
-  indexes: [['phone'], ['citizenid', 'phone'], ['citizenid', 'favorite', 'status']]
+  indexes: [
+    { name: 'phone', columns: ['phone'] },
+    { name: 'citizenid_phone', columns: ['citizenid', 'phone'] },
+    { name: 'citizenid_favorite', columns: ['citizenid', 'favorite', 'status'] }
+  ]
 });

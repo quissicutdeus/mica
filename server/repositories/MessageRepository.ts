@@ -1,24 +1,14 @@
-import { Repository } from '../lib/Repository';
+import { SchemaRepository } from '../lib/defineServerApp';
 import { Database } from '../lib/Database';
 import { Message } from '@shared/types';
 
-export class MessageRepository extends Repository<Message> {
-  protected tableName = 'gphone_messages';
-
-  protected columns = [
-    'id',
-    'conversation_id',
-    'citizenid',
-    'status',
-    'message',
-    'created_at',
-    'updated_at'
-  ];
-
-  // Sending is a custom action that has to authorize conversation membership
-  // first, so there is no generic client write path into this table.
-  protected clientWritable: readonly string[] = [];
-
+/**
+ * Bespoke queries for the messages table. The schema, the `columns` allowlist and
+ * the empty `clientWritable` set all come from the declaration in MessageController
+ * via `SchemaRepository`; this class only adds the multi-table reads and writes the
+ * generic path cannot express.
+ */
+export class MessageRepository extends SchemaRepository<Message> {
   async create(data: Partial<Message>): Promise<number> {
     // 1. Insert Message
     const messageId = await super.create({
