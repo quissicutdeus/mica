@@ -7,6 +7,8 @@ import {
   useCamera,
   useNuiBridge,
   useNavigation,
+  useStorage,
+  useSystemHardware,
   onAppMount,
   onAppUnmount,
   type AppManifest
@@ -117,6 +119,27 @@ describe('gPhone SDK (@gphone/sdk)', () => {
 
       goHome();
       expect(get(currentApp).name).toBe('home');
+    });
+
+    it('useStorage isolates key-value app storage', () => {
+      const storage = useStorage('test_app');
+      storage.setItem('user_theme', 'dark');
+
+      expect(storage.getItem('user_theme')).toBe('dark');
+      expect(storage.getItem('non_existent', 'default_val')).toBe('default_val');
+
+      storage.removeItem('user_theme');
+      expect(storage.getItem('user_theme')).toBeNull();
+    });
+
+    it('useSystemHardware exposes hardware stores and setters', () => {
+      const { charge, signalLevel, setSignal, is24Hour } = useSystemHardware();
+      expect(charge).toBeDefined();
+
+      setSignal(3);
+      expect(get(signalLevel)).toBe(3);
+
+      expect(is24Hour).toBeDefined();
     });
   });
 

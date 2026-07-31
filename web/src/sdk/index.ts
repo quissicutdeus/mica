@@ -1,3 +1,3 @@
-export * from "./manifest";
-export * from "./hooks";
-export * from "./version";
+export * from './manifest';
+export * from './hooks/index';
+export * from './version';
