@@ -11,7 +11,7 @@ describe('contacts store', () => {
   it('loads contacts list using fetchNui', async () => {
     const mockContacts = [
       { id: 1, name: 'Alice', number: '555-0100', favorite: true },
-      { id: 2, name: 'Bob', number: '555-0200', favorite: false },
+      { id: 2, name: 'Bob', number: '555-0200', favorite: false }
     ];
 
     vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockContacts as any);
@@ -23,7 +23,7 @@ describe('contacts store', () => {
   it('filters favorite contacts via derived store', async () => {
     const mockContacts = [
       { id: 1, name: 'Alice', number: '555-0100', favorite: true },
-      { id: 2, name: 'Bob', number: '555-0200', favorite: false },
+      { id: 2, name: 'Bob', number: '555-0200', favorite: false }
     ];
 
     vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockContacts as any);
@@ -64,7 +64,7 @@ describe('contacts store', () => {
   it('deletes a contact from store by id', async () => {
     const initialContacts = [
       { id: 1, name: 'Alice', number: '555-0100' },
-      { id: 2, name: 'Bob', number: '555-0200' },
+      { id: 2, name: 'Bob', number: '555-0200' }
     ];
 
     vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(initialContacts as any);

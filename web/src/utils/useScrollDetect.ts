@@ -1,4 +1,4 @@
-import { onMount } from "svelte";
+import { onMount } from 'svelte';
 
 /**
  * Tracks whether any scrollable container with `.overflow-y-auto` has scrolled
@@ -11,18 +11,15 @@ import { onMount } from "svelte";
  * useScrollDetect((v) => (isScrolled = v));
  * ```
  */
-export function useScrollDetect(
-    setter: (scrolled: boolean) => void,
-    threshold: number = 20,
-) {
-    onMount(() => {
-        const handleScroll = (e: Event) => {
-            const target = e.target as HTMLElement;
-            if (target && target.classList.contains("overflow-y-auto")) {
-                setter(target.scrollTop > threshold);
-            }
-        };
-        window.addEventListener("scroll", handleScroll, true);
-        return () => window.removeEventListener("scroll", handleScroll, true);
-    });
+export function useScrollDetect(setter: (scrolled: boolean) => void, threshold: number = 20) {
+  onMount(() => {
+    const handleScroll = (e: Event) => {
+      const target = e.target as HTMLElement;
+      if (target && target.classList.contains('overflow-y-auto')) {
+        setter(target.scrollTop > threshold);
+      }
+    };
+    window.addEventListener('scroll', handleScroll, true);
+    return () => window.removeEventListener('scroll', handleScroll, true);
+  });
 }

@@ -8,8 +8,8 @@ describe('ErrorBoundary component', () => {
     const { getByText } = render(ErrorBoundaryTestWrapper, {
       props: {
         appName: 'TestApp',
-        shouldCrash: false,
-      },
+        shouldCrash: false
+      }
     });
 
     expect(getByText('Normal Child Content')).toBeTruthy();

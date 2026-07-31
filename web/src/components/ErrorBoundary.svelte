@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { Snippet } from "svelte";
-  import { goHome } from "../store/navigation";
+  import type { Snippet } from 'svelte';
+  import { goHome } from '../store/navigation';
 
   let {
     children,
-    appName = "App",
+    appName = 'App'
   }: {
     children: Snippet;
     appName?: string;
@@ -25,15 +25,10 @@
 <svelte:boundary onerror={handleError}>
   {#if error}
     <div
-      class="flex h-full w-full flex-col items-center justify-center p-6 bg-gray-900 text-white text-center"
+      class="flex h-full w-full flex-col items-center justify-center bg-gray-900 p-6 text-center text-white"
     >
       <div class="mb-4 rounded-full bg-red-500/20 p-4 text-red-400">
-        <svg
-          class="w-10 h-10"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
+        <svg class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path
             stroke-linecap="round"
             stroke-linejoin="round"
@@ -42,17 +37,17 @@
           />
         </svg>
       </div>
-      <h2 class="text-xl font-bold mb-1 text-white">App Stopped Working</h2>
-      <p class="text-sm text-gray-400 mb-6">
-        The <span class="font-semibold text-gray-200 capitalize">{appName}</span
-        > app encountered an unexpected error.
+      <h2 class="mb-1 text-xl font-bold text-white">App Stopped Working</h2>
+      <p class="mb-6 text-sm text-gray-400">
+        The <span class="font-semibold text-gray-200 capitalize">{appName}</span> app encountered an unexpected
+        error.
       </p>
 
-      <div class="flex flex-col gap-3 w-full max-w-xs">
+      <div class="flex w-full max-w-xs flex-col gap-3">
         <button
           type="button"
           onclick={handleReset}
-          class="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-medium transition-colors cursor-pointer"
+          class="w-full cursor-pointer rounded-xl bg-blue-600 px-4 py-2.5 font-medium text-white transition-colors hover:bg-blue-500"
         >
           Restart App
         </button>
@@ -62,7 +57,7 @@
             handleReset();
             goHome();
           }}
-          class="w-full py-2.5 px-4 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-xl font-medium transition-colors cursor-pointer border border-gray-700"
+          class="w-full cursor-pointer rounded-xl border border-gray-700 bg-gray-800 px-4 py-2.5 font-medium text-gray-200 transition-colors hover:bg-gray-700"
         >
           Return to Home Screen
         </button>
@@ -70,7 +65,7 @@
 
       {#if import.meta.env.DEV && error?.stack}
         <div
-          class="mt-6 w-full text-left bg-black/40 p-3 rounded-lg overflow-auto max-h-32 text-xs font-mono text-red-300 border border-red-900/50"
+          class="mt-6 max-h-32 w-full overflow-auto rounded-lg border border-red-900/50 bg-black/40 p-3 text-left font-mono text-xs text-red-300"
         >
           {error.stack}
         </div>

@@ -12,14 +12,18 @@ vi.mock('svelte', () => ({
 describe('useScrollDetect', () => {
   it('detects scroll threshold on overflow-y-auto containers', () => {
     let scrolled = false;
-    const setter = (val: boolean) => { scrolled = val; };
+    const setter = (val: boolean) => {
+      scrolled = val;
+    };
 
     let scrollListener: ((e: Event) => void) | null = null;
-    const addEventListenerSpy = vi.spyOn(window, 'addEventListener').mockImplementation((event, listener) => {
-      if (event === 'scroll') {
-        scrollListener = listener as (e: Event) => void;
-      }
-    });
+    const addEventListenerSpy = vi
+      .spyOn(window, 'addEventListener')
+      .mockImplementation((event, listener) => {
+        if (event === 'scroll') {
+          scrollListener = listener as (e: Event) => void;
+        }
+      });
 
     useScrollDetect(setter, 20);
 

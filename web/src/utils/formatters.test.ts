@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  formatCurrency,
-  formatTimestamp,
-  formatTime,
-  formatRelativeTime,
-} from './formatters';
+import { formatCurrency, formatTimestamp, formatTime, formatRelativeTime } from './formatters';
 
 describe('formatters utility module', () => {
   describe('formatCurrency', () => {

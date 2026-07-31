@@ -9,9 +9,7 @@ describe('photos store', () => {
   });
 
   it('loads photo gallery', async () => {
-    const mockPhotos = [
-      { id: 1, image: 'data:image/png;base64,123', citizenid: 'CIT_1' }
-    ];
+    const mockPhotos = [{ id: 1, image: 'data:image/png;base64,123', citizenid: 'CIT_1' }];
 
     vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockPhotos as any);
 

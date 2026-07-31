@@ -7,13 +7,21 @@
     useSystemHardware,
     usePhoneNotification,
     useNavigation,
-    useNuiBridge
+    useNuiBridge,
+    useAccount,
+    useAppRegistry,
+    useCall,
+    useMail,
+    useMessages
   } from '@gphone/sdk';
-  import { myPhoneNumber, fetchPhoneNumber } from '../../store/account';
+  import { formatDate } from '../../utils/formatters';
   import { isBrowser } from '../../utils/isBrowser';
-  import { callStore } from '../../store/call';
-  import { mailStore } from '../../store/mail';
-  import { messagesStore } from '../../store/messages';
+
+  const { myPhoneNumber, fetchPhoneNumber } = useAccount();
+  const { getFirstBootTime } = useAppRegistry();
+  const { callStore } = useCall();
+  const { mailStore } = useMail();
+  const { messagesStore } = useMessages();
 
   let { onback } = $props<{ onback?: () => void }>();
 
@@ -161,6 +169,10 @@
         <div class="flex items-center justify-between p-4">
           <span class="font-medium text-gray-300">OS Version</span>
           <span class="font-mono text-indigo-400">v{MICA_VERSION}</span>
+        </div>
+        <div class="flex items-center justify-between p-4">
+          <span class="font-medium text-gray-300">First Boot</span>
+          <span class="font-mono text-xs text-gray-300">{formatDate(getFirstBootTime())}</span>
         </div>
         <div class="flex items-center justify-between p-4">
           <span class="font-medium text-gray-300">Build / Commit</span>

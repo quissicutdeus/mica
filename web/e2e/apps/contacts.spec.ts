@@ -14,19 +14,24 @@ test.describe('Contacts App E2E', () => {
 
   test('contains search input and empty state or contact list', async ({ page }) => {
     const searchInput = page.locator('input[type="text"]');
-    if (await searchInput.count() > 0) {
+    if ((await searchInput.count()) > 0) {
       await expect(searchInput).toBeVisible();
       await searchInput.fill('John');
       await expect(searchInput).toHaveValue('John');
     }
   });
 
-  test('disables Save Contact button when mandatory first name or phone number is missing', async ({ page }) => {
+  test('disables Save Contact button when mandatory first name or phone number is missing', async ({
+    page
+  }) => {
     // Look for FAB / Add contact button
-    const fabBtn = page.locator('button[aria-label="Add Contact"]').or(page.locator('button', { hasText: '+' })).first();
+    const fabBtn = page
+      .locator('button[aria-label="Add Contact"]')
+      .or(page.locator('button', { hasText: '+' }))
+      .first();
     if (await fabBtn.isVisible()) {
       await fabBtn.click();
-      
+
       const saveBtn = page.locator('button', { hasText: 'Save Contact' }).first();
       await expect(saveBtn).toBeDisabled();
 

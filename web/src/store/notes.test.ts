@@ -45,7 +45,7 @@ describe('notes store', () => {
   it('deletes a note by id', async () => {
     const initialNotes = [
       { id: 1, title: 'Note 1', content: 'C1', citizenid: 'CIT_1' },
-      { id: 2, title: 'Note 2', content: 'C2', citizenid: 'CIT_1' },
+      { id: 2, title: 'Note 2', content: 'C2', citizenid: 'CIT_1' }
     ];
     vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(initialNotes as any);
     await notes.load();

@@ -7,7 +7,11 @@ describe('fetchNui utility module', () => {
   });
 
   it('returns defaultValue in browser environment when mock data is absent', async () => {
-    const result = await fetchNui('nonExistentEvent', { test: true }, { defaultValue: { success: true } });
+    const result = await fetchNui(
+      'nonExistentEvent',
+      { test: true },
+      { defaultValue: { success: true } }
+    );
     expect(result).toEqual({ success: true });
   });
 

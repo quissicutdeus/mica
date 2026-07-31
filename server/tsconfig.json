@@ -5,24 +5,12 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "module": "CommonJS",
-    "types": [
-      "@citizenfx/server"
-    ],
-    "lib": [
-      "es2021"
-    ],
+    "types": ["@citizenfx/server"],
+    "lib": ["es2021"],
     "paths": {
-      "@shared/*": [
-        "../shared/*"
-      ]
+      "@shared/*": ["../shared/*"]
     }
   },
-  "include": [
-    "./**/*",
-    "../shared/**/*"
-  ],
-  "exclude": [
-    "**/node_modules",
-    "**/__tests__/*"
-  ]
+  "include": ["./**/*", "../shared/**/*"],
+  "exclude": ["**/node_modules", "**/__tests__/*"]
 }

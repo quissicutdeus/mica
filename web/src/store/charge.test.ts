@@ -43,4 +43,3 @@ describe('charge store', () => {
     expect(get(isDead)).toBe(true);
   });
 });
-

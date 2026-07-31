@@ -7,7 +7,7 @@ import {
   NuiTransportAdapter,
   WebSocketTransportAdapter,
   createWebSocketTransport,
-  type ITransportAdapter,
+  type ITransportAdapter
 } from './transport';
 
 class FakeWebSocket {
@@ -75,7 +75,7 @@ describe('Transport Abstraction Module', () => {
   it('allows custom transport adapter injection via setTransport', async () => {
     const customAdapter: ITransportAdapter = {
       send: vi.fn().mockResolvedValue({ custom: true }),
-      on: vi.fn().mockReturnValue(() => { }),
+      on: vi.fn().mockReturnValue(() => {})
     };
 
     setTransport(customAdapter);
@@ -90,16 +90,19 @@ describe('Transport Abstraction Module', () => {
 
   it('NuiTransportAdapter issues HTTP POST request', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      json: () => Promise.resolve({ success: true }),
+      json: () => Promise.resolve({ success: true })
     } as Response);
 
     const nuiTransport = new NuiTransportAdapter();
     const result = await nuiTransport.send('customNuiEvent', { foo: 'bar' });
 
-    expect(fetchSpy).toHaveBeenCalledWith('https://gphone/customNuiEvent', expect.objectContaining({
-      method: 'POST',
-      body: JSON.stringify({ foo: 'bar' }),
-    }));
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://gphone/customNuiEvent',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ foo: 'bar' })
+      })
+    );
     expect(result).toEqual({ success: true });
   });
 
@@ -110,7 +113,7 @@ describe('Transport Abstraction Module', () => {
     const unsubscribe = nuiTransport.on('testAction', handlerSpy);
 
     const event = new MessageEvent('message', {
-      data: { action: 'testAction', data: { test: 1 } },
+      data: { action: 'testAction', data: { test: 1 } }
     });
     window.dispatchEvent(event);
 
@@ -182,7 +185,7 @@ describe('Transport Abstraction Module', () => {
     it('receives broadcast events and dispatches to listeners & window', () => {
       const adapter = new WebSocketTransportAdapter({
         url: 'ws://localhost:9001',
-        dispatchWindowMessages: true,
+        dispatchWindowMessages: true
       });
       const fakeWs = FakeWebSocket.instances[0];
       fakeWs.triggerOpen();
@@ -193,13 +196,18 @@ describe('Transport Abstraction Module', () => {
       const unsubscribe = adapter.on('incomingCall', listenerSpy);
       window.addEventListener('message', (e) => windowSpy(e.data));
 
-      fakeWs.triggerMessage(JSON.stringify({ action: 'incomingCall', data: { caller: '555-0199' } }));
+      fakeWs.triggerMessage(
+        JSON.stringify({ action: 'incomingCall', data: { caller: '555-0199' } })
+      );
 
       expect(listenerSpy).toHaveBeenCalledWith({ caller: '555-0199' });
 
       // Advance timers to allow jsdom postMessage queue to dispatch
       vi.advanceTimersByTime(10);
-      expect(windowSpy).toHaveBeenCalledWith({ action: 'incomingCall', data: { caller: '555-0199' } });
+      expect(windowSpy).toHaveBeenCalledWith({
+        action: 'incomingCall',
+        data: { caller: '555-0199' }
+      });
 
       unsubscribe();
     });
@@ -208,7 +216,7 @@ describe('Transport Abstraction Module', () => {
       const adapter = new WebSocketTransportAdapter({
         url: 'ws://localhost:9001',
         reconnectInterval: 2000,
-        maxReconnectAttempts: 2,
+        maxReconnectAttempts: 2
       });
       const fakeWs1 = FakeWebSocket.instances[0];
       fakeWs1.triggerOpen();

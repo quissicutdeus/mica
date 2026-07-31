@@ -1,49 +1,49 @@
-import { describe, it, expect, vi } from "vitest";
-import { useNuiEvent } from "./useNuiEvent";
+import { describe, it, expect, vi } from 'vitest';
+import { useNuiEvent } from './useNuiEvent';
 
-describe("useNuiEvent", () => {
-    it("invokes handler when matching NUI message action is received", () => {
-        const handler = vi.fn();
-        const destroy = useNuiEvent<string>("testAction", handler);
+describe('useNuiEvent', () => {
+  it('invokes handler when matching NUI message action is received', () => {
+    const handler = vi.fn();
+    const destroy = useNuiEvent<string>('testAction', handler);
 
-        window.dispatchEvent(
-            new MessageEvent("message", {
-                data: { action: "testAction", data: "hello fivem" },
-            })
-        );
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { action: 'testAction', data: 'hello fivem' }
+      })
+    );
 
-        expect(handler).toHaveBeenCalledWith("hello fivem");
+    expect(handler).toHaveBeenCalledWith('hello fivem');
 
-        destroy();
-    });
+    destroy();
+  });
 
-    it("ignores messages with non-matching actions", () => {
-        const handler = vi.fn();
-        const destroy = useNuiEvent("targetAction", handler);
+  it('ignores messages with non-matching actions', () => {
+    const handler = vi.fn();
+    const destroy = useNuiEvent('targetAction', handler);
 
-        window.dispatchEvent(
-            new MessageEvent("message", {
-                data: { action: "otherAction", data: 123 },
-            })
-        );
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { action: 'otherAction', data: 123 }
+      })
+    );
 
-        expect(handler).not.toHaveBeenCalled();
+    expect(handler).not.toHaveBeenCalled();
 
-        destroy();
-    });
+    destroy();
+  });
 
-    it("cleans up listener when destroy is called", () => {
-        const handler = vi.fn();
-        const destroy = useNuiEvent("testAction", handler);
+  it('cleans up listener when destroy is called', () => {
+    const handler = vi.fn();
+    const destroy = useNuiEvent('testAction', handler);
 
-        destroy();
+    destroy();
 
-        window.dispatchEvent(
-            new MessageEvent("message", {
-                data: { action: "testAction", data: "after destroy" },
-            })
-        );
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { action: 'testAction', data: 'after destroy' }
+      })
+    );
 
-        expect(handler).not.toHaveBeenCalled();
-    });
+    expect(handler).not.toHaveBeenCalled();
+  });
 });

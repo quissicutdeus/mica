@@ -1,4 +1,4 @@
-import { contacts } from '../../store/contacts';
+import { contacts, favoriteContacts } from '../../store/contacts';
 
 /**
  * OS Service Hook for accessing address book contacts and sharing contacts.
@@ -6,6 +6,7 @@ import { contacts } from '../../store/contacts';
 export function useContacts() {
   return {
     contactsStore: contacts,
+    favoriteContacts,
     addContact: (
       firstname: string,
       phone: string,

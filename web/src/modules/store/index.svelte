@@ -7,6 +7,7 @@
     type AppPermission
   } from '@gphone/sdk';
   import ConfirmDialog from '../../components/ConfirmDialog.svelte';
+  import { formatDate, formatRelativeTime } from '../../utils/formatters';
 
   let { onback } = $props<{ onback?: () => void }>();
 
@@ -16,6 +17,7 @@
 
   let activeTab = $state<'catalog' | 'installed'>('catalog');
   let installedFilter = $state<'all' | 'system' | 'addon'>('all');
+  let installedSortOrder = $state<'newest' | 'oldest' | 'updated' | 'name'>('newest');
   let selectedApp = $state<AppManifest | null>(null);
   let appToUninstall = $state<AppManifest | null>(null);
 
@@ -124,13 +126,33 @@
     return !app.isRemote && (app.author === 'gPhone' || !app.author);
   }
 
-  // Filtered installed apps
+  // Filtered and sorted installed apps
   const filteredInstalledApps = $derived(
-    $registryStore.filter((app) => {
-      if (installedFilter === 'system') return isSystemApp(app);
-      if (installedFilter === 'addon') return !isSystemApp(app);
-      return true;
-    })
+    $registryStore
+      .filter((app) => {
+        if (installedFilter === 'system') return isSystemApp(app);
+        if (installedFilter === 'addon') return !isSystemApp(app);
+        return true;
+      })
+      .slice()
+      .sort((a, b) => {
+        if (installedSortOrder === 'name') {
+          return a.name.localeCompare(b.name);
+        }
+        const timeA_inst = a.installedAt ? new Date(a.installedAt).getTime() : 0;
+        const timeB_inst = b.installedAt ? new Date(b.installedAt).getTime() : 0;
+        const timeA_upd = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const timeB_upd = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+
+        if (installedSortOrder === 'oldest') {
+          return timeA_inst - timeB_inst || a.name.localeCompare(b.name);
+        }
+        if (installedSortOrder === 'updated') {
+          return timeB_upd - timeA_upd || a.name.localeCompare(b.name);
+        }
+        // default: newest installed first
+        return timeB_inst - timeA_inst || a.name.localeCompare(b.name);
+      })
   );
 
   // Simple mock component for dynamically installed catalog apps
@@ -328,6 +350,22 @@
               >
               <span class="font-semibold text-white">{getAppStorageSize(selectedApp)}</span>
             </div>
+            {#if selectedApp.installedAt}
+              <div class="rounded-xl border border-gray-800 bg-gray-800/40 p-3">
+                <span class="block text-[10px] font-medium text-gray-400 uppercase"
+                  >Installed Date</span
+                >
+                <span class="font-semibold text-white">{formatDate(selectedApp.installedAt)}</span>
+              </div>
+            {/if}
+            {#if selectedApp.updatedAt}
+              <div class="rounded-xl border border-gray-800 bg-gray-800/40 p-3">
+                <span class="block text-[10px] font-medium text-gray-400 uppercase"
+                  >Last Updated</span
+                >
+                <span class="font-semibold text-white">{formatDate(selectedApp.updatedAt)}</span>
+              </div>
+            {/if}
           </div>
         </div>
 
@@ -471,37 +509,57 @@
           </div>
         </div>
       {:else if activeTab === 'installed'}
-        <!-- Installed Apps Filter Bar -->
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-xs font-bold tracking-wider text-gray-400 uppercase">Applications</span>
-          <div class="flex gap-1 text-[11px]">
-            <button
-              onclick={() => (installedFilter = 'all')}
-              class="rounded px-2 py-0.5 transition class:bg-indigo-600={installedFilter ===
-                'all'} class:text-white={installedFilter ===
-                'all'} class:bg-gray-800={installedFilter !==
-                'all'} class:text-gray-400={installedFilter !== 'all'}"
+        <!-- Installed Apps Filter & Sort Bar -->
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-bold tracking-wider text-gray-400 uppercase"
+              >Applications</span
             >
-              All
-            </button>
-            <button
-              onclick={() => (installedFilter = 'system')}
-              class="rounded px-2 py-0.5 transition class:bg-indigo-600={installedFilter ===
-                'system'} class:text-white={installedFilter ===
-                'system'} class:bg-gray-800={installedFilter !==
-                'system'} class:text-gray-400={installedFilter !== 'system'}"
+            <div class="flex gap-1 text-[11px]">
+              <button
+                onclick={() => (installedFilter = 'all')}
+                class="rounded px-2 py-0.5 transition class:bg-indigo-600={installedFilter ===
+                  'all'} class:text-white={installedFilter ===
+                  'all'} class:bg-gray-800={installedFilter !==
+                  'all'} class:text-gray-400={installedFilter !== 'all'}"
+              >
+                All
+              </button>
+              <button
+                onclick={() => (installedFilter = 'system')}
+                class="rounded px-2 py-0.5 transition class:bg-indigo-600={installedFilter ===
+                  'system'} class:text-white={installedFilter ===
+                  'system'} class:bg-gray-800={installedFilter !==
+                  'system'} class:text-gray-400={installedFilter !== 'system'}"
+              >
+                System
+              </button>
+              <button
+                onclick={() => (installedFilter = 'addon')}
+                class="rounded px-2 py-0.5 transition class:bg-indigo-600={installedFilter ===
+                  'addon'} class:text-white={installedFilter ===
+                  'addon'} class:bg-gray-800={installedFilter !==
+                  'addon'} class:text-gray-400={installedFilter !== 'addon'}"
+              >
+                Add-ons
+              </button>
+            </div>
+          </div>
+
+          <div
+            class="flex items-center justify-between gap-2 rounded-lg border border-gray-800 bg-gray-800/50 px-2.5 py-1.5 text-xs"
+          >
+            <span class="text-[11px] font-medium text-gray-400">Sort Order</span>
+            <select
+              bind:value={installedSortOrder}
+              class="cursor-pointer rounded border border-gray-700 bg-gray-900 px-2 py-0.5 text-[11px] text-gray-200 focus:outline-none"
+              aria-label="Sort Installed Apps"
             >
-              System
-            </button>
-            <button
-              onclick={() => (installedFilter = 'addon')}
-              class="rounded px-2 py-0.5 transition class:bg-indigo-600={installedFilter ===
-                'addon'} class:text-white={installedFilter ===
-                'addon'} class:bg-gray-800={installedFilter !==
-                'addon'} class:text-gray-400={installedFilter !== 'addon'}"
-            >
-              Add-ons
-            </button>
+              <option value="newest">Newest Installed</option>
+              <option value="oldest">Oldest Installed</option>
+              <option value="updated">Recently Updated</option>
+              <option value="name">Name (A-Z)</option>
+            </select>
           </div>
         </div>
 
@@ -533,10 +591,16 @@
                 </div>
                 <div class="min-w-0 flex-1">
                   <span class="block truncate text-sm font-semibold text-white">{app.name}</span>
-                  <div class="flex items-center gap-2 text-[11px] text-gray-400">
+                  <div class="flex items-center gap-1.5 truncate text-[11px] text-gray-400">
                     <span>{app.author || 'gPhone'}</span>
                     <span>•</span>
                     <span>{getAppStorageSize(app)}</span>
+                    {#if app.installedAt}
+                      <span>•</span>
+                      <span title={formatDate(app.installedAt)}
+                        >{formatRelativeTime(app.installedAt)}</span
+                      >
+                    {/if}
                   </div>
                 </div>
               </button>

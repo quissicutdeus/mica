@@ -1,8 +1,8 @@
 import { isBrowser } from './isBrowser';
 
 interface DebugEvent {
-    action: string;
-    data: any;
+  action: string;
+  data: any;
 }
 
 /**
@@ -12,18 +12,18 @@ interface DebugEvent {
  * @param timer - The time to wait before dispatching the event
  */
 export const debugData = (events: DebugEvent[], timer = 1000) => {
-    if (isBrowser()) {
-        for (const event of events) {
-            setTimeout(() => {
-                window.dispatchEvent(
-                    new MessageEvent('message', {
-                        data: {
-                            action: event.action,
-                            data: event.data,
-                        },
-                    }),
-                );
-            }, timer);
-        }
+  if (isBrowser()) {
+    for (const event of events) {
+      setTimeout(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            data: {
+              action: event.action,
+              data: event.data
+            }
+          })
+        );
+      }, timer);
     }
+  }
 };

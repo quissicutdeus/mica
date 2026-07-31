@@ -17,8 +17,10 @@ export function enableDragScroll(container: HTMLElement): () => void {
       const style = window.getComputedStyle(curr);
       const overflowY = style.overflowY;
       const overflowX = style.overflowX;
-      const isScrollableY = (overflowY === "auto" || overflowY === "scroll") && curr.scrollHeight > curr.clientHeight;
-      const isScrollableX = (overflowX === "auto" || overflowX === "scroll") && curr.scrollWidth > curr.clientWidth;
+      const isScrollableY =
+        (overflowY === 'auto' || overflowY === 'scroll') && curr.scrollHeight > curr.clientHeight;
+      const isScrollableX =
+        (overflowX === 'auto' || overflowX === 'scroll') && curr.scrollWidth > curr.clientWidth;
 
       if (isScrollableY || isScrollableX) {
         return curr;
@@ -34,9 +36,9 @@ export function enableDragScroll(container: HTMLElement): () => void {
     const target = e.target as HTMLElement;
     // Don't drag scroll if interacting with form inputs or buttons directly
     if (
-      target.tagName === "INPUT" ||
-      target.tagName === "TEXTAREA" ||
-      target.tagName === "SELECT" ||
+      target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.tagName === 'SELECT' ||
       target.isContentEditable
     ) {
       return;
@@ -53,8 +55,8 @@ export function enableDragScroll(container: HTMLElement): () => void {
     initialScrollTop = scrollable.scrollTop;
     initialScrollLeft = scrollable.scrollLeft;
 
-    window.addEventListener("mousemove", handlePointerMove, { passive: false });
-    window.addEventListener("mouseup", handlePointerUp, { capture: true, once: true });
+    window.addEventListener('mousemove', handlePointerMove, { passive: false });
+    window.addEventListener('mouseup', handlePointerUp, { capture: true, once: true });
   }
 
   function handlePointerMove(e: MouseEvent) {
@@ -81,19 +83,19 @@ export function enableDragScroll(container: HTMLElement): () => void {
         clickEvent.stopPropagation();
         clickEvent.preventDefault();
       };
-      window.addEventListener("click", captureClick, { capture: true, once: true });
+      window.addEventListener('click', captureClick, { capture: true, once: true });
     }
 
     isPointerDown = false;
     isDragging = false;
     activeScrollableElement = null;
-    window.removeEventListener("mousemove", handlePointerMove);
+    window.removeEventListener('mousemove', handlePointerMove);
   }
 
-  container.addEventListener("mousedown", handlePointerDown);
+  container.addEventListener('mousedown', handlePointerDown);
 
   return () => {
-    container.removeEventListener("mousedown", handlePointerDown);
-    window.removeEventListener("mousemove", handlePointerMove);
+    container.removeEventListener('mousedown', handlePointerDown);
+    window.removeEventListener('mousemove', handlePointerMove);
   };
 }

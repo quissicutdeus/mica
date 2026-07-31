@@ -1,55 +1,80 @@
 export class ClientApp {
-    private pendingCallbacks = new Map<string, Function>();
+  private pendingCallbacks = new Map<string, Function>();
+  private pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private idCounter = 0;
 
-    constructor(private appName: string) {
-        this.registerDefaultResponseListeners();
+  constructor(private appName: string) {
+    this.registerDefaultResponseListeners();
+  }
+
+  private generateId(): string {
+    this.idCounter = (this.idCounter + 1) % 100000;
+    return `${Date.now()}-${this.idCounter}`;
+  }
+
+  private registerDefaultResponseListeners() {
+    this.onResponse('receive', (cbId, data) => this.handleResponse(cbId, data));
+    this.onResponse('created', (cbId, data) => this.handleResponse(cbId, data));
+    this.onResponse('updated', (cbId, data) => this.handleResponse(cbId, data));
+    this.onResponse('deleted', (cbId, data) => this.handleResponse(cbId, data));
+  }
+
+  private handleResponse(cbId: string, data: any) {
+    // Clear safety timer if it exists
+    const timer = this.pendingTimers.get(cbId);
+    if (timer) {
+      clearTimeout(timer);
+      this.pendingTimers.delete(cbId);
     }
 
-    private registerDefaultResponseListeners() {
-        this.onResponse('receive', (cbId, data) => this.handleResponse(cbId, data));
-        this.onResponse('created', (cbId, data) => this.handleResponse(cbId, data));
-        this.onResponse('updated', (cbId, data) => this.handleResponse(cbId, data));
-        this.onResponse('deleted', (cbId, data) => this.handleResponse(cbId, data));
-    }
+    if (this.pendingCallbacks.has(cbId)) {
+      const cb = this.pendingCallbacks.get(cbId);
+      this.pendingCallbacks.delete(cbId); // Clean up FIRST to prevent leaks on crash
 
-    private handleResponse(cbId: string, data: any) {
+      if (cb) {
+        // Safe serialization check: handles `undefined` without throwing an error
+        const cleanData = data !== undefined ? JSON.parse(JSON.stringify(data)) : null;
+        cb(cleanData);
+      }
+    }
+  }
+
+  public registerCallback(action: string, customServerEvent?: string) {
+    const nuiEvent = action;
+    const serverEvent = customServerEvent || `gphone:server:${this.appName}:${action}`;
+
+    RegisterNuiCallbackType(nuiEvent);
+    on(`__cfx_nui:${nuiEvent}`, (data: any, cb: Function) => {
+      const cbId = this.generateId();
+      this.pendingCallbacks.set(cbId, cb);
+
+      // 15-second safety timeout so NUI never hangs indefinitely
+      const timer = setTimeout(() => {
         if (this.pendingCallbacks.has(cbId)) {
-            const cb = this.pendingCallbacks.get(cbId);
-            if (cb) {
-                // Deep clean data to prevent NUI serialization issues (proxies, etc)
-                const cleanData = JSON.parse(JSON.stringify(data));
-                cb(cleanData);
-            }
-            this.pendingCallbacks.delete(cbId);
+          console.warn(
+            `[ClientApp:${this.appName}] Callback ${action} (${cbId}) timed out waiting for server response.`
+          );
+          const pendingCb = this.pendingCallbacks.get(cbId);
+          this.pendingCallbacks.delete(cbId);
+          this.pendingTimers.delete(cbId);
+          if (pendingCb) {
+            pendingCb({ error: 'Request timed out' });
+          }
         }
-    }
+      }, 15000);
 
-    public registerCallback(action: string, customServerEvent?: string) {
-        const nuiEvent = action; // e.g. 'getContacts'
-        // If appName is 'contacts', default server event: 'gphone:server:contacts:get'
-        // But the NUI event action might be 'getContacts'.
-        // Let's assume NUI sends action 'getContacts'.
+      this.pendingTimers.set(cbId, timer);
 
-        // We need a mapping or convention.
-        // Convention: action = 'getContacts' -> server 'gphone:server:contacts:get'
+      emitNet(serverEvent, cbId, data);
+    });
+  }
 
-        // Let's make it explicit for now to be safe.
-        const serverEvent = customServerEvent || `gphone:server:${this.appName}:${action}`;
+  public onResponse(action: string, handler: (cbId: string, data: any) => void) {
+    const clientEvent = `gphone:client:${this.appName}:${action}`;
+    onNet(clientEvent, handler);
+  }
 
-        RegisterNuiCallbackType(nuiEvent);
-        on(`__cfx_nui:${nuiEvent}`, (data: any, cb: Function) => {
-            const cbId = Math.random().toString(36).substring(7);
-            this.pendingCallbacks.set(cbId, cb);
-            emitNet(serverEvent, cbId, data);
-        });
-    }
-
-    public onResponse(action: string, handler: (cbId: string, data: any) => void) {
-        const clientEvent = `gphone:client:${this.appName}:${action}`;
-        onNet(clientEvent, handler);
-    }
-
-    public registerResponseListener(action: string) {
-        this.onResponse(action, (cbId, data) => this.handleResponse(cbId, data));
-    }
+  public registerResponseListener(action: string) {
+    this.onResponse(action, (cbId, data) => this.handleResponse(cbId, data));
+  }
 }

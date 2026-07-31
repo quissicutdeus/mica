@@ -1,13 +1,7 @@
-import type { Snippet } from "svelte";
+import type { Snippet } from 'svelte';
 
 export type AppPermission =
-  | "notifications"
-  | "contacts"
-  | "camera"
-  | "media"
-  | "storage"
-  | "location"
-  | "network";
+  'notifications' | 'contacts' | 'camera' | 'media' | 'storage' | 'location' | 'network';
 
 export interface AppManifest {
   /** Unique ID for the application (e.g., "contacts", "crypto_tracker") */
@@ -36,24 +30,28 @@ export interface AppManifest {
   bundleUrl?: string;
   /** Explicit flag indicating whether app is a protected system core app */
   isSystem?: boolean;
+  /** ISO date string when app was installed */
+  installedAt?: string;
+  /** ISO date string when app was last updated */
+  updatedAt?: string;
 }
 
-import { MICA_VERSION } from "./version";
+import { MICA_VERSION } from './version';
 
 /**
  * Helper function to define and validate a gPhone application manifest.
  * Ensures required fields exist and applies sensible defaults for third-party apps.
  */
 export function defineApp(manifest: AppManifest): AppManifest {
-  if (!manifest.id || typeof manifest.id !== "string") {
+  if (!manifest.id || typeof manifest.id !== 'string') {
     throw new Error("gPhone App Manifest error: 'id' is required and must be a string.");
   }
-  if (!manifest.name || typeof manifest.name !== "string") {
+  if (!manifest.name || typeof manifest.name !== 'string') {
     throw new Error("gPhone App Manifest error: 'name' is required and must be a string.");
   }
 
-  const isSystem = manifest.isSystem ?? (!manifest.isRemote && manifest.author !== "Community");
-  const author = manifest.author || (isSystem ? "gPhone" : "Community");
+  const isSystem = manifest.isSystem ?? (!manifest.isRemote && manifest.author !== 'Community');
+  const author = manifest.author || (isSystem ? 'gPhone' : 'Community');
 
   return {
     version: MICA_VERSION,
@@ -61,6 +59,6 @@ export function defineApp(manifest: AppManifest): AppManifest {
     defaultProps: {},
     isSystem,
     author,
-    ...manifest,
+    ...manifest
   };
 }

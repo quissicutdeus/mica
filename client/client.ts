@@ -15,29 +15,33 @@ const sendTimeToNui = () => {
 };
 
 // Toggle Phone Command
-RegisterCommand('togglePhone', () => {
-  isPhoneOpen = !isPhoneOpen;
+RegisterCommand(
+  'togglePhone',
+  () => {
+    isPhoneOpen = !isPhoneOpen;
 
-  if (isPhoneOpen) {
-    SetNuiFocus(true, true);
-    sendNuiMessage('setVisible', true);
+    if (isPhoneOpen) {
+      SetNuiFocus(true, true);
+      sendNuiMessage('setVisible', true);
 
-    const ped = PlayerPedId();
-    PhoneAnimationController.playAppAnimation(ped, null, isPhoneOpen);
-    PhoneAnimationController.spawnPhoneProp(ped, isPhoneOpen);
+      const ped = PlayerPedId();
+      PhoneAnimationController.playAppAnimation(ped, null, isPhoneOpen);
+      PhoneAnimationController.spawnPhoneProp(ped, isPhoneOpen);
 
-    // Send time and battery charge immediately when opening
-    sendTimeToNui();
-    sendChargeToNui();
-  } else {
-    const ped = PlayerPedId();
-    PhoneAnimationController.removePhoneProp();
-    PhoneAnimationController.stopAllPhoneAnimations(ped);
-    FreelookController.resetFreelook();
+      // Send time and battery charge immediately when opening
+      sendTimeToNui();
+      sendChargeToNui();
+    } else {
+      const ped = PlayerPedId();
+      PhoneAnimationController.removePhoneProp();
+      PhoneAnimationController.stopAllPhoneAnimations(ped);
+      FreelookController.resetFreelook();
 
-    sendNuiMessage('setVisible', false);
-  }
-}, false);
+      sendNuiMessage('setVisible', false);
+    }
+  },
+  false
+);
 
 // Register Key Mapping
 RegisterKeyMapping('togglePhone', 'Open Phone', 'keyboard', 'm');

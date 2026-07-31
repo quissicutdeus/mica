@@ -1,11 +1,26 @@
-import { myPhoneNumber, fetchPhoneNumber } from '../../store/account';
+import {
+  myPhoneNumber,
+  fetchPhoneNumber,
+  bankBalance,
+  transactions,
+  citizenid,
+  fetchBalance,
+  fetchTransactions,
+  fetchCitizenId
+} from '../../store/account';
 
 /**
- * OS Service Hook for account state & phone number.
+ * OS Service Hook for account state, bank balance, transactions, & phone number.
  */
 export function useAccount() {
   return {
     myPhoneNumber,
-    fetchPhoneNumber: () => fetchPhoneNumber()
+    bankBalance,
+    transactions,
+    citizenid,
+    fetchPhoneNumber: () => fetchPhoneNumber(),
+    fetchBalance: () => fetchBalance(),
+    fetchTransactions: () => fetchTransactions(),
+    fetchCitizenId: () => fetchCitizenId()
   };
 }

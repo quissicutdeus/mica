@@ -1,20 +1,29 @@
 import { describe, it, expect } from 'vitest';
 import { get } from 'svelte/store';
-import { appRegistryStore, registeredApps, type AppManifest } from './registry';
+import { appRegistryStore, registeredApps, getFirstBootTime, type AppManifest } from './registry';
 
 describe('App Registry Store', () => {
-  it('loads built-in manifests on startup', () => {
+  it('loads built-in manifests on startup with first boot timestamps', () => {
     const apps = get(appRegistryStore);
     expect(apps.length).toBeGreaterThan(0);
-    expect(apps).toEqual(registeredApps);
+    const firstBoot = getFirstBootTime();
+    expect(firstBoot).toBeDefined();
+    expect(apps[0].installedAt).toBe(firstBoot);
+    expect(apps[0].updatedAt).toBe(firstBoot);
   });
 
-  it('allows dynamic registration of custom third-party apps', () => {
+  it('provides a persistent read-only first boot timestamp', () => {
+    const time1 = getFirstBootTime();
+    const time2 = getFirstBootTime();
+    expect(time1).toBe(time2);
+  });
+
+  it('allows dynamic registration of custom third-party apps with installation timestamps', () => {
     const mockManifest: AppManifest = {
       id: 'crypto_app',
       name: 'Crypto',
       color: '#f59e0b',
-      icon: null,
+      icon: null
     };
     const mockComponent = {};
 
@@ -25,7 +34,20 @@ describe('App Registry Store', () => {
 
     expect(registered).toBeDefined();
     expect(registered?.name).toBe('Crypto');
+    expect(registered?.installedAt).toBeDefined();
+    expect(registered?.updatedAt).toBeDefined();
     expect(appRegistryStore.getComponent('crypto_app')).toBe(mockComponent);
+
+    // Re-registering preserves installedAt while updating updatedAt
+    const initialInstalledAt = registered?.installedAt;
+    const updatedManifest: AppManifest = {
+      ...mockManifest,
+      name: 'Crypto Pro'
+    };
+    appRegistryStore.registerApp(updatedManifest, mockComponent);
+    const reRegistered = get(appRegistryStore).find((a) => a.id === 'crypto_app');
+    expect(reRegistered?.name).toBe('Crypto Pro');
+    expect(reRegistered?.installedAt).toBe(initialInstalledAt);
   });
 
   it('prohibits unregistering built-in system apps', () => {
@@ -67,4 +89,3 @@ describe('App Registry Store', () => {
     );
   });
 });
-

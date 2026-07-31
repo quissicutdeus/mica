@@ -6,7 +6,9 @@ test.describe('Interactive Toast Notifications E2E', () => {
     await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
   });
 
-  test('handles incoming message toast with interactive inline reply input box', async ({ page }) => {
+  test('handles incoming message toast with interactive inline reply input box', async ({
+    page
+  }) => {
     // Emit receiveMessage NUI action
     await page.evaluate(() => {
       window.dispatchEvent(
@@ -17,9 +19,9 @@ test.describe('Interactive Toast Notifications E2E', () => {
               conversation_id: 1,
               senderName: 'Trevor Philips',
               message: 'Meet me at Sandy Shores airfield right now!',
-              avatar: undefined,
-            },
-          },
+              avatar: undefined
+            }
+          }
         })
       );
     });
@@ -42,7 +44,9 @@ test.describe('Interactive Toast Notifications E2E', () => {
     await expect(page.locator('text=Reply sent')).toBeVisible();
   });
 
-  test('handles contact share request toast with standardized Accept and Decline actions', async ({ page }) => {
+  test('handles contact share request toast with standardized Accept and Decline actions', async ({
+    page
+  }) => {
     // Emit shareContact NUI action
     await page.evaluate(() => {
       window.dispatchEvent(
@@ -52,9 +56,9 @@ test.describe('Interactive Toast Notifications E2E', () => {
             data: {
               firstname: 'Franklin',
               lastname: 'Clinton',
-              phone: '555-0177',
-            },
-          },
+              phone: '555-0177'
+            }
+          }
         })
       );
     });
@@ -76,7 +80,9 @@ test.describe('Interactive Toast Notifications E2E', () => {
     await expect(page.locator('text=Contact added to address book')).toBeVisible();
   });
 
-  test('handles incoming call toast with standardized Accept and Decline actions', async ({ page }) => {
+  test('handles incoming call toast with standardized Accept and Decline actions', async ({
+    page
+  }) => {
     // Emit incoming call NUI action
     await page.evaluate(() => {
       window.dispatchEvent(
@@ -86,9 +92,9 @@ test.describe('Interactive Toast Notifications E2E', () => {
             data: {
               status: 'incoming',
               name: 'Lester Crest',
-              number: '555-0155',
-            },
-          },
+              number: '555-0155'
+            }
+          }
         })
       );
     });
@@ -113,9 +119,9 @@ test.describe('Interactive Toast Notifications E2E', () => {
             action: 'receiveMail',
             data: {
               sender: 'Fleeca Bank',
-              subject: 'Your Monthly Statement is Ready',
-            },
-          },
+              subject: 'Your Monthly Statement is Ready'
+            }
+          }
         })
       );
     });
@@ -134,16 +140,18 @@ test.describe('Interactive Toast Notifications E2E', () => {
             data: {
               conversation_id: 1,
               senderName: 'Trevor Philips',
-              message: 'Check airfield!',
-            },
-          },
+              message: 'Check airfield!'
+            }
+          }
         })
       );
     });
 
     const toastCard = page.locator('.pointer-events-auto', { hasText: 'Trevor Philips' }).first();
     await expect(toastCard).toBeVisible();
-    await toastCard.evaluate(el => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+    await toastCard.evaluate((el) =>
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    );
 
     // Verify Messages conversation view opens
     await expect(page.locator('#messages-container')).toBeVisible();
@@ -158,22 +166,28 @@ test.describe('Interactive Toast Notifications E2E', () => {
             data: {
               id: 1,
               sender: 'Fleeca Bank',
-              subject: 'Monthly Statement Available',
-            },
-          },
+              subject: 'Monthly Statement Available'
+            }
+          }
         })
       );
     });
 
-    const toastCard = page.locator('.pointer-events-auto', { hasText: 'New Email: Fleeca Bank' }).first();
+    const toastCard = page
+      .locator('.pointer-events-auto', { hasText: 'New Email: Fleeca Bank' })
+      .first();
     await expect(toastCard).toBeVisible();
-    await toastCard.evaluate(el => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+    await toastCard.evaluate((el) =>
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    );
 
     // Verify Mail app opens
     await expect(page.locator('h1').first()).toBeVisible();
   });
 
-  test('clicking shared contact toast body accepts contact without navigating', async ({ page }) => {
+  test('clicking shared contact toast body accepts contact without navigating', async ({
+    page
+  }) => {
     await page.evaluate(() => {
       window.dispatchEvent(
         new MessageEvent('message', {
@@ -182,9 +196,9 @@ test.describe('Interactive Toast Notifications E2E', () => {
             data: {
               firstname: 'Franklin',
               lastname: 'Clinton',
-              phone: '555-0177',
-            },
-          },
+              phone: '555-0177'
+            }
+          }
         })
       );
     });
@@ -197,7 +211,9 @@ test.describe('Interactive Toast Notifications E2E', () => {
     await expect(page.locator('text=Contact added to address book')).toBeVisible();
   });
 
-  test('shows error toast when accepting shared contact with missing mandatory name/phone', async ({ page }) => {
+  test('shows error toast when accepting shared contact with missing mandatory name/phone', async ({
+    page
+  }) => {
     await page.evaluate(() => {
       window.dispatchEvent(
         new MessageEvent('message', {
@@ -205,9 +221,9 @@ test.describe('Interactive Toast Notifications E2E', () => {
             action: 'shareContact',
             data: {
               firstname: '',
-              phone: '',
-            },
-          },
+              phone: ''
+            }
+          }
         })
       );
     });
@@ -216,6 +232,8 @@ test.describe('Interactive Toast Notifications E2E', () => {
     await expect(acceptBtn).toBeVisible();
     await acceptBtn.dispatchEvent('click');
 
-    await expect(page.locator('text=Cannot add contact: missing required name or phone number')).toBeVisible();
+    await expect(
+      page.locator('text=Cannot add contact: missing required name or phone number')
+    ).toBeVisible();
   });
 });

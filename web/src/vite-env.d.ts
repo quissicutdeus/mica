@@ -2,9 +2,9 @@
 /// <reference types="vite/client" />
 
 declare module '*.svelte' {
-    import type { ComponentType, SvelteComponent } from 'svelte';
-    const component: ComponentType<SvelteComponent>;
-    export default component;
+  import type { ComponentType, SvelteComponent } from 'svelte';
+  const component: ComponentType<SvelteComponent>;
+  export default component;
 }
 
 declare const __MICA_VERSION__: string;

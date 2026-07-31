@@ -9,7 +9,7 @@ test.describe('Visual Snapshot Regression Suite', () => {
 
     // Verify visual snapshot of phone UI layout
     await expect(mainElement).toHaveScreenshot('home-screen.png', {
-      maxDiffPixelRatio: 0.05,
+      maxDiffPixelRatio: 0.05
     });
   });
 });

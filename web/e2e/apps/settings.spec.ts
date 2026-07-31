@@ -16,10 +16,13 @@ test.describe('Settings App E2E', () => {
     await toggleSwitch.click();
   });
 
-  test('displays About section with phone number, OS name, and smart versioning info', async ({ page }) => {
+  test('displays About section with phone number, OS name, first boot date, and smart versioning info', async ({
+    page
+  }) => {
     await expect(page.locator('h2', { hasText: 'About' })).toBeVisible();
     await expect(page.locator('text=Phone Number')).toBeVisible();
     await expect(page.locator('text=gPhone')).toBeVisible();
     await expect(page.locator('text=555-0199')).toBeVisible();
+    await expect(page.locator('text=First Boot')).toBeVisible();
   });
 });

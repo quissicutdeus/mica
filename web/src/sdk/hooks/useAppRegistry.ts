@@ -1,4 +1,4 @@
-import { appRegistryStore } from '../../store/registry';
+import { appRegistryStore, getFirstBootTime } from '../../store/registry';
 import type { AppManifest } from '../manifest';
 
 /**
@@ -7,6 +7,7 @@ import type { AppManifest } from '../manifest';
 export function useAppRegistry() {
   return {
     registryStore: appRegistryStore,
+    getFirstBootTime: () => getFirstBootTime(),
     loadRemoteApp: (url: string) => appRegistryStore.loadRemoteApp(url),
     registerApp: (manifest: AppManifest, component: any) =>
       appRegistryStore.registerApp(manifest, component),

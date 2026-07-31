@@ -1,5 +1,5 @@
-import { isBrowser } from "../../utils/isBrowser";
-import { MockRegistry } from "../../mocks/registry";
+import { isBrowser } from '../../utils/isBrowser';
+import { MockRegistry } from '../../mocks/registry';
 
 export interface ITransportAdapter {
   send<T = any>(event: string, data?: unknown): Promise<T>;
@@ -12,16 +12,16 @@ export class NuiTransportAdapter implements ITransportAdapter {
   constructor() {
     this.resourceName = (window as any).GetParentResourceName
       ? (window as any).GetParentResourceName()
-      : "gphone";
+      : 'gphone';
   }
 
   async send<T = any>(event: string, data?: unknown): Promise<T> {
     const options = {
-      method: "POST",
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json; charset=UTF-8",
+        'Content-Type': 'application/json; charset=UTF-8'
       },
-      body: JSON.stringify(data),
+      body: JSON.stringify(data)
     };
 
     const resp = await fetch(`https://${this.resourceName}/${event}`, options);
@@ -36,8 +36,8 @@ export class NuiTransportAdapter implements ITransportAdapter {
         handler(data);
       }
     };
-    window.addEventListener("message", eventListener);
-    return () => window.removeEventListener("message", eventListener);
+    window.addEventListener('message', eventListener);
+    return () => window.removeEventListener('message', eventListener);
   }
 }
 
@@ -56,8 +56,8 @@ export class MockTransportAdapter implements ITransportAdapter {
         handler(data);
       }
     };
-    window.addEventListener("message", eventListener);
-    return () => window.removeEventListener("message", eventListener);
+    window.addEventListener('message', eventListener);
+    return () => window.removeEventListener('message', eventListener);
   }
 }
 
@@ -70,7 +70,7 @@ export interface WebSocketTransportOptions {
   dispatchWindowMessages?: boolean;
 }
 
-export type ConnectionStatus = "disconnected" | "connecting" | "connected";
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 
 export class WebSocketTransportAdapter implements ITransportAdapter {
   private url: string;
@@ -81,17 +81,21 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
   private dispatchWindowMessages: boolean;
 
   private ws: WebSocket | null = null;
-  private status: ConnectionStatus = "disconnected";
+  private status: ConnectionStatus = 'disconnected';
   private pendingRequests = new Map<
     string,
-    { resolve: (value: any) => void; reject: (reason: any) => void; timer: ReturnType<typeof setTimeout> }
+    {
+      resolve: (value: any) => void;
+      reject: (reason: any) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
   >();
   private eventHandlers = new Map<string, Set<(data: any) => void>>();
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: string | WebSocketTransportOptions) {
-    if (typeof options === "string") {
+    if (typeof options === 'string') {
       this.url = options;
       this.autoConnect = true;
       this.reconnectInterval = 3000;
@@ -117,9 +121,9 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
   }
 
   public connect(): void {
-    if (this.ws || this.status === "connecting") return;
+    if (this.ws || this.status === 'connecting') return;
 
-    this.status = "connecting";
+    this.status = 'connecting';
     try {
       this.ws = new WebSocket(this.url);
     } catch {
@@ -128,7 +132,7 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
     }
 
     this.ws.onopen = () => {
-      this.status = "connected";
+      this.status = 'connected';
       this.reconnectAttempts = 0;
     };
 
@@ -147,7 +151,7 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
 
   private handleCloseOrError(): void {
     this.ws = null;
-    this.status = "disconnected";
+    this.status = 'disconnected';
 
     if (
       this.autoConnect &&
@@ -171,11 +175,11 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
       this.ws.close();
       this.ws = null;
     }
-    this.status = "disconnected";
+    this.status = 'disconnected';
 
     for (const [, req] of this.pendingRequests.entries()) {
       clearTimeout(req.timer);
-      req.reject(new Error("WebSocket disconnected"));
+      req.reject(new Error('WebSocket disconnected'));
     }
     this.pendingRequests.clear();
   }
@@ -206,8 +210,8 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
           handlers.forEach((h) => h(payload.data));
         }
 
-        if (this.dispatchWindowMessages && typeof window !== "undefined") {
-          window.postMessage({ action: eventName, data: payload.data }, "*");
+        if (this.dispatchWindowMessages && typeof window !== 'undefined') {
+          window.postMessage({ action: eventName, data: payload.data }, '*');
         }
       }
     } catch {
@@ -216,7 +220,7 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
   }
 
   async send<T = any>(event: string, data?: unknown): Promise<T> {
-    if (!this.ws || this.status !== "connected") {
+    if (!this.ws || this.status !== 'connected') {
       throw new Error(`WebSocket is not connected (status: ${this.status})`);
     }
 

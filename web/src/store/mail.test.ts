@@ -10,7 +10,14 @@ describe('mailStore', () => {
 
   it('loads received mail list', async () => {
     const mockMails = [
-      { id: 1, sender: 'Maze Bank', subject: 'Statement Ready', content: 'Your statement is ready', read: false, status: 'active' }
+      {
+        id: 1,
+        sender: 'Maze Bank',
+        subject: 'Statement Ready',
+        content: 'Your statement is ready',
+        read: false,
+        status: 'active'
+      }
     ];
 
     vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockMails as any);
@@ -22,7 +29,14 @@ describe('mailStore', () => {
 
   it('marks mail as read', async () => {
     const mockMails = [
-      { id: 1, sender: 'Maze Bank', subject: 'Statement Ready', content: 'Info', read: false, status: 'active' }
+      {
+        id: 1,
+        sender: 'Maze Bank',
+        subject: 'Statement Ready',
+        content: 'Info',
+        read: false,
+        status: 'active'
+      }
     ];
     vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockMails as any);
     await mailStore.load();
@@ -37,7 +51,14 @@ describe('mailStore', () => {
   it('deletes mail by id', async () => {
     const mockMails = [
       { id: 1, sender: 'Maze Bank', subject: 'Sub 1', content: 'C1', read: true, status: 'active' },
-      { id: 2, sender: 'Weazel News', subject: 'Sub 2', content: 'C2', read: false, status: 'active' }
+      {
+        id: 2,
+        sender: 'Weazel News',
+        subject: 'Sub 2',
+        content: 'C2',
+        read: false,
+        status: 'active'
+      }
     ];
     vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockMails as any);
     await mailStore.load();
@@ -45,14 +66,29 @@ describe('mailStore', () => {
     vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true as any);
     await mailStore.delete(1);
 
-    expect(get(mailStore)).toEqual([{ id: 2, sender: 'Weazel News', subject: 'Sub 2', content: 'C2', read: false, status: 'active' }]);
+    expect(get(mailStore)).toEqual([
+      {
+        id: 2,
+        sender: 'Weazel News',
+        subject: 'Sub 2',
+        content: 'C2',
+        read: false,
+        status: 'active'
+      }
+    ]);
   });
 
   it('adds newly received mail to store', () => {
-    const newMail = { id: 3, sender: 'Police Dept', subject: 'Citation', content: 'Fine details', read: false, status: 'active' };
+    const newMail = {
+      id: 3,
+      sender: 'Police Dept',
+      subject: 'Citation',
+      content: 'Fine details',
+      read: false,
+      status: 'active'
+    };
     mailStore.addReceivedMail(newMail as any);
 
     expect(get(mailStore)).toContainEqual(newMail);
   });
 });
-

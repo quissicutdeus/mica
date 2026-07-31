@@ -16,6 +16,7 @@
 ## Key Features
 
 ### 📱 Applications & UI
+
 - **Phone & Dialer**: Full contact dialing, active call management, and custom in-game phone prop animations.
 - **Contacts**: Contact management with favoriting, custom avatars, and soft deletion.
 - **Messages**: Individual and group messaging with support for image attachments directly linked to the photo gallery.
@@ -24,18 +25,20 @@
 - **Photos & Camera**: In-game screenshot/camera integration, automatic image compression, gallery view, and attachment sharing.
 - **Notes**: Full-featured note-taking app with instant saving.
 - **Calculator**: Full mathematical calculator with an optimized touchscreen keypad layout.
-- **Store Application**: Built-in app marketplace to browse, install, and manage community add-on apps. Features a permissions inspector (camera, contacts, notifications, storage, network, location, media) and estimated app storage footprint metrics.
-- **Settings & Status**: Settings application with an **About** section (phone number, software name, OS version, and smart git build/commit info), 24-hour time toggles, dynamic battery drain lifecycle with dead phone states, and developer controls.
+- **Store Application**: Built-in app marketplace to browse, install, and manage community add-on apps. Features Installed tab sorting (`newest`, `oldest`, `updated`, `name`), installation date metrics (`installedAt`, `updatedAt`), permissions inspector, and app storage footprint metrics.
+- **Settings & Status**: Settings application with an **About** section (phone number, OS version, first boot timestamp, and smart git build/commit info), 24-hour time toggles, embedded Developer Tools, dynamic battery drain lifecycle, and hardware controls.
 - **Home Screen Edit Mode**: Right-click icon gesture to trigger Edit Mode, swapping unread notification badges for grey minus action buttons on removable add-on apps with automatic Edit Mode exit when no add-on apps remain.
 
 ### 🛠️ Backend & Core Architecture
-- **Third-Party App SDK (`@gphone/sdk`)**: Type-safe app builder (`defineApp`), lifecycle hooks (`onAppMount`, `onAppUnmount`), OS service accessors (`usePhoneNotification`, `useContacts`, `useCamera`, `useNuiBridge`, `useAppRegistry`), and dynamic app loading (`loadRemoteApp`, `registerApp`, `unregisterApp`).
+
+- **SDK-First Architecture (`@gphone/sdk`)**: Complete OS service hook coverage (`useNavigation`, `usePhoneNotification`, `useContacts`, `useCamera`, `useAppRegistry`, `useAccount`, `useCall`, `useMail`, `useNotes`, `useMessages`, `useStorage`, `useSystemHardware`, `useNuiBridge`) and domain type exports (`Transaction`, `UIMessage`, `UIConversation`, `Contact`, `Mail`, `Note`), eliminating internal store imports from app modules.
+- **Client & NUI Transport Safety**: Deterministic ID generation and 15-second safety timeouts (`ClientApp.ts`) preventing NUI callbacks from hanging CEF indefinitely.
 - **System vs. Add-on Protection Engine**: Immutable System App protection for core OS apps alongside dynamic Add-on app management and granular permission auditing.
 - **App Isolation & Guardrails**: Wrapped dynamic app rendering with Svelte 5 `<svelte:boundary>` (`ErrorBoundary.svelte`) preventing third-party app runtime exceptions from locking FiveM NUI mouse focus or breaking OS navigation.
 - **Dual-Runtime Transport Abstraction**: Pluggable `ITransportAdapter` layer (`NuiTransportAdapter`, `MockTransportAdapter`, `WebSocketTransportAdapter`) cleanly separating FiveM CEF callbacks from browser mock engines and external WebSocket device sync.
-- **Interactive Browser Mock DevTools & Volume HUD**: Floating developer control panel (`MockDevTools.svelte`) for standalone browser testing (power button, volume HUD overlay, battery drain, signal levels, call/SMS/email simulation).
+- **In-Phone DevTools**: Embedded developer control panel in Settings app for browser testing (power button, volume HUD overlay, battery drain, signal levels, call/SMS/email simulation).
 - **Click & Drag Touch/Mouse Scrolling**: Universal pointer drag-scrolling delegation across all phone screens and scrollable containers with hidden scrollbar styling.
-- **Dynamic App Registry**: Reactive `appRegistryStore` supporting runtime third-party app registration (`registerApp`, `unregisterApp`) and home screen grid updates.
+- **Dynamic App Registry**: Reactive `appRegistryStore` supporting persistent `firstBoot` timestamps, app installation dates, runtime third-party app registration (`registerApp`, `unregisterApp`), and home screen grid updates.
 - **Framework Bridge**: Built-in support for **QBX Core** (`qbx_core`) and **QBCore** (`qb-core`) with automatic player lookup and money handlers.
 - **Inventory Integration**: Out-of-the-box support for `ox_inventory` item registration and removal.
 - **Central Audit Logging**: Comprehensive action auditing (`gphone_audit_logs`) tracking archive, deletion, moderation, and participant events.
@@ -62,7 +65,7 @@ Before installing, ensure your server environment meets the following requiremen
 - **Dependencies**:
   - `oxmysql`
   - Framework: `qbx_core` or `qb-core`
-  - *(Optional)* `ox_inventory`
+  - _(Optional)_ `ox_inventory`
 
 ---
 
@@ -76,6 +79,7 @@ Before installing, ensure your server environment meets the following requiremen
 
 3. **Install Dependencies & Build**
    Navigate to the resource directory and execute `pnpm` scripts:
+
    ```sh
    pnpm install
    pnpm build
@@ -96,19 +100,25 @@ Before installing, ensure your server environment meets the following requiremen
 gPhone uses `pnpm` workspaces for concurrent frontend and client/server development with live hot-reloading:
 
 ### Start Development Server
+
 ```sh
 pnpm dev
 ```
+
 This runs watch scripts for client/server bundles (`pnpm watch`) and the Vite web development server (`pnpm watch:web`) concurrently.
 
 ### Type Checking
+
 Run type checks across all modules (client, server, and web):
+
 ```sh
 pnpm typecheck
 ```
 
 ### Testing & Quality Assurance
+
 Run unit test suites (Vitest for all stores, utilities, SDK helpers, and transport bridge adapters) and Playwright End-to-End (E2E) test suites:
+
 ```sh
 # Run all unit tests (Vitest)
 pnpm test:unit

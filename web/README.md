@@ -26,13 +26,13 @@ web/
 │   ├── nui.spec.ts
 │   └── visual.spec.ts
 ├── src/
-│   ├── components/     # Core OS UI components (PhoneFrame, ErrorBoundary, MockDevTools, VolumeHud, ToastContainer)
+│   ├── components/     # Core OS UI components (PhoneFrame, ErrorBoundary, VolumeHud, ToastContainer)
 │   ├── core/           # Core OS architecture & bridge adapters
 │   │   └── bridge/     # Transport abstraction layer (NuiTransportAdapter, MockTransportAdapter, WebSocketTransportAdapter, transport.test.ts)
 │   ├── mocks/          # Standalone browser mode data mocks & registry
 │   ├── modules/        # Phone application modules (bank, calculator, camera, contacts, mail, messages, notes, phone, photos, settings, store)
-│   ├── sdk/            # @gphone/sdk (defineApp manifest helper, hooks, versioning, types, and sdk.test.ts)
-│   ├── store/          # Svelte state stores & unit tests (account, bootstrap, call, camera, charge, contacts, dev, mail, messages, navigation, notes, photos, registry, signal, sound, time, toast)
+│   ├── sdk/            # @gphone/sdk (defineApp manifest helper, domain hooks under hooks/, types.ts re-exports, versioning, sdk.test.ts)
+│   ├── store/          # Svelte state stores & unit tests (account, bootstrap, call, camera, charge, contacts, mail, messages, navigation, notes, photos, registry, signal, sound, time, toast)
 │   ├── utils/          # Utility helpers & unit tests (cardUtils, debug, dragScroll, fetchNui, formatters, markdown, useNuiEvent, useScrollDetect)
 │   ├── App.svelte      # Main OS runtime container & ErrorBoundary wrapper
 │   └── main.ts
@@ -78,5 +78,3 @@ gPhone uses a pluggable `ITransportAdapter` abstraction layer to handle event co
 - **Standalone Browser Mode (`MockTransportAdapter`)**: Running `pnpm dev` launches the web app on `http://localhost:5173`. Callbacks dynamically resolve from `MockRegistry` data fixtures.
 - **FiveM CEF NUI Mode (`NuiTransportAdapter`)**: Inside FiveM, callbacks issue `fetch('https://<resource>/<event>')` requests and handle incoming NUI `window.message` events seamlessly.
 - **Remote Device & External Sync (`WebSocketTransportAdapter`)**: Connects gPhone to external WebSockets with automatic reconnection, timeouts, and transparent NUI event broadcasting for remote control and external browser sync.
-
-

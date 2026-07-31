@@ -1,4 +1,5 @@
 import { photos } from '../../store/photos';
+import { isTakingPhoto, isPreviewingPhoto } from '../../store/camera';
 
 /**
  * OS Service Hook for accessing camera and photo gallery.
@@ -6,6 +7,8 @@ import { photos } from '../../store/photos';
 export function useCamera() {
   return {
     photosStore: photos,
+    isTakingPhoto,
+    isPreviewingPhoto,
     capturePhoto: async (image: string) => {
       return photos.add({ image });
     },

@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { bankBalance, transactions, citizenid, fetchBalance, fetchTransactions, fetchCitizenId } from './account';
+import {
+  bankBalance,
+  transactions,
+  citizenid,
+  fetchBalance,
+  fetchTransactions,
+  fetchCitizenId
+} from './account';
 import { get } from 'svelte/store';
 import * as fetchNuiModule from '../utils/fetchNui';
 
@@ -25,7 +32,7 @@ describe('account store', () => {
 
   it('fetches transactions and updates transactions store', async () => {
     const mockTx = [
-      { amount: 500, time: 1609459200, title: 'Salary Paycheck', message: 'Direct Deposit' },
+      { amount: 500, time: 1609459200, title: 'Salary Paycheck', message: 'Direct Deposit' }
     ];
 
     vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockTx as any);

@@ -11,22 +11,25 @@ test.describe('App Isolation & Error Boundaries', () => {
 
     // Register a faulty app dynamically
     await page.evaluate(() => {
-      const { appRegistryStore } = (window as any);
+      const { appRegistryStore } = window as any;
       if (appRegistryStore) {
-        appRegistryStore.registerApp({
-          id: 'faulty_app',
-          name: 'Faulty App',
-          color: '#ef4444',
-          icon: null,
-        }, () => {
-          throw new Error('Simulated third-party app crash!');
-        });
+        appRegistryStore.registerApp(
+          {
+            id: 'faulty_app',
+            name: 'Faulty App',
+            color: '#ef4444',
+            icon: null
+          },
+          () => {
+            throw new Error('Simulated third-party app crash!');
+          }
+        );
       }
     });
 
     // Check if Faulty App appears on the grid
     const faultyAppBtn = page.locator('button', { hasText: 'Faulty App' });
-    if (await faultyAppBtn.count() > 0) {
+    if ((await faultyAppBtn.count()) > 0) {
       await faultyAppBtn.click();
 
       // Should display ErrorBoundary crash UI
@@ -44,21 +47,24 @@ test.describe('App Isolation & Error Boundaries', () => {
   test('recovers from app error boundary using Escape key', async ({ page }) => {
     // Register a faulty app dynamically
     await page.evaluate(() => {
-      const { appRegistryStore } = (window as any);
+      const { appRegistryStore } = window as any;
       if (appRegistryStore) {
-        appRegistryStore.registerApp({
-          id: 'buggy_app',
-          name: 'Buggy App',
-          color: '#dc2626',
-          icon: null,
-        }, () => {
-          throw new Error('Uncaught render failure!');
-        });
+        appRegistryStore.registerApp(
+          {
+            id: 'buggy_app',
+            name: 'Buggy App',
+            color: '#dc2626',
+            icon: null
+          },
+          () => {
+            throw new Error('Uncaught render failure!');
+          }
+        );
       }
     });
 
     const buggyAppBtn = page.locator('button', { hasText: 'Buggy App' });
-    if (await buggyAppBtn.count() > 0) {
+    if ((await buggyAppBtn.count()) > 0) {
       await buggyAppBtn.click();
 
       // Verify ErrorBoundary fallback is shown

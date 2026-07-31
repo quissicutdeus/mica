@@ -10,29 +10,29 @@ import { getTransport } from '../core/bridge/transport';
  * @return returnData - A promise for the data sent back by the Nui Callbacks
  */
 export async function fetchNui<T = any>(
-    eventName: string,
-    data?: any,
-    options?: { defaultValue?: T }
+  eventName: string,
+  data?: any,
+  options?: { defaultValue?: T }
 ): Promise<T> {
-    try {
-        const respFormatted = await getTransport().send<T>(eventName, data);
+  try {
+    const respFormatted = await getTransport().send<T>(eventName, data);
 
-        if (options?.defaultValue !== undefined) {
-            if (respFormatted === null || respFormatted === undefined) {
-                return options.defaultValue;
-            }
-            if (Array.isArray(options.defaultValue) && !Array.isArray(respFormatted)) {
-                return options.defaultValue;
-            }
-        }
-
-        return respFormatted ?? options?.defaultValue ?? (null as unknown as T);
-    } catch {
-        if (options?.defaultValue !== undefined) {
-            return options.defaultValue;
-        }
-        return null as unknown as T;
+    if (options?.defaultValue !== undefined) {
+      if (respFormatted === null || respFormatted === undefined) {
+        return options.defaultValue;
+      }
+      if (Array.isArray(options.defaultValue) && !Array.isArray(respFormatted)) {
+        return options.defaultValue;
+      }
     }
+
+    return respFormatted ?? options?.defaultValue ?? (null as unknown as T);
+  } catch {
+    if (options?.defaultValue !== undefined) {
+      return options.defaultValue;
+    }
+    return null as unknown as T;
+  }
 }
 
 export { isBrowser };

@@ -12,7 +12,9 @@ test.describe('Messages App E2E', () => {
     await expect(title).toBeVisible();
   });
 
-  test('virtualizes message list and lazy-loads older messages on multiple scroll-ups', async ({ page }) => {
+  test('virtualizes message list and lazy-loads older messages on multiple scroll-ups', async ({
+    page
+  }) => {
     // Select first conversation ListItem by role="button" with force click
     const convItem = page.locator('[role="button"]').filter({ hasText: 'Trevor' }).first();
     await expect(convItem).toBeVisible();
@@ -26,7 +28,9 @@ test.describe('Messages App E2E', () => {
     await expect(messagesContainer).toBeVisible();
 
     // Verify initially only 50 messages are rendered in DOM out of 200 (150 hidden)
-    await expect(messagesContainer.locator('button', { hasText: 'Load older messages' })).toBeVisible();
+    await expect(
+      messagesContainer.locator('button', { hasText: 'Load older messages' })
+    ).toBeVisible();
     await expect(messagesContainer.locator('button', { hasText: '150 hidden' })).toBeVisible();
 
     // --- First Scroll Up / Load Older Batch ---
@@ -44,6 +48,8 @@ test.describe('Messages App E2E', () => {
     await loadBtn3.dispatchEvent('click');
 
     // Now all 200 messages are loaded and hidden count button is gone
-    await expect(messagesContainer.locator('button', { hasText: 'Load older messages' })).not.toBeVisible();
+    await expect(
+      messagesContainer.locator('button', { hasText: 'Load older messages' })
+    ).not.toBeVisible();
   });
 });

@@ -9,6 +9,11 @@ import {
   useNavigation,
   useStorage,
   useSystemHardware,
+  useAccount,
+  useCall,
+  useMail,
+  useNotes,
+  useMessages,
   onAppMount,
   onAppUnmount,
   type AppManifest
@@ -16,6 +21,10 @@ import {
 import { toast } from '../store/toast';
 import { contacts } from '../store/contacts';
 import { photos } from '../store/photos';
+import { mailStore } from '../store/mail';
+import { notes } from '../store/notes';
+import { messagesStore } from '../store/messages';
+import { callStore } from '../store/call';
 import { get } from 'svelte/store';
 
 describe('gPhone SDK (@gphone/sdk)', () => {
@@ -140,6 +149,62 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       expect(get(signalLevel)).toBe(3);
 
       expect(is24Hour).toBeDefined();
+    });
+
+    it('useAccount exposes bankBalance, transactions, citizenid, and phone number', () => {
+      const { bankBalance, transactions, citizenid, myPhoneNumber } = useAccount();
+      expect(bankBalance).toBeDefined();
+      expect(transactions).toBeDefined();
+      expect(citizenid).toBeDefined();
+      expect(get(myPhoneNumber)).toBe('555-0199');
+    });
+
+    it('useCall exposes callStore and call controls', () => {
+      const { callStore: cStore, startCall, endCall } = useCall();
+      expect(cStore).toBeDefined();
+      expect(startCall).toBeTypeOf('function');
+      expect(endCall).toBeTypeOf('function');
+    });
+
+    it('useMail exposes mailStore and unread mail count', () => {
+      const { mailStore: mStore, unreadMailCount, addReceivedMail } = useMail();
+      expect(mStore).toBeDefined();
+      expect(unreadMailCount).toBeDefined();
+
+      addReceivedMail({
+        id: 99,
+        sender: 'test@gphone.app',
+        subject: 'SDK Test',
+        read: false,
+        status: 'active'
+      });
+      expect(get(mStore).some((m) => m.id === 99)).toBe(true);
+    });
+
+    it('useNotes allows managing notes via notesStore', async () => {
+      const { notesStore, addNote, deleteNote } = useNotes();
+      expect(notesStore).toBeDefined();
+
+      const created = await addNote('Test Title', 'Test Content');
+      if (created) {
+        expect(get(notesStore).some((n) => n.id === created.id)).toBe(true);
+        await deleteNote(created.id);
+      }
+    });
+
+    it('useMessages exposes messagesStore and messaging utilities', () => {
+      const { messagesStore: msgStore, unreadMessagesCount, addReceivedMessage } = useMessages();
+      expect(msgStore).toBeDefined();
+      expect(unreadMessagesCount).toBeDefined();
+
+      addReceivedMessage({
+        id: 88,
+        senderName: 'SDK User',
+        message: 'Hello',
+        conversation_id: 1,
+        phone: '555-9999'
+      });
+      expect(get(msgStore).length).toBeGreaterThan(0);
     });
   });
 
