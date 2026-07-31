@@ -1,8 +1,5 @@
 # AGENTS.md
 
-> Lives at the **repo root**. Not in `.agents/` — that directory is for skills, workflows, and
-> custom agents; an `AGENTS.md` placed there is not discovered.
-
 **gphone** — an open-source TypeScript phone for FiveM. AGPL-3.0-or-later.
 
 pnpm workspace, three build targets:
@@ -67,7 +64,8 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
 5. **No new dependencies** without asking.
 6. **Do not change** TypeScript versions in either package, Vite `build.outDir`, or
    `scripts/generate-manifests.js` output paths without asking.
-7. **Never report work complete without running the §9 checklist.**
+7. **SDK First.** All applications inside `web/src/modules/` and external add-ons must consume OS services (navigation, notifications, contacts, camera, registry, NUI bridge) strictly via `@gphone/sdk` hooks (`useNavigation`, `usePhoneNotification`, `useContacts`, `useCamera`, `useAppRegistry`, `useNuiBridge`). Direct relative imports into internal `web/src/store/` files from app modules are prohibited — reaching into internal shell paths breaks standalone SDK app compatibility.
+8. **Never report work complete without running the §9 checklist.**
 
 ---
 
@@ -106,6 +104,7 @@ file per domain (`contacts.ts`, `messages.ts`).
 
 - Cross-component / cross-module state → **stores**, in `web/src/store/`.
 - Component-local state → runes are fine, inside `.svelte` files.
+- **Do not use `setContext`/`getContext` as a workaround for global state.** If state needs to be accessed across disparate modules, put it in a store. Context is strictly for component library wiring (e.g., compound components).
 - **Do not** introduce `.svelte.ts` rune-based state modules, and do not convert existing stores to
   runes. Stores are not deprecated in Svelte 5 and the codebase is currently consistent.
 - **Do not mix idioms within a single file.**
@@ -205,98 +204,3 @@ effects. XSS here is privilege escalation, not just defacement.
 ---
 
 ## 8. Repo layout, NUI, and testing
-
-```
-client/          # game client TS — own tsconfig, TS 7
-server/          # game server TS — own tsconfig, TS 7
-web/             # the UI (Vite + Svelte 5, TS 6). "--filter web" targets this.
-  e2e/               # Playwright specs
-  src/
-    components/      # shared, presentational, app-agnostic
-    modules/<app>/   # one folder per phone app: screens + local logic
-    store/           # global state, one file per domain
-    mocks/
-      registry.ts    # MockRegistry — browser-mode NUI handlers
-      data.ts        # fixtures
-    utils/
-      fetchNui.ts    # the ONLY path to the game client
-      markdown.ts    # the ONLY sanitizing renderer — see §7
-  *.test.ts          # Vitest, colocated with source
-  postcss.config.js  # load-bearing — see §6
-  playwright.config.ts
-build/           # build-bundle.js — esbuild pipeline for client + server
-scripts/         # generate-manifests.js — GENERATES fxmanifest.lua
-dist/            # generated. Never edit. Wiped by clearbuild.
-```
-
-Place new UI code by asking: reusable across apps (`components/`), specific to one app
-(`modules/<app>/`), or global state (`store/`)?
-
-**NUI communication**
-
-- All calls to the game go through `fetchNui()` in `web/src/utils/fetchNui.ts`, which wraps
-  `fetch('https://<resource>/<event>')`. Never call `fetch` at a game endpoint directly.
-- When `isBrowser()` is true, `fetchNui` resolves from the MockRegistry in
-  `web/src/mocks/registry.ts`.
-- **Adding a NUI event is a two-file change**: the call site _and_ a handler in `registry.ts`. A
-  missing handler makes the feature untestable in browser mode and invisible to Playwright.
-  Fixtures go in `web/src/mocks/data.ts`.
-
-**Unit tests** — Vitest, colocated as `*.test.ts` beside the source (`src/store/contacts.test.ts`).
-New store logic and new `fetchNui` handlers get tests.
-
-**E2E and the dev server**
-
-- Config is `web/playwright.config.ts` — read it rather than assuming ports or flags. Locally it
-  reuses an already-running dev server; in CI it always spawns its own.
-- **Never kill or restart a dev server you did not start.** The user may have one running.
-- When reusing, E2E tests whatever state that server is in, including uncommitted edits and stale
-  HMR. If results look impossible, ask the user to restart it before debugging the test.
-- A reused dev server is not a production bundle. A green E2E run says nothing about `vite build`
-  output, and nothing at all about CEF (§6).
-- The `PORT` env var in the Playwright config is **not** wired through to Vite. Do not rely on it.
-- Assume standard `localhost` routing (WSL2 NAT).
-
-**Build-output coupling**
-
-- Vite's `build.outDir` must stay in sync with the `ui_page` and `files[]` values that
-  `scripts/generate-manifests.js` writes into `fxmanifest.lua`. A mismatch produces a blank phone
-  in-game with **no console error**.
-- `pnpm build` runs `clearbuild → typecheck → generate-manifests → build-bundle → build:web`.
-  Changing that order breaks assumptions in the manifest step.
-
----
-
-## 9. Definition of done
-
-Before reporting any task complete, run these and report the actual output:
-
-1. `pnpm typecheck` — all three targets, zero errors
-2. `pnpm test:unit` — confirm the summary reads `0 failed`
-3. E2E, if UI behavior changed — confirm `0 failed`
-4. If a NUI event was added — confirm the MockRegistry handler exists
-5. If user-facing content rendering changed — confirm it routes through `markdown.ts` (§7)
-6. If build config or the manifest generator was touched — run `pnpm build` and confirm the emitted
-   `fxmanifest.lua` paths match the actual `dist/` contents
-7. **If CSS changed** — state plainly that in-game verification is outstanding and name the specific
-   features used that fall in the §6 gap. Do not claim a visual change works in CEF; you cannot
-   observe that from here.
-
-**Read the full output, including individual failure traces.** Do not infer success from the absence
-of a crash, from an exit code alone, or from a truncated log. If you did not see `0 failed`, the
-tests did not pass. Note that `run-p` interleaves output from three typecheckers running two
-different TypeScript versions — scan for errors from _each_ one, not just the last block printed.
-
-Report honestly: what you ran, what passed, what failed, what you did not verify. An accurate
-"typecheck clean, unit tests pass, E2E has one failure in contacts.spec.ts" is far more useful than
-an optimistic "done."
-
----
-
-## 10. When you are blocked
-
-Stop and ask if a task requires violating §2, contradicts something in this file, fails for a reason
-you do not understand, or needs a new dependency.
-
-Do not disable a test, add `@ts-expect-error`, widen a type to `any`, delete an assertion, or bypass
-a guard to make something pass. Surface the conflict instead.

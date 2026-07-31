@@ -6,9 +6,10 @@ import {
   useContacts,
   useCamera,
   useNuiBridge,
+  useNavigation,
   onAppMount,
   onAppUnmount,
-  type AppManifest,
+  type AppManifest
 } from './index';
 import { toast } from '../store/toast';
 import { contacts } from '../store/contacts';
@@ -27,7 +28,7 @@ describe('gPhone SDK (@gphone/sdk)', () => {
         name: 'Crypto Tracker',
         color: 'bg-yellow-500',
         icon: 'BitcoinIcon',
-        author: 'Community',
+        author: 'Community'
       };
 
       const app = defineApp(rawManifest);
@@ -64,7 +65,7 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       const notificationId = sendNotification({
         title: 'Crypto Alert',
         message: 'Bitcoin reached $100k',
-        avatar: 'TrendingUp',
+        avatar: 'TrendingUp'
       });
 
       const toasts = get(toast);
@@ -104,6 +105,18 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       const { fetchNui, useNuiEvent } = useNuiBridge();
       expect(fetchNui).toBeTypeOf('function');
       expect(useNuiEvent).toBeTypeOf('function');
+    });
+
+    it('useNavigation exposes navigation controls', () => {
+      const { openApp, goHome, currentApp } = useNavigation();
+      expect(openApp).toBeTypeOf('function');
+      expect(goHome).toBeTypeOf('function');
+
+      openApp('calc');
+      expect(get(currentApp).name).toBe('calc');
+
+      goHome();
+      expect(get(currentApp).name).toBe('home');
     });
   });
 

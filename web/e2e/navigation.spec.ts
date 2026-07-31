@@ -13,7 +13,7 @@ test.describe('Phone Navigation & Home Screen', () => {
 
   test('opens Calculator app and returns home using Escape key', async ({ page }) => {
     const calcButton = page.locator('button', { hasText: 'Calculator' });
-    if (await calcButton.count() > 0) {
+    if ((await calcButton.count()) > 0) {
       await calcButton.click();
       await expect(page.locator('h1', { hasText: 'Calculator' })).toBeVisible();
 
@@ -29,15 +29,23 @@ test.describe('Phone Navigation & Home Screen', () => {
     await expect(page.locator('h1', { hasText: 'Store' })).toBeVisible();
 
     // Click Install button specifically for Crypto Tracker
-    await page.locator('div.rounded-xl', { hasText: 'Crypto Tracker' }).locator('button', { hasText: 'Install' }).click();
+    await page
+      .locator('div.rounded-xl', { hasText: 'Crypto Tracker' })
+      .locator('button', { hasText: 'Install' })
+      .click();
     await page.locator("button[aria-label='Back to Home']").click();
 
     // 2. Verify Crypto Tracker icon appears on home screen
     await expect(page.locator('button', { hasText: 'Crypto Tracker' })).toBeVisible();
 
-    // 3. Return to Store to uninstall
+    // 3. Return to Store and open app details page to uninstall
     await page.locator('button', { hasText: 'Store' }).first().click();
-    await page.locator('div.rounded-xl', { hasText: 'Crypto Tracker' }).locator('button', { hasText: 'Uninstall' }).click();
+    await page.locator('div.rounded-xl', { hasText: 'Crypto Tracker' }).click();
+    await page.locator('button', { hasText: 'Uninstall' }).first().click();
+
+    // Confirm uninstallation in ConfirmDialog modal
+    await expect(page.locator('h3', { hasText: 'Uninstall Crypto Tracker' })).toBeVisible();
+    await page.locator('button', { hasText: 'Uninstall' }).last().click();
 
     // 4. Return Home and verify Crypto Tracker is uninstalled
     await page.locator("button[aria-label='Back to Home']").click();
