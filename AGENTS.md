@@ -384,6 +384,10 @@ a silent divergence breaks either security or writes. One schema drives both, pl
 - **`scope: 'shared'`** disables the generic create/update/delete events entirely, because ownership
   by `citizenid` is not a valid authorization check for rows several players can see. A shared app
   writes its own actions with an explicit membership check — see `ConversationRepository.isParticipant`.
+- **`serverAuthored: true`** means rows arrive from the server, never from the phone's owner — mail
+  from a job, a dispatch, a bank alert. Nothing becomes client-writable and create/update are not
+  registered. Distinct from `shared`: the row still belongs to exactly one citizenid, so reads and
+  deletes stay ownership-scoped and remain available.
 - `indexes` takes full ordered column lists. Use it: a per-column flag cannot express the composite
   indexes the existing tables rely on, and omitting them silently drops indexes on migration.
 - `default` on a field emits a SQL default. Set it when migrating an existing table —

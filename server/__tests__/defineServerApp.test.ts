@@ -85,6 +85,21 @@ describe('resolveAppSchema — derived lists', () => {
     expect(resolved.clientFilterable).toEqual(['phone']);
   });
 
+  it('makes nothing client-writable for a server-authored app', () => {
+    // Mail: rows arrive from jobs and dispatches, never from the phone's owner. The
+    // row still belongs to one citizenid, so this is distinct from shared scope.
+    const resolved = resolveAppSchema({
+      id: 'mail',
+      serverAuthored: true,
+      schema: { sender: 'string', subject: { type: 'string', clientFilterable: true } }
+    });
+
+    expect(resolved.clientWritable).toEqual([]);
+    expect(resolved.clientFilterable).toEqual([]);
+    expect(resolved.scope).toBe('owner');
+    expect(resolved.columns).toContain('sender');
+  });
+
   it('shuts the generic write path for shared-scope apps', () => {
     // Rows several players can see cannot be authorized by ownership, so nothing is
     // client-writable through the generic path — membership checks must be explicit.
@@ -179,6 +194,21 @@ describe('defineServerApp — event registration', () => {
     });
 
     expect(events).toEqual(['gphone:server:shared_a:get']);
+  });
+
+  it('registers get and delete but not create or update when server-authored', () => {
+    // A server-authored row still belongs to one citizenid, so reading and deleting
+    // your own mail is legitimate. Only authoring is closed.
+    const events = mountAndCapture({
+      id: 'authored_a',
+      serverAuthored: true,
+      schema: { sender: 'string' }
+    });
+
+    expect(events.sort()).toEqual([
+      'gphone:server:authored_a:delete',
+      'gphone:server:authored_a:get'
+    ]);
   });
 
   it('lets an explicit option override the scope default', () => {

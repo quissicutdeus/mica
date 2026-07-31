@@ -61,6 +61,16 @@ export interface ServerAppDefinition {
   table?: string;
   /** Defaults to 'owner'. */
   scope?: AppScope;
+  /**
+   * Rows are written by the server, never by the phone's owner — mail arriving from
+   * a job, a bank alert, a dispatch. Nothing becomes client-writable and the generic
+   * create/update events are not registered, so an app cannot accidentally expose a
+   * write path for data the client has no business authoring.
+   *
+   * Distinct from `scope: 'shared'`: a server-authored row still belongs to exactly
+   * one citizenid, so ownership scoping on reads and deletes is still correct.
+   */
+  serverAuthored?: boolean;
   schema: AppSchema;
   /** Values the `status` column accepts. Defaults to active/deleted. */
   statuses?: readonly string[];
@@ -90,14 +100,18 @@ const DEFAULT_STATUSES = ['active', 'deleted'] as const;
 const normalizeColumn = (spec: ColumnType | ColumnDef): ColumnDef =>
   typeof spec === 'string' ? { type: spec } : spec;
 
-/** A field is client-writable unless it opts out. Shared-scope apps opt everything out. */
-const isClientWritable = (def: ColumnDef, scope: AppScope): boolean =>
-  scope === 'owner' && def.clientWritable !== false;
+/**
+ * A field is client-writable unless it opts out. Shared-scope and server-authored
+ * apps opt every field out wholesale.
+ */
+const isClientWritable = (def: ColumnDef, scope: AppScope, serverAuthored: boolean): boolean =>
+  scope === 'owner' && !serverAuthored && def.clientWritable !== false;
 
 export interface ResolvedAppSchema {
   id: string;
   table: string;
   scope: AppScope;
+  serverAuthored: boolean;
   statuses: readonly string[];
   /** Declared fields only, in declaration order — implicit columns excluded. */
   fields: { name: string; def: ColumnDef }[];
@@ -122,6 +136,7 @@ export function resolveAppSchema(definition: ServerAppDefinition): ResolvedAppSc
   }
 
   const scope = definition.scope ?? 'owner';
+  const serverAuthored = definition.serverAuthored === true;
   const table = definition.table ?? `gphone_${id}`;
   const statuses = definition.statuses ?? DEFAULT_STATUSES;
 
@@ -169,13 +184,18 @@ export function resolveAppSchema(definition: ServerAppDefinition): ResolvedAppSc
     id,
     table,
     scope,
+    serverAuthored,
     statuses,
     fields,
     indexes,
     columns,
-    clientWritable: fields.filter((f) => isClientWritable(f.def, scope)).map((f) => f.name),
+    clientWritable: fields
+      .filter((f) => isClientWritable(f.def, scope, serverAuthored))
+      .map((f) => f.name),
     clientFilterable: fields
-      .filter((f) => f.def.clientFilterable === true && isClientWritable(f.def, scope))
+      .filter(
+        (f) => f.def.clientFilterable === true && isClientWritable(f.def, scope, serverAuthored)
+      )
       .map((f) => f.name)
   };
 }
@@ -241,14 +261,18 @@ export function defineServerApp<T>(definition: ServerAppDefinition): ServerAppHa
   }
   declaredApps.push(resolved);
 
-  const sharedScopeLockdown: ServerAppOptions =
+  // Shared scope cannot authorize any mutation by ownership. Server-authored tables
+  // still own their rows, so delete stays available — only authoring is closed.
+  const scopeLockdown: ServerAppOptions =
     resolved.scope === 'shared'
       ? { disableCreate: true, disableUpdate: true, disableDelete: true }
-      : {};
+      : resolved.serverAuthored
+        ? { disableCreate: true, disableUpdate: true }
+        : {};
 
   const app = new ServerApp<T>(resolved.id, repo, {
     tableName: resolved.table,
-    ...sharedScopeLockdown,
+    ...scopeLockdown,
     ...definition.options
   });
 

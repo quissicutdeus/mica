@@ -1,63 +1,124 @@
-import { MailRepository } from '../repositories/MailRepository';
-import { ServerApp } from '../lib/ServerApp';
+import { defineServerApp, SchemaRepository } from '../lib/defineServerApp';
 import { Mail } from '@shared/types';
 import { AuditLogger } from '../lib/AuditLogger';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
+import { Database } from '../lib/Database';
+import { requirePositiveInt } from '../lib/payload';
 
-const mailRepo = new MailRepository();
-const app = new ServerApp<Mail>('mail', mailRepo, {
-  disableGet: true,
-  disableCreate: true,
-  disableUpdate: true,
-  disableDelete: true
+/**
+ * Mail: owner-scoped but server-authored.
+ *
+ * Nobody writes mail from their own phone — it arrives from jobs, dispatches and
+ * bank alerts via the `SendSystemEmail` export below. `serverAuthored` therefore
+ * closes the generic create/update path entirely, while reads and deletes stay
+ * ownership-scoped because a mail row still belongs to exactly one citizenid.
+ *
+ * `read` is a MySQL reserved word. Every generated and hand-written identifier here
+ * is backtick-quoted, which is what makes the column usable at all.
+ */
+class MailRepository extends SchemaRepository<Mail> {
+  /** Everything not deleted, newest first — archived mail still shows in the UI. */
+  async findAllByCitizenId(citizenid: string): Promise<Mail[]> {
+    const query = `
+            SELECT * FROM \`gphone_mail\`
+            WHERE \`citizenid\` = ? AND \`status\` != 'deleted'
+            ORDER BY \`created_at\` DESC
+        `;
+    return await Database.query<Mail[]>(query, [citizenid]);
+  }
+
+  async markAsRead(id: number, citizenid: string): Promise<boolean> {
+    const query = 'UPDATE `gphone_mail` SET `read` = 1 WHERE `id` = ? AND `citizenid` = ?';
+    return await Database.update(query, [id, citizenid]);
+  }
+
+  async archive(id: number, citizenid: string, archiveState: boolean = true): Promise<boolean> {
+    const query = 'UPDATE `gphone_mail` SET `status` = ? WHERE `id` = ? AND `citizenid` = ?';
+    return await Database.update(query, [archiveState ? 'archived' : 'active', id, citizenid]);
+  }
+
+  /** Privileged: writes a row on another player's behalf, so no ownership predicate. */
+  async createForCitizen(mail: Partial<Mail>): Promise<number> {
+    return await this.create(mail);
+  }
+}
+
+let mailRepo!: MailRepository;
+
+export const mail = defineServerApp<Mail>({
+  id: 'mail',
+  scope: 'owner',
+  serverAuthored: true,
+  statuses: ['active', 'archived', 'deleted', 'moderated'],
+  schema: {
+    sender: { type: 'string', length: 100, notNull: true },
+    sender_address: { type: 'string', length: 100 },
+    subject: { type: 'string', length: 255, notNull: true },
+    content: { type: 'text', notNull: true },
+    read: { type: 'bool', notNull: true, default: 0 }
+  },
+  // Mirrors the indexes the hand-written gphone_mail table already carries.
+  indexes: [
+    ['citizenid', 'status', 'created_at'],
+    ['citizenid', 'read', 'status']
+  ],
+  // Reads and deletes are custom below: the list needs an explicit ORDER BY, and
+  // delete/archive carry their own audit entries.
+  options: { disableGet: true, disableDelete: true },
+  repositoryFactory: (resolved) => {
+    mailRepo = new MailRepository(resolved);
+    return mailRepo;
+  }
 });
+
+const app = mail.app;
+
+const auditMail = (citizenid: string, action: 'archived' | 'unarchived' | 'deleted', id: number) =>
+  AuditLogger.log({
+    citizenid,
+    action,
+    controller: 'MailController',
+    method: action === 'deleted' ? 'deleteMail' : 'archiveMail',
+    targetId: id,
+    targetTable: 'gphone_mail'
+  });
 
 app.registerEvent('getMail', async (source, cbId, data, citizenid) => {
   return await mailRepo.findAllByCitizenId(citizenid);
 });
 
 app.registerEvent('markAsRead', async (source, cbId, data, citizenid) => {
-  if (!data.id) throw new Error('Email ID required');
-  return await mailRepo.markAsRead(Number(data.id), citizenid);
+  const id = requirePositiveInt(data?.id, 'email id');
+  return await mailRepo.markAsRead(id, citizenid);
 });
 
 app.registerEvent('archiveMail', async (source, cbId, data, citizenid) => {
-  if (!data.id) throw new Error('Email ID required');
+  const id = requirePositiveInt(data?.id, 'email id');
   const shouldArchive = data.archive !== false;
-  const success = await mailRepo.archive(Number(data.id), citizenid, shouldArchive);
+
+  const success = await mailRepo.archive(id, citizenid, shouldArchive);
   if (success) {
-    await AuditLogger.log({
-      citizenid,
-      action: shouldArchive ? 'archived' : 'unarchived',
-      controller: 'MailController',
-      method: 'archiveMail',
-      targetId: Number(data.id),
-      targetTable: 'gphone_mail'
-    });
+    await auditMail(citizenid, shouldArchive ? 'archived' : 'unarchived', id);
   }
   return success;
 });
 
 app.registerEvent('deleteMail', async (source, cbId, data, citizenid) => {
-  if (!data.id) throw new Error('Email ID required');
-  const success = await mailRepo.delete(Number(data.id), citizenid);
+  const id = requirePositiveInt(data?.id, 'email id');
+
+  const success = await mailRepo.delete(id, citizenid);
   if (success) {
-    await AuditLogger.log({
-      citizenid,
-      action: 'deleted',
-      controller: 'MailController',
-      method: 'deleteMail',
-      targetId: Number(data.id),
-      targetTable: 'gphone_mail'
-    });
+    await auditMail(citizenid, 'deleted', id);
   }
   return success;
 });
 
 /**
  * Global Server Export: SendSystemEmail
- * Allows external resources (jobs, dispatches, bank alerts, system notifications)
- * to send dispatches or emails directly to a player's phone mailbox.
+ *
+ * Lets external resources (jobs, dispatches, bank alerts) drop mail into a player's
+ * mailbox. This is the only write path into the table, which is what
+ * `serverAuthored` is asserting.
  */
 export const SendSystemEmail = async (
   targetCitizenId: string,
@@ -79,7 +140,7 @@ export const SendSystemEmail = async (
       read: false
     };
 
-    const id = await mailRepo.create(mailItem);
+    const id = await mailRepo.createForCitizen(mailItem);
     const newMail: Mail = {
       ...mailItem,
       id,
@@ -87,7 +148,7 @@ export const SendSystemEmail = async (
       updated_at: new Date().toISOString()
     } as Mail;
 
-    // Find online target player to send real-time notification
+    // Notify the recipient if they are online.
     const players = FrameworkBridge.getAllPlayers();
     for (const src in players) {
       if (players[src]?.PlayerData?.citizenid === targetCitizenId) {
@@ -103,5 +164,10 @@ export const SendSystemEmail = async (
   }
 };
 
-// Expose server export for external resources
-exports('SendSystemEmail', SendSystemEmail);
+// `exports` is callable only under the FiveM runtime. This module is now also
+// imported by the SQL codegen and by server tests, where the host supplies a
+// non-callable `exports` binding that shadows any global stub — so guard the call
+// rather than throwing on import.
+if (typeof exports === 'function') {
+  exports('SendSystemEmail', SendSystemEmail);
+}

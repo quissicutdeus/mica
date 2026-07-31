@@ -15,7 +15,7 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 import { Repository } from '../lib/Repository';
 import { contacts } from '../controllers/ContactController';
 import { ConversationRepository } from '../repositories/ConversationRepository';
-import { MailRepository } from '../repositories/MailRepository';
+import { mail } from '../controllers/MailController';
 import { MessageRepository } from '../repositories/MessageRepository';
 // Notes has migrated to a defineServerApp declaration; its repository is derived.
 import { notes } from '../controllers/NoteController';
@@ -32,7 +32,7 @@ import { TransactionRepository } from '../repositories/TransactionRepository';
 const ALL = [
   { name: 'contacts', repo: contacts.repo },
   { name: 'conversations', repo: new ConversationRepository() },
-  { name: 'mail', repo: new MailRepository() },
+  { name: 'mail', repo: mail.repo },
   { name: 'messages', repo: new MessageRepository() },
   { name: 'notes', repo: notes.repo },
   { name: 'photos', repo: photos.repo },
@@ -81,17 +81,16 @@ describe('shipped repositories — declared client write policy', () => {
 });
 
 describe('shipped repositories — inherited guarantees', () => {
-  it('mail no longer overrides delete with an optional citizenid', async () => {
-    // The old override silently fell back to an unscoped UPDATE when the generic
-    // path called it with one argument.
-    const mail = new MailRepository();
+  it('mail delete is inherited and ownership-scoped', async () => {
+    // The pre-Phase-1 override silently fell back to an unscoped UPDATE when the
+    // generic path called it with one argument. There is no override now at all.
     dbMock.update.mockResolvedValue(true);
     dbMock.update.mockClear();
 
-    await expect(mail.delete(4, '')).rejects.toThrow(/requires a citizenid/);
+    await expect(mail.repo.delete(4, '')).rejects.toThrow(/requires a citizenid/);
     expect(dbMock.update).not.toHaveBeenCalled();
 
-    await mail.delete(4, 'CIT_OWNER');
+    await mail.repo.delete(4, 'CIT_OWNER');
     expect(String(dbMock.update.mock.calls[0][0])).toContain('`citizenid` = ?');
     expect(dbMock.update.mock.calls[0][1]).toEqual(['deleted', 4, 'CIT_OWNER']);
   });
