@@ -291,14 +291,14 @@
                   onclick={() => handleUninstall(app)}
                   class="rounded-lg bg-gray-700 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/20 active:scale-95 transition shrink-0"
                 >
-                  Installed
+                  Uninstall
                 </button>
               {:else}
                 <button
                   onclick={() => handleInstall(app)}
                   class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 active:scale-95 transition shrink-0"
                 >
-                  Get
+                  Install
                 </button>
               {/if}
             </div>

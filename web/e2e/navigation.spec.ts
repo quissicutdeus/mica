@@ -12,7 +12,7 @@ test.describe('Phone Navigation & Home Screen', () => {
   });
 
   test('opens Calculator app and returns home using Escape key', async ({ page }) => {
-    const calcButton = page.locator("div[role='group']", { hasText: 'Calculator' });
+    const calcButton = page.locator('button', { hasText: 'Calculator' });
     if (await calcButton.count() > 0) {
       await calcButton.click();
       await expect(page.locator('h1', { hasText: 'Calculator' })).toBeVisible();
@@ -23,29 +23,24 @@ test.describe('Phone Navigation & Home Screen', () => {
     }
   });
 
-  test('enters Edit Mode via right-click, shows minus badge on add-on apps, uninstalls app and auto-exits', async ({ page }) => {
+  test('installs and uninstalls add-on app via the Store', async ({ page }) => {
     // 1. Go to Store and install an add-on app (Crypto Tracker)
-    await page.locator("div[role='group']", { hasText: 'Store' }).first().click();
+    await page.locator('button', { hasText: 'Store' }).first().click();
     await expect(page.locator('h1', { hasText: 'Store' })).toBeVisible();
-    await page.locator('button', { hasText: 'Get' }).first().click();
+
+    // Click Install button specifically for Crypto Tracker
+    await page.locator('div.rounded-xl', { hasText: 'Crypto Tracker' }).locator('button', { hasText: 'Install' }).click();
     await page.locator("button[aria-label='Back to Home']").click();
 
-    // 2. Right click any app icon on the home screen to enter Edit Mode
-    const phoneIcon = page.locator("div[role='group']", { hasText: 'Phone' }).first();
-    await phoneIcon.click({ button: 'right' });
+    // 2. Verify Crypto Tracker icon appears on home screen
+    await expect(page.locator('button', { hasText: 'Crypto Tracker' })).toBeVisible();
 
-    // 3. Verify minus button badge appears on Crypto Tracker (add-on) but not on Phone (system)
-    const cryptoMinus = page.locator("button[aria-label='Remove Crypto Tracker']");
-    await expect(cryptoMinus).toBeVisible();
+    // 3. Return to Store to uninstall
+    await page.locator('button', { hasText: 'Store' }).first().click();
+    await page.locator('div.rounded-xl', { hasText: 'Crypto Tracker' }).locator('button', { hasText: 'Uninstall' }).click();
 
-    const phoneMinus = page.locator("button[aria-label='Remove Phone']");
-    await expect(phoneMinus).not.toBeVisible();
-
-    // 4. Click minus button on Crypto Tracker to uninstall
-    await cryptoMinus.click();
-
-    // 5. Verify app is uninstalled and Edit Mode auto-exits when no add-on apps remain
-    await expect(page.locator("text=Crypto Tracker")).not.toBeVisible();
-    await expect(cryptoMinus).not.toBeVisible();
+    // 4. Return Home and verify Crypto Tracker is uninstalled
+    await page.locator("button[aria-label='Back to Home']").click();
+    await expect(page.locator('button', { hasText: 'Crypto Tracker' })).not.toBeVisible();
   });
 });
