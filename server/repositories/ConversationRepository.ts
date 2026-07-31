@@ -75,24 +75,46 @@ export class ConversationRepository extends Repository<Conversation> {
     return participants;
   }
 
-  async findForCitizen(citizenid: string): Promise<Conversation[]> {
-    // Find conversations where user has an active session
+  /**
+   * Move this participant's read cursor to now.
+   *
+   * Scoped by citizenid and `left_at IS NULL`, so a player can only ever mark
+   * their own membership read, and only while they are still in the thread.
+   */
+  async markRead(conversationId: number, citizenid: string): Promise<boolean> {
     const query = `
-            SELECT c.*, 
+            UPDATE gphone_messages_participants
+            SET last_read = CURRENT_TIMESTAMP
+            WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL
+        `;
+    return await Database.update(query, [conversationId, citizenid]);
+  }
+
+  async findForCitizen(citizenid: string): Promise<Conversation[]> {
+    // Joined rather than EXISTS-filtered so the caller's own participant row
+    // (`me`) is in scope — `me.last_read` is what makes unread_count computable.
+    const query = `
+            SELECT c.*,
             (SELECT COUNT(*) FROM gphone_messages_participants WHERE conversation_id = c.id AND left_at IS NULL) as participant_count,
+            (SELECT COUNT(*) FROM gphone_messages unread
+                WHERE unread.conversation_id = c.id
+                AND unread.status != 'deleted'
+                AND unread.citizenid <> me.citizenid
+                AND unread.created_at > me.last_read) as unread_count,
             m.message as last_message_text,
             m.created_at as last_message_time,
             m.citizenid as last_message_sender
             FROM gphone_messages_conversations c
+            JOIN gphone_messages_participants me
+                ON me.conversation_id = c.id
+                AND me.citizenid = ?
+                AND me.left_at IS NULL
             LEFT JOIN gphone_messages m ON m.id = (
-                SELECT id FROM gphone_messages 
-                WHERE conversation_id = c.id AND status != 'deleted' 
+                SELECT id FROM gphone_messages
+                WHERE conversation_id = c.id AND status != 'deleted'
                 ORDER BY created_at DESC LIMIT 1
             )
-            WHERE EXISTS (
-                SELECT 1 FROM gphone_messages_participants p 
-                WHERE p.conversation_id = c.id AND p.citizenid = ? AND p.left_at IS NULL
-            ) AND c.status = 'active'
+            WHERE c.status = 'active'
             ORDER BY c.updated_at DESC
         `;
     const results = await Database.query<any[]>(query, [citizenid]);

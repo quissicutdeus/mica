@@ -190,6 +190,10 @@ describe('ServerApp — row id validation', () => {
     ['a zero id', { id: 0 }],
     ['a negative id', { id: -3 }],
     ['a fractional id', { id: 1.5 }],
+    // Number([7]) is 7, so a bare coercion would have accepted this.
+    ['an array id', { id: [7] }],
+    ['an object id', { id: { valueOf: 7 } }],
+    ['a boolean id', { id: true }],
     ['a null payload', null]
   ])('rejects %s on update', async (_label, payload) => {
     mount();

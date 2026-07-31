@@ -3,6 +3,7 @@ import { ServerApp } from '../lib/ServerApp';
 import { Conversation } from '@shared/types';
 import { Database } from '../lib/Database';
 import { AuditLogger } from '../lib/AuditLogger';
+import { conversationIdFrom } from '../lib/payload';
 
 const conversationRepo = new ConversationRepository();
 
@@ -159,14 +160,15 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   return { ...newConv, id: conversationId };
 });
 
+// Mark this participant's thread as read. Scoped to the caller's own membership.
+app.registerEvent('read', async (source, cbId, data, citizenid) => {
+  const id = conversationIdFrom(data);
+  return await conversationRepo.markRead(id, citizenid);
+});
+
 // Delete/Leave
 app.registerEvent('delete', async (source, cbId, data, citizenid) => {
-  // The UI sends `{ conversation_id }`; a bare id is accepted too.
-  const raw = data && typeof data === 'object' ? (data.conversation_id ?? data.id) : data;
-  const id = Number(raw);
-  if (!Number.isInteger(id) || id <= 0) {
-    throw new Error('A valid conversation_id is required.');
-  }
+  const id = conversationIdFrom(data);
 
   // Check role
   const participants = await conversationRepo.findParticipants(id);

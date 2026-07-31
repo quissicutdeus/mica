@@ -111,6 +111,40 @@ describe('shipped repositories — inherited guarantees', () => {
     await expect(conversations.isParticipant(3, 'CIT_STRANGER')).resolves.toBe(false);
   });
 
+  it('markRead only moves the caller own read cursor, and only while still joined', async () => {
+    const conversations = new ConversationRepository();
+    dbMock.update.mockResolvedValue(true);
+    dbMock.update.mockClear();
+
+    await conversations.markRead(3, 'CIT_A');
+
+    const sql = String(dbMock.update.mock.calls[0][0]).replace(/\s+/g, ' ').trim();
+    expect(sql).toBe(
+      'UPDATE gphone_messages_participants SET last_read = CURRENT_TIMESTAMP ' +
+        'WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL'
+    );
+    expect(dbMock.update.mock.calls[0][1]).toEqual([3, 'CIT_A']);
+  });
+
+  it('findForCitizen computes unread_count from the caller own last_read', async () => {
+    const conversations = new ConversationRepository();
+    dbMock.query.mockResolvedValue([]);
+    dbMock.query.mockClear();
+
+    await conversations.findForCitizen('CIT_A');
+
+    const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
+    // Joins the caller's own participant row so last_read is in scope...
+    expect(sql).toContain('JOIN gphone_messages_participants me');
+    expect(sql).toContain('me.citizenid = ?');
+    expect(sql).toContain('me.left_at IS NULL');
+    // ...counts only messages newer than it, and never the caller's own.
+    expect(sql).toContain('unread.created_at > me.last_read');
+    expect(sql).toContain('unread.citizenid <> me.citizenid');
+    expect(sql).toContain("unread.status != 'deleted'");
+    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A']);
+  });
+
   it('admin conversation deletion is a named privileged write, scoped to the row id', async () => {
     const conversations = new ConversationRepository();
     dbMock.update.mockResolvedValue(true);

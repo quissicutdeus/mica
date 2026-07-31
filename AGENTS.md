@@ -259,3 +259,92 @@ effects. XSS here is privilege escalation, not just defacement.
 ---
 
 ## 8. Repo layout, NUI, and testing
+
+### Layout
+
+| Path                   | Runs in      | Notes                                                           |
+| ---------------------- | ------------ | --------------------------------------------------------------- |
+| `client/controllers/`  | FiveM client | One file per domain, auto-indexed by the manifest generator     |
+| `client/lib/`          | FiveM client | `ClientApp` (NUI↔server relay), `FrameworkBridge`, `NuiUtils`   |
+| `server/controllers/`  | FiveM server | One file per domain, auto-indexed                               |
+| `server/lib/`          | FiveM server | `ServerApp`, `Repository`, `Database`, `AuditLogger`, `payload` |
+| `server/repositories/` | FiveM server | One per table; declares `columns` and `clientWritable` (§2.9)   |
+| `server/__tests__/`    | Vitest/node  | Excluded from `tsc`; see §1                                     |
+| `shared/types.ts`      | both         | `@shared/types` path alias, not a workspace package (§3)        |
+| `web/src/core/`        | CEF+browser  | Transport adapters — the only place that knows about `fetch`    |
+| `web/src/store/`       | CEF+browser  | Global state, one file per domain. Internal; apps use the SDK   |
+| `web/src/sdk/`         | CEF+browser  | `@gphone/sdk` — the public surface for apps (§2.7)              |
+| `web/src/modules/`     | CEF+browser  | One dir per app: `manifest.ts` + `index.svelte` + `Icon.svelte` |
+| `web/src/mocks/`       | browser only | Mock NUI responses so `pnpm dev` works with no game running     |
+
+`client/controllers/index.ts`, `server/controllers/index.ts` and `web/src/sdk/hooks/index.ts` are
+**generated** by `scripts/generate-manifests.js`. Add a file to the directory; do not edit the index.
+
+### A NUI round trip touches three files
+
+This is the single most common source of half-built features. A call from `web/` reaches the database
+only if every layer exists:
+
+1. **`web/`** — `fetchNui('someAction', payload)`, usually from a store in `web/src/store/`.
+2. **`client/controllers/`** — `app.registerCallback('someAction', 'gphone:server:<app>:<action>')`.
+   Without this the NUI callback is unregistered, `fetchNui` swallows the failure and returns its
+   `defaultValue`. **The feature silently does nothing in game.**
+3. **`server/controllers/`** — a `registerEvent('<action>', ...)` handler, or one of the generic CRUD
+   actions that `ServerApp` registers for you (`get`/`create`/`update`/`delete`).
+
+Two traps:
+
+- **Mocks make a missing layer invisible.** `web/src/mocks/registry.ts` answers by action name, so a
+  feature with no client/server wiring works perfectly in `pnpm dev` and in Playwright, and is dead
+  in game. When adding an endpoint, add all three layers _and_ the mock. When touching an existing
+  one, grep `client/` and `server/` for the action name before assuming it is wired.
+- **Custom actions need an explicit response listener.** `ClientApp` auto-listens on
+  `receive`/`created`/`updated`/`deleted` only. Any other action name needs
+  `app.registerResponseListener('<action>')`, or the reply never resolves and the callback times out
+  after 15s.
+
+Payload shape: the generic CRUD path reads the row id from `data.id`. Conversation-scoped custom
+actions accept `conversation_id`, `id`, or a bare id via `conversationIdFrom` in `server/lib/payload.ts`.
+
+### Testing
+
+| Suite  | Command                 | Covers                                                      |
+| ------ | ----------------------- | ----------------------------------------------------------- |
+| server | `pnpm test:unit:server` | `Repository`/`ServerApp` policy, per-table write allowlists |
+| web    | `pnpm test:unit:web`    | Stores, utils, SDK, components                              |
+| e2e    | `pnpm test:e2e`         | Playwright over `web/` against the mock transport           |
+
+What the suites **cannot** catch: anything that needs the game. The Chromium-103 gap (§6), the
+client/server relay layers above, framework bridge behaviour, and SQL that only fails against a real
+schema. Playwright drives a modern Chromium against mocks — a green suite is not evidence a NUI
+feature works in game.
+
+E2E note: `webServer` polls port 5173 while Vite silently falls back to 5174 if 5173 is taken, so
+anything else holding that port produces a 120s `Timed out waiting for config.webServer` that reads
+like a code failure but is not one. On WSL2 the holder may be a **Windows-side** process, which
+`ss`/`netstat` inside the guest will not show — check `netstat.exe -ano | grep 5173` before
+concluding anything. **This is an environment collision, not a repo defect.** Report it and stop;
+do not "fix" it by changing the port or the config.
+
+---
+
+## 9. Definition of done
+
+Run these from the repo root before reporting any code change complete (§2.8). All four, in any
+order, all passing:
+
+1. `pnpm typecheck` — all three targets. Not `typecheck:web` alone (§3).
+2. `pnpm test:unit` — server and web.
+3. `pnpm test:e2e` — if the change touches `web/`.
+4. `pnpm format:check` — or `pnpm format` then re-check.
+
+Then, before saying it works:
+
+- **New or changed server logic gets a test** in `server/__tests__/`. Server code is excluded from
+  `tsc`, so tests are the only thing standing behind it.
+- **Report failures as failures.** If a suite is red, say so and paste the output. A pipeline like
+  `pnpm test:e2e | tail -5` reports `tail`'s exit code, not the suite's — check the real one.
+- **State what you did not verify.** In-game behaviour, CEF rendering, and framework integration are
+  outside the suites. Say so rather than implying coverage.
+- **Untracked files are not staged.** New directories need an explicit `git add`; `git add -u` misses
+  them.

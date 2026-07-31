@@ -2,6 +2,7 @@ import { MessageRepository } from '../repositories/MessageRepository';
 import { ConversationRepository } from '../repositories/ConversationRepository';
 import { PhotoRepository } from '../repositories/PhotoRepository';
 import { ServerApp } from '../lib/ServerApp';
+import { conversationIdFrom } from '../lib/payload';
 import { Message } from '@shared/types';
 
 const messageRepo = new MessageRepository();
@@ -14,16 +15,6 @@ const app = new ServerApp<Message>('messages', messageRepo, {
   disableUpdate: true,
   disableDelete: true
 });
-
-/** Accepts `{ conversation_id }` or a bare id. */
-const requireConversationId = (data: any): number => {
-  const raw = data && typeof data === 'object' ? data.conversation_id : data;
-  const conversationId = Number(raw);
-  if (!Number.isInteger(conversationId) || conversationId <= 0) {
-    throw new Error('A valid conversation_id is required.');
-  }
-  return conversationId;
-};
 
 /**
  * Messages live in a table shared between players, so ownership by `citizenid` is
@@ -64,7 +55,7 @@ const resolveOwnedAttachments = async (
 };
 
 app.registerEvent('get', async (source, cbId, data, citizenid) => {
-  const conversationId = requireConversationId(data);
+  const conversationId = conversationIdFrom(data);
   await requireParticipant(conversationId, citizenid);
 
   return await messageRepo.findByConversation(conversationId);
@@ -72,7 +63,7 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
 
 app.registerEvent('send', async (source, cbId, data, citizenid) => {
   // data: { conversation_id, message, attachments? }
-  const conversationId = requireConversationId(data);
+  const conversationId = conversationIdFrom(data);
   await requireParticipant(conversationId, citizenid);
 
   const message = typeof data?.message === 'string' ? data.message : '';

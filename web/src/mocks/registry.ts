@@ -163,7 +163,7 @@ export const mockRegistry: Record<string, MockHandler> = {
   },
   renameConversation: async (data: any) => {
     await delay(200);
-    const id = data?.conversation_id;
+    const id = data?.id ?? data?.conversation_id;
     const name = data?.name;
     const conv = mockConversations.find((c) => c.id === id);
     if (conv) {
@@ -174,7 +174,7 @@ export const mockRegistry: Record<string, MockHandler> = {
 
   // Account
   getCitizenId: () => 'my-id',
-  getPhoneNumber: () => '555-0199',
+  getPhoneNumber: () => '867-5309',
   getBankBalance: () => 12450,
   getTransactions: () => [
     { message: 'Store Purchase', amount: -45, time: Math.floor(Date.now() / 1000), title: 'Store' },

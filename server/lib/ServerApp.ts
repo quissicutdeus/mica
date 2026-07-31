@@ -1,5 +1,6 @@
 import { Repository } from './Repository';
 import { AuditLogger } from './AuditLogger';
+import { requirePositiveInt } from './payload';
 import { FrameworkBridge, FrameworkPlayer } from './FrameworkBridge';
 
 export interface ServerAppOptions {
@@ -63,11 +64,11 @@ export class ServerApp<T> {
   /** Pull a usable row id out of a payload, accepting `{ id }` or a bare id. */
   private requireId(data: any): number {
     const raw = data && typeof data === 'object' ? (data as Record<string, unknown>).id : data;
-    const id = Number(raw);
-    if (!Number.isInteger(id) || id <= 0) {
+    try {
+      return requirePositiveInt(raw, 'numeric id');
+    } catch {
       throw new Error(`A valid numeric id is required for this ${this.appName} operation.`);
     }
-    return id;
   }
 
   /**

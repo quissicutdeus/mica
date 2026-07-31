@@ -22,7 +22,7 @@ test.describe('Settings App E2E', () => {
     await expect(page.locator('h2', { hasText: 'About' })).toBeVisible();
     await expect(page.locator('text=Phone Number')).toBeVisible();
     await expect(page.locator('text=gPhone')).toBeVisible();
-    await expect(page.locator('text=555-0199')).toBeVisible();
+    await expect(page.locator('text=867-5309')).toBeVisible();
     await expect(page.locator('text=First Boot')).toBeVisible();
   });
 });

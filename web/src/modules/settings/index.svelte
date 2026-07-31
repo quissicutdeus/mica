@@ -41,7 +41,7 @@
   const { fetchNui } = useNuiBridge();
 
   // Call Simulation state
-  let callName = $state('John Doe');
+  let callName = $state('Ursula (Crazy Ex)');
   let callNumber = $state('555-0199');
 
   onMount(() => {

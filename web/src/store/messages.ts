@@ -238,7 +238,9 @@ function createMessagesStore() {
         convs.map((c) => (c.id === conversationId ? { ...c, name, targetName: name } : c))
       );
       try {
-        await fetchNui('renameConversation', { conversation_id: conversationId, name });
+        // `id`, not `conversation_id`: rename maps onto the generic CRUD update,
+        // which reads the row id from `id`.
+        await fetchNui('renameConversation', { id: conversationId, name });
       } catch (e) {
         console.error('Failed to rename conversation', e);
       }
