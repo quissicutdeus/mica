@@ -12,3 +12,4 @@ import './NoteController';
 import './PhotoController';
 import './ReportController';
 import './SchemaController';
+import './SeedController';
