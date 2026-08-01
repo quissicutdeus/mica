@@ -5,6 +5,7 @@ import { sendNuiMessage } from './lib/NuiUtils';
 import { PhoneState } from './lib/PhoneState';
 import { PhoneAnimationController } from './controllers/PhoneAnimationController';
 import { FreelookController } from './controllers/FreelookController';
+import { PhoneCameraController } from './controllers/PhoneCameraController';
 import { GAME_SCOPE_ACTIONS } from '@shared/keybinds';
 
 // Send system time to NUI
@@ -38,6 +39,7 @@ RegisterCommand(
       sendChargeToNui();
     } else {
       const ped = PlayerPedId();
+      PhoneCameraController.disable();
       PhoneAnimationController.removePhoneProp();
       PhoneAnimationController.stopAllPhoneAnimations(ped);
       FreelookController.resetFreelook();
@@ -86,6 +88,9 @@ RegisterNuiCallbackType('hideFrame');
 on('__cfx_nui:hideFrame', (_: any, cb: Function) => {
   PhoneState.setOpen(false);
   PhoneState.setTyping(false);
+  // Otherwise the scripted cam survives the phone closing and the player is stuck
+  // looking through it.
+  PhoneCameraController.disable();
 
   const ped = PlayerPedId();
   PhoneAnimationController.removePhoneProp();
@@ -100,7 +105,16 @@ on('__cfx_nui:hideFrame', (_: any, cb: Function) => {
 RegisterNuiCallbackType('onCameraApp');
 on('__cfx_nui:onCameraApp', async (data: { state: boolean }, cb: Function) => {
   const ped = PlayerPedId();
-  await PhoneAnimationController.setCameraApp(ped, Boolean(data?.state), PhoneState.isOpen());
+  const active = Boolean(data?.state);
+  await PhoneAnimationController.setCameraApp(ped, active, PhoneState.isOpen());
+
+  // After the animation, so the prop exists and the hand is in position before the cam
+  // attaches and hides it.
+  if (active && PhoneState.isOpen()) {
+    PhoneCameraController.enable();
+  } else {
+    PhoneCameraController.disable();
+  }
   cb({});
 });
 

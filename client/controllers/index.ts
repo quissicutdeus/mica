@@ -7,5 +7,6 @@ import './ContactController';
 import './FreelookController';
 import './MailController';
 import './PhoneAnimationController';
+import './PhoneCameraController';
 import './RelayController';
 import './ShellController';

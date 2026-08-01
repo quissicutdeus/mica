@@ -1,3 +1,5 @@
+import { PhoneCameraController } from './PhoneCameraController';
+
 const takePhoto = async (): Promise<string> => {
   return new Promise((resolve, reject) => {
     try {
@@ -28,17 +30,18 @@ on('__cfx_nui:takePhoto', async (_: any, cb: Function) => {
 });
 
 /**
- * Front/rear camera toggle — **not implemented in game**.
+ * Front/rear camera toggle.
  *
- * The web called this and nothing was registered, so the button silently did nothing
- * while the browser mock answered `true` and made it look fine in `pnpm dev`.
- *
- * A real selfie view is not a wiring fix: the in-game viewfinder is the world seen
- * through a transparent NUI, so "front camera" needs an actual `CreateCam` pointed at
- * the ped. Until that exists, answer honestly and let the UI hide the control rather
- * than offer one that does nothing.
+ * Backed by the scripted camera, which is what made this implementable: the toggle is
+ * the same cam re-attached with a different offset and spun 180 degrees.
  */
 RegisterNuiCallbackType('flipCamera');
-on('__cfx_nui:flipCamera', (_: any, cb: Function) => {
-  cb({ supported: false });
+on('__cfx_nui:flipCamera', (data: { isFrontCamera?: boolean }, cb: Function) => {
+  if (!PhoneCameraController.isActive()) {
+    cb({ supported: false });
+    return;
+  }
+
+  PhoneCameraController.setFrontFacing(Boolean(data?.isFrontCamera));
+  cb({ supported: true, isFrontCamera: PhoneCameraController.isFrontFacing() });
 });

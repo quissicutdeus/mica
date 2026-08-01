@@ -108,18 +108,21 @@ export const CLIENT_ONLY_ACTIONS: readonly string[] = [
   'setBatteryLevel',
   'takePhoto',
   // Proximity share, resolved client-side against nearby players.
-  'shareContact'
+  'shareContact',
+  // Front/rear toggle on the scripted camera.
+  'flipCamera'
 ] as const;
 
 /**
  * Actions `web/` may call that are deliberately unimplemented in game.
  *
  * An entry here is a promise that the **web** handles the missing capability visibly —
- * not a place to park a silent no-op. `flipCamera` qualifies because the camera module
- * asks the client whether it is supported and hides the control when it is not; a real
- * selfie view needs an in-game `CreateCam`, which does not exist yet.
+ * not a place to park a silent no-op. The test enforces that the callback still answers,
+ * because an absent one is the silent no-op this whole table exists to outlaw.
+ *
+ * Empty. `flipCamera` lived here until the scripted camera made it real.
  */
-export const UNIMPLEMENTED_ACTIONS: readonly string[] = ['flipCamera'] as const;
+export const UNIMPLEMENTED_ACTIONS: readonly string[] = [] as const;
 
 export const findRoute = (action: string): Route | undefined =>
   ROUTES.find((r) => r.action === action);

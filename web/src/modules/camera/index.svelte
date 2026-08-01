@@ -104,10 +104,10 @@
     clearTimeout(flyTimer);
   });
 
-  // The client answers `{ supported: false }` in game — a selfie view needs a real
-  // in-game camera that does not exist yet. Hide the control rather than offer one that
-  // does nothing; in a browser the mocked viewfinder can flip freely.
-  let canFlipCamera = $state(isBrowser());
+  // The client reports whether the scripted camera is up. It answers `supported: false`
+  // only if the app is somehow open without it, in which case hiding the control beats
+  // offering one that does nothing.
+  let canFlipCamera = $state(true);
 
   const toggleFlipCamera = async () => {
     const next = !isFrontCamera;

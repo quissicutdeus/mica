@@ -141,6 +141,11 @@ export class PhoneAnimationController {
     });
   }
 
+  /** The held prop, so the scripted camera can hide it while framing a shot. */
+  public static getPhoneProp(): number | null {
+    return PhoneAnimationController.phoneProp;
+  }
+
   public static removePhoneProp(): void {
     if (PhoneAnimationController.phoneProp) {
       DeleteObject(PhoneAnimationController.phoneProp);
