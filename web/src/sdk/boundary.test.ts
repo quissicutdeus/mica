@@ -95,7 +95,10 @@ describe('app module boundary', () => {
     ]) {
       expect(sdk, `@gphone/sdk is missing ${name}`).toHaveProperty(name);
     }
-  });
+    // Importing the barrel compiles every icon and component in the SDK — real work
+    // that grew past the 5s default as the surface grew, and timed out rather than
+    // failing on an assertion.
+  }, 30_000);
 
   it('does not export the shell itself', async () => {
     // An app rendering its own phone frame or toast host is a bug. Exporting these
@@ -114,5 +117,5 @@ describe('app module boundary', () => {
     ]) {
       expect(sdk, `@gphone/sdk should not expose ${shellOnly}`).not.toHaveProperty(shellOnly);
     }
-  });
+  }, 30_000);
 });
