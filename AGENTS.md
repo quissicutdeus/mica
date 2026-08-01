@@ -43,6 +43,25 @@ Run from the **repo root** unless noted.
 the targets run _different TypeScript versions_ (§3), so a web-only check proves nothing about
 `client/` or `server/`.
 
+### In-game commands
+
+All admin-gated by `AdminController.isAdmin` — the `gphone_admin_aces` convar, defaulting
+to `gphone.admin` and `command`. The server console (`source` 0) is trusted.
+
+| Command                                 | Does                                                         |
+| --------------------------------------- | ------------------------------------------------------------ |
+| `gphoneschema`                          | Prints what a migration would change, without changing it    |
+| `gphonecharge <id> <0-100>`             | Sets a player's battery level                                |
+| `gphoneseed`                            | Creates test characters, contacts and threads for the caller |
+| `gphoneseed text <firstname> <message>` | Has a seeded character text you — exercises inbound delivery |
+| `gphoneseed clear`                      | Removes everything `gphoneseed` created                      |
+
+`gphoneseed` exists because a fresh database has one character and nobody to text:
+`ConversationController.create` resolves a phone number to a `citizenid` and gives up when
+it cannot, and `gphone_messages_participants.citizenid` is a foreign key onto `players`. So
+the seeded counterparts are real `players` rows, marked by a license nothing else uses
+(`lib/seed.ts`) so `clear` can find exactly its own and nothing a person made.
+
 `pnpm test:unit` likewise fans out to **two separate Vitest projects**, and they are not
 interchangeable:
 
