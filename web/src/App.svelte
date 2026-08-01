@@ -7,6 +7,7 @@
   import { setSignal } from './store/signal';
   import { currentApp, openApp, goHome, closePhone } from './store/navigation';
   import { dispatchKey, isTypingTarget, registerHandler } from './store/keybinds';
+  import { lockDevTools } from './store/devtools';
   import { callStore } from './store/call';
   import { isPreviewingPhoto } from './store/camera';
   import PhoneFrame from './components/PhoneFrame.svelte';
@@ -30,6 +31,11 @@
       visible = data;
       if (!visible && isFreelook) {
         isFreelook = false;
+      }
+      // Developer Tools are earned per session, so closing the phone puts them back
+      // behind the ten taps.
+      if (!visible) {
+        lockDevTools();
       }
     } else if (action === 'setTime') {
       time.set(data);
