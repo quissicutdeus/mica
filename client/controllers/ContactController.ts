@@ -1,13 +1,6 @@
-import { ClientApp } from '../lib/ClientApp';
+// Contacts: only the part that is not a plain relay. The CRUD routes are declared in
+// `shared/routes.ts` and registered by RelayController.
 
-const app = new ClientApp('contacts');
-
-app.registerCallback('getContacts', 'gphone:server:contacts:get');
-app.registerCallback('createContact', 'gphone:server:contacts:create');
-app.registerCallback('updateContact', 'gphone:server:contacts:update');
-app.registerCallback('deleteContact', 'gphone:server:contacts:delete');
-
-// Register manual NUI callback for client-side logic
 RegisterNuiCallbackType('shareContact');
 on(
   '__cfx_nui:shareContact',

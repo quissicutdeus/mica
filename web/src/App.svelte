@@ -307,7 +307,6 @@
             avatar:
               'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=500&auto=format&fit=crop&q=80'
           };
-          fetchNui('receiveMessage', testMsg).catch(() => {});
           window.postMessage(
             {
               action: 'receiveMessage',
