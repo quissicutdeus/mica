@@ -101,6 +101,12 @@ export const closeAllApps = () => {
 
 export const closePhone = () => {
   fetchNui('hideFrame');
-  // Apps stay resident across an open/close cycle, the same as pocketing a phone.
-  goHome();
+  // Deliberately does *not* go home. Two reasons, both visible in game:
+  //
+  // Switching to home before the frame hides meant you watched the phone navigate away
+  // from whatever you were looking at on its way out.
+  //
+  // And a phone you put away and take out again should still be on the screen you left
+  // it on. Apps are already resident; going home threw away the one piece of state that
+  // made that observable.
 };

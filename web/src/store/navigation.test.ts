@@ -34,13 +34,16 @@ describe('navigation store', () => {
     expect(get(currentApp)).toEqual({ name: 'home', props: {} });
   });
 
-  it('closes phone and navigates home via closePhone', () => {
+  it('closes the phone without navigating anywhere', () => {
+    // Going home on the way out was visible in game: closing from a photo showed the
+    // home screen for a frame before the phone dropped. It also threw away where the
+    // player was, so re-opening always landed on home.
     const fetchNuiSpy = vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(async () => ({}));
     openApp('mail');
     closePhone();
 
     expect(fetchNuiSpy).toHaveBeenCalledWith('hideFrame');
-    expect(get(currentApp)).toEqual({ name: 'home', props: {} });
+    expect(get(currentApp).name).toBe('mail');
 
     fetchNuiSpy.mockRestore();
   });
@@ -64,6 +67,8 @@ describe('residency', () => {
     openApp('notes');
     closePhone();
     expect(names()).toEqual(['notes']);
+    // ...and still showing it, so the next open resumes rather than restarts.
+    expect(get(currentApp).name).toBe('notes');
     spy.mockRestore();
   });
 
