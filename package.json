@@ -6,7 +6,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "build": "pnpm clearbuild && pnpm typecheck && node scripts/generate-manifests.js && node build/build-bundle.js && pnpm build:web",
+    "build": "pnpm clearbuild && node scripts/generate-manifests.js && pnpm typecheck && node build/build-bundle.js && pnpm build:web",
     "build:web": "pnpm --filter web build",
     "clearbuild": "node scripts/clear-build.js",
     "generate:sql": "node scripts/generate-sql.js",
