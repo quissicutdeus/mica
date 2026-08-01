@@ -43,6 +43,80 @@
   let callName = $state('Ursula (Crazy Ex)');
   let callNumber = $state('555-0199');
 
+  /**
+   * Copy the player's number so it can be pasted into a message.
+   *
+   * `navigator.clipboard` needs a secure context. NUI is served over
+   * `https://cfx-nui-<resource>/` so it qualifies, but CEF can still refuse the
+   * permission — hence the execCommand fallback, which is deprecated on the open web
+   * and entirely reliable here.
+   */
+  const copyPhoneNumber = async () => {
+    const number = $myPhoneNumber;
+    let copied = false;
+
+    try {
+      await navigator.clipboard.writeText(number);
+      copied = true;
+    } catch {
+      try {
+        const scratch = document.createElement('textarea');
+        scratch.value = number;
+        // Keep it off-screen and unfocusable so the phone UI does not visibly shift.
+        scratch.setAttribute('readonly', '');
+        scratch.style.position = 'fixed';
+        scratch.style.opacity = '0';
+        scratch.style.pointerEvents = 'none';
+        document.body.appendChild(scratch);
+        scratch.select();
+        copied = document.execCommand('copy');
+        document.body.removeChild(scratch);
+      } catch {
+        copied = false;
+      }
+    }
+
+    toast.show(
+      copied
+        ? { type: 'success', message: `Copied ${number} to clipboard` }
+        : { type: 'error', message: 'Could not copy your number' }
+    );
+  };
+
+  /**
+   * Ten taps on the build row reveals Developer Tools, the way Android reveals its
+   * developer options. In a browser the panel is always available, so this only
+   * matters in game.
+   */
+  let devToolsTaps = $state(0);
+  let devToolsUnlocked = $state(false);
+  let tapResetTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const TAPS_TO_UNLOCK = 10;
+
+  const tapBuildRow = () => {
+    if (devToolsUnlocked) return;
+
+    devToolsTaps += 1;
+    clearTimeout(tapResetTimer);
+    // Taps must be consecutive; drifting off resets the count.
+    tapResetTimer = setTimeout(() => (devToolsTaps = 0), 2000);
+
+    const remaining = TAPS_TO_UNLOCK - devToolsTaps;
+
+    if (remaining <= 0) {
+      devToolsUnlocked = true;
+      devToolsTaps = 0;
+      clearTimeout(tapResetTimer);
+      toast.show({ type: 'success', message: 'Developer Tools unlocked' });
+    } else if (remaining <= 3) {
+      toast.show({ type: 'info', message: `${remaining} more to unlock Developer Tools` });
+    }
+  };
+
+  /** Browser always shows the panel; in game it has to be earned. */
+  const showDevTools = $derived(isBrowser() || devToolsUnlocked);
+
   onMount(() => {
     fetchPhoneNumber();
   });
@@ -157,10 +231,15 @@
     <div>
       <h2 class="mb-2 px-2 text-sm font-medium tracking-wider text-gray-400 uppercase">About</h2>
       <div class="divide-y divide-gray-700 overflow-hidden rounded-xl bg-gray-800 text-sm">
-        <div class="flex items-center justify-between p-4">
+        <button
+          type="button"
+          onclick={copyPhoneNumber}
+          class="flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors hover:bg-gray-700/40 active:bg-gray-700/60"
+          aria-label="Copy phone number to clipboard"
+        >
           <span class="font-medium text-gray-300">Phone Number</span>
           <span class="font-mono text-gray-200">{$myPhoneNumber}</span>
-        </div>
+        </button>
         <div class="flex items-center justify-between p-4">
           <span class="font-medium text-gray-300">First Boot</span>
           <span class="font-mono text-xs text-gray-300">{formatDate(getFirstBootTime())}</span>
@@ -170,16 +249,21 @@
           <span class="font-semibold text-white">gPhone</span>
         </div>
         <!-- OS Version carries the build info: `v1.0.0 (branch@commit)`. Was a separate
-             "Build / Commit" row saying almost the same thing. -->
-        <div class="flex items-center justify-between p-4">
+             "Build / Commit" row saying almost the same thing. Ten taps here reveal
+             Developer Tools in game. -->
+        <button
+          type="button"
+          onclick={tapBuildRow}
+          class="flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors hover:bg-gray-700/40 active:bg-gray-700/60"
+        >
           <span class="font-medium text-gray-300">OS Version</span>
           <span class="font-mono text-indigo-400">{MICA_BUILD_INFO}</span>
-        </div>
+        </button>
       </div>
     </div>
 
-    <!-- Developer Tools Section (Browser Dev & Testing) -->
-    {#if isBrowser()}
+    <!-- Developer Tools Section (browser always; in game after 10 taps on OS Version) -->
+    {#if showDevTools}
       <div>
         <h2
           class="mb-2 flex items-center justify-between px-2 text-sm font-medium tracking-wider text-emerald-400 uppercase"
@@ -188,7 +272,7 @@
           <span
             class="rounded border border-emerald-800 bg-emerald-950 px-1.5 py-0.5 font-mono text-[10px] text-emerald-300"
           >
-            Browser
+            {isBrowser() ? 'Browser' : 'Unlocked'}
           </span>
         </h2>
         <div class="space-y-4 overflow-hidden rounded-xl bg-gray-800 p-4 text-xs">
