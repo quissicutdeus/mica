@@ -1,22 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { debugData } from './utils/debug';
+  import { appRegistryStore } from './store/registry';
+  import { createNuiMessageRouter } from './shell/nuiMessages';
+  import { installDevHarness, seedBrowserPhone } from './shell/devHarness';
   import { isBrowser } from './utils/isBrowser';
-  import { time } from './store/time';
-  import { charge } from './store/charge';
-  import { setSignal } from './store/signal';
   import { currentApp, runningApps, openApp, goHome, closePhone } from './store/navigation';
   import { bindings, dispatchKey, isTypingTarget, registerHandler } from './store/keybinds';
   import { lockDevTools } from './store/devtools';
   import { callStore } from './store/call';
   import { isPreviewingPhoto } from './store/camera';
   import PhoneFrame from './components/PhoneFrame.svelte';
-  import { appRegistryStore } from './store/registry';
   import Home from './components/Home.svelte';
   import { fetchNui } from './utils/fetchNui';
-  import { mailStore } from './store/mail';
-  import { messagesStore } from './store/messages';
-  import { contacts } from './store/contacts';
   import { toast } from './store/toast';
   import { bootstrapStores } from './store/bootstrap';
   import ToastContainer from './components/ToastContainer.svelte';
@@ -24,149 +19,33 @@
 
   let visible = $state(isBrowser());
 
-  // Handle NUI messages
+  /**
+   * Everything that is not shell state is routed away.
+   *
+   * Only two cases stay: frame visibility, and the call status that owns the ring
+   * toast's id. Both act on state that lives in this component, so passing them out
+   * would be more coupling rather than less.
+   */
+  const routeNuiMessage = createNuiMessageRouter({
+    openFromNotification: (appName, props) => {
+      visible = true;
+      openApp(appName, props);
+    }
+  });
+
   const handleMessage = (event: MessageEvent) => {
-    const { action, data } = event.data;
+    const { action, data } = event.data ?? {};
+
     if (action === 'setVisible') {
       visible = data;
-      if (!visible && isFreelook) {
-        isFreelook = false;
-      }
+      if (!visible && isFreelook) isFreelook = false;
       // Developer Tools are earned per session, so closing the phone puts them back
       // behind the ten taps.
-      if (!visible) {
-        lockDevTools();
-      }
-    } else if (action === 'setTime') {
-      time.set(data);
-    } else if (action === 'setCharge') {
-      if (typeof data === 'number') {
-        charge.set(data);
-      }
-    } else if (action === 'notify') {
-      // Server-originated toast, relayed by the client's ShellController. Used by the
-      // ace-denial paths and the call failure cases.
-      if (typeof data?.message === 'string' && data.message) {
-        toast.show({
-          type: data.type ?? 'info',
-          title: data.title,
-          message: data.message
-        });
-      }
-    } else if (action === 'setSignal') {
-      if (typeof data === 'number') {
-        setSignal(data);
-      }
-    } else if (action === 'installApp') {
-      if (data?.url) {
-        appRegistryStore
-          .loadRemoteApp(data.url)
-          .then(({ manifest }) => {
-            toast.show({
-              type: 'success',
-              message: `App '${manifest.name}' installed successfully`
-            });
-          })
-          .catch((err) => {
-            toast.show({
-              type: 'error',
-              message: err.message || 'Failed to install remote app'
-            });
-          });
-      }
-    } else if (action === 'uninstallApp') {
-      if (data?.appId) {
-        try {
-          appRegistryStore.unregisterApp(data.appId);
-          toast.show({
-            type: 'info',
-            message: 'App uninstalled'
-          });
-        } catch (err: any) {
-          toast.show({
-            type: 'error',
-            message: err.message || 'Failed to uninstall app'
-          });
-        }
-      }
-    } else if (action === 'receiveMail') {
-      mailStore.addReceivedMail(data);
-      toast.showMail({
-        sender: data.sender || 'Mail',
-        subject: data.subject || 'New Message',
-        onClick: () => {
-          visible = true;
-          openApp('mail', { mailId: data.id });
-        }
-      });
-    } else if (action === 'receiveMessage') {
-      messagesStore.addReceivedMessage(data);
-      toast.showIncomingMessage({
-        sender: data.senderName || data.phone || 'Message',
-        message: data.message || '',
-        avatar: data.avatar,
-        onReply: async (replyText) => {
-          if (data.conversation_id) {
-            await messagesStore.sendMessage(data.conversation_id, replyText);
-          }
-        },
-        onClick: () => {
-          visible = true;
-          openApp('messages', {
-            conversationId: data.conversation_id,
-            phone: data.phone || data.senderPhone
-          });
-        }
-      });
-    } else if (action === 'receiveContactShare' || action === 'shareContact') {
-      const handleAcceptContact = async () => {
-        const firstname = typeof data.firstname === 'string' ? data.firstname.trim() : '';
-        const phone = typeof data.phone === 'string' ? data.phone.trim() : '';
+      if (!visible) lockDevTools();
+      return;
+    }
 
-        if (!firstname || !phone) {
-          toast.show({
-            type: 'error',
-            message: 'Cannot add contact: missing required name or phone number'
-          });
-          return;
-        }
-
-        const payload = {
-          firstname,
-          lastname: typeof data.lastname === 'string' ? data.lastname.trim() : '',
-          phone,
-          email: typeof data.email === 'string' ? data.email.trim() : undefined,
-          avatar: typeof data.avatar === 'string' ? data.avatar : undefined,
-          favorite: typeof data.favorite === 'boolean' ? data.favorite : false
-        };
-        try {
-          await contacts.add(payload);
-          toast.show({
-            type: 'success',
-            message: 'Contact added to address book'
-          });
-        } catch (e: any) {
-          toast.show({
-            type: 'error',
-            message: e.message || 'Failed to add contact'
-          });
-        }
-      };
-
-      toast.showContactShare({
-        name: `${data.firstname || ''} ${data.lastname || ''}`.trim() || data.phone || 'Contact',
-        phone: data.phone || '',
-        avatar: data.avatar,
-        onAccept: handleAcceptContact,
-        onDecline: () => {
-          toast.show({
-            type: 'info',
-            message: 'Contact share declined'
-          });
-        },
-        onClick: handleAcceptContact
-      });
-    } else if (action === 'callStatus') {
+    if (action === 'callStatus') {
       // { status: 'connected' | 'idle' | 'incoming', number: '...', name: '...' }
       if (data.status === 'incoming') {
         callStore.setIncoming(data.number, data.name);
@@ -191,7 +70,10 @@
         }
         callStore.setStatus(data.status);
       }
+      return;
     }
+
+    routeNuiMessage(event);
   };
 
   let isFreelook = false;
@@ -318,80 +200,8 @@
     window.addEventListener('focusin', handleFocusIn);
     window.addEventListener('focusout', handleFocusOut);
 
-    // Mock data for browser dev
-    const now = new Date();
-    debugData([
-      {
-        action: 'setVisible',
-        data: true
-      },
-      {
-        action: 'setTime',
-        data: {
-          hours: now.getHours(),
-          minutes: now.getMinutes()
-        }
-      }
-    ]);
-
-    if (import.meta.env.DEV) {
-      (window as any).triggerTestToast = (
-        type: 'message' | 'contact' | 'call' | 'email' = 'message'
-      ) => {
-        if (type === 'message') {
-          const testMsg = {
-            conversation_id: 1,
-            senderName: 'Ursula (Crazy Ex)',
-            message: '1... 🤬😡🗯️‼️',
-            phone: '555-0199',
-            avatar:
-              'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=500&auto=format&fit=crop&q=80'
-          };
-          window.postMessage(
-            {
-              action: 'receiveMessage',
-              data: testMsg
-            },
-            '*'
-          );
-        } else if (type === 'contact') {
-          window.postMessage(
-            {
-              action: 'shareContact',
-              data: {
-                firstname: 'Franklin',
-                lastname: 'Clinton',
-                phone: '555-0177'
-              }
-            },
-            '*'
-          );
-        } else if (type === 'call') {
-          window.postMessage(
-            {
-              action: 'callStatus',
-              data: {
-                status: 'incoming',
-                name: 'Lester Crest',
-                number: '555-0155'
-              }
-            },
-            '*'
-          );
-        } else if (type === 'email') {
-          window.postMessage(
-            {
-              action: 'receiveMail',
-              data: {
-                sender: 'Fleeca Bank',
-                subject: 'Your Monthly Account Statement is Ready'
-              }
-            },
-            '*'
-          );
-        }
-      };
-    }
+    seedBrowserPhone(new Date());
+    installDevHarness();
 
     return () => {
       window.removeEventListener('message', handleMessage);
