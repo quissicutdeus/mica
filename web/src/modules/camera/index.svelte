@@ -23,6 +23,75 @@
   let currentViewfinderImage = $derived(sampleAvatars[mockPhotoIndex % sampleAvatars.length]);
 
   let containerRef = $state<HTMLElement | null>(null);
+  let viewfinderRef = $state<HTMLElement | null>(null);
+  let thumbnailRef = $state<HTMLElement | null>(null);
+
+  /**
+   * The just-captured photo, animating from the viewfinder down into the gallery
+   * thumbnail. Null when nothing is in flight.
+   *
+   * `style` carries the transform that moves it; it is applied one frame after mount so
+   * the browser has an initial position to animate away from.
+   */
+  let flyingPhoto = $state<{ src: string; box: string; style: string } | null>(null);
+  let flyTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const FLY_MS = 480;
+
+  /**
+   * Send the captured frame to the thumbnail.
+   *
+   * Measured rather than hard-coded: the thumbnail sits in a flex row whose position
+   * depends on whether the flip control is showing, so a fixed offset would drift.
+   */
+  const flyToThumbnail = (src: string) => {
+    const container = containerRef?.getBoundingClientRect();
+    const from = viewfinderRef?.getBoundingClientRect();
+    const to = thumbnailRef?.getBoundingClientRect();
+    if (!container || !from || !to || from.width === 0) {
+      // No geometry to animate with (jsdom, or a hidden pane). Skip straight to the
+      // bounce rather than leaving a stuck overlay.
+      bounceThumbnail();
+      return;
+    }
+
+    // Positioned against the outer container rather than the viewfinder: the viewfinder
+    // is `overflow-hidden`, so a child animating down towards the controls would be
+    // clipped at its edge and never arrive.
+    const box =
+      `left: ${from.left - container.left}px; top: ${from.top - container.top}px; ` +
+      `width: ${from.width}px; height: ${from.height}px;`;
+
+    const scale = to.width / from.width;
+    const dx = to.left + to.width / 2 - (from.left + from.width / 2);
+    const dy = to.top + to.height / 2 - (from.top + from.height / 2);
+
+    flyingPhoto = { src, box, style: 'transform: none; opacity: 1;' };
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!flyingPhoto) return;
+        flyingPhoto = {
+          src,
+          box,
+          style: `transform: translate(${dx}px, ${dy}px) scale(${scale}); opacity: 0.85;`
+        };
+      });
+    });
+
+    clearTimeout(flyTimer);
+    flyTimer = setTimeout(() => {
+      flyingPhoto = null;
+      bounceThumbnail();
+    }, FLY_MS);
+  };
+
+  const bounceThumbnail = () => {
+    isThumbnailBouncing = true;
+    setTimeout(() => {
+      isThumbnailBouncing = false;
+    }, 600);
+  };
 
   const { onKeybind } = useKeybinds();
 
@@ -32,6 +101,7 @@
 
   onDestroy(() => {
     isPreviewingPhoto.set(false);
+    clearTimeout(flyTimer);
   });
 
   // The client answers `{ supported: false }` in game — a selfie view needs a real
@@ -61,11 +131,14 @@
     // Get the phone dimensions from the container before hiding it
     const rect = containerRef?.getBoundingClientRect();
 
-    // Trigger flash animation strictly inside picture viewfinder area on shutter click
+    // A brief pulse, not a white screen. This used to hold solid white for 180ms, which
+    // was tolerable over the old opaque black panel and is jarring now that the
+    // viewfinder shows the live world. The overlay stays mounted and fades, so the
+    // ramp down is visible instead of the element simply vanishing.
     isFlashing = true;
     setTimeout(() => {
       isFlashing = false;
-    }, 180);
+    }, 60);
 
     // The chrome fades out over `duration-75`, and the screenshot is a crop of this
     // exact region — so the capture has to wait for the fade to finish or the shutter
@@ -152,11 +225,8 @@
         await capturePhoto(capturedImage);
         await photosStore.load();
 
-        // Trigger gallery thumbnail bounce highlight
-        isThumbnailBouncing = true;
-        setTimeout(() => {
-          isThumbnailBouncing = false;
-        }, 600);
+        // Send the frame down into the thumbnail, then bounce it on arrival.
+        flyToThumbnail(capturedImage);
       } catch (err) {
         console.error('Failed to take photo', err);
       } finally {
@@ -184,6 +254,7 @@
 >
   <!-- Live Viewfinder / Camera View -->
   <div
+    bind:this={viewfinderRef}
     class="relative flex flex-1 flex-col justify-between overflow-hidden rounded-[3rem] p-4"
     class:bg-black={isBrowser()}
   >
@@ -196,12 +267,17 @@
       />
     {/if}
 
-    <!-- Viewfinder Picture Shutter Flash Overlay (Only over picture area, behind controls) -->
-    {#if isFlashing}
-      <div
-        class="pointer-events-none absolute inset-0 z-0 bg-white transition-opacity duration-150"
-      ></div>
-    {/if}
+    <!-- Shutter flash. Always mounted so the fade-out actually renders: toggling with
+         {#if} removed the element outright, which is why the old flash ended as an
+         abrupt cut rather than a pulse. Peaks below full white — over a live viewfinder
+         a solid #fff reads as a bug rather than a shutter. -->
+    <div
+      class="pointer-events-none absolute inset-0 z-20 bg-white transition-opacity ease-out"
+      class:opacity-0={!isFlashing}
+      class:opacity-80={isFlashing}
+      class:duration-75={isFlashing}
+      class:duration-300={!isFlashing}
+    ></div>
 
     <!-- Top Controls -->
     <div
@@ -261,6 +337,7 @@
         <!-- Left: Gallery Preview Thumbnail (Clicking opens directly to that photo in Photos app) -->
         <button
           type="button"
+          bind:this={thumbnailRef}
           onclick={() => {
             if ($photosStore.length > 0) {
               openApp('photos', {
@@ -316,4 +393,16 @@
       </div>
     </div>
   </div>
+
+  <!-- The captured frame travelling to the gallery thumbnail, matted in white so it
+       reads as a photo leaving the camera rather than the viewfinder sliding away.
+       A child of the outer container so it can cross into the controls strip. -->
+  {#if flyingPhoto}
+    <div
+      class="pointer-events-none absolute z-30 origin-center rounded-2xl bg-white p-1.5 shadow-2xl"
+      style="transition: transform {FLY_MS}ms cubic-bezier(0.4, 0, 0.2, 1), opacity {FLY_MS}ms ease-in; {flyingPhoto.box} {flyingPhoto.style}"
+    >
+      <img src={flyingPhoto.src} alt="" class="h-full w-full rounded-xl object-cover" />
+    </div>
+  {/if}
 </div>
