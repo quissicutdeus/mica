@@ -6,13 +6,13 @@
     useKeybinds,
     useNuiBridge,
     usePhoneNotification,
-    useSystemHardware,
     Screen,
     ChevronRightIcon,
     isBrowser,
     useDevTools
   } from '@gphone/sdk';
   import About from './panes/About.svelte';
+  import Display from './panes/Display.svelte';
   import DeveloperTools from './panes/DeveloperTools.svelte';
   import Shortcuts from './panes/Shortcuts.svelte';
   import Sound from './panes/Sound.svelte';
@@ -20,7 +20,6 @@
   let { onback } = $props<{ onback?: () => void }>();
 
   const { fetchPhoneNumber } = useAccount();
-  const { is24Hour } = useSystemHardware();
   const { toast } = usePhoneNotification();
   const { fetchNui } = useNuiBridge();
   const { onKeybind } = useKeybinds();
@@ -34,11 +33,12 @@
    * own screens, and because `App.svelte` re-keys on `currentApp.name` — routing through
    * the registry would destroy and rebuild the whole module on every drill-in.
    */
-  type Pane = 'root' | 'sound' | 'shortcuts' | 'devtools' | 'about';
+  type Pane = 'root' | 'display' | 'sound' | 'shortcuts' | 'devtools' | 'about';
   let pane = $state<Pane>('root');
 
   const PANE_TITLES: Record<Pane, string> = {
     root: 'Settings',
+    display: 'Display',
     sound: 'Sound',
     shortcuts: 'Shortcuts',
     devtools: 'Developer Tools',
@@ -118,10 +118,6 @@
     toast.show({ type: 'info', message: 'Developer Tools hidden — tap OS Version 10x to restore' });
   };
 
-  const toggleTimeFormat = () => {
-    is24Hour.update((v) => !v);
-  };
-
   onMount(() => {
     fetchPhoneNumber();
     void refreshAdmin();
@@ -135,45 +131,27 @@
     <Shortcuts />
   {:else if pane === 'devtools'}
     <DeveloperTools onhide={hideDevTools} />
+  {:else if pane === 'display'}
+    <Display />
   {:else if pane === 'about'}
     <About ontapbuild={tapBuildRow} />
   {:else}
     <div class="space-y-6 p-4">
-      <!-- General Section -->
-      <div>
-        <h2 class="mb-2 px-2 text-sm font-medium tracking-wider text-gray-400 uppercase">
-          General
-        </h2>
-        <div class="overflow-hidden rounded-xl bg-gray-800">
-          <button
-            type="button"
-            onclick={toggleTimeFormat}
-            class="flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors hover:bg-gray-700"
-            aria-label="Toggle 24-hour time"
-          >
-            <div class="flex flex-col">
-              <span class="font-medium">24-Hour Time</span>
-              <span class="text-sm text-gray-400">Use 24-hour format</span>
-            </div>
-            <div
-              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
-              class:bg-blue-600={$is24Hour}
-              class:bg-gray-600={!$is24Hour}
-            >
-              <span
-                class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
-                class:translate-x-6={$is24Hour}
-                class:translate-x-1={!$is24Hour}
-              ></span>
-            </div>
-          </button>
-        </div>
-      </div>
-
-      <!-- Sub-pages -->
+      <!-- Every setting lives in a group; the root is nothing but the way in. -->
       <div>
         <h2 class="mb-2 px-2 text-sm font-medium tracking-wider text-gray-400 uppercase">System</h2>
         <div class="divide-y divide-gray-700 overflow-hidden rounded-xl bg-gray-800 text-sm">
+          <button
+            type="button"
+            onclick={() => (pane = 'display')}
+            class="flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors hover:bg-gray-700/40 active:bg-gray-700/60"
+          >
+            <div class="flex flex-col">
+              <span class="font-medium text-gray-200">Display</span>
+              <span class="text-xs text-gray-400">Clock and time format</span>
+            </div>
+            <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+          </button>
           <button
             type="button"
             onclick={() => (pane = 'sound')}
@@ -214,7 +192,7 @@
               class="flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors hover:bg-gray-700/40 active:bg-gray-700/60"
             >
               <div class="flex flex-col">
-                <span class="font-medium text-emerald-400">Developer Tools</span>
+                <span class="font-medium text-gray-200">Developer Tools</span>
                 <span class="text-xs text-gray-400">Battery, signal, and event simulation</span>
               </div>
               <ChevronRightIcon class="h-4 w-4 text-gray-500" />

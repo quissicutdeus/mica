@@ -7,13 +7,21 @@ test.describe('Settings App E2E', () => {
     await expect(page.locator('h1', { hasText: 'Settings' })).toBeVisible();
   });
 
-  test('renders Settings interface and toggles 24-hour time format', async ({ page }) => {
+  test('the root is nothing but groups — 24-hour time lives under Display', async ({ page }) => {
+    // Nothing is settable from the root itself.
+    await expect(page.locator('button[aria-label="Toggle 24-hour time"]')).toHaveCount(0);
+
+    await page.locator('button', { hasText: 'Display' }).first().click();
+    await expect(page.locator('h1', { hasText: 'Display' })).toBeVisible();
+
     const toggleSwitch = page.locator('button[aria-label="Toggle 24-hour time"]');
     await expect(toggleSwitch).toBeVisible();
+    await toggleSwitch.click();
+    await toggleSwitch.click();
 
-    // Toggle switch on and off
-    await toggleSwitch.click();
-    await toggleSwitch.click();
+    // And Backspace steps back up to the hub rather than leaving Settings.
+    await page.keyboard.press('Backspace');
+    await expect(page.locator('h1', { hasText: 'Settings' })).toBeVisible();
   });
 
   test('displays About sub-page with phone number, OS name, first boot date, and smart versioning info', async ({
