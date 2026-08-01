@@ -45,7 +45,10 @@
       ></div>
     </div>
 
-    <span class="min-w-[28px] text-xs font-semibold tracking-wider text-white/90">
+    <span
+      data-testid="volume-hud-percent"
+      class="min-w-[28px] text-xs font-semibold tracking-wider text-white/90"
+    >
       {$soundVolumePercent}%
     </span>
   </div>

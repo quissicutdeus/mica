@@ -5,7 +5,7 @@
   import { goHome } from '../store/navigation';
   import { displayCharge, isDead } from '../store/charge';
   import { clampedSignalLevel } from '../store/signal';
-  import { adjustVolume } from '../store/sound';
+  import { stepVolume } from '../store/sound';
   import { enableDragScroll } from '../utils/dragScroll';
   import LightningWarningIcon from './icons/LightningWarningIcon.svelte';
   import SignalIcon from './icons/SignalIcon.svelte';
@@ -39,13 +39,13 @@
   <div class="absolute top-[250px] -right-[13px] flex flex-col gap-2">
     <button
       class="h-10 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600"
-      onclick={() => adjustVolume(0.1)}
+      onclick={() => stepVolume(1)}
       title="Volume Up"
       aria-label="Volume Up"
     ></button>
     <button
       class="h-10 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600"
-      onclick={() => adjustVolume(-0.1)}
+      onclick={() => stepVolume(-1)}
       title="Volume Down"
       aria-label="Volume Down"
     ></button>

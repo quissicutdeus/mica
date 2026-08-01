@@ -14,6 +14,7 @@
   import About from './panes/About.svelte';
   import DeveloperTools from './panes/DeveloperTools.svelte';
   import Shortcuts from './panes/Shortcuts.svelte';
+  import Sound from './panes/Sound.svelte';
 
   let { onback } = $props<{ onback?: () => void }>();
 
@@ -30,11 +31,12 @@
    * own screens, and because `App.svelte` re-keys on `currentApp.name` — routing through
    * the registry would destroy and rebuild the whole module on every drill-in.
    */
-  type Pane = 'root' | 'shortcuts' | 'devtools' | 'about';
+  type Pane = 'root' | 'sound' | 'shortcuts' | 'devtools' | 'about';
   let pane = $state<Pane>('root');
 
   const PANE_TITLES: Record<Pane, string> = {
     root: 'Settings',
+    sound: 'Sound',
     shortcuts: 'Shortcuts',
     devtools: 'Developer Tools',
     about: 'About'
@@ -132,7 +134,9 @@
 </script>
 
 <Screen title={PANE_TITLES[pane]} onback={goBack}>
-  {#if pane === 'shortcuts'}
+  {#if pane === 'sound'}
+    <Sound />
+  {:else if pane === 'shortcuts'}
     <Shortcuts />
   {:else if pane === 'devtools'}
     <DeveloperTools onhide={hideDevTools} />
@@ -175,6 +179,17 @@
       <div>
         <h2 class="mb-2 px-2 text-sm font-medium tracking-wider text-gray-400 uppercase">System</h2>
         <div class="divide-y divide-gray-700 overflow-hidden rounded-xl bg-gray-800 text-sm">
+          <button
+            type="button"
+            onclick={() => (pane = 'sound')}
+            class="flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors hover:bg-gray-700/40 active:bg-gray-700/60"
+          >
+            <div class="flex flex-col">
+              <span class="font-medium text-gray-200">Sound</span>
+              <span class="text-xs text-gray-400">Volume, mute, and button step size</span>
+            </div>
+            <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+          </button>
           <button
             type="button"
             onclick={() => (pane = 'shortcuts')}

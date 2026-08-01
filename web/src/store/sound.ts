@@ -1,10 +1,40 @@
 import { writable, derived, get } from 'svelte/store';
+import { useStorage } from '../sdk/hooks/useStorage';
 
 export type SoundEffect = 'click' | 'pop' | 'camera' | 'notification' | 'ringtone';
 
 export const soundVolume = writable<number>(0.5);
 export const soundMuted = writable<boolean>(false);
 export const volumeHudVisible = writable<boolean>(false);
+
+/**
+ * How far one press of a physical volume button moves the volume, in whole percent.
+ *
+ * Configurable from Settings > Sound. Stored in percent rather than the store's 0–1
+ * scale because that is the unit the setting is expressed in, and round-tripping
+ * 5 → 0.05 → 5 through a float is a needless source of 4.999999.
+ */
+const storage = useStorage('settings');
+const VOLUME_STEP_KEY = 'volumeStep';
+
+export const VOLUME_STEP_DEFAULT = 5;
+export const VOLUME_STEP_CHOICES = [1, 2, 5, 10, 20] as const;
+
+/** Reject a stored value that is not one of the offered steps. */
+const sanitizeStep = (value: unknown): number =>
+  (VOLUME_STEP_CHOICES as readonly number[]).includes(Number(value))
+    ? Number(value)
+    : VOLUME_STEP_DEFAULT;
+
+export const volumeStep = writable<number>(
+  sanitizeStep(storage.getItem<number>(VOLUME_STEP_KEY, VOLUME_STEP_DEFAULT))
+);
+
+export const setVolumeStep = (percent: number) => {
+  const next = sanitizeStep(percent);
+  volumeStep.set(next);
+  storage.setItem(VOLUME_STEP_KEY, next);
+};
 
 let hudTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -28,6 +58,20 @@ export const adjustVolume = (delta: number) => {
   const current = get(soundVolume);
   const next = Math.max(0, Math.min(1, current + delta));
   setVolume(next);
+  soundService.play('click');
+};
+
+/**
+ * One press of a physical volume button.
+ *
+ * Rounded to whole percent so a run of presses lands on 5, 10, 15 rather than drifting
+ * off a float — the HUD shows whole percent, and 4.999999% renders as 5% while
+ * behaving like 4.
+ */
+export const stepVolume = (direction: 1 | -1) => {
+  const currentPercent = Math.round(get(soundVolume) * 100);
+  const nextPercent = Math.max(0, Math.min(100, currentPercent + direction * get(volumeStep)));
+  setVolume(nextPercent / 100);
   soundService.play('click');
 };
 
