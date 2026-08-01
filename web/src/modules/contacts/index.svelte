@@ -27,7 +27,8 @@
     StarIcon,
     TrashIcon,
     formatRelativeTime,
-    useScrollDetect
+    useScrollDetect,
+    useKeybinds
   } from '@gphone/sdk';
 
   const { openApp } = useNavigation();
@@ -40,6 +41,7 @@
   const { photosStore: photos } = useCamera();
   const { sendNotification, toast } = usePhoneNotification();
   const { fetchNui } = useNuiBridge();
+  const { onKeybind } = useKeybinds();
 
   const contacts = contactsStore;
 
@@ -120,6 +122,10 @@
     showPhotoPicker = false;
   };
 
+  /**
+   * Backspace steps up one level before it will leave the app. The shell owns the key,
+   * so wiring `goBack` only to `<Screen onback>` let it jump straight home.
+   */
   const goBack = () => {
     if (selectedContact) {
       selectedContact = null;
@@ -133,6 +139,8 @@
       onback?.();
     }
   };
+
+  onKeybind('back', goBack);
 
   const handleMessage = async () => {
     if (!selectedContact) return;

@@ -14,13 +14,16 @@
     DocumentIcon,
     EditIcon,
     ListBulletIcon,
-    renderMarkdown
+    renderMarkdown,
+    useKeybinds
   } from '@gphone/sdk';
 
   const { notesStore: notes } = useNotes();
   import { fade } from 'svelte/transition';
 
   let { onback } = $props();
+
+  const { onKeybind } = useKeybinds();
 
   let selectedNote: Note | null = $state(null);
   let draftNote: Note | null = $state(null); // Draft state for editing
@@ -38,6 +41,12 @@
     content: ''
   });
 
+  /**
+   * Backspace closes the open note before it will leave the app.
+   *
+   * The shell owns Backspace, so a `goBack` that is only wired to `<Screen onback>` gets
+   * pre-empted and the key jumps straight home — which is what happened here.
+   */
   const goBack = () => {
     if (selectedNote) {
       selectedNote = null;
@@ -48,6 +57,8 @@
       onback?.();
     }
   };
+
+  onKeybind('back', goBack);
 
   const addNote = async () => {
     if (!newNote.title.trim() && !newNote.content.trim()) return;
