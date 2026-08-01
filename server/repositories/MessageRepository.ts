@@ -1,4 +1,4 @@
-import { SchemaRepository } from '../lib/defineServerApp';
+import { SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { Message } from '@shared/types';
 

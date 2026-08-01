@@ -1,4 +1,4 @@
-import { defineServerApp, SchemaRepository } from '../lib/defineServerApp';
+import { defineService, SchemaRepository } from '../lib/defineService';
 import { Mail } from '@shared/types';
 import { AuditLogger } from '../lib/AuditLogger';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
@@ -45,7 +45,7 @@ class MailRepository extends SchemaRepository<Mail> {
 
 let mailRepo!: MailRepository;
 
-export const mail = defineServerApp<Mail>({
+export const mail = defineService<Mail>({
   id: 'mail',
   scope: 'owner',
   serverAuthored: true,

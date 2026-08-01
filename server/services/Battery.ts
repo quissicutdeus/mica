@@ -1,8 +1,9 @@
 // Server Battery Controller
 import { FrameworkBridge } from '../lib/FrameworkBridge';
-import { defineServerApp } from '../lib/defineServerApp';
+import { defineService } from '../lib/defineService';
 import { PhoneBattery } from '@shared/types';
-import { isAdmin } from './AdminController';
+import { isAdmin } from './Admin';
+import { notifyPlayer } from '../lib/shell';
 
 /**
  * gPhone owns the saved charge, in its own table.
@@ -18,7 +19,7 @@ import { isAdmin } from './AdminController';
  * through the named events below. `serverAuthored` keeps the columns non-client-writable
  * on top of that.
  */
-export const batteryApp = defineServerApp<PhoneBattery>({
+export const batteryApp = defineService<PhoneBattery>({
   id: 'battery',
   scope: 'owner',
   serverAuthored: true,
@@ -113,7 +114,7 @@ onNet('gphone:server:battery:save', (chargeAmount: number) => {
 onNet('gphone:server:admin:setBattery', (chargeAmount: number) => {
   const src = source;
   if (!isAdmin(src)) {
-    emitNet('gphone:client:shell:notify', src, {
+    notifyPlayer(src, {
       type: 'error',
       message: 'You do not have permission to do that.'
     });
@@ -204,7 +205,7 @@ const respond = (source: number, message: string, isError = false) => {
     console.log(`[gphone] ${message}`);
     return;
   }
-  emitNet('gphone:client:shell:notify', source, {
+  notifyPlayer(source, {
     type: isError ? 'error' : 'success',
     message
   });

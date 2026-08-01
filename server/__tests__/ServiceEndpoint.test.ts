@@ -17,7 +17,7 @@ vi.mock('../lib/FrameworkBridge', () => bridgeMock);
 vi.mock('../lib/AuditLogger', () => auditMock);
 
 import { Repository } from '../lib/Repository';
-import { ServerApp, ServerAppOptions } from '../lib/ServerApp';
+import { ServiceEndpoint, ServiceOptions } from '../lib/ServiceEndpoint';
 
 interface TestRow {
   id: number;
@@ -43,8 +43,8 @@ type Handler = (cbId: string, data: unknown) => Promise<void>;
 let handlers: Map<string, Handler>;
 let emitted: unknown[][];
 
-/** Build a ServerApp with `onNet` / `emitNet` captured so handlers can be driven. */
-const mount = (options: ServerAppOptions = {}) => {
+/** Build a ServiceEndpoint with `onNet` / `emitNet` captured so handlers can be driven. */
+const mount = (options: ServiceOptions = {}) => {
   handlers = new Map();
   emitted = [];
 
@@ -57,7 +57,7 @@ const mount = (options: ServerAppOptions = {}) => {
   (globalThis as Record<string, unknown>).source = 5;
 
   const repo = new TestRepo();
-  const app = new ServerApp<TestRow>('test', repo, options);
+  const app = new ServiceEndpoint<TestRow>('test', repo, options);
   return { app, repo };
 };
 
@@ -79,7 +79,7 @@ beforeEach(() => {
   dbMock.query.mockResolvedValue([]);
 });
 
-describe('ServerApp — payload cannot choose its own owner', () => {
+describe('ServiceEndpoint — payload cannot choose its own owner', () => {
   it('ignores a citizenid supplied by the client on update', async () => {
     mount();
 
@@ -110,7 +110,7 @@ describe('ServerApp — payload cannot choose its own owner', () => {
   });
 });
 
-describe('ServerApp — payload field allowlist', () => {
+describe('ServiceEndpoint — payload field allowlist', () => {
   it('drops unknown keys and status instead of forwarding them to SQL', async () => {
     mount();
 
@@ -183,7 +183,7 @@ describe('ServerApp — payload field allowlist', () => {
   });
 });
 
-describe('ServerApp — row id validation', () => {
+describe('ServiceEndpoint — row id validation', () => {
   it.each([
     ['a missing id', {}],
     ['a non-numeric id', { id: 'abc' }],
@@ -215,7 +215,7 @@ describe('ServerApp — row id validation', () => {
   });
 });
 
-describe('ServerApp — responses and side effects', () => {
+describe('ServiceEndpoint — responses and side effects', () => {
   it('stamps the fields MySQL owns so the client gets a well-formed row back', async () => {
     mount();
 
@@ -274,7 +274,7 @@ describe('ServerApp — responses and side effects', () => {
   });
 });
 
-describe('ServerApp — authentication and registration', () => {
+describe('ServiceEndpoint — authentication and registration', () => {
   it('rejects an unauthenticated caller before running any handler logic', async () => {
     mount();
     bridgeMock.FrameworkBridge.getPlayer.mockReturnValue(null);

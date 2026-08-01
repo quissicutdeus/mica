@@ -3,7 +3,7 @@ import { requestEventFor } from './rpc';
 /**
  * Every NUI action that forwards to the server, declared once.
  *
- * Replaces seven near-identical `client/controllers/*Controller.ts` files whose entire
+ * Replaces seven near-identical `client/systems/*.ts` files whose entire
  * content was `app.registerCallback(nuiAction, serverEvent)` repeated. Those files were
  * data pretending to be code, and being spread across seven files is what let routes go
  * missing without anyone noticing.
@@ -19,15 +19,15 @@ import { requestEventFor } from './rpc';
 export interface Route {
   /** The name `fetchNui` is called with from `web/`. */
   action: string;
-  /** The owning app; the second segment of the server event. */
-  app: string;
+  /** The owning service; the second segment of the server event. */
+  service: string;
   /** The action segment of the server event. Often differs from the NUI name. */
   serverAction: string;
 }
 
-const route = (action: string, app: string, serverAction: string): Route => ({
+const route = (action: string, service: string, serverAction: string): Route => ({
   action,
-  app,
+  service,
   serverAction
 });
 
@@ -89,7 +89,7 @@ export const ROUTES: readonly Route[] = [
 ] as const;
 
 /** The `gphone:server:<app>:<action>` event a route forwards to. */
-export const serverEventFor = (r: Route): string => requestEventFor(r.app, r.serverAction);
+export const serverEventFor = (r: Route): string => requestEventFor(r.service, r.serverAction);
 
 /**
  * NUI actions handled entirely on the client, with no server round trip.

@@ -29,7 +29,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
   }
 }));
 
-vi.mock('../controllers/ConversationController', () => ({
+vi.mock('../services/Conversations', () => ({
   conversations: { repo: { findParticipants: async () => participants.rows } }
 }));
 
@@ -45,7 +45,7 @@ beforeEach(async () => {
   emitted.length = 0;
   sources.clear();
   participants.rows = [];
-  ({ deliverToParticipants } = await import('../controllers/MessageController'));
+  ({ deliverToParticipants } = await import('../services/Messages'));
 });
 
 describe('deliverToParticipants', () => {

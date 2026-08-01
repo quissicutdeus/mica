@@ -1,5 +1,5 @@
 import { Repository } from './Repository';
-import { ServerApp, ServerAppOptions } from './ServerApp';
+import { ServiceEndpoint, ServiceOptions } from './ServiceEndpoint';
 
 /**
  * One declaration per app, replacing the hand-written repository + controller pair.
@@ -9,7 +9,7 @@ import { ServerApp, ServerAppOptions } from './ServerApp';
  *
  *   1. the table's DDL (see `toCreateTableSql`)
  *   2. the `columns` allowlist that guards SQL identifier interpolation (§2.9)
- *   3. the `clientWritable` set that `ServerApp` reduces payloads to
+ *   3. the `clientWritable` set that `ServiceEndpoint` reduces payloads to
  *
  * (2) is only *safe* if it matches the real table, so deriving both from one
  * schema removes a class of bug rather than just saving keystrokes.
@@ -122,7 +122,7 @@ export const normalizeIndex = (index: IndexDefinition): ResolvedIndex =>
       };
 
 /** `{ title: 'string' }` is shorthand for `{ title: { type: 'string' } }`. */
-export type AppSchema = Record<string, ColumnType | ColumnDef>;
+export type ServiceSchema = Record<string, ColumnType | ColumnDef>;
 
 /**
  * `owner` — rows belong to one citizenid; the generic CRUD path is safe as-is.
@@ -130,15 +130,15 @@ export type AppSchema = Record<string, ColumnType | ColumnDef>;
  *   ownership is the wrong authorization question and the generic mutation path
  *   is disabled. A shared app must supply custom actions that check membership.
  */
-export type AppScope = 'owner' | 'shared';
+export type ServiceScope = 'owner' | 'shared';
 
-export interface ServerAppDefinition {
+export interface ServiceDefinition {
   /** Matches the web module's manifest id. */
   id: string;
   /** Defaults to `gphone_<id>`. */
   table?: string;
   /** Defaults to 'owner'. */
-  scope?: AppScope;
+  scope?: ServiceScope;
   /**
    * Rows are written by the server, never by the phone's owner — mail arriving from
    * a job, a bank alert, a dispatch. Nothing becomes client-writable and the generic
@@ -149,7 +149,7 @@ export interface ServerAppDefinition {
    * one citizenid, so ownership scoping on reads and deletes is still correct.
    */
   serverAuthored?: boolean;
-  schema: AppSchema;
+  schema: ServiceSchema;
   /** Values the `status` column accepts. Defaults to active/deleted. */
   statuses?: readonly string[];
   /**
@@ -165,15 +165,15 @@ export interface ServerAppDefinition {
    * resolve.
    */
   childTables?: readonly ChildTableDefinition[];
-  /** Passed through to ServerApp — e.g. `{ disableUpdate: true }`. */
-  options?: ServerAppOptions;
+  /** Passed through to ServiceEndpoint — e.g. `{ disableUpdate: true }`. */
+  options?: ServiceOptions;
   /**
    * Escape hatch for apps that need custom read shaping — e.g. coercing a blob
    * column to a string before it crosses NUI. Subclass `SchemaRepository` so the
    * result still inherits the `columns` allowlist and the ownership scoping;
    * overriding a method is additive, not a way around §2.9.
    */
-  repositoryFactory?: (resolved: ResolvedAppSchema) => Repository<any>;
+  repositoryFactory?: (resolved: ResolvedService) => Repository<any>;
 }
 
 /** Columns every gPhone table carries. Declared by the framework, not by an app. */
@@ -188,13 +188,13 @@ const normalizeColumn = (spec: ColumnType | ColumnDef): ColumnDef =>
  * A field is client-writable unless it opts out. Shared-scope and server-authored
  * apps opt every field out wholesale.
  */
-const isClientWritable = (def: ColumnDef, scope: AppScope, serverAuthored: boolean): boolean =>
+const isClientWritable = (def: ColumnDef, scope: ServiceScope, serverAuthored: boolean): boolean =>
   scope === 'owner' && !serverAuthored && def.clientWritable !== false;
 
-export interface ResolvedAppSchema {
+export interface ResolvedService {
   id: string;
   table: string;
-  scope: AppScope;
+  scope: ServiceScope;
   serverAuthored: boolean;
   statuses: readonly string[];
   /** Declared fields only, in declaration order — implicit columns excluded. */
@@ -210,14 +210,14 @@ export interface ResolvedAppSchema {
  * Expand a declaration into the concrete lists the runtime needs. Pure — no
  * database, no event registration — so it is cheap to test and to feed to codegen.
  */
-export function resolveAppSchema(definition: ServerAppDefinition): ResolvedAppSchema {
+export function resolveAppSchema(definition: ServiceDefinition): ResolvedService {
   const { id, schema } = definition;
 
   if (!id || typeof id !== 'string') {
-    throw new Error("defineServerApp: 'id' is required and must be a string.");
+    throw new Error("defineService: 'id' is required and must be a string.");
   }
   if (!schema || typeof schema !== 'object' || Object.keys(schema).length === 0) {
-    throw new Error(`defineServerApp('${id}'): 'schema' must declare at least one field.`);
+    throw new Error(`defineService('${id}'): 'schema' must declare at least one field.`);
   }
 
   const scope = definition.scope ?? 'owner';
@@ -227,7 +227,7 @@ export function resolveAppSchema(definition: ServerAppDefinition): ResolvedAppSc
 
   if (!statuses.includes('active') || !statuses.includes('deleted')) {
     throw new Error(
-      `defineServerApp('${id}'): 'statuses' must include both 'active' and 'deleted' — ` +
+      `defineService('${id}'): 'statuses' must include both 'active' and 'deleted' — ` +
         'the generic get filters on active and delete is a soft delete.'
     );
   }
@@ -236,13 +236,13 @@ export function resolveAppSchema(definition: ServerAppDefinition): ResolvedAppSc
   for (const [name, spec] of Object.entries(schema)) {
     if ((IMPLICIT_COLUMNS as readonly string[]).includes(name)) {
       throw new Error(
-        `defineServerApp('${id}'): '${name}' is supplied by the framework and must not be ` +
+        `defineService('${id}'): '${name}' is supplied by the framework and must not be ` +
           'declared in the schema.'
       );
     }
     if (!/^[a-z][a-z0-9_]*$/.test(name)) {
       throw new Error(
-        `defineServerApp('${id}'): field '${name}' must be lower_snake_case — it becomes a ` +
+        `defineService('${id}'): field '${name}' must be lower_snake_case — it becomes a ` +
           'SQL identifier.'
       );
     }
@@ -254,17 +254,17 @@ export function resolveAppSchema(definition: ServerAppDefinition): ResolvedAppSc
   const indexes = (definition.indexes ?? []).map(normalizeIndex);
   for (const index of indexes) {
     if (index.columns.length === 0) {
-      throw new Error(`defineServerApp('${id}'): an index must name at least one column.`);
+      throw new Error(`defineService('${id}'): an index must name at least one column.`);
     }
     if (!/^[a-z][a-z0-9_]*$/.test(index.name)) {
       throw new Error(
-        `defineServerApp('${id}'): index name '${index.name}' must be lower_snake_case.`
+        `defineService('${id}'): index name '${index.name}' must be lower_snake_case.`
       );
     }
     for (const column of index.columns) {
       if (!columns.includes(column)) {
         throw new Error(
-          `defineServerApp('${id}'): index references '${column}', which is not a column.`
+          `defineService('${id}'): index references '${column}', which is not a column.`
         );
       }
     }
@@ -282,7 +282,7 @@ export function resolveAppSchema(definition: ServerAppDefinition): ResolvedAppSc
   const duplicateIndex = emittedIndexNames.find((name, i) => emittedIndexNames.indexOf(name) !== i);
   if (duplicateIndex) {
     throw new Error(
-      `defineServerApp('${id}'): index name '${duplicateIndex}' is emitted twice on ` +
+      `defineService('${id}'): index name '${duplicateIndex}' is emitted twice on ` +
         `'${table}'. The primary table always carries \`status\` and \`citizenid_status\`; ` +
         'do not redeclare them.'
     );
@@ -292,18 +292,18 @@ export function resolveAppSchema(definition: ServerAppDefinition): ResolvedAppSc
   for (const child of childTables) {
     if (!child.name || !/^[a-z][a-z0-9_]*$/.test(child.name)) {
       throw new Error(
-        `defineServerApp('${id}'): child table name '${child.name}' must be lower_snake_case.`
+        `defineService('${id}'): child table name '${child.name}' must be lower_snake_case.`
       );
     }
     if (!child.columns || Object.keys(child.columns).length === 0) {
       throw new Error(
-        `defineServerApp('${id}'): child table '${child.name}' must declare at least one column.`
+        `defineService('${id}'): child table '${child.name}' must declare at least one column.`
       );
     }
     for (const column of Object.keys(child.columns)) {
       if (!/^[a-z][a-z0-9_]*$/.test(column)) {
         throw new Error(
-          `defineServerApp('${id}'): child table '${child.name}' column '${column}' must be ` +
+          `defineService('${id}'): child table '${child.name}' column '${column}' must be ` +
             'lower_snake_case — it becomes a SQL identifier.'
         );
       }
@@ -314,13 +314,13 @@ export function resolveAppSchema(definition: ServerAppDefinition): ResolvedAppSc
     );
     if (duplicateChildIndex) {
       throw new Error(
-        `defineServerApp('${id}'): child table '${child.name}' emits index name ` +
+        `defineService('${id}'): child table '${child.name}' emits index name ` +
           `'${duplicateChildIndex}' twice.`
       );
     }
     if (child.name === table) {
       throw new Error(
-        `defineServerApp('${id}'): child table '${child.name}' collides with the primary table.`
+        `defineService('${id}'): child table '${child.name}' collides with the primary table.`
       );
     }
   }
@@ -359,7 +359,7 @@ export class SchemaRepository<T> extends Repository<T> {
   protected clientWritable: readonly string[];
   protected clientFilterable: readonly string[];
 
-  constructor(resolved: ResolvedAppSchema) {
+  constructor(resolved: ResolvedService) {
     super();
     this.tableName = resolved.table;
     this.columns = resolved.columns;
@@ -369,22 +369,22 @@ export class SchemaRepository<T> extends Repository<T> {
 }
 
 /** Build a Repository bound to a resolved schema. */
-export function buildRepository<T>(resolved: ResolvedAppSchema): Repository<T> {
+export function buildRepository<T>(resolved: ResolvedService): Repository<T> {
   return new SchemaRepository<T>(resolved);
 }
 
 export interface ServerAppHandle<T> {
-  resolved: ResolvedAppSchema;
+  resolved: ResolvedService;
   repo: Repository<T>;
-  app: ServerApp<T>;
+  app: ServiceEndpoint<T>;
 }
 
 /**
  * Every schema declared this process. `scripts/generate-sql.js` imports the
- * controllers and reads this to emit DDL, which is why declaring an app is enough
+ * services and reads this to emit DDL, which is why declaring a service is enough
  * to get its table file — no separate registration step to forget.
  */
-export const declaredApps: ResolvedAppSchema[] = [];
+export const declaredServices: ResolvedService[] = [];
 
 /**
  * Declare an app's server half: derives the repository, registers the generic CRUD
@@ -393,30 +393,30 @@ export const declaredApps: ResolvedAppSchema[] = [];
  * A `shared`-scope app gets no generic mutation events — ownership by citizenid is
  * not a valid authorization check for rows several players can see.
  */
-export function defineServerApp<T>(definition: ServerAppDefinition): ServerAppHandle<T> {
+export function defineService<T>(definition: ServiceDefinition): ServerAppHandle<T> {
   const resolved = resolveAppSchema(definition);
   const repo = definition.repositoryFactory
     ? (definition.repositoryFactory(resolved) as Repository<T>)
     : buildRepository<T>(resolved);
 
-  if (declaredApps.some((existing) => existing.table === resolved.table)) {
+  if (declaredServices.some((existing) => existing.table === resolved.table)) {
     throw new Error(
-      `defineServerApp('${resolved.id}'): table '${resolved.table}' is already declared by ` +
+      `defineService('${resolved.id}'): table '${resolved.table}' is already declared by ` +
         'another app. Two apps sharing a table would each believe they own its schema.'
     );
   }
-  declaredApps.push(resolved);
+  declaredServices.push(resolved);
 
   // Shared scope cannot authorize any mutation by ownership. Server-authored tables
   // still own their rows, so delete stays available — only authoring is closed.
-  const scopeLockdown: ServerAppOptions =
+  const scopeLockdown: ServiceOptions =
     resolved.scope === 'shared'
       ? { disableCreate: true, disableUpdate: true, disableDelete: true }
       : resolved.serverAuthored
         ? { disableCreate: true, disableUpdate: true }
         : {};
 
-  const app = new ServerApp<T>(resolved.id, repo, {
+  const app = new ServiceEndpoint<T>(resolved.id, repo, {
     tableName: resolved.table,
     ...scopeLockdown,
     ...definition.options

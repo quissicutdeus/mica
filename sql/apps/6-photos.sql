@@ -1,4 +1,4 @@
--- Generated from the 'photos' defineServerApp declaration.
+-- Generated from the 'photos' defineService declaration.
 -- Do not edit by hand; change the declaration and regenerate.
 
 CREATE TABLE IF NOT EXISTS `gphone_photos` (

@@ -1,4 +1,4 @@
-import { PhoneCameraController } from './PhoneCameraController';
+import { PhoneCameraController } from './PhoneCamera';
 
 const takePhoto = async (): Promise<string> => {
   return new Promise((resolve, reject) => {

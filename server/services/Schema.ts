@@ -1,10 +1,11 @@
 import { SchemaMigrator } from '../lib/SchemaMigrator';
-import { isAdmin } from './AdminController';
+import { isAdmin } from './Admin';
+import { notifyPlayer } from '../lib/shell';
 
 /**
  * Schema reconciliation at resource start, plus a dry run on demand.
  *
- * Triggered by `onResourceStart`, not import order, so every `defineServerApp` call has
+ * Triggered by `onResourceStart`, not import order, so every `defineService` call has
  * registered before the declarations are read.
  */
 
@@ -18,7 +19,7 @@ RegisterCommand(
   'gphoneschema',
   (source: number) => {
     if (!isAdmin(source)) {
-      emitNet('gphone:client:shell:notify', source, {
+      notifyPlayer(source, {
         type: 'error',
         message: 'You do not have permission to use that.'
       });
@@ -33,7 +34,7 @@ RegisterCommand(
  * Reconcile on resource start.
  *
  * `onResourceStart` rather than a deferred timer for two reasons. It fires after the
- * whole controller graph has imported, so `declaredApps` is complete — reading it at
+ * whole controller graph has imported, so `declaredServices` is complete — reading it at
  * module scope would see only the apps imported before this file. And it is inert
  * outside a running server: `pnpm generate:sql` imports every controller to read the
  * declarations, and a timer fired there, reaching for a database that does not exist.

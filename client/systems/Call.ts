@@ -1,6 +1,6 @@
 import { PhoneState } from '../lib/PhoneState';
 
-// Calls do not use ClientApp: these are fire-and-forget NUI callbacks with no cbId to
+// Calls do not use ServiceProxy: these are fire-and-forget NUI callbacks with no cbId to
 // correlate and no server reply to await, so the request/response machinery does not
 // apply. They answer the NUI callback immediately and let the server push state changes
 // back through the `gphone:client:*` events below.

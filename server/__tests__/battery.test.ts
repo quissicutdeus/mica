@@ -21,7 +21,7 @@ import {
   savePlayerBattery,
   sendLoadedBatteryToClient,
   __resetBatteryCache
-} from '../controllers/BatteryController';
+} from '../services/Battery';
 
 const SRC = 7;
 const CID = 'ABC12345';

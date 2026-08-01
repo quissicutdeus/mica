@@ -6,7 +6,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "build": "pnpm clearbuild && node scripts/generate-manifests.js && pnpm typecheck && node build/build-bundle.js && pnpm build:web",
+    "build": "pnpm clearbuild && node scripts/generate-barrels.js && pnpm typecheck && node build/build-bundle.js && pnpm build:web",
     "build:web": "pnpm --filter web build",
     "clearbuild": "node scripts/clear-build.js",
     "generate:sql": "node scripts/generate-sql.js",
@@ -16,7 +16,7 @@
     "typecheck:server": "tsc --noEmit -p server/tsconfig.json",
     "typecheck:web": "pnpm --filter web check",
     "typecheck": "concurrently \"pnpm:typecheck:*\"",
-    "watch": "pnpm clearbuild && node scripts/generate-manifests.js && cross-env IS_WATCH_MODE=1 node build/build-bundle.js",
+    "watch": "pnpm clearbuild && node scripts/generate-barrels.js && cross-env IS_WATCH_MODE=1 node build/build-bundle.js",
     "watch:web": "pnpm --filter web dev",
     "test": "pnpm test:unit && pnpm test:e2e",
     "test:unit": "concurrently -c \"cyan,magenta\" -n \"web,server\" \"pnpm:test:unit:web\" \"pnpm:test:unit:server\"",

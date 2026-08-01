@@ -1,8 +1,9 @@
 import { Database } from '../lib/Database';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { SEED_CHARACTERS, clearSeed, seedFor } from '../lib/seed';
-import { deliverToParticipants } from './MessageController';
-import { isAdmin } from './AdminController';
+import { deliverToParticipants } from './Messages';
+import { isAdmin } from './Admin';
+import { notifyPlayer } from '../lib/shell';
 
 /**
  * `gphoneseed` — populate a dev server with someone to talk to.
@@ -20,7 +21,7 @@ const respond = (source: number, message: string, type: 'success' | 'error' = 's
     console.log(`[gphoneseed] ${message}`);
     return;
   }
-  emitNet('gphone:client:shell:notify', source, { type, title: 'Seed', message });
+  notifyPlayer(source, { type, title: 'Seed', message });
 };
 
 const citizenIdFor = (source: number): string | null =>

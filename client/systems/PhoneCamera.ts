@@ -1,4 +1,4 @@
-import { PhoneAnimationController } from './PhoneAnimationController';
+import { PhoneAnimationController } from './PhoneAnimation';
 import { sendNuiMessage } from '../lib/NuiUtils';
 
 /**

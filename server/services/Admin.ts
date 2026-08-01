@@ -1,4 +1,4 @@
-import { ServerApp } from '../lib/ServerApp';
+import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 
 /**
  * Whether the caller counts as an admin.
@@ -43,7 +43,7 @@ export const adminAces = (): string[] => {
   // An empty or whitespace-only convar would otherwise lock everyone out silently.
   return parsed.length > 0 ? parsed : [...DEFAULT_ADMIN_ACES];
 };
-const app = new ServerApp<never>('admin', null, {
+const app = new ServiceEndpoint<never>('admin', null, {
   disableGet: true,
   disableCreate: true,
   disableUpdate: true,

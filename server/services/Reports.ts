@@ -1,4 +1,4 @@
-import { defineServerApp, SchemaRepository, type ResolvedAppSchema } from '../lib/defineServerApp';
+import { defineService, SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { requirePositiveInt } from '../lib/payload';
 import {
@@ -11,7 +11,7 @@ import {
   summariseTarget,
   type ReportableTable
 } from '../lib/moderation';
-import { isAdmin } from './AdminController';
+import { isAdmin } from './Admin';
 import type { Report, ReportResolution } from '@shared/types';
 
 /**
@@ -48,7 +48,7 @@ class ReportRepository extends SchemaRepository<Report> {
  * reading the queue is a privileged cross-owner read, which is the exact thing the
  * ownership-scoped generic `get` exists to prevent.
  */
-export const reports = defineServerApp<Report>({
+export const reports = defineService<Report>({
   id: 'reports',
   scope: 'owner',
   serverAuthored: true,
@@ -87,7 +87,7 @@ export const reports = defineServerApp<Report>({
     disableUpdate: true,
     disableDelete: true
   },
-  repositoryFactory: (resolved: ResolvedAppSchema) => new ReportRepository(resolved)
+  repositoryFactory: (resolved: ResolvedService) => new ReportRepository(resolved)
 });
 
 const app = reports.app;

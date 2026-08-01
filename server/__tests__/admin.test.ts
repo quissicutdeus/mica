@@ -5,7 +5,7 @@ const { dbMock } = vi.hoisted(() => ({
 }));
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
-import { isAdmin, adminAces, DEFAULT_ADMIN_ACES } from '../controllers/AdminController';
+import { isAdmin, adminAces, DEFAULT_ADMIN_ACES } from '../services/Admin';
 
 /** Aces the fake server has granted to source 5. */
 let granted = new Set<string>();

@@ -1,4 +1,4 @@
-import './controllers';
+import './services';
 import { BankingBridge } from './lib/BankingBridge';
 
 on('onResourceStart', (resName: string) => {

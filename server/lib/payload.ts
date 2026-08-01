@@ -3,7 +3,7 @@
  *
  * Every id in a `gphone:server:*` payload is attacker-controlled (AGENTS.md §9),
  * so it is parsed and range-checked before it reaches SQL or an authorization
- * check. Shared here so controllers cannot drift into subtly different rules.
+ * check. Shared here so services cannot drift into subtly different rules.
  */
 
 /**

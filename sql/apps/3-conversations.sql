@@ -1,4 +1,4 @@
--- Generated from the 'conversations' defineServerApp declaration.
+-- Generated from the 'conversations' defineService declaration.
 -- Do not edit by hand; change the declaration and regenerate.
 
 CREATE TABLE IF NOT EXISTS `gphone_messages_conversations` (

@@ -19,14 +19,14 @@ vi.mock('../lib/AuditLogger', () => auditMock);
 import {
   resolveAppSchema,
   buildRepository,
-  defineServerApp,
-  declaredApps,
+  defineService,
+  declaredServices,
   SchemaRepository,
-  type ServerAppDefinition
-} from '../lib/defineServerApp';
+  type ServiceDefinition
+} from '../lib/defineService';
 import { toCreateTableSql, toChildTableSql, toSqlFile } from '../lib/schemaSql';
 
-const notesDefinition: ServerAppDefinition = {
+const notesDefinition: ServiceDefinition = {
   id: 'notes',
   statuses: ['active', 'archived', 'deleted', 'moderated'],
   schema: {
@@ -161,14 +161,14 @@ describe('buildRepository — inherits every Phase 1 guarantee', () => {
   });
 });
 
-describe('defineServerApp — event registration', () => {
-  /** Capture the events ServerApp registers, so the wiring is observable. */
-  const mountAndCapture = (definition: ServerAppDefinition): string[] => {
+describe('defineService — event registration', () => {
+  /** Capture the events ServiceEndpoint registers, so the wiring is observable. */
+  const mountAndCapture = (definition: ServiceDefinition): string[] => {
     const registered: string[] = [];
     (globalThis as Record<string, unknown>).onNet = (event: string) => {
       registered.push(event);
     };
-    defineServerApp(definition);
+    defineService(definition);
     return registered;
   };
 
@@ -222,7 +222,7 @@ describe('defineServerApp — event registration', () => {
   });
 
   it('audits a delete against the declared table, not the id-derived default', async () => {
-    // ServerApp defaults targetTable to `gphone_<appName>`. An app with a custom table
+    // ServiceEndpoint defaults targetTable to `gphone_<appName>`. An app with a custom table
     // would otherwise log deletions against a table that does not exist.
     const handlers = new Map<string, (cbId: string, data: unknown) => Promise<void>>();
     (globalThis as Record<string, unknown>).onNet = (event: string, cb: any) => {
@@ -235,7 +235,7 @@ describe('defineServerApp — event registration', () => {
     dbMock.update.mockResolvedValue(true);
     auditMock.AuditLogger.log.mockClear();
 
-    defineServerApp({ id: 'owned_d', table: 'legacy_table', schema: { label: 'string' } });
+    defineService({ id: 'owned_d', table: 'legacy_table', schema: { label: 'string' } });
     await handlers.get('gphone:server:owned_d:delete')!('cb-1', { id: 3 });
 
     expect(auditMock.AuditLogger.log).toHaveBeenCalledWith(
@@ -244,28 +244,28 @@ describe('defineServerApp — event registration', () => {
   });
 
   it('records every declaration in the registry that drives codegen', () => {
-    const before = declaredApps.length;
-    defineServerApp({ id: 'owned_e', schema: { label: 'string' } });
+    const before = declaredServices.length;
+    defineService({ id: 'owned_e', schema: { label: 'string' } });
 
-    expect(declaredApps.length).toBe(before + 1);
-    expect(declaredApps.at(-1)?.id).toBe('owned_e');
+    expect(declaredServices.length).toBe(before + 1);
+    expect(declaredServices.at(-1)?.id).toBe('owned_e');
   });
 
   it('refuses two apps declaring the same table', () => {
-    defineServerApp({ id: 'first_owner', table: 'gphone_contested', schema: { a: 'string' } });
+    defineService({ id: 'first_owner', table: 'gphone_contested', schema: { a: 'string' } });
 
     expect(() =>
-      defineServerApp({ id: 'second_owner', table: 'gphone_contested', schema: { b: 'string' } })
+      defineService({ id: 'second_owner', table: 'gphone_contested', schema: { b: 'string' } })
     ).toThrow(/already declared by another app/);
   });
 });
 
-describe('defineServerApp — repositoryFactory', () => {
+describe('defineService — repositoryFactory', () => {
   it('lets an app subclass the derived repository for custom read shaping', async () => {
     (globalThis as Record<string, unknown>).onNet = () => {};
     dbMock.query.mockResolvedValue([{ id: 1, blobbed: Buffer.from('hello', 'utf8') }]);
 
-    const { repo } = defineServerApp<any>({
+    const { repo } = defineService<any>({
       id: 'shaped',
       schema: { blobbed: 'blob' },
       repositoryFactory: (resolved) =>
@@ -285,7 +285,7 @@ describe('defineServerApp — repositoryFactory', () => {
     (globalThis as Record<string, unknown>).onNet = () => {};
     dbMock.update.mockResolvedValue(true);
 
-    const { repo } = defineServerApp<any>({
+    const { repo } = defineService<any>({
       id: 'shaped_two',
       schema: { label: 'string' },
       repositoryFactory: (resolved) => new (class extends SchemaRepository<any> {})(resolved)
@@ -453,7 +453,7 @@ describe('toSqlFile', () => {
   it('marks the output generated so nobody hand-edits it', () => {
     const file = toSqlFile(resolveAppSchema(notesDefinition));
 
-    expect(file).toContain("-- Generated from the 'notes' defineServerApp declaration.");
+    expect(file).toContain("-- Generated from the 'notes' defineService declaration.");
     expect(file).toContain('Do not edit by hand');
     expect(file).toContain('CREATE TABLE IF NOT EXISTS `gphone_notes`');
   });

@@ -1,5 +1,5 @@
 import { ConversationRepository } from '../repositories/ConversationRepository';
-import { defineServerApp } from '../lib/defineServerApp';
+import { defineService } from '../lib/defineService';
 import { Conversation } from '@shared/types';
 import { Database } from '../lib/Database';
 import { AuditLogger } from '../lib/AuditLogger';
@@ -18,7 +18,7 @@ import { conversationIdFrom } from '../lib/payload';
  * emits a complete schema: it carries `role`, a different status enum, and two
  * nullable timestamps, none of which fit the primary-table shape.
  */
-export const conversations = defineServerApp<Conversation>({
+export const conversations = defineService<Conversation>({
   id: 'conversations',
   table: 'gphone_messages_conversations',
   scope: 'owner',
@@ -83,7 +83,7 @@ export const conversations = defineServerApp<Conversation>({
   repositoryFactory: (resolved) => new ConversationRepository(resolved)
 });
 
-/** So other controllers can reach the bespoke membership queries with types intact. */
+/** So other services can reach the bespoke membership queries with types intact. */
 export type ConversationRepo = ConversationRepository;
 
 const app = conversations.app;

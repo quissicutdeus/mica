@@ -3,9 +3,9 @@ import {
   type ChildTableDefinition,
   type ColumnDef,
   type ColumnType,
-  type ResolvedAppSchema,
+  type ResolvedService,
   type ResolvedIndex
-} from './defineServerApp';
+} from './defineService';
 
 /**
  * Emit MySQL DDL from a resolved app schema.
@@ -16,7 +16,7 @@ import {
  * NUI endpoints. Output goes to a reviewable file instead; a real migration runner
  * consumes it later.
  *
- * Kept separate from `defineServerApp` so the FiveM server bundle does not carry
+ * Kept separate from `defineService` so the FiveM server bundle does not carry
  * DDL-generation code it never calls.
  */
 
@@ -107,7 +107,7 @@ export interface ExpectedShape {
  * that drifts is how you get a fresh install and an upgraded install with different
  * schemas.
  */
-export function expectedShape(resolved: ResolvedAppSchema): ExpectedShape {
+export function expectedShape(resolved: ResolvedService): ExpectedShape {
   const { table, statuses, fields, indexes } = resolved;
 
   const perColumnIndexes: ResolvedIndex[] = fields
@@ -157,7 +157,7 @@ export const indexDefinitionSql = (index: ResolvedIndex): string =>
  * cascade, and a `(citizenid, status)` index because every generic read filters on
  * both.
  */
-export function toCreateTableSql(resolved: ResolvedAppSchema): string {
+export function toCreateTableSql(resolved: ResolvedService): string {
   const { table, id, fields } = resolved;
   const shape = expectedShape(resolved);
 
@@ -219,14 +219,14 @@ export function toChildTableSql(child: ChildTableDefinition): string {
  * A generated file's contents: the primary table, then every child table in
  * declaration order so foreign keys resolve.
  */
-export function toSqlFile(resolved: ResolvedAppSchema): string {
+export function toSqlFile(resolved: ResolvedService): string {
   const blocks = [
     toCreateTableSql(resolved),
     ...resolved.childTables.map((child) => toChildTableSql(child))
   ];
 
   return [
-    `-- Generated from the '${resolved.id}' defineServerApp declaration.`,
+    `-- Generated from the '${resolved.id}' defineService declaration.`,
     '-- Do not edit by hand; change the declaration and regenerate.',
     '',
     blocks.join('\n\n'),

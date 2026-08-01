@@ -1,4 +1,4 @@
--- Generated from the 'reports' defineServerApp declaration.
+-- Generated from the 'reports' defineService declaration.
 -- Do not edit by hand; change the declaration and regenerate.
 
 CREATE TABLE IF NOT EXISTS `gphone_reports` (

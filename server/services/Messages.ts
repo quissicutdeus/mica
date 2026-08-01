@@ -1,9 +1,9 @@
 import { MessageRepository } from '../repositories/MessageRepository';
-import { conversations, type ConversationRepo } from './ConversationController';
+import { conversations, type ConversationRepo } from './Conversations';
 // Photos is a declared app; reuse its derived repository rather than a second
 // instance, so the attachment-ownership check runs against the same allowlist.
-import { photos } from './PhotoController';
-import { defineServerApp } from '../lib/defineServerApp';
+import { photos } from './Photos';
+import { defineService } from '../lib/defineService';
 import { conversationIdFrom, requirePositiveInt } from '../lib/payload';
 import { Message } from '@shared/types';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
@@ -20,7 +20,7 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
  * emits a complete schema. It carries neither `status` nor timestamps, which is why
  * it cannot use the primary-table shape.
  */
-export const messages = defineServerApp<Message>({
+export const messages = defineService<Message>({
   id: 'messages',
   table: 'gphone_messages',
   scope: 'shared',

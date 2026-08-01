@@ -5,7 +5,7 @@ const { dbMock } = vi.hoisted(() => ({
 }));
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
-import { resolveAppSchema } from '../lib/defineServerApp';
+import { resolveAppSchema } from '../lib/defineService';
 import { expectedShape } from '../lib/schemaSql';
 import { planAppMigration, planChildMigration, isNoop, type LiveTable } from '../lib/migrate';
 

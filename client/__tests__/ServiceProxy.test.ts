@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { requestEventFor, responseEventFor, parseRequestEvent } from '@shared/rpc';
-import { ClientApp } from '../lib/ClientApp';
+import { ServiceProxy } from '../lib/ServiceProxy';
 
 /**
  * The bug these lock down: the client used to subscribe a fixed set of four CRUD reply
@@ -47,15 +47,15 @@ describe('shared/rpc — one derivation for both sides', () => {
     expect(requestEventFor('notes', 'get')).toBe('gphone:server:notes:get');
   });
 
-  it('round-trips a request event back to app and action', () => {
+  it('round-trips a request event back to service and action', () => {
     expect(parseRequestEvent('gphone:server:mail:markAsRead')).toEqual({
-      app: 'mail',
+      service: 'mail',
       action: 'markAsRead'
     });
   });
 
   it.each([
-    ['too few segments', 'gphone:server:noAppSegment'],
+    ['too few segments', 'gphone:server:noServiceSegment'],
     ['wrong side', 'gphone:client:notes:get'],
     ['foreign prefix', 'other:server:notes:get'],
     ['empty', '']
@@ -64,9 +64,9 @@ describe('shared/rpc — one derivation for both sides', () => {
   });
 });
 
-describe('ClientApp — subscribes the reply it will actually receive', () => {
+describe('ServiceProxy — subscribes the reply it will actually receive', () => {
   it('subscribes the derived reply for a generic CRUD action', () => {
-    const app = new ClientApp('notes');
+    const app = new ServiceProxy('notes');
     app.registerCallback('getNotes', 'gphone:server:notes:get');
 
     expect([...netSubscriptions.keys()]).toEqual(['gphone:client:notes:receive']);
@@ -75,7 +75,7 @@ describe('ClientApp — subscribes the reply it will actually receive', () => {
 
   it('subscribes the reply for a custom action — the mail regression', () => {
     // Every one of these used to reply into the void.
-    const app = new ClientApp('mail');
+    const app = new ServiceProxy('mail');
     app.registerCallback('getMail', 'gphone:server:mail:getMail');
     app.registerCallback('markAsRead', 'gphone:server:mail:markAsRead');
     app.registerCallback('archiveMail', 'gphone:server:mail:archiveMail');
@@ -97,7 +97,7 @@ describe('ClientApp — subscribes the reply it will actually receive', () => {
       netSubscriptions.set(event, handler);
     };
 
-    const app = new ClientApp('conversations');
+    const app = new ServiceProxy('conversations');
     app.registerCallback('deleteConversation', 'gphone:server:conversations:delete');
     app.registerCallback('leaveConversation', 'gphone:server:conversations:delete');
 
@@ -107,16 +107,16 @@ describe('ClientApp — subscribes the reply it will actually receive', () => {
 
   it('refuses a server event whose reply cannot be derived', () => {
     // A caller would otherwise hang for 15s. Fail at startup instead.
-    const app = new ClientApp('phone');
+    const app = new ServiceProxy('phone');
     expect(() => app.registerCallback('endCall', 'gphone:server:noAppSegment')).toThrow(
       /cannot be derived/
     );
   });
 });
 
-describe('ClientApp — request/response round trip', () => {
+describe('ServiceProxy — request/response round trip', () => {
   it('resolves the NUI callback when the reply arrives', async () => {
-    const app = new ClientApp('mail');
+    const app = new ServiceProxy('mail');
     app.registerCallback('getMail', 'gphone:server:mail:getMail');
 
     const resolved = vi.fn();
@@ -134,7 +134,7 @@ describe('ClientApp — request/response round trip', () => {
   });
 
   it('ignores a reply for an unknown correlation id', () => {
-    const app = new ClientApp('notes');
+    const app = new ServiceProxy('notes');
     app.registerCallback('getNotes', 'gphone:server:notes:get');
 
     expect(() =>
@@ -146,7 +146,7 @@ describe('ClientApp — request/response round trip', () => {
     vi.useFakeTimers();
     try {
       vi.spyOn(console, 'warn').mockImplementation(() => {});
-      const app = new ClientApp('notes');
+      const app = new ServiceProxy('notes');
       app.registerCallback('getNotes', 'gphone:server:notes:get');
 
       const resolved = vi.fn();

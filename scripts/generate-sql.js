@@ -4,14 +4,14 @@ import { fileURLToPath } from 'url';
 import esbuild from 'esbuild';
 
 /**
- * Emit one .sql file per defineServerApp declaration into sql/apps/.
+ * Emit one .sql file per defineService declaration into sql/apps/.
  *
  * Nothing here touches a database. The generated files are reviewable artifacts you
  * apply yourself — see the note in server/lib/schemaSql.ts for why runtime
  * `CREATE TABLE IF NOT EXISTS` was rejected.
  *
  * Loading the declarations means executing server/ code in node, which touches FiveM
- * globals at import time (`Database` reads `exports.oxmysql`, ServerApp calls
+ * globals at import time (`Database` reads `exports.oxmysql`, ServiceEndpoint calls
  * `onNet`). The banner below stubs them, same as server/__tests__/setup.ts.
  */
 
@@ -38,8 +38,8 @@ globalThis.GetConvar = globalThis.GetConvar ?? ((_n, fallback) => fallback);
 `;
 
 const entry = `
-import '${path.join(root, 'server/controllers/index.ts').split(path.sep).join('/')}';
-export { declaredApps } from '${path.join(root, 'server/lib/defineServerApp.ts').split(path.sep).join('/')}';
+import '${path.join(root, 'server/services/index.ts').split(path.sep).join('/')}';
+export { declaredServices } from '${path.join(root, 'server/lib/defineService.ts').split(path.sep).join('/')}';
 export { toSqlFile } from '${path.join(root, 'server/lib/schemaSql.ts').split(path.sep).join('/')}';
 `;
 
@@ -190,10 +190,10 @@ async function main() {
     logLevel: 'warning'
   });
 
-  const { declaredApps, toSqlFile } = await import(`file://${bundlePath}?t=${Date.now()}`);
+  const { declaredServices, toSqlFile } = await import(`file://${bundlePath}?t=${Date.now()}`);
 
-  if (declaredApps.length === 0) {
-    console.log('No defineServerApp declarations found; nothing to generate.');
+  if (declaredServices.length === 0) {
+    console.log('No defineService declarations found; nothing to generate.');
     return;
   }
 
@@ -205,7 +205,7 @@ async function main() {
     fs.unlinkSync(path.join(outDir, stale));
   }
 
-  const ordered = orderAppsByDependency(declaredApps);
+  const ordered = orderAppsByDependency(declaredServices);
   const width = String(ordered.length).length;
 
   const appFiles = [];
@@ -218,8 +218,8 @@ async function main() {
     console.log(`Generated sql/apps/${name} (${resolved.table})`);
   }
 
-  const tableCount = declaredApps.reduce((n, a) => n + 1 + a.childTables.length, 0);
-  console.log(`Done. ${declaredApps.length} app(s), ${tableCount} table(s).`);
+  const tableCount = declaredServices.reduce((n, a) => n + 1 + a.childTables.length, 0);
+  console.log(`Done. ${declaredServices.length} app(s), ${tableCount} table(s).`);
 
   if (withReset) {
     const resetPath = path.join(root, 'sql', 'dev-reset.sql');

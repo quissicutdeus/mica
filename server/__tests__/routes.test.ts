@@ -24,7 +24,7 @@ const { dbMock, registeredServerEvents } = vi.hoisted(() => {
    *
    * Installed inside `vi.hoisted` because ESM evaluates every `import` before any
    * module-level statement — a plain assignment here would run *after*
-   * `import '../controllers'` and record nothing, which is exactly the vacuous-pass
+   * `import '../services'` and record nothing, which is exactly the vacuous-pass
    * failure mode this file warns about elsewhere.
    */
   const events = new Set<string>();
@@ -41,7 +41,7 @@ const { dbMock, registeredServerEvents } = vi.hoisted(() => {
 });
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
-import '../controllers';
+import '../services';
 
 const ROOT = join(__dirname, '..', '..');
 

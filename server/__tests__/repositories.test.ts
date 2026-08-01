@@ -13,13 +13,13 @@ const { dbMock } = vi.hoisted(() => ({
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import { Repository } from '../lib/Repository';
-import { contacts } from '../controllers/ContactController';
-import { mail } from '../controllers/MailController';
-import { conversations } from '../controllers/ConversationController';
-import { messages } from '../controllers/MessageController';
-// Notes has migrated to a defineServerApp declaration; its repository is derived.
-import { notes } from '../controllers/NoteController';
-import { photos } from '../controllers/PhotoController';
+import { contacts } from '../services/Contacts';
+import { mail } from '../services/Mail';
+import { conversations } from '../services/Conversations';
+import { messages } from '../services/Messages';
+// Notes has migrated to a defineService declaration; its repository is derived.
+import { notes } from '../services/Notes';
+import { photos } from '../services/Photos';
 
 /**
  * The shipped write policy, table by table.

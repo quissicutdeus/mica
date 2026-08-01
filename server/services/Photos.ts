@@ -1,4 +1,4 @@
-import { defineServerApp, SchemaRepository } from '../lib/defineServerApp';
+import { defineService, SchemaRepository } from '../lib/defineService';
 import { Photo } from '@shared/types';
 
 /**
@@ -14,7 +14,7 @@ import { Photo } from '@shared/types';
  * can come back as a Buffer, which would cross NUI as `{type:'Buffer',data:[...]}`
  * and render as nothing. Coerced to a string on the way out.
  */
-export const photos = defineServerApp<Photo>({
+export const photos = defineService<Photo>({
   id: 'photos',
   scope: 'owner',
   statuses: ['active', 'deleted', 'moderated'],

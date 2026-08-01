@@ -2,7 +2,7 @@
  * FiveM server runtime stubs.
  *
  * Server modules reach for these globals at import time — `Database` reads
- * `exports.oxmysql` in module scope, controllers call `onNet` while registering —
+ * `exports.oxmysql` in module scope, services call `onNet` while registering —
  * so they have to exist before the module graph loads. Individual suites override
  * `onNet` / `emitNet` / `source` to capture and drive the handlers under test.
  */

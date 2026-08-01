@@ -1,4 +1,4 @@
-import { ServerApp } from '../lib/ServerApp';
+import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { BankingBridge } from '../lib/BankingBridge';
 import { Transaction } from '@shared/types';
 
@@ -6,13 +6,13 @@ import { Transaction } from '@shared/types';
  * Bank: read-only, and backed by the banking resource's own export rather than its
  * database.
  *
- * There is no repository and no `defineServerApp` declaration here on purpose.
+ * There is no repository and no `defineService` declaration here on purpose.
  * `player_transactions` belongs to the banking script, not to gPhone — declaring it
  * would generate DDL for someone else's table, and querying it directly would couple
  * the phone to their schema and read data their in-memory cache has already moved
  * past. `BankingBridge` adapts, the same way `FrameworkBridge` does for cores.
  */
-const app = new ServerApp<Transaction>('bank', null, {
+const app = new ServiceEndpoint<Transaction>('bank', null, {
   disableGet: true,
   disableCreate: true,
   disableUpdate: true,

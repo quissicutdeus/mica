@@ -1,11 +1,11 @@
-import './controllers';
-import { sendChargeToNui } from './controllers/BatteryController';
+import './systems';
+import { sendChargeToNui } from './systems/Battery';
 import { FrameworkBridge } from './lib/FrameworkBridge';
 import { sendNuiMessage } from './lib/NuiUtils';
 import { PhoneState } from './lib/PhoneState';
-import { PhoneAnimationController } from './controllers/PhoneAnimationController';
-import { FreelookController } from './controllers/FreelookController';
-import { PhoneCameraController } from './controllers/PhoneCameraController';
+import { PhoneAnimationController } from './systems/PhoneAnimation';
+import { FreelookController } from './systems/Freelook';
+import { PhoneCameraController } from './systems/PhoneCamera';
 import { GAME_SCOPE_ACTIONS } from '@shared/keybinds';
 
 // Send system time to NUI

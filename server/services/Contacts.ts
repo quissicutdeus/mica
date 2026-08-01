@@ -1,4 +1,4 @@
-import { defineServerApp } from '../lib/defineServerApp';
+import { defineService } from '../lib/defineService';
 import { Contact } from '@shared/types';
 
 /**
@@ -8,7 +8,7 @@ import { Contact } from '@shared/types';
  * looks contacts up by number and filters the favourites list. Nothing else needs
  * to be, and every filterable column is one more thing a client can probe.
  */
-export const contacts = defineServerApp<Contact>({
+export const contacts = defineService<Contact>({
   id: 'contacts',
   scope: 'owner',
   statuses: ['active', 'deleted', 'moderated'],

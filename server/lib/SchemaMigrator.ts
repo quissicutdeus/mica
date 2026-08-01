@@ -1,5 +1,5 @@
 import { Database } from './Database';
-import { declaredApps } from './defineServerApp';
+import { declaredServices } from './defineService';
 import {
   isNoop,
   planAppMigration,
@@ -72,7 +72,7 @@ const readLiveTable = async (schema: string, table: string): Promise<LiveTable> 
 const collectPlans = async (schema: string): Promise<MigrationPlan[]> => {
   const plans: MigrationPlan[] = [];
 
-  for (const resolved of declaredApps) {
+  for (const resolved of declaredServices) {
     plans.push(planAppMigration(resolved, await readLiveTable(schema, resolved.table)));
 
     for (const child of resolved.childTables) {

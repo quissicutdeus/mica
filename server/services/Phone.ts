@@ -1,4 +1,6 @@
 import { FrameworkBridge } from '../lib/FrameworkBridge';
+import { notifyPlayer } from '../lib/shell';
+import { registerService } from '../lib/services';
 
 // Dictionary to track active calls: CallID -> { caller: source, target: source }
 interface ActiveCall {
@@ -15,6 +17,13 @@ const playerCalls: Record<number, number> = {}; // Source -> CallID (Fast lookup
 
 const generateCallId = () => Math.floor(Math.random() * 900000) + 100000;
 
+/**
+ * Calls are a service with no endpoint and no table: pure signalling, hand-written
+ * handlers below. Declared so the `<service>` segment resolves like any other.
+ */
+const PHONE_SERVICE = registerService('phone');
+void PHONE_SERVICE;
+
 onNet('gphone:server:phone:start', (targetPhone: string) => {
   const src = source;
   const callerPhone = FrameworkBridge.getPlayerPhone(src);
@@ -26,20 +35,20 @@ onNet('gphone:server:phone:start', (targetPhone: string) => {
   const targetSrc = targetPlayer?.source || null;
 
   if (!targetSrc) {
-    emitNet('gphone:client:shell:notify', src, { type: 'error', message: 'Number unavailable' });
+    notifyPlayer(src, { type: 'error', message: 'Number unavailable' });
     // Tell client to reset
     emitNet('gphone:client:phone:failed', src);
     return;
   }
 
   if (targetSrc === src) {
-    emitNet('gphone:client:shell:notify', src, { type: 'error', message: 'Busy' });
+    notifyPlayer(src, { type: 'error', message: 'Busy' });
     emitNet('gphone:client:phone:failed', src);
     return;
   }
 
   if (playerCalls[targetSrc] || playerCalls[src]) {
-    emitNet('gphone:client:shell:notify', src, { type: 'error', message: 'Line busy' });
+    notifyPlayer(src, { type: 'error', message: 'Line busy' });
     emitNet('gphone:client:phone:failed', src);
     return;
   }

@@ -1,13 +1,13 @@
 import { parseRequestEvent, requestEventFor, responseEventFor } from '@shared/rpc';
 
-export class ClientApp {
+export class ServiceProxy {
   private pendingCallbacks = new Map<string, Function>();
   private pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private idCounter = 0;
   /** Response events already subscribed, so several routes can share one. */
   private subscribed = new Set<string>();
 
-  constructor(private appName: string) {}
+  constructor(private serviceName: string) {}
 
   private generateId(): string {
     this.idCounter = (this.idCounter + 1) % 100000;
@@ -55,18 +55,18 @@ export class ClientApp {
    */
   public registerCallback(action: string, customServerEvent?: string) {
     const nuiEvent = action;
-    const serverEvent = customServerEvent || requestEventFor(this.appName, action);
+    const serverEvent = customServerEvent || requestEventFor(this.serviceName, action);
 
     const target = parseRequestEvent(serverEvent);
     if (!target) {
-      // A server event outside the gphone:server:<app>:<action> convention has no
+      // A server event outside the gphone:server:<service>:<action> convention has no
       // derivable reply, so a caller would hang. Refuse loudly at startup instead.
       throw new Error(
-        `[ClientApp:${this.appName}] '${serverEvent}' does not match ` +
-          'gphone:server:<app>:<action>, so its response event cannot be derived.'
+        `[ServiceProxy:${this.serviceName}] '${serverEvent}' does not match ` +
+          'gphone:server:<service>:<action>, so its response event cannot be derived.'
       );
     }
-    this.subscribeResponse(responseEventFor(target.app, target.action));
+    this.subscribeResponse(responseEventFor(target.service, target.action));
 
     RegisterNuiCallbackType(nuiEvent);
     on(`__cfx_nui:${nuiEvent}`, (data: any, cb: Function) => {
@@ -77,7 +77,7 @@ export class ClientApp {
       const timer = setTimeout(() => {
         if (this.pendingCallbacks.has(cbId)) {
           console.warn(
-            `[ClientApp:${this.appName}] Callback ${action} (${cbId}) timed out waiting for server response.`
+            `[ServiceProxy:${this.serviceName}] Callback ${action} (${cbId}) timed out waiting for server response.`
           );
           const pendingCb = this.pendingCallbacks.get(cbId);
           this.pendingCallbacks.delete(cbId);

@@ -3,8 +3,9 @@ import { AuditLogger } from './AuditLogger';
 import { requirePositiveInt } from './payload';
 import { requestEventFor, responseEventFor } from '@shared/rpc';
 import { FrameworkBridge, FrameworkPlayer } from './FrameworkBridge';
+import { registerService } from './services';
 
-export interface ServerAppOptions {
+export interface ServiceOptions {
   disableGet?: boolean;
   disableCreate?: boolean;
   disableUpdate?: boolean;
@@ -13,16 +14,17 @@ export interface ServerAppOptions {
   onAfterDelete?: (citizenid: string, targetId: number) => Promise<void>;
 }
 
-export class ServerApp<T> {
+export class ServiceEndpoint<T> {
   constructor(
-    private appName: string,
+    private serviceName: string,
     /**
-     * Null for an app with no gPhone-owned table — Bank reads another resource's
-     * export instead. Such an app must disable every generic CRUD action.
+     * Null for a service with no gPhone-owned table — Bank reads another resource's
+     * export instead. Such a service must disable every generic CRUD action.
      */
     private repo: Repository<T> | null,
-    private options: ServerAppOptions = {}
+    private options: ServiceOptions = {}
   ) {
+    registerService(serviceName);
     this.registerCrudEvents();
   }
 
@@ -30,7 +32,7 @@ export class ServerApp<T> {
   private get repository(): Repository<T> {
     if (!this.repo) {
       throw new Error(
-        `ServerApp('${this.appName}') has no repository, so generic CRUD is unavailable. ` +
+        `ServiceEndpoint('${this.serviceName}') has no repository, so generic CRUD is unavailable. ` +
           'Disable get/create/update/delete, or supply a repository.'
       );
     }
@@ -60,7 +62,7 @@ export class ServerApp<T> {
         typeof value === 'boolean';
 
       if (!isScalar) {
-        throw new Error(`Field '${column}' on ${this.appName} must be a scalar value.`);
+        throw new Error(`Field '${column}' on ${this.serviceName} must be a scalar value.`);
       }
       picked[column] = value;
     }
@@ -83,7 +85,7 @@ export class ServerApp<T> {
     try {
       return requirePositiveInt(raw, 'numeric id');
     } catch {
-      throw new Error(`A valid numeric id is required for this ${this.appName} operation.`);
+      throw new Error(`A valid numeric id is required for this ${this.serviceName} operation.`);
     }
   }
 
@@ -121,7 +123,7 @@ export class ServerApp<T> {
         async (source: number, cbId: any, data: any, citizenid: string) => {
           const fields = this.sanitizeWrite(data);
           if (Object.keys(fields).length === 0) {
-            throw new Error(`No writable fields supplied for ${this.appName} create.`);
+            throw new Error(`No writable fields supplied for ${this.serviceName} create.`);
           }
 
           const newItem = { ...fields, citizenid };
@@ -139,7 +141,7 @@ export class ServerApp<T> {
           const id = this.requireId(data);
           const fields = this.sanitizeWrite(data);
           if (Object.keys(fields).length === 0) {
-            throw new Error(`No writable fields supplied for ${this.appName} update.`);
+            throw new Error(`No writable fields supplied for ${this.serviceName} update.`);
           }
 
           const success = await this.repository.update(id, fields as any, citizenid);
@@ -159,10 +161,10 @@ export class ServerApp<T> {
             await AuditLogger.log({
               citizenid,
               action: 'deleted',
-              controller: this.appName,
+              controller: this.serviceName,
               method: 'delete',
               targetId: id,
-              targetTable: this.options.tableName || `gphone_${this.appName}`
+              targetTable: this.options.tableName || `gphone_${this.serviceName}`
             });
             if (this.options.onAfterDelete) {
               await this.options.onAfterDelete(citizenid, id);
@@ -185,8 +187,8 @@ export class ServerApp<T> {
     ) => Promise<any>
   ) {
     // Both names come from shared/rpc.ts so the client derives exactly the same ones.
-    const eventName = requestEventFor(this.appName, action);
-    const clientEventName = responseEventFor(this.appName, action);
+    const eventName = requestEventFor(this.serviceName, action);
+    const clientEventName = responseEventFor(this.serviceName, action);
 
     onNet(eventName, async (cbId: any, data: any) => {
       const src = source;

@@ -8,10 +8,10 @@ const { dbMock } = vi.hoisted(() => ({
 }));
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
-// Loading the controllers is what populates `declaredApps` — the registry is filled as a
-// side effect of each `defineServerApp` call, not by importing the module that holds it.
-import '../controllers';
-import { declaredApps } from '../lib/defineServerApp';
+// Loading the controllers is what populates the service registry — it is filled as a side
+// effect of constructing each endpoint, not by importing the module that holds it.
+import '../services';
+import { knownServices } from '../lib/services';
 
 /**
  * Every `gphone:` event name in the source has to match `gphone:<side>:<app>:<action>`.
@@ -47,9 +47,6 @@ const EXTENSIONS = ['.ts', '.svelte', '.js'];
  * place to park something awkward.
  */
 const EXEMPT = new Set<string>([]);
-
-/** Segments in the `<app>` position that are not apps. */
-const NON_APP_SEGMENTS = new Set(['shell', 'admin']);
 
 const walk = (dir: string): string[] => {
   const out: string[] = [];
@@ -117,23 +114,20 @@ describe('net event naming', () => {
     for (const { event, file } of requests) {
       const parsed = parseRequestEvent(event);
       expect(parsed, `${event} in ${file} is not parseable`).not.toBeNull();
-      expect(requestEventFor(parsed!.app, parsed!.action), `${event} in ${file}`).toBe(event);
+      expect(requestEventFor(parsed!.service, parsed!.action), `${event} in ${file}`).toBe(event);
     }
   });
 
-  it('the app segment is an app, or a declared non-app scope', () => {
+  it('the service segment names a real service', () => {
     // Catches a typo'd or invented segment — `gphone:client:setting:x` would otherwise
     // satisfy the shape check and then match no listener.
-    expect(declaredApps.length, 'controllers did not load').toBeGreaterThan(0);
-
-    const known = new Set<string>([
-      ...declaredApps.map((app) => app.id),
-      ...NON_APP_SEGMENTS,
-      // Apps with no gPhone-owned table, so nothing to declare: Bank reads another
-      // resource's export, and calls are pure signalling.
-      'bank',
-      'phone'
-    ]);
+    //
+    // Reads the registry rather than a list kept here. This test used to carry
+    // `NON_APP_SEGMENTS = ['shell', 'admin']` and a second exception for `bank` and
+    // `phone`, because the vocabulary called every segment an "app" and four of them
+    // were not. Services declare themselves now, so there is nothing left to exempt.
+    const known = new Set<string>(knownServices());
+    expect(known.size, 'services did not load').toBeGreaterThan(0);
 
     const unknown = ALL.filter(({ event }) => {
       if (EXEMPT.has(event)) return false;

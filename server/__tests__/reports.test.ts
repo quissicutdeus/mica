@@ -23,7 +23,7 @@ const { dbMock, handlers } = vi.hoisted(() => {
 });
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
-/** `ServerApp` resolves the caller's citizenid through the bridge before dispatching. */
+/** `ServiceEndpoint` resolves the caller's citizenid through the bridge before dispatching. */
 const bridge = vi.hoisted(() => ({ current: 'REPORTER1' }));
 vi.mock('../lib/FrameworkBridge', () => ({
   FrameworkBridge: {
@@ -33,7 +33,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
   }
 }));
 
-import '../controllers/ReportController';
+import '../services/Reports';
 import { isReportableTable, isReportCategory, REPORTABLE } from '../lib/moderation';
 
 const REPORTER = 'REPORTER1';
@@ -41,7 +41,7 @@ const ADMIN = 'ADMIN1';
 const SRC = 5;
 
 /**
- * Drive a registered handler the way `ServerApp` does, and surface what it returned or
+ * Drive a registered handler the way `ServiceEndpoint` does, and surface what it returned or
  * threw. The reply crosses NUI as `emitNet`, so the assertions read that.
  */
 const call = async (action: string, data: unknown, citizenid = REPORTER) => {

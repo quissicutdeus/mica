@@ -1,11 +1,11 @@
-import { normalizeIndex, type ChildTableDefinition, type ColumnDef } from './defineServerApp';
+import { normalizeIndex, type ChildTableDefinition, type ColumnDef } from './defineService';
 import {
   columnDefinitionSql,
   expectedShape,
   indexDefinitionSql,
   type ExpectedShape
 } from './schemaSql';
-import type { ResolvedAppSchema } from './defineServerApp';
+import type { ResolvedService } from './defineService';
 
 /**
  * Bring a live table up to the shape its declaration describes.
@@ -151,7 +151,7 @@ const planFor = (
   return plan;
 };
 
-export const planAppMigration = (resolved: ResolvedAppSchema, live: LiveTable): MigrationPlan => {
+export const planAppMigration = (resolved: ResolvedService, live: LiveTable): MigrationPlan => {
   const shape: ExpectedShape = expectedShape(resolved);
   return planFor(shape.table, shape.columns, [...shape.indexes], live);
 };
