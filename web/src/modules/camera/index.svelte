@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useCamera, useNavigation, useNuiBridge, onAppMount } from '@gphone/sdk';
+  import { useCamera, useKeybinds, useNavigation, useNuiBridge, onAppMount } from '@gphone/sdk';
   import { isBrowser } from '../../utils/isBrowser';
 
   const { capturePhoto, photosStore, isTakingPhoto, isPreviewingPhoto } = useCamera();
@@ -23,6 +23,8 @@
   let currentViewfinderImage = $derived(sampleAvatars[mockPhotoIndex % sampleAvatars.length]);
 
   let containerRef = $state<HTMLElement | null>(null);
+
+  const { onKeybind } = useKeybinds();
 
   onAppMount(() => {
     photosStore.load();
@@ -150,6 +152,13 @@
       }
     }, CHROME_FADE_MS + 30);
   };
+
+  // Claimed only while the camera is mounted, so Enter is the shutter here and stays
+  // free for whatever else wants it elsewhere.
+  onKeybind('shutter', () => {
+    if ($isTakingPhoto || $isPreviewingPhoto) return;
+    void takePhoto();
+  });
 </script>
 
 <!-- No opaque background in game: PhoneFrame goes transparent while the camera is open

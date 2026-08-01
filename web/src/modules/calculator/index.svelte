@@ -127,6 +127,11 @@
   };
 
   const handleKeydown = (event: KeyboardEvent) => {
+    // The shell dispatcher runs first and calls preventDefault on any key it consumed.
+    // Escape used to fire twice — clearing the display here *and* navigating home — and
+    // Backspace would double up the same way whenever a call was in progress.
+    if (event.defaultPrevented) return;
+
     const { key } = event;
 
     if (/[0-9]/.test(key)) {
@@ -142,8 +147,6 @@
         operator = null;
         waitingForSecondOperand = false;
       }
-    } else if (key === 'Escape') {
-      clear();
     } else if (key === '+' || key === '-') {
       handleOperator(key);
     } else if (key === '*' || key === 'x') {

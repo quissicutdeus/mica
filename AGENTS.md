@@ -85,7 +85,31 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
 5. **No new dependencies** without asking.
 6. **Do not change** TypeScript versions in either package, Vite `build.outDir`, or
    `scripts/generate-manifests.js` output paths without asking.
-7. **SDK First.** All applications inside `web/src/modules/` and external add-ons must consume OS services (navigation, notifications, contacts, camera, registry, NUI bridge) strictly via `@gphone/sdk` hooks (`useNavigation`, `usePhoneNotification`, `useContacts`, `useCamera`, `useAppRegistry`, `useNuiBridge`). Direct relative imports into internal `web/src/store/` files from app modules are prohibited — reaching into internal shell paths breaks standalone SDK app compatibility.
+7. **SDK First.** All applications inside `web/src/modules/` and external add-ons must consume OS services (navigation, notifications, contacts, camera, registry, NUI bridge) strictly via `@gphone/sdk` hooks (`useNavigation`, `usePhoneNotification`, `useContacts`, `useCamera`, `useAppRegistry`, `useNuiBridge`, `useKeybinds`). Direct relative imports into internal `web/src/store/` files from app modules are prohibited — reaching into internal shell paths breaks standalone SDK app compatibility.
+
+   **Keyboard shortcuts specifically.** Never add a raw `keydown` listener or a
+   `<svelte:window on:keydown>` for a phone-level action; declare the action in
+   `shared/keybinds.ts` and claim it with `useKeybinds().onKeybind`. Two reasons the
+   shell has to own dispatch: an app that listens directly cannot be rebound from
+   Settings > Shortcuts, and it will double-fire against the shell's own handler
+   (`Escape` did exactly this in the calculator). An app that genuinely needs raw keys —
+   the calculator's digits and operators — must early-return on `event.defaultPrevented`,
+   which is how it yields any press the dispatcher already claimed.
+
+   Handlers are a **stack per action**, not a slot. A mounted app overrides the shell and
+   hands the action back on unmount — which is how Settings makes `back` step up one pane
+   before leaving the app. A single slot would work until the first unmount, then delete
+   the shell's `back` and kill Escape for the rest of the session, because the shell
+   registers once at startup and never again.
+
+   The scope split is forced by FiveM, not by taste: opening the phone calls
+   `SetNuiFocus(true, true)` with no keep-input, so the game receives no control input
+   and a `RegisterKeyMapping` cannot fire in-phone. `scope: 'game'` actions are therefore
+   rebound in FiveM's own Key Bindings menu, `scope: 'phone'` actions in gPhone's
+   Shortcuts screen. Both halves must refuse to fire while a text field has focus — the
+   web checks the event target, the client checks `PhoneState.isTyping()`, which the web
+   pushes over on `focusin`/`focusout` because the client cannot see DOM focus.
+
 8. **Never report work complete without running the §9 checklist.**
 9. **Trust no NUI payload on the server.** Every field, and every row id, in a
    `gphone:server:*` payload is attacker-controlled — CEF XSS can `fetch` any registered callback

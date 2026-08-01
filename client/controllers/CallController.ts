@@ -1,3 +1,5 @@
+import { PhoneState } from '../lib/PhoneState';
+
 // Calls do not use ClientApp: these are fire-and-forget NUI callbacks with no cbId to
 // correlate and no server reply to await, so the request/response machinery does not
 // apply. They answer the NUI callback immediately and let the server push state changes
@@ -49,6 +51,10 @@ on('__cfx_nui:toggleSpeaker', (data: { enabled: boolean }, cb: Function) => {
 // Server Events
 onNet('gphone:client:receiveCall', (data: { from: string; callId: number }) => {
   SetNuiFocus(true, true);
+  // The phone is now open whether or not the player asked for it. Without this the flag
+  // in PhoneState still reads false, so the next `M` re-opens instead of closing and
+  // freelook refuses to engage.
+  PhoneState.setOpen(true);
   SendNuiMessage(
     JSON.stringify({
       action: 'setVisible',

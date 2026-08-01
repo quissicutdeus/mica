@@ -1,5 +1,6 @@
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { soundService } from './sound';
+import { isDead } from './charge';
 
 export type ToastType = 'info' | 'success' | 'warning' | 'error' | 'message' | 'call' | 'contact';
 
@@ -22,6 +23,14 @@ export interface ToastMessage {
   replyPlaceholder?: string;
   onReply?: (replyText: string) => void | Promise<void>;
   onClick?: () => void;
+  /**
+   * Run when the toast times out on its own, as opposed to being dismissed or actioned.
+   *
+   * Exists because an expiring toast can leave state behind: an unanswered call toast
+   * vanished after 12s while `callStore.status` stayed `'incoming'`, so the phone sat
+   * open and focused showing a call with no way to end it.
+   */
+  onExpire?: () => void | Promise<void>;
 }
 
 let toastCounter = 0;
@@ -42,8 +51,13 @@ function createToastStore() {
     clearToastTimer(id);
     if (duration > 0) {
       const timer = setTimeout(() => {
-        update((toasts) => toasts.filter((t) => t.id !== id));
+        let expiring: ToastMessage | undefined;
+        update((toasts) => {
+          expiring = toasts.find((t) => t.id === id);
+          return toasts.filter((t) => t.id !== id);
+        });
         timers.delete(id);
+        void expiring?.onExpire?.();
       }, duration);
       timers.set(id, timer);
     }
@@ -63,7 +77,8 @@ function createToastStore() {
       hasReplyInput: options.hasReplyInput,
       replyPlaceholder: options.replyPlaceholder,
       onReply: options.onReply,
-      onClick: options.onClick
+      onClick: options.onClick,
+      onExpire: options.onExpire
     };
 
     update((toasts) => [newToast, ...toasts]);
@@ -165,10 +180,17 @@ function createToastStore() {
       number: string;
       onAccept: () => void | Promise<void>;
       onDecline?: () => void | Promise<void>;
+      onExpire?: () => void | Promise<void>;
     }) => {
-      soundService.play('ringtone');
+      // A dead phone renders no children (PhoneFrame skips them), so the toast is
+      // invisible — playing the ringtone anyway meant a dead phone rang with nothing
+      // on screen and no way to answer.
+      if (!get(isDead)) {
+        soundService.play('ringtone');
+      }
       return show({
         type: 'call',
+        onExpire: options.onExpire,
         title: 'Incoming Call',
         message: options.name ? `${options.name} (${options.number})` : options.number,
         duration: 12000,

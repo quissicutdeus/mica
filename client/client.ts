@@ -2,10 +2,10 @@ import './controllers';
 import { sendChargeToNui } from './controllers/BatteryController';
 import { FrameworkBridge } from './lib/FrameworkBridge';
 import { sendNuiMessage } from './lib/NuiUtils';
+import { PhoneState } from './lib/PhoneState';
 import { PhoneAnimationController } from './controllers/PhoneAnimationController';
 import { FreelookController } from './controllers/FreelookController';
-
-let isPhoneOpen = false;
+import { GAME_SCOPE_ACTIONS } from '@shared/keybinds';
 
 // Send system time to NUI
 const sendTimeToNui = () => {
@@ -18,15 +18,20 @@ const sendTimeToNui = () => {
 RegisterCommand(
   'togglePhone',
   () => {
-    isPhoneOpen = !isPhoneOpen;
+    // Belt and braces alongside the dispatcher's own guard: whatever key ends up bound
+    // to this, it must never fire out from under a focused text field.
+    if (PhoneState.isTyping()) return;
 
-    if (isPhoneOpen) {
+    const open = !PhoneState.isOpen();
+    PhoneState.setOpen(open);
+
+    if (open) {
       SetNuiFocus(true, true);
       sendNuiMessage('setVisible', true);
 
       const ped = PlayerPedId();
-      PhoneAnimationController.playAppAnimation(ped, null, isPhoneOpen);
-      PhoneAnimationController.spawnPhoneProp(ped, isPhoneOpen);
+      PhoneAnimationController.playAppAnimation(ped, null, open);
+      PhoneAnimationController.spawnPhoneProp(ped, open);
 
       // Send time and battery charge immediately when opening
       sendTimeToNui();
@@ -43,13 +48,23 @@ RegisterCommand(
   false
 );
 
-// Register Key Mapping
-RegisterKeyMapping('togglePhone', 'Open Phone', 'keyboard', 'm');
+/**
+ * Register every game-scope action from the shared table.
+ *
+ * Only actions usable with the phone *closed* live here — while it is open,
+ * `SetNuiFocus(true, true)` means the game receives no control input, so a mapping
+ * cannot fire. In-phone keys are dispatched by the web and rebound in Settings >
+ * Shortcuts instead. Registering these through `RegisterKeyMapping` is what puts them
+ * in FiveM's own Key Bindings menu.
+ */
+for (const action of GAME_SCOPE_ACTIONS) {
+  RegisterKeyMapping(action.command ?? action.id, action.label, 'keyboard', action.defaultKey);
+}
 
 // NUI Callback to toggle freelook
 RegisterNuiCallbackType('toggleFreelook');
 on('__cfx_nui:toggleFreelook', (data: { state: boolean }, cb: Function) => {
-  if (isPhoneOpen) {
+  if (PhoneState.isOpen()) {
     if (data && data.state) {
       FreelookController.enableFreelook();
     } else {
@@ -59,10 +74,18 @@ on('__cfx_nui:toggleFreelook', (data: { state: boolean }, cb: Function) => {
   cb({});
 });
 
+// Whether a text field in the NUI has focus. See PhoneState.isTyping.
+RegisterNuiCallbackType('setTyping');
+on('__cfx_nui:setTyping', (data: { typing: boolean }, cb: Function) => {
+  PhoneState.setTyping(Boolean(data?.typing));
+  cb({});
+});
+
 // NUI Callback to close phone
 RegisterNuiCallbackType('hideFrame');
 on('__cfx_nui:hideFrame', (_: any, cb: Function) => {
-  isPhoneOpen = false;
+  PhoneState.setOpen(false);
+  PhoneState.setTyping(false);
 
   const ped = PlayerPedId();
   PhoneAnimationController.removePhoneProp();
@@ -77,7 +100,7 @@ on('__cfx_nui:hideFrame', (_: any, cb: Function) => {
 RegisterNuiCallbackType('onCameraApp');
 on('__cfx_nui:onCameraApp', async (data: { state: boolean }, cb: Function) => {
   const ped = PlayerPedId();
-  await PhoneAnimationController.setCameraApp(ped, Boolean(data?.state), isPhoneOpen);
+  await PhoneAnimationController.setCameraApp(ped, Boolean(data?.state), PhoneState.isOpen());
   cb({});
 });
 
@@ -104,7 +127,7 @@ on('__cfx_nui:getPhoneNumber', (_: any, cb: Function) => {
 
 // Time Sync Loop
 setInterval(() => {
-  if (isPhoneOpen) {
+  if (PhoneState.isOpen()) {
     sendTimeToNui();
   }
 }, 1000);

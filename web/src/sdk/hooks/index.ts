@@ -6,6 +6,7 @@ export * from './useAppRegistry';
 export * from './useCall';
 export * from './useCamera';
 export * from './useContacts';
+export * from './useKeybind';
 export * from './useMail';
 export * from './useMessages';
 export * from './useNavigation';

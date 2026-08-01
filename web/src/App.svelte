@@ -6,6 +6,7 @@
   import { charge } from './store/charge';
   import { setSignal } from './store/signal';
   import { currentApp, openApp, goHome, closePhone } from './store/navigation';
+  import { dispatchKey, isTypingTarget, registerHandler } from './store/keybinds';
   import { callStore } from './store/call';
   import { isPreviewingPhoto } from './store/camera';
   import PhoneFrame from './components/PhoneFrame.svelte';
@@ -153,45 +154,113 @@
       // { status: 'connected' | 'idle' | 'incoming', number: '...', name: '...' }
       if (data.status === 'incoming') {
         callStore.setIncoming(data.number, data.name);
-        toast.showCall({
+        incomingToastId = toast.showCall({
           name: data.name,
           number: data.number,
           onAccept: () => {
             visible = true;
             openApp('phone');
           },
-          onDecline: () => {
-            callStore.setStatus('idle');
-            fetchNui('rejectCall', { number: data.number });
-          }
+          onDecline: declineCall,
+          // Nothing else ends an unanswered call, so letting the toast simply vanish
+          // left the phone open and focused with status stuck on 'incoming'. Treat the
+          // timeout as a decline, which also tells the server to tear the call down.
+          onExpire: declineCall
         });
       } else {
+        // The server has moved the call on; a still-visible ring toast is stale.
+        if (incomingToastId) {
+          toast.dismiss(incomingToastId);
+          incomingToastId = null;
+        }
         callStore.setStatus(data.status);
       }
     }
   };
 
   let isFreelook = false;
+  let incomingToastId: string | null = null;
+
+  const declineCall = () => {
+    const { number } = $callStore;
+    callStore.setStatus('idle');
+    fetchNui('rejectCall', { number }).catch(() => {});
+  };
+
+  // Shell-level actions. Apps claim their own through `useKeybinds().onKeybind`, so this
+  // file stays unaware of which apps exist or what keys they want.
+  //
+  // Calls are handled here rather than in the Phone app because an incoming call
+  // force-opens the phone to whatever app was last on screen, and the call toast is
+  // shell-level — the Phone app is usually not mounted when the ring arrives.
+  registerHandler('answerCall', () => {
+    if (incomingToastId) {
+      toast.dismiss(incomingToastId);
+      incomingToastId = null;
+    }
+    visible = true;
+    openApp('phone');
+    callStore.answerCall();
+  });
+
+  registerHandler('endCall', () => {
+    if (incomingToastId) {
+      toast.dismiss(incomingToastId);
+      incomingToastId = null;
+    }
+    if ($callStore.status === 'incoming') {
+      declineCall();
+    } else {
+      callStore.endCall();
+    }
+  });
+
+  registerHandler('back', () => {
+    if ($currentApp.name !== 'home') {
+      goHome();
+    } else {
+      closePhone();
+    }
+  });
+
+  registerHandler('freelook', () => {
+    if (!visible) return;
+    isFreelook = !isFreelook;
+    fetchNui('toggleFreelook', { state: isFreelook });
+  });
+
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
-      if (event.code === 'AltLeft' || event.key === 'Alt') {
-        event.preventDefault();
-        // Only toggle once per key press, ignore held repeats
-        if (!event.repeat && visible) {
-          isFreelook = !isFreelook;
-          fetchNui('toggleFreelook', { state: isFreelook });
-        }
-      } else if (event.key === 'Escape') {
-        if ($currentApp.name !== 'home') {
-          goHome();
-        } else {
-          closePhone();
-        }
-      }
+      // Held keys must not repeat-fire an action; the old Alt branch special-cased this
+      // and nothing else did.
+      if (event.repeat) return;
+
+      dispatchKey(event, {
+        currentApp: $currentApp.name,
+        callStatus: $callStore.status
+      });
+    };
+
+    /**
+     * Tell the client when a text field has focus.
+     *
+     * The client cannot see DOM focus, and `RegisterKeyMapping` bindings would otherwise
+     * still fire while typing — reachable today via freelook, which enables
+     * `SetNuiFocusKeepInput`. Typing `MM` into a message would insert two characters and
+     * toggle the phone twice.
+     */
+    const reportTyping = (typing: boolean) => fetchNui('setTyping', { typing }).catch(() => {});
+    const handleFocusIn = (e: FocusEvent) => {
+      if (isTypingTarget(e.target)) reportTyping(true);
+    };
+    const handleFocusOut = (e: FocusEvent) => {
+      if (isTypingTarget(e.target)) reportTyping(false);
     };
 
     window.addEventListener('message', handleMessage);
     window.addEventListener('keydown', handleKeydown);
+    window.addEventListener('focusin', handleFocusIn);
+    window.addEventListener('focusout', handleFocusOut);
 
     // Mock data for browser dev
     const now = new Date();
@@ -272,6 +341,8 @@
     return () => {
       window.removeEventListener('message', handleMessage);
       window.removeEventListener('keydown', handleKeydown);
+      window.removeEventListener('focusin', handleFocusIn);
+      window.removeEventListener('focusout', handleFocusOut);
     };
   });
 

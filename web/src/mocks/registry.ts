@@ -274,7 +274,11 @@ export const mockRegistry: Record<string, MockHandler> = {
   // Navigation & Client Controls
   hideFrame: () => true,
   toggleFreelook: () => true,
-  rejectCall: () => true
+  rejectCall: () => true,
+  setTyping: () => true,
+  setBatteryLevel: () => true,
+  // The browser has no ace list; the panel is unconditional there anyway.
+  checkAdmin: () => ({ isAdmin: true })
 };
 
 export async function getMockData(eventName: string, data?: any): Promise<any> {
