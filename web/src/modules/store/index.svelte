@@ -428,18 +428,19 @@
     <div class="flex shrink-0 border-b border-gray-800 bg-gray-950/60 p-1">
       <button
         onclick={() => (activeTab = 'catalog')}
-        class="flex-1 rounded-md py-1.5 text-xs font-medium transition class:bg-indigo-600={activeTab ===
-          'catalog'} class:text-white={activeTab === 'catalog'} class:text-gray-400={activeTab !==
-          'catalog'} class:hover:text-gray-200={activeTab !== 'catalog'}"
+        aria-pressed={activeTab === 'catalog'}
+        class="flex-1 rounded-md py-1.5 text-xs font-medium transition {activeTab === 'catalog'
+          ? 'bg-indigo-600 text-white'
+          : 'text-gray-400 hover:text-gray-200'}"
       >
         Store Catalog
       </button>
       <button
         onclick={() => (activeTab = 'installed')}
-        class="flex-1 rounded-md py-1.5 text-xs font-medium transition class:bg-indigo-600={activeTab ===
-          'installed'} class:text-white={activeTab ===
-          'installed'} class:text-gray-400={activeTab !==
-          'installed'} class:hover:text-gray-200={activeTab !== 'installed'}"
+        aria-pressed={activeTab === 'installed'}
+        class="flex-1 rounded-md py-1.5 text-xs font-medium transition {activeTab === 'installed'
+          ? 'bg-indigo-600 text-white'
+          : 'text-gray-400 hover:text-gray-200'}"
       >
         Installed ({$registryStore.length})
       </button>
@@ -522,28 +523,28 @@
             <div class="flex gap-1 text-[11px]">
               <button
                 onclick={() => (installedFilter = 'all')}
-                class="rounded px-2 py-0.5 transition class:bg-indigo-600={installedFilter ===
-                  'all'} class:text-white={installedFilter ===
-                  'all'} class:bg-gray-800={installedFilter !==
-                  'all'} class:text-gray-400={installedFilter !== 'all'}"
+                aria-pressed={installedFilter === 'all'}
+                class="rounded px-2 py-0.5 transition {installedFilter === 'all'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-800 text-gray-400'}"
               >
                 All
               </button>
               <button
                 onclick={() => (installedFilter = 'system')}
-                class="rounded px-2 py-0.5 transition class:bg-indigo-600={installedFilter ===
-                  'system'} class:text-white={installedFilter ===
-                  'system'} class:bg-gray-800={installedFilter !==
-                  'system'} class:text-gray-400={installedFilter !== 'system'}"
+                aria-pressed={installedFilter === 'system'}
+                class="rounded px-2 py-0.5 transition {installedFilter === 'system'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-800 text-gray-400'}"
               >
                 System
               </button>
               <button
                 onclick={() => (installedFilter = 'addon')}
-                class="rounded px-2 py-0.5 transition class:bg-indigo-600={installedFilter ===
-                  'addon'} class:text-white={installedFilter ===
-                  'addon'} class:bg-gray-800={installedFilter !==
-                  'addon'} class:text-gray-400={installedFilter !== 'addon'}"
+                aria-pressed={installedFilter === 'addon'}
+                class="rounded px-2 py-0.5 transition {installedFilter === 'addon'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-800 text-gray-400'}"
               >
                 Add-ons
               </button>
