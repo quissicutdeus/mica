@@ -68,7 +68,8 @@ RegisterNuiCallbackType('toggleFreelook');
 on('__cfx_nui:toggleFreelook', (data: { state: boolean }, cb: Function) => {
   if (PhoneState.isOpen()) {
     if (data && data.state) {
-      FreelookController.enableFreelook();
+      // The camera app holds this open indefinitely, so it gets the narrower profile.
+      FreelookController.enableFreelook(PhoneCameraController.isActive() ? 'camera' : 'freelook');
     } else {
       FreelookController.disableFreelook();
     }
