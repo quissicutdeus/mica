@@ -38,20 +38,26 @@ export const mockRegistry: Record<string, MockHandler> = {
   getContacts: () => mockContacts,
   createContact: async (contact: any) => {
     await delay(500);
-    return {
+    const created = {
       ...contact,
       id: Math.random(),
       citizenid: 'mock-id',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     } as Contact;
+    mockContacts.push(created);
+    return created;
   },
   updateContact: async (contact: Contact) => {
     await delay(500);
+    const i = mockContacts.findIndex((c) => c.id === contact.id);
+    if (i !== -1) mockContacts[i] = { ...mockContacts[i], ...contact };
     return contact;
   },
-  deleteContact: async () => {
+  deleteContact: async (data: { id: number }) => {
     await delay(500);
+    const i = mockContacts.findIndex((c) => c.id === data?.id);
+    if (i !== -1) mockContacts.splice(i, 1);
     return true;
   },
   shareContact: async () => {
@@ -63,20 +69,26 @@ export const mockRegistry: Record<string, MockHandler> = {
   getNotes: () => mockNotes,
   createNote: async (note: any) => {
     await delay(300);
-    return {
+    const created = {
       ...note,
       id: Math.random(),
       citizenid: 'mock-id',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     } as Note;
+    mockNotes.push(created);
+    return created;
   },
   updateNote: async (note: Note) => {
     await delay(300);
+    const i = mockNotes.findIndex((n) => n.id === note.id);
+    if (i !== -1) mockNotes[i] = { ...mockNotes[i], ...note };
     return note;
   },
-  deleteNote: async () => {
+  deleteNote: async (data: { id: number }) => {
     await delay(300);
+    const i = mockNotes.findIndex((n) => n.id === data?.id);
+    if (i !== -1) mockNotes.splice(i, 1);
     return true;
   },
 
@@ -161,11 +173,12 @@ export const mockRegistry: Record<string, MockHandler> = {
   },
   archiveConversation: async (data: any) => {
     await delay(200);
-    const id = data?.conversation_id;
-    const archived = data?.archived;
-    const conv = mockConversations.find((c) => c.id === id);
-    if (conv) {
-      conv.status = archived ? 'archived' : 'active';
+    // Reads `status`, which is what `store/messages.ts` actually sends. It used to read
+    // `archived`, a key nothing ever set, so archiving was a silent no-op in the browser
+    // and in Playwright — the route test only checks names, not payloads.
+    const conv = mockConversations.find((c) => c.id === data?.conversation_id);
+    if (conv && (data?.status === 'archived' || data?.status === 'active')) {
+      conv.status = data.status;
     }
     return true;
   },
