@@ -28,15 +28,15 @@ const names = (container: HTMLElement) =>
 beforeEach(() => isAdmin.set(true));
 
 describe('home launcher', () => {
-  it('shows the Administration app to an admin', () => {
+  it('shows the Admin app to an admin', () => {
     const { container } = render(Home, { props: { openApp: () => {} } });
-    expect(names(container).some((n) => n.includes('Administration'))).toBe(true);
+    expect(names(container).some((n) => n.includes('Admin'))).toBe(true);
   });
 
   it('hides it from everyone else', () => {
     isAdmin.set(false);
     const { container } = render(Home, { props: { openApp: () => {} } });
-    expect(names(container).some((n) => n.includes('Administration'))).toBe(false);
+    expect(names(container).some((n) => n.includes('Admin'))).toBe(false);
   });
 
   it('still shows ordinary apps to a non-admin', () => {

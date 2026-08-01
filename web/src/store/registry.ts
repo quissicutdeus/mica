@@ -163,8 +163,8 @@ function createAppRegistry() {
      * The manifest for an installed app.
      *
      * The shell holds app *ids*; anything shown to a player needs the manifest's `name`.
-     * Without this the error boundary rendered the id, so an Administration crash read
-     * "The Admin app encountered…".
+     * Without this the error boundary rendered the id rather than the manifest's
+     * `name`, which are not the same string.
      */
     getManifest: (appId: string): AppManifest | undefined =>
       get(installed).find((a: AppManifest) => a.id === appId),

@@ -63,7 +63,7 @@
   const isImage = (preview?: string) => Boolean(preview?.startsWith('data:image'));
 </script>
 
-<Screen title="Administration" {onback}>
+<Screen title="Admin" {onback}>
   <div class="p-4">
     <!-- Two tabs, matching Mail and Messages, so a decision can be reviewed and undone
          rather than being final the moment it is made. -->

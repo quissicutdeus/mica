@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * The Administration app is hidden from players without an admin ace.
+ * The Admin app is hidden from players without an admin ace.
  *
  * Worth stating plainly: this only checks the *launcher*. Hiding an icon is not a
  * permission — the report queue and every resolve action are gated again server-side,
@@ -12,21 +12,18 @@ import { test, expect } from '@playwright/test';
  * the app is visible here at all.
  */
 
-test.describe('Administration app', () => {
+test.describe('Admin app', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
   });
 
   test('appears on the home screen for an admin', async ({ page }) => {
-    await expect(page.getByRole('button', { name: /Administration/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Admin/i })).toBeVisible();
   });
 
   test('shows the pending report queue', async ({ page }) => {
-    await page
-      .getByRole('button', { name: /Administration/i })
-      .first()
-      .click();
-    await expect(page.locator('h1', { hasText: 'Administration' })).toBeVisible();
+    await page.getByRole('button', { name: /Admin/i }).first().click();
+    await expect(page.locator('h1', { hasText: 'Admin' })).toBeVisible();
 
     // The preview is captured when the report is filed, so the queue still says what
     // was reported even once the content is gone.
@@ -35,10 +32,7 @@ test.describe('Administration app', () => {
   });
 
   test('hiding content asks first, then clears the report', async ({ page }) => {
-    await page
-      .getByRole('button', { name: /Administration/i })
-      .first()
-      .click();
+    await page.getByRole('button', { name: /Admin/i }).first().click();
 
     await page.getByRole('button', { name: 'Remove for everyone' }).click();
     await expect(page.getByText('Remove this content?')).toBeVisible();
@@ -72,21 +66,18 @@ test.describe('Administration app', () => {
     // The reported behaviour: opening the app cleared the count even with the report
     // still pending. A report is outstanding until somebody decides about it, so this
     // must not behave like an unread badge.
-    const icon = page.getByRole('button', { name: /Administration/i }).first();
+    const icon = page.getByRole('button', { name: /Admin/i }).first();
     await expect(icon).toContainText('1');
 
     await icon.click();
-    await expect(page.locator('h1', { hasText: 'Administration' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'Admin' })).toBeVisible();
     await page.locator("button[aria-label='Return to home screen']").click();
 
-    await expect(page.getByRole('button', { name: /Administration/i }).first()).toContainText('1');
+    await expect(page.getByRole('button', { name: /Admin/i }).first()).toContainText('1');
   });
 
   test('history offers an undo', async ({ page }) => {
-    await page
-      .getByRole('button', { name: /Administration/i })
-      .first()
-      .click();
+    await page.getByRole('button', { name: /Admin/i }).first().click();
 
     await page.getByRole('button', { name: /^History/ }).click();
     await expect(page.getByText('No history yet')).toBeVisible();

@@ -3,7 +3,7 @@ import { defineApp, pendingReportCount } from '@gphone/sdk';
 
 export default defineApp({
   id: 'admin',
-  name: 'Administration',
+  name: 'Admin',
   color: 'bg-rose-600',
   icon: Icon,
   // Counts outstanding reports, and only falls when one is decided. Opening the app
