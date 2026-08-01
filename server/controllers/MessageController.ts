@@ -6,6 +6,7 @@ import { photos } from './PhotoController';
 import { defineServerApp } from '../lib/defineServerApp';
 import { conversationIdFrom, requirePositiveInt } from '../lib/payload';
 import { Message } from '@shared/types';
+import { FrameworkBridge } from '../lib/FrameworkBridge';
 
 /**
  * Messages: shared scope.
@@ -122,6 +123,45 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
   return await messageRepo.findByConversation(conversationId);
 });
 
+/**
+ * Push a new message to everyone else in the thread.
+ *
+ * Sending used to write the row and tell nobody. The reply went back to the sender and
+ * that was the end of it — the recipient's phone learned nothing, so a text only ever
+ * appeared if they happened to re-open the conversation and it re-fetched. With apps
+ * resident across an open/close cycle, often not even then.
+ *
+ * Offline participants are skipped rather than queued: the row is already written, so
+ * they get it from the normal fetch when they next open the thread.
+ */
+export const deliverToParticipants = async (
+  conversationId: number,
+  senderCitizenId: string,
+  sender: { name?: string | null; phone?: string | null },
+  message: Message & { id: number }
+): Promise<void> => {
+  const participants = await conversationRepo.findParticipants(conversationId);
+
+  for (const participant of participants) {
+    if (participant.citizenid === senderCitizenId) continue;
+    if (participant.status && participant.status !== 'active') continue;
+
+    const target = FrameworkBridge.getSourceByCitizenId(participant.citizenid);
+    // Offline. The row is written, so they get it from the normal fetch next time.
+    if (!target) continue;
+
+    // The shape the shell's `receiveMessage` route already expects: it appends to the
+    // thread and raises a toast with an inline reply.
+    emitNet('gphone:client:messages:received', target, {
+      conversation_id: conversationId,
+      message: message.message,
+      senderName: sender.name ?? undefined,
+      phone: sender.phone ?? undefined,
+      row: message
+    });
+  }
+};
+
 app.registerEvent('send', async (source, cbId, data, citizenid) => {
   // data: { conversation_id, message, attachments? }
   const conversationId = conversationIdFrom(data);
@@ -144,5 +184,23 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
   };
 
   const id = await messageRepo.create(newMessage);
-  return { ...newMessage, id };
+  const stored = { ...newMessage, id } as Message & { id: number };
+
+  // Delivery must not fail the send: the row is committed either way, and the sender
+  // should not see an error for something that already happened.
+  try {
+    const senderPlayer = FrameworkBridge.getPlayer(source);
+    const charinfo = senderPlayer?.rawPlayer?.PlayerData?.charinfo;
+    const name = charinfo ? `${charinfo.firstname ?? ''} ${charinfo.lastname ?? ''}`.trim() : '';
+    await deliverToParticipants(
+      conversationId,
+      citizenid,
+      { name: name || null, phone: senderPlayer?.phone ?? null },
+      stored
+    );
+  } catch (error) {
+    console.error('[Messages] Delivery failed for conversation', conversationId, error);
+  }
+
+  return stored;
 });

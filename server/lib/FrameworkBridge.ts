@@ -112,6 +112,25 @@ export class FrameworkBridge {
     return {};
   }
 
+  /**
+   * The server id of an online character, or null when they are not connected.
+   *
+   * Needed to push anything to a specific character — delivering a message, for one.
+   * Everything else here goes the other way, from a source to their data.
+   */
+  public static getSourceByCitizenId(citizenid: string): number | null {
+    if (!citizenid) return null;
+    try {
+      const players = FrameworkBridge.getAllPlayers();
+      for (const src in players) {
+        if (players[src]?.PlayerData?.citizenid === citizenid) return parseInt(src, 10);
+      }
+    } catch (error) {
+      console.error(`[FrameworkBridge] Error finding source for ${citizenid}:`, error);
+    }
+    return null;
+  }
+
   public static getPlayerByPhone(phone: string): FrameworkPlayer | null {
     try {
       const players = FrameworkBridge.getAllPlayers();
