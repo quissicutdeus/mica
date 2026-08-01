@@ -96,15 +96,15 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
 1. **No mutating git.** `git status`, `git diff`, `git log` are fine. Never `add`, `commit`, `push`,
    `checkout`, `reset`, `stash`, `rebase`, or `branch`.
 2. **Never edit `fxmanifest.lua` or anything in `dist/`.** Both are generated — the manifest by
-   `scripts/generate-manifests.js`, `dist/` by the build. Edits are erased by the next `clearbuild`.
+   `scripts/generate-barrels.js`, `dist/` by the build. Edits are erased by the next `clearbuild`.
    Change the generator instead.
 3. **Never delete or "simplify" `web/postcss.config.js`.** It looks redundant next to Tailwind 4.
    It is not. See §6 — removing it breaks every color in-game while the dev browser looks perfect.
 4. **Never pass unsanitized user content to `{@html}`.** See §7.
 5. **No new dependencies** without asking.
 6. **Do not change** TypeScript versions in either package, Vite `build.outDir`, or
-   `scripts/generate-manifests.js` output paths without asking.
-7. **SDK First.** All applications inside `web/src/modules/` and external add-ons must consume OS services (navigation, notifications, contacts, camera, registry, NUI bridge) strictly via `@gphone/sdk` hooks (`useNavigation`, `usePhoneNotification`, `useContacts`, `useCamera`, `useAppRegistry`, `useNuiBridge`, `useKeybinds`). Direct relative imports into internal `web/src/store/` **or** `web/src/components/` files from app modules are prohibited — reaching into internal shell paths breaks standalone SDK app compatibility. UI primitives (`Screen`, `ListItem`, `Button`, `Avatar`, `SearchBar`, `EmptyState`, `ConfirmDialog`, `FloatingActionButton`, `PhotoPickerModal`) are re-exported from `@gphone/sdk`; add to `web/src/sdk/components.ts` rather than importing across. The shell's own pieces — `PhoneFrame`, `Home`, `ToastContainer`, `VolumeHud`, `ErrorBoundary` — are deliberately **not** exported, because an app rendering its own phone frame or toast host is a bug.
+   `scripts/generate-barrels.js` output paths without asking.
+7. **SDK First.** Everything in `web/src/apps/`, and every external add-on, consumes the OS strictly through `@gphone/sdk` hooks (`useNavigation`, `usePhoneNotification`, `useContacts`, `usePhotos`, `useCamera`, `useClock`, `useAppRegistry`, `useNuiBridge`, `useKeybinds`). Relative imports out of an app — into `shell/`, `services/`, `nui/`, `lib/`, or `sdk/` by path — are prohibited and enforced by `web/src/sdk/boundary.test.ts`. An add-on installed from the Store resolves `@gphone/sdk` and nothing else, so a relative import is a thing a third-party app cannot do. UI primitives (`Screen`, `ListItem`, `Button`, `Avatar`, `SearchBar`, `EmptyState`, `ConfirmDialog`, `FloatingActionButton`, `PhotoPickerModal`, `ReportDialog`, `SegmentedControl`, `ToggleSwitch`, `ActionSheet`) live in `web/src/sdk/ui/` and are re-exported from `web/src/sdk/components.ts`. The shell's own pieces — `PhoneFrame`, `Launcher`, `ToastHost`, `VolumeHud`, `ErrorBoundary` — are deliberately **not** exported, because an app rendering its own phone frame or toast host is a bug.
 
    **Keyboard shortcuts specifically.** Never add a raw `keydown` listener or a
    `<svelte:window on:keydown>` for a phone-level action; declare the action in
@@ -136,16 +136,16 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
    `server/lib/Repository.ts`:
    - **Never interpolate a payload key into SQL.** Column lists are built from object keys and MySQL
      cannot parameterize an identifier. Every key is checked against the repository's `columns`
-     allowlist first. New apps get this from their `defineServerApp` schema (§10); a hand-written
+     allowlist first. New apps get this from their `defineService` schema (§10); a hand-written
      repository must declare `columns` itself.
    - **Never mutate a row without an ownership predicate.** `update` and `delete` require a
      `citizenid` and put it in the `WHERE`; a row id alone is never authorization. For rows shared
      between players (conversations, messages) ownership is the wrong question — check membership,
      e.g. `ConversationRepository.isParticipant`. Privileged writes go through a **named** repository
-     method built on the `protected updateUnscoped`, never a controller-level bypass.
+     method built on the `protected updateUnscoped`, never a service-level bypass.
 
    Client-writable fields are declared per table via `clientWritable` — derived from the schema for
-   declared apps (§10), hand-written otherwise; `ServerApp` reduces the payload to that set before it
+   declared apps (§10), hand-written otherwise; `ServiceEndpoint` reduces the payload to that set before it
    reaches SQL. `id`, `citizenid`, `created_at`, `updated_at` are never
    client-writable, and `status` is deliberately excluded everywhere — moderation and soft-delete
    state is not the client's to set.
@@ -201,10 +201,11 @@ plain `tsc` with no Svelte involvement, so they get the native compiler now and 
 ## 4. Svelte 5 — state policy
 
 Svelte 5 is installed, so runes (`$state`, `$derived`, `$effect`) are available. **This repo does not
-use them for global state.** Global state is `writable` / `derived` stores in `web/src/store/`, one
+use them for global state.** Global state is `writable` / `derived` stores in `web/src/services/`
+(a service's client-side cache) or `web/src/shell/state/` (state the phone itself owns), one
 file per domain (`contacts.ts`, `messages.ts`).
 
-- Cross-component / cross-module state → **stores**, in `web/src/store/`.
+- Cross-component / cross-app state → **stores**, in `web/src/services/` or `web/src/shell/state/`.
 - Component-local state → runes are fine, inside `.svelte` files.
 - **Do not use `setContext`/`getContext` as a workaround for global state.** If state needs to be accessed across disparate modules, put it in a store. Context is strictly for component library wiring (e.g., compound components).
 - **Do not** introduce `.svelte.ts` rune-based state modules, and do not convert existing stores to
@@ -292,7 +293,7 @@ assume Chromium 103.
 Player-supplied strings — message bodies, contact names, note contents — must never reach `{@html}`
 unsanitized. `marked` passes raw HTML through by default and has no built-in sanitizer.
 
-- Render user content only via the sanitizing helper in `web/src/utils/markdown.ts`. Never call
+- Render user content only via the sanitizing helper in `web/src/lib/markdown.ts`. Never call
   `marked.parse()` directly in a component.
 - Never add `a` to the DOMPurify allowlist. Anchor navigation reloads the CEF instance and drops all
   state, so a link in a message body is a griefing vector.
@@ -309,37 +310,54 @@ effects. XSS here is privilege escalation, not just defacement.
 
 ### Layout
 
+Four words carry the structure, and they mean exactly one thing each:
+
+- **App** — something with an icon on the home screen. Only this.
+- **Shell** — the OS: frame, launcher, navigation, key dispatch, notifications, hardware.
+- **Service** — a named group of server actions, usually backed by a table. `notes` is one;
+  so are `battery`, `reports`, `shell` and `phone`, none of which are apps.
+- **SDK** — the contract apps build against, and the only thing they may import.
+
 | Path                   | Runs in      | Notes                                                            |
 | ---------------------- | ------------ | ---------------------------------------------------------------- |
-| `client/controllers/`  | FiveM client | One file per domain, auto-indexed by the manifest generator      |
-| `client/lib/`          | FiveM client | `ClientApp` (NUI↔server relay), `FrameworkBridge`, `NuiUtils`    |
-| `server/controllers/`  | FiveM server | One file per domain, auto-indexed                                |
-| `server/lib/`          | FiveM server | `ServerApp`, `Repository`, `Database`, `AuditLogger`, `payload`  |
+| `client/systems/`      | FiveM client | Client subsystems, auto-indexed by the barrel generator          |
+| `client/lib/`          | FiveM client | `ServiceProxy` (NUI↔server relay), `FrameworkBridge`, `NuiUtils` |
+| `server/services/`     | FiveM server | One file per service, named for the service, auto-indexed        |
+| `server/lib/`          | FiveM server | `ServiceEndpoint`, `defineService`, `Repository`, `Database`     |
 | `server/repositories/` | FiveM server | Hand-written repos, for tables not yet migrated to §10           |
-| `sql/apps/`            | generated    | Per-app DDL from `pnpm generate:sql`; committed, applied by hand |
+| `sql/apps/`            | generated    | Per-service DDL from `pnpm generate:sql`; applied by hand        |
 | `gphone.sql`           | hand-written | Framework schema only — the moderation audit ledger              |
 | `server/__tests__/`    | Vitest/node  | Excluded from `tsc`; see §1                                      |
 | `shared/types.ts`      | both         | `@shared/types` path alias, not a workspace package (§3)         |
-| `web/src/core/`        | CEF+browser  | Transport adapters — the only place that knows about `fetch`     |
-| `web/src/store/`       | CEF+browser  | Global state, one file per domain. Internal; apps use the SDK    |
+| `web/src/shell/`       | CEF+browser  | The OS: `Shell.svelte`, `PhoneFrame`, `Launcher`, `ToastHost`    |
+| `web/src/shell/state/` | CEF+browser  | State the phone itself owns: navigation, keybinds, hardware      |
+| `web/src/services/`    | CEF+browser  | Client-side cache of each server service. Reached via the SDK    |
 | `web/src/sdk/`         | CEF+browser  | `@gphone/sdk` — the public surface for apps (§2.7)               |
-| `web/src/modules/`     | CEF+browser  | One dir per app: `manifest.ts` + `index.svelte` + `Icon.svelte`  |
-| `web/src/mocks/`       | browser only | Mock NUI responses so `pnpm dev` works with no game running      |
+| `web/src/sdk/ui/`      | CEF+browser  | UI primitives and icons apps may build with                      |
+| `web/src/apps/`        | CEF+browser  | One dir per app: `manifest.ts` + `index.svelte` + `Icon.svelte`  |
+| `web/src/nui/`         | CEF+browser  | The bridge: transport, `fetchNui`, `useNuiEvent`, browser mocks  |
+| `web/src/lib/`         | CEF+browser  | Pure helpers — formatters, markdown, scroll. No state, no I/O    |
 
-`client/controllers/index.ts`, `server/controllers/index.ts` and `web/src/sdk/hooks/index.ts` are
-**generated** by `scripts/generate-manifests.js`. Add a file to the directory; do not edit the index.
+`client/systems/index.ts`, `server/services/index.ts`, `web/src/sdk/hooks/index.ts` and
+`web/src/sdk/icons.ts` are **generated** by `scripts/generate-barrels.js`. Add a file to the
+directory; do not edit the index.
+
+**Why `web/src/services/` and not a store inside each app.** Every one of these is read by
+more than its own app — Messages resolves names through `contacts`, the shell raises a toast
+from `mail`. They are not app state; they are the client half of a service, which is why they
+sit beside the SDK hooks that expose them rather than inside `apps/`.
 
 ### A NUI round trip touches three files
 
 This is the single most common source of half-built features. A call from `web/` reaches the database
 only if every layer exists:
 
-1. **`web/`** — `fetchNui('someAction', payload)`, usually from a store in `web/src/store/`.
-2. **`client/controllers/`** — `app.registerCallback('someAction', 'gphone:server:<app>:<action>')`.
+1. **`web/`** — `fetchNui('someAction', payload)`, usually from `web/src/services/`.
+2. **`shared/routes.ts`** — a `route()` entry; `client/systems/Relay.ts` registers every one.
    Without this the NUI callback is unregistered, `fetchNui` swallows the failure and returns its
    `defaultValue`. **The feature silently does nothing in game.**
-3. **`server/controllers/`** — a `registerEvent('<action>', ...)` handler, or one of the generic CRUD
-   actions that `ServerApp` registers for you (`get`/`create`/`update`/`delete`).
+3. **`server/services/`** — a `registerEvent('<action>', ...)` handler, or one of the generic CRUD
+   actions that `ServiceEndpoint` registers for you (`get`/`create`/`update`/`delete`).
 
 Two traps:
 
@@ -348,8 +366,8 @@ Two traps:
   in game. When adding an endpoint, add all three layers _and_ the mock. When touching an existing
   one, grep `client/` and `server/` for the action name before assuming it is wired.
 - **Response events are derived, never written by hand.** `shared/rpc.ts` owns
-  `requestEventFor` / `responseEventFor`, and both `ServerApp` and `ClientApp` import them, so the
-  two cannot disagree. `ClientApp.registerCallback` subscribes the derived reply itself. Previously
+  `requestEventFor` / `responseEventFor`, and both `ServiceEndpoint` and `ServiceProxy` import them, so the
+  two cannot disagree. `ServiceProxy.registerCallback` subscribes the derived reply itself. Previously
   the client subscribed a fixed set of four CRUD reply names and every custom action needed an
   explicit opt-in — all four mail actions were missing it and timed out after 15s, silently.
 
@@ -364,7 +382,7 @@ database. Re-running it against a live one succeeds and changes nothing — whic
 
 Adding a column or index therefore needs nothing extra: `SchemaMigrator` runs at resource
 start, reads `information_schema`, and applies the difference. Change the
-`defineServerApp` declaration, run `pnpm generate:sql`, done.
+`defineService` declaration, run `pnpm generate:sql`, done.
 
 It is **additive only**, and that is a safety property rather than an unfinished feature.
 A drop, a rename and a type change can all lose data, and none is inferable from a diff —
@@ -399,11 +417,11 @@ no `gphone:` prefix; the test scans `web/src` precisely to catch one borrowing t
 
 ### Testing
 
-| Suite  | Command                 | Covers                                                      |
-| ------ | ----------------------- | ----------------------------------------------------------- |
-| server | `pnpm test:unit:server` | `Repository`/`ServerApp` policy, per-table write allowlists |
-| web    | `pnpm test:unit:web`    | Stores, utils, SDK, components                              |
-| e2e    | `pnpm test:e2e`         | Playwright over `web/` against the mock transport           |
+| Suite  | Command                 | Covers                                                            |
+| ------ | ----------------------- | ----------------------------------------------------------------- |
+| server | `pnpm test:unit:server` | `Repository`/`ServiceEndpoint` policy, per-table write allowlists |
+| web    | `pnpm test:unit:web`    | Stores, utils, SDK, components                                    |
+| e2e    | `pnpm test:e2e`         | Playwright over `web/` against the mock transport                 |
 
 What the suites **cannot** catch: anything that needs the game. The Chromium-103 gap (§6), the
 client/server relay layers above, framework bridge behaviour, and SQL that only fails against a real
@@ -442,14 +460,17 @@ Then, before saying it works:
 
 ---
 
-## 10. Declaring an app's server half
+## 10. Declaring a service
 
-New apps declare their server side once instead of hand-writing a repository and a controller.
-`server/lib/defineServerApp.ts` derives everything from one schema:
+A service is a named group of server actions, usually backed by a table. Most apps have one;
+some services (`shell`, `phone`) have no app, and some apps (Calculator) have no service.
+
+Declare it once instead of hand-writing a repository and an endpoint.
+`server/lib/defineService.ts` derives everything from one schema:
 
 ```ts
-export const notes = defineServerApp<Note>({
-  id: 'notes', // matches the web module's manifest id
+export const notes = defineService<Note>({
+  id: 'notes', // matches the app manifest id, and the <service> event segment
   scope: 'owner',
   statuses: ['active', 'archived', 'deleted', 'moderated'],
   schema: {
@@ -585,5 +606,75 @@ direction from a negative amount renders every withdrawal as a credit. Normalize
 testable without a running server, and make the mock emit the same normalized shape — otherwise `pnpm
 dev` disagrees with production and hides the bug (§8).
 
-Such an app has **no table and no declaration**: pass `null` as the repository to `ServerApp` and
+Such an app has **no table and no declaration**: pass `null` as the repository to `ServiceEndpoint` and
 disable every generic CRUD action. `Bank` is the worked example.
+
+---
+
+## 11. Adding an app
+
+The shortest path, and the order that catches mistakes soonest. Notes is the smallest complete
+example to copy from; Bank is the example with no table.
+
+### 1. The app directory
+
+`web/src/apps/<id>/`, with three files. The id is lowercase, matches the manifest, and becomes the
+`<service>` segment of every event the app's service uses.
+
+```
+web/src/apps/journal/
+├── manifest.ts     defineApp({ id: 'journal', name: 'Journal', ... })
+├── index.svelte    the app itself; receives `onback`
+└── Icon.svelte     32x32, sized `h-8 w-8` like every other icon
+```
+
+Nothing registers these. `shell/state/registry.ts` discovers them with `import.meta.glob`, so
+creating the directory is the whole installation step.
+
+**Name it for the launcher.** Anything past about eight characters truncates under the icon —
+"Administration" became "Admin" for exactly this reason.
+
+### 2. The service, if it needs one
+
+One declaration in `server/services/<Name>.ts` (§10). Repository, write allowlist, CRUD events and
+DDL are all derived from it. Then `pnpm generate:sql` and apply the file.
+
+An app with no gPhone-owned table skips this entirely — Calculator has no service at all, and Bank
+has a service with `null` for its repository because the data belongs to another resource.
+
+### 3. The route
+
+Every NUI action needs a `route()` entry in `shared/routes.ts`. `client/systems/Relay.ts` registers
+all of them, so there is no per-app client file to write.
+
+This is the layer that goes missing. `readConversation`, `renameConversation`,
+`archiveConversation`, `rejectCall`, `flipCamera` and all four mail actions have each shipped as a
+silent no-op. `server/__tests__/routes.test.ts` cross-references the table against the `fetchNui`
+calls in `web/`, the events the server registers, and the browser mock — a missing layer fails there
+rather than in game.
+
+### 4. The browser mock
+
+Add the action to `web/src/nui/mocks/registry.ts`. Without it the app is dead in `pnpm dev` and in
+Playwright, and — worse — a mock that returns plausible data while doing nothing makes an e2e test
+pass with the feature broken. Make mutators actually mutate the fixtures.
+
+### 5. Wiring inside the app
+
+- Import from `@gphone/sdk`. Nothing else. `sdk/boundary.test.ts` enforces it.
+- Data comes from a hook (`useNotes`, `useContacts`, …), never from `services/` by path.
+- Load on `onAppMount`, not an `$effect` — apps are resident, and an `$effect` that reads `$state`
+  becomes a refetch loop.
+- If the app has internal levels, write `goBack` **and** register it: `onKeybind('back', goBack)`.
+  The shell owns Backspace and pre-empts an unregistered ladder, sending the player home from a
+  detail view. `sdk/backNavigation.test.ts` checks this.
+- Give the empty state a `<EmptyState>`. A broken fetch showing only a heading is indistinguishable
+  from "you have nothing yet".
+
+### 6. Before you call it done
+
+`pnpm typecheck`, `test:unit`, `test:e2e`, `build`, `format:check` — by exit code (§9). `build` and
+`e2e` are not optional: they are the only steps that catch a broken import inside a `.svelte` file
+or a stale mock.
+
+Then run it in game. A green suite is not evidence a NUI feature works (§8).

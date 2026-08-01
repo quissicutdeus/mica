@@ -31,7 +31,7 @@
 
 ### 🛠️ Backend & Core Architecture
 
-- **SDK-First Architecture (`@gphone/sdk`)**: Complete OS service hook coverage (`useNavigation`, `usePhoneNotification`, `useContacts`, `useCamera`, `useAppRegistry`, `useAccount`, `useCall`, `useMail`, `useNotes`, `useMessages`, `useStorage`, `useSystemHardware`, `useNuiBridge`) and domain type exports (`Transaction`, `UIMessage`, `UIConversation`, `Contact`, `Mail`, `Note`), eliminating internal store imports from app modules.
+- **SDK-First Architecture (`@gphone/sdk`)**: Complete OS hook coverage (`useNavigation`, `usePhoneNotification`, `useContacts`, `usePhotos`, `useCamera`, `useClock`, `useAppRegistry`, `useAccount`, `useCall`, `useMail`, `useNotes`, `useMessages`, `useStorage`, `useSystemHardware`, `useNuiBridge`, `useKeybinds`) and domain type exports (`Transaction`, `UIMessage`, `UIConversation`, `Contact`, `Mail`, `Note`). Apps import the SDK and nothing else — enforced by a test, not just documented.
 - **Client & NUI Transport Safety**: Deterministic ID generation and 15-second safety timeouts (`ClientApp.ts`) preventing NUI callbacks from hanging CEF indefinitely.
 - **System vs. Add-on Protection Engine**: Immutable System App protection for core OS apps alongside dynamic Add-on app management and granular permission auditing.
 - **App Isolation & Guardrails**: Wrapped dynamic app rendering with Svelte 5 `<svelte:boundary>` (`ErrorBoundary.svelte`) preventing third-party app runtime exceptions from locking FiveM NUI mouse focus or breaking OS navigation.
@@ -44,7 +44,7 @@
 - **Declarative Server Schema**: Each app declares its server half once via `defineServerApp` — the schema drives the SQL identifier allowlist, the client-writable field set, and the generated DDL in `sql/apps/`, so they cannot drift apart.
 - **Inventory Integration**: Out-of-the-box support for `ox_inventory` item registration and removal.
 - **Central Audit Logging**: Comprehensive action auditing (`gphone_audit_logs`) tracking archive, deletion, moderation, and participant events.
-- **Animation & Control**: Client-side animation controllers, camera capture controllers, and freelook camera handling.
+- **Animation & Control**: Client-side animation, camera capture, and freelook camera systems.
 
 ---
 
@@ -124,7 +124,7 @@ This runs watch scripts for client/server bundles (`pnpm watch`) and the Vite we
 
 ### Type Checking
 
-Run type checks across all modules (client, server, and web):
+Run type checks across all three targets (client, server, and web):
 
 ```sh
 pnpm typecheck
@@ -132,7 +132,7 @@ pnpm typecheck
 
 ### Testing & Quality Assurance
 
-Run unit test suites (Vitest for all stores, utilities, SDK helpers, and transport bridge adapters) and Playwright End-to-End (E2E) test suites:
+Run unit test suites (Vitest for service caches, shell state, helpers, SDK, and transport adapters) and Playwright End-to-End (E2E) test suites:
 
 ```sh
 # Run all unit tests (Vitest)
@@ -154,8 +154,8 @@ pnpm --filter web test:e2e:report
 
 ```
 gphone/
-├── client/           # Client-side TypeScript controllers (Animation, Battery, Camera, Call, etc.)
-├── server/           # Server-side controllers, FrameworkBridge, AuditLogger, & Database access
+├── client/           # Client-side systems (Animation, Battery, Camera, Call, Relay, etc.)
+├── server/           # Server-side services, FrameworkBridge, AuditLogger, & Database access
 ├── shared/           # Shared types, interfaces, and constants
 ├── web/              # Svelte 5 + Vite + Tailwind CSS v4 frontend application
 ├── scripts/          # Manifest generation, SQL generation, and build automation

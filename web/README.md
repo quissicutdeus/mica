@@ -25,16 +25,15 @@ web/
 │   ├── notifications.spec.ts
 │   └── nui.spec.ts
 ├── src/
-│   ├── components/     # Core OS UI components (PhoneFrame, ErrorBoundary, VolumeHud, ToastContainer)
-│   ├── core/           # Core OS architecture & bridge adapters
-│   │   └── bridge/     # Transport abstraction layer (NuiTransportAdapter, MockTransportAdapter, WebSocketTransportAdapter, transport.test.ts)
-│   ├── mocks/          # Standalone browser mode data mocks & registry
-│   ├── modules/        # Phone application modules (bank, calculator, camera, contacts, mail, messages, notes, phone, photos, settings, store)
-│   ├── sdk/            # @gphone/sdk (defineApp manifest helper, domain hooks under hooks/, types.ts re-exports, versioning, sdk.test.ts)
-│   ├── store/          # Svelte state stores & unit tests (account, bootstrap, call, camera, charge, contacts, mail, messages, navigation, notes, photos, registry, signal, sound, time, toast)
-│   ├── utils/          # Utility helpers & unit tests (cardUtils, debug, dragScroll, fetchNui, formatters, markdown, useNuiEvent, useScrollDetect)
-│   ├── App.svelte      # Main OS runtime container & ErrorBoundary wrapper
-│   └── main.ts
+│   ├── apps/           # One directory per app (admin, bank, calculator, camera, contacts, mail, messages, notes, phone, photos, settings, store)
+│   ├── shell/          # The OS itself: Shell.svelte, PhoneFrame, Launcher, ToastHost, VolumeHud, ErrorBoundary
+│   │   └── state/      # State the phone owns (navigation, keybinds, registry, bootstrap, devtools, charge, signal, time, audio, toast)
+│   ├── services/       # Client-side cache of each server service (account, admin, call, camera, contacts, conversations, mail, notes, photos, reports)
+│   ├── sdk/            # @gphone/sdk — the only thing apps may import
+│   │   └── ui/         # UI primitives and icons apps build with
+│   ├── nui/            # The bridge: transport adapters, fetchNui, useNuiEvent, browser mocks
+│   ├── lib/            # Pure helpers (debug, dragScroll, formatters, isBrowser, markdown, useScrollDetect)
+│   └── main.ts         # Mounts shell/Shell.svelte
 ├── package.json
 └── playwright.config.ts
 ```
@@ -47,7 +46,7 @@ gPhone includes a full suite of automated unit (Vitest) and Playwright End-to-En
 
 ### Running Unit Tests
 
-Run unit test suites covering Svelte stores (`account`, `bootstrap`, `call`, `camera`, `charge`, `contacts`, `dev`, `mail`, `messages`, `navigation`, `notes`, `photos`, `registry`, `signal`, `sound`, `time`, `toast`), transport bridge adapters, SDK helpers, and utility functions (`cardUtils`, `dragScroll`, `fetchNui`, `formatters`, `markdown`, `useNuiEvent`, `useScrollDetect`):
+Run unit test suites covering the service caches (`account`, `call`, `camera`, `contacts`, `conversations`, `mail`, `notes`, `photos`), shell state (`bootstrap`, `charge`, `keybinds`, `navigation`, `registry`, `signal`, `time`, `audio`, `toast`), transport adapters, SDK helpers and boundaries, and the pure helpers in `lib/`:
 
 ```sh
 pnpm test:unit
