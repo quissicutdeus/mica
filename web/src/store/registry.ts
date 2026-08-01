@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { type AppManifest, defineApp } from '@gphone/sdk';
 
 export type { AppManifest } from '@gphone/sdk';
@@ -94,7 +94,8 @@ function removeSavedRemoteAppUrl(url: string) {
 
 // Reactive App Registry Store for Dynamic Community App Installation
 function createAppRegistry() {
-  const { subscribe, update } = writable<AppManifest[]>(loadedApps);
+  const installed = writable<AppManifest[]>(loadedApps);
+  const { subscribe, update } = installed;
 
   const store = {
     subscribe,
@@ -158,6 +159,15 @@ function createAppRegistry() {
       update((apps) => apps.filter((a) => a.id !== appId));
     },
     getComponent: (appId: string) => componentRegistry[appId],
+    /**
+     * The manifest for an installed app.
+     *
+     * The shell holds app *ids*; anything shown to a player needs the manifest's `name`.
+     * Without this the error boundary rendered the id, so an Administration crash read
+     * "The Admin app encountered…".
+     */
+    getManifest: (appId: string): AppManifest | undefined =>
+      get(installed).find((a: AppManifest) => a.id === appId),
     loadRemoteApp: async (url: string): Promise<{ manifest: AppManifest; component: any }> => {
       if (!url || typeof url !== 'string') {
         throw new Error('gPhone App Loader error: Remote app URL must be a valid string.');

@@ -312,7 +312,9 @@
               aria-hidden={!isActive}
               inert={!isActive}
             >
-              <ErrorBoundary appName={instance.name}>
+              <ErrorBoundary
+                appName={appRegistryStore.getManifest(instance.name)?.name ?? instance.name}
+              >
                 <AppComponent onback={goHome} {...instance.props} />
               </ErrorBoundary>
             </div>
