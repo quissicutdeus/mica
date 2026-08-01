@@ -337,6 +337,27 @@ Two traps:
 Payload shape: the generic CRUD path reads the row id from `data.id`. Conversation-scoped custom
 actions accept `conversation_id`, `id`, or a bare id via `conversationIdFrom` in `server/lib/payload.ts`.
 
+#### Schema changes
+
+`sql/apps/*.sql` is `CREATE TABLE IF NOT EXISTS`, so it only ever builds a **fresh**
+database. Re-running it against a live one succeeds and changes nothing — which is how
+`archived_at` reached new installs and no existing one.
+
+Adding a column or index therefore needs nothing extra: `SchemaMigrator` runs at resource
+start, reads `information_schema`, and applies the difference. Change the
+`defineServerApp` declaration, run `pnpm generate:sql`, done.
+
+It is **additive only**, and that is a safety property rather than an unfinished feature.
+A drop, a rename and a type change can all lose data, and none is inferable from a diff —
+a renamed column looks exactly like one dropped and another added. Those are printed for
+a human and never applied. `gphoneschema` prints the same report without touching
+anything; `setr gphone_auto_migrate false` turns the automatic pass off.
+
+The expected shape of a table comes from `expectedShape()` in `server/lib/schemaSql.ts`,
+which both the `CREATE TABLE` generator and the migration planner read. Do not restate a
+table's columns anywhere else: a fresh install and an upgraded one must not be able to
+disagree.
+
 #### Event names
 
 Every net event is **`gphone:<side>:<app>:<action>`**, with no exceptions —

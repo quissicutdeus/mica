@@ -10,3 +10,4 @@ import './MailController';
 import './MessageController';
 import './NoteController';
 import './PhotoController';
+import './SchemaController';

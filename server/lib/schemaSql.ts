@@ -83,6 +83,74 @@ const foreignKeySql = (table: string, column: string, def: ColumnDef): string | 
   );
 };
 
+/** One column of a table, as data rather than as a line of SQL. */
+export interface ExpectedColumn {
+  name: string;
+  def: ColumnDef;
+  /** True for `id`. Never migrated: adding an auto-increment PK to a live table is
+   *  not something to attempt unattended. */
+  autoIncrement?: boolean;
+}
+
+export interface ExpectedShape {
+  table: string;
+  columns: ExpectedColumn[];
+  indexes: ResolvedIndex[];
+}
+
+/**
+ * What a table is supposed to look like, as data.
+ *
+ * Extracted so `toCreateTableSql` and the migration planner read the *same*
+ * description. Previously the shape existed only as lines of SQL text inside the
+ * creator, which meant a migrator would have had to restate it — and a restatement
+ * that drifts is how you get a fresh install and an upgraded install with different
+ * schemas.
+ */
+export function expectedShape(resolved: ResolvedAppSchema): ExpectedShape {
+  const { table, statuses, fields, indexes } = resolved;
+
+  const perColumnIndexes: ResolvedIndex[] = fields
+    .filter(({ def }) => def.index)
+    .map(({ name }) => ({
+      name: `citizenid_${name}`,
+      columns: ['citizenid', name],
+      unique: false
+    }));
+
+  return {
+    table,
+    columns: [
+      { name: 'id', def: { type: 'int', notNull: true }, autoIncrement: true },
+      { name: 'citizenid', def: { type: 'string', length: 50, notNull: true } },
+      ...fields.map(({ name, def }) => ({ name, def })),
+      {
+        name: 'status',
+        def: { type: 'enum', values: statuses, notNull: true, default: 'active' }
+      },
+      { name: 'created_at', def: { type: 'timestamp', notNull: true, defaultNow: true } },
+      {
+        name: 'updated_at',
+        def: { type: 'timestamp', notNull: true, defaultNow: true, onUpdateNow: true }
+      }
+    ],
+    indexes: [
+      { name: 'status', columns: ['status'], unique: false },
+      { name: 'citizenid_status', columns: ['citizenid', 'status'], unique: false },
+      ...perColumnIndexes,
+      ...indexes.map(normalizeIndex)
+    ]
+  };
+}
+
+/** A single `ADD COLUMN` / column-definition fragment, without the CREATE TABLE indent. */
+export const columnDefinitionSql = (name: string, def: ColumnDef): string =>
+  columnSql(name, def).trim();
+
+/** A single `ADD [UNIQUE] KEY` fragment. */
+export const indexDefinitionSql = (index: ResolvedIndex): string =>
+  indexSql(index).trim().replace(/,$/, '');
+
 /**
  * The full `CREATE TABLE` for an app's primary table, matching the conventions
  * already in gphone.sql: soft-delete `status` enum, citizenid FK onto `players` with
@@ -90,12 +158,9 @@ const foreignKeySql = (table: string, column: string, def: ColumnDef): string | 
  * both.
  */
 export function toCreateTableSql(resolved: ResolvedAppSchema): string {
-  const { table, id, statuses, fields, indexes } = resolved;
+  const { table, id, fields } = resolved;
+  const shape = expectedShape(resolved);
 
-  const statusEnum = statuses.map((s) => `'${s}'`).join(', ');
-  const perColumnIndexes = fields
-    .filter(({ def }) => def.index)
-    .map(({ name }) => `    KEY \`citizenid_${name}\` (\`citizenid\`, \`${name}\`),`);
   const declaredForeignKeys = fields
     .map(({ name, def }) => foreignKeySql(table, name, def))
     .filter((line): line is string => line !== null);
@@ -103,16 +168,11 @@ export function toCreateTableSql(resolved: ResolvedAppSchema): string {
   const lines = [
     `CREATE TABLE IF NOT EXISTS \`${table}\` (`,
     '    `id` int(11) NOT NULL AUTO_INCREMENT,',
-    '    `citizenid` varchar(50) NOT NULL,',
-    ...fields.map(({ name, def }) => `${columnSql(name, def)},`),
-    `    \`status\` ENUM(${statusEnum}) NOT NULL DEFAULT 'active',`,
-    '    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,',
-    '    `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,',
+    ...shape.columns
+      .filter((c) => !c.autoIncrement)
+      .map(({ name, def }) => `${columnSql(name, def)},`),
     '    PRIMARY KEY (`id`),',
-    '    KEY `status` (`status`),',
-    '    KEY `citizenid_status` (`citizenid`, `status`),',
-    ...perColumnIndexes,
-    ...indexes.map(indexSql),
+    ...shape.indexes.map(indexSql),
     ...declaredForeignKeys,
     `    CONSTRAINT \`fk_${id}_citizenid\` FOREIGN KEY (\`citizenid\`)`,
     '        REFERENCES `players` (`citizenid`) ON DELETE CASCADE',
