@@ -21,10 +21,18 @@
   });
 </script>
 
-<!-- Phone Frame -->
+<!-- Phone Frame.
+
+     The fill is conditional, not just the screen's. `transparent` used to be applied
+     only to the inner screen div while this one kept an unconditional `bg-gray-950` —
+     near-black and fully opaque — so the camera viewfinder rendered as a black box in
+     game no matter what the screen did. The bezel border stays either way; it is the
+     phone body, not the display. -->
 <div
   transition:fly={{ y: 1000, duration: 500 }}
-  class="relative h-[850px] w-[400px] rounded-[3.5rem] border-[8px] border-gray-950 bg-gray-950 shadow-2xl ring-1 ring-gray-600 transition-colors duration-200"
+  data-testid="phone-frame"
+  class="relative h-[850px] w-[400px] rounded-[3.5rem] border-[8px] border-gray-950 shadow-2xl ring-1 ring-gray-600 transition-colors duration-200"
+  class:bg-gray-950={!transparent || $isDead}
 >
   <!-- Hardware Side Buttons -->
   <!-- Power / Screen Off Button -->
@@ -54,6 +62,7 @@
   <!-- Screen -->
   <div
     bind:this={screenElement}
+    data-testid="phone-screen"
     class="relative h-full w-full overflow-hidden rounded-[3rem] transition-colors duration-200"
     class:bg-gray-900={!transparent && !$isDead}
     class:bg-black={$isDead}
