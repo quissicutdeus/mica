@@ -6,15 +6,20 @@ const takePhoto = async (): Promise<string> => {
       // `screencapture:requestScreenshot` uses CBT to convert directly to base64 encoding.
       // https://github.com/itschip/screencapture?tab=readme-ov-file#requestscreenshot-client-side-export
       //
-      // Quality is explicit because the NUI re-encodes the crop, so whatever is lost
-      // here is lost permanently and then compounded. The full-screen intermediate is
-      // transient — only the crop is stored — so the extra bytes cost one NUI message.
-      exports['screencapture'].requestScreenshot(
-        { encoding: 'jpg', quality: 0.95 },
-        (data: string) => {
-          resolve(data);
-        }
-      );
+      // PNG, deliberately, even though nothing stores a PNG.
+      //
+      // This image is an intermediate: the NUI crops it to the viewfinder and re-encodes.
+      // Asking for a JPEG here meant two lossy passes over the same pixels, and the
+      // second one amplifies the first — JPEG's artefacts are exactly the kind of
+      // high-frequency detail the next encoder then spends its bit budget preserving.
+      // Dark sky gradients, which this game is full of, showed it worst.
+      //
+      // PNG makes the intermediate lossless, so the single remaining encode in the NUI
+      // sees the original pixels. It costs a larger one-off NUI message; the frame is
+      // discarded immediately and only the crop is ever stored.
+      exports['screencapture'].requestScreenshot({ encoding: 'png' }, (data: string) => {
+        resolve(data);
+      });
     } catch (error) {
       console.error('Failed to take photo with screencapture export:', error);
       reject(error);

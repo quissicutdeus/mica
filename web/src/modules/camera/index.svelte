@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { asDataUri, encodeCrop } from './capture';
   import {
     useCamera,
     useKeybinds,
@@ -27,14 +28,6 @@
 
   let mockPhotoIndex = $state(1);
   let currentViewfinderImage = $derived(sampleAvatars[mockPhotoIndex % sampleAvatars.length]);
-
-  /**
-   * JPEG quality for the stored crop.
-   *
-   * High, because this is the *second* lossy encode: `screencapture` already returns a
-   * JPEG and re-encoding compounds the loss.
-   */
-  const CAPTURE_QUALITY = 0.92;
 
   let containerRef = $state<HTMLElement | null>(null);
   let viewfinderRef = $state<HTMLElement | null>(null);
@@ -185,9 +178,7 @@
             try {
               const img = new Image();
               img.crossOrigin = 'Anonymous';
-              img.src = base64Data.startsWith('data:')
-                ? base64Data
-                : 'data:image/jpeg;base64,' + base64Data;
+              img.src = asDataUri(base64Data);
 
               await new Promise((resolve, reject) => {
                 img.onload = resolve;
@@ -210,6 +201,8 @@
 
                 const ctx = canvas.getContext('2d');
                 if (ctx) {
+                  // The crop is 1:1 with the source, so no resampling happens and
+                  // smoothing would only soften it.
                   ctx.imageSmoothingEnabled = false;
                   ctx.drawImage(
                     img,
@@ -222,12 +215,7 @@
                     physWidth,
                     physHeight
                   );
-                  // The source is already a JPEG from `screencapture`, so this is a
-                  // second lossy pass. At 0.5 the two compounded into visible blocking
-                  // and banding — worst on exactly the dark gradients this game is full
-                  // of. The stored crop is a fraction of the screen, so the extra bytes
-                  // are cheap next to what the artefacts cost.
-                  const cropped = canvas.toDataURL('image/jpeg', CAPTURE_QUALITY);
+                  const cropped = encodeCrop(canvas);
                   if (cropped && cropped.length > 30 && cropped !== 'data:,') {
                     capturedImage = cropped;
                   }
