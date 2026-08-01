@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS `gphone_audit_logs` (
         'moderated',
         'unmoderated'
     ) NOT NULL,
-    `controller` varchar(100) NOT NULL,
+    `service` varchar(100) NOT NULL,
     `method` varchar(100) NOT NULL,
     `target_id` int(11) NOT NULL,
     `target_table` varchar(100) DEFAULT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS `gphone_audit_logs` (
     PRIMARY KEY (`id`),
     KEY `citizenid` (`citizenid`),
     KEY `action` (`action`),
-    KEY `controller_method` (`controller`, `method`),
+    KEY `service_method` (`service`, `method`),
     KEY `target` (`target_table`, `target_id`),
     -- Moderation review reads newest-first for one player.
     KEY `citizenid_created` (`citizenid`, `created_at`),

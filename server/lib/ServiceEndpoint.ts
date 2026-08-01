@@ -161,7 +161,7 @@ export class ServiceEndpoint<T> {
             await AuditLogger.log({
               citizenid,
               action: 'deleted',
-              controller: this.serviceName,
+              service: this.serviceName,
               method: 'delete',
               targetId: id,
               targetTable: this.options.tableName || `gphone_${this.serviceName}`

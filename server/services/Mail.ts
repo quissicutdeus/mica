@@ -76,7 +76,7 @@ const auditMail = (citizenid: string, action: 'archived' | 'unarchived' | 'delet
   AuditLogger.log({
     citizenid,
     action,
-    controller: 'mail',
+    service: 'mail',
     method: action === 'deleted' ? 'deleteMail' : 'archiveMail',
     targetId: id,
     targetTable: 'gphone_mail'

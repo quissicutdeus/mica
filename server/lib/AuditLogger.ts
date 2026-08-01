@@ -13,7 +13,8 @@ export type AuditAction =
 export interface AuditLogOptions {
   citizenid: string;
   action: AuditAction;
-  controller: string;
+  /** The service that performed the action — `contacts`, `reports`. */
+  service: string;
   method: string;
   targetId: number;
   targetTable?: string;
@@ -25,14 +26,14 @@ export class AuditLogger {
     try {
       const query = `
                 INSERT INTO gphone_audit_logs 
-                (citizenid, action, controller, method, target_id, target_table, details)
+                (citizenid, action, service, method, target_id, target_table, details)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             `;
       const detailsJson = options.details ? JSON.stringify(options.details) : null;
       await Database.insert(query, [
         options.citizenid,
         options.action,
-        options.controller,
+        options.service,
         options.method,
         options.targetId,
         options.targetTable || null,

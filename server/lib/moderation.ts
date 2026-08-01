@@ -113,7 +113,7 @@ export const setTargetStatus = async (
     await AuditLogger.log({
       citizenid: actorCitizenid,
       action: status === 'moderated' ? 'moderated' : 'unmoderated',
-      controller: 'reports',
+      service: 'reports',
       method: status === 'moderated' ? 'resolve' : 'reopen',
       targetId: id,
       targetTable: table,
