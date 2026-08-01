@@ -22,6 +22,14 @@
   let mockPhotoIndex = $state(1);
   let currentViewfinderImage = $derived(sampleAvatars[mockPhotoIndex % sampleAvatars.length]);
 
+  /**
+   * JPEG quality for the stored crop.
+   *
+   * High, because this is the *second* lossy encode: `screencapture` already returns a
+   * JPEG and re-encoding compounds the loss.
+   */
+  const CAPTURE_QUALITY = 0.92;
+
   let containerRef = $state<HTMLElement | null>(null);
   let viewfinderRef = $state<HTMLElement | null>(null);
   let thumbnailRef = $state<HTMLElement | null>(null);
@@ -204,7 +212,12 @@
                     physWidth,
                     physHeight
                   );
-                  const cropped = canvas.toDataURL('image/jpeg', 0.5);
+                  // The source is already a JPEG from `screencapture`, so this is a
+                  // second lossy pass. At 0.5 the two compounded into visible blocking
+                  // and banding — worst on exactly the dark gradients this game is full
+                  // of. The stored crop is a fraction of the screen, so the extra bytes
+                  // are cheap next to what the artefacts cost.
+                  const cropped = canvas.toDataURL('image/jpeg', CAPTURE_QUALITY);
                   if (cropped && cropped.length > 30 && cropped !== 'data:,') {
                     capturedImage = cropped;
                   }

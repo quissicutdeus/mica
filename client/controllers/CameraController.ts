@@ -5,9 +5,16 @@ const takePhoto = async (): Promise<string> => {
     try {
       // `screencapture:requestScreenshot` uses CBT to convert directly to base64 encoding.
       // https://github.com/itschip/screencapture?tab=readme-ov-file#requestscreenshot-client-side-export
-      exports['screencapture'].requestScreenshot({ encoding: 'jpg' }, (data: string) => {
-        resolve(data);
-      });
+      //
+      // Quality is explicit because the NUI re-encodes the crop, so whatever is lost
+      // here is lost permanently and then compounded. The full-screen intermediate is
+      // transient — only the crop is stored — so the extra bytes cost one NUI message.
+      exports['screencapture'].requestScreenshot(
+        { encoding: 'jpg', quality: 0.95 },
+        (data: string) => {
+          resolve(data);
+        }
+      );
     } catch (error) {
       console.error('Failed to take photo with screencapture export:', error);
       reject(error);
