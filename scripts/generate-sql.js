@@ -32,6 +32,8 @@ globalThis.emitNet = globalThis.emitNet ?? (() => {});
 globalThis.on = globalThis.on ?? (() => {});
 globalThis.source = globalThis.source ?? 0;
 globalThis.GetCurrentResourceName = globalThis.GetCurrentResourceName ?? (() => 'gphone');
+globalThis.RegisterCommand = globalThis.RegisterCommand ?? (() => {});
+globalThis.IsPlayerAceAllowed = globalThis.IsPlayerAceAllowed ?? (() => false);
 `;
 
 const entry = `

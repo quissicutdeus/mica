@@ -23,7 +23,11 @@ const fivemGlobals: Record<string, unknown> = {
   on: noop,
   onNetSafe: noop,
   source: 0,
-  GetCurrentResourceName: () => 'gphone'
+  GetCurrentResourceName: () => 'gphone',
+  RegisterCommand: noop,
+  // Denies by default, so a suite that forgets to stub it cannot accidentally exercise
+  // the privileged path.
+  IsPlayerAceAllowed: () => false
 };
 
 for (const [key, value] of Object.entries(fivemGlobals)) {

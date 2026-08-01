@@ -74,7 +74,10 @@ on('__cfx_nui:setBatteryLevel', (data: { level?: number }, cb: Function) => {
   }
 
   setPhoneCharge(level);
-  TriggerServerEvent('gphone:server:saveBattery', level);
+  // Admin-gated, unlike the drain loop's `saveBattery`. The server rejects a caller
+  // without `gphone.admin` and leaves the stored charge alone, so the local value here
+  // reverts as soon as the next drain tick reports the truth.
+  TriggerServerEvent('gphone:server:admin:setBattery', level);
   cb({ ok: true, level });
 });
 
