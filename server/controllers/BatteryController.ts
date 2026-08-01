@@ -77,6 +77,50 @@ on('qbx_core:server:playerLoaded', (player: any) => {
   }
 });
 
+/**
+ * Out-of-band recharge: `gphonecharge [playerId] <0-100>`.
+ *
+ * Until now the only way to add charge was the `battery_bank` item, so a flat battery
+ * with no item in your inventory meant a phone that could not be turned on — and the
+ * Developer Tools that would have fixed it live inside the phone.
+ *
+ * Runnable from the **server console** (always) or by a player holding the
+ * `gphone.admin` ace. Restricted rather than open because it writes another player's
+ * character metadata.
+ */
+RegisterCommand(
+  'gphonecharge',
+  (source: number, args: string[]) => {
+    const fromConsole = source === 0;
+    if (!fromConsole && !IsPlayerAceAllowed(String(source), 'gphone.admin')) {
+      emitNet('gphone:client:notify', source, {
+        type: 'error',
+        text: 'You do not have permission to use that.'
+      });
+      return;
+    }
+
+    // Console must name a target; a player defaults to themselves.
+    const target = args.length > 1 ? parseInt(args[0], 10) : fromConsole ? NaN : source;
+    const rawLevel = args.length > 1 ? args[1] : args[0];
+    const level = Math.max(0, Math.min(100, Number(rawLevel)));
+
+    if (!Number.isInteger(target) || target <= 0) {
+      console.log('[gphone] usage: gphonecharge <playerId> <0-100>');
+      return;
+    }
+    if (!Number.isFinite(level) || rawLevel === undefined) {
+      console.log('[gphone] usage: gphonecharge [playerId] <0-100>');
+      return;
+    }
+
+    setPlayerBatteryMeta(target, level);
+    emitNet('gphone:client:setCharge', target, level);
+    console.log(`[gphone] battery for ${target} set to ${level}%`);
+  },
+  false
+);
+
 // Register usable item with framework
 FrameworkBridge.registerUsableItem('battery_bank', (source: number) => {
   const removed = removeBatteryBankItem(source);

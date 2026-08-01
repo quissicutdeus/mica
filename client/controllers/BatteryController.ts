@@ -57,6 +57,27 @@ onNet('gphone:client:setCharge', (amount: number) => {
   setPhoneCharge(amount);
 });
 
+/**
+ * Set the charge from the phone's Developer Tools.
+ *
+ * The DevTools slider used to write only to the web store, so the value snapped back
+ * within a second when the drain loop pushed the real charge over it, and nothing ever
+ * reached the character. This applies it for real and persists it, so the panel
+ * matches what it claims to be doing.
+ */
+RegisterNuiCallbackType('setBatteryLevel');
+on('__cfx_nui:setBatteryLevel', (data: { level?: number }, cb: Function) => {
+  const level = Math.max(0, Math.min(100, Number(data?.level)));
+  if (!Number.isFinite(level)) {
+    cb({ ok: false });
+    return;
+  }
+
+  setPhoneCharge(level);
+  TriggerServerEvent('gphone:server:saveBattery', level);
+  cb({ ok: true, level });
+});
+
 // Load initial battery state on spawn/join
 setTimeout(() => {
   TriggerServerEvent('gphone:server:loadBattery');
