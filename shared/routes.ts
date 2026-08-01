@@ -109,6 +109,7 @@ export const CLIENT_ONLY_ACTIONS: readonly string[] = [
   'endCall',
   'rejectCall',
   'toggleSpeaker',
+  'toggleMute',
   // Hardware and framework reads
   'getBankBalance',
   'getCitizenId',

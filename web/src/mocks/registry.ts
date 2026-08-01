@@ -247,6 +247,9 @@ export const mockRegistry: Record<string, MockHandler> = {
   answerCall: async () => {
     return true;
   },
+  toggleMute: async () => {
+    return true;
+  },
   toggleSpeaker: async () => {
     return true;
   },

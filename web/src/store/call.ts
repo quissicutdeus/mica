@@ -9,13 +9,15 @@ export interface CallState {
   name?: string;
   duration: number; // in seconds
   speaker: boolean;
+  muted: boolean;
 }
 
 const initialState: CallState = {
   status: 'idle',
   number: '',
   duration: 0,
-  speaker: false
+  speaker: false,
+  muted: false
 };
 
 function createCallStore() {
@@ -60,6 +62,13 @@ function createCallStore() {
       } catch (e) {
         console.error('Failed to answer call', e);
       }
+    },
+    toggleMute: async () => {
+      update((s) => {
+        const muted = !s.muted;
+        fetchNui('toggleMute', { muted }).catch((e) => console.error(e));
+        return { ...s, muted };
+      });
     },
     toggleSpeaker: async () => {
       update((s) => {

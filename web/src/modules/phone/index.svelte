@@ -18,6 +18,9 @@
   let { onback } = $props();
 
   let enteredNumber = $state('');
+  /** The DTMF pad shown over an active call. Local only. */
+  let showInCallKeypad = $state(false);
+  let dtmfEntered = $state('');
 
   const handleKeypad = (num: string) => {
     if (enteredNumber.length < 15) {
@@ -33,6 +36,13 @@
     if (!number) return;
     callStore.startCall(number, name);
   };
+
+  $effect(() => {
+    if ($callStore.status === 'idle') {
+      showInCallKeypad = false;
+      dtmfEntered = '';
+    }
+  });
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -159,25 +169,55 @@
         {/if}
       </p>
 
+      <!-- DTMF pad, shown over the call. Digits go nowhere yet — there is no server
+           tone channel — so it echoes what was pressed rather than pretending. -->
+      {#if showInCallKeypad}
+        <div class="mb-8 grid w-full max-w-[260px] grid-cols-3 gap-4">
+          {#each ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'] as key (key)}
+            <button
+              class="flex h-14 w-14 cursor-pointer items-center justify-center justify-self-center rounded-full bg-gray-800 text-xl transition-colors hover:bg-gray-700"
+              onclick={() => (dtmfEntered += key)}
+            >
+              {key}
+            </button>
+          {/each}
+        </div>
+        {#if dtmfEntered}
+          <p class="mb-4 font-mono text-sm tracking-widest text-gray-400">{dtmfEntered}</p>
+        {/if}
+      {/if}
+
       <!-- Controls -->
       <div class="mt-auto grid w-full max-w-[300px] grid-cols-3 gap-8">
-        <!-- Mute -->
+        <!-- Mute. Both this and Keypad were decorative: styled, labelled, no onclick. -->
         <button
-          class="flex flex-col items-center space-y-2 text-gray-400 transition-colors hover:text-white"
+          onclick={() => callStore.toggleMute()}
+          aria-pressed={$callStore.muted}
+          class="flex flex-col items-center space-y-2 transition-colors {$callStore.muted
+            ? 'text-white'
+            : 'text-gray-400 hover:text-white'}"
           aria-label="Mute"
         >
-          <div class="rounded-full bg-gray-800 p-4">
+          <div
+            class="rounded-full p-4 {$callStore.muted ? 'bg-white text-gray-900' : 'bg-gray-800'}"
+          >
             <MicrophoneIcon />
           </div>
-          <span class="text-xs">Mute</span>
+          <span class="text-xs">{$callStore.muted ? 'Unmute' : 'Mute'}</span>
         </button>
 
-        <!-- Keypad -->
+        <!-- Keypad: purely local, so the in-call DTMF pad needs no plumbing. -->
         <button
-          class="flex flex-col items-center space-y-2 text-gray-400 transition-colors hover:text-white"
+          onclick={() => (showInCallKeypad = !showInCallKeypad)}
+          aria-pressed={showInCallKeypad}
+          class="flex flex-col items-center space-y-2 transition-colors {showInCallKeypad
+            ? 'text-white'
+            : 'text-gray-400 hover:text-white'}"
           aria-label="Keypad"
         >
-          <div class="rounded-full bg-gray-800 p-4">
+          <div
+            class="rounded-full p-4 {showInCallKeypad ? 'bg-white text-gray-900' : 'bg-gray-800'}"
+          >
             <KeypadIcon />
           </div>
           <span class="text-xs">Keypad</span>

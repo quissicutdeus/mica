@@ -33,6 +33,22 @@ on('__cfx_nui:rejectCall', (_: any, cb: Function) => {
   cb({ status: 'idle' });
 });
 
+/**
+ * Microphone mute.
+ *
+ * pma-voice owns the mic, so this asks it to when it is present and otherwise just
+ * acknowledges — the UI state is still worth keeping honest either way.
+ */
+RegisterNuiCallbackType('toggleMute');
+on('__cfx_nui:toggleMute', (data: { muted: boolean }, cb: Function) => {
+  try {
+    exports['pma-voice']?.setPlayerTalkingOverride?.(!data?.muted);
+  } catch {
+    // pma-voice absent or a different version; the UI stays consistent regardless.
+  }
+  cb({ muted: Boolean(data?.muted) });
+});
+
 RegisterNuiCallbackType('toggleSpeaker');
 on('__cfx_nui:toggleSpeaker', (data: { enabled: boolean }, cb: Function) => {
   // There isn't a standard "toggleSpeaker" export in pma-voice usually exposed to client this way without routing audio?
