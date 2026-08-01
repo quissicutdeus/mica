@@ -5,10 +5,12 @@ import {
   usePhoneNotification,
   useContacts,
   useCamera,
+  usePhotos,
   useNuiBridge,
   useNavigation,
   useStorage,
   useSystemHardware,
+  useClock,
   useAccount,
   useCall,
   useMail,
@@ -18,13 +20,13 @@ import {
   onAppUnmount,
   type AppManifest
 } from './index';
-import { toast } from '../store/toast';
-import { contacts } from '../store/contacts';
-import { photos } from '../store/photos';
-import { mailStore } from '../store/mail';
-import { notes } from '../store/notes';
-import { messagesStore } from '../store/messages';
-import { callStore } from '../store/call';
+import { toast } from '../shell/state/toast';
+import { contacts } from '../services/contacts';
+import { photos } from '../services/photos';
+import { mailStore } from '../services/mail';
+import { notes } from '../services/notes';
+import { conversationsStore } from '../services/conversations';
+import { callStore } from '../services/call';
 import { get } from 'svelte/store';
 
 describe('gPhone SDK (@gphone/sdk)', () => {
@@ -100,8 +102,8 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       expect(contactList[0].phone).toBe('555-0100');
     });
 
-    it('useCamera captures and deletes photo items', async () => {
-      const { capturePhoto, deletePhoto } = useCamera();
+    it('usePhotos captures and deletes photo items', async () => {
+      const { capturePhoto, deletePhoto } = usePhotos();
 
       await capturePhoto('data:image/png;base64,mockImageBytes');
       let photoList = get(photos);
@@ -124,10 +126,10 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       expect(goHome).toBeTypeOf('function');
 
       openApp('calc');
-      expect(get(currentApp).name).toBe('calc');
+      expect(get(currentApp).id).toBe('calc');
 
       goHome();
-      expect(get(currentApp).name).toBe('home');
+      expect(get(currentApp).id).toBe('home');
     });
 
     it('useStorage isolates key-value app storage', () => {
@@ -142,13 +144,21 @@ describe('gPhone SDK (@gphone/sdk)', () => {
     });
 
     it('useSystemHardware exposes hardware stores and setters', () => {
-      const { charge, signalLevel, setSignal, is24Hour } = useSystemHardware();
+      const { charge, signalLevel, setSignal } = useSystemHardware();
       expect(charge).toBeDefined();
 
       setSignal(3);
       expect(get(signalLevel)).toBe(3);
+    });
 
-      expect(is24Hour).toBeDefined();
+    it('useClock exposes the time and its format', () => {
+      // Split out of useSystemHardware: a 12/24-hour preference is a locale setting,
+      // not hardware.
+      const { time, is24Hour } = useClock();
+      expect(time).toBeDefined();
+
+      is24Hour.set(true);
+      expect(get(is24Hour)).toBe(true);
     });
 
     it('useAccount exposes bankBalance, transactions, citizenid, and phone number', () => {
@@ -192,8 +202,12 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       }
     });
 
-    it('useMessages exposes messagesStore and messaging utilities', () => {
-      const { messagesStore: msgStore, unreadMessagesCount, addReceivedMessage } = useMessages();
+    it('useMessages exposes conversationsStore and messaging utilities', () => {
+      const {
+        conversationsStore: msgStore,
+        unreadMessagesCount,
+        addReceivedMessage
+      } = useMessages();
       expect(msgStore).toBeDefined();
       expect(unreadMessagesCount).toBeDefined();
 

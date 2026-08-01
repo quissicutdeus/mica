@@ -3,25 +3,30 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 /**
- * App modules may not reach into the shell.
+ * Apps may not reach past the SDK.
  *
  * §2.7 has said so since the SDK existed, and it drifted anyway: nine UI components,
  * thirty-two icons, fifteen utility imports and one store were all being pulled in by
  * relative path. Nothing checked, so nothing stopped it.
  *
  * It matters for one concrete reason. An add-on installed through the Store resolves
- * `@gphone/sdk` and nothing else — `../../components/Screen.svelte` does not exist for
- * it. Every relative import into the shell is a thing a third-party app cannot do,
- * which quietly makes the app-registry story only half true.
+ * `@gphone/sdk` and nothing else — `../../sdk/ui/Screen.svelte` does not exist for it.
+ * Every relative import out of an app is a thing a third-party app cannot do, which
+ * quietly makes the app-registry story only half true.
  *
  * A prose rule that is not enforced is a suggestion. This is the enforcement.
  */
 
 const ROOT = join(__dirname, '..', '..');
-const MODULES = join(ROOT, 'src', 'modules');
+const APPS = join(ROOT, 'src', 'apps');
 
-/** Shell directories an app must never import from by path. */
-const FORBIDDEN = ['components', 'store', 'utils', 'mocks', 'core', 'sdk'];
+/**
+ * Directories an app must never import from by path — everything outside itself.
+ *
+ * Kept as an explicit list rather than "anything that escapes", so a new top-level
+ * directory has to be classified deliberately instead of silently becoming reachable.
+ */
+const FORBIDDEN = ['shell', 'services', 'sdk', 'nui', 'lib'];
 
 /**
  * `../../sdk` is a violation too, and the directory pattern above missed it: it requires
@@ -40,21 +45,21 @@ const walk = (dir: string): string[] => {
   return out;
 };
 
-/** `import ... from '../../<shell dir>/...'`, at any depth. */
+/** `import ... from '../../<forbidden dir>/...'`, at any depth. */
 const ESCAPING_IMPORT = new RegExp(
   String.raw`from\s+['"](?:\.\./)+(${FORBIDDEN.join('|')})/[^'"]*['"]`,
   'g'
 );
 
-const FILES = walk(MODULES);
+const FILES = walk(APPS);
 
-describe('app module boundary', () => {
-  it('finds app modules to check', () => {
+describe('app boundary', () => {
+  it('finds apps to check', () => {
     // A walk that silently matched nothing would make the rule below vacuous.
     expect(FILES.length).toBeGreaterThan(10);
   });
 
-  it('no app module imports the shell by relative path', () => {
+  it('no app imports past the SDK by relative path', () => {
     const offenders: string[] = [];
 
     for (const file of FILES) {

@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 
-vi.mock('../utils/fetchNui', () => ({ fetchNui: vi.fn(async () => ({})) }));
+vi.mock('../nui/fetchNui', () => ({ fetchNui: vi.fn(async () => ({})) }));
 
 import { createNuiMessageRouter } from './nuiMessages';
-import { toast } from '../store/toast';
-import { time } from '../store/time';
-import { charge } from '../store/charge';
-import { signalLevel } from '../store/signal';
-import { contacts } from '../store/contacts';
+import { toast } from './state/toast';
+import { time } from './state/time';
+import { charge } from './state/charge';
+import { signalLevel } from './state/signal';
+import { contacts } from '../services/contacts';
 
 /**
  * These twelve branches previously lived inside `App.svelte` and had no unit tests at

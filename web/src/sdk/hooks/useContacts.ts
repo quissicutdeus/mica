@@ -1,4 +1,4 @@
-import { contacts, favoriteContacts } from '../../store/contacts';
+import { contacts, favoriteContacts } from '../../services/contacts';
 
 /**
  * OS Service Hook for accessing address book contacts and sharing contacts.

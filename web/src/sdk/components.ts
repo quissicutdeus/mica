@@ -11,13 +11,13 @@
  * `VolumeHud` and `ErrorBoundary` are the shell itself — an app rendering its own phone
  * frame or toast host is a bug, not a feature.
  */
-export { default as Avatar } from '../components/Avatar.svelte';
-export { default as Button } from '../components/Button.svelte';
-export { default as ConfirmDialog } from '../components/ConfirmDialog.svelte';
-export { default as EmptyState } from '../components/EmptyState.svelte';
-export { default as FloatingActionButton } from '../components/FloatingActionButton.svelte';
-export { default as ListItem } from '../components/ListItem.svelte';
-export { default as PhotoPickerModal } from '../components/PhotoPickerModal.svelte';
-export { default as ReportDialog } from '../components/ReportDialog.svelte';
-export { default as Screen } from '../components/Screen.svelte';
-export { default as SearchBar } from '../components/SearchBar.svelte';
+export { default as Avatar } from './ui/Avatar.svelte';
+export { default as Button } from './ui/Button.svelte';
+export { default as ConfirmDialog } from './ui/ConfirmDialog.svelte';
+export { default as EmptyState } from './ui/EmptyState.svelte';
+export { default as FloatingActionButton } from './ui/FloatingActionButton.svelte';
+export { default as ListItem } from './ui/ListItem.svelte';
+export { default as PhotoPickerModal } from './ui/PhotoPickerModal.svelte';
+export { default as ReportDialog } from './ui/ReportDialog.svelte';
+export { default as Screen } from './ui/Screen.svelte';
+export { default as SearchBar } from './ui/SearchBar.svelte';

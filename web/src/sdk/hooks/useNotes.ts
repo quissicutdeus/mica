@@ -1,4 +1,4 @@
-import { notes } from '../../store/notes';
+import { notes } from '../../services/notes';
 import type { Note } from '@shared/types';
 
 /**

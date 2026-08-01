@@ -1,4 +1,4 @@
-import { isAdmin, refreshAdmin } from '../../store/admin';
+import { isAdmin, refreshAdmin } from '../../services/admin';
 
 /**
  * OS Service Hook for the player's admin status.

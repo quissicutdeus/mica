@@ -1,4 +1,4 @@
-import { devToolsUnlocked, lockDevTools } from '../../store/devtools';
+import { devToolsUnlocked, lockDevTools } from '../../shell/state/devtools';
 
 /**
  * OS Service Hook for the Developer Tools reveal.

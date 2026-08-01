@@ -1,11 +1,11 @@
-import { charge } from '../store/charge';
-import { contacts } from '../store/contacts';
-import { mailStore } from '../store/mail';
-import { messagesStore } from '../store/messages';
-import { appRegistryStore } from '../store/registry';
-import { setSignal } from '../store/signal';
-import { time } from '../store/time';
-import { toast } from '../store/toast';
+import { charge } from './state/charge';
+import { contacts } from '../services/contacts';
+import { mailStore } from '../services/mail';
+import { conversationsStore } from '../services/conversations';
+import { appRegistryStore } from './state/registry';
+import { setSignal } from './state/signal';
+import { time } from './state/time';
+import { toast } from './state/toast';
 
 /**
  * Routing for messages the client pushes into the NUI.
@@ -66,14 +66,14 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
   };
 
   const receiveMessage = (data: any) => {
-    messagesStore.addReceivedMessage(data);
+    conversationsStore.addReceivedMessage(data);
     toast.showIncomingMessage({
       sender: data.senderName || data.phone || 'Message',
       message: data.message || '',
       avatar: data.avatar,
       onReply: async (replyText) => {
         if (data.conversation_id) {
-          await messagesStore.sendMessage(data.conversation_id, replyText);
+          await conversationsStore.sendMessage(data.conversation_id, replyText);
         }
       },
       onClick: () =>

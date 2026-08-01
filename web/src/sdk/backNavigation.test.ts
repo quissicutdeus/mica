@@ -15,7 +15,7 @@ import { join, relative } from 'node:path';
  */
 
 const ROOT = join(__dirname, '..', '..');
-const APPS = join(ROOT, 'src', 'modules');
+const APPS = join(ROOT, 'src', 'apps');
 
 const walk = (dir: string): string[] => {
   const out: string[] = [];

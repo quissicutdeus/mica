@@ -1,15 +1,15 @@
-import { messagesStore, unreadMessagesCount } from '../../store/messages';
-export { messagesStore, unreadMessagesCount };
+import { conversationsStore, unreadMessagesCount } from '../../services/conversations';
+export { conversationsStore, unreadMessagesCount };
 
 /**
  * OS Service Hook for accessing SMS messaging.
  */
 export function useMessages() {
   return {
-    messagesStore,
+    conversationsStore,
     unreadMessagesCount,
     sendMessage: (conversationId: number, text: string) =>
-      messagesStore.sendMessage(conversationId, text),
-    addReceivedMessage: (message: any) => messagesStore.addReceivedMessage(message)
+      conversationsStore.sendMessage(conversationId, text),
+    addReceivedMessage: (message: any) => conversationsStore.addReceivedMessage(message)
   };
 }

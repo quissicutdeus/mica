@@ -1,4 +1,10 @@
-import { currentApp, openApp, goHome, closePhone, consumeAppProps } from '../../store/navigation';
+import {
+  currentApp,
+  openApp,
+  goHome,
+  closePhone,
+  consumeAppProps
+} from '../../shell/state/navigation';
 
 /**
  * OS Service Hook for phone navigation (opening apps, returning home, closing phone shell).

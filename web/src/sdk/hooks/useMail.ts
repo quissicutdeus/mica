@@ -1,4 +1,4 @@
-import { mailStore, unreadMailCount } from '../../store/mail';
+import { mailStore, unreadMailCount } from '../../services/mail';
 export { mailStore, unreadMailCount };
 
 /**

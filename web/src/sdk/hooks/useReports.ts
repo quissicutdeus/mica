@@ -6,7 +6,7 @@ import {
   loadReportHistory,
   reopenReport,
   resolveReport
-} from '../../store/reports';
+} from '../../services/reports';
 
 /**
  * OS Service Hook for the moderation queue.

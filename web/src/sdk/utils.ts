@@ -9,13 +9,13 @@
  * app — `hashStringToCardNumber` was a `utils/` file used by nothing but Bank, and now
  * lives there.
  */
-export { isBrowser } from '../utils/isBrowser';
+export { isBrowser } from '../lib/isBrowser';
 export {
   formatCurrency,
   formatDate,
   formatRelativeTime,
   formatTime,
   formatTimestamp
-} from '../utils/formatters';
-export { renderMarkdown } from '../utils/markdown';
-export { useScrollDetect } from '../utils/useScrollDetect';
+} from '../lib/formatters';
+export { renderMarkdown } from '../lib/markdown';
+export { useScrollDetect } from '../lib/useScrollDetect';

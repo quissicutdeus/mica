@@ -1,4 +1,4 @@
-import { debugData } from '../utils/debug';
+import { debugData } from '../lib/debug';
 
 /**
  * Browser-only scaffolding: seed the phone, and expose a console helper for firing

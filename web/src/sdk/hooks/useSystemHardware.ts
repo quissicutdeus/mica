@@ -1,5 +1,5 @@
-import { charge } from '../../store/charge';
-import { signalLevel, setSignal } from '../../store/signal';
+import { charge } from '../../shell/state/charge';
+import { signalLevel, setSignal } from '../../shell/state/signal';
 import {
   soundVolume,
   soundMuted,
@@ -8,11 +8,13 @@ import {
   volumeStep,
   setVolumeStep,
   VOLUME_STEP_CHOICES
-} from '../../store/sound';
-import { is24Hour } from '../../store/time';
+} from '../../shell/state/audio';
 
 /**
- * OS Service Hook for system hardware state (battery, signal, volume, time format).
+ * The phone's hardware: battery, signal, and the volume buttons.
+ *
+ * The time format used to be here too. It is a locale preference rather than hardware,
+ * and it now lives in `useClock` with the clock it formats.
  */
 export function useSystemHardware() {
   return {
@@ -26,7 +28,6 @@ export function useSystemHardware() {
     /** How far one physical volume-button press moves the volume, in whole percent. */
     volumeStep,
     setVolumeStep,
-    volumeStepChoices: VOLUME_STEP_CHOICES,
-    is24Hour
+    volumeStepChoices: VOLUME_STEP_CHOICES
   };
 }

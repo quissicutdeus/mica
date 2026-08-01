@@ -7,7 +7,7 @@ import {
   fetchBalance,
   fetchTransactions,
   fetchCitizenId
-} from '../../store/account';
+} from '../../services/account';
 
 /**
  * OS Service Hook for account state, bank balance, transactions, & phone number.

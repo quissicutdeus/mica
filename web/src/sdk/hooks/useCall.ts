@@ -1,4 +1,4 @@
-import { callStore } from '../../store/call';
+import { callStore } from '../../services/call';
 
 /**
  * OS Service Hook for active phone call management.

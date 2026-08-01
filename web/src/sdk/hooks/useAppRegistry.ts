@@ -1,4 +1,4 @@
-import { appRegistryStore, getFirstBootTime } from '../../store/registry';
+import { appRegistryStore, getFirstBootTime } from '../../shell/state/registry';
 import type { AppManifest } from '../manifest';
 
 /**

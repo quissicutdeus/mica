@@ -84,7 +84,7 @@ const collectClientCallbacks = (): Set<string> => {
 };
 
 const mockRegistryKeys = (): Set<string> => {
-  const text = readFileSync(join(ROOT, 'web', 'src', 'mocks', 'registry.ts'), 'utf8');
+  const text = readFileSync(join(ROOT, 'web', 'src', 'nui', 'mocks', 'registry.ts'), 'utf8');
   const body = text.slice(text.indexOf('mockRegistry'));
   const keys = new Set<string>();
   for (const m of body.matchAll(/^\s{2}([a-zA-Z][\w]*)\s*:/gm)) keys.add(m[1]);
