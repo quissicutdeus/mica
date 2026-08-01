@@ -78,6 +78,8 @@ export const ROUTES: readonly Route[] = [
   route('createReport', 'reports', 'create'),
   route('getReportQueue', 'reports', 'queue'),
   route('resolveReport', 'reports', 'resolve'),
+  route('getReportHistory', 'reports', 'history'),
+  route('reopenReport', 'reports', 'reopen'),
 
   // Photos — no `updatePhoto`: a stored photo has no mutable fields, and the server
   // does not register the endpoint.

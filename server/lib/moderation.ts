@@ -96,23 +96,25 @@ export const summariseTarget = async (
  * module that does nothing else, rather than added to a repository, so that is obvious
  * at the call site.
  */
-export const moderateTarget = async (
+export const setTargetStatus = async (
   table: ReportableTable,
   id: number,
+  status: 'moderated' | 'active',
   actorCitizenid: string,
   reason: string
 ): Promise<boolean> => {
-  const ok = await Database.update(
-    `UPDATE \`${table}\` SET \`status\` = 'moderated' WHERE \`id\` = ?`,
-    [id]
-  );
+  // `status` is a literal from this function's own signature, never a payload.
+  const ok = await Database.update(`UPDATE \`${table}\` SET \`status\` = ? WHERE \`id\` = ?`, [
+    status,
+    id
+  ]);
 
   if (ok) {
     await AuditLogger.log({
       citizenid: actorCitizenid,
-      action: 'moderated',
+      action: status === 'moderated' ? 'moderated' : 'unmoderated',
       controller: 'ReportController',
-      method: 'resolve',
+      method: status === 'moderated' ? 'resolve' : 'reopen',
       targetId: id,
       targetTable: table,
       details: reason
@@ -121,3 +123,16 @@ export const moderateTarget = async (
 
   return ok;
 };
+
+export const moderateTarget = (table: ReportableTable, id: number, actor: string, reason: string) =>
+  setTargetStatus(table, id, 'moderated', actor, reason);
+
+/**
+ * Put moderated content back.
+ *
+ * Restores to `active` rather than to whatever it was before, because the previous
+ * status is not recorded anywhere — and the only status a moderated row can have had is
+ * active, since a deleted row is not visible to report in the first place.
+ */
+export const restoreTarget = (table: ReportableTable, id: number, actor: string, reason: string) =>
+  setTargetStatus(table, id, 'active', actor, reason);

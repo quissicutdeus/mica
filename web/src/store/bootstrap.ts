@@ -5,6 +5,7 @@ import { photos } from './photos';
 import { mailStore } from './mail';
 import { notes } from './notes';
 import { refreshAdmin } from './admin';
+import { loadPendingReports } from './reports';
 
 let isBootstrapped = false;
 let bootstrapPromise: Promise<any> | null = null;
@@ -24,6 +25,8 @@ export async function bootstrapStores(force: boolean = false): Promise<void> {
         // Asked here so the home screen knows whether to draw the Administration app
         // before it renders, rather than having it appear a beat later.
         refreshAdmin(),
+        // So the Administration badge is right before the launcher draws.
+        loadPendingReports(),
         fetchCitizenId(),
         fetchBalance(),
         contacts.load(),

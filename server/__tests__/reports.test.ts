@@ -214,11 +214,14 @@ describe('resolving is admin-only', () => {
     const reply = await call('resolve', { id: 9, action: 'moderate' }, ADMIN);
     expect(reply).toMatchObject({ ok: true, resolution: 'actioned' });
 
-    const statements = dbMock.update.mock.calls.map((c: any[]) => c[0]);
     // Soft status change, not a delete: the audit trail has to keep pointing at a row.
-    expect(
-      statements.some((s: string) => /UPDATE `gphone_messages` SET `status` = 'moderated'/.test(s))
-    ).toBe(true);
+    // The status is bound rather than interpolated, so this reads the parameters.
+    const hide = dbMock.update.mock.calls.find((c: any[]) => /UPDATE `gphone_messages`/.test(c[0]));
+    expect(hide, 'the content should be hidden').toBeTruthy();
+    expect(hide[0]).not.toMatch(/DELETE/i);
+    expect(hide[1]).toEqual(expect.arrayContaining(['moderated']));
+
+    const statements = dbMock.update.mock.calls.map((c: any[]) => c[0]);
     expect(statements.some((s: string) => /UPDATE `gphone_reports`/.test(s))).toBe(true);
 
     const audited = dbMock.insert.mock.calls.some((c: any[]) => /gphone_audit_logs/.test(c[0]));
@@ -252,5 +255,71 @@ describe('resolving is admin-only', () => {
     const reply = await call('resolve', { id: 9, action: 'moderate' }, ADMIN);
     expect(reply).toMatchObject({ error: expect.any(String) });
     expect(dbMock.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('history and undo', () => {
+  const actioned = {
+    id: 9,
+    resolution: 'actioned',
+    target_table: 'gphone_messages',
+    target_id: 4,
+    category: 'spam'
+  };
+
+  it('history is admin-only', async () => {
+    const reply = await call('history', {});
+    expect(reply).toMatchObject({ error: expect.stringMatching(/not authorised/i) });
+  });
+
+  it('reopening is admin-only, and changes nothing', async () => {
+    dbMock.single.mockResolvedValue(actioned);
+    const reply = await call('reopen', { id: 9 });
+
+    expect(reply).toMatchObject({ error: expect.stringMatching(/not authorised/i) });
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  it('undoing a removal puts the content back', async () => {
+    // Undo that cleared the decision but left the content hidden would be worse than no
+    // undo at all.
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+    dbMock.single.mockResolvedValue(actioned);
+
+    const reply = await call('reopen', { id: 9 }, ADMIN);
+    expect(reply).toMatchObject({ ok: true, resolution: 'pending' });
+
+    const statements = dbMock.update.mock.calls;
+    const restore = statements.find((c: any[]) => /UPDATE `gphone_messages`/.test(c[0]));
+    expect(restore, 'the content should be restored').toBeTruthy();
+    expect(restore[1]).toEqual(expect.arrayContaining(['active']));
+  });
+
+  it('undoing a dismissal leaves content alone — it was never hidden', async () => {
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+    dbMock.single.mockResolvedValue({ ...actioned, resolution: 'dismissed' });
+
+    await call('reopen', { id: 9 }, ADMIN);
+    const touched = dbMock.update.mock.calls.some((c: any[]) => /gphone_messages/.test(c[0]));
+    expect(touched).toBe(false);
+  });
+
+  it('refuses to reopen something already open', async () => {
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+    dbMock.single.mockResolvedValue({ ...actioned, resolution: 'pending' });
+
+    const reply = await call('reopen', { id: 9 }, ADMIN);
+    expect(reply).toMatchObject({ error: expect.stringMatching(/already open/i) });
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  it('records the reversal in the ledger as its own act', async () => {
+    // Not `unarchived` or a second `moderated`: the ledger should read honestly.
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+    dbMock.single.mockResolvedValue(actioned);
+
+    await call('reopen', { id: 9 }, ADMIN);
+    const audit = dbMock.insert.mock.calls.find((c: any[]) => /gphone_audit_logs/.test(c[0]));
+    expect(audit[1]).toEqual(expect.arrayContaining(['unmoderated']));
   });
 });

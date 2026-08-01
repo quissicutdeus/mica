@@ -40,9 +40,9 @@ test.describe('Administration app', () => {
       .first()
       .click();
 
-    await page.getByRole('button', { name: 'Hide content' }).click();
-    await expect(page.getByText('Hide this content?')).toBeVisible();
-    await page.getByRole('button', { name: 'Hide', exact: true }).click();
+    await page.getByRole('button', { name: 'Remove for everyone' }).click();
+    await expect(page.getByText('Remove this content?')).toBeVisible();
+    await page.getByRole('button', { name: 'Remove', exact: true }).click();
 
     await expect(page.getByText('Nothing to review')).toBeVisible();
   });
@@ -66,5 +66,42 @@ test.describe('Administration app', () => {
     await page.getByRole('button', { name: 'Threats or violence' }).click();
     await page.getByRole('button', { name: 'Report', exact: true }).click();
     await expect(page.getByText('Report sent for review')).toBeVisible();
+  });
+
+  test('the badge counts outstanding reports and visiting does not clear it', async ({ page }) => {
+    // The reported behaviour: opening the app cleared the count even with the report
+    // still pending. A report is outstanding until somebody decides about it, so this
+    // must not behave like an unread badge.
+    const icon = page.getByRole('button', { name: /Administration/i }).first();
+    await expect(icon).toContainText('1');
+
+    await icon.click();
+    await expect(page.locator('h1', { hasText: 'Administration' })).toBeVisible();
+    await page.locator("button[aria-label='Return to home screen']").click();
+
+    await expect(page.getByRole('button', { name: /Administration/i }).first()).toContainText('1');
+  });
+
+  test('history offers an undo', async ({ page }) => {
+    await page
+      .getByRole('button', { name: /Administration/i })
+      .first()
+      .click();
+
+    await page.getByRole('button', { name: /^History/ }).click();
+    await expect(page.getByText('No history yet')).toBeVisible();
+
+    // Decide something, then take it back.
+    await page.getByRole('button', { name: /^Pending/ }).click();
+    await page.getByRole('button', { name: 'Allow — no action' }).click();
+    await page.getByRole('button', { name: 'Allow', exact: true }).click();
+    await expect(page.getByText('Nothing to review')).toBeVisible();
+
+    await page.getByRole('button', { name: /^History/ }).click();
+    await expect(page.getByText('No action taken')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Undo' }).click();
+    await page.getByRole('button', { name: /^Pending/ }).click();
+    await expect(page.getByText('you are going to regret that')).toBeVisible();
   });
 });

@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS `gphone_audit_logs` (
         'deleted',
         'left',
         'removed',
-        'moderated'
+        'moderated',
+        'unmoderated'
     ) NOT NULL,
     `controller` varchar(100) NOT NULL,
     `method` varchar(100) NOT NULL,

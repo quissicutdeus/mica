@@ -1,6 +1,14 @@
 import { Database } from './Database';
 
-export type AuditAction = 'archived' | 'unarchived' | 'deleted' | 'left' | 'removed' | 'moderated';
+export type AuditAction =
+  | 'archived'
+  | 'unarchived'
+  | 'deleted'
+  | 'left'
+  | 'removed'
+  | 'moderated'
+  /** A moderation reversed. Distinct from `unarchived` so the ledger reads honestly. */
+  | 'unmoderated';
 
 export interface AuditLogOptions {
   citizenid: string;

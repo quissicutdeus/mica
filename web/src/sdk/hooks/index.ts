@@ -15,5 +15,6 @@ export * from './useNavigation';
 export * from './useNotes';
 export * from './useNotification';
 export * from './useNuiBridge';
+export * from './useReports';
 export * from './useStorage';
 export * from './useSystemHardware';

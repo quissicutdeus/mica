@@ -1,4 +1,5 @@
 import { defineServerApp, SchemaRepository, type ResolvedAppSchema } from '../lib/defineServerApp';
+import { Database } from '../lib/Database';
 import { requirePositiveInt } from '../lib/payload';
 import {
   MAX_NOTE_LENGTH,
@@ -6,6 +7,7 @@ import {
   isReportCategory,
   isReportableTable,
   moderateTarget,
+  restoreTarget,
   summariseTarget,
   type ReportableTable
 } from '../lib/moderation';
@@ -21,6 +23,20 @@ import type { Report, ReportResolution } from '@shared/types';
 class ReportRepository extends SchemaRepository<Report> {
   async resolve(id: number, resolution: ReportResolution): Promise<boolean> {
     return await this.updateUnscoped(id, { resolution } as Partial<Report>);
+  }
+
+  /**
+   * Everything already decided.
+   *
+   * A cross-owner read like the queue, so it is only reachable behind the `isAdmin`
+   * check in the handler. `findAll` cannot express "not pending".
+   */
+  async findAllResolved(): Promise<Report[]> {
+    return await Database.query<Report[]>(
+      `SELECT * FROM \`${this.tableName}\`
+       WHERE \`status\` = 'active' AND \`resolution\` <> 'pending'`,
+      []
+    );
   }
 }
 
@@ -128,6 +144,46 @@ app.registerEvent('queue', async (source) => {
   return pending.sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
+});
+
+/**
+ * Everything already resolved, newest first.
+ *
+ * A separate call rather than a flag on `queue`, because the two are read at different
+ * times and the pending list is the one that has to stay small and fast.
+ */
+app.registerEvent('history', async (source) => {
+  if (!isAdmin(source)) throw new Error('Not authorised.');
+
+  const rows = await repo.findAllResolved();
+  return rows.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+});
+
+/**
+ * Undo a resolution, putting the report back in the queue.
+ *
+ * Reversing a takedown restores the content too. Without that, "undo" would clear the
+ * decision while leaving the consequence in place, which is worse than no undo at all.
+ */
+app.registerEvent('reopen', async (source, cbId, data, citizenid) => {
+  if (!isAdmin(source)) throw new Error('Not authorised.');
+
+  const id = requirePositiveInt(data?.id, 'report id');
+  const report = await repo.findById(id);
+  if (!report) throw new Error('No such report.');
+  if (report.resolution === 'pending') throw new Error('That report is already open.');
+
+  if (report.resolution === 'actioned' && isReportableTable(report.target_table)) {
+    await restoreTarget(
+      report.target_table as ReportableTable,
+      report.target_id,
+      citizenid,
+      `report #${id} reopened`
+    );
+  }
+
+  await repo.resolve(id, 'pending');
+  return { ok: true, resolution: 'pending' };
 });
 
 /** Dismiss a report, or moderate what it points at. */
