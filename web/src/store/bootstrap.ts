@@ -4,6 +4,7 @@ import { messagesStore } from './messages';
 import { photos } from './photos';
 import { mailStore } from './mail';
 import { notes } from './notes';
+import { refreshAdmin } from './admin';
 
 let isBootstrapped = false;
 let bootstrapPromise: Promise<any> | null = null;
@@ -20,6 +21,9 @@ export async function bootstrapStores(force: boolean = false): Promise<void> {
   bootstrapPromise = (async () => {
     try {
       await Promise.allSettled([
+        // Asked here so the home screen knows whether to draw the Administration app
+        // before it renders, rather than having it appear a beat later.
+        refreshAdmin(),
         fetchCitizenId(),
         fetchBalance(),
         contacts.load(),

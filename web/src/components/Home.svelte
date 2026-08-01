@@ -1,8 +1,19 @@
 <script lang="ts">
+  import { isAdmin } from '../store/admin';
   import AppIcon from './AppIcon.svelte';
   import { appRegistryStore } from '../store/registry';
 
   let { openApp } = $props<{ openApp: (id: string) => void }>();
+
+  /**
+   * Apps flagged `requiresAdmin` are absent for everyone else, rather than present and
+   * refusing. A visible icon that errors on tap tells a player something exists that
+   * they cannot have, which is worse than not showing it.
+   *
+   * This is only what the launcher draws. Every privileged action behind such an app is
+   * checked again on the server.
+   */
+  const visibleApps = $derived($appRegistryStore.filter((app) => !app.requiresAdmin || $isAdmin));
 </script>
 
 <div
@@ -13,7 +24,7 @@
   <h1 class="mb-8 text-4xl font-bold tracking-tight">gPhone</h1>
 
   <div class="grid w-full grid-cols-4 gap-4 px-4">
-    {#each $appRegistryStore as app}
+    {#each visibleApps as app}
       <AppIcon
         name={app.name}
         color={app.color}

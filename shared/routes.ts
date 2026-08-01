@@ -73,8 +73,11 @@ export const ROUTES: readonly Route[] = [
   route('updateNote', 'notes', 'update'),
   route('deleteNote', 'notes', 'delete'),
 
-  // Reports
+  // Reports. `queue` and `resolve` are admin-only, enforced server-side rather than by
+  // hiding the Administration app — hiding the app hides the button, not the capability.
   route('createReport', 'reports', 'create'),
+  route('getReportQueue', 'reports', 'queue'),
+  route('resolveReport', 'reports', 'resolve'),
 
   // Photos — no `updatePhoto`: a stored photo has no mutable fields, and the server
   // does not register the endpoint.

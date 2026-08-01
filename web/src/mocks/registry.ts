@@ -271,8 +271,25 @@ export const mockRegistry: Record<string, MockHandler> = {
     return true;
   },
 
-  // Reports
+  // Reports & moderation
   createReport: async () => ({ ok: true, id: 1 }),
+  getReportQueue: async () => [
+    {
+      id: 1,
+      citizenid: 'REPORTER',
+      target_table: 'gphone_messages',
+      target_id: 4,
+      category: 'harassment',
+      note: 'Kept messaging after I asked them to stop.',
+      resolution: 'pending',
+      target_preview: 'you are going to regret that',
+      target_author: 'AUTHOR1',
+      status: 'active',
+      created_at: '2026-07-30T10:00:00Z',
+      updated_at: '2026-07-30T10:00:00Z'
+    }
+  ],
+  resolveReport: async () => ({ ok: true, resolution: 'actioned' }),
 
   // Navigation & Client Controls
   hideFrame: () => true,

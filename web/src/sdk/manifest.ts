@@ -30,6 +30,13 @@ export interface AppManifest {
   bundleUrl?: string;
   /** Explicit flag indicating whether app is a protected system core app */
   isSystem?: boolean;
+  /**
+   * Hide the app entirely unless the player holds an admin ace.
+   *
+   * A visibility hint, not a permission. The server gates every privileged action it
+   * exposes; this only stops the icon appearing for everyone else.
+   */
+  requiresAdmin?: boolean;
   /** ISO date string when app was installed */
   installedAt?: string;
   /** ISO date string when app was last updated */

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import {
     useAccount,
+    useAdmin,
     useKeybinds,
     useNuiBridge,
     usePhoneNotification,
@@ -24,6 +25,7 @@
   const { fetchNui } = useNuiBridge();
   const { onKeybind } = useKeybinds();
   const { devToolsUnlocked } = useDevTools();
+  const { refreshAdmin } = useAdmin();
 
   /**
    * Settings is a hub, not one long scroll: each group is its own pane.
@@ -71,22 +73,18 @@
   const TAPS_TO_UNLOCK = 10;
 
   /**
-   * Whether the player holds `gphone.admin`, as decided by the server.
+   * Admin status comes from the shared store rather than a private fetch.
    *
-   * Asked once on mount rather than trusted from the client: `IsPlayerAceAllowed` on the
-   * client side reflects what the server last replicated and is spoofable. This only
-   * decides what the panel *shows* — the privileged actions inside it are gated again
+   * Settings and the home screen both need this answer, and two copies of one fact
+   * drift. It decides what is *shown*; the privileged actions behind it are gated again
    * server-side, because a NUI request is not proof of intent (AGENTS.md §2.9).
-   *
-   * A plain browser has no ace list and no server to ask, so it stands in as allowed;
-   * the ten taps still apply, which keeps browser and in-game behaviour identical.
    */
-  let isAdmin = $state(isBrowser());
+  const { isAdmin } = useAdmin();
 
   const tapBuildRow = () => {
     if ($devToolsUnlocked) return;
 
-    if (!isAdmin) {
+    if (!$isAdmin) {
       // Say so outright. Silently counting to ten and then showing nothing reads as a
       // broken build.
       toast.show({ type: 'error', message: 'Developer Tools require the gphone.admin permission' });
@@ -111,7 +109,7 @@
   };
 
   /** The row only appears with the ace *and* the ten taps — in a browser too. */
-  const showDevTools = $derived(isAdmin && $devToolsUnlocked);
+  const showDevTools = $derived($isAdmin && $devToolsUnlocked);
 
   const hideDevTools = () => {
     devToolsUnlocked.set(false);
@@ -126,11 +124,7 @@
 
   onMount(() => {
     fetchPhoneNumber();
-
-    if (isBrowser()) return;
-    fetchNui<{ isAdmin?: boolean }>('checkAdmin')
-      .then((res) => (isAdmin = res?.isAdmin === true))
-      .catch(() => (isAdmin = false));
+    void refreshAdmin();
   });
 </script>
 
