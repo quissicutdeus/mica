@@ -9,6 +9,7 @@
     useNuiBridge,
     useAccount,
     useAppRegistry,
+    useStorage,
     useCall,
     useMail,
     useMessages
@@ -88,8 +89,13 @@
    * developer options. In a browser the panel is always available, so this only
    * matters in game.
    */
+  const devToolsStore = useStorage('settings');
+  const DEV_TOOLS_KEY = 'devToolsUnlocked';
+
   let devToolsTaps = $state(0);
-  let devToolsUnlocked = $state(false);
+  // Persisted: switching apps destroys this component (App.svelte re-keys on
+  // currentApp.name), so component state alone would drop the unlock immediately.
+  let devToolsUnlocked = $state(devToolsStore.getItem<boolean>(DEV_TOOLS_KEY, false) === true);
   let tapResetTimer: ReturnType<typeof setTimeout> | undefined;
 
   const TAPS_TO_UNLOCK = 10;
@@ -106,6 +112,7 @@
 
     if (remaining <= 0) {
       devToolsUnlocked = true;
+      devToolsStore.setItem(DEV_TOOLS_KEY, true);
       devToolsTaps = 0;
       clearTimeout(tapResetTimer);
       toast.show({ type: 'success', message: 'Developer Tools unlocked' });
@@ -114,8 +121,31 @@
     }
   };
 
-  /** Browser always shows the panel; in game it has to be earned. */
+  /** Browser always shows the panel; in game it has to be earned, then stays. */
   const showDevTools = $derived(isBrowser() || devToolsUnlocked);
+
+  const hideDevTools = () => {
+    devToolsUnlocked = false;
+    devToolsStore.setItem(DEV_TOOLS_KEY, false);
+    devToolsTaps = 0;
+    toast.show({ type: 'info', message: 'Developer Tools hidden — tap OS Version 10x to restore' });
+  };
+
+  /**
+   * Apply a battery level for real rather than only in the UI.
+   *
+   * The slider used to call `charge.set()`, which the client's drain loop overwrote
+   * within a second and which never reached the character's saved charge.
+   */
+  const applyBatteryLevel = async (level: number) => {
+    charge.set(level);
+    if (isBrowser()) return;
+    try {
+      await fetchNui('setBatteryLevel', { level });
+    } catch (e) {
+      console.error('Failed to apply battery level', e);
+    }
+  };
 
   onMount(() => {
     fetchPhoneNumber();
@@ -276,6 +306,19 @@
           </span>
         </h2>
         <div class="space-y-4 overflow-hidden rounded-xl bg-gray-800 p-4 text-xs">
+          <!-- Hide toggle. In a browser the panel is unconditional, so there is nothing
+               to hide; in game it is the way back out without hunting for the tap row. -->
+          {#if !isBrowser()}
+            <button
+              type="button"
+              onclick={hideDevTools}
+              class="flex w-full cursor-pointer items-center justify-between rounded-lg border border-gray-700 bg-gray-900/60 px-3 py-2 text-left transition-colors hover:border-gray-600 hover:bg-gray-900"
+            >
+              <span class="font-semibold text-gray-300">Hide Developer Tools</span>
+              <span class="font-mono text-[10px] text-gray-500">10 taps to restore</span>
+            </button>
+          {/if}
+
           <!-- Battery Level -->
           <div class="flex flex-col gap-2">
             <div class="flex items-center justify-between text-gray-300">
@@ -287,34 +330,35 @@
               min="0"
               max="100"
               value={Math.round($charge)}
-              oninput={(e) => charge.set(Number((e.currentTarget as HTMLInputElement).value))}
+              oninput={(e) =>
+                applyBatteryLevel(Number((e.currentTarget as HTMLInputElement).value))}
               class="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-gray-900 accent-emerald-500"
             />
             <div class="grid grid-cols-4 gap-1.5 pt-0.5">
               <button
                 type="button"
-                onclick={() => charge.set(0)}
+                onclick={() => applyBatteryLevel(0)}
                 class="cursor-pointer rounded border border-red-800 bg-red-950 px-2 py-1.5 text-center text-[10px] font-semibold text-red-300 hover:bg-red-900"
               >
                 0% (Dead)
               </button>
               <button
                 type="button"
-                onclick={() => charge.set(15)}
+                onclick={() => applyBatteryLevel(15)}
                 class="cursor-pointer rounded border border-yellow-800 bg-yellow-950 px-2 py-1.5 text-center text-[10px] font-semibold text-yellow-300 hover:bg-yellow-900"
               >
                 15% (Low)
               </button>
               <button
                 type="button"
-                onclick={() => charge.set(50)}
+                onclick={() => applyBatteryLevel(50)}
                 class="cursor-pointer rounded border border-gray-600 bg-gray-700 px-2 py-1.5 text-center text-[10px] font-semibold text-gray-200 hover:bg-gray-600"
               >
                 50%
               </button>
               <button
                 type="button"
-                onclick={() => charge.set(100)}
+                onclick={() => applyBatteryLevel(100)}
                 class="cursor-pointer rounded border border-emerald-800 bg-emerald-950 px-2 py-1.5 text-center text-[10px] font-semibold text-emerald-300 hover:bg-emerald-900"
               >
                 100%
