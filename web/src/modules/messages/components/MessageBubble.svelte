@@ -6,7 +6,8 @@
     type UIConversation,
     MessageStatusIcon,
     formatTime,
-    Avatar
+    Avatar,
+    ReportDialog
   } from '@gphone/sdk';
   import type { Contact } from '@shared/types';
 
@@ -33,12 +34,26 @@
     return { name, avatar, contact };
   };
 
+  /**
+   * Reporting is offered on other people's messages only. Reporting your own is not
+   * moderation, and the server refuses it anyway — better not to offer the button.
+   */
+  let reporting = $state(false);
+
   const handleOpenSenderContact = (contact?: Contact) => {
     if (contact) {
       openApp('contacts', { initialContact: contact });
     }
   };
 </script>
+
+{#if reporting}
+  <ReportDialog
+    targetTable="gphone_messages"
+    targetId={msg.id}
+    onclose={() => (reporting = false)}
+  />
+{/if}
 
 <div class="mb-1.5 flex flex-col {msg.sender === 'me' ? 'items-end' : 'items-start'}">
   {#if currentConv?.is_group && msg.sender === 'other'}
@@ -79,6 +94,16 @@
   </div>
 
   <div class="mt-1 flex items-center gap-1.5 px-1 select-none">
+    {#if msg.sender === 'other'}
+      <button
+        type="button"
+        onclick={() => (reporting = true)}
+        class="cursor-pointer text-[10px] text-gray-500 transition-colors hover:text-rose-400"
+        aria-label="Report message"
+      >
+        Report
+      </button>
+    {/if}
     <span class="text-[10px] text-gray-400">
       {formatTime(msg.created_at)}
     </span>

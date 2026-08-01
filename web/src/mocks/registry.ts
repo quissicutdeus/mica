@@ -271,6 +271,9 @@ export const mockRegistry: Record<string, MockHandler> = {
     return true;
   },
 
+  // Reports
+  createReport: async () => ({ ok: true, id: 1 }),
+
   // Navigation & Client Controls
   hideFrame: () => true,
   toggleFreelook: () => true,

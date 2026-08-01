@@ -18,5 +18,6 @@ export { default as EmptyState } from '../components/EmptyState.svelte';
 export { default as FloatingActionButton } from '../components/FloatingActionButton.svelte';
 export { default as ListItem } from '../components/ListItem.svelte';
 export { default as PhotoPickerModal } from '../components/PhotoPickerModal.svelte';
+export { default as ReportDialog } from '../components/ReportDialog.svelte';
 export { default as Screen } from '../components/Screen.svelte';
 export { default as SearchBar } from '../components/SearchBar.svelte';

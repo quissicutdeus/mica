@@ -8,7 +8,7 @@
     ShareSquareIcon,
     TrashIcon
   } from '@gphone/sdk';
-  import { useCamera, useKeybinds, useNavigation, onAppMount } from '../../sdk';
+  import { useCamera, useKeybinds, useNavigation, onAppMount, ReportDialog } from '../../sdk';
   import type { Photo } from '@shared/types';
   import { fade } from 'svelte/transition';
 
@@ -27,6 +27,7 @@
   let selectedIds = $state<Set<number>>(new Set());
   let isLoading = $state(false);
   let showDeleteConfirm = $state(false);
+  let reporting = $state(false);
 
   onAppMount(() => {
     void photosStore.load();
@@ -268,3 +269,11 @@
     </div>
   {/if}
 </Screen>
+
+{#if reporting && selectedPhoto}
+  <ReportDialog
+    targetTable="gphone_photos"
+    targetId={selectedPhoto.id}
+    onclose={() => (reporting = false)}
+  />
+{/if}
