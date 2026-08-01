@@ -16,33 +16,20 @@ function createNotesStore() {
         set([]);
       }
     },
+    // No `defaultValue` on the writes, so `fetchNui` throws and the caller can react.
+    // These used to swallow, which made a failed save indistinguishable from a good one.
     add: async (note: Omit<Note, 'id' | 'citizenid'>) => {
-      try {
-        const newNote = await fetchNui<Note>('createNote', note);
-        if (newNote) {
-          update((n) => [...n, newNote]);
-          return newNote;
-        }
-      } catch (e) {
-        console.error('Failed to create note:', e);
-        throw e;
-      }
+      const newNote = await fetchNui<Note>('createNote', note);
+      update((n) => [...n, newNote]);
+      return newNote;
     },
     update: async (note: Note) => {
-      try {
-        await fetchNui('updateNote', note);
-        update((n) => n.map((c) => (c.id === note.id ? note : c)));
-      } catch (e) {
-        console.error('Failed to update note:', e);
-      }
+      await fetchNui('updateNote', note);
+      update((n) => n.map((c) => (c.id === note.id ? note : c)));
     },
     delete: async (id: number) => {
-      try {
-        await fetchNui('deleteNote', { id });
-        update((n) => n.filter((c) => c.id !== id));
-      } catch (e) {
-        console.error('Failed to delete note:', e);
-      }
+      await fetchNui('deleteNote', { id });
+      update((n) => n.filter((c) => c.id !== id));
     }
   };
 }

@@ -21,36 +21,24 @@ function createContactsStore() {
         console.error('Failed to create contact: missing required firstname or phone');
         throw new Error('First name and phone number are required.');
       }
-      try {
-        const newContact = await fetchNui<Contact>('createContact', contact);
-        if (newContact) {
-          update((n) => [...n, newContact]);
-          return newContact;
-        }
-      } catch (e) {
-        console.error('Failed to create contact:', e);
-        throw e;
-      }
+      // No `defaultValue`, so `fetchNui` throws on a failed write and the caller's catch
+      // runs. It used to swallow, so this returned `undefined` and the UI announced
+      // success for a contact that was never created.
+      const newContact = await fetchNui<Contact>('createContact', contact);
+      update((n) => [...n, newContact]);
+      return newContact;
     },
     update: async (contact: Contact) => {
       if (!contact.firstname?.trim() || !contact.phone?.trim()) {
         console.error('Failed to update contact: missing required firstname or phone');
         throw new Error('First name and phone number are required.');
       }
-      try {
-        await fetchNui('updateContact', contact);
-        update((n) => n.map((c) => (c.id === contact.id ? contact : c)));
-      } catch (e) {
-        console.error('Failed to update contact:', e);
-      }
+      await fetchNui('updateContact', contact);
+      update((n) => n.map((c) => (c.id === contact.id ? contact : c)));
     },
     delete: async (id: number) => {
-      try {
-        await fetchNui('deleteContact', { id });
-        update((n) => n.filter((c) => c.id !== id));
-      } catch (e) {
-        console.error('Failed to delete contact:', e);
-      }
+      await fetchNui('deleteContact', { id });
+      update((n) => n.filter((c) => c.id !== id));
     },
     share: async (payload: Partial<Contact> & { name?: string; phone: string }) => {
       const firstname = payload.firstname || payload.name?.split(' ')[0];
