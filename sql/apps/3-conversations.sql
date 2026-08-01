@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS `gphone_messages_participants` (
     `last_read` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `left_at` timestamp DEFAULT NULL,
+    `archived_at` timestamp DEFAULT NULL,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `status` (`status`),

@@ -92,6 +92,26 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     return await Database.update(query, [conversationId, citizenid]);
   }
 
+  /**
+   * Archive or unarchive a thread for one participant.
+   *
+   * `left_at IS NULL` keeps a player who has left the thread from mutating a row they
+   * no longer own a view of. No separate membership check is needed: a non-participant
+   * matches no row and the update reports false.
+   */
+  async setArchived(
+    conversationId: number,
+    citizenid: string,
+    archived: boolean
+  ): Promise<boolean> {
+    const query = `
+            UPDATE gphone_messages_participants
+            SET archived_at = ${archived ? 'CURRENT_TIMESTAMP' : 'NULL'}
+            WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL
+        `;
+    return await Database.update(query, [conversationId, citizenid]);
+  }
+
   async findForCitizen(citizenid: string): Promise<Conversation[]> {
     // Joined rather than EXISTS-filtered so the caller's own participant row
     // (`me`) is in scope — `me.last_read` is what makes unread_count computable.
@@ -105,7 +125,8 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
                 AND unread.created_at > me.last_read) as unread_count,
             m.message as last_message_text,
             m.created_at as last_message_time,
-            m.citizenid as last_message_sender
+            m.citizenid as last_message_sender,
+            me.archived_at as archived_at
             FROM gphone_messages_conversations c
             JOIN gphone_messages_participants me
                 ON me.conversation_id = c.id

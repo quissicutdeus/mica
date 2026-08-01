@@ -59,6 +59,11 @@ export const conversations = defineServerApp<Conversation>({
         created_at: { type: 'timestamp', notNull: true, defaultNow: true },
         // Null means "still in the thread" — every membership check filters on it.
         left_at: { type: 'timestamp' },
+        // Archiving is per-participant: hiding a thread from your own list must not
+        // hide it from everyone else's. A separate column rather than a `status`
+        // value, because every membership check filters on `status = 'active'` and an
+        // archived participant is still very much in the conversation.
+        archived_at: { type: 'timestamp' },
         updated_at: { type: 'timestamp', notNull: true, defaultNow: true, onUpdateNow: true }
       },
       indexes: [
@@ -236,6 +241,20 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
 app.registerEvent('read', async (source, cbId, data, citizenid) => {
   const id = conversationIdFrom(data);
   return await conversationRepo.markRead(id, citizenid);
+});
+
+/**
+ * Archive or unarchive a thread, for the caller only.
+ *
+ * The web has offered this from two places since Messages shipped and it reached
+ * nothing — no client route, no server handler — while the browser mock answered it
+ * happily. Scoped to the caller's own participant row, so the WHERE clause is the
+ * authorization: there is no id a player can pass that touches someone else's view.
+ */
+app.registerEvent('archive', async (source, cbId, data, citizenid) => {
+  const id = conversationIdFrom(data);
+  const archive = data?.archive !== false;
+  return await conversationRepo.setArchived(id, citizenid, archive);
 });
 
 // Delete/Leave
