@@ -55,7 +55,7 @@ describe('shared/rpc — one derivation for both sides', () => {
   });
 
   it.each([
-    ['too few segments', 'gphone:server:endCall'],
+    ['too few segments', 'gphone:server:noAppSegment'],
     ['wrong side', 'gphone:client:notes:get'],
     ['foreign prefix', 'other:server:notes:get'],
     ['empty', '']
@@ -108,7 +108,7 @@ describe('ClientApp — subscribes the reply it will actually receive', () => {
   it('refuses a server event whose reply cannot be derived', () => {
     // A caller would otherwise hang for 15s. Fail at startup instead.
     const app = new ClientApp('phone');
-    expect(() => app.registerCallback('endCall', 'gphone:server:endCall')).toThrow(
+    expect(() => app.registerCallback('endCall', 'gphone:server:noAppSegment')).toThrow(
       /cannot be derived/
     );
   });

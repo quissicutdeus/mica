@@ -337,6 +337,26 @@ Two traps:
 Payload shape: the generic CRUD path reads the row id from `data.id`. Conversation-scoped custom
 actions accept `conversation_id`, `id`, or a bare id via `conversationIdFrom` in `server/lib/payload.ts`.
 
+#### Event names
+
+Every net event is **`gphone:<side>:<app>:<action>`**, with no exceptions —
+`server/__tests__/eventNames.test.ts` scans the source and fails on anything else. It also
+rejects an `<app>` segment that is neither a declared app nor one of the two non-app scopes,
+so a typo cannot produce a well-shaped name that matches no listener.
+
+Two scopes are not apps:
+
+- **`shell`** — the phone itself rather than any app (`gphone:client:shell:notify`). `shell` is
+  the word this codebase already uses for the layer that owns navigation, key dispatch, and
+  anything above an individual app. Not `core`: `web/src/core/` is the transport directory and
+  every other use of "core" in the tree means QBCore / qbx_core.
+- **`admin`** — the privileged surface, grouped by who may call it rather than by subject.
+
+Names drifted before this was enforced. Fifteen events omitted the app segment and
+`gphone:call:failed` had no **side** segment at all, so its direction was unreadable from the
+name. NUI message actions (`setVisible`, `receiveMail`) are a **separate namespace** and carry
+no `gphone:` prefix; the test scans `web/src` precisely to catch one borrowing the prefix.
+
 ### Testing
 
 | Suite  | Command                 | Covers                                                      |

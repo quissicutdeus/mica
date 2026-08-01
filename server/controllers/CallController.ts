@@ -15,7 +15,7 @@ const playerCalls: Record<number, number> = {}; // Source -> CallID (Fast lookup
 
 const generateCallId = () => Math.floor(Math.random() * 900000) + 100000;
 
-onNet('gphone:server:startCall', (targetPhone: string) => {
+onNet('gphone:server:phone:start', (targetPhone: string) => {
   const src = source;
   const callerPhone = FrameworkBridge.getPlayerPhone(src);
 
@@ -26,21 +26,21 @@ onNet('gphone:server:startCall', (targetPhone: string) => {
   const targetSrc = targetPlayer?.source || null;
 
   if (!targetSrc) {
-    emitNet('gphone:client:notify', src, { type: 'error', text: 'Number unavailable' });
+    emitNet('gphone:client:shell:notify', src, { type: 'error', message: 'Number unavailable' });
     // Tell client to reset
-    emitNet('gphone:call:failed', src);
+    emitNet('gphone:client:phone:failed', src);
     return;
   }
 
   if (targetSrc === src) {
-    emitNet('gphone:client:notify', src, { type: 'error', text: 'Busy' });
-    emitNet('gphone:call:failed', src);
+    emitNet('gphone:client:shell:notify', src, { type: 'error', message: 'Busy' });
+    emitNet('gphone:client:phone:failed', src);
     return;
   }
 
   if (playerCalls[targetSrc] || playerCalls[src]) {
-    emitNet('gphone:client:notify', src, { type: 'error', text: 'Line busy' });
-    emitNet('gphone:call:failed', src);
+    emitNet('gphone:client:shell:notify', src, { type: 'error', message: 'Line busy' });
+    emitNet('gphone:client:phone:failed', src);
     return;
   }
 
@@ -59,24 +59,24 @@ onNet('gphone:server:startCall', (targetPhone: string) => {
   playerCalls[targetSrc] = callId;
 
   // Notify receiving player
-  emitNet('gphone:client:receiveCall', targetSrc, {
+  emitNet('gphone:client:phone:incoming', targetSrc, {
     from: callerPhone,
     callId: callId
   });
 });
 
-onNet('gphone:server:answerCall', () => {
+onNet('gphone:server:phone:answer', () => {
   const src = source;
   const callId = playerCalls[src];
   const call = activeCalls[callId];
 
   if (!call || call.target !== src) return;
 
-  emitNet('gphone:client:callAccepted', call.caller, { callId });
-  emitNet('gphone:client:callAccepted', call.target, { callId });
+  emitNet('gphone:client:phone:accepted', call.caller, { callId });
+  emitNet('gphone:client:phone:accepted', call.target, { callId });
 });
 
-onNet('gphone:server:endCall', () => {
+onNet('gphone:server:phone:end', () => {
   const src = source;
   const callId = playerCalls[src];
   const call = activeCalls[callId];
@@ -84,8 +84,8 @@ onNet('gphone:server:endCall', () => {
   if (!call) return;
 
   // Notify both
-  if (call.caller !== src) emitNet('gphone:client:endCall', call.caller);
-  if (call.target !== src) emitNet('gphone:client:endCall', call.target);
+  if (call.caller !== src) emitNet('gphone:client:phone:ended', call.caller);
+  if (call.target !== src) emitNet('gphone:client:phone:ended', call.target);
 
   // Clean up
   delete playerCalls[call.caller];
@@ -101,7 +101,7 @@ on('playerDropped', () => {
     const call = activeCalls[callId];
     // End for other party
     const other = call.caller === src ? call.target : call.caller;
-    emitNet('gphone:client:endCall', other);
+    emitNet('gphone:client:phone:ended', other);
 
     delete playerCalls[other];
     delete playerCalls[src];

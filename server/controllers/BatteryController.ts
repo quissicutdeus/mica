@@ -84,17 +84,17 @@ export const savePlayerBattery = async (src: number, level: number): Promise<voi
 };
 
 // Event handler for battery_bank item or custom server trigger to recharge phone
-onNet('gphone:server:useBatteryBank', () => {
+onNet('gphone:server:battery:useItem', () => {
   const src = source;
   const removed = removeBatteryBankItem(src);
   if (removed) {
     void savePlayerBattery(src, 100);
-    emitNet('gphone:client:rechargePhone', src);
+    emitNet('gphone:client:battery:recharge', src);
   }
 });
 
 // Event to save battery charge from client
-onNet('gphone:server:saveBattery', (chargeAmount: number) => {
+onNet('gphone:server:battery:save', (chargeAmount: number) => {
   void savePlayerBattery(source, Number(chargeAmount));
 });
 
@@ -113,9 +113,9 @@ onNet('gphone:server:saveBattery', (chargeAmount: number) => {
 onNet('gphone:server:admin:setBattery', (chargeAmount: number) => {
   const src = source;
   if (!isAdmin(src)) {
-    emitNet('gphone:client:notify', src, {
+    emitNet('gphone:client:shell:notify', src, {
       type: 'error',
-      text: 'You do not have permission to do that.'
+      message: 'You do not have permission to do that.'
     });
     return;
   }
@@ -124,7 +124,7 @@ onNet('gphone:server:admin:setBattery', (chargeAmount: number) => {
   if (!Number.isFinite(level)) return;
 
   void savePlayerBattery(src, level);
-  emitNet('gphone:client:setCharge', src, level);
+  emitNet('gphone:client:battery:set', src, level);
 });
 
 /**
@@ -141,7 +141,7 @@ export const sendLoadedBatteryToClient = async (src: number): Promise<void> => {
   // No loaded character yet — a multichar player still at the selection screen. Nothing
   // to look up, and `src_<id>` would key a row to a source number that gets reused.
   if (!citizenid) {
-    emitNet('gphone:client:setCharge', src, 100);
+    emitNet('gphone:client:battery:set', src, 100);
     return;
   }
 
@@ -164,11 +164,11 @@ export const sendLoadedBatteryToClient = async (src: number): Promise<void> => {
   }
 
   if (!Number.isFinite(savedCharge)) savedCharge = 100;
-  emitNet('gphone:client:setCharge', src, savedCharge);
+  emitNet('gphone:client:battery:set', src, savedCharge);
 };
 
 // Event for client to request saved battery level on spawn / join
-onNet('gphone:server:loadBattery', () => {
+onNet('gphone:server:battery:load', () => {
   void sendLoadedBatteryToClient(source);
 });
 
@@ -204,9 +204,9 @@ RegisterCommand(
   (source: number, args: string[]) => {
     const fromConsole = source === 0;
     if (!fromConsole && !IsPlayerAceAllowed(String(source), 'gphone.admin')) {
-      emitNet('gphone:client:notify', source, {
+      emitNet('gphone:client:shell:notify', source, {
         type: 'error',
-        text: 'You do not have permission to use that.'
+        message: 'You do not have permission to use that.'
       });
       return;
     }
@@ -226,7 +226,7 @@ RegisterCommand(
     }
 
     void savePlayerBattery(target, level);
-    emitNet('gphone:client:setCharge', target, level);
+    emitNet('gphone:client:battery:set', target, level);
     console.log(`[gphone] battery for ${target} set to ${level}%`);
   },
   false
@@ -236,6 +236,6 @@ RegisterCommand(
 FrameworkBridge.registerUsableItem('battery_bank', (source: number) => {
   const removed = removeBatteryBankItem(source);
   if (removed) {
-    emitNet('gphone:client:rechargePhone', source);
+    emitNet('gphone:client:battery:recharge', source);
   }
 });

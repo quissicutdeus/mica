@@ -8,19 +8,19 @@ import { PhoneState } from '../lib/PhoneState';
 // NUI Callbacks
 RegisterNuiCallbackType('startCall');
 on('__cfx_nui:startCall', (data: { number: string }, cb: Function) => {
-  TriggerServerEvent('gphone:server:startCall', data.number);
+  TriggerServerEvent('gphone:server:phone:start', data.number);
   cb({ status: 'dialing' });
 });
 
 RegisterNuiCallbackType('answerCall');
 on('__cfx_nui:answerCall', (_: any, cb: Function) => {
-  TriggerServerEvent('gphone:server:answerCall');
+  TriggerServerEvent('gphone:server:phone:answer');
   cb({ status: 'connected' });
 });
 
 RegisterNuiCallbackType('endCall');
 on('__cfx_nui:endCall', (_: any, cb: Function) => {
-  TriggerServerEvent('gphone:server:endCall');
+  TriggerServerEvent('gphone:server:phone:end');
   cb({ status: 'idle' });
 });
 
@@ -29,7 +29,7 @@ on('__cfx_nui:endCall', (_: any, cb: Function) => {
 // Settings' DevTools but registered nowhere, so declining silently did nothing.
 RegisterNuiCallbackType('rejectCall');
 on('__cfx_nui:rejectCall', (_: any, cb: Function) => {
-  TriggerServerEvent('gphone:server:endCall');
+  TriggerServerEvent('gphone:server:phone:end');
   cb({ status: 'idle' });
 });
 
@@ -49,7 +49,7 @@ on('__cfx_nui:toggleSpeaker', (data: { enabled: boolean }, cb: Function) => {
 });
 
 // Server Events
-onNet('gphone:client:receiveCall', (data: { from: string; callId: number }) => {
+onNet('gphone:client:phone:incoming', (data: { from: string; callId: number }) => {
   SetNuiFocus(true, true);
   // The phone is now open whether or not the player asked for it. Without this the flag
   // in PhoneState still reads false, so the next `M` re-opens instead of closing and
@@ -75,7 +75,7 @@ onNet('gphone:client:receiveCall', (data: { from: string; callId: number }) => {
   );
 });
 
-onNet('gphone:client:callAccepted', (data: { callId: number }) => {
+onNet('gphone:client:phone:accepted', (data: { callId: number }) => {
   // Connect to PMA Voice Channel
   exports['pma-voice'].addPlayerToCall(data.callId);
 
@@ -88,7 +88,7 @@ onNet('gphone:client:callAccepted', (data: { callId: number }) => {
   );
 });
 
-onNet('gphone:client:endCall', () => {
+onNet('gphone:client:phone:ended', () => {
   // Disconnect from PMA Voice
   exports['pma-voice'].removePlayerFromCall();
 
@@ -102,7 +102,7 @@ onNet('gphone:client:endCall', () => {
 });
 
 // If calls fail
-onNet('gphone:call:failed', () => {
+onNet('gphone:client:phone:failed', () => {
   SendNuiMessage(
     JSON.stringify({
       action: 'callStatus',

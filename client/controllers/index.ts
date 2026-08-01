@@ -13,3 +13,4 @@ import './MessageController';
 import './NoteController';
 import './PhoneAnimationController';
 import './PhotoController';
+import './ShellController';

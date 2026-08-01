@@ -29,7 +29,7 @@ export const setPhoneCharge = (amount: number) => {
 
 const onBatteryDrained = () => {
   // End active phone call if battery dies
-  TriggerServerEvent('gphone:server:endCall');
+  TriggerServerEvent('gphone:server:phone:end');
   try {
     if (exports['pma-voice']?.removePlayerFromCall) {
       exports['pma-voice'].removePlayerFromCall();
@@ -48,12 +48,12 @@ const onBatteryDrained = () => {
 };
 
 // Listen for server recharge events
-onNet('gphone:client:rechargePhone', () => {
+onNet('gphone:client:battery:recharge', () => {
   setPhoneCharge(100);
-  TriggerServerEvent('gphone:server:saveBattery', 100);
+  TriggerServerEvent('gphone:server:battery:save', 100);
 });
 
-onNet('gphone:client:setCharge', (amount: number) => {
+onNet('gphone:client:battery:set', (amount: number) => {
   setPhoneCharge(amount);
 });
 
@@ -83,7 +83,7 @@ on('__cfx_nui:setBatteryLevel', (data: { level?: number }, cb: Function) => {
 
 // Load initial battery state on spawn/join
 setTimeout(() => {
-  TriggerServerEvent('gphone:server:loadBattery');
+  TriggerServerEvent('gphone:server:battery:load');
 }, 1000);
 
 // Deteriorate battery by DRAIN_RATE_PER_MINUTE every minute (sub-percent updates every second)
@@ -101,7 +101,7 @@ setInterval(() => {
     saveCounter++;
     if (saveCounter >= 15) {
       saveCounter = 0;
-      TriggerServerEvent('gphone:server:saveBattery', phoneCharge);
+      TriggerServerEvent('gphone:server:battery:save', phoneCharge);
     }
   }
 }, 1000);

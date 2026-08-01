@@ -43,11 +43,21 @@
       if (typeof data === 'number') {
         charge.set(data);
       }
+    } else if (action === 'notify') {
+      // Server-originated toast, relayed by the client's ShellController. Used by the
+      // ace-denial paths and the call failure cases.
+      if (typeof data?.message === 'string' && data.message) {
+        toast.show({
+          type: data.type ?? 'info',
+          title: data.title,
+          message: data.message
+        });
+      }
     } else if (action === 'setSignal') {
       if (typeof data === 'number') {
         setSignal(data);
       }
-    } else if (action === 'installApp' || action === 'gphone:installApp') {
+    } else if (action === 'installApp') {
       if (data?.url) {
         appRegistryStore
           .loadRemoteApp(data.url)
@@ -64,7 +74,7 @@
             });
           });
       }
-    } else if (action === 'uninstallApp' || action === 'gphone:uninstallApp') {
+    } else if (action === 'uninstallApp') {
       if (data?.appId) {
         try {
           appRegistryStore.unregisterApp(data.appId);

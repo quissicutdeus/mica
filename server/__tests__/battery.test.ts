@@ -32,10 +32,10 @@ const mockPlayer = (metadata: Record<string, unknown> = {}) => ({
   rawPlayer: { PlayerData: { metadata } }
 });
 
-/** The last `emitNet('gphone:client:setCharge', ...)` level, or undefined. */
+/** The last `emitNet('gphone:client:battery:set', ...)` level, or undefined. */
 const emittedCharge = (): number | undefined => {
   const call = (globalThis.emitNet as any).mock.calls
-    .filter((c: any[]) => c[0] === 'gphone:client:setCharge')
+    .filter((c: any[]) => c[0] === 'gphone:client:battery:set')
     .pop();
   return call?.[2];
 };
