@@ -1,14 +1,20 @@
 <script lang="ts">
   import {
-    ConfirmDialog,
-    EmptyState,
-    Screen,
     CheckIcon,
+    ConfirmDialog,
     EmptyPhotoIcon,
+    EmptyState,
+    FlagIcon,
+    ReportDialog,
+    Screen,
     ShareSquareIcon,
-    TrashIcon
+    TrashIcon,
+    onAppMount,
+    useCamera,
+    useKeybinds,
+    useNavigation,
+    usePhoneNotification
   } from '@gphone/sdk';
-  import { useCamera, useKeybinds, useNavigation, onAppMount, ReportDialog } from '../../sdk';
   import type { Photo } from '@shared/types';
   import { fade } from 'svelte/transition';
 
@@ -21,6 +27,7 @@
   const { photosStore, deletePhoto } = useCamera();
   const { consumeDeepLink } = useNavigation();
   const { onKeybind } = useKeybinds();
+  const { toast } = usePhoneNotification();
 
   let selectedPhoto: Photo | null = $state(null);
   let isSelectionMode = $state(false);
@@ -97,9 +104,8 @@
   };
 
   const shareSelected = () => {
-    // Mock share functionality
-    console.log('Sharing photos:', Array.from(selectedIds));
-    alert('Photos shared! (Mock)');
+    // Not implemented. Says so, rather than an `alert()` claiming it worked.
+    toast.show({ type: 'info', message: 'Sharing photos is not implemented yet' });
     selectedIds.clear();
     isSelectionMode = false;
   };
@@ -160,12 +166,17 @@
         <button
           class="p-2 text-blue-400 transition-colors hover:text-blue-300"
           aria-label="Share photo"
-          onclick={() => {
-            console.log('Share photo', selectedPhoto?.id);
-            alert('Photo shared! (Mock)');
-          }}
+          onclick={() =>
+            toast.show({ type: 'info', message: 'Sharing photos is not implemented yet' })}
         >
           <ShareSquareIcon class="h-6 w-6" />
+        </button>
+        <button
+          class="p-2 text-gray-400 transition-colors hover:text-rose-400"
+          aria-label="Report photo"
+          onclick={() => (reporting = true)}
+        >
+          <FlagIcon class="h-6 w-6" />
         </button>
         <button
           class="p-2 text-red-500 transition-colors hover:text-red-400"

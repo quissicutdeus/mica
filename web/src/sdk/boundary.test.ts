@@ -23,6 +23,13 @@ const MODULES = join(ROOT, 'src', 'modules');
 /** Shell directories an app must never import from by path. */
 const FORBIDDEN = ['components', 'store', 'utils', 'mocks', 'core', 'sdk'];
 
+/**
+ * `../../sdk` is a violation too, and the directory pattern above missed it: it requires
+ * a `/` after the directory name, and the SDK barrel is imported as the bare directory.
+ * Photos had both forms in one file and only the tidy one was caught.
+ */
+const BARE_SDK_IMPORT = /from\s+['"](?:\.\.\/)+sdk['"]/g;
+
 const walk = (dir: string): string[] => {
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
@@ -52,7 +59,7 @@ describe('app module boundary', () => {
 
     for (const file of FILES) {
       const text = readFileSync(file, 'utf8');
-      for (const match of text.matchAll(ESCAPING_IMPORT)) {
+      for (const match of [...text.matchAll(ESCAPING_IMPORT), ...text.matchAll(BARE_SDK_IMPORT)]) {
         offenders.push(`${relative(ROOT, file)}  ->  ${match[0].replace(/^from\s+/, '')}`);
       }
     }

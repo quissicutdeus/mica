@@ -15,6 +15,7 @@ export { default as DocumentIcon } from '../components/icons/DocumentIcon.svelte
 export { default as EditIcon } from '../components/icons/EditIcon.svelte';
 export { default as EmptyMailIcon } from '../components/icons/EmptyMailIcon.svelte';
 export { default as EmptyPhotoIcon } from '../components/icons/EmptyPhotoIcon.svelte';
+export { default as FlagIcon } from '../components/icons/FlagIcon.svelte';
 export { default as FlipCameraIcon } from '../components/icons/FlipCameraIcon.svelte';
 export { default as KeypadIcon } from '../components/icons/KeypadIcon.svelte';
 export { default as LightningWarningIcon } from '../components/icons/LightningWarningIcon.svelte';
