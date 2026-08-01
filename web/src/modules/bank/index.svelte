@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useAccount, Screen } from '@gphone/sdk';
+  import { EmptyState, Screen, onAppMount, useAccount } from '@gphone/sdk';
   import CreditCard from './components/CreditCard.svelte';
   import TransactionItem from './components/TransactionItem.svelte';
 
@@ -8,10 +8,12 @@
   const { bankBalance, transactions, citizenid, fetchBalance, fetchTransactions, fetchCitizenId } =
     useAccount();
 
-  $effect(() => {
-    fetchBalance();
-    fetchTransactions();
-    fetchCitizenId();
+  // `onAppMount`, not `$effect`. An effect re-runs whenever anything it reads changes,
+  // so the first `$state` read added inside this block would turn it into a fetch loop.
+  onAppMount(() => {
+    void fetchBalance();
+    void fetchTransactions();
+    void fetchCitizenId();
   });
 </script>
 
@@ -25,6 +27,11 @@
     <div class="space-y-4">
       {#each $transactions as transaction}
         <TransactionItem {transaction} />
+      {:else}
+        <EmptyState
+          title="No transactions"
+          description="Nothing has moved through this account yet."
+        />
       {/each}
     </div>
   </div>
