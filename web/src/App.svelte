@@ -239,10 +239,15 @@
     }
   });
 
+  const setFreelook = (state: boolean) => {
+    if (isFreelook === state) return;
+    isFreelook = state;
+    fetchNui('toggleFreelook', { state });
+  };
+
   registerHandler('freelook', () => {
     if (!visible) return;
-    isFreelook = !isFreelook;
-    fetchNui('toggleFreelook', { state: isFreelook });
+    setFreelook(!isFreelook);
   });
 
   onMount(() => {
@@ -371,10 +376,26 @@
   let wasInCameraApp = false;
   $effect(() => {
     const isCameraApp = $currentApp.name === 'camera' && visible;
-    if (isCameraApp !== wasInCameraApp) {
-      wasInCameraApp = isCameraApp;
-      fetchNui('onCameraApp', { state: isCameraApp });
-    }
+    if (isCameraApp === wasInCameraApp) return;
+    wasInCameraApp = isCameraApp;
+    fetchNui('onCameraApp', { state: isCameraApp });
+
+    /**
+     * Aim mode: freelook on for as long as the camera app is open.
+     *
+     * A camera you cannot point is not much of a camera, and framing a shot previously
+     * meant holding the freelook key the whole time. Freelook already solves the only
+     * hard part — `SetNuiFocus(true, false)` drops the cursor so the mouse turns the
+     * view instead of moving a pointer, which is the one way to have both.
+     *
+     * The trade is that the on-screen controls are unclickable while aiming, so the
+     * shutter and back run off their keybinds and the freelook key toggles the cursor
+     * back for the mode tabs and the gallery.
+     *
+     * Set here rather than in the camera module because `isFreelook` is shell state:
+     * leaving it stale would make the player's first freelook press a no-op.
+     */
+    setFreelook(isCameraApp);
   });
 </script>
 

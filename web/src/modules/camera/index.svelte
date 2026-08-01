@@ -101,7 +101,11 @@
     }, 600);
   };
 
-  const { onKeybind } = useKeybinds();
+  const { onKeybind, bindings } = useKeybinds();
+
+  /** `' '` renders as nothing, and a bare letter reads better capitalised. */
+  const keyLabel = (key: string) =>
+    key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key;
 
   onAppMount(() => {
     photosStore.load();
@@ -291,6 +295,22 @@
       class:duration-75={isFlashing}
       class:duration-300={!isFlashing}
     ></div>
+
+    <!-- Keyboard hint. The mouse aims rather than pointing while the camera is open, so
+         the on-screen controls cannot be clicked and these keys are the only way in. -->
+    {#if !isBrowser()}
+      <div
+        class="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center gap-2 text-[10px] text-white/70 transition-opacity duration-75"
+        class:opacity-0={$isTakingPhoto}
+      >
+        {#each [['shutter', 'Shoot'], ['back', 'Close'], ['freelook', 'Cursor']] as [id, label] (id)}
+          <span class="rounded bg-black/50 px-1.5 py-0.5 backdrop-blur-sm">
+            <span class="font-mono text-white">{keyLabel($bindings[id])}</span>
+            {label}
+          </span>
+        {/each}
+      </div>
+    {/if}
 
     <!-- Top Controls -->
     <div
