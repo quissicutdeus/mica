@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import Screen from '../../components/Screen.svelte';
   import {
-    MICA_VERSION,
     MICA_BUILD_INFO,
     useSystemHardware,
     usePhoneNotification,
@@ -163,20 +162,18 @@
           <span class="font-mono text-gray-200">{$myPhoneNumber}</span>
         </div>
         <div class="flex items-center justify-between p-4">
-          <span class="font-medium text-gray-300">Software</span>
-          <span class="font-semibold text-white">gPhone</span>
-        </div>
-        <div class="flex items-center justify-between p-4">
-          <span class="font-medium text-gray-300">OS Version</span>
-          <span class="font-mono text-indigo-400">v{MICA_VERSION}</span>
-        </div>
-        <div class="flex items-center justify-between p-4">
           <span class="font-medium text-gray-300">First Boot</span>
           <span class="font-mono text-xs text-gray-300">{formatDate(getFirstBootTime())}</span>
         </div>
         <div class="flex items-center justify-between p-4">
-          <span class="font-medium text-gray-300">Build / Commit</span>
-          <span class="font-mono text-xs text-gray-400">{MICA_BUILD_INFO}</span>
+          <span class="font-medium text-gray-300">Software</span>
+          <span class="font-semibold text-white">gPhone</span>
+        </div>
+        <!-- OS Version carries the build info: `v1.0.0 (branch@commit)`. Was a separate
+             "Build / Commit" row saying almost the same thing. -->
+        <div class="flex items-center justify-between p-4">
+          <span class="font-medium text-gray-300">OS Version</span>
+          <span class="font-mono text-indigo-400">{MICA_BUILD_INFO}</span>
         </div>
       </div>
     </div>
