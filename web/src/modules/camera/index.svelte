@@ -53,6 +53,11 @@
       isFlashing = false;
     }, 180);
 
+    // The chrome fades out over `duration-75`, and the screenshot is a crop of this
+    // exact region — so the capture has to wait for the fade to finish or the shutter
+    // bar is still half-visible in the photo. Was 50ms against a 75ms fade.
+    const CHROME_FADE_MS = 75;
+
     setTimeout(async () => {
       try {
         let capturedImage: string;
@@ -143,17 +148,23 @@
       } finally {
         isTakingPhoto.set(false);
       }
-    }, 50);
+    }, CHROME_FADE_MS + 30);
   };
 </script>
 
+<!-- No opaque background in game: PhoneFrame goes transparent while the camera is open
+     so the world renders through the viewfinder, and a bg-black here would paint over
+     it — every capture came out black. The browser mock needs a backdrop, so it keeps
+     one. -->
 <div
   bind:this={containerRef}
-  class="relative flex h-full flex-col overflow-hidden rounded-[3rem] bg-black text-white select-none"
+  class="relative flex h-full flex-col overflow-hidden rounded-[3rem] text-white select-none"
+  class:bg-black={isBrowser()}
 >
   <!-- Live Viewfinder / Camera View -->
   <div
-    class="relative flex flex-1 flex-col justify-between overflow-hidden rounded-[3rem] bg-black p-4"
+    class="relative flex flex-1 flex-col justify-between overflow-hidden rounded-[3rem] p-4"
+    class:bg-black={isBrowser()}
   >
     <!-- Mock Browser Viewfinder Background Image (Displayed in browser mode when FiveM 3D world is not running) -->
     {#if isBrowser()}
@@ -201,9 +212,12 @@
       <div></div>
     </div>
 
-    <!-- Bottom Controls & Opacity Overlay Container (Always visible) -->
+    <!-- Bottom Controls. Hidden during capture along with the rest of the chrome: the
+         in-game photo is a crop of this exact region, so anything still on screen ends
+         up inside the picture. -->
     <div
-      class="relative z-10 mx-[-1rem] mb-[-1rem] flex transform-gpu flex-col items-center gap-4 overflow-hidden rounded-b-[3rem] bg-black/90 px-4 pt-4 pb-10 text-white shadow-2xl backdrop-blur-lg"
+      class="relative z-10 mx-[-1rem] mb-[-1rem] flex transform-gpu flex-col items-center gap-4 overflow-hidden rounded-b-[3rem] bg-black/90 px-4 pt-4 pb-10 text-white shadow-2xl backdrop-blur-lg transition-opacity duration-75"
+      class:opacity-0={$isTakingPhoto}
     >
       <!-- Mode Toggle Buttons -->
       <div class="flex items-center gap-4">

@@ -7,7 +7,7 @@
   import { setSignal } from './store/signal';
   import { currentApp, openApp, goHome, closePhone } from './store/navigation';
   import { callStore } from './store/call';
-  import { isTakingPhoto, isPreviewingPhoto } from './store/camera';
+  import { isPreviewingPhoto } from './store/camera';
   import PhoneFrame from './components/PhoneFrame.svelte';
   import { appRegistryStore } from './store/registry';
   import Home from './components/Home.svelte';
