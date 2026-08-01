@@ -69,9 +69,9 @@ const columnSql = (name: string, def: ColumnDef): string => {
   return `    ${parts.join(' ')}`;
 };
 
-const indexSql = ({ name, columns }: ResolvedIndex): string => {
+const indexSql = ({ name, columns, unique }: ResolvedIndex): string => {
   const list = columns.map((c) => `\`${c}\``).join(', ');
-  return `    KEY \`${name}\` (${list}),`;
+  return `    ${unique ? 'UNIQUE KEY' : 'KEY'} \`${name}\` (${list}),`;
 };
 
 const foreignKeySql = (table: string, column: string, def: ColumnDef): string | null => {

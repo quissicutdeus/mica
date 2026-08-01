@@ -72,6 +72,23 @@ export interface Transaction {
   receiver?: string;
 }
 
+/**
+ * A player's saved phone charge.
+ *
+ * gPhone owns this rather than leaning on framework character metadata: metadata is
+ * only flushed to the `players` row when the framework decides to save (logout,
+ * autosave interval, shutdown), so a crash or a `restart qbx_core` loses it, and the
+ * shape of the metadata API differs per core. One row per citizenid.
+ */
+export interface PhoneBattery {
+  id: number;
+  citizenid: string;
+  level: number;
+  status?: 'active' | 'deleted';
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
 export interface Note {
   id: number;
   citizenid: string;

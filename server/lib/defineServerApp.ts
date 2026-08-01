@@ -93,19 +93,32 @@ export interface ChildTableDefinition {
  * index names at 64 characters, and a name is what shows up in EXPLAIN output.
  */
 export type IndexDefinition =
-  readonly string[] | { readonly name: string; readonly columns: readonly string[] };
+  | readonly string[]
+  | {
+      readonly name: string;
+      readonly columns: readonly string[];
+      /**
+       * Emit `UNIQUE KEY`. Use it when at-most-one-row is a real invariant rather than
+       * a convention — a per-player state row, say. The application-level
+       * find-then-write that would otherwise enforce it has a race the database does
+       * not.
+       */
+      readonly unique?: boolean;
+    };
 
 export interface ResolvedIndex {
   name: string;
   columns: readonly string[];
+  unique: boolean;
 }
 
 export const normalizeIndex = (index: IndexDefinition): ResolvedIndex =>
   Array.isArray(index)
-    ? { name: index.join('_'), columns: index }
+    ? { name: index.join('_'), columns: index, unique: false }
     : {
         name: (index as { name: string }).name,
-        columns: (index as { columns: readonly string[] }).columns
+        columns: (index as { columns: readonly string[] }).columns,
+        unique: (index as { unique?: boolean }).unique === true
       };
 
 /** `{ title: 'string' }` is shorthand for `{ title: { type: 'string' } }`. */
