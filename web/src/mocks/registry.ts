@@ -227,7 +227,7 @@ export const mockRegistry: Record<string, MockHandler> = {
     mockPhotoIndex++;
     return photo;
   },
-  flipCamera: async () => true,
+  flipCamera: async () => ({ supported: true }),
   onCameraApp: async () => true,
   getPhotos: () => mockPhotos.filter((p) => p.status !== 'deleted'),
   createPhoto: async (photo: any) => {

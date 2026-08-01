@@ -34,10 +34,22 @@
     isPreviewingPhoto.set(false);
   });
 
+  // The client answers `{ supported: false }` in game — a selfie view needs a real
+  // in-game camera that does not exist yet. Hide the control rather than offer one that
+  // does nothing; in a browser the mocked viewfinder can flip freely.
+  let canFlipCamera = $state(isBrowser());
+
   const toggleFlipCamera = async () => {
-    isFrontCamera = !isFrontCamera;
+    const next = !isFrontCamera;
     try {
-      await fetchNui('flipCamera', { isFrontCamera });
+      const res = await fetchNui<{ supported?: boolean }>('flipCamera', {
+        isFrontCamera: next
+      });
+      if (res?.supported === false) {
+        canFlipCamera = false;
+        return;
+      }
+      isFrontCamera = next;
     } catch (e) {
       console.error('Failed to flip camera', e);
     }
@@ -287,15 +299,20 @@
           ></div>
         </button>
 
-        <!-- Right: Flip Camera Button -->
-        <button
-          type="button"
-          onclick={toggleFlipCamera}
-          class="flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-white/20 bg-white/20 text-white shadow-lg backdrop-blur-md transition-transform hover:bg-white/30 active:rotate-180"
-          aria-label="Flip camera"
-        >
-          <FlipCameraIcon class="h-6 w-6" />
-        </button>
+        <!-- Right: Flip Camera Button. Kept in the layout as a spacer when unsupported,
+             so removing it does not re-centre the shutter. -->
+        {#if canFlipCamera}
+          <button
+            type="button"
+            onclick={toggleFlipCamera}
+            class="flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-white/20 bg-white/20 text-white shadow-lg backdrop-blur-md transition-transform hover:bg-white/30 active:rotate-180"
+            aria-label="Flip camera"
+          >
+            <FlipCameraIcon class="h-6 w-6" />
+          </button>
+        {:else}
+          <div class="h-12 w-12" aria-hidden="true"></div>
+        {/if}
       </div>
     </div>
   </div>

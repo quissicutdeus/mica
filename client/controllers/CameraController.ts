@@ -26,3 +26,19 @@ on('__cfx_nui:takePhoto', async (_: any, cb: Function) => {
     );
   }
 });
+
+/**
+ * Front/rear camera toggle — **not implemented in game**.
+ *
+ * The web called this and nothing was registered, so the button silently did nothing
+ * while the browser mock answered `true` and made it look fine in `pnpm dev`.
+ *
+ * A real selfie view is not a wiring fix: the in-game viewfinder is the world seen
+ * through a transparent NUI, so "front camera" needs an actual `CreateCam` pointed at
+ * the ped. Until that exists, answer honestly and let the UI hide the control rather
+ * than offer one that does nothing.
+ */
+RegisterNuiCallbackType('flipCamera');
+on('__cfx_nui:flipCamera', (_: any, cb: Function) => {
+  cb({ supported: false });
+});
