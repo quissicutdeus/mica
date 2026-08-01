@@ -60,6 +60,24 @@ export const openApp = (appName: string, props: any = {}) => {
   currentApp.set(resolved);
 };
 
+/**
+ * Clear an app's deep-link props once it has acted on them.
+ *
+ * Deep links became sticky the moment apps started staying resident: the props that
+ * opened Photos on a specific picture are still set when you press back, so the
+ * "open this one" effect fires again and the back button appears dead. Under the old
+ * mount-per-navigation model the props died with the component and the problem could
+ * not arise.
+ *
+ * One-shot is the right semantic regardless: `openApp('photos', { initialPhoto })` is
+ * an instruction to do something once, not a description of lasting state.
+ */
+export const consumeAppProps = (appName: string) => {
+  const name = appName.toLowerCase();
+  runningApps.update((apps) => apps.map((a) => (a.name === name ? { name, props: {} } : a)));
+  currentApp.update((c) => (c.name === name ? { name, props: {} } : c));
+};
+
 export const goHome = () => {
   currentApp.set({ name: 'home', props: {} });
 };

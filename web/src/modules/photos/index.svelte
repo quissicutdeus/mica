@@ -1,6 +1,6 @@
 <script lang="ts">
   import Screen from '../../components/Screen.svelte';
-  import { useCamera, onAppMount } from '../../sdk';
+  import { useCamera, useNavigation, onAppMount } from '../../sdk';
   import type { Photo } from '@shared/types';
   import { fade } from 'svelte/transition';
   import ShareSquareIcon from '../../components/icons/ShareSquareIcon.svelte';
@@ -10,8 +10,6 @@
   import ConfirmDialog from '../../components/ConfirmDialog.svelte';
   import EmptyState from '../../components/EmptyState.svelte';
 
-  import { get } from 'svelte/store';
-
   let { onback, initialPhoto, initialPhotoId } = $props<{
     onback?: () => void;
     initialPhoto?: Photo;
@@ -19,6 +17,7 @@
   }>();
 
   const { photosStore, deletePhoto } = useCamera();
+  const { consumeDeepLink } = useNavigation();
 
   let selectedPhoto: Photo | null = $state(null);
   let isSelectionMode = $state(false);
@@ -31,20 +30,29 @@
   });
 
   /**
-   * Open the photo a deep link asked for.
+   * Open the photo a deep link asked for, exactly once.
    *
-   * An `$effect` rather than mount-time work: the app stays resident once opened, so
-   * mount runs exactly once and a second deep link — tapping the camera thumbnail
-   * again — would have been ignored.
+   * An `$effect` rather than mount-time work, because the app stays resident and mount
+   * runs only once — a second tap on the camera thumbnail would otherwise be ignored.
+   *
+   * Consuming the props is what makes the back button work. Without it the prop is
+   * still set when `goBack` clears `selectedPhoto`, this effect re-runs and immediately
+   * reopens the same picture.
    */
   $effect(() => {
     if (initialPhoto) {
-      if (selectedPhoto?.id !== initialPhoto.id) selectedPhoto = initialPhoto;
+      selectedPhoto = initialPhoto;
+      consumeDeepLink('photos');
       return;
     }
-    if (initialPhotoId && selectedPhoto?.id !== initialPhotoId) {
-      const found = get(photosStore).find((p) => p.id === initialPhotoId);
-      if (found) selectedPhoto = found;
+    if (initialPhotoId) {
+      // Read the store reactively: on a cold open the photo list has not arrived yet,
+      // and the prop must survive until it does.
+      const found = $photosStore.find((p) => p.id === initialPhotoId);
+      if (found) {
+        selectedPhoto = found;
+        consumeDeepLink('photos');
+      }
     }
   });
 

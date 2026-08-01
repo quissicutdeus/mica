@@ -6,6 +6,7 @@
     useContacts,
     useCamera,
     useAccount,
+    useNavigation,
     type UIMessage,
     type UIConversation
   } from '@gphone/sdk';
@@ -13,6 +14,7 @@
   import type { Contact, Photo } from '@shared/types';
 
   const { messagesStore } = useMessages();
+  const { consumeDeepLink } = useNavigation();
   const { contactsStore: contacts } = useContacts();
   const { photosStore: photos } = useCamera();
   const { citizenid } = useAccount();
@@ -317,16 +319,26 @@
     messagesStore.loadConversations();
   });
 
+  /**
+   * Act on a deep link exactly once.
+   *
+   * Consuming the props matters here for the same reason it does in Photos and Mail:
+   * apps stay resident, so an unconsumed `conversationId` re-selects the thread every
+   * time the user backs out to the conversation list.
+   */
   $effect(() => {
     if (conversationId && conversationId !== selectedConversationId) {
       handleSelectConversation(conversationId);
+      consumeDeepLink('messages');
     } else if (phone && (!currentConv || currentConv.target !== phone)) {
       const existing = $messagesStore.find((c) => c.target === phone);
       if (existing) {
         handleSelectConversation(existing.id);
+        consumeDeepLink('messages');
       }
     } else if (initialContact && !selectedConversationId && !isComposing) {
       handleSelectContactRaw(initialContact);
+      consumeDeepLink('messages');
     }
   });
 

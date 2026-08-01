@@ -108,4 +108,30 @@ test.describe('App residency', () => {
     // Six opened, five resident: the first is gone.
     await expect(page.locator('[inert]')).toHaveCount(5);
   });
+
+  test('back works inside an app opened by a deep link', async ({ page }) => {
+    // Deep-link props became sticky when apps started staying resident: Photos was
+    // opened on a specific picture, so pressing back cleared the selection, the
+    // "open this one" effect saw the prop still set and immediately reopened it. The
+    // back button looked dead.
+    // Camera has no <h1>; it is a full-bleed viewfinder, so wait on the shutter.
+    await page
+      .getByRole('button', { name: /Camera/i })
+      .first()
+      .click();
+    const shutter = page.getByRole('button', { name: /take photo/i });
+    await expect(shutter).toBeVisible();
+    await shutter.click();
+    await expect(page.getByRole('button', { name: /Open Photos Gallery/i })).toBeVisible();
+
+    await page.getByRole('button', { name: /Open Photos Gallery/i }).click();
+    // Anchored: the gallery's own title is "Photos", so a substring match on "Photo"
+    // passes whether or not the detail view actually opened.
+    await expect(page.locator('h1').filter({ hasText: /^Photo$/ })).toBeVisible();
+
+    // Role-based: Camera is still resident behind Photos and has its own back button.
+    await page.getByRole('button', { name: 'Go back' }).click();
+    await expect(page.locator('h1').filter({ hasText: /^Photos$/ })).toBeVisible();
+    await expect(page.locator('h1').filter({ hasText: /^Photo$/ })).toHaveCount(0);
+  });
 });

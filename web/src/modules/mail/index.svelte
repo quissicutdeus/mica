@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Screen from '../../components/Screen.svelte';
-  import { useMail, type Mail } from '@gphone/sdk';
+  import { useMail, useNavigation, type Mail } from '@gphone/sdk';
 
   const { mailStore } = useMail();
+  const { consumeDeepLink } = useNavigation();
   import { formatRelativeTime } from '../../utils/formatters';
   import TrashIcon from '../../components/icons/TrashIcon.svelte';
   import ArchiveIcon from '../../components/icons/ArchiveIcon.svelte';
@@ -21,11 +22,19 @@
     }
   });
 
+  /**
+   * Open the mail a deep link asked for, exactly once.
+   *
+   * Consuming the prop is what lets the back button work: apps stay resident, so
+   * without it `mailId` is still set when the user returns to the list and this effect
+   * immediately reopens the same message.
+   */
   $effect(() => {
     if (mailId && $mailStore.length > 0) {
       const found = $mailStore.find((m) => m.id === mailId);
-      if (found && selectedMail?.id !== mailId) {
+      if (found) {
         openMail(found);
+        consumeDeepLink('mail');
       }
     }
   });
