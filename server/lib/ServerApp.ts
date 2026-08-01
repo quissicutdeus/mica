@@ -159,7 +159,7 @@ export class ServerApp<T> {
             await AuditLogger.log({
               citizenid,
               action: 'deleted',
-              controller: `${this.appName}Controller`,
+              controller: this.appName,
               method: 'delete',
               targetId: id,
               targetTable: this.options.tableName || `gphone_${this.appName}`

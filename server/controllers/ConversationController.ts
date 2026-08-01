@@ -275,7 +275,7 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
       await AuditLogger.log({
         citizenid,
         action: 'deleted',
-        controller: 'ConversationController',
+        controller: 'conversations',
         method: 'delete',
         targetId: id,
         targetTable: 'gphone_messages_conversations'
@@ -288,7 +288,7 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
     await AuditLogger.log({
       citizenid,
       action: 'left',
-      controller: 'ConversationController',
+      controller: 'conversations',
       method: 'delete',
       targetId: id,
       targetTable: 'gphone_messages_participants'
