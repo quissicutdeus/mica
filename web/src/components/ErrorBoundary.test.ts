@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/svelte';
-import ErrorBoundaryTestWrapper from './ErrorBoundaryTestWrapper.svelte';
+import ErrorBoundaryTestWrapper from './__fixtures__/ErrorBoundaryTestWrapper.svelte';
 
 describe('ErrorBoundary component', () => {
   it('renders children normally when no error occurs', () => {

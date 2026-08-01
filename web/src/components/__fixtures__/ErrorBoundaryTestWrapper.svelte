@@ -1,5 +1,5 @@
 <script lang="ts">
-  import ErrorBoundary from './ErrorBoundary.svelte';
+  import ErrorBoundary from '../ErrorBoundary.svelte';
 
   let { appName = 'TestApp', shouldCrash = false }: { appName?: string; shouldCrash?: boolean } =
     $props();
