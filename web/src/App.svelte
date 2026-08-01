@@ -438,11 +438,16 @@
            Keyed by name so Svelte reuses the instance instead of tearing it down —
            that reuse *is* the state preservation.
 
-           Inactive apps use `invisible` (visibility:hidden), which keeps them laid out,
-           so their scroll offset is retained by construction rather than by grace.
-           Testing showed `display:none` also preserves scrollTop in current Chromium,
-           but CEF is on 103 and that is not something to bet the behaviour on when the
-           cost of being sure is laying out at most four hidden apps.
+           Inactive apps are `display:none`, not `visibility:hidden`. Visibility was the
+           first choice, to keep them laid out and their scroll offset guaranteed — but
+           in game the outgoing app stayed partly on screen over the home screen. These
+           apps are full of `backdrop-blur`, `transform` and `hover:scale`, each of which
+           promotes an element to its own compositor layer, and a hidden *ancestor* does
+           not reliably force those layers to repaint on CEF's Chromium 103. Removing the
+           box leaves nothing to retain.
+
+           Scroll survives it: `display:none` preserves scrollTop in Chromium, which the
+           residency e2e asserts rather than assumes.
 
            `inert` is what keeps them out of the tab order and the accessibility tree.
            Their DOM is still present and matchable — that is inherent to residency, and
@@ -458,8 +463,7 @@
             {@const isActive = $currentApp.name === instance.name}
             <div
               class="absolute inset-0"
-              class:invisible={!isActive}
-              class:pointer-events-none={!isActive}
+              class:hidden={!isActive}
               aria-hidden={!isActive}
               inert={!isActive}
             >
