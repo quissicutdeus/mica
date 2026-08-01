@@ -39,7 +39,9 @@ test.describe('Store E2E', () => {
     await page.locator("button[aria-label='Back to Home']").click();
 
     // Verify new Crypto Tracker app icon exists on home screen
-    await expect(page.locator('button', { hasText: 'Crypto Tracker' })).toBeVisible();
+    // Scoped to the home screen: apps stay resident once opened, so the Store's own
+    // list row is still in the DOM behind it and a bare text match hits both.
+    await expect(page.getByRole('button', { name: /Crypto Tracker/ })).toBeVisible();
   });
 
   test('displays installed system vs add-on filter and sort order in Installed tab', async ({

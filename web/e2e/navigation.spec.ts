@@ -36,7 +36,9 @@ test.describe('Phone Navigation & Home Screen', () => {
     await page.locator("button[aria-label='Back to Home']").click();
 
     // 2. Verify Crypto Tracker icon appears on home screen
-    await expect(page.locator('button', { hasText: 'Crypto Tracker' })).toBeVisible();
+    // Scoped to the home screen: apps stay resident once opened, so the Store's own
+    // list row is still in the DOM behind it and a bare text match hits both.
+    await expect(page.getByRole('button', { name: /Crypto Tracker/ })).toBeVisible();
 
     // 3. Return to Store and open app details page to uninstall
     await page.locator('button', { hasText: 'Store' }).first().click();
@@ -49,6 +51,6 @@ test.describe('Phone Navigation & Home Screen', () => {
 
     // 4. Return Home and verify Crypto Tracker is uninstalled
     await page.locator("button[aria-label='Back to Home']").click();
-    await expect(page.locator('button', { hasText: 'Crypto Tracker' })).not.toBeVisible();
+    await expect(page.getByRole('button', { name: /Crypto Tracker/ })).toHaveCount(0);
   });
 });

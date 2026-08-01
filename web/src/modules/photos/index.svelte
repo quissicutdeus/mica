@@ -26,13 +26,24 @@
   let isLoading = $state(false);
   let showDeleteConfirm = $state(false);
 
-  onAppMount(async () => {
-    await photosStore.load();
-    if (initialPhoto && !selectedPhoto) {
-      selectedPhoto = initialPhoto;
-    } else if (initialPhotoId && !selectedPhoto) {
-      const list = get(photosStore);
-      const found = list.find((p) => p.id === initialPhotoId);
+  onAppMount(() => {
+    void photosStore.load();
+  });
+
+  /**
+   * Open the photo a deep link asked for.
+   *
+   * An `$effect` rather than mount-time work: the app stays resident once opened, so
+   * mount runs exactly once and a second deep link — tapping the camera thumbnail
+   * again — would have been ignored.
+   */
+  $effect(() => {
+    if (initialPhoto) {
+      if (selectedPhoto?.id !== initialPhoto.id) selectedPhoto = initialPhoto;
+      return;
+    }
+    if (initialPhotoId && selectedPhoto?.id !== initialPhotoId) {
+      const found = get(photosStore).find((p) => p.id === initialPhotoId);
       if (found) selectedPhoto = found;
     }
   });

@@ -5,7 +5,7 @@
   import { time } from './store/time';
   import { charge } from './store/charge';
   import { setSignal } from './store/signal';
-  import { currentApp, openApp, goHome, closePhone } from './store/navigation';
+  import { currentApp, runningApps, openApp, goHome, closePhone } from './store/navigation';
   import { dispatchKey, isTypingTarget, registerHandler } from './store/keybinds';
   import { lockDevTools } from './store/devtools';
   import { callStore } from './store/call';
@@ -412,16 +412,43 @@
       }}
     >
       <ToastContainer />
-      {#if $currentApp.name === 'home'}
-        <Home {openApp} />
-      {:else if appRegistryStore.getComponent($currentApp.name)}
-        {@const ActiveComponent = appRegistryStore.getComponent($currentApp.name)}
-        {#key $currentApp.name}
-          <ErrorBoundary appName={$currentApp.name}>
-            <ActiveComponent onback={goHome} {...$currentApp.props} />
-          </ErrorBoundary>
-        {/key}
-      {/if}
+      <!-- Every resident app is mounted; only the active one is visible.
+
+           Keyed by name so Svelte reuses the instance instead of tearing it down —
+           that reuse *is* the state preservation.
+
+           Inactive apps use `invisible` (visibility:hidden), which keeps them laid out,
+           so their scroll offset is retained by construction rather than by grace.
+           Testing showed `display:none` also preserves scrollTop in current Chromium,
+           but CEF is on 103 and that is not something to bet the behaviour on when the
+           cost of being sure is laying out at most four hidden apps.
+
+           `inert` is what keeps them out of the tab order and the accessibility tree.
+           Their DOM is still present and matchable — that is inherent to residency, and
+           why tests here use role-based locators. -->
+      <div class="relative h-full w-full">
+        {#if $currentApp.name === 'home'}
+          <Home {openApp} />
+        {/if}
+
+        {#each $runningApps as instance (instance.name)}
+          {@const AppComponent = appRegistryStore.getComponent(instance.name)}
+          {#if AppComponent}
+            {@const isActive = $currentApp.name === instance.name}
+            <div
+              class="absolute inset-0"
+              class:invisible={!isActive}
+              class:pointer-events-none={!isActive}
+              aria-hidden={!isActive}
+              inert={!isActive}
+            >
+              <ErrorBoundary appName={instance.name}>
+                <AppComponent onback={goHome} {...instance.props} />
+              </ErrorBoundary>
+            </div>
+          {/if}
+        {/each}
+      </div>
     </PhoneFrame>
   </main>
 {/if}
