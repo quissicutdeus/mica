@@ -17,6 +17,7 @@ vi.mock('../lib/FrameworkBridge', () => ({ FrameworkBridge: bridgeMock }));
 
 import {
   batteryApp,
+  runChargeCommand,
   savePlayerBattery,
   sendLoadedBatteryToClient,
   __resetBatteryCache
@@ -195,5 +196,84 @@ describe('sendLoadedBatteryToClient', () => {
 
     // A dead database must not leave the phone with no charge value at all.
     expect(emittedCharge()).toBe(100);
+  });
+});
+
+describe('gphonecharge command', () => {
+  const notifies = () =>
+    (globalThis.emitNet as any).mock.calls.filter(
+      (c: any[]) => c[0] === 'gphone:client:shell:notify'
+    );
+  const chargeCalls = () =>
+    (globalThis.emitNet as any).mock.calls.filter(
+      (c: any[]) => c[0] === 'gphone:client:battery:set'
+    );
+
+  beforeEach(() => {
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    (globalThis as any).GetConvar = (_n: string, fallback: string) => fallback;
+    (globalThis as any).IsPlayerAceAllowed = () => false;
+  });
+
+  it('accepts a server admin holding `command` but not gphone.admin', async () => {
+    // The command ran its own `gphone.admin` check rather than going through isAdmin,
+    // so it refused the very admins the rest of the resource accepts — and said
+    // nothing, because at the time the denial notify had no client listener.
+    (globalThis as any).IsPlayerAceAllowed = (_s: string, ace: string) => ace === 'command';
+
+    runChargeCommand(SRC, ['100']);
+    await Promise.resolve();
+
+    expect(chargeCalls()[0]?.[2]).toBe(100);
+  });
+
+  it('refuses a player with no admin ace, and says so', () => {
+    runChargeCommand(SRC, ['100']);
+
+    expect(chargeCalls()).toHaveLength(0);
+    expect(notifies()[0]?.[2]).toMatchObject({ type: 'error' });
+  });
+
+  it('defaults a player to their own phone', async () => {
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+
+    runChargeCommand(SRC, ['42']);
+    await Promise.resolve();
+
+    expect(chargeCalls()[0]?.[1]).toBe(SRC);
+    expect(chargeCalls()[0]?.[2]).toBe(42);
+  });
+
+  it('lets the console target another player without any ace', async () => {
+    runChargeCommand(0, ['12', '80']);
+    await Promise.resolve();
+
+    expect(chargeCalls()[0]?.[1]).toBe(12);
+    expect(chargeCalls()[0]?.[2]).toBe(80);
+  });
+
+  it('rejects the console omitting a target', () => {
+    runChargeCommand(0, ['80']);
+    expect(chargeCalls()).toHaveLength(0);
+  });
+
+  it('clamps rather than trusting the argument', async () => {
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+
+    runChargeCommand(SRC, ['9999']);
+    await Promise.resolve();
+
+    expect(chargeCalls()[0]?.[2]).toBe(100);
+  });
+
+  it('reports usage to the player, not only the console', () => {
+    // Typing it wrong in chat previously produced a console.log the player cannot see,
+    // so the command simply looked broken.
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+
+    runChargeCommand(SRC, []);
+
+    expect(chargeCalls()).toHaveLength(0);
+    expect(notifies()[0]?.[2]?.message).toMatch(/usage/i);
   });
 });

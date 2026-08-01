@@ -195,40 +195,54 @@ on('qbx_core:server:playerLoaded', (player: any) => {
  * with no item in your inventory meant a phone that could not be turned on — and the
  * Developer Tools that would have fixed it live inside the phone.
  *
- * Runnable from the **server console** (always) or by a player holding the
- * `gphone.admin` ace. Restricted rather than open because it writes another player's
- * character metadata.
+ * Runnable from the server console or by anyone `isAdmin` accepts. Restricted rather
+ * than open because it writes another player's saved charge.
  */
+/** Report back on whichever channel the caller used. */
+const respond = (source: number, message: string, isError = false) => {
+  if (source === 0) {
+    console.log(`[gphone] ${message}`);
+    return;
+  }
+  emitNet('gphone:client:shell:notify', source, {
+    type: isError ? 'error' : 'success',
+    message
+  });
+};
+
+export const runChargeCommand = (source: number, args: string[]): void => {
+  // Routed through `isAdmin` rather than repeating an ace check. The inline
+  // `IsPlayerAceAllowed(..., 'gphone.admin')` this replaces did not learn about the
+  // wider admin list, so a full server admin was refused by a command that then said
+  // nothing, because the denial notify had no client listener at the time.
+  if (!isAdmin(source)) {
+    respond(source, 'You do not have permission to use that.', true);
+    return;
+  }
+
+  const fromConsole = source === 0;
+  // Console must name a target; a player defaults to themselves.
+  const target = args.length > 1 ? parseInt(args[0], 10) : fromConsole ? NaN : source;
+  const rawLevel = args.length > 1 ? args[1] : args[0];
+  const level = Math.max(0, Math.min(100, Number(rawLevel)));
+
+  if (!Number.isInteger(target) || target <= 0) {
+    respond(source, 'usage: gphonecharge <playerId> <0-100>', true);
+    return;
+  }
+  if (rawLevel === undefined || !Number.isFinite(Number(rawLevel))) {
+    respond(source, 'usage: gphonecharge [playerId] <0-100>', true);
+    return;
+  }
+
+  void savePlayerBattery(target, level);
+  emitNet('gphone:client:battery:set', target, level);
+  respond(source, `battery for ${target} set to ${level}%`);
+};
+
 RegisterCommand(
   'gphonecharge',
-  (source: number, args: string[]) => {
-    const fromConsole = source === 0;
-    if (!fromConsole && !IsPlayerAceAllowed(String(source), 'gphone.admin')) {
-      emitNet('gphone:client:shell:notify', source, {
-        type: 'error',
-        message: 'You do not have permission to use that.'
-      });
-      return;
-    }
-
-    // Console must name a target; a player defaults to themselves.
-    const target = args.length > 1 ? parseInt(args[0], 10) : fromConsole ? NaN : source;
-    const rawLevel = args.length > 1 ? args[1] : args[0];
-    const level = Math.max(0, Math.min(100, Number(rawLevel)));
-
-    if (!Number.isInteger(target) || target <= 0) {
-      console.log('[gphone] usage: gphonecharge <playerId> <0-100>');
-      return;
-    }
-    if (!Number.isFinite(level) || rawLevel === undefined) {
-      console.log('[gphone] usage: gphonecharge [playerId] <0-100>');
-      return;
-    }
-
-    void savePlayerBattery(target, level);
-    emitNet('gphone:client:battery:set', target, level);
-    console.log(`[gphone] battery for ${target} set to ${level}%`);
-  },
+  (source: number, args: string[]) => runChargeCommand(source, args),
   false
 );
 
