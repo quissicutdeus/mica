@@ -25,6 +25,7 @@ const fivemGlobals: Record<string, unknown> = {
   source: 0,
   GetCurrentResourceName: () => 'gphone',
   RegisterCommand: noop,
+  GetConvar: (_name: string, fallback: string) => fallback,
   // Denies by default, so a suite that forgets to stub it cannot accidentally exercise
   // the privileged path.
   IsPlayerAceAllowed: () => false

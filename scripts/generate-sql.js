@@ -34,6 +34,7 @@ globalThis.source = globalThis.source ?? 0;
 globalThis.GetCurrentResourceName = globalThis.GetCurrentResourceName ?? (() => 'gphone');
 globalThis.RegisterCommand = globalThis.RegisterCommand ?? (() => {});
 globalThis.IsPlayerAceAllowed = globalThis.IsPlayerAceAllowed ?? (() => false);
+globalThis.GetConvar = globalThis.GetConvar ?? ((_n, fallback) => fallback);
 `;
 
 const entry = `
