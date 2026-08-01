@@ -490,11 +490,14 @@
                 </button>
 
                 {#if installed}
+                  <!-- Uninstall, not Open: this column is the install control for every
+                       other row, so an "Open" here reads as a different kind of action.
+                       Tapping the row itself still opens the details view. -->
                   <button
-                    onclick={() => openPhoneApp(app.id)}
-                    class="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-emerald-500 active:scale-95"
+                    onclick={() => requestUninstall(app)}
+                    class="shrink-0 rounded-lg bg-red-600/90 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-500 active:scale-95"
                   >
-                    Open
+                    Uninstall
                   </button>
                 {:else}
                   <button
