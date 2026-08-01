@@ -11,14 +11,14 @@ test.describe('Phone Navigation & Home Screen', () => {
     await expect(appGrid).toBeVisible();
   });
 
-  test('opens Calculator app and returns home using Escape key', async ({ page }) => {
+  test('opens Calculator app and returns home using Backspace', async ({ page }) => {
     const calcButton = page.locator('button', { hasText: 'Calculator' });
     if ((await calcButton.count()) > 0) {
       await calcButton.click();
       await expect(page.locator('h1', { hasText: 'Calculator' })).toBeVisible();
 
       // Press Escape to return Home
-      await page.keyboard.press('Escape');
+      await page.keyboard.press('Backspace');
       await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
     }
   });

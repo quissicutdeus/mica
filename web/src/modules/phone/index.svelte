@@ -1,16 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { useCall, useContacts } from '@gphone/sdk';
-  import Screen from '../../components/Screen.svelte';
+  import {
+    useCall,
+    useContacts,
+    Avatar,
+    Screen,
+    BackspaceIcon,
+    KeypadIcon,
+    MicrophoneIcon,
+    PhoneIcon,
+    SpeakerIcon
+  } from '@gphone/sdk';
 
   const { callStore } = useCall();
   const { contactsStore, favoriteContacts } = useContacts();
-  import PhoneIcon from '../../components/icons/PhoneIcon.svelte';
-  import BackspaceIcon from '../../components/icons/BackspaceIcon.svelte';
-  import MicrophoneIcon from '../../components/icons/MicrophoneIcon.svelte';
-  import KeypadIcon from '../../components/icons/KeypadIcon.svelte';
-  import SpeakerIcon from '../../components/icons/SpeakerIcon.svelte';
-  import Avatar from '../../components/Avatar.svelte';
 
   let { onback } = $props();
 

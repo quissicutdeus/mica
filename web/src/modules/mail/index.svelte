@@ -1,16 +1,34 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import Screen from '../../components/Screen.svelte';
-  import { useMail, useNavigation, type Mail } from '@gphone/sdk';
+  import {
+    useKeybinds,
+    useMail,
+    useNavigation,
+    type Mail,
+    EmptyState,
+    ListItem,
+    Screen,
+    ArchiveIcon,
+    EmptyMailIcon,
+    TrashIcon,
+    formatRelativeTime
+  } from '@gphone/sdk';
 
   const { mailStore } = useMail();
   const { consumeDeepLink } = useNavigation();
-  import { formatRelativeTime } from '../../utils/formatters';
-  import TrashIcon from '../../components/icons/TrashIcon.svelte';
-  import ArchiveIcon from '../../components/icons/ArchiveIcon.svelte';
-  import EmptyMailIcon from '../../components/icons/EmptyMailIcon.svelte';
-  import EmptyState from '../../components/EmptyState.svelte';
-  import ListItem from '../../components/ListItem.svelte';
+  const { onKeybind } = useKeybinds();
+
+  /**
+   * Backspace closes an open message before it will leave the app. Claimed rather than
+   * handled raw, because the shell owns Backspace and would otherwise pre-empt it.
+   */
+  onKeybind('back', () => {
+    if (selectedMail) {
+      closeDetail();
+    } else {
+      onback?.();
+    }
+  });
 
   let { onback, mailId } = $props<{ onback?: () => void; mailId?: number }>();
   let selectedMail = $state<Mail | null>(null);

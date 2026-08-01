@@ -6,7 +6,7 @@
   import { charge } from './store/charge';
   import { setSignal } from './store/signal';
   import { currentApp, runningApps, openApp, goHome, closePhone } from './store/navigation';
-  import { dispatchKey, isTypingTarget, registerHandler } from './store/keybinds';
+  import { bindings, dispatchKey, isTypingTarget, registerHandler } from './store/keybinds';
   import { lockDevTools } from './store/devtools';
   import { callStore } from './store/call';
   import { isPreviewingPhoto } from './store/camera';
@@ -231,12 +231,21 @@
     }
   });
 
+  // The shell's fallback, underneath anything a mounted app claims. An app that has
+  // its own levels handles those first and only lets this run at its top.
   registerHandler('back', () => {
     if ($currentApp.name !== 'home') {
       goHome();
     } else {
       closePhone();
     }
+  });
+
+  // Always lowers the phone, from anywhere. Deliberately not "back at the top level":
+  // there is no state in which this does something else.
+  registerHandler('closePhone', () => {
+    if (isBrowser()) visible = false;
+    closePhone();
   });
 
   const setFreelook = (state: boolean) => {
@@ -255,6 +264,32 @@
       // Held keys must not repeat-fire an action; the old Alt branch special-cased this
       // and nothing else did.
       if (event.repeat) return;
+
+      /**
+       * Browser only: honour the Open Phone binding here.
+       *
+       * That action is `scope: 'game'`, so in game it is a `RegisterKeyMapping` the
+       * client owns and the web never sees it. There is no FiveM in a browser, so
+       * nothing was listening at all and a collapsed phone could only be reopened with
+       * the mouse.
+       *
+       * Checked before `dispatchKey` because a collapsed phone has no meaningful
+       * phone-scope action, and after the typing guard so it cannot fire out from under
+       * a focused field.
+       */
+      if (isBrowser() && !isTypingTarget(event.target)) {
+        const openKey = $bindings.openPhone;
+        if (openKey && event.key.toLowerCase() === openKey.toLowerCase()) {
+          event.preventDefault();
+          if (visible) {
+            visible = false;
+            closePhone();
+          } else {
+            visible = true;
+          }
+          return;
+        }
+      }
 
       dispatchKey(event, {
         currentApp: $currentApp.name,

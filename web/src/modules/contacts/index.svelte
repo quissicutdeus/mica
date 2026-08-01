@@ -8,31 +8,31 @@
     useCall,
     useMessages,
     onAppMount,
-    type Contact
+    type Contact,
+    Avatar,
+    Button,
+    FloatingActionButton,
+    ListItem,
+    PhotoPickerModal,
+    Screen,
+    SearchBar,
+    AddIcon,
+    ChevronRightIcon,
+    CloseIcon,
+    EditIcon,
+    MessageIcon,
+    PhoneIcon,
+    SearchIcon,
+    ShareIcon,
+    StarIcon,
+    TrashIcon,
+    formatRelativeTime,
+    useScrollDetect
   } from '@gphone/sdk';
-  import Screen from '../../components/Screen.svelte';
 
   const { openApp } = useNavigation();
   const { callStore } = useCall();
   const { messagesStore } = useMessages();
-  import AddIcon from '../../components/icons/AddIcon.svelte';
-  import StarIcon from '../../components/icons/StarIcon.svelte';
-  import PhoneIcon from '../../components/icons/PhoneIcon.svelte';
-  import MessageIcon from '../../components/icons/MessageIcon.svelte';
-  import ShareIcon from '../../components/icons/ShareIcon.svelte';
-  import EditIcon from '../../components/icons/EditIcon.svelte';
-  import TrashIcon from '../../components/icons/TrashIcon.svelte';
-  import Avatar from '../../components/Avatar.svelte';
-  import ListItem from '../../components/ListItem.svelte';
-  import Button from '../../components/Button.svelte';
-  import CloseIcon from '../../components/icons/CloseIcon.svelte';
-  import SearchIcon from '../../components/icons/SearchIcon.svelte';
-  import SearchBar from '../../components/SearchBar.svelte';
-  import ChevronRightIcon from '../../components/icons/ChevronRightIcon.svelte';
-  import FloatingActionButton from '../../components/FloatingActionButton.svelte';
-  import PhotoPickerModal from '../../components/PhotoPickerModal.svelte';
-  import { formatRelativeTime } from '../../utils/formatters';
-  import { useScrollDetect } from '../../utils/useScrollDetect';
 
   let { onback } = $props();
 

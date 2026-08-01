@@ -74,6 +74,7 @@
     {#each actions as action (action.id)}
       <button
         type="button"
+        data-testid="shortcut-{action.id}"
         onclick={() => (capturingId = action.id)}
         class="flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors hover:bg-gray-700/40"
       >

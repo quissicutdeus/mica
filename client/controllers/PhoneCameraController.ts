@@ -1,4 +1,5 @@
 import { PhoneAnimationController } from './PhoneAnimationController';
+import { sendNuiMessage } from '../lib/NuiUtils';
 
 /**
  * A scripted camera for the Camera app, so the shot is taken from the phone rather than
@@ -21,6 +22,9 @@ import { PhoneAnimationController } from './PhoneAnimationController';
 
 /** SKEL_Head — the offsets below are relative to this bone. */
 const BONE_HEAD = 31086;
+
+/** INPUT_ATTACK — left mouse button. */
+const INPUT_ATTACK = 24;
 
 /**
  * Tunable in one place, because the right numbers are a matter of looking at it in game
@@ -87,6 +91,14 @@ export class PhoneCameraController {
 
       const [pitch, roll, yaw] = GetGameplayCamRot(2);
       SetCamRot(active, pitch, roll, PhoneCameraController.frontFacing ? yaw + 180.0 : yaw, 2);
+
+      // Left click takes the photo. It has to be read from the *game* rather than the
+      // page: aiming means no NUI cursor, so the web never receives a click at all.
+      // `IsDisabledControlJustPressed` because the aim profile disables attack, and a
+      // disabled control still reports its state.
+      if (IsDisabledControlJustPressed(0, INPUT_ATTACK)) {
+        sendNuiMessage('cameraShutter', {});
+      }
     });
   }
 

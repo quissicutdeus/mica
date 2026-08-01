@@ -44,7 +44,7 @@ test.describe('App Isolation & Error Boundaries', () => {
     }
   });
 
-  test('recovers from app error boundary using Escape key', async ({ page }) => {
+  test('recovers from app error boundary using Backspace', async ({ page }) => {
     // Register a faulty app dynamically
     await page.evaluate(() => {
       const { appRegistryStore } = window as any;
@@ -71,7 +71,7 @@ test.describe('App Isolation & Error Boundaries', () => {
       await expect(page.locator('text=App Stopped Working')).toBeVisible();
 
       // Press Escape key
-      await page.keyboard.press('Escape');
+      await page.keyboard.press('Backspace');
 
       // Verify user is safely returned to Home screen
       await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();

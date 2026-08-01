@@ -32,7 +32,8 @@ describe('keybind resolution', () => {
   beforeEach(() => resetBindings());
 
   it('resolves a key to its action', () => {
-    expect(resolveAction('Escape', IDLE, get(bindings))?.id).toBe('back');
+    expect(resolveAction('Backspace', IDLE, get(bindings))?.id).toBe('back');
+    expect(resolveAction('Escape', IDLE, get(bindings))?.id).toBe('closePhone');
   });
 
   it('returns null for an unbound key', () => {
@@ -64,24 +65,38 @@ describe('keybind resolution', () => {
     expect(resolveAction('Enter', camera, get(bindings))?.id).toBe('shutter');
   });
 
-  it('leaves Backspace alone when no call is in progress', () => {
-    // Otherwise the dispatcher would swallow it from the calculator and the dialler.
-    expect(resolveAction('Backspace', IDLE, get(bindings))).toBeNull();
-    expect(
-      resolveAction('Backspace', { currentApp: 'home', callStatus: 'connected' }, get(bindings))?.id
-    ).toBe('endCall');
+  it('Backspace hangs up during a call and navigates the rest of the time', () => {
+    // `back` and `endCall` deliberately share a key. `endCall` is scoped to `call:any`
+    // and a scoped action outranks an unscoped one, so which wins is decided by state
+    // rather than by declaration order.
+    expect(resolveAction('Backspace', IDLE, get(bindings))?.id).toBe('back');
+    for (const callStatus of ['incoming', 'dialing', 'connected']) {
+      expect(
+        resolveAction('Backspace', { currentApp: 'home', callStatus }, get(bindings))?.id
+      ).toBe('endCall');
+    }
+  });
+
+  it('Escape always puts the phone away, whatever else is going on', () => {
+    for (const env of [
+      IDLE,
+      { currentApp: 'camera', callStatus: 'idle' },
+      { currentApp: 'messages', callStatus: 'connected' }
+    ]) {
+      expect(resolveAction('Escape', env, get(bindings))?.id).toBe('closePhone');
+    }
   });
 
   it('honours an override over the default', () => {
     setBinding('back', 'q');
-    expect(resolveAction('Escape', IDLE, get(bindings))).toBeNull();
+    expect(resolveAction('Backspace', IDLE, get(bindings))).toBeNull();
     expect(resolveAction('q', IDLE, get(bindings))?.id).toBe('back');
   });
 
   it('restores defaults on reset', () => {
     setBinding('back', 'q');
     resetBindings();
-    expect(get(bindings).back).toBe('Escape');
+    expect(get(bindings).back).toBe('Backspace');
   });
 
   it('treats call:any as anything but idle', () => {
@@ -119,7 +134,7 @@ describe('dispatchKey', () => {
     const handler = vi.fn();
     const release = registerHandler('back', handler);
 
-    const event = pressEvent('Escape');
+    const event = pressEvent('Backspace');
     expect(dispatchKey(event, IDLE)).toBe(true);
     expect(handler).toHaveBeenCalledOnce();
     expect(event.defaultPrevented).toBe(true);
@@ -131,7 +146,7 @@ describe('dispatchKey', () => {
     const handler = vi.fn();
     const release = registerHandler('back', handler);
 
-    const event = pressEvent('Escape', document.createElement('textarea'));
+    const event = pressEvent('Backspace', document.createElement('textarea'));
     expect(dispatchKey(event, IDLE)).toBe(false);
     expect(handler).not.toHaveBeenCalled();
     // The key must still reach the field, so the press stays unclaimed.
@@ -141,7 +156,7 @@ describe('dispatchKey', () => {
   });
 
   it('does not claim a press no one has registered', () => {
-    const event = pressEvent('Escape');
+    const event = pressEvent('Backspace');
     expect(dispatchKey(event, IDLE)).toBe(false);
     expect(event.defaultPrevented).toBe(false);
   });
@@ -149,7 +164,7 @@ describe('dispatchKey', () => {
   it('releasing a handler stops it firing', () => {
     const handler = vi.fn();
     registerHandler('back', handler)();
-    expect(dispatchKey(pressEvent('Escape'), IDLE)).toBe(false);
+    expect(dispatchKey(pressEvent('Backspace'), IDLE)).toBe(false);
     expect(handler).not.toHaveBeenCalled();
   });
 
@@ -159,7 +174,7 @@ describe('dispatchKey', () => {
     registerHandler('back', first);
     const release = registerHandler('back', second);
 
-    dispatchKey(pressEvent('Escape'), IDLE);
+    dispatchKey(pressEvent('Backspace'), IDLE);
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledOnce();
 
@@ -176,7 +191,7 @@ describe('dispatchKey', () => {
     const releaseApp = registerHandler('back', app);
 
     releaseApp();
-    dispatchKey(pressEvent('Escape'), IDLE);
+    dispatchKey(pressEvent('Backspace'), IDLE);
     expect(app).not.toHaveBeenCalled();
     expect(shell).toHaveBeenCalledOnce();
 
@@ -190,7 +205,7 @@ describe('dispatchKey', () => {
     const releaseSecond = registerHandler('back', second);
 
     releaseFirst();
-    dispatchKey(pressEvent('Escape'), IDLE);
+    dispatchKey(pressEvent('Backspace'), IDLE);
     expect(second).toHaveBeenCalledOnce();
 
     releaseSecond();

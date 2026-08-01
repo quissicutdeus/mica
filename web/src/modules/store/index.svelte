@@ -4,10 +4,11 @@
     usePhoneNotification,
     useNavigation,
     type AppManifest,
-    type AppPermission
+    type AppPermission,
+    ConfirmDialog,
+    formatDate,
+    formatRelativeTime
   } from '@gphone/sdk';
-  import ConfirmDialog from '../../components/ConfirmDialog.svelte';
-  import { formatDate, formatRelativeTime } from '../../utils/formatters';
 
   let { onback } = $props<{ onback?: () => void }>();
 

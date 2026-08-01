@@ -78,7 +78,23 @@ export const KEYBIND_ACTIONS: readonly KeybindAction[] = [
   },
   {
     id: 'back',
-    label: 'Back / Close',
+    label: 'Back',
+    // Backspace, not Escape: back is a navigation step, and Escape is now reserved for
+    // putting the phone away entirely. They were one action and that made "up one
+    // level" and "leave" impossible to express separately.
+    //
+    // It shares a key with End Call, which is fine — that action is scoped to
+    // `call:any` and a scoped action outranks an unscoped one, so Backspace hangs up
+    // during a call and navigates the rest of the time.
+    //
+    // Apps that have their own levels claim this and decide: the calculator deletes a
+    // digit before it will leave, Messages closes a thread before the app.
+    defaultKey: 'Backspace',
+    scope: 'phone'
+  },
+  {
+    id: 'closePhone',
+    label: 'Put Phone Away',
     defaultKey: 'Escape',
     scope: 'phone'
   },

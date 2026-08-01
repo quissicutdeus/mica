@@ -1,21 +1,24 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import Screen from '../../components/Screen.svelte';
-  import { useNotes, type Note } from '@gphone/sdk';
+  import {
+    useNotes,
+    type Note,
+    Button,
+    ConfirmDialog,
+    EmptyState,
+    ListItem,
+    Screen,
+    SearchBar,
+    AddIcon,
+    CheckCircleIcon,
+    DocumentIcon,
+    EditIcon,
+    ListBulletIcon,
+    renderMarkdown
+  } from '@gphone/sdk';
 
   const { notesStore: notes } = useNotes();
-  import { renderMarkdown } from '../../utils/markdown';
   import { fade } from 'svelte/transition';
-  import AddIcon from '../../components/icons/AddIcon.svelte';
-  import EditIcon from '../../components/icons/EditIcon.svelte';
-  import ListBulletIcon from '../../components/icons/ListBulletIcon.svelte';
-  import CheckCircleIcon from '../../components/icons/CheckCircleIcon.svelte';
-  import DocumentIcon from '../../components/icons/DocumentIcon.svelte';
-  import ConfirmDialog from '../../components/ConfirmDialog.svelte';
-  import EmptyState from '../../components/EmptyState.svelte';
-  import SearchBar from '../../components/SearchBar.svelte';
-  import Button from '../../components/Button.svelte';
-  import ListItem from '../../components/ListItem.svelte';
 
   let { onback } = $props();
 

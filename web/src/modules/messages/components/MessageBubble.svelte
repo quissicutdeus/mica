@@ -1,8 +1,13 @@
 <script lang="ts">
-  import Avatar from '../../../components/Avatar.svelte';
-  import MessageStatusIcon from '../../../components/icons/MessageStatusIcon.svelte';
-  import { formatTime } from '../../../utils/formatters';
-  import { useNavigation, useContacts, type UIMessage, type UIConversation } from '@gphone/sdk';
+  import {
+    useNavigation,
+    useContacts,
+    type UIMessage,
+    type UIConversation,
+    MessageStatusIcon,
+    formatTime,
+    Avatar
+  } from '@gphone/sdk';
   import type { Contact } from '@shared/types';
 
   const { openApp } = useNavigation();

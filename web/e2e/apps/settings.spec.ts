@@ -42,20 +42,20 @@ test.describe('Settings App E2E', () => {
     await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
   });
 
-  test('Escape steps up one pane before leaving the app', async ({ page }) => {
+  test('Backspace steps up one pane before leaving the app', async ({ page }) => {
     await page.locator('button', { hasText: 'Shortcuts' }).first().click();
     await expect(page.locator('h1', { hasText: 'Shortcuts' })).toBeVisible();
 
-    await page.keyboard.press('Escape');
+    await page.keyboard.press('Backspace');
     await expect(page.locator('h1', { hasText: 'Settings' })).toBeVisible();
 
-    await page.keyboard.press('Escape');
+    await page.keyboard.press('Backspace');
     await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
 
-    // And the shell's own handler is back: Escape still works after Settings unmounts.
+    // And the shell's own handler is back: Backspace still works after Settings unmounts.
     await page.locator('button', { hasText: 'Calculator' }).first().click();
     await expect(page.locator('h1', { hasText: 'Calculator' })).toBeVisible();
-    await page.keyboard.press('Escape');
+    await page.keyboard.press('Backspace');
     await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
   });
 

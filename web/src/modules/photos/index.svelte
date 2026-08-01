@@ -1,14 +1,16 @@
 <script lang="ts">
-  import Screen from '../../components/Screen.svelte';
-  import { useCamera, useNavigation, onAppMount } from '../../sdk';
+  import {
+    ConfirmDialog,
+    EmptyState,
+    Screen,
+    CheckIcon,
+    EmptyPhotoIcon,
+    ShareSquareIcon,
+    TrashIcon
+  } from '@gphone/sdk';
+  import { useCamera, useKeybinds, useNavigation, onAppMount } from '../../sdk';
   import type { Photo } from '@shared/types';
   import { fade } from 'svelte/transition';
-  import ShareSquareIcon from '../../components/icons/ShareSquareIcon.svelte';
-  import TrashIcon from '../../components/icons/TrashIcon.svelte';
-  import EmptyPhotoIcon from '../../components/icons/EmptyPhotoIcon.svelte';
-  import CheckIcon from '../../components/icons/CheckIcon.svelte';
-  import ConfirmDialog from '../../components/ConfirmDialog.svelte';
-  import EmptyState from '../../components/EmptyState.svelte';
 
   let { onback, initialPhoto, initialPhotoId } = $props<{
     onback?: () => void;
@@ -18,6 +20,7 @@
 
   const { photosStore, deletePhoto } = useCamera();
   const { consumeDeepLink } = useNavigation();
+  const { onKeybind } = useKeybinds();
 
   let selectedPhoto: Photo | null = $state(null);
   let isSelectionMode = $state(false);
@@ -114,6 +117,13 @@
     }
   };
 
+  /**
+   * Backspace steps up one level inside the app before it will leave.
+   *
+   * Claimed rather than handled raw: the shell owns Backspace, and a local listener
+   * would be pre-empted. The handler stack puts this on top while mounted and returns
+   * the action to the shell on unmount.
+   */
   const goBack = () => {
     if (selectedPhoto) {
       selectedPhoto = null;
@@ -121,6 +131,8 @@
       onback?.();
     }
   };
+
+  onKeybind('back', () => goBack());
 </script>
 
 {#snippet headerActions()}

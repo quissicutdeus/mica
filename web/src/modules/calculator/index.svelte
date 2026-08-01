@@ -1,8 +1,24 @@
 <script lang="ts">
-  import Screen from '../../components/Screen.svelte';
-  import BackspaceIcon from '../../components/icons/BackspaceIcon.svelte';
+  import { useKeybinds, Screen, BackspaceIcon } from '@gphone/sdk';
 
   let { onback } = $props();
+
+  const { onKeybind } = useKeybinds();
+
+  /**
+   * Backspace deletes a digit here before it will leave the app.
+   *
+   * Claimed rather than handled raw: the shell owns Backspace now, so a local listener
+   * would be pre-empted. The stack lets this sit on top while mounted and hand the
+   * action back on unmount.
+   */
+  onKeybind('back', () => {
+    if (display !== '0') {
+      handleBackspace();
+    } else {
+      onback?.();
+    }
+  });
 
   let display = $state('0');
   let firstOperand: number | null = $state(null);
@@ -153,8 +169,6 @@
       handleOperator('×');
     } else if (key === '/') {
       handleOperator('÷');
-    } else if (key === 'Backspace') {
-      handleBackspace();
     }
   };
 </script>

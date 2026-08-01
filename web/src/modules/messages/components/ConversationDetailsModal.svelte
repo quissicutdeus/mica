@@ -1,12 +1,17 @@
 <script lang="ts">
-  import Avatar from '../../../components/Avatar.svelte';
-  import Button from '../../../components/Button.svelte';
-  import CloseIcon from '../../../components/icons/CloseIcon.svelte';
-  import ArchiveIcon from '../../../components/icons/ArchiveIcon.svelte';
-  import TrashIcon from '../../../components/icons/TrashIcon.svelte';
-  import StarIcon from '../../../components/icons/StarIcon.svelte';
-  import ChevronRightIcon from '../../../components/icons/ChevronRightIcon.svelte';
-  import { useNavigation, useContacts, useMessages, type UIConversation } from '@gphone/sdk';
+  import {
+    useNavigation,
+    useContacts,
+    useMessages,
+    type UIConversation,
+    ArchiveIcon,
+    ChevronRightIcon,
+    CloseIcon,
+    StarIcon,
+    TrashIcon,
+    Avatar,
+    Button
+  } from '@gphone/sdk';
 
   const { openApp } = useNavigation();
   const { contactsStore: contacts } = useContacts();

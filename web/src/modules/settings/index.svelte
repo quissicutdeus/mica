@@ -1,16 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import Screen from '../../components/Screen.svelte';
-  import ChevronRightIcon from '../../components/icons/ChevronRightIcon.svelte';
   import {
     useAccount,
     useKeybinds,
     useNuiBridge,
     usePhoneNotification,
-    useSystemHardware
+    useSystemHardware,
+    Screen,
+    ChevronRightIcon,
+    isBrowser,
+    useDevTools
   } from '@gphone/sdk';
-  import { devToolsUnlocked } from '../../store/devtools';
-  import { isBrowser } from '../../utils/isBrowser';
   import About from './panes/About.svelte';
   import DeveloperTools from './panes/DeveloperTools.svelte';
   import Shortcuts from './panes/Shortcuts.svelte';
@@ -23,6 +23,7 @@
   const { toast } = usePhoneNotification();
   const { fetchNui } = useNuiBridge();
   const { onKeybind } = useKeybinds();
+  const { devToolsUnlocked } = useDevTools();
 
   /**
    * Settings is a hub, not one long scroll: each group is its own pane.

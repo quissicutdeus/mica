@@ -1,18 +1,24 @@
 <script lang="ts">
-  import { useCamera, useKeybinds, useNavigation, useNuiBridge, onAppMount } from '@gphone/sdk';
-  import { isBrowser } from '../../utils/isBrowser';
+  import {
+    useCamera,
+    useKeybinds,
+    useNavigation,
+    useNuiBridge,
+    onAppMount,
+    CloseIcon,
+    FlipCameraIcon,
+    PhotoIcon,
+    isBrowser
+  } from '@gphone/sdk';
 
   const { capturePhoto, photosStore, isTakingPhoto, isPreviewingPhoto } = useCamera();
   const { openApp } = useNavigation();
-  import { sampleAvatars } from '../../mocks/data';
-  import CloseIcon from '../../components/icons/CloseIcon.svelte';
-  import FlipCameraIcon from '../../components/icons/FlipCameraIcon.svelte';
-  import PhotoIcon from '../../components/icons/PhotoIcon.svelte';
+  import { sampleAvatars } from './mockViewfinder';
   import { onDestroy } from 'svelte';
 
   let { onback } = $props<{ onback: () => void }>();
 
-  const { fetchNui } = useNuiBridge();
+  const { fetchNui, useNuiEvent } = useNuiBridge();
 
   let cameraMode = $state<'PHOTO' | 'VIDEO' | 'LANDSCAPE'>('PHOTO');
   let isFrontCamera = $state(false);
@@ -252,12 +258,18 @@
     }, CHROME_FADE_MS + 30);
   };
 
-  // Claimed only while the camera is mounted, so Enter is the shutter here and stays
-  // free for whatever else wants it elsewhere.
-  onKeybind('shutter', () => {
+  const shoot = () => {
     if ($isTakingPhoto || $isPreviewingPhoto) return;
     void takePhoto();
-  });
+  };
+
+  // Claimed only while the camera is mounted, so Enter is the shutter here and stays
+  // free for whatever else wants it elsewhere.
+  onKeybind('shutter', shoot);
+
+  // Left click, relayed by the client. Aiming leaves no NUI cursor, so the click never
+  // reaches the page and has to be read from the game control instead.
+  useNuiEvent('cameraShutter', shoot);
 </script>
 
 <!-- No opaque background in game: PhoneFrame goes transparent while the camera is open

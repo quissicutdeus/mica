@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { hashStringToCardNumber } from '../../../utils/cardUtils';
-  import { formatCurrency } from '../../../utils/formatters';
+  import { formatCurrency } from '@gphone/sdk';
+  import { hashStringToCardNumber } from '../cardUtils';
 
   let { balance, citizenid }: { balance: number; citizenid: string } = $props();
 </script>

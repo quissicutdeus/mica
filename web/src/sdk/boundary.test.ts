@@ -1,0 +1,118 @@
+import { describe, it, expect } from 'vitest';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
+
+/**
+ * App modules may not reach into the shell.
+ *
+ * §2.7 has said so since the SDK existed, and it drifted anyway: nine UI components,
+ * thirty-two icons, fifteen utility imports and one store were all being pulled in by
+ * relative path. Nothing checked, so nothing stopped it.
+ *
+ * It matters for one concrete reason. An add-on installed through the Store resolves
+ * `@gphone/sdk` and nothing else — `../../components/Screen.svelte` does not exist for
+ * it. Every relative import into the shell is a thing a third-party app cannot do,
+ * which quietly makes the app-registry story only half true.
+ *
+ * A prose rule that is not enforced is a suggestion. This is the enforcement.
+ */
+
+const ROOT = join(__dirname, '..', '..');
+const MODULES = join(ROOT, 'src', 'modules');
+
+/** Shell directories an app must never import from by path. */
+const FORBIDDEN = ['components', 'store', 'utils', 'mocks', 'core', 'sdk'];
+
+const walk = (dir: string): string[] => {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) out.push(...walk(full));
+    else if (/\.(svelte|ts)$/.test(entry) && !entry.endsWith('.test.ts')) out.push(full);
+  }
+  return out;
+};
+
+/** `import ... from '../../<shell dir>/...'`, at any depth. */
+const ESCAPING_IMPORT = new RegExp(
+  String.raw`from\s+['"](?:\.\./)+(${FORBIDDEN.join('|')})/[^'"]*['"]`,
+  'g'
+);
+
+const FILES = walk(MODULES);
+
+describe('app module boundary', () => {
+  it('finds app modules to check', () => {
+    // A walk that silently matched nothing would make the rule below vacuous.
+    expect(FILES.length).toBeGreaterThan(10);
+  });
+
+  it('no app module imports the shell by relative path', () => {
+    const offenders: string[] = [];
+
+    for (const file of FILES) {
+      const text = readFileSync(file, 'utf8');
+      for (const match of text.matchAll(ESCAPING_IMPORT)) {
+        offenders.push(`${relative(ROOT, file)}  ->  ${match[0].replace(/^from\s+/, '')}`);
+      }
+    }
+
+    expect(
+      offenders.sort(),
+      'export it from @gphone/sdk instead — an add-on cannot resolve a relative shell path'
+    ).toEqual([]);
+  });
+
+  it('the SDK actually re-exports what apps were reaching for', async () => {
+    // Guards the other direction: the rule above is only satisfiable if the surface
+    // exists. A missing export would push the next author back to a relative import.
+    const sdk = await import('./index');
+
+    for (const name of [
+      // Components
+      'Screen',
+      'ListItem',
+      'Button',
+      'Avatar',
+      'SearchBar',
+      'EmptyState',
+      'ConfirmDialog',
+      'FloatingActionButton',
+      'PhotoPickerModal',
+      // Utils
+      'isBrowser',
+      'formatDate',
+      'formatRelativeTime',
+      'formatCurrency',
+      'renderMarkdown',
+      'useScrollDetect',
+      // Hooks
+      'useNavigation',
+      'useKeybinds',
+      'useDevTools',
+      // Icons are generated; spot-check one that was imported by path before.
+      'ChevronRightIcon'
+    ]) {
+      expect(sdk, `@gphone/sdk is missing ${name}`).toHaveProperty(name);
+    }
+  });
+
+  it('does not export the shell itself', async () => {
+    // An app rendering its own phone frame or toast host is a bug. Exporting these
+    // would make that easy and look sanctioned.
+    //
+    // Asserted against the resolved module rather than the source text: the docblock in
+    // `components.ts` names these precisely to explain why they are absent, and a
+    // grep for them matched the explanation.
+    const sdk = await import('./index');
+    for (const shellOnly of [
+      'PhoneFrame',
+      'ToastContainer',
+      'ErrorBoundary',
+      'VolumeHud',
+      'Home'
+    ]) {
+      expect(sdk, `@gphone/sdk should not expose ${shellOnly}`).not.toHaveProperty(shellOnly);
+    }
+  });
+});

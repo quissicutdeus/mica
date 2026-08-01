@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { formatCurrency, formatTimestamp } from '../../../utils/formatters';
+  import { formatCurrency, formatTimestamp } from '@gphone/sdk';
   import type { Transaction } from '@gphone/sdk';
 
   let { transaction }: { transaction: Transaction } = $props();

@@ -6,9 +6,9 @@
     useNavigation,
     useNuiBridge,
     usePhoneNotification,
-    useSystemHardware
+    useSystemHardware,
+    isBrowser
   } from '@gphone/sdk';
-  import { isBrowser } from '../../../utils/isBrowser';
 
   let { onhide } = $props<{ onhide: () => void }>();
 

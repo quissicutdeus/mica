@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { useAccount } from '@gphone/sdk';
-  import Screen from '../../components/Screen.svelte';
+  import { useAccount, Screen } from '@gphone/sdk';
   import CreditCard from './components/CreditCard.svelte';
   import TransactionItem from './components/TransactionItem.svelte';
 

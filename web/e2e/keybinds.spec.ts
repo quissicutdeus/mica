@@ -5,30 +5,51 @@ test.describe('Keyboard Shortcuts E2E', () => {
     await page.goto('/');
   });
 
-  test('the Calculator no longer handles Escape itself', async ({ page }) => {
-    // Escape used to fire twice: the calculator's own window handler cleared the display
-    // *and* the shell navigated home, because neither stopped the other. Rebinding Back
-    // off Escape is what makes that observable — with Escape still bound, the shell
-    // navigates away and App.svelte re-keys the app, so a cleared display and a
-    // remounted one look identical.
-    await page.evaluate(() => {
-      localStorage.setItem('gphone:settings:keybinds', JSON.stringify({ back: 'q' }));
-    });
-    await page.reload();
-
+  test('the Calculator deletes a digit before Backspace will leave it', async ({ page }) => {
+    // Backspace is Back at shell level now, and the calculator needs it for deleting.
+    // It claims the action while mounted and decides: delete first, leave once empty.
+    // The old bug was the reverse — a raw listener that fired *alongside* the shell.
     await page.locator('button', { hasText: 'Calculator' }).first().click();
     await expect(page.locator('h1', { hasText: 'Calculator' })).toBeVisible();
 
     await page.locator('button', { hasText: '7' }).first().click();
+    await page.locator('button', { hasText: '8' }).first().click();
     const display = page.locator('.text-6xl');
-    await expect(display).toHaveText('7');
+    await expect(display).toHaveText('78');
 
-    await page.keyboard.press('Escape');
+    await page.keyboard.press('Backspace');
     await expect(page.locator('h1', { hasText: 'Calculator' })).toBeVisible();
     await expect(display).toHaveText('7');
 
-    // The rebound key still does the shell's job.
-    await page.keyboard.press('q');
+    // Emptied, so the next press hands the action back to the shell.
+    await page.keyboard.press('Backspace');
+    await expect(display).toHaveText('0');
+    await page.keyboard.press('Backspace');
+    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+  });
+
+  test('Escape puts the phone away rather than navigating', async ({ page }) => {
+    await page.locator('button', { hasText: 'Calculator' }).first().click();
+    await expect(page.locator('h1', { hasText: 'Calculator' })).toBeVisible();
+
+    // Not "back to home" — straight out. The two were one action and could not be
+    // told apart.
+    //
+    // Asserted on the collapsed-phone affordance rather than the phone's absence: in a
+    // browser the frame's outro transition never completes and `<main>` stays in the
+    // DOM. That is a pre-existing bug on the close path — the hardware power button
+    // does it too — and not what this test is about.
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: /Open gPhone/i })).toBeVisible();
+  });
+
+  test('the Open Phone key reopens a collapsed phone in the browser', async ({ page }) => {
+    // `openPhone` is a FiveM key mapping, so in a browser nothing was listening and the
+    // only way back was the mouse.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('h1', { hasText: 'gPhone' })).toHaveCount(0);
+
+    await page.keyboard.press('m');
     await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
   });
 
@@ -65,9 +86,11 @@ test.describe('Keyboard Shortcuts E2E', () => {
     await page.locator('button', { hasText: 'Shortcuts' }).first().click();
     await expect(page.locator('h1', { hasText: 'Shortcuts' })).toBeVisible();
 
-    const backRow = page.locator('button', { hasText: 'Back / Close' });
+    // By id, not by text: a bare 'Back' also matches "End / Reject Call **Back**space",
+    // which comes first in the list, and the test then rebound the wrong action.
+    const backRow = page.getByTestId('shortcut-back');
     await expect(backRow).toBeVisible();
-    await expect(backRow).toContainText('Escape');
+    await expect(backRow).toContainText('Backspace');
 
     await backRow.click();
     await expect(page.locator('text=Press a key…')).toBeVisible();
@@ -77,7 +100,7 @@ test.describe('Keyboard Shortcuts E2E', () => {
     await page.reload();
     await page.locator('button', { hasText: 'Settings' }).first().click();
     await page.locator('button', { hasText: 'Shortcuts' }).first().click();
-    await expect(page.locator('button', { hasText: 'Back / Close' })).toContainText('Q');
+    await expect(page.getByTestId('shortcut-back')).toContainText('Q');
 
     // And the new key actually drives navigation, not just the label. Settings claims
     // `back` while mounted, so the first press steps up to the hub.

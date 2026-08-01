@@ -1,45 +1,48 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import Screen from '../../components/Screen.svelte';
   import {
     useMessages,
     useContacts,
     useCamera,
     useAccount,
+    useKeybinds,
     useNavigation,
     type UIMessage,
-    type UIConversation
+    type UIConversation,
+    Avatar,
+    Button,
+    EmptyState,
+    FloatingActionButton,
+    ListItem,
+    PhotoPickerModal,
+    Screen,
+    SearchBar,
+    ArchiveIcon,
+    ChevronRightIcon,
+    CloseIcon,
+    LocationIcon,
+    MessageIcon,
+    MessageStatusIcon,
+    PaperclipIcon,
+    PhotoIcon,
+    SearchIcon,
+    SendIcon,
+    TrashIcon,
+    formatRelativeTime,
+    formatTime,
+    useScrollDetect
   } from '@gphone/sdk';
   import { fade, fly } from 'svelte/transition';
   import type { Contact, Photo } from '@shared/types';
 
   const { messagesStore } = useMessages();
   const { consumeDeepLink } = useNavigation();
+  const { onKeybind } = useKeybinds();
   const { contactsStore: contacts } = useContacts();
   const { photosStore: photos } = useCamera();
   const { citizenid } = useAccount();
-  import { formatTime, formatRelativeTime } from '../../utils/formatters';
-  import { useScrollDetect } from '../../utils/useScrollDetect';
-  import PaperclipIcon from '../../components/icons/PaperclipIcon.svelte';
-  import CloseIcon from '../../components/icons/CloseIcon.svelte';
-  import SendIcon from '../../components/icons/SendIcon.svelte';
-  import PhotoIcon from '../../components/icons/PhotoIcon.svelte';
-  import LocationIcon from '../../components/icons/LocationIcon.svelte';
-  import ChevronRightIcon from '../../components/icons/ChevronRightIcon.svelte';
-  import MessageIcon from '../../components/icons/MessageIcon.svelte';
-  import EmptyState from '../../components/EmptyState.svelte';
-  import SearchBar from '../../components/SearchBar.svelte';
-  import ListItem from '../../components/ListItem.svelte';
-  import Avatar from '../../components/Avatar.svelte';
-  import Button from '../../components/Button.svelte';
-  import TrashIcon from '../../components/icons/TrashIcon.svelte';
-  import ArchiveIcon from '../../components/icons/ArchiveIcon.svelte';
-  import SearchIcon from '../../components/icons/SearchIcon.svelte';
-  import MessageStatusIcon from '../../components/icons/MessageStatusIcon.svelte';
   import MessageBubble from './components/MessageBubble.svelte';
   import ConversationDetailsModal from './components/ConversationDetailsModal.svelte';
-  import PhotoPickerModal from '../../components/PhotoPickerModal.svelte';
-  import FloatingActionButton from '../../components/FloatingActionButton.svelte';
 
   let { onback, initialContact, conversationId, phone } = $props<{
     onback?: () => void;
@@ -187,6 +190,13 @@
       : $contacts
   );
 
+  /**
+   * Backspace steps up one level inside the app before it will leave.
+   *
+   * Claimed rather than handled raw: the shell owns Backspace, and a local listener
+   * would be pre-empted. The handler stack puts this on top while mounted and returns
+   * the action to the shell on unmount.
+   */
   const goBack = () => {
     if (showDetailsModal) {
       showDetailsModal = false;
@@ -215,6 +225,8 @@
       onback?.();
     }
   };
+
+  onKeybind('back', () => goBack());
 
   const handleTitleClick = () => {
     if (selectedConversationId && currentConv) {
