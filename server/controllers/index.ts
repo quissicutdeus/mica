@@ -10,4 +10,5 @@ import './MailController';
 import './MessageController';
 import './NoteController';
 import './PhotoController';
+import './ReportController';
 import './SchemaController';
