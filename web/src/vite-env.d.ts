@@ -30,4 +30,13 @@ interface Window {
   setDrainSpeed?: (multiplier: number) => void;
   setSignalLevel?: (level: number) => void;
   triggerTestToast?: (type?: 'message' | 'contact' | 'call' | 'email') => void;
+  /**
+   * The app registry, so an e2e test can install an app the repo does not ship —
+   * a deliberately crashing one, for the error boundary.
+   *
+   * `error_boundary.spec.ts` already read this and it was never assigned, so every
+   * assertion in that file sat behind an `if (count > 0)` that was never true and both
+   * tests passed having checked nothing.
+   */
+  appRegistryStore?: typeof import('./shell/state/registry').appRegistryStore;
 }

@@ -1,4 +1,5 @@
 import { debugData } from '../lib/debug';
+import { appRegistryStore } from './state/registry';
 
 /**
  * Browser-only scaffolding: seed the phone, and expose a console helper for firing
@@ -55,4 +56,10 @@ export function installDevHarness(): void {
     if (!fixture) return;
     window.postMessage(fixture, '*');
   };
+
+  // So a test can install an app the repo does not ship. `error_boundary.spec.ts` needs
+  // an app that crashes on render, and there is deliberately no such app in `apps/` —
+  // it would appear on every player's home screen. The spec has always read this
+  // property; nothing ever assigned it, so its assertions never ran.
+  window.appRegistryStore = appRegistryStore;
 }

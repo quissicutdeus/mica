@@ -2,6 +2,22 @@
   import type { Snippet } from 'svelte';
   import { goHome } from './state/navigation';
 
+  /**
+   * The fallback that stands between one app's crash and a dead phone.
+   *
+   * The fallback lives in the `failed` snippet, and it has to. It was previously an
+   * `{#if error}` branch *inside* the boundary's children, driven by `$state` that
+   * `onerror` set — which renders nothing at all. Svelte destroys the main effect the
+   * moment it catches, and only re-renders if a `failed` snippet exists; the `{#if}`
+   * branch was in the effect that had just been destroyed, so setting the flag updated
+   * a tree that was no longer there. A crashed app left a blank screen with no way home,
+   * and `handleReset` was unreachable.
+   *
+   * `reset` comes from Svelte rather than from a local flag for the same reason: clearing
+   * our own state cannot rebuild the destroyed branch, and Svelte's own `reset` is what
+   * re-creates it.
+   */
+
   let {
     children,
     appName = 'App'
@@ -10,20 +26,19 @@
     appName?: string;
   } = $props();
 
-  let error = $state<Error | null>(null);
-
   function handleError(e: unknown) {
     console.error(`[gPhone] ErrorBoundary caught crash in '${appName}':`, e);
-    error = e instanceof Error ? e : new Error(String(e));
   }
 
-  function handleReset() {
-    error = null;
-  }
+  /** `error` is `unknown` — only a real Error carries a stack worth printing. */
+  const stackOf = (error: unknown): string | null =>
+    error instanceof Error && error.stack ? error.stack : null;
 </script>
 
 <svelte:boundary onerror={handleError}>
-  {#if error}
+  {@render children()}
+
+  {#snippet failed(error, reset)}
     <div
       class="flex h-full w-full flex-col items-center justify-center bg-gray-900 p-6 text-center text-white"
     >
@@ -46,7 +61,7 @@
       <div class="flex w-full max-w-xs flex-col gap-3">
         <button
           type="button"
-          onclick={handleReset}
+          onclick={reset}
           class="w-full cursor-pointer rounded-xl bg-blue-600 px-4 py-2.5 font-medium text-white transition-colors hover:bg-blue-500"
         >
           Restart App
@@ -54,7 +69,7 @@
         <button
           type="button"
           onclick={() => {
-            handleReset();
+            reset();
             goHome();
           }}
           class="w-full cursor-pointer rounded-xl border border-gray-700 bg-gray-800 px-4 py-2.5 font-medium text-gray-200 transition-colors hover:bg-gray-700"
@@ -63,15 +78,13 @@
         </button>
       </div>
 
-      {#if import.meta.env.DEV && error?.stack}
+      {#if import.meta.env.DEV && stackOf(error)}
         <div
           class="mt-6 max-h-32 w-full overflow-auto rounded-lg border border-red-900/50 bg-black/40 p-3 text-left font-mono text-xs text-red-300"
         >
-          {error.stack}
+          {stackOf(error)}
         </div>
       {/if}
     </div>
-  {:else}
-    {@render children()}
-  {/if}
+  {/snippet}
 </svelte:boundary>
