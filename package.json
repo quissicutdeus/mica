@@ -28,7 +28,10 @@
     "test:e2e:report": "pnpm --filter web test:e2e:report",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "deadcode": "pnpm dlx knip"
+    "deadcode": "pnpm dlx knip",
+    "new:app": "node scripts/new-app.js",
+    "verify": "node scripts/verify.js",
+    "verify:quick": "node scripts/verify.js --quick"
   },
   "author": "quissicutdeus",
   "license": "AGPL-3.0-or-later",

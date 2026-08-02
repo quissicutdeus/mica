@@ -1,9 +1,9 @@
-name: Build Test
+name: Verify
 on: [push, pull_request]
 
 jobs:
-  build:
-    name: Build Test
+  verify:
+    name: Verify
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -21,9 +21,22 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'pnpm'
-      - name: Install dependencies NUI
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Run Unit Tests
-        run: pnpm test:unit
-      - name: Build Bundles
-        run: pnpm build
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: web
+
+      # The same command a developer runs, so the two cannot drift. This used to be
+      # `test:unit` and `build` only, which left the e2e suite and the formatter
+      # enforced nowhere — seventy-one tests free to go red without anything saying so.
+      - name: Verify
+        run: pnpm verify
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/playwright-report
+          retention-days: 7
