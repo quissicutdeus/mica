@@ -730,6 +730,10 @@ a mock that disagrees with the server is a bug you cannot see in the browser.
   and it will ask again; returning `true` consumes the props, which is what makes back work.
 - Filter a list with `filterByQuery`, and use the shared primitives — `SegmentedControl` for tabs,
   `ToggleSwitch` for a setting, `Skeleton` while a fetch is in flight.
+- Page a long list with `usePagedList`. Set `olderAt: 'start'` for a chat, where older rows are
+  above and revealing them must not move the reader, and `'end'` for a feed, where they are below
+  and it cannot. Use its `offset` for anything positional — a divider, a highlight — because the
+  index inside the window is not the index in the list.
 - Give the empty state an `<EmptyState>`, and do not show it until the fetch has returned. A list
   that is merely still loading is not a list with nothing in it.
 
