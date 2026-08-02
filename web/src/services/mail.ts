@@ -1,62 +1,40 @@
-import { writable, derived } from 'svelte/store';
+import { derived, get } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
+import { createCrudStore } from './createCrudStore';
 import type { Mail } from '@shared/types';
 
-function createMailStore() {
-  const { subscribe, set, update } = writable<Mail[]>([]);
+const store = createCrudStore<Mail>('Mail', {
+  list: 'getMail',
+  remove: 'deleteMail'
+});
 
-  return {
-    subscribe,
-    load: async () => {
-      try {
-        const data = await fetchNui<Mail[]>('getMail', null, { defaultValue: [] });
-        if (Array.isArray(data)) {
-          set(data);
-        } else {
-          console.error('Mail store received invalid data:', data);
-          set([]);
-        }
-      } catch (e) {
-        console.error('Failed to load emails:', e);
-        set([]);
-      }
-    },
-    markAsRead: async (id: number) => {
-      try {
-        update((mails) => mails.map((m) => (m.id === id ? { ...m, read: true } : m)));
-        await fetchNui('markAsRead', { id });
-      } catch (e) {
-        console.error('Failed to mark email as read:', e);
-      }
-    },
-    archive: async (id: number, archiveState: boolean = true) => {
-      try {
-        const newStatus = archiveState ? 'archived' : 'active';
-        update((mails) => mails.map((m) => (m.id === id ? { ...m, status: newStatus } : m)));
-        await fetchNui('archiveMail', { id, archive: archiveState });
-      } catch (e) {
-        console.error('Failed to archive email:', e);
-      }
-    },
-    delete: async (id: number) => {
-      try {
-        update((mails) => mails.filter((m) => m.id !== id));
-        await fetchNui('deleteMail', { id });
-      } catch (e) {
-        console.error('Failed to delete email:', e);
-      }
-    },
-    addReceivedMail: (newMail: Mail) => {
-      update((mails) => {
-        const idExists = newMail.id && mails.some((m) => m.id === newMail.id);
-        const safeId = idExists || !newMail.id ? Date.now() : newMail.id;
-        return [{ ...newMail, id: safeId, status: newMail.status || 'active' }, ...mails];
-      });
-    }
-  };
-}
+export const mailStore = {
+  ...store,
 
-export const mailStore = createMailStore();
+  /**
+   * Mail is read-only from the phone's side apart from these two flags, so they are the
+   * app's own verbs rather than a generic update. Both wait for the server before the
+   * list changes: they used to patch first, which meant a failed archive left the
+   * message hidden until the next reload put it back.
+   */
+  markAsRead: async (id: number) => {
+    await fetchNui('markAsRead', { id });
+    store.patch(id, { read: true });
+  },
+
+  archive: async (id: number, archive: boolean = true) => {
+    await fetchNui('archiveMail', { id, archive });
+    store.patch(id, { status: archive ? 'archived' : 'active' });
+  },
+
+  /** Arrives by push, so there is nothing to tell the server. */
+  addReceivedMail: (incoming: Mail) => {
+    const current = get(store);
+    const clashes = incoming.id && current.some((m) => m.id === incoming.id);
+    const id = clashes || !incoming.id ? Date.now() : incoming.id;
+    store.set([{ ...incoming, id, status: incoming.status || 'active' }, ...current]);
+  }
+};
 
 export const unreadMailCount = derived(
   mailStore,

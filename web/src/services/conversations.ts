@@ -25,6 +25,14 @@ function createMessagesStore() {
   const messagesByConversation = writable<Record<number, UIMessage[]>>({});
   const activeConversationId = writable<number | null>(null);
 
+  /**
+   * False until the first conversation fetch has come back.
+   *
+   * The same signal `createCrudStore` exposes, so every list in the phone can tell
+   * "still arriving" from "there is nothing here" the same way.
+   */
+  const loaded = writable(false);
+
   // Helper to resolve display info
   const resolveDisplayInfo = (conv: Conversation, myId: string, currentContacts: any[]) => {
     let target = '';
@@ -64,6 +72,7 @@ function createMessagesStore() {
 
   return {
     subscribe,
+    loaded: { subscribe: loaded.subscribe },
     messages: { subscribe: messagesByConversation.subscribe },
     activeConversationId: { subscribe: activeConversationId.subscribe },
 
@@ -101,6 +110,7 @@ function createMessagesStore() {
         );
 
       set(mapped);
+      loaded.set(true);
     },
 
     loadMessages: async (conversationId: number) => {

@@ -1,61 +1,51 @@
-import { writable, derived } from 'svelte/store';
+import { derived } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
+import { createCrudStore } from './createCrudStore';
 import type { Contact } from '@shared/types';
 
-function createContactsStore() {
-  const { subscribe, set, update } = writable<Contact[]>([]);
+/**
+ * The one rule, applied to a create, an update and a share alike.
+ *
+ * Sharing says so in its own words: the message reaches the player as a toast, and
+ * "required to share contact" is the difference between a form they can fix and an
+ * action that will not go through.
+ */
+const requireNameAndPhone = (draft: Partial<Contact>, forSharing = false) => {
+  if (draft.firstname?.trim() && draft.phone?.trim()) return;
+  throw new Error(
+    forSharing
+      ? 'First name and phone number are required to share contact.'
+      : 'First name and phone number are required.'
+  );
+};
 
-  return {
-    subscribe,
-    load: async () => {
-      const data = await fetchNui<Contact[]>('getContacts', null, { defaultValue: [] });
-      if (Array.isArray(data)) {
-        set(data);
-      } else {
-        console.error('Contacts store received invalid data:', data);
-        set([]);
-      }
-    },
-    add: async (contact: Omit<Contact, 'id' | 'citizenid' | 'created_at' | 'updated_at'>) => {
-      if (!contact.firstname?.trim() || !contact.phone?.trim()) {
-        console.error('Failed to create contact: missing required firstname or phone');
-        throw new Error('First name and phone number are required.');
-      }
-      // No `defaultValue`, so `fetchNui` throws on a failed write and the caller's catch
-      // runs. It used to swallow, so this returned `undefined` and the UI announced
-      // success for a contact that was never created.
-      const newContact = await fetchNui<Contact>('createContact', contact);
-      update((n) => [...n, newContact]);
-      return newContact;
-    },
-    update: async (contact: Contact) => {
-      if (!contact.firstname?.trim() || !contact.phone?.trim()) {
-        console.error('Failed to update contact: missing required firstname or phone');
-        throw new Error('First name and phone number are required.');
-      }
-      await fetchNui('updateContact', contact);
-      update((n) => n.map((c) => (c.id === contact.id ? contact : c)));
-    },
-    delete: async (id: number) => {
-      await fetchNui('deleteContact', { id });
-      update((n) => n.filter((c) => c.id !== id));
-    },
-    share: async (payload: Partial<Contact> & { name?: string; phone: string }) => {
-      const firstname = payload.firstname || payload.name?.split(' ')[0];
-      if (!firstname?.trim() || !payload.phone?.trim()) {
-        console.error('Failed to share contact: missing required name or phone');
-        throw new Error('First name and phone number are required to share contact.');
-      }
-      try {
-        await fetchNui('shareContact', payload);
-      } catch (e) {
-        console.error('Failed to share contact:', e);
-      }
-    }
-  };
-}
+const store = createCrudStore<
+  Contact,
+  Omit<Contact, 'id' | 'citizenid' | 'created_at' | 'updated_at'>
+>(
+  'Contacts',
+  {
+    list: 'getContacts',
+    create: 'createContact',
+    update: 'updateContact',
+    remove: 'deleteContact'
+  },
+  { validate: requireNameAndPhone }
+);
 
-export const contacts = createContactsStore();
+export const contacts = {
+  ...store,
+
+  /**
+   * Offer a contact to another player. Not a CRUD write — nothing enters this list.
+   */
+  share: async (payload: Partial<Contact> & { name?: string; phone: string }) => {
+    const firstname = payload.firstname || payload.name?.split(' ')[0];
+    requireNameAndPhone({ firstname, phone: payload.phone }, true);
+    await fetchNui('shareContact', payload);
+  }
+};
+
 export const favoriteContacts = derived(contacts, ($contacts) =>
   $contacts.filter((c) => c.favorite)
 );

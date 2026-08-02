@@ -8,6 +8,7 @@ import {
   sampleAvatars
 } from './data';
 import type { Contact, Conversation, Mail, Message, Note, Photo, Transaction } from '@shared/types';
+import { defineMockCrud } from './defineMockCrud';
 
 // Helper to simulate delays
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -33,64 +34,23 @@ const mockReports: any[] = [
   }
 ];
 
-export const mockRegistry: Record<string, MockHandler> = {
+const mockRegistry: Record<string, MockHandler> = {
   // Contacts
-  getContacts: () => mockContacts,
-  createContact: async (contact: any) => {
-    await delay(500);
-    const created = {
-      ...contact,
-      id: Math.random(),
-      citizenid: 'mock-id',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    } as Contact;
-    mockContacts.push(created);
-    return created;
-  },
-  updateContact: async (contact: Contact) => {
-    await delay(500);
-    const i = mockContacts.findIndex((c) => c.id === contact.id);
-    if (i !== -1) mockContacts[i] = { ...mockContacts[i], ...contact };
-    return contact;
-  },
-  deleteContact: async (data: { id: number }) => {
-    await delay(500);
-    const i = mockContacts.findIndex((c) => c.id === data?.id);
-    if (i !== -1) mockContacts.splice(i, 1);
-    return true;
-  },
-  shareContact: async () => {
-    await delay(500);
-    return true;
-  },
+  ...defineMockCrud<Contact>(mockContacts, {
+    list: 'getContacts',
+    create: 'createContact',
+    update: 'updateContact',
+    remove: 'deleteContact'
+  }),
+  shareContact: async () => true,
 
   // Notes
-  getNotes: () => mockNotes,
-  createNote: async (note: any) => {
-    await delay(300);
-    const created = {
-      ...note,
-      id: Math.random(),
-      citizenid: 'mock-id',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    } as Note;
-    mockNotes.push(created);
-    return created;
-  },
-  updateNote: async (note: Note) => {
-    await delay(300);
-    const i = mockNotes.findIndex((n) => n.id === note.id);
-    if (i !== -1) mockNotes[i] = { ...mockNotes[i], ...note };
-    return note;
-  },
-  deleteNote: async (data: { id: number }) => {
-    await delay(300);
-    const i = mockNotes.findIndex((n) => n.id === data?.id);
-    if (i !== -1) mockNotes.splice(i, 1);
-    return true;
-  },
+  ...defineMockCrud<Note>(mockNotes, {
+    list: 'getNotes',
+    create: 'createNote',
+    update: 'updateNote',
+    remove: 'deleteNote'
+  }),
 
   // Messages
   getConversations: () => mockConversations,
@@ -262,45 +222,33 @@ export const mockRegistry: Record<string, MockHandler> = {
   },
   flipCamera: async (data: any) => ({ supported: true, isFrontCamera: !!data?.isFrontCamera }),
   onCameraApp: async () => true,
-  getPhotos: () => mockPhotos.filter((p) => p.status !== 'deleted'),
-  createPhoto: async (photo: any) => {
-    await delay(300);
-    const newPhoto: Photo = {
-      ...photo,
-      id: Math.random(),
-      citizenid: 'mock-id',
-      status: 'active',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-    mockPhotos.unshift(newPhoto);
-    return newPhoto;
-  },
-  deletePhoto: async (data: { id: number }) => {
-    await delay(300);
-    const item = mockPhotos.find((p) => p.id === data.id);
-    if (item) item.status = 'deleted';
-    return true;
-  },
+  // Photos and mail are soft-deleted, as the server does it: a removed row is still
+  // there to be moderated.
+  ...defineMockCrud<Photo>(
+    mockPhotos,
+    { list: 'getPhotos', create: 'createPhoto', remove: 'deletePhoto' },
+    {
+      remove: 'soft',
+      visible: (p) => p.status !== 'deleted',
+      insert: 'prepend',
+      defaults: { status: 'active' }
+    }
+  ),
 
   // Mail
-  getMail: () => mockEmails.filter((e) => e.status !== 'deleted'),
+  ...defineMockCrud<Mail>(
+    mockEmails,
+    { list: 'getMail', remove: 'deleteMail' },
+    { remove: 'soft', visible: (e) => e.status !== 'deleted' }
+  ),
   markAsRead: async (data: { id: number }) => {
-    await delay(200);
     const item = mockEmails.find((e) => e.id === data.id);
     if (item) item.read = true;
     return true;
   },
   archiveMail: async (data: { id: number; archive?: boolean }) => {
-    await delay(200);
     const item = mockEmails.find((e) => e.id === data.id);
     if (item) item.status = data.archive === false ? 'active' : 'archived';
-    return true;
-  },
-  deleteMail: async (data: { id: number }) => {
-    await delay(200);
-    const item = mockEmails.find((e) => e.id === data.id);
-    if (item) item.status = 'deleted';
     return true;
   },
 
@@ -331,7 +279,7 @@ export const mockRegistry: Record<string, MockHandler> = {
   checkAdmin: () => ({ isAdmin: true })
 };
 
-export async function getMockData(eventName: string, data?: any): Promise<any> {
+async function getMockData(eventName: string, data?: any): Promise<any> {
   const handler = mockRegistry[eventName];
   if (handler) {
     return handler(data);

@@ -9,6 +9,15 @@ export type { Transaction } from '@shared/types';
 
 export const bankBalance = writable<number>(0);
 export const transactions = writable<Transaction[]>([]);
+
+/**
+ * False until the first transaction fetch has come back.
+ *
+ * Same signal `createCrudStore` exposes, for the same reason: an empty list is not the
+ * same statement as "this account has no transactions", and Bank used to make the
+ * second one while still waiting for the first.
+ */
+export const transactionsLoaded = writable(false);
 export const citizenid = writable<string>('');
 export const myPhoneNumber = writable<string>('555-0199');
 
@@ -52,5 +61,7 @@ export const fetchTransactions = async () => {
     transactions.set(data);
   } catch (error) {
     console.error('Failed to fetch transactions:', error);
+  } finally {
+    transactionsLoaded.set(true);
   }
 };

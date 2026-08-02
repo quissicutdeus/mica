@@ -70,6 +70,31 @@ const collectFetchNuiCalls = (): { action: string; file: string }[] => {
   return found;
 };
 
+/**
+ * Action names declared rather than called — `createCrudStore('Notes', { list: 'getNotes' })`.
+ *
+ * A store built from a declaration contains no `fetchNui('getNotes')` for the scanner
+ * above to find, so without this every CRUD route read as uncalled and the dead-weight
+ * check told us to delete thirteen live routes. The scan has to follow the code, not the
+ * other way round.
+ */
+const collectCrudStoreEvents = (): { action: string; file: string }[] => {
+  const found: { action: string; file: string }[] = [];
+  for (const file of walk(join(ROOT, 'web', 'src', 'services'), ['.ts'])) {
+    if (file.endsWith('.test.ts')) continue;
+    const text = readFileSync(file, 'utf8');
+    for (const call of text.matchAll(/createCrudStore\s*(?:<[\s\S]*?>)?\s*\(/g)) {
+      // The config object is the last argument; a window is enough and keeps this a
+      // scanner rather than a parser.
+      const window = text.slice(call.index!, call.index! + 600);
+      for (const m of window.matchAll(/\b(?:list|create|update|remove)\s*:\s*['"](\w+)['"]/g)) {
+        found.push({ action: m[1], file: relative(ROOT, file) });
+      }
+    }
+  }
+  return found;
+};
+
 /** Action names the client registers by hand, outside the route table. */
 const collectClientCallbacks = (): Set<string> => {
   const names = new Set<string>();
@@ -88,10 +113,20 @@ const mockRegistryKeys = (): Set<string> => {
   const body = text.slice(text.indexOf('mockRegistry'));
   const keys = new Set<string>();
   for (const m of body.matchAll(/^\s{2}([a-zA-Z][\w]*)\s*:/gm)) keys.add(m[1]);
+  // The CRUD handlers are spread in from `defineMockCrud(fixtures, { list: 'getMail' })`
+  // rather than written as literal keys, so they are named in the call and not in the
+  // object. Same reason the fetch scanner has to read `createCrudStore` declarations.
+  for (const call of body.matchAll(/defineMockCrud\s*(?:<[\s\S]*?>)?\s*\(/g)) {
+    const window = body.slice(call.index!, call.index! + 600);
+    for (const m of window.matchAll(/\b(?:list|create|update|remove)\s*:\s*['"](\w+)['"]/g)) {
+      keys.add(m[1]);
+    }
+  }
   return keys;
 };
 
-const FETCH_CALLS = collectFetchNuiCalls();
+const FETCH_CALLS = [...collectFetchNuiCalls(), ...collectCrudStoreEvents()];
+const CRUD_EVENTS = collectCrudStoreEvents();
 const CLIENT_CALLBACKS = collectClientCallbacks();
 const MOCKS = mockRegistryKeys();
 const ROUTE_ACTIONS = new Set(ROUTES.map((r) => r.action));
@@ -108,6 +143,10 @@ describe('route table', () => {
     expect(FETCH_CALLS.length).toBeGreaterThan(20);
     expect(CLIENT_CALLBACKS.size).toBeGreaterThan(5);
     expect(MOCKS.size).toBeGreaterThan(20);
+    // The declarative half specifically. If `createCrudStore` were renamed and this
+    // collector quietly stopped matching, the dead-weight check would start failing for
+    // reasons that have nothing to do with dead weight.
+    expect(CRUD_EVENTS.length).toBeGreaterThan(10);
   });
 
   it('declares no duplicate NUI action names', () => {
