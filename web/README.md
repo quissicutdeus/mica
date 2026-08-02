@@ -32,7 +32,7 @@ web/
 │   ├── sdk/            # @gphone/sdk — the only thing apps may import
 │   │   └── ui/         # UI primitives and icons apps build with
 │   ├── nui/            # The bridge: transport adapters, fetchNui, useNuiEvent, browser mocks
-│   ├── lib/            # Pure helpers (debug, dragScroll, formatters, isBrowser, markdown, useScrollDetect)
+│   ├── lib/            # Helpers with no gPhone state and no I/O (debug, dragScroll, filterByQuery, formatters, isBrowser, markdown, useScrollDetect)
 │   └── main.ts         # Mounts shell/Shell.svelte
 ├── package.json
 └── playwright.config.ts
