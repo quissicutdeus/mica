@@ -45,7 +45,7 @@ the targets run _different TypeScript versions_ (§3), so a web-only check prove
 
 ### In-game commands
 
-All admin-gated by `AdminController.isAdmin` — the `gphone_admin_aces` convar, defaulting
+All admin-gated by `isAdmin` in `server/services/Admin.ts` — the `gphone_admin_aces` convar, defaulting
 to `gphone.admin` and `command`. The server console (`source` 0) is trusted.
 
 | Command                                 | Does                                                         |
@@ -57,7 +57,7 @@ to `gphone.admin` and `command`. The server console (`source` 0) is trusted.
 | `gphoneseed clear`                      | Removes everything `gphoneseed` created                      |
 
 `gphoneseed` exists because a fresh database has one character and nobody to text:
-`ConversationController.create` resolves a phone number to a `citizenid` and gives up when
+`conversations:create` resolves a phone number to a `citizenid` and gives up when
 it cannot, and `gphone_messages_participants.citizenid` is a foreign key onto `players`. So
 the seeded counterparts are real `players` rows, marked by a license nothing else uses
 (`lib/seed.ts`) so `clear` can find exactly its own and nothing a person made.
@@ -318,29 +318,44 @@ Four words carry the structure, and they mean exactly one thing each:
   so are `battery`, `reports`, `shell` and `phone`, none of which are apps.
 - **SDK** — the contract apps build against, and the only thing they may import.
 
-| Path                   | Runs in      | Notes                                                            |
-| ---------------------- | ------------ | ---------------------------------------------------------------- |
-| `client/systems/`      | FiveM client | Client subsystems, auto-indexed by the barrel generator          |
-| `client/lib/`          | FiveM client | `ServiceProxy` (NUI↔server relay), `FrameworkBridge`, `NuiUtils` |
-| `server/services/`     | FiveM server | One file per service, named for the service, auto-indexed        |
-| `server/lib/`          | FiveM server | `ServiceEndpoint`, `defineService`, `Repository`, `Database`     |
-| `server/repositories/` | FiveM server | Hand-written repos, for tables not yet migrated to §10           |
-| `sql/apps/`            | generated    | Per-service DDL from `pnpm generate:sql`; applied by hand        |
-| `gphone.sql`           | hand-written | Framework schema only — the moderation audit ledger              |
-| `server/__tests__/`    | Vitest/node  | Excluded from `tsc`; see §1                                      |
-| `shared/types.ts`      | both         | `@shared/types` path alias, not a workspace package (§3)         |
-| `web/src/shell/`       | CEF+browser  | The OS: `Shell.svelte`, `PhoneFrame`, `Launcher`, `ToastHost`    |
-| `web/src/shell/state/` | CEF+browser  | State the phone itself owns: navigation, keybinds, hardware      |
-| `web/src/services/`    | CEF+browser  | Client-side cache of each server service. Reached via the SDK    |
-| `web/src/sdk/`         | CEF+browser  | `@gphone/sdk` — the public surface for apps (§2.7)               |
-| `web/src/sdk/ui/`      | CEF+browser  | UI primitives and icons apps may build with                      |
-| `web/src/apps/`        | CEF+browser  | One dir per app: `manifest.ts` + `index.svelte` + `Icon.svelte`  |
-| `web/src/nui/`         | CEF+browser  | The bridge: transport, `fetchNui`, `useNuiEvent`, browser mocks  |
-| `web/src/lib/`         | CEF+browser  | Pure helpers — formatters, markdown, scroll. No state, no I/O    |
+| Path                   | Runs in      | Notes                                                           |
+| ---------------------- | ------------ | --------------------------------------------------------------- |
+| `client/systems/`      | FiveM client | Client subsystems, auto-indexed by the barrel generator         |
+| `client/lib/`          | FiveM client | `ServiceProxy` (NUI↔server relay), `FrameworkBridge`, `nui`     |
+| `server/services/`     | FiveM server | One file per service, named for the service, auto-indexed       |
+| `server/lib/`          | FiveM server | `ServiceEndpoint`, `defineService`, `Repository`, `Database`    |
+| `server/repositories/` | FiveM server | Hand-written repos, for tables not yet migrated to §10          |
+| `sql/apps/`            | generated    | Per-service DDL from `pnpm generate:sql`; applied by hand       |
+| `gphone.sql`           | hand-written | Framework schema only — the moderation audit ledger             |
+| `server/__tests__/`    | Vitest/node  | Excluded from `tsc`; see §1                                     |
+| `shared/types.ts`      | both         | `@shared/types` path alias, not a workspace package (§3)        |
+| `web/src/shell/`       | CEF+browser  | The OS: `Shell.svelte`, `PhoneFrame`, `Launcher`, `ToastHost`   |
+| `web/src/shell/state/` | CEF+browser  | State the phone itself owns: navigation, keybinds, hardware     |
+| `web/src/services/`    | CEF+browser  | Client-side cache of each server service. Reached via the SDK   |
+| `web/src/sdk/`         | CEF+browser  | `@gphone/sdk` — the public surface for apps (§2.7)              |
+| `web/src/sdk/ui/`      | CEF+browser  | UI primitives and icons apps may build with                     |
+| `web/src/apps/`        | CEF+browser  | One dir per app: `manifest.ts` + `index.svelte` + `Icon.svelte` |
+| `web/src/nui/`         | CEF+browser  | The bridge: transport, `fetchNui`, `useNuiEvent`, browser mocks |
+| `web/src/lib/`         | CEF+browser  | Helpers with no gPhone state and no I/O — formatters, markdown  |
 
 `client/systems/index.ts`, `server/services/index.ts`, `web/src/sdk/hooks/index.ts` and
 `web/src/sdk/icons.ts` are **generated** by `scripts/generate-barrels.js`. Add a file to the
 directory; do not edit the index.
+
+**`services/` appears on two sides on purpose.** `server/services/Notes.ts` and
+`web/src/services/notes.ts` are the two ends of the one `notes` service, so they carry the
+same name deliberately — it is not a collision to tidy up.
+
+A tempting alternative is to move each store into the app that uses it
+(`apps/notes/store.ts`), and it does not work: `contacts` is read by Contacts, Messages and
+Phone, and `photos` by four apps. A store inside one app's directory is a boundary
+violation (§2.7) for every other app that needs it. Stores are shared by nature; apps are
+not. That is why they live outside `apps/`.
+
+**Casing in `server/lib/` is a rule, not an accident.** PascalCase is a class or a
+singleton object (`Repository`, `ServiceEndpoint`, `Database`, `SchemaMigrator`); camelCase
+is a module of plain functions (`defineService`, `migrate`, `schemaSql`, `moderation`,
+`seed`, `shell`, `payload`, `services`). The filename tells you which you are importing.
 
 **Why `web/src/services/` and not a store inside each app.** Every one of these is read by
 more than its own app — Messages resolves names through `contacts`, the shell raises a toast
