@@ -3,7 +3,7 @@ import { Mail } from '@shared/types';
 import { AuditLogger } from '../lib/AuditLogger';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { Database } from '../lib/Database';
-import { requirePositiveInt } from '../lib/payload';
+import { fields, flagUnlessFalse, requirePositiveInt } from '../lib/payload';
 
 /**
  * Mail: owner-scoped but server-authored.
@@ -87,13 +87,13 @@ app.registerEvent('getMail', async (source, cbId, data, citizenid) => {
 });
 
 app.registerEvent('markAsRead', async (source, cbId, data, citizenid) => {
-  const id = requirePositiveInt(data?.id, 'email id');
+  const id = requirePositiveInt(fields(data).id, 'email id');
   return await mailRepo.markAsRead(id, citizenid);
 });
 
 app.registerEvent('archiveMail', async (source, cbId, data, citizenid) => {
-  const id = requirePositiveInt(data?.id, 'email id');
-  const shouldArchive = data.archive !== false;
+  const id = requirePositiveInt(fields(data).id, 'email id');
+  const shouldArchive = flagUnlessFalse(fields(data).archive);
 
   const success = await mailRepo.archive(id, citizenid, shouldArchive);
   if (success) {
@@ -103,7 +103,7 @@ app.registerEvent('archiveMail', async (source, cbId, data, citizenid) => {
 });
 
 app.registerEvent('deleteMail', async (source, cbId, data, citizenid) => {
-  const id = requirePositiveInt(data?.id, 'email id');
+  const id = requirePositiveInt(fields(data).id, 'email id');
 
   const success = await mailRepo.delete(id, citizenid);
   if (success) {

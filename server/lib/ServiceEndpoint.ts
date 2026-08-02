@@ -1,6 +1,6 @@
 import { Repository } from './Repository';
 import { AuditLogger } from './AuditLogger';
-import { requirePositiveInt } from './payload';
+import { type CallbackId, requirePositiveInt } from './payload';
 import { requestEventFor, responseEventFor } from '@shared/rpc';
 import { FrameworkBridge, FrameworkPlayer } from './FrameworkBridge';
 import { registerService } from './services';
@@ -47,7 +47,7 @@ export class ServiceEndpoint<T> {
    * no gphone column takes a structured value, and handing an object or array to
    * the driver as a bound parameter has no well-defined meaning.
    */
-  private pickColumns(data: any, allowed: readonly string[]): Record<string, unknown> {
+  private pickColumns(data: unknown, allowed: readonly string[]): Record<string, unknown> {
     const picked: Record<string, unknown> = {};
     if (!data || typeof data !== 'object') return picked;
 
@@ -70,17 +70,17 @@ export class ServiceEndpoint<T> {
   }
 
   /** Reduce a raw NUI payload to the columns this table lets clients write. */
-  private sanitizeWrite(data: any): Record<string, unknown> {
+  private sanitizeWrite(data: unknown): Record<string, unknown> {
     return this.pickColumns(data, this.repository.writableColumns);
   }
 
   /** Reduce a raw NUI payload to the columns this table lets clients filter on. */
-  private sanitizeFilter(data: any): Record<string, unknown> {
+  private sanitizeFilter(data: unknown): Record<string, unknown> {
     return this.pickColumns(data, this.repository.filterableColumns);
   }
 
   /** Pull a usable row id out of a payload, accepting `{ id }` or a bare id. */
-  private requireId(data: any): number {
+  private requireId(data: unknown): number {
     const raw = data && typeof data === 'object' ? (data as Record<string, unknown>).id : data;
     try {
       return requirePositiveInt(raw, 'numeric id');
@@ -107,20 +107,23 @@ export class ServiceEndpoint<T> {
   private registerCrudEvents() {
     // Read (All or partial)
     if (!this.options.disableGet) {
-      this.registerEvent('get', async (source: number, cbId: any, data: any, citizenid: string) => {
-        const result = await this.repository.findAll({
-          ...this.sanitizeFilter(data),
-          citizenid
-        } as any);
-        return result;
-      });
+      this.registerEvent(
+        'get',
+        async (source: number, cbId: CallbackId, data: unknown, citizenid: string) => {
+          const result = await this.repository.findAll({
+            ...this.sanitizeFilter(data),
+            citizenid
+          } as any);
+          return result;
+        }
+      );
     }
 
     // Create
     if (!this.options.disableCreate) {
       this.registerEvent(
         'create',
-        async (source: number, cbId: any, data: any, citizenid: string) => {
+        async (source: number, cbId: CallbackId, data: unknown, citizenid: string) => {
           const fields = this.sanitizeWrite(data);
           if (Object.keys(fields).length === 0) {
             throw new Error(`No writable fields supplied for ${this.serviceName} create.`);
@@ -137,7 +140,7 @@ export class ServiceEndpoint<T> {
     if (!this.options.disableUpdate) {
       this.registerEvent(
         'update',
-        async (source: number, cbId: any, data: any, citizenid: string) => {
+        async (source: number, cbId: CallbackId, data: unknown, citizenid: string) => {
           const id = this.requireId(data);
           const fields = this.sanitizeWrite(data);
           if (Object.keys(fields).length === 0) {
@@ -154,7 +157,7 @@ export class ServiceEndpoint<T> {
     if (!this.options.disableDelete) {
       this.registerEvent(
         'delete',
-        async (source: number, cbId: any, data: any, citizenid: string) => {
+        async (source: number, cbId: CallbackId, data: unknown, citizenid: string) => {
           const id = this.requireId(data);
           const success = await this.repository.delete(id, citizenid);
           if (success) {
@@ -180,8 +183,8 @@ export class ServiceEndpoint<T> {
     action: string,
     handler: (
       source: number,
-      cbId: any,
-      data: any,
+      cbId: CallbackId,
+      data: unknown,
       citizenid: string,
       player: FrameworkPlayer
     ) => Promise<any>
@@ -190,7 +193,7 @@ export class ServiceEndpoint<T> {
     const eventName = requestEventFor(this.serviceName, action);
     const clientEventName = responseEventFor(this.serviceName, action);
 
-    onNet(eventName, async (cbId: any, data: any) => {
+    onNet(eventName, async (cbId: CallbackId, data: unknown) => {
       const src = source;
       try {
         const player = FrameworkBridge.getPlayer(src);

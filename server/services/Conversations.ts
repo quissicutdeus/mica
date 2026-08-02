@@ -3,7 +3,13 @@ import { defineService } from '../lib/defineService';
 import { Conversation } from '@shared/types';
 import { Database } from '../lib/Database';
 import { AuditLogger } from '../lib/AuditLogger';
-import { conversationIdFrom } from '../lib/payload';
+import {
+  conversationIdFrom,
+  fields,
+  flagUnlessFalse,
+  isRecord,
+  optionalString
+} from '../lib/payload';
 
 /**
  * Conversations: owner scope, deliberately not `shared`.
@@ -141,21 +147,37 @@ const hydrateParticipants = async (conversationId: number) => {
   return await Database.query<any[]>(query, [conversationId]);
 };
 
+/** The UI sends either a citizenid or a whole contact object as `participant`. */
+const nameOf = (participant: unknown): string | null => {
+  if (!isRecord(participant)) return null;
+  const first = optionalString(participant.firstname);
+  const last = optionalString(participant.lastname);
+  return first || last ? `${first ?? ''} ${last ?? ''}`.trim() : null;
+};
+
 // Create/Start conversation
 app.registerEvent('create', async (source, cbId, data, citizenid) => {
-  // data: { is_group, name, participants: [], participant: string, phone: string }
+  // The client chooses every field here, so it is read once into named locals with the
+  // shape each one is actually allowed to have. `participant` is the exception and stays
+  // loose: the UI sends either a citizenid or a whole contact object, and both branches
+  // below already handle that.
+  const body = fields(data);
+  const isGroup = body.is_group === true;
+  const phone = optionalString(body.phone);
+  const requestedName = optionalString(body.name);
+  const participant = body.participant;
 
-  let targetCitizenId = data.participant;
+  let targetCitizenId = typeof participant === 'string' ? participant : undefined;
 
   // Resolve phone to citizenid if needed
-  let targetName = null;
-  if (!data.is_group && data.phone) {
+  let targetName: string | null = null;
+  if (!isGroup && phone) {
     let targetPlayer: any = null;
     try {
       if (exports['qbx_core']?.GetPlayerByPhone) {
-        targetPlayer = exports['qbx_core'].GetPlayerByPhone(data.phone);
+        targetPlayer = exports['qbx_core'].GetPlayerByPhone(phone);
       } else if (exports['qb-core']?.GetCoreObject) {
-        targetPlayer = exports['qb-core'].GetCoreObject().Functions.GetPlayerByPhone(data.phone);
+        targetPlayer = exports['qb-core'].GetCoreObject().Functions.GetPlayerByPhone(phone);
       }
     } catch (e) {
       targetPlayer = null;
@@ -171,27 +193,25 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
       } else if (targetPlayer.phone_number) {
         targetCitizenId = targetPlayer.phone_number;
       }
-      console.log(`[Conversation] Resolved phone ${data.phone} to ${targetCitizenId} via QBX`);
+      console.log(`[Conversation] Resolved phone ${phone} to ${targetCitizenId} via QBX`);
     } else {
       // Offline fallback
-      console.log(
-        `[Conversation] Player offline for phone ${data.phone}. Attempting SQL fallback...`
-      );
-      const fallbackId = await findCitizenIdByPhone(data.phone);
+      console.log(`[Conversation] Player offline for phone ${phone}. Attempting SQL fallback...`);
+      const fallbackId = await findCitizenIdByPhone(phone);
       if (fallbackId) {
         targetCitizenId = fallbackId;
         console.log(
-          `[Conversation] Resolved phone ${data.phone} to ${targetCitizenId} via SQL fallback`
+          `[Conversation] Resolved phone ${phone} to ${targetCitizenId} via SQL fallback`
         );
       } else {
-        console.log(`[Conversation] Could not resolve phone ${data.phone} via QBX or SQL`);
+        console.log(`[Conversation] Could not resolve phone ${phone} via QBX or SQL`);
         return null;
       }
     }
   }
 
   // Logic for 1-on-1: existing check
-  if (!data.is_group && targetCitizenId) {
+  if (!isGroup && targetCitizenId) {
     const existing = await conversationRepo.findOneToOne(citizenid, targetCitizenId);
     if (existing) return existing;
   }
@@ -199,14 +219,10 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   // Create new
   const newConv: Partial<Conversation> = {
     citizenid: citizenid,
-    is_group: !!data.is_group,
-    // Use provided name, or resolved name, or fallback to data.participant logic (safely)
-    name:
-      data.name ||
-      targetName ||
-      (typeof data.participant === 'object'
-        ? `${data.participant.firstname} ${data.participant.lastname}`
-        : null)
+    is_group: isGroup,
+    // Provided name, or the one resolved from the phone, or the contact object the UI
+    // sometimes sends instead of a citizenid.
+    name: requestedName ?? targetName ?? nameOf(participant) ?? undefined
   };
   const conversationId = await conversationRepo.createConversation(newConv);
   console.log(`[Conversation] Created conversation ${conversationId}, adding participants.`);
@@ -225,12 +241,11 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   }
 
   // If group list (assuming they are already citizenids for now, or we recursively resolve them)
-  if (data.participants && Array.isArray(data.participants)) {
-    for (const p of data.participants) {
-      if (p !== citizenid) {
-        // Avoid double add
-        await conversationRepo.addParticipant(conversationId, p, 'member');
-      }
+  const participants = Array.isArray(body.participants) ? body.participants : [];
+  for (const p of participants) {
+    if (typeof p === 'string' && p !== citizenid) {
+      // Avoid double add
+      await conversationRepo.addParticipant(conversationId, p, 'member');
     }
   }
 
@@ -253,7 +268,7 @@ app.registerEvent('read', async (source, cbId, data, citizenid) => {
  */
 app.registerEvent('archive', async (source, cbId, data, citizenid) => {
   const id = conversationIdFrom(data);
-  const archive = data?.archive !== false;
+  const archive = flagUnlessFalse(fields(data).archive);
   return await conversationRepo.setArchived(id, citizenid, archive);
 });
 

@@ -1,6 +1,6 @@
 import { defineService, SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { requirePositiveInt } from '../lib/payload';
+import { fields, optionalString, requirePositiveInt } from '../lib/payload';
 import {
   MAX_NOTE_LENGTH,
   REPORT_CATEGORIES,
@@ -95,15 +95,15 @@ const repo = reports.repo as ReportRepository;
 
 /** File a report. Anyone may; everything about it is checked. */
 app.registerEvent('create', async (source, cbId, data, citizenid) => {
-  const table = data?.targetTable;
+  const body = fields(data);
+  const table = body.targetTable;
   if (!isReportableTable(table)) {
     throw new Error('That kind of content cannot be reported.');
   }
 
-  const targetId = requirePositiveInt(data?.targetId, 'target id');
-  const category = isReportCategory(data?.category) ? data.category : 'other';
-  const note =
-    typeof data?.note === 'string' ? data.note.trim().slice(0, MAX_NOTE_LENGTH) : undefined;
+  const targetId = requirePositiveInt(body.targetId, 'target id');
+  const category = isReportCategory(body.category) ? body.category : 'other';
+  const note = optionalString(body.note)?.trim().slice(0, MAX_NOTE_LENGTH) || undefined;
 
   const target = await summariseTarget(table, targetId);
   if (!target.exists) {
@@ -168,7 +168,7 @@ app.registerEvent('history', async (source) => {
 app.registerEvent('reopen', async (source, cbId, data, citizenid) => {
   if (!isAdmin(source)) throw new Error('Not authorised.');
 
-  const id = requirePositiveInt(data?.id, 'report id');
+  const id = requirePositiveInt(fields(data).id, 'report id');
   const report = await repo.findById(id);
   if (!report) throw new Error('No such report.');
   if (report.resolution === 'pending') throw new Error('That report is already open.');
@@ -190,8 +190,8 @@ app.registerEvent('reopen', async (source, cbId, data, citizenid) => {
 app.registerEvent('resolve', async (source, cbId, data, citizenid) => {
   if (!isAdmin(source)) throw new Error('Not authorised.');
 
-  const id = requirePositiveInt(data?.id, 'report id');
-  const action = data?.action === 'moderate' ? 'moderate' : 'dismiss';
+  const id = requirePositiveInt(fields(data).id, 'report id');
+  const action = fields(data).action === 'moderate' ? 'moderate' : 'dismiss';
 
   const report = await repo.findById(id);
   if (!report) throw new Error('No such report.');

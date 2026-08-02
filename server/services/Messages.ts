@@ -4,7 +4,7 @@ import { conversations, type ConversationRepo } from './Conversations';
 // instance, so the attachment-ownership check runs against the same allowlist.
 import { photos } from './Photos';
 import { defineService } from '../lib/defineService';
-import { conversationIdFrom, requirePositiveInt } from '../lib/payload';
+import { conversationIdFrom, fields, requirePositiveInt } from '../lib/payload';
 import { Message } from '@shared/types';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 
@@ -167,8 +167,9 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
   const conversationId = conversationIdFrom(data);
   await requireParticipant(conversationId, citizenid);
 
-  const message = typeof data?.message === 'string' ? data.message : '';
-  const attachments = await resolveOwnedAttachments(data?.attachments, citizenid);
+  const body = fields(data);
+  const message = typeof body.message === 'string' ? body.message : '';
+  const attachments = await resolveOwnedAttachments(body.attachments, citizenid);
   if (!message.trim() && attachments.length === 0) {
     throw new Error('A message body or an attachment is required.');
   }
