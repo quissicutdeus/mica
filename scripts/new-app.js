@@ -213,6 +213,17 @@ export function use${Pascal}() {
   );
 }
 
+// --- the generated barrel ------------------------------------------------------------
+
+if (WITH_SERVICE) {
+  // `web/src/sdk/hooks/index.ts` is generated and committed, and until now only `build`
+  // and `watch` regenerated it. `pnpm verify` typechecks long before it builds, so the
+  // app this script had just written failed its own closing instruction — on the one
+  // import the script itself generated. Doing it here means the tree is coherent the
+  // moment the scaffold finishes.
+  await import('./generate-barrels.js');
+}
+
 // --- what is left, and why it is not generated ---------------------------------------
 
 console.log(`\n\x1b[1m${title} scaffolded.\x1b[0m`);

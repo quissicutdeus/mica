@@ -74,6 +74,16 @@ const report = (failedEarly) => {
 
 /** Cheapest first, so a missing semicolon does not cost a full e2e run to discover. */
 const main = async () => {
+  // The generated barrels, before anything reads them.
+  //
+  // `pnpm new:app <id> --service` writes `web/src/sdk/hooks/use<Name>.ts`, and that
+  // directory's `index.ts` is generated — previously only by `build` and `watch`, which
+  // run *after* typecheck here. So a freshly scaffolded app died at the typecheck gate on
+  // an import that was perfectly correct, and the remedy was a command nothing mentioned.
+  // `.vscode/settings.json` marks the barrel read-only, so fixing it by hand was blocked
+  // too. Idempotent and about a millisecond, so it runs every time rather than becoming
+  // one more thing to remember.
+  if (await gate('barrels', 'node', ['scripts/generate-barrels.js'])) return (report(true), 1);
   if (await gate('format', 'pnpm', ['format:check'])) return (report(true), 1);
   if (await gate('typecheck', 'pnpm', ['typecheck'])) return (report(true), 1);
   if (await gate('unit', 'pnpm', ['test:unit'])) return (report(true), 1);

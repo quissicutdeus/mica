@@ -365,7 +365,9 @@ Four words carry the structure, and they mean exactly one thing each:
 
 `client/services/index.ts`, `client/game/index.ts`, `server/services/index.ts`, `web/src/sdk/hooks/index.ts` and
 `web/src/sdk/icons.ts` are **generated** by `scripts/generate-barrels.js`. Add a file to the
-directory; do not edit the index.
+directory; do not edit the index. They are committed, and `pnpm verify` regenerates them as its
+first step, so a hand-added hook is picked up without a build — the generator used to run only
+inside `build` and `watch`, both of which come _after_ the typecheck gate.
 
 **`client/` splits by what a file talks to.** `client/services/` is the client half of a
 service and speaks NUI and net events; `client/game/` speaks to GTA and knows nothing about
