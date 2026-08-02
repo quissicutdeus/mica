@@ -125,6 +125,23 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
    the shell's `back` and kill Escape for the rest of the session, because the shell
    registers once at startup and never again.
 
+   **A handler names the app that owns it, and the top of the stack is not enough.** Apps
+   are resident, so an app is destroyed only on LRU eviction, and `Shell.svelte` renders
+   them from a _keyed_ each-block — re-opening a resident app reuses the component and
+   never re-registers. The stack therefore records first-mount order and never learns what
+   is on screen. Open Notes, then Contacts, then re-open Notes, and Backspace ran
+   **Contacts'** handler: it closed an invisible detail view in a backgrounded app while
+   the app in front of you did nothing. `useAppLevels` takes a required `appId` and
+   `onKeybind` an optional one; the dispatcher runs the topmost handler that is either
+   unscoped or owned by the foreground app, and skips one owned by any other. Shell
+   handlers pass no id, which is what makes them the fallback for home and for an app that
+   never claimed the action.
+
+   `back` is the action this bit, because it is the only one apps claim that has no `when`
+   — `shutter` is `app:camera`, so `isEligible` already scoped it. Scoping at the handler
+   is still the right layer: the _action_ is global, since the shell needs `back` too, and
+   only the _handler_ belongs to one app.
+
    The scope split is forced by FiveM, not by taste: opening the phone calls
    `SetNuiFocus(true, true)` with no keep-input, so the game receives no control input
    and a `RegisterKeyMapping` cannot fire in-phone. `scope: 'game'` actions are therefore
@@ -197,7 +214,10 @@ plain `tsc` with no Svelte involvement, so they get the native compiler now and 
   `node_modules`. Only `web/` is a separate pnpm project.
 - **Editor errors may disagree with CLI errors** in `web/`, because the language service picks one
   TypeScript for the whole workspace. **The CLI is authoritative.** If `pnpm typecheck` is clean,
-  the code is clean regardless of editor squiggles.
+  the code is clean regardless of editor squiggles. The usual case is a stale cache after a type
+  changed — adding a field to an interface and getting `ts(2353) 'x' does not exist in type` at a
+  call site that plainly has it. Run **Svelte: Restart Language Server** for a `.svelte` file, or
+  **TypeScript: Restart TS Server** for a `.ts` one, before believing it.
 - When 7.1 ships, the migration is: bump `svelte-check`, bump `web/` to 7, delete this section.
 
 ---
@@ -726,10 +746,11 @@ a mock that disagrees with the server is a bug you cannot see in the browser.
 - Show `Skeleton` until the store's `loaded` says the first fetch has come back, and only then the
   `EmptyState`. An empty list is not the same statement as "you have nothing"; every list in the
   phone used to make the second one while still waiting for the first.
-- Declare internal levels with `useAppLevels`, deepest first. That one call supplies `onback`, the
-  header title, **and** the `back` keybind — the shell owns Backspace and pre-empts a ladder that
-  was written but never registered, which is how Notes and Contacts both shipped sending the player
-  home from a detail view.
+- Declare internal levels with `useAppLevels`, deepest first, and pass your `appId`. That one call
+  supplies `onback`, the header title, **and** the `back` keybind — the shell owns Backspace and
+  pre-empts a ladder that was written but never registered, which is how Notes and Contacts both
+  shipped sending the player home from a detail view. `appId` is required because the claim outlives
+  the app being on screen (§2.7); without it Back reaches whichever app registered last.
 - Wrap a user-initiated write in `useAppAction`'s `run`, which gives you the busy flag, the success
   toast and the error toast together. Written by hand they come apart: Contacts' delete had neither
   toast, so a refused delete looked exactly like a real one.

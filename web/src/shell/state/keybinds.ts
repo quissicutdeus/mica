@@ -55,33 +55,68 @@ type Handler = () => void;
 /**
  * Handlers registered by whichever components are mounted, as a stack per action.
  *
- * Only the top of the stack fires, so a mounted app overrides the shell rather than both
- * running. A stack rather than a single slot because the shell registers `back` once at
- * startup and never again: if an app claimed the slot and then deleted it on unmount,
- * Escape would stop working everywhere for the rest of the session.
+ * A stack rather than a single slot because the shell registers `back` once at startup
+ * and never again: if an app claimed the slot and then deleted it on unmount, Escape
+ * would stop working everywhere for the rest of the session.
+ *
+ * **A handler names the app that owns it**, and the top of the stack is not enough on its
+ * own. Apps are resident, so an app is destroyed only on LRU eviction, and `Shell.svelte`
+ * renders them from a *keyed* each-block — so re-opening a resident app reuses the
+ * component and never re-registers. The stack therefore records first-mount order and
+ * never learns which app is actually on screen. Open Notes, then Contacts, then re-open
+ * Notes, and Backspace ran Contacts' handler: it closed an invisible detail view in a
+ * backgrounded app while the app in front of you did nothing.
+ *
+ * `back` is the action this bites, because it is the one apps claim that has no `when`
+ * (`shutter` is `app:camera`, so `isEligible` already scopes it). Scoping at the handler
+ * is still the right layer: the *action* is global — the shell needs `back` too — and only
+ * the *handler* belongs to one app.
+ *
+ * Shell handlers pass no `appId` and stay unscoped, which is what makes them the fallback
+ * for home and for any app that never claimed the action.
  */
-const handlers = new Map<string, Handler[]>();
+interface RegisteredHandler {
+  handler: Handler;
+  /** The app that owns this handler. Undefined for the shell's own. */
+  appId?: string;
+}
 
-export function registerHandler(actionId: string, handler: Handler): () => void {
+const handlers = new Map<string, RegisteredHandler[]>();
+
+export function registerHandler(actionId: string, handler: Handler, appId?: string): () => void {
   const stack = handlers.get(actionId) ?? [];
-  stack.push(handler);
+  const entry: RegisteredHandler = { handler, appId };
+  stack.push(entry);
   handlers.set(actionId, stack);
 
   return () => {
-    // Remove this handler specifically. It may no longer be on top — an app can unmount
-    // in any order relative to whatever registered after it.
+    // Remove this registration specifically. It may no longer be on top — an app can
+    // unmount in any order relative to whatever registered after it. Keyed on the entry
+    // rather than the function so registering the same handler twice stays unambiguous.
     const current = handlers.get(actionId);
     if (!current) return;
-    const index = current.lastIndexOf(handler);
+    const index = current.lastIndexOf(entry);
     if (index !== -1) current.splice(index, 1);
     if (current.length === 0) handlers.delete(actionId);
   };
 }
 
-/** The handler that would run for this action right now, if any. */
-const activeHandler = (actionId: string): Handler | undefined => {
+/**
+ * The handler that would run for this action right now, if any.
+ *
+ * Topmost entry that is either unscoped or owned by the app on screen. A handler owned by
+ * some *other* app is skipped rather than falling through to nothing, so a backgrounded
+ * app can never answer for the foreground one.
+ */
+const activeHandler = (actionId: string, currentApp: string): Handler | undefined => {
   const stack = handlers.get(actionId);
-  return stack && stack.length > 0 ? stack[stack.length - 1] : undefined;
+  if (!stack) return undefined;
+
+  for (let i = stack.length - 1; i >= 0; i--) {
+    const entry = stack[i];
+    if (entry.appId === undefined || entry.appId === currentApp) return entry.handler;
+  }
+  return undefined;
 };
 
 // --- dispatch ---------------------------------------------------------------------
@@ -153,7 +188,7 @@ export function dispatchKey(event: KeyboardEvent, env: KeybindEnvironment): bool
   const action = resolveAction(event.key, env, get(bindings));
   if (!action) return false;
 
-  const handler = activeHandler(action.id);
+  const handler = activeHandler(action.id, env.currentApp);
   if (!handler) return false;
 
   event.preventDefault();

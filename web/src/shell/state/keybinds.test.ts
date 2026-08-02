@@ -171,14 +171,18 @@ describe('dispatchKey', () => {
   it('a later registration replaces an earlier one rather than both firing', () => {
     const first = vi.fn();
     const second = vi.fn();
-    registerHandler('back', first);
-    const release = registerHandler('back', second);
+    // Both releases are held. `first` used to be discarded, which left an unscoped
+    // handler in the registry for the rest of the file — the map is module state, so a
+    // leak here silently props up every later test.
+    const releaseFirst = registerHandler('back', first);
+    const releaseSecond = registerHandler('back', second);
 
     dispatchKey(pressEvent('Backspace'), IDLE);
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledOnce();
 
-    release();
+    releaseSecond();
+    releaseFirst();
   });
 
   it('releasing an override restores the handler underneath it', () => {
@@ -209,5 +213,103 @@ describe('dispatchKey', () => {
     expect(second).toHaveBeenCalledOnce();
 
     releaseSecond();
+  });
+});
+
+describe('handler ownership under residency', () => {
+  beforeEach(() => resetBindings());
+
+  const inApp = (id: string): KeybindEnvironment => ({ currentApp: id, callStatus: 'idle' });
+
+  it('routes back to the app on screen, not the one that registered last', () => {
+    // The regression. Apps are resident and `Shell.svelte` renders them from a keyed
+    // each-block, so re-opening an app reuses its component and never re-registers —
+    // the stack records first-mount order forever. Open Notes, then Contacts, then
+    // re-open Notes: the top of the stack is still Contacts.
+    const shell = vi.fn();
+    const notes = vi.fn();
+    const contacts = vi.fn();
+
+    const releaseShell = registerHandler('back', shell);
+    const releaseNotes = registerHandler('back', notes, 'notes');
+    const releaseContacts = registerHandler('back', contacts, 'contacts');
+
+    dispatchKey(pressEvent('Backspace'), inApp('notes'));
+
+    expect(notes).toHaveBeenCalledOnce();
+    expect(contacts).not.toHaveBeenCalled();
+    expect(shell).not.toHaveBeenCalled();
+
+    releaseContacts();
+    releaseNotes();
+    releaseShell();
+  });
+
+  it('never lets a backgrounded app answer for the foreground one', () => {
+    // Contacts is resident but hidden, and Phone has no ladder of its own. Back must
+    // leave Phone rather than close something invisible inside Contacts.
+    const shell = vi.fn();
+    const contacts = vi.fn();
+
+    const releaseShell = registerHandler('back', shell);
+    const releaseContacts = registerHandler('back', contacts, 'contacts');
+
+    dispatchKey(pressEvent('Backspace'), inApp('phone'));
+
+    expect(contacts).not.toHaveBeenCalled();
+    expect(shell).toHaveBeenCalledOnce();
+
+    releaseContacts();
+    releaseShell();
+  });
+
+  it('falls back to the shell on the home screen', () => {
+    const shell = vi.fn();
+    const notes = vi.fn();
+
+    const releaseShell = registerHandler('back', shell);
+    const releaseNotes = registerHandler('back', notes, 'notes');
+
+    dispatchKey(pressEvent('Backspace'), IDLE);
+
+    expect(notes).not.toHaveBeenCalled();
+    expect(shell).toHaveBeenCalledOnce();
+
+    releaseNotes();
+    releaseShell();
+  });
+
+  it('still stacks two claims from the same app, deepest last', () => {
+    // Ownership scopes the claim; it does not flatten it. A modal over a detail view
+    // registers on top of the app's own ladder and hands it back on unmount.
+    const ladder = vi.fn();
+    const modal = vi.fn();
+
+    const releaseLadder = registerHandler('back', ladder, 'notes');
+    const releaseModal = registerHandler('back', modal, 'notes');
+
+    dispatchKey(pressEvent('Backspace'), inApp('notes'));
+    expect(modal).toHaveBeenCalledOnce();
+    expect(ladder).not.toHaveBeenCalled();
+
+    releaseModal();
+    dispatchKey(pressEvent('Backspace'), inApp('notes'));
+    expect(ladder).toHaveBeenCalledOnce();
+
+    releaseLadder();
+  });
+
+  it('does not claim the press when only another app owns the action', () => {
+    // Nothing eligible must leave the key alone, so the browser or a raw app listener
+    // can still see it — the calculator's digits depend on `defaultPrevented`.
+    const contacts = vi.fn();
+    const release = registerHandler('back', contacts, 'contacts');
+
+    const event = pressEvent('Backspace');
+    expect(dispatchKey(event, inApp('notes'))).toBe(false);
+    expect(contacts).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+
+    release();
   });
 });

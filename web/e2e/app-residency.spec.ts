@@ -125,6 +125,31 @@ test.describe('App residency', () => {
     await expect(page.locator('[inert]')).toHaveCount(5);
   });
 
+  test('back goes to the app on screen, not the one that registered last', async ({ page }) => {
+    // Residency broke the `back` claim. An app registers its ladder at mount and is
+    // destroyed only on eviction, and the shell renders apps from a keyed each-block —
+    // so re-opening a resident app reuses the component and never re-registers. The
+    // handler stack recorded first-mount order and never learned what was in front.
+    //
+    // Calculator's ladder deletes a digit before it will leave, so the two outcomes are
+    // easy to tell apart: Settings' handler has no level open and would go straight home.
+    await openApp(page, 'Calculator');
+    await page.getByRole('button', { name: '7', exact: true }).click();
+    await expect(page.locator('.text-6xl')).toHaveText('7');
+
+    await goHome(page);
+    await openApp(page, 'Settings');
+    await goHome(page);
+    await openApp(page, 'Calculator');
+
+    await page.keyboard.press('Backspace');
+
+    // Before the fix this ran Settings' handler and sent the player home with the 7
+    // still on the display.
+    await expect(page.locator('h1', { hasText: 'Calculator' })).toBeVisible();
+    await expect(page.locator('.text-6xl')).toHaveText('0');
+  });
+
   test('back works inside an app opened by a deep link', async ({ page }) => {
     // Deep-link props became sticky when apps started staying resident: Photos was
     // opened on a specific picture, so pressing back cleared the selection, the

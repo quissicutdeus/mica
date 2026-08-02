@@ -265,7 +265,9 @@
 
   // Claimed only while the camera is mounted, so Enter is the shutter here and stays
   // free for whatever else wants it elsewhere.
-  onKeybind('shutter', shoot);
+  // `shutter` carries `when: 'app:camera'`, so it is already scoped at the action. Naming
+  // the owner here too costs nothing and keeps the claim correct if that ever changes.
+  onKeybind('shutter', shoot, 'camera');
 
   // Left click, relayed by the client. Aiming leaves no NUI cursor, so the click never
   // reaches the page and has to be read from the game control instead.

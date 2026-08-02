@@ -169,6 +169,7 @@
   };
 
   const app = useAppLevels({
+    appId: 'messages',
     title: () => {
       if (isComposing) return 'New Message';
       if (currentConv) return currentConv.targetName || currentConv.target;

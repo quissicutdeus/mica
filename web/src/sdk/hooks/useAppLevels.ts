@@ -11,6 +11,16 @@ interface AppLevel {
 }
 
 export interface AppLevelsConfig {
+  /**
+   * The app's registry id — `notes`, `settings`. Not its display name.
+   *
+   * Required, and it is what stops Back reaching a backgrounded app. Apps are resident,
+   * so this ladder stays registered while the app sits hidden; without an owner the
+   * dispatcher would hand `back` to whichever app registered last rather than the one on
+   * screen. The app names itself for the same reason it does in `onAppForeground`: the
+   * shell has no way to hand a component its own registry id.
+   */
+  appId: string;
   /** Title when nothing is open — the app's own name, usually. */
   title: string | (() => string);
   /** Where back goes once every level is closed. The shell's `onback` prop. */
@@ -43,6 +53,7 @@ const resolve = (title: string | (() => string) | undefined): string =>
  *
  * ```ts
  * const app = useAppLevels({
+ *   appId: 'notes',
  *   title: 'Notes',
  *   onback,
  *   levels: [
@@ -61,7 +72,7 @@ export function useAppLevels(config: AppLevelsConfig) {
     else config.onback?.();
   };
 
-  const release = registerHandler('back', back);
+  const release = registerHandler('back', back, config.appId.toLowerCase());
   try {
     onDestroy(release);
   } catch {

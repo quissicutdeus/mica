@@ -22,9 +22,17 @@ import { PHONE_SCOPE_ACTIONS, conflictsWith, findAction } from '@shared/keybinds
  */
 export function useKeybinds() {
   return {
-    /** Claim an action for as long as this component is mounted. */
-    onKeybind: (actionId: string, handler: () => void) => {
-      const release = registerHandler(actionId, handler);
+    /**
+     * Claim an action for as long as this component is mounted.
+     *
+     * Pass `appId` for anything an app claims. Apps are resident, so the claim outlives
+     * the app being on screen, and without an owner the dispatcher hands the action to
+     * whichever app registered last — see the registry note in `shell/state/keybinds.ts`.
+     * Only actions carrying their own `when: 'app:…'` context are safe without it, and
+     * naming the app costs nothing either way.
+     */
+    onKeybind: (actionId: string, handler: () => void, appId?: string) => {
+      const release = registerHandler(actionId, handler, appId?.toLowerCase());
       try {
         onDestroy(release);
       } catch {

@@ -5,9 +5,9 @@ import { dispatchKey } from '../../shell/state/keybinds';
 
 // The real dispatch path, so these prove the shell would actually route Backspace here —
 // not merely that a handler landed in a map.
-const pressBack = () =>
+const pressBack = (currentApp = 'notes') =>
   dispatchKey(new KeyboardEvent('keydown', { key: 'Backspace' }), {
-    currentApp: 'notes',
+    currentApp,
     callStatus: 'idle'
   });
 
@@ -18,6 +18,7 @@ describe('useAppLevels', () => {
     const onback = vi.fn();
 
     const app = useAppLevels({
+      appId: 'notes',
       title: 'Notes',
       onback,
       levels: [
@@ -48,6 +49,7 @@ describe('useAppLevels', () => {
     let detail = false;
     const onback = vi.fn();
     const app = useAppLevels({
+      appId: 'photos',
       title: 'Photos',
       onback,
       levels: [{ open: () => detail, close: () => (detail = false) }]
@@ -68,6 +70,7 @@ describe('useAppLevels', () => {
     let detail = true;
     const onback = vi.fn();
     const app = useAppLevels({
+      appId: 'notes',
       title: 'Notes',
       onback,
       levels: [{ open: () => detail, close: () => (detail = false) }]
@@ -80,9 +83,30 @@ describe('useAppLevels', () => {
     app.release();
   });
 
+  it('does not answer for another app that is on screen', () => {
+    // Apps are resident, so this ladder stays registered while Notes sits hidden behind
+    // whatever the player opened next. Without `appId` the dispatcher ran the topmost
+    // handler regardless, and Backspace in Contacts closed a detail view inside Notes.
+    let detail = true;
+    const onback = vi.fn();
+    const app = useAppLevels({
+      appId: 'notes',
+      title: 'Notes',
+      onback,
+      levels: [{ open: () => detail, close: () => (detail = false) }]
+    });
+
+    pressBack('contacts');
+
+    expect(detail).toBe(true);
+    expect(onback).not.toHaveBeenCalled();
+    app.release();
+  });
+
   it('hands the action back when the app releases it', () => {
     let detail = true;
     const app = useAppLevels({
+      appId: 'notes',
       title: 'Notes',
       levels: [{ open: () => detail, close: () => (detail = false) }]
     });
@@ -97,6 +121,7 @@ describe('useAppLevels', () => {
     let editing = false;
     let detail = false;
     const app = useAppLevels({
+      appId: 'notes',
       title: 'Notes',
       levels: [
         { open: () => editing, close: () => (editing = false), title: 'Edit Note' },
@@ -120,6 +145,7 @@ describe('useAppLevels', () => {
     let confirming = false;
     let detail = false;
     const app = useAppLevels({
+      appId: 'photos',
       title: 'Photos',
       levels: [
         { open: () => confirming, close: () => (confirming = false) },

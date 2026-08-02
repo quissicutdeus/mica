@@ -46,6 +46,7 @@
   // Back steps up one pane before it will leave, and the Back keybind is claimed as part
   // of saying so — Escape would otherwise jump straight home from inside a pane.
   const app = useAppLevels({
+    appId: 'settings',
     title: 'Settings',
     onback: () => onback?.(),
     levels: [

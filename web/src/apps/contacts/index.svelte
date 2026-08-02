@@ -124,6 +124,7 @@
   };
 
   const app = useAppLevels({
+    appId: 'contacts',
     title: 'Contacts',
     onback: () => onback?.(),
     levels: [

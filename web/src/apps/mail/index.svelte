@@ -23,6 +23,7 @@
   let activeTab = $state<'inbox' | 'archive'>('inbox');
 
   const app = useAppLevels({
+    appId: 'mail',
     title: () => (activeTab === 'inbox' ? 'Mail' : 'Archived Mail'),
     onback: () => onback?.(),
     levels: [{ open: () => !!selectedMail, close: closeDetail, title: 'Message' }]

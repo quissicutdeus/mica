@@ -108,6 +108,7 @@
   };
 
   const app = useAppLevels({
+    appId: 'photos',
     title: 'Photos',
     onback: () => onback?.(),
     levels: [

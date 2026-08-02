@@ -44,6 +44,7 @@
   });
 
   const app = useAppLevels({
+    appId: 'notes',
     title: 'Notes',
     onback: () => onback?.(),
     levels: [

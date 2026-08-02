@@ -8,6 +8,7 @@
   // Calculator's one "level" is an entered number rather than a screen: back deletes a
   // digit until there is nothing left to delete, and only then leaves.
   const app = useAppLevels({
+    appId: 'calculator',
     title: 'Calculator',
     onback: () => onback?.(),
     levels: [{ open: () => display !== '0', close: () => handleBackspace() }]

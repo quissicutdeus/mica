@@ -123,8 +123,10 @@ ${
     : ''
 }
   // Declaring the levels is what claims the Back key. Add a rung per screen, deepest
-  // first; with none, Back simply leaves the app.
+  // first; with none, Back simply leaves the app. \`appId\` is what keeps the claim
+  // pointed at this app while it sits resident in the background.
   const app = useAppLevels({
+    appId: '${id}',
     title: '${title}',
     onback: () => onback?.(),
     levels: []
