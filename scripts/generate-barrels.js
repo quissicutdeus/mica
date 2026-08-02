@@ -13,13 +13,24 @@ const generateIndex = (dir, mode = 'import') => {
     return;
   }
 
+  // Tests are excluded, and not as a tidiness measure: this barrel is the public face of
+  // the SDK, so a `useThing.test.ts` sitting next to `useThing.ts` was re-exported from
+  // `@gphone/sdk` and pulled vitest into the shipped bundle. The same applies to the
+  // server and client barrels, which import for side effects — a test file there would
+  // register its own describe blocks at runtime.
   const files = fs
     .readdirSync(fullDir)
-    .filter((file) => file.endsWith('.ts') && file !== 'index.ts');
+    .filter(
+      (file) =>
+        file.endsWith('.ts') &&
+        file !== 'index.ts' &&
+        !file.endsWith('.test.ts') &&
+        !file.endsWith('.d.ts')
+    );
 
   const lines = files
     .map((file) => {
-      const name = file.replace('.ts', '');
+      const name = file.replace(/\.ts$/, '');
       return mode === 'export' ? `export * from './${name}';` : `import './${name}';`;
     })
     .join('\n');
