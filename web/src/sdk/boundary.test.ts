@@ -91,6 +91,10 @@ describe('app boundary', () => {
       'ConfirmDialog',
       'FloatingActionButton',
       'PhotoPickerModal',
+      // Written, then left out of the barrel, so apps inlined their own instead.
+      'SegmentedControl',
+      'ToggleSwitch',
+      'Skeleton',
       // Utils
       'isBrowser',
       'formatDate',
@@ -98,6 +102,7 @@ describe('app boundary', () => {
       'formatCurrency',
       'renderMarkdown',
       'useScrollDetect',
+      'filterByQuery',
       // Hooks
       'useNavigation',
       'useKeybinds',

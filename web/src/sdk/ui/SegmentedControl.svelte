@@ -1,19 +1,34 @@
 <script lang="ts">
   import { audio } from '../../shell/state/audio';
 
+  /**
+   * A row of mutually exclusive choices — the tab bar at the top of a list.
+   *
+   * This existed and nothing imported it, so every app that wanted tabs wrote its own:
+   * Admin and Store both rendered two buttons with a ternary on the class string, and
+   * Store's rendered `class:` directives inside a `class="…"` attribute, so the active
+   * state came out as literal text and no tab ever looked selected. That is the failure
+   * mode a shared primitive removes — not the twelve lines.
+   *
+   * `badge` is for a count that belongs to the tab rather than the screen behind it, as
+   * Admin's pending queue does.
+   */
   export interface SegmentOption {
     id: string;
     label: string;
+    badge?: number;
   }
 
   let {
     options = [],
     selected = $bindable(''),
-    onchange
+    onchange,
+    'aria-label': ariaLabel
   }: {
     options: SegmentOption[];
     selected: string;
     onchange?: (id: string) => void;
+    'aria-label'?: string;
   } = $props();
 
   const select = (id: string) => {
@@ -24,10 +39,18 @@
   };
 </script>
 
-<div class="flex w-full rounded-xl border border-gray-700/50 bg-gray-800/70 p-1 backdrop-blur-md">
-  {#each options as opt}
+<!-- `aria-pressed` rather than `role="tab"`: a tablist without `tabpanel` ids and arrow-key
+     roving focus is a worse lie to a screen reader than a row of toggle buttons, which is
+     what this is. It is also what the apps already announced. -->
+<div
+  role="group"
+  aria-label={ariaLabel}
+  class="flex w-full rounded-xl border border-gray-700/50 bg-gray-800/70 p-1 backdrop-blur-md"
+>
+  {#each options as opt (opt.id)}
     <button
       type="button"
+      aria-pressed={selected === opt.id}
       class="flex-1 cursor-pointer rounded-lg py-1.5 text-center text-xs font-semibold transition-all {selected ===
       opt.id
         ? 'bg-gray-700 text-white shadow-md'
@@ -35,6 +58,9 @@
       onclick={() => select(opt.id)}
     >
       {opt.label}
+      {#if opt.badge}
+        <span class="ml-1 rounded-full bg-rose-600 px-1.5 text-xs text-white">{opt.badge}</span>
+      {/if}
     </button>
   {/each}
 </div>

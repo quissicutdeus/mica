@@ -10,6 +10,7 @@
  * lives there.
  */
 export { isBrowser } from '../lib/isBrowser';
+export { filterByQuery } from '../lib/filterByQuery';
 export {
   formatCurrency,
   formatDate,
