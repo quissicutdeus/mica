@@ -24,6 +24,9 @@ Run from the **repo root** unless noted.
 
 | Task                         | Command                                      | Pre-approved?            |
 | ---------------------------- | -------------------------------------------- | ------------------------ |
+| **Every gate, in order**     | **`pnpm verify`**                            | Yes                      |
+| Gates minus e2e and build    | `pnpm verify --quick`                        | Yes                      |
+| Scaffold an app              | `pnpm new:app <id> [--service]`              | Yes                      |
 | Install                      | `pnpm install --frozen-lockfile`             | Yes                      |
 | Format (write)               | `pnpm format`                                | Yes                      |
 | Format (check)               | `pnpm format:check`                          | Yes                      |
@@ -641,6 +644,10 @@ example to copy from; Bank is the example with no table.
 
 ### 1. The app directory
 
+`pnpm new:app <id>` writes it, or `pnpm new:app <id> --service` writes the data half too and
+prints the `routes.ts` and mock-registry entries to paste. Everything below is what it generates
+and why — worth reading once, then let the generator do it.
+
 `web/src/apps/<id>/`, with three files. The id is lowercase, matches the manifest, and becomes the
 `<service>` segment of every event the app's service uses.
 
@@ -739,8 +746,15 @@ a mock that disagrees with the server is a bug you cannot see in the browser.
 
 ### 7. Before you call it done
 
-`pnpm typecheck`, `test:unit`, `test:e2e`, `build`, `format:check` — by exit code (§9). `build` and
-`e2e` are not optional: they are the only steps that catch a broken import inside a `.svelte` file
-or a stale mock.
+`pnpm verify`. It runs format, typecheck, unit, e2e, build and the dead-code scan in that order —
+cheapest first, stopping at the first failure — and prints a per-gate summary. CI runs the same
+command, so the two cannot drift.
+
+`--quick` skips e2e and build for a tight edit loop. Do not finish on it: `build` and `e2e` are the
+only steps that catch a broken import inside a `.svelte` file or a stale mock.
+
+**Keep `pnpm dev` running while you work.** Playwright reuses a server that is already up; when it
+has to start its own, the suite takes about two and a half minutes instead of twenty-seven seconds.
+`pnpm verify` starts one for you and shuts it down after.
 
 Then run it in game. A green suite is not evidence a NUI feature works (§8).
