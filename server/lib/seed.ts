@@ -183,8 +183,13 @@ export const seedFor = async (owner: string): Promise<SeedResult> => {
  *
  * Scoped by the seed citizenids rather than by owner: the rows are only ever reachable
  * through a seeded character, and leaving orphaned `players` rows behind would break the
- * next `seedFor`. Real characters are never matched — no genuine citizenid is in
- * `SEED_CHARACTERS`, and the `players` delete additionally requires the seed license.
+ * next `seedFor`.
+ *
+ * Every delete here has to be narrow enough that it cannot reach a real row. The
+ * citizenid list is a hard-coded constant, never a query, and the `players` delete
+ * additionally requires the seed license. The contacts delete is the one that has to
+ * work harder, because a contact row is owned by a real player and carries no marker
+ * saying the seed wrote it — see below.
  */
 export const clearSeed = async (): Promise<void> => {
   const ids = SEED_CHARACTERS.map((c) => c.citizenid);
@@ -214,11 +219,19 @@ export const clearSeed = async (): Promise<void> => {
     );
   }
 
-  const phones = SEED_CHARACTERS.map((c) => c.phone);
-  await Database.query(
-    `DELETE FROM gphone_contacts WHERE phone IN (${phones.map(() => '?').join(',')})`,
-    phones
-  );
+  // Matched on the whole seeded contact, not just its number.
+  //
+  // This was `WHERE phone IN (...)` with no other condition, which deleted any row on
+  // one of the seed numbers regardless of who owned it or where it came from. A player
+  // who had saved 5550101 themselves lost that contact the next time an admin ran
+  // `gphoneseed clear`. `createContacts` writes the name as well, so requiring it back
+  // means the delete only reaches rows the seed could have written.
+  for (const character of SEED_CHARACTERS) {
+    await Database.query(
+      `DELETE FROM gphone_contacts WHERE phone = ? AND firstname = ? AND lastname = ?`,
+      [character.phone, character.firstname, character.lastname]
+    );
+  }
 
   await Database.query(`DELETE FROM players WHERE license = ? AND citizenid IN (${placeholders})`, [
     SEED_LICENSE,
