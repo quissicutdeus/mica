@@ -217,6 +217,23 @@
     }
   });
 
+  /**
+   * Never leave focus inside an app that has just been backgrounded.
+   *
+   * Leaving an app by pressing Back means the app's own back button is still focused
+   * when the shell makes its container `inert`, which strands the caret in a subtree
+   * that is both `display:none` and unreachable. Blurring puts it back on the document,
+   * so the next Tab starts from the top of whatever is now on screen.
+   *
+   * Scoped to focus that actually ended up inert, rather than blurring on every
+   * navigation — opening an app from the launcher should not steal focus from anything.
+   */
+  $effect(() => {
+    void $currentApp.id;
+    const focused = document.activeElement as HTMLElement | null;
+    if (focused?.closest('[inert]')) focused.blur();
+  });
+
   // Track if we are currently in the camera app and notify the client
   let wasInCameraApp = false;
   $effect(() => {
@@ -296,7 +313,13 @@
 
            `inert` is what keeps them out of the tab order and the accessibility tree.
            Their DOM is still present and matchable — that is inherent to residency, and
-           why tests here use role-based locators. -->
+           why tests here use role-based locators.
+
+           `inert` and nothing else. It carried `aria-hidden` too, which is what `inert`
+           already implies, and the pair is invalid the instant focus is inside: pressing
+           Back leaves focus on the app's own back button, and Chrome refuses to hide a
+           subtree containing the focused element. The console said so on every trip
+           home. -->
       <div class="relative h-full w-full">
         {#if $currentApp.id === 'home'}
           <Home {openApp} />
@@ -306,12 +329,7 @@
           {@const AppComponent = appRegistryStore.getComponent(instance.id)}
           {#if AppComponent}
             {@const isActive = $currentApp.id === instance.id}
-            <div
-              class="absolute inset-0"
-              class:hidden={!isActive}
-              aria-hidden={!isActive}
-              inert={!isActive}
-            >
+            <div class="absolute inset-0" class:hidden={!isActive} inert={!isActive}>
               <ErrorBoundary
                 appName={appRegistryStore.getManifest(instance.id)?.name ?? instance.id}
               >

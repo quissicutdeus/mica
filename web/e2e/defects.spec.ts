@@ -118,6 +118,35 @@ test.describe('Lists can be used from the keyboard', () => {
   });
 });
 
+test.describe('Backgrounded apps are hidden without breaking focus', () => {
+  test('leaving an app by Backspace logs no aria-hidden complaint', async ({ page }) => {
+    // Resident apps are hidden with `inert`, and carried `aria-hidden` as well. The pair
+    // is invalid the moment focus is inside: Back leaves focus on the app's own back
+    // button, and the browser refuses to hide a subtree containing the focused element.
+    // It printed on every trip home and nothing was watching the console.
+    const complaints: string[] = [];
+    page.on('console', (msg) => {
+      if (/aria-hidden/i.test(msg.text())) complaints.push(msg.text());
+    });
+
+    await openApp(page, 'Mail');
+    await page.locator("button[aria-label='Go back']").focus();
+    await page.keyboard.press('Backspace');
+    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+
+    expect(complaints).toEqual([]);
+  });
+
+  test('a hidden app is inert and carries no aria-hidden', async ({ page }) => {
+    await openApp(page, 'Mail');
+    await goHome(page);
+
+    const hidden = page.locator('div.absolute.inset-0.hidden').first();
+    await expect(hidden).toHaveAttribute('inert', '');
+    expect(await hidden.getAttribute('aria-hidden')).toBeNull();
+  });
+});
+
 test.describe('Contacts', () => {
   test('sharing says it is unimplemented instead of claiming success', async ({ page }) => {
     // The same lie as Photos' old `alert(...)`, one layer deeper and so missed for

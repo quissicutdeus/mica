@@ -63,8 +63,24 @@ test.describe('App residency', () => {
 
     const hidden = page.locator('[inert]');
     await expect(hidden).toHaveCount(1);
-    await expect(hidden).toHaveAttribute('aria-hidden', 'true');
+
+    // `inert` and nothing else. It used to assert `aria-hidden="true"` alongside, which
+    // named the mechanism rather than the property — and the two together are invalid
+    // whenever focus is inside, which is exactly what pressing Back leaves behind.
+    expect(await hidden.getAttribute('aria-hidden')).toBeNull();
+
+    // The property itself: gone from the accessibility tree, and unfocusable. Focus is
+    // attempted for real, because `inert` is enforced by the browser rather than by an
+    // attribute a test could read.
     await expect(page.getByRole('button', { name: '7', exact: true })).toHaveCount(0);
+    const focusLanded = await hidden
+      .locator('button')
+      .first()
+      .evaluate((el: HTMLElement) => {
+        el.focus();
+        return document.activeElement === el;
+      });
+    expect(focusLanded, 'a button inside an inert app must not take focus').toBe(false);
   });
 
   test('scroll position survives an app switch', async ({ page }) => {
