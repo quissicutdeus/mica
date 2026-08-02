@@ -3,7 +3,6 @@
   "private": true,
   "version": "1.0.0",
   "description": "An open-source TypeScript phone for FiveM",
-  "main": "index.js",
   "type": "module",
   "scripts": {
     "build": "pnpm clearbuild && node scripts/generate-barrels.js && pnpm typecheck && node build/build-bundle.js && pnpm build:web",
@@ -28,7 +27,8 @@
     "test:e2e:headed": "pnpm --filter web test:e2e:headed",
     "test:e2e:report": "pnpm --filter web test:e2e:report",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "deadcode": "pnpm dlx knip"
   },
   "author": "quissicutdeus",
   "license": "AGPL-3.0-or-later",

@@ -27,6 +27,7 @@ Run from the **repo root** unless noted.
 | Install                      | `pnpm install --frozen-lockfile`             | Yes                      |
 | Format (write)               | `pnpm format`                                | Yes                      |
 | Format (check)               | `pnpm format:check`                          | Yes                      |
+| Dead code scan               | `pnpm deadcode`                              | Yes                      |
 | Typecheck **everything**     | `pnpm typecheck`                             | Yes                      |
 | Typecheck one target         | `pnpm typecheck:client` · `:server` · `:web` | Yes                      |
 | Unit tests **everything**    | `pnpm test:unit`                             | Yes                      |

@@ -30,7 +30,7 @@ const INPUT_ATTACK = 24;
  * Tunable in one place, because the right numbers are a matter of looking at it in game
  * against a specific prop and animation, not of arithmetic.
  */
-export const PHONE_CAMERA_TUNING = {
+const PHONE_CAMERA_TUNING = {
   /** Narrower than the gameplay cam; a phone lens is not a 70-degree fisheye. */
   fov: 55.0,
 

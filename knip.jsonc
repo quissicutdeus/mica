@@ -1,0 +1,37 @@
+{
+  // Dead-code scanning. Run with `pnpm deadcode`.
+  //
+  // Without this, knip reports eighteen "unused files" and four unused exports that are
+  // all false positives, and a report you have to mentally filter is a report nobody
+  // reads. The point of the config is that a hit means something.
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  // Tailwind and its two plugins are pulled in by `@import` / `@plugin` in
+  // `src/app.css`, and knip does not follow CSS. They are load-bearing — see AGENTS §6
+  // on what happens in game when the Tailwind setup is "tidied up".
+  "ignoreDependencies": ["tailwindcss", "tailwindcss-animate", "@tailwindcss/typography"],
+  "workspaces": {
+    ".": {
+      // esbuild builds these two directly (`build/build-bundle.js`), so nothing in the
+      // repo imports them and knip cannot infer that they are roots.
+      "entry": ["client/client.ts", "server/server.ts", "scripts/*.js", "build/*.js"],
+      "project": [
+        "client/**/*.ts",
+        "server/**/*.ts",
+        "shared/**/*.ts",
+        "scripts/**/*.js",
+        "build/**/*.js"
+      ]
+    },
+    "web": {
+      // `src/sdk/icons.ts` is an entry point rather than ordinary code: it is generated,
+      // and deliberately republishes every icon so an add-on can import any of them. Its
+      // exports being unused inside this repo is the intended state.
+      //
+      // `src/sdk/index.ts` is deliberately NOT listed. Treating the whole SDK as public
+      // API would stop knip ever reporting an unused export from it — and an exported,
+      // complete, unused component is exactly what this found last time.
+      "entry": ["src/sdk/icons.ts", "e2e/**/*.spec.ts", "*.config.ts"],
+      "project": ["src/**/*.{ts,svelte}"]
+    }
+  }
+}

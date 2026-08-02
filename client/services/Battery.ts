@@ -2,10 +2,8 @@
 
 let phoneCharge = 100;
 // Battery deterioration rate in percent per minute (e.g. 1.0 = 1% per minute). Easily updated for real-world scenarios.
-export const DRAIN_RATE_PER_MINUTE = 1.0;
+const DRAIN_RATE_PER_MINUTE = 1.0;
 let saveCounter = 0;
-
-export const getPhoneCharge = (): number => phoneCharge;
 
 export const sendChargeToNui = () => {
   SendNuiMessage(
@@ -16,7 +14,7 @@ export const sendChargeToNui = () => {
   );
 };
 
-export const setPhoneCharge = (amount: number) => {
+const setPhoneCharge = (amount: number) => {
   const prevCharge = phoneCharge;
   phoneCharge = Math.max(0, Math.min(100, amount));
   sendChargeToNui();
