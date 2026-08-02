@@ -4,7 +4,7 @@ import { Database } from '../lib/Database';
 
 /**
  * Bespoke queries for conversations. The schema and both allowlists come from the
- * declaration in ConversationController via `SchemaRepository`.
+ * declaration in `services/Conversations.ts` via `defineService`.
  *
  * Nine of the methods below read or join `gphone_messages_participants`, which is why
  * this class exists: membership lives in a join table that the generic single-table

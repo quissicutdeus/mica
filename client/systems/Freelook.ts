@@ -36,7 +36,7 @@ export type ControlProfile = keyof typeof CONTROL_PROFILES;
  */
 const FLUSH_FRAMES = 10;
 
-export class FreelookController {
+export class Freelook {
   private static isFreelookActive = false;
   private static freelookTick: number | null = null;
   private static flushTick: number | null = null;
@@ -55,41 +55,41 @@ export class FreelookController {
    * made it constant by holding keep-input open for the whole session.
    */
   private static flushHeldControls(): void {
-    if (FreelookController.flushTick !== null) {
-      clearTick(FreelookController.flushTick);
-      FreelookController.flushTick = null;
+    if (Freelook.flushTick !== null) {
+      clearTick(Freelook.flushTick);
+      Freelook.flushTick = null;
     }
 
     let frames = 0;
-    FreelookController.flushTick = setTick(() => {
+    Freelook.flushTick = setTick(() => {
       DisableAllControlActions(0);
       frames += 1;
-      if (frames >= FLUSH_FRAMES && FreelookController.flushTick !== null) {
-        clearTick(FreelookController.flushTick);
-        FreelookController.flushTick = null;
+      if (frames >= FLUSH_FRAMES && Freelook.flushTick !== null) {
+        clearTick(Freelook.flushTick);
+        Freelook.flushTick = null;
       }
     });
   }
 
   private static cancelFlush(): void {
-    if (FreelookController.flushTick !== null) {
-      clearTick(FreelookController.flushTick);
-      FreelookController.flushTick = null;
+    if (Freelook.flushTick !== null) {
+      clearTick(Freelook.flushTick);
+      Freelook.flushTick = null;
     }
   }
 
   public static enableFreelook(profile: ControlProfile = 'freelook'): void {
     // A flush still running would fight the profile about to be applied.
-    FreelookController.cancelFlush();
-    FreelookController.isFreelookActive = true;
-    FreelookController.profile = profile;
+    Freelook.cancelFlush();
+    Freelook.isFreelookActive = true;
+    Freelook.profile = profile;
     SetNuiFocus(true, false);
     SetNuiFocusKeepInput(true);
 
-    if (FreelookController.freelookTick === null) {
-      FreelookController.freelookTick = setTick(() => {
+    if (Freelook.freelookTick === null) {
+      Freelook.freelookTick = setTick(() => {
         DisableAllControlActions(0);
-        for (const control of CONTROL_PROFILES[FreelookController.profile]) {
+        for (const control of CONTROL_PROFILES[Freelook.profile]) {
           EnableControlAction(0, control, true);
         }
       });
@@ -97,30 +97,30 @@ export class FreelookController {
   }
 
   public static disableFreelook(): void {
-    FreelookController.isFreelookActive = false;
+    Freelook.isFreelookActive = false;
     SetNuiFocusKeepInput(false);
     SetNuiFocus(true, true);
-    FreelookController.flushHeldControls();
+    Freelook.flushHeldControls();
 
-    if (FreelookController.freelookTick !== null) {
-      clearTick(FreelookController.freelookTick);
-      FreelookController.freelookTick = null;
+    if (Freelook.freelookTick !== null) {
+      clearTick(Freelook.freelookTick);
+      Freelook.freelookTick = null;
     }
   }
 
   public static resetFreelook(): void {
-    FreelookController.isFreelookActive = false;
+    Freelook.isFreelookActive = false;
     SetNuiFocusKeepInput(false);
     SetNuiFocus(false, false);
-    FreelookController.flushHeldControls();
+    Freelook.flushHeldControls();
 
-    if (FreelookController.freelookTick !== null) {
-      clearTick(FreelookController.freelookTick);
-      FreelookController.freelookTick = null;
+    if (Freelook.freelookTick !== null) {
+      clearTick(Freelook.freelookTick);
+      Freelook.freelookTick = null;
     }
   }
 
   public static isActive(): boolean {
-    return FreelookController.isFreelookActive;
+    return Freelook.isFreelookActive;
   }
 }

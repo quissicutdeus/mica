@@ -1,4 +1,4 @@
-// Client Battery Controller
+// The client half of the battery service.
 
 let phoneCharge = 100;
 // Battery deterioration rate in percent per minute (e.g. 1.0 = 1% per minute). Easily updated for real-world scenarios.

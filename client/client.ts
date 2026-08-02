@@ -1,11 +1,11 @@
 import './systems';
 import { sendChargeToNui } from './systems/Battery';
 import { FrameworkBridge } from './lib/FrameworkBridge';
-import { sendNuiMessage } from './lib/NuiUtils';
+import { sendNuiMessage } from './lib/nui';
 import { PhoneState } from './lib/PhoneState';
-import { PhoneAnimationController } from './systems/PhoneAnimation';
-import { FreelookController } from './systems/Freelook';
-import { PhoneCameraController } from './systems/PhoneCamera';
+import { PhoneAnimation } from './systems/PhoneAnimation';
+import { Freelook } from './systems/Freelook';
+import { PhoneCamera } from './systems/PhoneCamera';
 import { GAME_SCOPE_ACTIONS } from '@shared/keybinds';
 
 // Send system time to NUI
@@ -31,18 +31,18 @@ RegisterCommand(
       sendNuiMessage('setVisible', true);
 
       const ped = PlayerPedId();
-      PhoneAnimationController.playAppAnimation(ped, null, open);
-      PhoneAnimationController.spawnPhoneProp(ped, open);
+      PhoneAnimation.playAppAnimation(ped, null, open);
+      PhoneAnimation.spawnPhoneProp(ped, open);
 
       // Send time and battery charge immediately when opening
       sendTimeToNui();
       sendChargeToNui();
     } else {
       const ped = PlayerPedId();
-      PhoneCameraController.disable();
-      PhoneAnimationController.removePhoneProp();
-      PhoneAnimationController.stopAllPhoneAnimations(ped);
-      FreelookController.resetFreelook();
+      PhoneCamera.disable();
+      PhoneAnimation.removePhoneProp();
+      PhoneAnimation.stopAllPhoneAnimations(ped);
+      Freelook.resetFreelook();
 
       sendNuiMessage('setVisible', false);
     }
@@ -69,9 +69,9 @@ on('__cfx_nui:toggleFreelook', (data: { state: boolean }, cb: Function) => {
   if (PhoneState.isOpen()) {
     if (data && data.state) {
       // The camera app holds this open indefinitely, so it gets the narrower profile.
-      FreelookController.enableFreelook(PhoneCameraController.isActive() ? 'camera' : 'freelook');
+      Freelook.enableFreelook(PhoneCamera.isActive() ? 'camera' : 'freelook');
     } else {
-      FreelookController.disableFreelook();
+      Freelook.disableFreelook();
     }
   }
   cb({});
@@ -91,12 +91,12 @@ on('__cfx_nui:hideFrame', (_: any, cb: Function) => {
   PhoneState.setTyping(false);
   // Otherwise the scripted cam survives the phone closing and the player is stuck
   // looking through it.
-  PhoneCameraController.disable();
+  PhoneCamera.disable();
 
   const ped = PlayerPedId();
-  PhoneAnimationController.removePhoneProp();
-  PhoneAnimationController.stopAllPhoneAnimations(ped);
-  FreelookController.resetFreelook();
+  PhoneAnimation.removePhoneProp();
+  PhoneAnimation.stopAllPhoneAnimations(ped);
+  Freelook.resetFreelook();
 
   sendNuiMessage('setVisible', false);
   cb({});
@@ -107,14 +107,14 @@ RegisterNuiCallbackType('onCameraApp');
 on('__cfx_nui:onCameraApp', async (data: { state: boolean }, cb: Function) => {
   const ped = PlayerPedId();
   const active = Boolean(data?.state);
-  await PhoneAnimationController.setCameraApp(ped, active, PhoneState.isOpen());
+  await PhoneAnimation.setCameraApp(ped, active, PhoneState.isOpen());
 
   // After the animation, so the prop exists and the hand is in position before the cam
   // attaches and hides it.
   if (active && PhoneState.isOpen()) {
-    PhoneCameraController.enable();
+    PhoneCamera.enable();
   } else {
-    PhoneCameraController.disable();
+    PhoneCamera.disable();
   }
   cb({});
 });

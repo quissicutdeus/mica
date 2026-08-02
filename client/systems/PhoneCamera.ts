@@ -1,5 +1,5 @@
-import { PhoneAnimationController } from './PhoneAnimation';
-import { sendNuiMessage } from '../lib/NuiUtils';
+import { PhoneAnimation } from './PhoneAnimation';
+import { sendNuiMessage } from '../lib/nui';
 
 /**
  * A scripted camera for the Camera app, so the shot is taken from the phone rather than
@@ -49,48 +49,48 @@ export const PHONE_CAMERA_TUNING = {
   flipEaseMs: 350
 };
 
-export class PhoneCameraController {
+export class PhoneCamera {
   private static cam: number | null = null;
   private static tick: number | null = null;
   private static frontFacing = false;
   private static propWasVisible = true;
 
   public static isActive(): boolean {
-    return PhoneCameraController.cam !== null;
+    return PhoneCamera.cam !== null;
   }
 
   public static isFrontFacing(): boolean {
-    return PhoneCameraController.frontFacing;
+    return PhoneCamera.frontFacing;
   }
 
   public static enable(frontFacing = false): void {
-    if (PhoneCameraController.cam !== null) {
-      PhoneCameraController.setFrontFacing(frontFacing);
+    if (PhoneCamera.cam !== null) {
+      PhoneCamera.setFrontFacing(frontFacing);
       return;
     }
 
     const ped = PlayerPedId();
     const cam = CreateCam('DEFAULT_SCRIPTED_CAMERA', true);
-    PhoneCameraController.cam = cam;
-    PhoneCameraController.frontFacing = frontFacing;
+    PhoneCamera.cam = cam;
+    PhoneCamera.frontFacing = frontFacing;
 
     SetCamFov(cam, PHONE_CAMERA_TUNING.fov);
-    PhoneCameraController.attach(ped, frontFacing);
+    PhoneCamera.attach(ped, frontFacing);
     SetCamActive(cam, true);
     RenderScriptCams(true, false, 0, true, true);
 
-    PhoneCameraController.hidePhoneProp();
+    PhoneCamera.hidePhoneProp();
 
     // The camera has to follow where the player is looking, and an attached cam does not
     // inherit that on its own — the bone's rotation is the head's, which lags and rolls
     // with the animation. Driving it from the gameplay cam each frame keeps aim and
     // freelook working exactly as they do outside the app.
-    PhoneCameraController.tick = setTick(() => {
-      const active = PhoneCameraController.cam;
+    PhoneCamera.tick = setTick(() => {
+      const active = PhoneCamera.cam;
       if (active === null) return;
 
       const [pitch, roll, yaw] = GetGameplayCamRot(2);
-      SetCamRot(active, pitch, roll, PhoneCameraController.frontFacing ? yaw + 180.0 : yaw, 2);
+      SetCamRot(active, pitch, roll, PhoneCamera.frontFacing ? yaw + 180.0 : yaw, 2);
 
       // Left click takes the photo. It has to be read from the *game* rather than the
       // page: aiming means no NUI cursor, so the web never receives a click at all.
@@ -103,31 +103,31 @@ export class PhoneCameraController {
   }
 
   public static setFrontFacing(frontFacing: boolean): void {
-    if (PhoneCameraController.cam === null || PhoneCameraController.frontFacing === frontFacing) {
+    if (PhoneCamera.cam === null || PhoneCamera.frontFacing === frontFacing) {
       return;
     }
-    PhoneCameraController.frontFacing = frontFacing;
-    PhoneCameraController.attach(PlayerPedId(), frontFacing);
+    PhoneCamera.frontFacing = frontFacing;
+    PhoneCamera.attach(PlayerPedId(), frontFacing);
   }
 
   public static disable(): void {
-    if (PhoneCameraController.tick !== null) {
-      clearTick(PhoneCameraController.tick);
-      PhoneCameraController.tick = null;
+    if (PhoneCamera.tick !== null) {
+      clearTick(PhoneCamera.tick);
+      PhoneCamera.tick = null;
     }
 
-    if (PhoneCameraController.cam !== null) {
+    if (PhoneCamera.cam !== null) {
       RenderScriptCams(false, false, 0, true, true);
-      DestroyCam(PhoneCameraController.cam, false);
-      PhoneCameraController.cam = null;
+      DestroyCam(PhoneCamera.cam, false);
+      PhoneCamera.cam = null;
     }
 
-    PhoneCameraController.frontFacing = false;
-    PhoneCameraController.restorePhoneProp();
+    PhoneCamera.frontFacing = false;
+    PhoneCamera.restorePhoneProp();
   }
 
   private static attach(ped: number, frontFacing: boolean): void {
-    const cam = PhoneCameraController.cam;
+    const cam = PhoneCamera.cam;
     if (cam === null) return;
 
     const offset = frontFacing ? PHONE_CAMERA_TUNING.front : PHONE_CAMERA_TUNING.rear;
@@ -135,15 +135,15 @@ export class PhoneCameraController {
   }
 
   private static hidePhoneProp(): void {
-    const prop = PhoneAnimationController.getPhoneProp();
+    const prop = PhoneAnimation.getPhoneProp();
     if (prop === null || !DoesEntityExist(prop)) return;
-    PhoneCameraController.propWasVisible = IsEntityVisible(prop);
+    PhoneCamera.propWasVisible = IsEntityVisible(prop);
     SetEntityVisible(prop, false, false);
   }
 
   private static restorePhoneProp(): void {
-    const prop = PhoneAnimationController.getPhoneProp();
+    const prop = PhoneAnimation.getPhoneProp();
     if (prop === null || !DoesEntityExist(prop)) return;
-    SetEntityVisible(prop, PhoneCameraController.propWasVisible, false);
+    SetEntityVisible(prop, PhoneCamera.propWasVisible, false);
   }
 }

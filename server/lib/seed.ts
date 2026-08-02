@@ -4,7 +4,7 @@ import { Database } from './Database';
  * Seed data for testing the phone against something other than an empty database.
  *
  * The problem this solves: with one character on a dev server there is nobody to text.
- * `ConversationController.create` resolves a phone number to a `citizenid` and gives up
+ * `conversations:create` resolves a phone number to a `citizenid` and gives up
  * when it cannot, and `gphone_messages_participants.citizenid` is a foreign key onto
  * `players` — so a conversation counterpart has to be a real row in `players`, not a
  * made-up string.

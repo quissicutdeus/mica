@@ -1,4 +1,4 @@
-import { PhoneCameraController } from './PhoneCamera';
+import { PhoneCamera } from './PhoneCamera';
 
 const takePhoto = async (): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -49,11 +49,11 @@ on('__cfx_nui:takePhoto', async (_: any, cb: Function) => {
  */
 RegisterNuiCallbackType('flipCamera');
 on('__cfx_nui:flipCamera', (data: { isFrontCamera?: boolean }, cb: Function) => {
-  if (!PhoneCameraController.isActive()) {
+  if (!PhoneCamera.isActive()) {
     cb({ supported: false });
     return;
   }
 
-  PhoneCameraController.setFrontFacing(Boolean(data?.isFrontCamera));
-  cb({ supported: true, isFrontCamera: PhoneCameraController.isFrontFacing() });
+  PhoneCamera.setFrontFacing(Boolean(data?.isFrontCamera));
+  cb({ supported: true, isFrontCamera: PhoneCamera.isFrontFacing() });
 });

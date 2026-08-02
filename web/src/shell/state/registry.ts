@@ -3,7 +3,7 @@ import { type AppManifest, defineApp } from '@gphone/sdk';
 
 export type { AppManifest } from '@gphone/sdk';
 
-// Glob all manifest.ts files in ../modules/
+// Glob every app's manifest and component out of `apps/`.
 const manifestFiles = import.meta.glob('../../apps/*/manifest.ts', { eager: true });
 const appComponents = import.meta.glob('../../apps/*/index.svelte', { eager: true });
 

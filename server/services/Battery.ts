@@ -1,4 +1,4 @@
-// Server Battery Controller
+// The server half of the battery service.
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { defineService } from '../lib/defineService';
 import { PhoneBattery } from '@shared/types';

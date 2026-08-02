@@ -16,7 +16,7 @@ const fivemGlobals: Record<string, unknown> = {
   // Caveat worth knowing: Vite's module wrapper supplies its own non-callable
   // `exports` binding in module scope, which shadows this global. So the indexed use
   // resolves against Vite's object and the callable use does NOT reach this stub —
-  // which is why MailController guards its `exports(...)` call with a typeof check.
+  // which is why `services/Mail.ts` guards its `exports(...)` call with a typeof check.
   exports: function () {},
   onNet: noop,
   emitNet: noop,

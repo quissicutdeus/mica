@@ -1,7 +1,7 @@
 /**
  * Client-side phone state that more than one controller needs to agree on.
  *
- * `isPhoneOpen` used to be a module-local in `client.ts`, which meant `CallController`
+ * `isPhoneOpen` used to be a module-local in `client.ts`, which meant the call system
  * force-opening the phone for an incoming call left the flag reading `false`: the next
  * `M` press re-opened an already-open phone, and `toggleFreelook` no-oped because it is
  * guarded on the flag.

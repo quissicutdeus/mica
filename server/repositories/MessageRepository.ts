@@ -4,7 +4,7 @@ import { Message } from '@shared/types';
 
 /**
  * Bespoke queries for the messages table. The schema, the `columns` allowlist and
- * the empty `clientWritable` set all come from the declaration in MessageController
+ * the empty `clientWritable` set all come from the declaration in `services/Messages.ts`
  * via `SchemaRepository`; this class only adds the multi-table reads and writes the
  * generic path cannot express.
  */

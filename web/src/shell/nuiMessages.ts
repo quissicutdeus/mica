@@ -137,7 +137,7 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     setSignal: (data) => {
       if (typeof data === 'number') setSignal(data);
     },
-    // Server-originated toast, relayed by the client's ShellController. Used by the
+    // Server-originated toast, relayed by the client's shell system. Used by the
     // ace-denial paths and the call failure cases.
     notify: (data) => {
       if (typeof data?.message !== 'string' || !data.message) return;

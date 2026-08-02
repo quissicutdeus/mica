@@ -110,7 +110,7 @@ const resolveOwnedAttachments = async (
     if (photo) {
       owned.push({ photo_id: photoId });
     } else {
-      console.warn(`[MessageController] Dropped attachment ${photoId} not owned by ${citizenid}.`);
+      console.warn(`[messages] Dropped attachment ${photoId} not owned by ${citizenid}.`);
     }
   }
   return owned;

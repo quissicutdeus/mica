@@ -7,7 +7,7 @@ interface AppState {
 
 const delay = (ms: number) => new Promise((res) => setTimeout(() => res(true), ms));
 
-export class PhoneAnimationController {
+export class PhoneAnimation {
   private static phoneProp: number | null = null;
   private static activeApp: string | null = null;
   private static savedCameraViewMode: number | null = null;
@@ -18,13 +18,13 @@ export class PhoneAnimationController {
       dict: 'amb@world_human_tourist_mobile@male@base',
       anim: 'base',
       init: () => {
-        PhoneAnimationController.savedCameraViewMode = GetFollowPedCamViewMode();
+        PhoneAnimation.savedCameraViewMode = GetFollowPedCamViewMode();
         SetFollowPedCamViewMode(4);
       },
       cleanup: () => {
-        if (PhoneAnimationController.savedCameraViewMode !== null) {
-          SetFollowPedCamViewMode(PhoneAnimationController.savedCameraViewMode);
-          PhoneAnimationController.savedCameraViewMode = null;
+        if (PhoneAnimation.savedCameraViewMode !== null) {
+          SetFollowPedCamViewMode(PhoneAnimation.savedCameraViewMode);
+          PhoneAnimation.savedCameraViewMode = null;
         }
       }
     },
@@ -56,26 +56,22 @@ export class PhoneAnimationController {
     appName: string | null,
     isPhoneOpen: boolean
   ): Promise<void> {
-    const animId = ++PhoneAnimationController.currentAnimId;
+    const animId = ++PhoneAnimation.currentAnimId;
     const state =
-      appName && PhoneAnimationController.appStates[appName]
-        ? PhoneAnimationController.appStates[appName]
-        : PhoneAnimationController.appStates.default;
+      appName && PhoneAnimation.appStates[appName]
+        ? PhoneAnimation.appStates[appName]
+        : PhoneAnimation.appStates.default;
 
-    await PhoneAnimationController.loadAnimDict(state.dict);
+    await PhoneAnimation.loadAnimDict(state.dict);
 
     // Abort if another animation was requested or phone was closed while loading
-    if (animId !== PhoneAnimationController.currentAnimId || !isPhoneOpen) {
+    if (animId !== PhoneAnimation.currentAnimId || !isPhoneOpen) {
       RemoveAnimDict(state.dict);
       return;
     }
 
-    if (
-      appName &&
-      PhoneAnimationController.appStates[appName] &&
-      PhoneAnimationController.appStates[appName].init
-    ) {
-      PhoneAnimationController.appStates[appName].init!();
+    if (appName && PhoneAnimation.appStates[appName] && PhoneAnimation.appStates[appName].init) {
+      PhoneAnimation.appStates[appName].init!();
     }
 
     TaskPlayAnim(ped, state.dict, state.anim, 8.0, 8.0, -1, 50, 0, false, false, false);
@@ -83,35 +79,32 @@ export class PhoneAnimationController {
   }
 
   public static stopAllPhoneAnimations(ped: number): void {
-    PhoneAnimationController.currentAnimId++; // Cancel any pending animations
-    if (
-      PhoneAnimationController.activeApp &&
-      PhoneAnimationController.appStates[PhoneAnimationController.activeApp]
-    ) {
-      if (PhoneAnimationController.appStates[PhoneAnimationController.activeApp].cleanup) {
-        PhoneAnimationController.appStates[PhoneAnimationController.activeApp].cleanup!();
+    PhoneAnimation.currentAnimId++; // Cancel any pending animations
+    if (PhoneAnimation.activeApp && PhoneAnimation.appStates[PhoneAnimation.activeApp]) {
+      if (PhoneAnimation.appStates[PhoneAnimation.activeApp].cleanup) {
+        PhoneAnimation.appStates[PhoneAnimation.activeApp].cleanup!();
       }
       StopAnimTask(
         ped,
-        PhoneAnimationController.appStates[PhoneAnimationController.activeApp].dict,
-        PhoneAnimationController.appStates[PhoneAnimationController.activeApp].anim,
+        PhoneAnimation.appStates[PhoneAnimation.activeApp].dict,
+        PhoneAnimation.appStates[PhoneAnimation.activeApp].anim,
         1.0
       );
     }
-    PhoneAnimationController.activeApp = null;
+    PhoneAnimation.activeApp = null;
     StopAnimTask(
       ped,
-      PhoneAnimationController.appStates.default.dict,
-      PhoneAnimationController.appStates.default.anim,
+      PhoneAnimation.appStates.default.dict,
+      PhoneAnimation.appStates.default.anim,
       1.0
     );
   }
 
   public static spawnPhoneProp(ped: number, isPhoneOpen: boolean): void {
-    PhoneAnimationController.loadModel('prop_npc_phone_02').then(() => {
-      if (!isPhoneOpen || PhoneAnimationController.phoneProp) return;
+    PhoneAnimation.loadModel('prop_npc_phone_02').then(() => {
+      if (!isPhoneOpen || PhoneAnimation.phoneProp) return;
       const coords = GetEntityCoords(ped, true);
-      PhoneAnimationController.phoneProp = CreateObject(
+      PhoneAnimation.phoneProp = CreateObject(
         GetHashKey('prop_npc_phone_02'),
         coords[0],
         coords[1],
@@ -121,7 +114,7 @@ export class PhoneAnimationController {
         false
       );
       AttachEntityToEntity(
-        PhoneAnimationController.phoneProp,
+        PhoneAnimation.phoneProp,
         ped,
         GetPedBoneIndex(ped, 28422),
         0.0,
@@ -143,13 +136,13 @@ export class PhoneAnimationController {
 
   /** The held prop, so the scripted camera can hide it while framing a shot. */
   public static getPhoneProp(): number | null {
-    return PhoneAnimationController.phoneProp;
+    return PhoneAnimation.phoneProp;
   }
 
   public static removePhoneProp(): void {
-    if (PhoneAnimationController.phoneProp) {
-      DeleteObject(PhoneAnimationController.phoneProp);
-      PhoneAnimationController.phoneProp = null;
+    if (PhoneAnimation.phoneProp) {
+      DeleteObject(PhoneAnimation.phoneProp);
+      PhoneAnimation.phoneProp = null;
     }
   }
 
@@ -159,26 +152,22 @@ export class PhoneAnimationController {
     isPhoneOpen: boolean
   ): Promise<void> {
     if (active) {
-      PhoneAnimationController.activeApp = 'camera';
-      await PhoneAnimationController.playAppAnimation(
-        ped,
-        PhoneAnimationController.activeApp,
-        isPhoneOpen
-      );
+      PhoneAnimation.activeApp = 'camera';
+      await PhoneAnimation.playAppAnimation(ped, PhoneAnimation.activeApp, isPhoneOpen);
     } else {
-      if (PhoneAnimationController.activeApp === 'camera') {
-        if (PhoneAnimationController.appStates.camera.cleanup) {
-          PhoneAnimationController.appStates.camera.cleanup();
+      if (PhoneAnimation.activeApp === 'camera') {
+        if (PhoneAnimation.appStates.camera.cleanup) {
+          PhoneAnimation.appStates.camera.cleanup();
         }
         StopAnimTask(
           ped,
-          PhoneAnimationController.appStates.camera.dict,
-          PhoneAnimationController.appStates.camera.anim,
+          PhoneAnimation.appStates.camera.dict,
+          PhoneAnimation.appStates.camera.anim,
           1.0
         );
-        PhoneAnimationController.activeApp = null;
+        PhoneAnimation.activeApp = null;
       }
-      await PhoneAnimationController.playAppAnimation(ped, null, isPhoneOpen);
+      await PhoneAnimation.playAppAnimation(ped, null, isPhoneOpen);
     }
   }
 }

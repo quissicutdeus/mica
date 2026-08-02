@@ -1,7 +1,7 @@
 // Messages: only the part that is not a plain relay. The CRUD routes are declared in
-// `shared/routes.ts` and registered by RelayController.
+// `shared/routes.ts` and registered by the relay.
 
-import { sendNuiMessage } from '../lib/NuiUtils';
+import { sendNuiMessage } from '../lib/nui';
 
 /**
  * An inbound text.

@@ -1,4 +1,4 @@
-import { sendNuiMessage } from '../lib/NuiUtils';
+import { sendNuiMessage } from '../lib/nui';
 
 /**
  * Shell-scoped client events — the ones that belong to the phone itself rather than to
@@ -13,7 +13,7 @@ import { sendNuiMessage } from '../lib/NuiUtils';
  * A server-originated toast.
  *
  * The server has emitted this since the ace-denial paths were added, and **nothing was
- * listening** — five call sites across CallController and BatteryController pushed
+ * listening** — five call sites across the call and battery systems pushed
  * notifications into the void, so a player denied permission saw no feedback at all.
  */
 onNet(

@@ -1,11 +1,8 @@
 // Mail: only the part that is not a plain relay. The CRUD routes are declared in
-// `shared/routes.ts` and registered by RelayController.
+// `shared/routes.ts` and registered by the relay.
 
-onNet('gphone:client:mail:receive', (newMail: any) => {
-  SendNuiMessage(
-    JSON.stringify({
-      action: 'receiveMail',
-      data: newMail
-    })
-  );
+import { sendNuiMessage } from '../lib/nui';
+
+onNet('gphone:client:mail:receive', (newMail: unknown) => {
+  sendNuiMessage('receiveMail', newMail);
 });
