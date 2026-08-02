@@ -1,6 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
-import type { Conversation, Message } from '@shared/types';
+import type { Contact, Conversation, Message } from '@shared/types';
 
 import { citizenid, fetchCitizenId } from './account';
 import { contacts } from './contacts';
@@ -34,7 +34,7 @@ function createMessagesStore() {
   const loaded = writable(false);
 
   // Helper to resolve display info
-  const resolveDisplayInfo = (conv: Conversation, myId: string, currentContacts: any[]) => {
+  const resolveDisplayInfo = (conv: Conversation, myId: string, currentContacts: Contact[]) => {
     let target = '';
     let targetName = conv.name || 'Unknown';
     let targetAvatar: string | undefined = undefined;
@@ -134,7 +134,11 @@ function createMessagesStore() {
       }));
     },
 
-    sendMessage: async (conversationId: number, message: string, attachments: any[] = []) => {
+    sendMessage: async (
+      conversationId: number,
+      message: string,
+      attachments: { photo_id: number; attachment?: string }[] = []
+    ) => {
       let myId = get(citizenid);
       const payload = { conversation_id: conversationId, message, attachments };
 

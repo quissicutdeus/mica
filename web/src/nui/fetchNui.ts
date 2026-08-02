@@ -33,7 +33,7 @@ const errorFrom = (reply: unknown): string | null => {
  */
 export async function fetchNui<T = any>(
   eventName: string,
-  data?: any,
+  data?: unknown,
   options?: { defaultValue?: T }
 ): Promise<T> {
   const hasDefault = options?.defaultValue !== undefined;

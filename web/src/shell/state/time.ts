@@ -1,7 +1,7 @@
 import { writable, derived } from 'svelte/store';
 import { isBrowser } from '../../lib/isBrowser';
 
-interface TimeState {
+export interface TimeState {
   hours: number;
   minutes: number;
 }

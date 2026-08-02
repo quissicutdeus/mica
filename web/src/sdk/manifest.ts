@@ -1,4 +1,5 @@
-import type { Snippet } from 'svelte';
+import type { Component, Snippet } from 'svelte';
+import type { Readable } from 'svelte/store';
 
 export type AppPermission =
   'notifications' | 'contacts' | 'camera' | 'media' | 'storage' | 'location' | 'network';
@@ -10,10 +11,11 @@ export interface AppManifest {
   name: string;
   /** Tailwind background color class or hex string for launcher icon badge */
   color: string;
-  /** Svelte component, snippet, icon component, or image URL representing the app icon */
-  icon: Snippet | string | any;
-  /** Optional reactive badge store for unread counts / notifications */
-  badgeStore?: any;
+  /** A Svelte component, a snippet, or an image URL. Null renders no glyph, which
+   *  is what a remote app that shipped without one gets. */
+  icon: Component<any> | Snippet | string | null;
+  /** Reactive unread count for the launcher badge — `unreadMailCount` and friends. */
+  badgeStore?: Readable<number>;
   /** Semantic version string (e.g. "1.0.0") */
   version?: string;
   /** App author or developer team */

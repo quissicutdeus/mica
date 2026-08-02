@@ -15,5 +15,5 @@ export const setSignal = (level: number) => {
 };
 
 if (isBrowser()) {
-  (window as any).setSignalLevel = (level: number) => setSignal(level);
+  window.setSignalLevel = (level: number) => setSignal(level);
 }

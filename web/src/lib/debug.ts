@@ -2,7 +2,7 @@ import { isBrowser } from './isBrowser';
 
 interface DebugEvent {
   action: string;
-  data: any;
+  data: unknown;
 }
 
 /**

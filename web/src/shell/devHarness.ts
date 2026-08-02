@@ -50,7 +50,7 @@ export function seedBrowserPhone(now: Date): void {
 export function installDevHarness(): void {
   if (!import.meta.env.DEV) return;
 
-  (window as any).triggerTestToast = (type: TestToast = 'message') => {
+  window.triggerTestToast = (type: TestToast = 'message') => {
     const fixture = FIXTURES[type];
     if (!fixture) return;
     window.postMessage(fixture, '*');

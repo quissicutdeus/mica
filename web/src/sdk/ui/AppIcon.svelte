@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { Component, Snippet } from 'svelte';
+  import type { Readable } from 'svelte/store';
   import { audio } from '../../shell/state/audio';
 
   let {
@@ -10,10 +12,10 @@
     onclick
   }: {
     name: string;
-    icon: any;
+    icon: Component<any> | Snippet | string | null;
     color: string;
     badge?: number;
-    badgeStore?: any;
+    badgeStore?: Readable<number>;
     onclick: () => void;
   } = $props();
 

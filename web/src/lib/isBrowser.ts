@@ -1,1 +1,1 @@
-export const isBrowser = () => !(window as any).invokeNative;
+export const isBrowser = () => !window.invokeNative;

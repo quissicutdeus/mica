@@ -4,6 +4,7 @@
   import { fetchNui } from '../../nui/fetchNui';
   import { toast } from '../../shell/state/toast';
   import type { ReportCategory } from '@shared/types';
+  import { messageOf } from '../../lib/errors';
 
   interface Props {
     /** The gPhone table the content lives in. Validated again server-side. */
@@ -42,8 +43,8 @@
       if (res?.error) throw new Error(res.error);
       toast.show({ type: 'success', message: 'Report sent for review' });
       onclose();
-    } catch (e: any) {
-      toast.show({ type: 'error', message: e?.message || 'Could not send the report' });
+    } catch (e) {
+      toast.show({ type: 'error', message: messageOf(e, 'Could not send the report') });
     } finally {
       sending = false;
     }

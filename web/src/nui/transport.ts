@@ -10,9 +10,7 @@ export class NuiTransportAdapter implements ITransportAdapter {
   private resourceName: string;
 
   constructor() {
-    this.resourceName = (window as any).GetParentResourceName
-      ? (window as any).GetParentResourceName()
-      : 'gphone';
+    this.resourceName = window.GetParentResourceName ? window.GetParentResourceName() : 'gphone';
   }
 
   async send<T = any>(event: string, data?: unknown): Promise<T> {
@@ -85,11 +83,14 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
   private pendingRequests = new Map<
     string,
     {
+      // Deliberately `any`: one map holds the pending promise of every in-flight
+      // request, each with its own `T`. There is no single type that is all of them.
       resolve: (value: any) => void;
       reject: (reason: any) => void;
       timer: ReturnType<typeof setTimeout>;
     }
   >();
+  // Same reason: one map, many payload shapes, each known only to its subscriber.
   private eventHandlers = new Map<string, Set<(data: any) => void>>();
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;

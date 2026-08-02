@@ -10,6 +10,7 @@ export function useMessages() {
     unreadMessagesCount,
     sendMessage: (conversationId: number, text: string) =>
       conversationsStore.sendMessage(conversationId, text),
-    addReceivedMessage: (message: any) => conversationsStore.addReceivedMessage(message)
+    addReceivedMessage: (message: Parameters<typeof conversationsStore.addReceivedMessage>[0]) =>
+      conversationsStore.addReceivedMessage(message)
   };
 }

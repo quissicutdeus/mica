@@ -181,12 +181,19 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       expect(mStore).toBeDefined();
       expect(unreadMailCount).toBeDefined();
 
+      // A whole Mail, because that is what the hook takes. It was missing citizenid,
+      // content and both timestamps, and `any` let it through.
+      const now = new Date().toISOString();
       addReceivedMail({
         id: 99,
+        citizenid: 'CIT_TEST',
         sender: 'test@gphone.app',
         subject: 'SDK Test',
+        content: 'Body',
         read: false,
-        status: 'active'
+        status: 'active',
+        created_at: now,
+        updated_at: now
       });
       expect(get(mStore).some((m) => m.id === 99)).toBe(true);
     });
@@ -211,8 +218,9 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       expect(msgStore).toBeDefined();
       expect(unreadMessagesCount).toBeDefined();
 
+      // No `id`: an inbound message is identified by its conversation, and the store
+      // assigns one. Passing a stray `id` did nothing and only looked like it did.
       addReceivedMessage({
-        id: 88,
         senderName: 'SDK User',
         message: 'Hello',
         conversation_id: 1,

@@ -37,11 +37,11 @@ if (isBrowser()) {
   // Browser dev helpers available in browser console (F12):
   // - setBattery(50)       -> Set battery level to 50%
   // - setDrainSpeed(10)    -> Speed up battery drain by 10x for testing
-  (window as any).setBattery = (val: number) => {
+  window.setBattery = (val: number) => {
     lastTime = Date.now();
     charge.set(val);
   };
-  (window as any).setDrainSpeed = (multiplier: number) => {
+  window.setDrainSpeed = (multiplier: number) => {
     drainMultiplier = multiplier;
     console.log(`[gPhone] Battery drain speed set to ${multiplier}x`);
   };

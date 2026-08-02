@@ -4,8 +4,24 @@ import { mailStore } from '../services/mail';
 import { conversationsStore } from '../services/conversations';
 import { appRegistryStore } from './state/registry';
 import { setSignal } from './state/signal';
-import { time } from './state/time';
-import { toast } from './state/toast';
+import { time, type TimeState } from './state/time';
+import { toast, type ToastMessage } from './state/toast';
+import { messageOf } from '../lib/errors';
+
+/**
+ * A message that arrived from the client, as something with readable fields.
+ *
+ * These handlers were typed `any`, which meant a typo in a field name compiled and
+ * produced `undefined` at runtime — on the one boundary where every value was chosen by
+ * something outside the web. Mirrors `server/lib/payload.ts`, for the same reason.
+ */
+const fields = (data: unknown): Record<string, unknown> =>
+  data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+
+const str = (raw: unknown): string | undefined =>
+  typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+
+const num = (raw: unknown): number | undefined => (typeof raw === 'number' ? raw : undefined);
 
 /**
  * Routing for messages the client pushes into the NUI.
@@ -34,65 +50,76 @@ export interface NotificationBridge {
  * instead of duplicating the list of what is handled here.
  */
 export function createNuiMessageRouter(bridge: NotificationBridge) {
-  const installApp = (data: any) => {
-    if (!data?.url) return;
+  const installApp = (data: unknown) => {
+    const url = str(fields(data).url);
+    if (!url) return;
     appRegistryStore
-      .loadRemoteApp(data.url)
+      .loadRemoteApp(url)
       .then(({ manifest }) => {
         toast.show({ type: 'success', message: `App '${manifest.name}' installed successfully` });
       })
       .catch((err) => {
-        toast.show({ type: 'error', message: err.message || 'Failed to install remote app' });
+        toast.show({ type: 'error', message: messageOf(err, 'Failed to install remote app') });
       });
   };
 
-  const uninstallApp = (data: any) => {
-    if (!data?.appId) return;
+  const uninstallApp = (data: unknown) => {
+    const appId = str(fields(data).appId);
+    if (!appId) return;
     try {
-      appRegistryStore.unregisterApp(data.appId);
+      appRegistryStore.unregisterApp(appId);
       toast.show({ type: 'info', message: 'App uninstalled' });
-    } catch (err: any) {
-      toast.show({ type: 'error', message: err.message || 'Failed to uninstall app' });
+    } catch (err) {
+      toast.show({ type: 'error', message: messageOf(err, 'Failed to uninstall app') });
     }
   };
 
-  const receiveMail = (data: any) => {
-    mailStore.addReceivedMail(data);
+  const receiveMail = (data: unknown) => {
+    const mail = fields(data);
+    mailStore.addReceivedMail(mail as unknown as Parameters<typeof mailStore.addReceivedMail>[0]);
     toast.showMail({
-      sender: data.sender || 'Mail',
-      subject: data.subject || 'New Message',
-      onClick: () => bridge.openFromNotification('mail', { mailId: data.id })
+      sender: str(mail.sender) ?? 'Mail',
+      subject: str(mail.subject) ?? 'New Message',
+      onClick: () => bridge.openFromNotification('mail', { mailId: num(mail.id) })
     });
   };
 
-  const receiveMessage = (data: any) => {
-    conversationsStore.addReceivedMessage(data);
+  const receiveMessage = (data: unknown) => {
+    const msg = fields(data);
+    const conversationId = num(msg.conversation_id);
+    conversationsStore.addReceivedMessage({
+      conversation_id: conversationId,
+      message: str(msg.message),
+      senderName: str(msg.senderName),
+      phone: str(msg.phone),
+      avatar: str(msg.avatar),
+      created_at: str(msg.created_at)
+    });
     toast.showIncomingMessage({
-      sender: data.senderName || data.phone || 'Message',
-      message: data.message || '',
-      avatar: data.avatar,
+      sender: str(msg.senderName) ?? str(msg.phone) ?? 'Message',
+      message: str(msg.message) ?? '',
+      avatar: str(msg.avatar),
       onReply: async (replyText) => {
-        if (data.conversation_id) {
-          await conversationsStore.sendMessage(data.conversation_id, replyText);
-        }
+        if (conversationId) await conversationsStore.sendMessage(conversationId, replyText);
       },
       onClick: () =>
         bridge.openFromNotification('messages', {
-          conversationId: data.conversation_id,
-          phone: data.phone || data.senderPhone
+          conversationId,
+          phone: str(msg.phone) ?? str(msg.senderPhone)
         })
     });
   };
 
-  const receiveContactShare = (data: any) => {
+  const receiveContactShare = (data: unknown) => {
+    const share = fields(data);
     /**
      * Accepting is the same whether the player taps Accept or the toast body, so both
      * run this. It validates rather than trusting the payload: a share arriving with no
      * name or number would otherwise be written as a blank contact.
      */
     const accept = async () => {
-      const firstname = typeof data.firstname === 'string' ? data.firstname.trim() : '';
-      const phone = typeof data.phone === 'string' ? data.phone.trim() : '';
+      const firstname = str(share.firstname)?.trim() ?? '';
+      const phone = str(share.phone)?.trim() ?? '';
 
       if (!firstname || !phone) {
         toast.show({
@@ -105,22 +132,25 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
       try {
         await contacts.add({
           firstname,
-          lastname: typeof data.lastname === 'string' ? data.lastname.trim() : '',
+          lastname: str(share.lastname)?.trim() ?? '',
           phone,
-          email: typeof data.email === 'string' ? data.email.trim() : undefined,
-          avatar: typeof data.avatar === 'string' ? data.avatar : undefined,
-          favorite: typeof data.favorite === 'boolean' ? data.favorite : false
+          email: str(share.email)?.trim(),
+          avatar: str(share.avatar),
+          favorite: share.favorite === true
         });
         toast.show({ type: 'success', message: 'Contact added to address book' });
-      } catch (e: any) {
-        toast.show({ type: 'error', message: e.message || 'Failed to add contact' });
+      } catch (e) {
+        toast.show({ type: 'error', message: messageOf(e, 'Failed to add contact') });
       }
     };
 
     toast.showContactShare({
-      name: `${data.firstname || ''} ${data.lastname || ''}`.trim() || data.phone || 'Contact',
-      phone: data.phone || '',
-      avatar: data.avatar,
+      name:
+        `${str(share.firstname) ?? ''} ${str(share.lastname) ?? ''}`.trim() ??
+        str(share.phone) ??
+        'Contact',
+      phone: str(share.phone) ?? '',
+      avatar: str(share.avatar),
       onAccept: accept,
       onDecline: () => {
         toast.show({ type: 'info', message: 'Contact share declined' });
@@ -129,8 +159,8 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     });
   };
 
-  const routes: Record<string, (data: any) => void> = {
-    setTime: (data) => time.set(data),
+  const routes: Record<string, (data: unknown) => void> = {
+    setTime: (data) => time.set(data as TimeState),
     setCharge: (data) => {
       if (typeof data === 'number') charge.set(data);
     },
@@ -140,8 +170,14 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     // Server-originated toast, relayed by the client's shell system. Used by the
     // ace-denial paths and the call failure cases.
     notify: (data) => {
-      if (typeof data?.message !== 'string' || !data.message) return;
-      toast.show({ type: data.type ?? 'info', title: data.title, message: data.message });
+      const notification = fields(data);
+      const message = str(notification.message);
+      if (!message) return;
+      toast.show({
+        type: (str(notification.type) as ToastMessage['type']) ?? 'info',
+        title: str(notification.title),
+        message
+      });
     },
     installApp,
     uninstallApp,

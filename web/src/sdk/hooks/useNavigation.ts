@@ -12,7 +12,7 @@ import {
 export function useNavigation() {
   return {
     currentApp,
-    openApp: (appName: string, props: any = {}) => openApp(appName, props),
+    openApp: (appName: string, props: Record<string, unknown> = {}) => openApp(appName, props),
     goHome: () => goHome(),
     closePhone: () => closePhone(),
     /**

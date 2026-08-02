@@ -1,5 +1,6 @@
 import { get, writable } from 'svelte/store';
 import { type AppManifest, defineApp } from '@gphone/sdk';
+import { messageOf } from '../../lib/errors';
 
 export type { AppManifest } from '@gphone/sdk';
 
@@ -186,10 +187,9 @@ function createAppRegistry() {
           const code = await response.text();
           const dataUrl = `data:text/javascript;charset=utf-8,${encodeURIComponent(code)}`;
           loadedModule = await import(/* @vite-ignore */ dataUrl);
-        } catch (fallbackError: any) {
-          throw new Error(
-            `gPhone Remote App Loader failed to load bundle from '${url}': ${(directImportError as any)?.message || fallbackError?.message}`
-          );
+        } catch (fallbackError) {
+          const why = messageOf(directImportError, '') || messageOf(fallbackError, 'unknown error');
+          throw new Error(`gPhone Remote App Loader failed to load bundle from '${url}': ${why}`);
         }
       }
 

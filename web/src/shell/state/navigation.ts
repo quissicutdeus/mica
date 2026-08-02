@@ -43,7 +43,7 @@ export const runningApps = writable<RunningApp[]>([]);
 /** Whatever is on screen. `home` is the shell, not an app, and is never resident. */
 export const currentApp = writable<RunningApp>({ id: 'home', props: {} });
 
-export const openApp = (appName: string, props: any = {}) => {
+export const openApp = (appName: string, props: Record<string, unknown> = {}) => {
   const id = appName.toLowerCase();
 
   if (id === 'home') {

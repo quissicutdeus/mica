@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import { toast } from '../../shell/state/toast';
+import { messageOf } from '../../lib/errors';
 
 export interface AppActionOptions {
   /** Toast to show when the work succeeds. Omit for actions that speak for themselves. */
@@ -50,12 +51,12 @@ export function useAppAction() {
         toast.show({ type: 'success', title: options.title, message: options.success });
       }
       return true;
-    } catch (e: any) {
+    } catch (e) {
       console.error(options.error || 'App action failed', e);
       toast.show({
         type: 'error',
         title: options.title,
-        message: options.error || e?.message || 'That did not work'
+        message: options.error || messageOf(e, 'That did not work')
       });
       return false;
     } finally {
