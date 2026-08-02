@@ -18,10 +18,9 @@ import { Database } from './Database';
  */
 
 /** Marks a `players` row as ours. Nothing else in the database uses this license. */
-export const SEED_LICENSE = 'license:gphoneseed';
+const SEED_LICENSE = 'license:gphoneseed';
 
 /** Every seeded citizenid starts with this. */
-export const SEED_PREFIX = 'SEED';
 
 export interface SeedCharacter {
   citizenid: string;

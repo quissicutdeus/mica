@@ -1,6 +1,6 @@
 import { onMount } from 'svelte';
 
-export interface NuiMessageData<T = any> {
+interface NuiMessageData<T = any> {
   action: string;
   data: T;
 }

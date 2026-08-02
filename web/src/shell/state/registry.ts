@@ -55,7 +55,6 @@ for (const path in manifestFiles) {
 loadedApps.sort((a, b) => a.name.localeCompare(b.name));
 
 export const registeredApps = loadedApps;
-export const registeredComponents = componentRegistry;
 
 const SYSTEM_APP_IDS = new Set(loadedApps.filter((a) => a.isSystem !== false).map((a) => a.id));
 const LOCAL_STORAGE_KEY = 'gphone_installed_remote_apps';

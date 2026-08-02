@@ -7,7 +7,7 @@ const ts = (offsetMs: number = 0) => {
 };
 
 // Helper function to generate unique Robohash / DiceBear avatars
-export const getUniqueAvatar = (seed: string, setIndex: number = 1) => {
+const getUniqueAvatar = (seed: string, setIndex: number = 1) => {
   const sets = [
     `https://robohash.org/${encodeURIComponent(seed)}.png?set=set1&bgset=bg1`,
     `https://robohash.org/${encodeURIComponent(seed)}.png?set=set2&bgset=bg2`,

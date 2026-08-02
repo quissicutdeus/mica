@@ -1,5 +1,5 @@
 import { mailStore, unreadMailCount } from '../../services/mail';
-export { mailStore, unreadMailCount };
+export { unreadMailCount };
 
 /**
  * OS Service Hook for email messaging.

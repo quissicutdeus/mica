@@ -33,9 +33,7 @@ export default defineConfig({
   base: './',
   define: {
     __MICA_VERSION__: JSON.stringify(version),
-    __MICA_BUILD_INFO__: JSON.stringify(buildInfo),
-    __MICA_GIT_BRANCH__: JSON.stringify(gitInfo.branch),
-    __MICA_GIT_COMMIT__: JSON.stringify(gitInfo.commit)
+    __MICA_BUILD_INFO__: JSON.stringify(buildInfo)
   },
   resolve: {
     alias: {

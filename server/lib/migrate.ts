@@ -21,7 +21,7 @@ import type { ResolvedService } from './defineService';
  * reported for a human to act on, never applied.
  */
 
-export interface PlannedStatement {
+interface PlannedStatement {
   /** What this does, in one line, for the startup log. */
   description: string;
   sql: string;
@@ -41,7 +41,7 @@ export interface MigrationPlan {
 }
 
 /** One row of `information_schema.columns`, reduced to what the planner needs. */
-export interface LiveColumn {
+interface LiveColumn {
   name: string;
   /** `COLUMN_TYPE`, e.g. `varchar(50)`, `enum('active','deleted')`. */
   type: string;

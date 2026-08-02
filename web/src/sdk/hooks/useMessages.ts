@@ -1,5 +1,5 @@
 import { conversationsStore, unreadMessagesCount } from '../../services/conversations';
-export { conversationsStore, unreadMessagesCount };
+export { unreadMessagesCount };
 
 /**
  * OS Service Hook for accessing SMS messaging.

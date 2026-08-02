@@ -1,7 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { useStorage } from '../../sdk/hooks/useStorage';
 
-export type SoundEffect = 'click' | 'pop' | 'camera' | 'notification' | 'ringtone';
+type SoundEffect = 'click' | 'pop' | 'camera' | 'notification' | 'ringtone';
 
 export const soundVolume = writable<number>(0.5);
 export const soundMuted = writable<boolean>(false);
@@ -80,7 +80,7 @@ export const toggleMute = () => {
   showVolumeHud();
 };
 
-export const showVolumeHud = () => {
+const showVolumeHud = () => {
   volumeHudVisible.set(true);
   if (hudTimeout) clearTimeout(hudTimeout);
   hudTimeout = setTimeout(() => {

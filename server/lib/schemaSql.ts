@@ -84,7 +84,7 @@ const foreignKeySql = (table: string, column: string, def: ColumnDef): string | 
 };
 
 /** One column of a table, as data rather than as a line of SQL. */
-export interface ExpectedColumn {
+interface ExpectedColumn {
   name: string;
   def: ColumnDef;
   /** True for `id`. Never migrated: adding an auto-increment PK to a live table is

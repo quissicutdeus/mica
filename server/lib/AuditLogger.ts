@@ -1,6 +1,6 @@
 import { Database } from './Database';
 
-export type AuditAction =
+type AuditAction =
   | 'archived'
   | 'unarchived'
   | 'deleted'

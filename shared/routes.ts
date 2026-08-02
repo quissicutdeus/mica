@@ -132,6 +132,3 @@ export const CLIENT_ONLY_ACTIONS: readonly string[] = [
  * Empty. `flipCamera` lived here until the scripted camera made it real.
  */
 export const UNIMPLEMENTED_ACTIONS: readonly string[] = [] as const;
-
-export const findRoute = (action: string): Route | undefined =>
-  ROUTES.find((r) => r.action === action);

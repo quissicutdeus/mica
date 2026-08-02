@@ -119,7 +119,7 @@ app.registerEvent('deleteMail', async (source, cbId, data, citizenid) => {
  * mailbox. This is the only write path into the table, which is what
  * `serverAuthored` is asserting.
  */
-export const SendSystemEmail = async (
+const SendSystemEmail = async (
   targetCitizenId: string,
   emailData: {
     sender: string;

@@ -15,7 +15,7 @@
  * key name, which is why the two are not interchangeable.
  */
 
-export type KeybindScope = 'game' | 'phone';
+type KeybindScope = 'game' | 'phone';
 
 /**
  * When an action is eligible. Omitted means "whenever the phone is open".

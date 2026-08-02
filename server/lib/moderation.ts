@@ -96,7 +96,7 @@ export const summariseTarget = async (
  * module that does nothing else, rather than added to a repository, so that is obvious
  * at the call site.
  */
-export const setTargetStatus = async (
+const setTargetStatus = async (
   table: ReportableTable,
   id: number,
   status: 'moderated' | 'active',

@@ -25,7 +25,6 @@ export { default as MessageIcon } from './ui/icons/MessageIcon.svelte';
 export { default as MessageStatusIcon } from './ui/icons/MessageStatusIcon.svelte';
 export { default as MicrophoneIcon } from './ui/icons/MicrophoneIcon.svelte';
 export { default as PaperclipIcon } from './ui/icons/PaperclipIcon.svelte';
-export { default as PencilSquareIcon } from './ui/icons/PencilSquareIcon.svelte';
 export { default as PhoneIcon } from './ui/icons/PhoneIcon.svelte';
 export { default as PhotoIcon } from './ui/icons/PhotoIcon.svelte';
 export { default as SearchIcon } from './ui/icons/SearchIcon.svelte';

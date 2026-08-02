@@ -8,7 +8,7 @@ import { registerService } from './services';
  * `eventNames.test.ts` check the `<service>` segment against a registry instead of a
  * hard-coded list of names that were "not apps".
  */
-export const SHELL_SERVICE = registerService('shell');
+const SHELL_SERVICE = registerService('shell');
 
 export interface ShellNotification {
   type?: 'success' | 'error' | 'info' | 'warning';

@@ -22,7 +22,7 @@ export type ColumnType =
   'string' | 'text' | 'mediumtext' | 'int' | 'bool' | 'json' | 'blob' | 'timestamp' | 'enum';
 
 /** A foreign key onto another table. `players` is implied for `citizenid`. */
-export interface ColumnReference {
+interface ColumnReference {
   table: string;
   column: string;
   /** Defaults to CASCADE, matching every existing gphone FK. */
@@ -122,7 +122,7 @@ export const normalizeIndex = (index: IndexDefinition): ResolvedIndex =>
       };
 
 /** `{ title: 'string' }` is shorthand for `{ title: { type: 'string' } }`. */
-export type ServiceSchema = Record<string, ColumnType | ColumnDef>;
+type ServiceSchema = Record<string, ColumnType | ColumnDef>;
 
 /**
  * `owner` — rows belong to one citizenid; the generic CRUD path is safe as-is.
@@ -130,7 +130,7 @@ export type ServiceSchema = Record<string, ColumnType | ColumnDef>;
  *   ownership is the wrong authorization question and the generic mutation path
  *   is disabled. A shared app must supply custom actions that check membership.
  */
-export type ServiceScope = 'owner' | 'shared';
+type ServiceScope = 'owner' | 'shared';
 
 export interface ServiceDefinition {
   /** Matches the web module's manifest id. */

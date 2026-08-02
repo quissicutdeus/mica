@@ -2,7 +2,7 @@ import { get, writable } from 'svelte/store';
 import { audio } from './audio';
 import { isBatteryDead } from './charge';
 
-export type ToastType = 'info' | 'success' | 'warning' | 'error' | 'message' | 'call' | 'contact';
+type ToastType = 'info' | 'success' | 'warning' | 'error' | 'message' | 'call' | 'contact';
 
 export interface ToastAction {
   label: string;

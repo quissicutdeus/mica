@@ -1,9 +1,9 @@
 import { writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
 
-export type CallStatus = 'idle' | 'dialing' | 'connected' | 'incoming';
+type CallStatus = 'idle' | 'dialing' | 'connected' | 'incoming';
 
-export interface CallState {
+interface CallState {
   status: CallStatus;
   number: string;
   name?: string;
