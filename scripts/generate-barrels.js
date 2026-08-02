@@ -85,7 +85,8 @@ ${lines}
 };
 
 console.log('Generating barrels...');
-generateIndex('client/systems', 'import');
+generateIndex('client/services', 'import');
+generateIndex('client/game', 'import');
 generateIndex('server/services', 'import');
 generateIndex('web/src/sdk/hooks', 'export');
 generateIconIndex();

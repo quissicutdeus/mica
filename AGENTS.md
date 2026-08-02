@@ -320,7 +320,8 @@ Four words carry the structure, and they mean exactly one thing each:
 
 | Path                   | Runs in      | Notes                                                           |
 | ---------------------- | ------------ | --------------------------------------------------------------- |
-| `client/systems/`      | FiveM client | Client subsystems, auto-indexed by the barrel generator         |
+| `client/services/`     | FiveM client | The client half of each service — NUI callbacks, server pushes  |
+| `client/game/`         | FiveM client | GTA world: camera, freelook, phone prop and animations          |
 | `client/lib/`          | FiveM client | `ServiceProxy` (NUI↔server relay), `FrameworkBridge`, `nui`     |
 | `server/services/`     | FiveM server | One file per service, named for the service, auto-indexed       |
 | `server/lib/`          | FiveM server | `ServiceEndpoint`, `defineService`, `Repository`, `Database`    |
@@ -338,9 +339,15 @@ Four words carry the structure, and they mean exactly one thing each:
 | `web/src/nui/`         | CEF+browser  | The bridge: transport, `fetchNui`, `useNuiEvent`, browser mocks |
 | `web/src/lib/`         | CEF+browser  | Helpers with no gPhone state and no I/O — formatters, markdown  |
 
-`client/systems/index.ts`, `server/services/index.ts`, `web/src/sdk/hooks/index.ts` and
+`client/services/index.ts`, `client/game/index.ts`, `server/services/index.ts`, `web/src/sdk/hooks/index.ts` and
 `web/src/sdk/icons.ts` are **generated** by `scripts/generate-barrels.js`. Add a file to the
 directory; do not edit the index.
+
+**`client/` splits by what a file talks to.** `client/services/` is the client half of a
+service and speaks NUI and net events; `client/game/` speaks to GTA and knows nothing about
+the phone's data. They were one `systems/` directory, which was itself a rename of
+`controllers/` — and renaming it did not fix the thing wrong with it, which was that two
+unrelated kinds of file shared a name that described neither.
 
 **`services/` appears on two sides on purpose.** `server/services/Notes.ts` and
 `web/src/services/notes.ts` are the two ends of the one `notes` service, so they carry the
@@ -368,7 +375,7 @@ This is the single most common source of half-built features. A call from `web/`
 only if every layer exists:
 
 1. **`web/`** — `fetchNui('someAction', payload)`, usually from `web/src/services/`.
-2. **`shared/routes.ts`** — a `route()` entry; `client/systems/Relay.ts` registers every one.
+2. **`shared/routes.ts`** — a `route()` entry; `client/services/Relay.ts` registers every one.
    Without this the NUI callback is unregistered, `fetchNui` swallows the failure and returns its
    `defaultValue`. **The feature silently does nothing in game.**
 3. **`server/services/`** — a `registerEvent('<action>', ...)` handler, or one of the generic CRUD
@@ -659,7 +666,7 @@ has a service with `null` for its repository because the data belongs to another
 
 ### 3. The route
 
-Every NUI action needs a `route()` entry in `shared/routes.ts`. `client/systems/Relay.ts` registers
+Every NUI action needs a `route()` entry in `shared/routes.ts`. `client/services/Relay.ts` registers
 all of them, so there is no per-app client file to write.
 
 This is the layer that goes missing. `readConversation`, `renameConversation`,

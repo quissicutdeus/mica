@@ -3,7 +3,7 @@ import { requestEventFor } from './rpc';
 /**
  * Every NUI action that forwards to the server, declared once.
  *
- * Replaces seven near-identical `client/systems/*.ts` files whose entire
+ * Replaces seven near-identical client relay files whose entire
  * content was `app.registerCallback(nuiAction, serverEvent)` repeated. Those files were
  * data pretending to be code, and being spread across seven files is what let routes go
  * missing without anyone noticing.

@@ -1,4 +1,4 @@
-import { PhoneCamera } from './PhoneCamera';
+import { PhoneCamera } from '../game/PhoneCamera';
 
 const takePhoto = async (): Promise<string> => {
   return new Promise((resolve, reject) => {
