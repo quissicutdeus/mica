@@ -18,6 +18,7 @@ export * from './useMessages';
 export * from './useNavigation';
 export * from './useNotes';
 export * from './useNuiBridge';
+export * from './usePagedList.svelte';
 export * from './usePhoneNotification';
 export * from './usePhotos';
 export * from './useReports';
