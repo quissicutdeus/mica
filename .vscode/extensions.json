@@ -1,0 +1,12 @@
+{
+  // Everything the toolchain assumes is installed. Without the Svelte extension a
+  // `.svelte` file is an unhighlighted text file and none of the type errors that
+  // `pnpm typecheck` reports show up while you type.
+  "recommendations": [
+    "svelte.svelte-vscode",
+    "bradlc.vscode-tailwindcss",
+    "esbenp.prettier-vscode",
+    "vitest.explorer",
+    "ms-playwright.playwright"
+  ]
+}

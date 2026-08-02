@@ -1,0 +1,30 @@
+{
+  // Formatting matches `pnpm format`, so the editor and the `format` gate cannot
+  // disagree and turn every save into a diff.
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnSave": true,
+  "[svelte]": { "editor.defaultFormatter": "svelte.svelte-vscode" },
+
+  // Tailwind 4 keeps its configuration in `app.css` rather than a config file, so the
+  // extension has to be pointed at it or class completion is silently absent.
+  "tailwindCSS.experimental.configFile": "web/src/app.css",
+  "tailwindCSS.includeLanguages": { "svelte": "html" },
+
+  // The class strings in this codebase are long and conditional. Wrapping them makes
+  // the ternaries readable instead of a horizontal scroll.
+  "editor.wordWrap": "on",
+
+  // Generated. Editing one is erased by the next build — AGENTS.md §2.2.
+  "files.readonlyInclude": {
+    "**/sdk/hooks/index.ts": true,
+    "**/sdk/icons.ts": true,
+    "client/services/index.ts": true,
+    "client/game/index.ts": true,
+    "server/services/index.ts": true,
+    "fxmanifest.lua": true,
+    "dist/**": true
+  },
+
+  "search.exclude": { "dist": true, "playwright-report": true, "test-results": true },
+  "typescript.tsdk": "node_modules/typescript/lib"
+}
