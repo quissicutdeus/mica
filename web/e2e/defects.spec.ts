@@ -89,6 +89,22 @@ test.describe('Photos', () => {
   });
 });
 
+test.describe('Contacts', () => {
+  test('sharing says it is unimplemented instead of claiming success', async ({ page }) => {
+    // The same lie as Photos' old `alert(...)`, one layer deeper and so missed for
+    // longer: the client callback logged to console and answered `{ success: true }`,
+    // so the phone announced "Contact shared successfully" for a contact that never
+    // left the machine. Nothing caught it — the callback was registered, which is all
+    // the route table can check.
+    await openApp(page, 'Contacts');
+    await page.locator('[role="button"]').first().click();
+
+    await page.getByRole('button', { name: 'Share' }).click();
+    await expect(page.getByText(/not implemented/i)).toBeVisible();
+    await expect(page.getByText(/shared successfully/i)).toHaveCount(0);
+  });
+});
+
 test.describe('Notes and Contacts persist in the browser mock', () => {
   // The mock handlers never touched their fixtures, so a created note vanished and a
   // deleted contact came back — while photos and mail behaved correctly.

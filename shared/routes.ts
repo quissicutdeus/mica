@@ -116,8 +116,6 @@ export const CLIENT_ONLY_ACTIONS: readonly string[] = [
   'getPhoneNumber',
   'setBatteryLevel',
   'takePhoto',
-  // Proximity share, resolved client-side against nearby players.
-  'shareContact',
   // Front/rear toggle on the scripted camera.
   'flipCamera'
 ] as const;
@@ -129,6 +127,13 @@ export const CLIENT_ONLY_ACTIONS: readonly string[] = [
  * not a place to park a silent no-op. The test enforces that the callback still answers,
  * because an absent one is the silent no-op this whole table exists to outlaw.
  *
- * Empty. `flipCamera` lived here until the scripted camera made it real.
+ * `flipCamera` lived here until the scripted camera made it real.
  */
-export const UNIMPLEMENTED_ACTIONS: readonly string[] = [] as const;
+export const UNIMPLEMENTED_ACTIONS: readonly string[] = [
+  // Proximity share. The client callback is a stub that logs and returns success, so
+  // the phone announced "Contact shared successfully" and nothing left the machine —
+  // the same lie `alert('Photos shared! (Mock)')` used to tell, hidden one layer deeper.
+  // It was listed as client-only, which satisfied every check: the callback really is
+  // registered, and no test can see that the body does nothing.
+  'shareContact'
+] as const;

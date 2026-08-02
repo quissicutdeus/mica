@@ -42,7 +42,9 @@ const mockRegistry: Record<string, MockHandler> = {
     update: 'updateContact',
     remove: 'deleteContact'
   }),
-  shareContact: async () => true,
+  // Matches the client exactly. A mock that succeeded where the game fails is how the
+  // stub survived this long.
+  shareContact: async () => ({ error: 'Sharing a contact is not implemented yet' }),
 
   // Notes
   ...defineMockCrud<Note>(mockNotes, {
