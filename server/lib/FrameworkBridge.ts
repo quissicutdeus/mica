@@ -9,14 +9,32 @@ export interface FrameworkPlayer {
   rawPlayer: any;
 }
 
+/**
+ * Another resource's exports.
+ *
+ * Indirected through a variable for one reason: under Vitest the bundler supplies its
+ * own module-scope `exports` binding that shadows FiveM's global, so a test cannot put a
+ * fake `qbx_core` where this module will look. Production evaluates exactly the same
+ * expression it always did — see `__setResourceLookup`.
+ */
+type ResourceLookup = (name: string) => any;
+
+let resource: ResourceLookup = (name) => (exports as any)[name];
+
+/** Test seam, like `__resetBatteryCache`. Pass nothing to restore the real lookup. */
+export const __setResourceLookup = (fn?: ResourceLookup): void => {
+  resource = fn ?? ((name) => (exports as any)[name]);
+};
+
 export class FrameworkBridge {
   public static getPlayer(src: number): FrameworkPlayer | null {
     try {
       // QBX Core
-      if (exports['qbx_core']?.GetPlayer) {
-        const player = exports['qbx_core'].GetPlayer(src);
+      if (resource('qbx_core')?.GetPlayer) {
+        const player = resource('qbx_core').GetPlayer(src);
         if (!player) return null;
-        const citizenid = player.PlayerData?.citizenid || player.citizenid || `src_${src}`;
+        const citizenid = player.PlayerData?.citizenid || player.citizenid;
+        if (!citizenid) return FrameworkBridge.unidentified(src, 'qbx_core');
         const phone = player.PlayerData?.charinfo?.phone || null;
         return {
           citizenid,
@@ -24,7 +42,7 @@ export class FrameworkBridge {
           phone,
           getMoney: (type: 'bank' | 'cash') => {
             if (player.Functions?.GetMoney) return player.Functions.GetMoney(type);
-            if (exports['qbx_core']?.GetMoney) return exports['qbx_core'].GetMoney(src, type);
+            if (resource('qbx_core')?.GetMoney) return resource('qbx_core').GetMoney(src, type);
             return player.PlayerData?.money?.[type] ?? 0;
           },
           removeMoney: (type: 'bank' | 'cash', amount: number) => {
@@ -38,8 +56,8 @@ export class FrameworkBridge {
               player.PlayerData.metadata[key] = value;
             }
             try {
-              if (exports['qbx_core']?.SetMetaData) {
-                exports['qbx_core'].SetMetaData(src, key, value);
+              if (resource('qbx_core')?.SetMetaData) {
+                resource('qbx_core').SetMetaData(src, key, value);
               }
             } catch (e) {
               // ignore
@@ -53,11 +71,12 @@ export class FrameworkBridge {
       }
 
       // QB Core
-      if (exports['qb-core']?.GetCoreObject) {
-        const QBCore = exports['qb-core'].GetCoreObject();
+      if (resource('qb-core')?.GetCoreObject) {
+        const QBCore = resource('qb-core').GetCoreObject();
         const player = QBCore?.Functions?.GetPlayer ? QBCore.Functions.GetPlayer(src) : null;
         if (!player) return null;
-        const citizenid = player.PlayerData?.citizenid || `src_${src}`;
+        const citizenid = player.PlayerData?.citizenid;
+        if (!citizenid) return FrameworkBridge.unidentified(src, 'qb-core');
         const phone = player.PlayerData?.charinfo?.phone || null;
         return {
           citizenid,
@@ -88,6 +107,26 @@ export class FrameworkBridge {
     return null;
   }
 
+  /**
+   * A loaded player the framework will not name.
+   *
+   * This used to synthesise `src_<source>` and carry on. A server id is not an identity:
+   * it is assigned per connection and reused, so the next player to be given source 5
+   * would have inherited the previous one's contacts, notes and photos — every
+   * repository scopes by citizenid and this one looked perfectly valid.
+   *
+   * Returning null is what a missing player already does, and `ServiceEndpoint` answers
+   * it with "Player not authenticated". A phone that refuses to open beats one showing
+   * somebody else's messages.
+   */
+  private static unidentified(src: number, framework: string): null {
+    console.error(
+      `[FrameworkBridge] ${framework} returned a player for source ${src} with no ` +
+        `citizenid. Refusing to serve gPhone data rather than inventing an identity.`
+    );
+    return null;
+  }
+
   public static getCitizenId(src: number): string | null {
     const player = FrameworkBridge.getPlayer(src);
     return player ? player.citizenid : null;
@@ -100,10 +139,10 @@ export class FrameworkBridge {
 
   public static getAllPlayers(): Record<string | number, any> {
     try {
-      if (exports['qbx_core']?.GetQBPlayers) {
-        return exports['qbx_core'].GetQBPlayers() || {};
-      } else if (exports['qb-core']?.GetCoreObject) {
-        const QBCore = exports['qb-core'].GetCoreObject();
+      if (resource('qbx_core')?.GetQBPlayers) {
+        return resource('qbx_core').GetQBPlayers() || {};
+      } else if (resource('qb-core')?.GetCoreObject) {
+        const QBCore = resource('qb-core').GetCoreObject();
         return QBCore?.Functions?.GetQBPlayers ? QBCore.Functions.GetQBPlayers() : {};
       }
     } catch (error) {
@@ -156,21 +195,30 @@ export class FrameworkBridge {
       return player.Functions.RemoveItem(item, count);
     }
     try {
-      if (exports['ox_inventory']?.RemoveItem) {
-        return exports['ox_inventory'].RemoveItem(src, item, count);
+      if (resource('ox_inventory')?.RemoveItem) {
+        return resource('ox_inventory').RemoveItem(src, item, count);
       }
     } catch (e) {
       // ox_inventory not present
     }
-    return true; // Fallback allow if inventory item removal function not detected
+
+    // Deliberate fail-open, said out loud. A server with a framework but no recognised
+    // inventory gets the item's effect without the item being consumed; the alternative
+    // is a consumable that silently never works. A silent `return true` here reads as
+    // "removed" to every caller, which is the same lie `shareContact` used to tell.
+    console.warn(
+      `[FrameworkBridge] No inventory resource could remove '${item}' for source ${src}. ` +
+        `Allowing the action anyway — the item was not consumed.`
+    );
+    return true;
   }
 
   public static registerUsableItem(item: string, cb: (source: number) => void): void {
     try {
-      if (exports['qbx_core']?.CreateUseableItem) {
-        exports['qbx_core'].CreateUseableItem(item, cb);
-      } else if (exports['qb-core']?.GetCoreObject) {
-        const QBCore = exports['qb-core'].GetCoreObject();
+      if (resource('qbx_core')?.CreateUseableItem) {
+        resource('qbx_core').CreateUseableItem(item, cb);
+      } else if (resource('qb-core')?.GetCoreObject) {
+        const QBCore = resource('qb-core').GetCoreObject();
         if (QBCore?.Functions?.CreateUseableItem) {
           QBCore.Functions.CreateUseableItem(item, cb);
         }
