@@ -20,6 +20,8 @@ import { messages } from '../services/Messages';
 // Notes has migrated to a defineService declaration; its repository is derived.
 import { notes } from '../services/Notes';
 import { photos } from '../services/Photos';
+import { reports } from '../services/Reports';
+import { batteryApp } from '../services/Battery';
 
 /**
  * The shipped write policy, table by table.
@@ -34,7 +36,12 @@ const ALL = [
   { name: 'mail', repo: mail.repo },
   { name: 'messages', repo: messages.repo },
   { name: 'notes', repo: notes.repo },
-  { name: 'photos', repo: photos.repo }
+  { name: 'photos', repo: photos.repo },
+  // Both were missing, which is how a dead-code scan came to report `reports` as an
+  // unused export: this file was the only thing that ever imported a declaration, so
+  // one absent from it looked like one nobody used.
+  { name: 'reports', repo: reports.repo },
+  { name: 'battery', repo: batteryApp.repo }
 ] satisfies { name: string; repo: Repository<any> }[];
 
 describe('shipped repositories — declared client write policy', () => {
@@ -45,7 +52,9 @@ describe('shipped repositories — declared client write policy', () => {
     ['photos', ['image']],
     // Every mutation on these goes through a named, authorizing method.
     ['mail', []],
-    ['messages', []]
+    ['messages', []],
+    ['reports', []],
+    ['battery', []]
   ])('%s exposes exactly the expected writable columns', (name, expected) => {
     const entry = ALL.find((candidate) => candidate.name === name)!;
     expect(entry.repo.writableColumns).toEqual(expected);
