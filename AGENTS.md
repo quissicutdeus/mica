@@ -104,7 +104,7 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
 5. **No new dependencies** without asking.
 6. **Do not change** TypeScript versions in either package, Vite `build.outDir`, or
    `scripts/generate-barrels.js` output paths without asking.
-7. **SDK First.** Everything in `web/src/apps/`, and every external add-on, consumes the OS strictly through `@gphone/sdk` hooks (`useNavigation`, `usePhoneNotification`, `useContacts`, `usePhotos`, `useCamera`, `useClock`, `useAppRegistry`, `useNuiBridge`, `useKeybinds`). Relative imports out of an app — into `shell/`, `services/`, `nui/`, `lib/`, or `sdk/` by path — are prohibited and enforced by `web/src/sdk/boundary.test.ts`. An add-on installed from the Store resolves `@gphone/sdk` and nothing else, so a relative import is a thing a third-party app cannot do. UI primitives (`Screen`, `ListItem`, `Button`, `Avatar`, `SearchBar`, `EmptyState`, `ConfirmDialog`, `FloatingActionButton`, `PhotoPickerModal`, `ReportDialog`, `SegmentedControl`, `ToggleSwitch`, `ActionSheet`) live in `web/src/sdk/ui/` and are re-exported from `web/src/sdk/components.ts`. The shell's own pieces — `PhoneFrame`, `Launcher`, `ToastHost`, `VolumeHud`, `ErrorBoundary` — are deliberately **not** exported, because an app rendering its own phone frame or toast host is a bug.
+7. **SDK First.** Everything in `web/src/apps/`, and every external add-on, consumes the OS strictly through `@gphone/sdk` hooks — data (`useContacts`, `usePhotos`, `useNotes`, `useMail`, `useMessages`, `useAccount`, `useCall`, `useReports`), OS services (`useNavigation`, `usePhoneNotification`, `useKeybinds`, `useClock`, `useSystemHardware`, `useAppRegistry`, `useNuiBridge`, `useStorage`, `useCamera`, `useAdmin`, `useDevTools`), and the four an app is built out of: `useAppLevels` for its internal levels, `useAppAction` for a write, `useDeepLink` for the props it was opened with, and `onAppForeground` for loading. Relative imports out of an app — into `shell/`, `services/`, `nui/`, `lib/`, or `sdk/` by path — are prohibited and enforced by `web/src/sdk/boundary.test.ts`. An add-on installed from the Store resolves `@gphone/sdk` and nothing else, so a relative import is a thing a third-party app cannot do. UI primitives (`Screen`, `ListItem`, `Button`, `Avatar`, `SearchBar`, `EmptyState`, `ConfirmDialog`, `FloatingActionButton`, `PhotoPickerModal`, `ReportDialog`, `SegmentedControl`, `ToggleSwitch`, `Skeleton`) live in `web/src/sdk/ui/` and are re-exported from `web/src/sdk/components.ts`. The shell's own pieces — `PhoneFrame`, `Launcher`, `ToastHost`, `VolumeHud`, `ErrorBoundary` — are deliberately **not** exported, because an app rendering its own phone frame or toast host is a bug.
 
    **Keyboard shortcuts specifically.** Never add a raw `keydown` listener or a
    `<svelte:window on:keydown>` for a phone-level action; declare the action in
@@ -653,25 +653,64 @@ silent no-op. `server/__tests__/routes.test.ts` cross-references the table again
 calls in `web/`, the events the server registers, and the browser mock — a missing layer fails there
 rather than in game.
 
-### 4. The browser mock
+### 4. The store
 
-Add the action to `web/src/nui/mocks/registry.ts`. Without it the app is dead in `pnpm dev` and in
+A list the server owns is one `createCrudStore` declaration in `web/src/services/<name>.ts`:
+
+```ts
+export const notes = createCrudStore<Note, Omit<Note, 'id' | 'citizenid'>>(
+  'Notes',
+  { list: 'getNotes', create: 'createNote', update: 'updateNote', remove: 'deleteNote' },
+  { sort: byNewest<Note>('updated_at') }
+);
+```
+
+`sort` is what keeps one order however the list changed — the hand-written stores disagreed about
+append vs prepend and sorted on load but not after a write. `validate` refuses a write before it
+leaves the phone. Anything that is not list/create/update/delete stays a named method on the store,
+as Mail's `archive` does; do not stretch the factory to cover it.
+
+Then expose it through a hook in `web/src/sdk/hooks/`. Stores are never reached by path from an app.
+
+### 5. The browser mock
+
+Add it to `web/src/nui/mocks/registry.ts`. Without a mock the app is dead in `pnpm dev` and in
 Playwright, and — worse — a mock that returns plausible data while doing nothing makes an e2e test
-pass with the feature broken. Make mutators actually mutate the fixtures.
+pass with the feature broken.
 
-### 5. Wiring inside the app
+`defineMockCrud(fixtures, events, options)` covers the CRUD half and mutates the fixtures for you,
+which is the part that kept being forgotten: a created note used to vanish on reload while photos
+and mail behaved. Say whether the server deletes `'hard'` or `'soft'` — matching it matters, because
+a mock that disagrees with the server is a bug you cannot see in the browser.
+
+### 6. Wiring inside the app
 
 - Import from `@gphone/sdk`. Nothing else. `sdk/boundary.test.ts` enforces it.
 - Data comes from a hook (`useNotes`, `useContacts`, …), never from `services/` by path.
-- Load on `onAppMount`, not an `$effect` — apps are resident, and an `$effect` that reads `$state`
-  becomes a refetch loop.
-- If the app has internal levels, write `goBack` **and** register it: `onKeybind('back', goBack)`.
-  The shell owns Backspace and pre-empts an unregistered ladder, sending the player home from a
-  detail view. `sdk/backNavigation.test.ts` checks this.
-- Give the empty state a `<EmptyState>`. A broken fetch showing only a heading is indistinguishable
-  from "you have nothing yet".
+- Load with `onAppForeground`, never `onMount` and never an `$effect`. Apps are resident, so mount
+  runs once per session and an app whose data changed while it sat in the background would show
+  the old answer for the rest of the session; an `$effect` that reads `$state` becomes a refetch
+  loop. Every app that fetches uses `onAppForeground` — there is no second rule to weigh, and a
+  push channel does not exempt one, because a push only covers what arrives while you are looking.
+  `onAppMount` and `onAppUnmount` remain for setup and teardown that is not a fetch.
+- Show `Skeleton` until the store's `loaded` says the first fetch has come back, and only then the
+  `EmptyState`. An empty list is not the same statement as "you have nothing"; every list in the
+  phone used to make the second one while still waiting for the first.
+- Declare internal levels with `useAppLevels`, deepest first. That one call supplies `onback`, the
+  header title, **and** the `back` keybind — the shell owns Backspace and pre-empts a ladder that
+  was written but never registered, which is how Notes and Contacts both shipped sending the player
+  home from a detail view.
+- Wrap a user-initiated write in `useAppAction`'s `run`, which gives you the busy flag, the success
+  toast and the error toast together. Written by hand they come apart: Contacts' delete had neither
+  toast, so a refused delete looked exactly like a real one.
+- Act on deep-link props with `useDeepLink`. Return `false` while the data it names has not arrived
+  and it will ask again; returning `true` consumes the props, which is what makes back work.
+- Filter a list with `filterByQuery`, and use the shared primitives — `SegmentedControl` for tabs,
+  `ToggleSwitch` for a setting, `Skeleton` while a fetch is in flight.
+- Give the empty state an `<EmptyState>`, and do not show it until the fetch has returned. A list
+  that is merely still loading is not a list with nothing in it.
 
-### 6. Before you call it done
+### 7. Before you call it done
 
 `pnpm typecheck`, `test:unit`, `test:e2e`, `build`, `format:check` — by exit code (§9). `build` and
 `e2e` are not optional: they are the only steps that catch a broken import inside a `.svelte` file
