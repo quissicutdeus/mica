@@ -283,8 +283,7 @@
           </div>
         {/if}
 
-        {#each filteredNotes as note}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
+        {#each filteredNotes as note (note.id)}
           <ListItem
             class="mb-2 rounded-lg bg-gray-800 p-4 shadow"
             onclick={() => (selectedNote = note)}

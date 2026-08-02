@@ -141,8 +141,11 @@
     <!-- Full Screen Image View -->
     <div class="relative flex h-full flex-col bg-black" transition:fade>
       <div class="flex flex-1 items-center justify-center p-2">
-        <!-- svelte-ignore a11y_missing_attribute -->
-        <img src={selectedPhoto.image} class="h-full w-full object-contain" />
+        <img
+          src={selectedPhoto.image}
+          alt="Photo {selectedPhoto.id}"
+          class="h-full w-full object-contain"
+        />
       </div>
 
       <div class="flex justify-between border-t border-gray-800 bg-black/80 p-4 pb-8 backdrop-blur">
@@ -194,12 +197,15 @@
         </EmptyState>
       {:else}
         <div class="grid grid-cols-3 gap-1">
-          {#each $photos as photo}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div
+          {#each $photos as photo (photo.id)}
+            <!-- A real button: the grid is the only way into a photo, and it was a bare
+                 div, so the gallery could not be opened from the keyboard at all. -->
+            <button
+              type="button"
               class="group relative aspect-square cursor-pointer bg-gray-800"
               onclick={() => handlePhotoClick(photo)}
+              aria-pressed={isSelectionMode ? selectedIds.has(photo.id) : undefined}
+              aria-label={isSelectionMode ? `Select photo ${photo.id}` : `Open photo ${photo.id}`}
             >
               <img
                 src={photo.image}
@@ -222,7 +228,7 @@
                   {/if}
                 </div>
               {/if}
-            </div>
+            </button>
           {/each}
         </div>
       {/if}

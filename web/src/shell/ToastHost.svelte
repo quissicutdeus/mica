@@ -76,7 +76,9 @@
 {#if toasts.length > 0}
   <div class="pointer-events-none absolute top-12 right-3 left-3 z-50 flex flex-col gap-2">
     {#each toasts as t (t.id)}
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- Announced as a button only when tapping the body actually does something.
+           A toast whose actions are its own inner buttons stays presentational, so it
+           does not put an extra stop in the tab order that leads nowhere. -->
       <div
         transition:fly={{ y: -20, duration: 250 }}
         class="pointer-events-auto flex cursor-pointer flex-col space-y-2.5 rounded-2xl border p-3 shadow-2xl backdrop-blur-2xl transition-all hover:scale-[1.01] active:scale-[0.99] {getBgColor(
@@ -90,9 +92,21 @@
         }}
         onmouseenter={() => toast.pauseDismiss(t.id)}
         onmouseleave={() => toast.resumeDismiss(t.id, 4000)}
+        onkeydown={(e) => {
+          if (!t.onClick || (e.key !== 'Enter' && e.key !== ' ')) return;
+          // Only the toast body. A keypress from Accept, Decline or the reply box
+          // belongs to that control, not to the toast behind it.
+          if (e.target !== e.currentTarget) return;
+          e.preventDefault();
+          void (async () => {
+            await t.onClick!();
+            toast.dismiss(t.id);
+          })();
+        }}
         onfocusin={() => toast.pauseDismiss(t.id)}
         onfocusout={() => toast.resumeDismiss(t.id, 4000)}
-        role="presentation"
+        role={t.onClick ? 'button' : 'presentation'}
+        tabindex={t.onClick ? 0 : undefined}
       >
         <div class="flex items-start gap-3">
           {#if t.avatar || t.sender || t.type === 'message' || t.type === 'contact'}

@@ -89,6 +89,35 @@ test.describe('Photos', () => {
   });
 });
 
+test.describe('Lists can be used from the keyboard', () => {
+  test('a mail opens on Enter, not only on click', async ({ page }) => {
+    // `ListItem` is the row primitive behind Mail, Notes, Contacts, Messages and Store.
+    // It announced itself as a button and could be tabbed to, and then ignored Enter —
+    // the warning saying so was suppressed rather than answered, which left every list
+    // in the phone reachable by keyboard and impossible to act on.
+    await openApp(page, 'Mail');
+
+    const row = page.locator('[role="button"]').first();
+    await expect(row).toBeVisible();
+    await row.focus();
+    await page.keyboard.press('Enter');
+
+    await expect(page.locator('h1', { hasText: 'Message' })).toBeVisible();
+  });
+
+  test('a photo opens on Enter', async ({ page }) => {
+    // The grid was bare divs with no role and no tabindex, so the gallery could not be
+    // opened from the keyboard at all.
+    await openApp(page, 'Photos');
+
+    const tile = page.getByRole('button', { name: /Open photo/ }).first();
+    await tile.focus();
+    await page.keyboard.press('Enter');
+
+    await expect(page.getByRole('button', { name: 'Delete photo' })).toBeVisible();
+  });
+});
+
 test.describe('Contacts', () => {
   test('sharing says it is unimplemented instead of claiming success', async ({ page }) => {
     // The same lie as Photos' old `alert(...)`, one layer deeper and so missed for
