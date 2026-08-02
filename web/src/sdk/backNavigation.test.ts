@@ -12,6 +12,10 @@ import { join, relative } from 'node:path';
  * Notes and Contacts shipped exactly that way: both defined a multi-level `goBack` and
  * neither registered it, so Backspace left the app instead of closing the open note or
  * contact. Nothing caught it because the two wirings are independent.
+ *
+ * `useAppLevels` is the fix — declaring the levels and claiming the key are one call, and
+ * `useAppLevels.test.ts` proves the claim happens. This file is the backstop for the
+ * other route: an app that goes back to hand-rolling the ladder must still register it.
  */
 
 const ROOT = join(__dirname, '..', '..');
@@ -41,6 +45,14 @@ const FILES = walk(APPS);
 describe('back navigation', () => {
   it('finds app files to check', () => {
     expect(FILES.length).toBeGreaterThan(10);
+  });
+
+  it('the apps with levels route back through the SDK', () => {
+    // Keeps the check below from passing by vacuum. If every app stopped declaring
+    // levels at all, the hand-rolled-ladder rule would be trivially satisfied and this
+    // file would silently stop testing anything.
+    const users = FILES.filter((file) => /useAppLevels\(/.test(readFileSync(file, 'utf8')));
+    expect(users.length).toBeGreaterThanOrEqual(6);
   });
 
   it('every app with a multi-level goBack also claims the back action', () => {

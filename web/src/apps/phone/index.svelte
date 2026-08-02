@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import {
+    onAppForeground,
     useCall,
     useContacts,
     Avatar,
@@ -50,9 +50,9 @@
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  onMount(() => {
-    // Ensure contacts are loaded for favorites
-    contactsStore.load();
+  // Ensure contacts are loaded for favorites, on every visit rather than once.
+  onAppForeground('phone', () => {
+    void contactsStore.load();
   });
 </script>
 

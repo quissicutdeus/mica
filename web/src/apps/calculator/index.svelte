@@ -1,26 +1,17 @@
 <script lang="ts">
-  import { useKeybinds, Screen, BackspaceIcon } from '@gphone/sdk';
+  import { useAppLevels, Screen, BackspaceIcon } from '@gphone/sdk';
 
   let { onback } = $props();
 
-  const { onKeybind } = useKeybinds();
-
-  /**
-   * Backspace deletes a digit here before it will leave the app.
-   *
-   * Claimed rather than handled raw: the shell owns Backspace now, so a local listener
-   * would be pre-empted. The stack lets this sit on top while mounted and hand the
-   * action back on unmount.
-   */
-  onKeybind('back', () => {
-    if (display !== '0') {
-      handleBackspace();
-    } else {
-      onback?.();
-    }
-  });
-
   let display = $state('0');
+
+  // Calculator's one "level" is an entered number rather than a screen: back deletes a
+  // digit until there is nothing left to delete, and only then leaves.
+  const app = useAppLevels({
+    title: 'Calculator',
+    onback: () => onback?.(),
+    levels: [{ open: () => display !== '0', close: () => handleBackspace() }]
+  });
   let firstOperand: number | null = $state(null);
   let operator: string | null = $state(null);
   let waitingForSecondOperand = $state(false);
@@ -175,7 +166,7 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-<Screen title="Calculator" {onback}>
+<Screen title={app.title} onback={app.back}>
   <div class="flex h-full flex-col p-4">
     <!-- Display -->
     <div class="mb-8 flex flex-1 items-end justify-end text-6xl font-light break-all">

@@ -3,16 +3,17 @@
     Screen,
     EmptyState,
     ConfirmDialog,
-    usePhoneNotification,
+    SegmentedControl,
+    useAppAction,
     useReports,
-    onAppMount,
+    onAppForeground,
     formatRelativeTime
   } from '@gphone/sdk';
   import type { Report } from '@shared/types';
 
   let { onback } = $props<{ onback?: () => void }>();
 
-  const { toast } = usePhoneNotification();
+  const { busy, run } = useAppAction();
   const {
     pendingReports,
     resolvedReports,
@@ -24,7 +25,6 @@
 
   type Tab = 'pending' | 'history';
   let tab = $state<Tab>('pending');
-  let busy = $state(false);
   let confirming = $state<{ report: Report; action: 'moderate' | 'dismiss' } | null>(null);
 
   const CATEGORY_LABELS: Record<string, string> = {
@@ -41,22 +41,17 @@
     dismissed: 'No action taken'
   };
 
-  onAppMount(() => {
+  // Refreshed on every visit: reports are filed by other players and nothing pushes
+  // them here, so a queue fetched once at open would be stale the moment it mattered.
+  onAppForeground('admin', () => {
     void loadPendingReports();
     void loadReportHistory();
   });
 
-  const run = async (work: () => Promise<void>, success: string) => {
-    busy = true;
-    try {
-      await work();
-      toast.show({ type: 'success', message: success });
-    } catch (e: any) {
-      toast.show({ type: 'error', message: e?.message || 'That did not work' });
-    } finally {
-      busy = false;
-      confirming = null;
-    }
+  /** Every decision closes its confirmation, whether or not the server agreed. */
+  const decide = async (work: () => Promise<void>, success: string) => {
+    await run(work, { success });
+    confirming = null;
   };
 
   /** A photo's stored preview is a base64 data URI; anything else is text. */
@@ -67,23 +62,16 @@
   <div class="p-4">
     <!-- Two tabs, matching Mail and Messages, so a decision can be reviewed and undone
          rather than being final the moment it is made. -->
-    <div class="mb-4 flex gap-1 rounded-xl bg-gray-800 p-1 text-sm">
-      {#each [['pending', 'Pending'], ['history', 'History']] as [id, label] (id)}
-        <button
-          type="button"
-          onclick={() => (tab = id as Tab)}
-          class="flex-1 cursor-pointer rounded-lg py-2 font-medium transition-colors {tab === id
-            ? 'bg-gray-700 text-white'
-            : 'text-gray-400 hover:text-gray-200'}"
-        >
-          {label}
-          {#if id === 'pending' && $pendingReports.length}
-            <span class="ml-1 rounded-full bg-rose-600 px-1.5 text-xs text-white">
-              {$pendingReports.length}
-            </span>
-          {/if}
-        </button>
-      {/each}
+    <div class="mb-4">
+      <SegmentedControl
+        aria-label="Report queue"
+        selected={tab}
+        onchange={(id) => (tab = id as Tab)}
+        options={[
+          { id: 'pending', label: 'Pending', badge: $pendingReports.length },
+          { id: 'history', label: 'History' }
+        ]}
+      />
     </div>
 
     {#if tab === 'pending'}
@@ -133,7 +121,7 @@
               <div class="grid grid-cols-2 gap-px bg-gray-700">
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={$busy}
                   onclick={() => (confirming = { report, action: 'dismiss' })}
                   class="cursor-pointer bg-gray-800 py-3 font-medium text-gray-300 transition-colors hover:bg-gray-700 disabled:opacity-50"
                 >
@@ -141,7 +129,7 @@
                 </button>
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={$busy}
                   onclick={() => (confirming = { report, action: 'moderate' })}
                   class="cursor-pointer bg-gray-800 py-3 font-medium text-rose-400 transition-colors hover:bg-gray-700 disabled:opacity-50"
                 >
@@ -174,12 +162,11 @@
               </div>
               <button
                 type="button"
-                disabled={busy}
+                disabled={$busy}
                 onclick={() =>
-                  run(
-                    () => reopenReport(report.id),
-                    'Reopened — content restored if it was removed'
-                  )}
+                  run(() => reopenReport(report.id), {
+                    success: 'Reopened — content restored if it was removed'
+                  })}
                 class="shrink-0 cursor-pointer rounded-lg border border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-200 transition-colors hover:bg-gray-700 disabled:opacity-50"
               >
                 Undo
@@ -205,7 +192,7 @@
     confirmVariant={confirming.action === 'moderate' ? 'danger' : 'primary'}
     onconfirm={() =>
       confirming &&
-      run(
+      decide(
         () => resolveReport(confirming!.report.id, confirming!.action),
         confirming!.action === 'moderate' ? 'Content removed' : 'Report closed'
       )}

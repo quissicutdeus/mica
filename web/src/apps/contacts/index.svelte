@@ -1,5 +1,6 @@
 <script lang="ts">
   import {
+    useAppAction,
     useContacts,
     usePhotos,
     usePhoneNotification,
@@ -7,7 +8,7 @@
     useNavigation,
     useCall,
     useMessages,
-    onAppMount,
+    onAppForeground,
     type Contact,
     Avatar,
     Button,
@@ -16,6 +17,7 @@
     PhotoPickerModal,
     Screen,
     SearchBar,
+    Skeleton,
     AddIcon,
     ChevronRightIcon,
     CloseIcon,
@@ -26,9 +28,10 @@
     ShareIcon,
     StarIcon,
     TrashIcon,
+    filterByQuery,
     formatRelativeTime,
     useScrollDetect,
-    useKeybinds
+    useAppLevels
   } from '@gphone/sdk';
 
   const { openApp } = useNavigation();
@@ -41,9 +44,10 @@
   const { photos } = usePhotos();
   const { sendNotification, toast } = usePhoneNotification();
   const { fetchNui } = useNuiBridge();
-  const { onKeybind } = useKeybinds();
+  const { busy, run } = useAppAction();
 
   const contacts = contactsStore;
+  const contactsLoaded = contactsStore.loaded;
 
   // Derive other contacts from the main store
   let otherContacts = $derived($contacts.filter((c: Contact) => !c.favorite));
@@ -66,16 +70,10 @@
   let searchQuery = $state('');
   let isScrolled = $state(false);
 
-  // Filtered contacts based on search query
+  // Filtered contacts based on search query. The name is searched as one composed string
+  // so that "john sm" finds John Smith.
   let filteredContacts = $derived(
-    searchQuery.trim()
-      ? $contacts.filter(
-          (c) =>
-            `${c.firstname} ${c.lastname || ''}`
-              .toLowerCase()
-              .includes(searchQuery.toLowerCase()) || c.phone.includes(searchQuery.trim())
-        )
-      : $contacts
+    filterByQuery($contacts, searchQuery, (c) => [`${c.firstname} ${c.lastname || ''}`, c.phone])
   );
   let filteredFavorites = $derived(filteredContacts.filter((c) => c.favorite));
   let filteredOther = $derived(filteredContacts.filter((c) => !c.favorite));
@@ -122,25 +120,27 @@
     showPhotoPicker = false;
   };
 
-  /**
-   * Backspace steps up one level before it will leave the app. The shell owns the key,
-   * so wiring `goBack` only to `<Screen onback>` let it jump straight home.
-   */
-  const goBack = () => {
-    if (selectedContact) {
-      selectedContact = null;
-      isEditing = false;
-    } else if (isAdding) {
-      isAdding = false;
-    } else if (showSearch) {
-      showSearch = false;
-      searchQuery = '';
-    } else {
-      onback?.();
-    }
-  };
-
-  onKeybind('back', goBack);
+  const app = useAppLevels({
+    title: 'Contacts',
+    onback: () => onback?.(),
+    levels: [
+      { open: () => showPhotoPicker, close: () => (showPhotoPicker = false) },
+      { open: () => isEditing, close: () => (isEditing = false) },
+      {
+        open: () => !!selectedContact,
+        close: () => (selectedContact = null),
+        title: 'Contact Details'
+      },
+      { open: () => isAdding, close: () => (isAdding = false), title: 'New Contact' },
+      {
+        open: () => showSearch,
+        close: () => {
+          showSearch = false;
+          searchQuery = '';
+        }
+      }
+    ]
+  });
 
   const handleMessage = async () => {
     if (!selectedContact) return;
@@ -155,135 +155,110 @@
     openApp('phone');
   };
 
+  /** The one rule the server also enforces, checked here so the toast is immediate. */
+  const requireNameAndPhone = (firstname?: string, phone?: string, forSharing = false) => {
+    if (firstname?.trim() && phone?.trim()) return true;
+    toast.show({
+      type: 'error',
+      message: forSharing
+        ? 'First name and phone number are required to share contact.'
+        : 'First name and phone number are required.'
+    });
+    return false;
+  };
+
   const addContact = async () => {
-    if (!newContact.firstname.trim() || !newContact.phone.trim()) {
-      toast.show({
-        type: 'error',
-        message: 'First name and phone number are required.'
-      });
-      return;
-    }
-    try {
-      await contactsStore.add({
-        firstname: newContact.firstname.trim(),
-        lastname: newContact.lastname.trim(),
-        phone: newContact.phone.trim(),
-        avatar: newContact.avatar,
-        favorite: newContact.favorite
-      });
-      isAdding = false;
-      newContact = {
-        firstname: '',
-        lastname: '',
-        phone: '',
-        avatar: '',
-        favorite: false
-      };
-      toast.show({
-        type: 'success',
-        message: 'Contact added successfully'
-      });
-    } catch (e: any) {
-      console.error('Failed to create contact', e);
-      toast.show({
-        type: 'error',
-        message: e.message || 'Failed to create contact'
-      });
-    }
+    if (!requireNameAndPhone(newContact.firstname, newContact.phone)) return;
+
+    const added = await run(
+      () =>
+        contactsStore.add({
+          firstname: newContact.firstname.trim(),
+          lastname: newContact.lastname.trim(),
+          phone: newContact.phone.trim(),
+          avatar: newContact.avatar,
+          favorite: newContact.favorite
+        }),
+      { success: 'Contact added successfully' }
+    );
+    if (!added) return;
+
+    isAdding = false;
+    newContact = {
+      firstname: '',
+      lastname: '',
+      phone: '',
+      avatar: '',
+      favorite: false
+    };
   };
 
   const updateContact = async () => {
-    if (!selectedContact) return;
-    if (!selectedContact.firstname.trim() || !selectedContact.phone.trim()) {
-      toast.show({
-        type: 'error',
-        message: 'First name and phone number are required.'
-      });
-      return;
-    }
-    try {
-      // Sanitize payload to only include updatable fields
-      const payload = {
-        id: selectedContact.id, // ID is required for update in ServiceEndpoint
-        firstname: selectedContact.firstname.trim(),
-        lastname: selectedContact.lastname ? selectedContact.lastname.trim() : '',
-        phone: selectedContact.phone.trim(),
-        favorite: selectedContact.favorite,
-        avatar: selectedContact.avatar,
-        citizenid: selectedContact.citizenid, // Required for type safety
-        created_at: selectedContact.created_at,
-        updated_at: new Date().toISOString()
-      };
+    if (!selectedContact) return false;
+    if (!requireNameAndPhone(selectedContact.firstname, selectedContact.phone)) return false;
 
-      await contactsStore.update(payload);
-      isEditing = false;
-      toast.show({
-        type: 'success',
-        message: 'Contact updated successfully'
-      });
-    } catch (e: any) {
-      console.error('Failed to update contact', e);
-      toast.show({
-        type: 'error',
-        message: e.message || 'Failed to update contact'
-      });
-    }
+    // Sanitize payload to only include updatable fields
+    const payload = {
+      id: selectedContact.id, // ID is required for update in ServiceEndpoint
+      firstname: selectedContact.firstname.trim(),
+      lastname: selectedContact.lastname ? selectedContact.lastname.trim() : '',
+      phone: selectedContact.phone.trim(),
+      favorite: selectedContact.favorite,
+      avatar: selectedContact.avatar,
+      citizenid: selectedContact.citizenid, // Required for type safety
+      created_at: selectedContact.created_at,
+      updated_at: new Date().toISOString()
+    };
+
+    const saved = await run(() => contactsStore.update(payload), {
+      success: 'Contact updated successfully'
+    });
+    if (saved) isEditing = false;
+    return saved;
   };
 
   const toggleFavorite = async () => {
     if (!selectedContact) return;
     selectedContact.favorite = !selectedContact.favorite;
-    await updateContact();
+    // Put the star back if the write did not land, rather than showing a state the
+    // server does not have.
+    if (!(await updateContact()) && selectedContact) {
+      selectedContact.favorite = !selectedContact.favorite;
+    }
   };
 
   const deleteContact = async () => {
     if (!selectedContact) return;
-    try {
-      await contactsStore.delete(selectedContact.id);
-      selectedContact = null;
-    } catch (e) {
-      console.error('Failed to delete contact', e);
-    }
+    // This one used to swallow both toasts, so a refused delete looked like a real one.
+    const deleted = await run(() => contactsStore.delete(selectedContact!.id), {
+      success: 'Contact deleted'
+    });
+    if (deleted) selectedContact = null;
   };
 
   const shareContact = async () => {
     if (!selectedContact) return;
-    if (!selectedContact.firstname.trim() || !selectedContact.phone.trim()) {
-      toast.show({
-        type: 'error',
-        message: 'First name and phone number are required to share contact.'
-      });
-      return;
-    }
-    try {
-      await contactsStore.share({
-        name: `${selectedContact.firstname.trim()} ${selectedContact.lastname?.trim() || ''}`.trim(),
-        firstname: selectedContact.firstname.trim(),
-        lastname: selectedContact.lastname?.trim() || '',
-        phone: selectedContact.phone.trim(),
-        avatar: selectedContact.avatar || ''
-      });
-      toast.show({
-        type: 'success',
-        message: 'Contact shared successfully'
-      });
-    } catch (e: any) {
-      console.error('Failed to share contact', e);
-      toast.show({
-        type: 'error',
-        message: e.message || 'Failed to share contact'
-      });
-    }
+    if (!requireNameAndPhone(selectedContact.firstname, selectedContact.phone, true)) return;
+
+    await run(
+      () =>
+        contactsStore.share({
+          name: `${selectedContact!.firstname.trim()} ${selectedContact!.lastname?.trim() || ''}`.trim(),
+          firstname: selectedContact!.firstname.trim(),
+          lastname: selectedContact!.lastname?.trim() || '',
+          phone: selectedContact!.phone.trim(),
+          avatar: selectedContact!.avatar || ''
+        }),
+      { success: 'Contact shared successfully' }
+    );
   };
 
-  onAppMount(() => {
-    contactsStore.load();
-    conversationsStore.loadConversations();
+  onAppForeground('contacts', () => {
+    void contactsStore.load();
+    void conversationsStore.loadConversations();
   });
 
   useScrollDetect((v) => (isScrolled = v));
-
-  const getTitle = () => (selectedContact ? 'Contact Details' : 'Contacts');
 </script>
 
 {#snippet headerActions()}
@@ -318,7 +293,7 @@
   {/if}
 {/snippet}
 
-<Screen title={getTitle()} onback={goBack} actions={headerActions} overlay={fabOverlay}>
+<Screen title={app.title} onback={app.back} actions={headerActions} overlay={fabOverlay}>
   {#if !selectedContact}
     {#if isAdding}
       <!-- New Contact Dropdown Panel (Sticky overlay directly below header) -->
@@ -389,9 +364,9 @@
           <Button
             class="flex-1 text-xs"
             onclick={addContact}
-            disabled={!newContact.firstname.trim() || !newContact.phone.trim()}
+            disabled={$busy || !newContact.firstname.trim() || !newContact.phone.trim()}
           >
-            Save Contact
+            {$busy ? 'Saving...' : 'Save Contact'}
           </Button>
         </div>
       </div>
@@ -461,8 +436,14 @@
         </div>
       {/if}
 
-      {#if filteredContacts.length === 0}
-        <div class="py-16 text-center text-sm text-gray-400">No matching contacts found.</div>
+      {#if !$contactsLoaded}
+        <div class="p-3">
+          <Skeleton count={6} height="h-14" />
+        </div>
+      {:else if filteredContacts.length === 0}
+        <div class="py-16 text-center text-sm text-gray-400">
+          {searchQuery.trim() ? 'No matching contacts found.' : 'No contacts yet.'}
+        </div>
       {/if}
     </div>
   {:else}
@@ -536,7 +517,7 @@
           variant="icon"
           class="bg-gray-700 text-white hover:bg-gray-600 hover:text-white"
           onclick={shareContact}
-          disabled={!selectedContact?.firstname?.trim() || !selectedContact?.phone?.trim()}
+          disabled={$busy || !selectedContact?.firstname?.trim() || !selectedContact?.phone?.trim()}
           aria-label="Share"
         >
           <!-- Share Icon -->
@@ -555,6 +536,7 @@
           variant="icon"
           class="bg-red-900/50 text-red-400 hover:bg-red-900/80 hover:text-red-300"
           onclick={deleteContact}
+          disabled={$busy}
           aria-label="Delete"
         >
           <!-- Trash Icon -->
@@ -588,9 +570,9 @@
             <Button
               class="w-full"
               onclick={updateContact}
-              disabled={!selectedContact.firstname.trim() || !selectedContact.phone.trim()}
+              disabled={$busy || !selectedContact.firstname.trim() || !selectedContact.phone.trim()}
             >
-              Save Changes
+              {$busy ? 'Saving...' : 'Save Changes'}
             </Button>
           </div>
         {:else}

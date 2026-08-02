@@ -1,14 +1,13 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import {
     useAccount,
     useAdmin,
-    useKeybinds,
+    onAppForeground,
+    useAppLevels,
     useNuiBridge,
     usePhoneNotification,
     Screen,
     ChevronRightIcon,
-    isBrowser,
     useDevTools
   } from '@gphone/sdk';
   import About from './panes/About.svelte';
@@ -22,7 +21,6 @@
   const { fetchPhoneNumber } = useAccount();
   const { toast } = usePhoneNotification();
   const { fetchNui } = useNuiBridge();
-  const { onKeybind } = useKeybinds();
   const { devToolsUnlocked } = useDevTools();
   const { refreshAdmin } = useAdmin();
 
@@ -45,19 +43,19 @@
     about: 'About'
   };
 
-  /** Back goes up one level first, and only then out of the app. */
-  const goBack = () => {
-    if (pane !== 'root') {
-      pane = 'root';
-    } else {
-      onback?.();
-    }
-  };
-
-  // Claim the Back keybind while Settings is mounted so Escape steps up a pane instead
-  // of jumping straight home. The shell's own handler is underneath on the stack and
-  // takes over again the moment this component unmounts.
-  onKeybind('back', goBack);
+  // Back steps up one pane before it will leave, and the Back keybind is claimed as part
+  // of saying so — Escape would otherwise jump straight home from inside a pane.
+  const app = useAppLevels({
+    title: 'Settings',
+    onback: () => onback?.(),
+    levels: [
+      {
+        open: () => pane !== 'root',
+        close: () => (pane = 'root'),
+        title: () => PANE_TITLES[pane]
+      }
+    ]
+  });
 
   /**
    * Ten taps on the OS Version row reveals Developer Tools, the way Android reveals its
@@ -118,13 +116,14 @@
     toast.show({ type: 'info', message: 'Developer Tools hidden — tap OS Version 10x to restore' });
   };
 
-  onMount(() => {
-    fetchPhoneNumber();
+  // Admin status is granted server-side and can change between visits.
+  onAppForeground('settings', () => {
+    void fetchPhoneNumber();
     void refreshAdmin();
   });
 </script>
 
-<Screen title={PANE_TITLES[pane]} onback={goBack}>
+<Screen title={app.title} onback={app.back}>
   {#if pane === 'sound'}
     <Sound />
   {:else if pane === 'shortcuts'}

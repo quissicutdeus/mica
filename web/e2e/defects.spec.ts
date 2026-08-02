@@ -101,8 +101,10 @@ test.describe('Notes and Contacts persist in the browser mock', () => {
     if ((await del.count()) === 0) test.skip();
     await del.click();
 
-    const confirm = page.getByRole('button', { name: /^Delete$/ });
-    if (await confirm.isVisible().catch(() => false)) await confirm.click();
+    // Contacts deletes straight away — there is no confirmation step to click through.
+    // Wait for the detail view to close, which is what says the write came back. The
+    // delete button is disabled while it is in flight, so clicking again would hang.
+    await expect(del).toHaveCount(0);
 
     await goHome(page);
     await openApp(page, 'Contacts');

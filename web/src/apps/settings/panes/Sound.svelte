@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useSystemHardware } from '@gphone/sdk';
+  import { ToggleSwitch, useSystemHardware } from '@gphone/sdk';
 
   const {
     soundVolume,
@@ -33,28 +33,14 @@
           class="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-gray-900 accent-blue-500"
         />
       </div>
-      <button
-        type="button"
-        onclick={toggleMute}
-        class="flex w-full cursor-pointer items-center justify-between border-t border-gray-700 p-4 text-left transition-colors hover:bg-gray-700"
-        aria-label="Toggle mute"
-      >
-        <div class="flex flex-col">
-          <span class="font-medium">Mute</span>
-          <span class="text-sm text-gray-400">Silence all phone sounds</span>
-        </div>
-        <div
-          class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
-          class:bg-blue-600={$soundMuted}
-          class:bg-gray-600={!$soundMuted}
-        >
-          <span
-            class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
-            class:translate-x-6={$soundMuted}
-            class:translate-x-1={!$soundMuted}
-          ></span>
-        </div>
-      </button>
+      <div class="border-t border-gray-700">
+        <ToggleSwitch
+          label="Mute"
+          description="Silence all phone sounds"
+          checked={$soundMuted}
+          onchange={toggleMute}
+        />
+      </div>
     </div>
   </div>
 

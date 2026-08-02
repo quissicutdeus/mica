@@ -1,13 +1,14 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import {
-    useKeybinds,
+    onAppForeground,
+    useAppLevels,
+    useDeepLink,
     useMail,
-    useNavigation,
     type Mail,
     EmptyState,
     ListItem,
     Screen,
+    Skeleton,
     ArchiveIcon,
     EmptyMailIcon,
     TrashIcon,
@@ -15,46 +16,30 @@
   } from '@gphone/sdk';
 
   const { mailStore } = useMail();
-  const { consumeDeepLink } = useNavigation();
-  const { onKeybind } = useKeybinds();
-
-  /**
-   * Backspace closes an open message before it will leave the app. Claimed rather than
-   * handled raw, because the shell owns Backspace and would otherwise pre-empt it.
-   */
-  onKeybind('back', () => {
-    if (selectedMail) {
-      closeDetail();
-    } else {
-      onback?.();
-    }
-  });
+  const mailLoaded = mailStore.loaded;
 
   let { onback, mailId } = $props<{ onback?: () => void; mailId?: number }>();
   let selectedMail = $state<Mail | null>(null);
   let activeTab = $state<'inbox' | 'archive'>('inbox');
 
-  onMount(() => {
-    if ($mailStore.length === 0) {
-      mailStore.load();
-    }
+  const app = useAppLevels({
+    title: () => (activeTab === 'inbox' ? 'Mail' : 'Archived Mail'),
+    onback: () => onback?.(),
+    levels: [{ open: () => !!selectedMail, close: closeDetail, title: 'Message' }]
   });
 
-  /**
-   * Open the mail a deep link asked for, exactly once.
-   *
-   * Consuming the prop is what lets the back button work: apps stay resident, so
-   * without it `mailId` is still set when the user returns to the list and this effect
-   * immediately reopens the same message.
-   */
-  $effect(() => {
-    if (mailId && $mailStore.length > 0) {
-      const found = $mailStore.find((m) => m.id === mailId);
-      if (found) {
-        openMail(found);
-        consumeDeepLink('mail');
-      }
-    }
+  // Every visit, not only the first. Mail that arrived while the app sat in the
+  // background is pushed in, but a message read or deleted elsewhere is not.
+  onAppForeground('mail', () => {
+    void mailStore.load();
+  });
+
+  useDeepLink('mail', () => {
+    if (!mailId) return false;
+    const found = $mailStore.find((m) => m.id === mailId);
+    if (!found) return false;
+    openMail(found);
+    return true;
   });
 
   let activeEmails = $derived($mailStore.filter((m) => (m.status || 'active') === 'active'));
@@ -131,11 +116,7 @@
   {/if}
 {/snippet}
 
-<Screen
-  title={selectedMail ? 'Message' : activeTab === 'inbox' ? 'Mail' : 'Archived Mail'}
-  onback={selectedMail ? closeDetail : onback}
-  actions={headerActions}
->
+<Screen title={app.title} onback={app.back} actions={headerActions}>
   {#if selectedMail}
     <!-- Detail View -->
     <div class="flex h-full flex-col p-4">
@@ -159,7 +140,9 @@
   {:else}
     <!-- Email List -->
     <div class="divide-y divide-gray-800">
-      {#if displayedEmails.length === 0}
+      {#if !$mailLoaded}
+        <Skeleton count={4} height="h-16" />
+      {:else if displayedEmails.length === 0}
         <EmptyState
           title={activeTab === 'inbox' ? 'No inbox messages' : 'No archived messages'}
           description={activeTab === 'inbox'

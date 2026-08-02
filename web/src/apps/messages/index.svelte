@@ -1,12 +1,14 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { tick } from 'svelte';
   import {
     useMessages,
     useContacts,
     usePhotos,
     useAccount,
-    useKeybinds,
-    useNavigation,
+    onAppForeground,
+    useAppAction,
+    useAppLevels,
+    useDeepLink,
     type UIMessage,
     type UIConversation,
     Avatar,
@@ -17,6 +19,7 @@
     PhotoPickerModal,
     Screen,
     SearchBar,
+    Skeleton,
     ArchiveIcon,
     ChevronRightIcon,
     CloseIcon,
@@ -28,16 +31,16 @@
     SearchIcon,
     SendIcon,
     TrashIcon,
+    filterByQuery,
     formatRelativeTime,
-    formatTime,
     useScrollDetect
   } from '@gphone/sdk';
-  import { fade, fly } from 'svelte/transition';
+  import { fly } from 'svelte/transition';
   import type { Contact, Photo } from '@shared/types';
 
   const { conversationsStore } = useMessages();
-  const { consumeDeepLink } = useNavigation();
-  const { onKeybind } = useKeybinds();
+  const conversationsLoaded = conversationsStore.loaded;
+  const { busy, run } = useAppAction();
   const { contactsStore: contacts } = useContacts();
   const { photos } = usePhotos();
   const { citizenid } = useAccount();
@@ -81,14 +84,11 @@
     viewingArchive ? archivedConversations : activeConversations
   );
   let filteredConversations = $derived(
-    searchQuery.trim()
-      ? displayedConversations.filter(
-          (c) =>
-            (c.targetName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (c.target || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (c.lastMessage || '').toLowerCase().includes(searchQuery.toLowerCase())
-        )
-      : displayedConversations
+    filterByQuery(displayedConversations, searchQuery, (c) => [
+      c.targetName,
+      c.target,
+      c.lastMessage
+    ])
   );
   let currentConv = $derived(
     selectedConversationId ? conversations.find((c) => c.id === selectedConversationId) : null
@@ -100,13 +100,7 @@
   let messages = $derived(
     selectedConversationId ? $messageStore[selectedConversationId] || [] : []
   );
-  let filteredMessages = $derived(
-    inChatSearchQuery.trim()
-      ? messages.filter((m) =>
-          (m.message || '').toLowerCase().includes(inChatSearchQuery.toLowerCase())
-        )
-      : messages
-  );
+  let filteredMessages = $derived(filterByQuery(messages, inChatSearchQuery, (m) => [m.message]));
 
   const MESSAGE_PAGE_SIZE = 50;
   let displayLimit = $state(MESSAGE_PAGE_SIZE);
@@ -180,53 +174,57 @@
 
   // Filter contacts for composition
   let filteredContacts = $derived(
-    recipientQuery
-      ? $contacts.filter(
-          (c) =>
-            c.firstname.toLowerCase().includes(recipientQuery.toLowerCase()) ||
-            (c.lastname || '').toLowerCase().includes(recipientQuery.toLowerCase()) ||
-            c.phone.includes(recipientQuery)
-        )
-      : $contacts
+    filterByQuery($contacts, recipientQuery, (c) => [c.firstname, c.lastname, c.phone])
   );
 
   /**
-   * Backspace steps up one level inside the app before it will leave.
+   * Leaving a thread clears everything scoped to that thread.
    *
-   * Claimed rather than handled raw: the shell owns Backspace, and a local listener
-   * would be pre-empted. The handler stack puts this on top while mounted and returns
-   * the action to the shell on unmount.
+   * Its own level rather than one rung that resets everything: the composer, the photo
+   * picker and the in-chat search are separate screens and close one at a time, but the
+   * draft and the unread divider belong to the conversation and cannot outlive it.
    */
-  const goBack = () => {
-    if (showDetailsModal) {
-      showDetailsModal = false;
-    } else if (showInChatSearch) {
-      showInChatSearch = false;
-      inChatSearchQuery = '';
-    } else if (selectedConversationId || isComposing) {
-      selectedConversationId = null;
-      conversationsStore.setActiveConversationId(null);
-      isComposing = false;
-      newMessageText = '';
-      recipientQuery = '';
-      showAttachMenu = false;
-      showPhotoPicker = false;
-      selectedAttachments = [];
-      showInChatSearch = false;
-      inChatSearchQuery = '';
-      unreadDividerIndex = -1;
-      displayLimit = MESSAGE_PAGE_SIZE;
-    } else if (showSearch) {
-      showSearch = false;
-      searchQuery = '';
-    } else if (viewingArchive) {
-      viewingArchive = false;
-    } else {
-      onback?.();
-    }
+  const closeConversation = () => {
+    selectedConversationId = null;
+    conversationsStore.setActiveConversationId(null);
+    isComposing = false;
+    newMessageText = '';
+    recipientQuery = '';
+    selectedAttachments = [];
+    unreadDividerIndex = -1;
+    displayLimit = MESSAGE_PAGE_SIZE;
   };
 
-  onKeybind('back', () => goBack());
+  const app = useAppLevels({
+    title: () => {
+      if (isComposing) return 'New Message';
+      if (currentConv) return currentConv.targetName || currentConv.target;
+      if (selectedConversationId) return 'Chat';
+      return viewingArchive ? 'Archived Messages' : 'Messages';
+    },
+    onback: () => onback?.(),
+    levels: [
+      { open: () => showDetailsModal, close: () => (showDetailsModal = false) },
+      { open: () => showPhotoPicker, close: () => (showPhotoPicker = false) },
+      { open: () => showAttachMenu, close: () => (showAttachMenu = false) },
+      {
+        open: () => showInChatSearch,
+        close: () => {
+          showInChatSearch = false;
+          inChatSearchQuery = '';
+        }
+      },
+      { open: () => !!selectedConversationId || isComposing, close: closeConversation },
+      {
+        open: () => showSearch,
+        close: () => {
+          showSearch = false;
+          searchQuery = '';
+        }
+      },
+      { open: () => viewingArchive, close: () => (viewingArchive = false) }
+    ]
+  });
 
   const handleTitleClick = () => {
     if (selectedConversationId && currentConv) {
@@ -281,14 +279,13 @@
       isComposing = false;
     } else {
       // Start new conversation via store
-      try {
-        const newConv = await conversationsStore.startConversation(contact.phone);
-        if (newConv) {
-          selectedConversationId = newConv.id;
-          isComposing = false;
-        }
-      } catch (e) {
-        console.error('Failed to start conversation', e);
+      let newConv: Awaited<ReturnType<typeof conversationsStore.startConversation>> | undefined;
+      const started = await run(async () => {
+        newConv = await conversationsStore.startConversation(contact.phone);
+      });
+      if (started && newConv) {
+        selectedConversationId = newConv.id;
+        isComposing = false;
       }
     }
   };
@@ -303,22 +300,24 @@
     if ((!newMessageText.trim() && selectedAttachments.length === 0) || !selectedConversationId)
       return;
 
-    try {
-      await conversationsStore.sendMessage(
-        selectedConversationId,
+    // The draft survives a failure: clearing it before the server has taken the message
+    // would lose what the player typed with nothing to show for it.
+    const sent = await run(() =>
+      conversationsStore.sendMessage(
+        selectedConversationId!,
         newMessageText,
         selectedAttachments.map((att) => ({
           photo_id: att.photo_id,
           attachment: att.image
         }))
-      );
-      newMessageText = '';
-      selectedAttachments = [];
-      await tick();
-      scrollToBottom();
-    } catch (e) {
-      console.error('Failed to send message', e);
-    }
+      )
+    );
+    if (!sent) return;
+
+    newMessageText = '';
+    selectedAttachments = [];
+    await tick();
+    scrollToBottom();
   };
 
   const scrollToBottom = () => {
@@ -327,41 +326,29 @@
   };
 
   // Load conversations on mount; deep-link navigation is handled by the $effect below
-  onMount(() => {
-    conversationsStore.loadConversations();
+  onAppForeground('messages', () => {
+    void conversationsStore.loadConversations();
   });
 
-  /**
-   * Act on a deep link exactly once.
-   *
-   * Consuming the props matters here for the same reason it does in Photos and Mail:
-   * apps stay resident, so an unconsumed `conversationId` re-selects the thread every
-   * time the user backs out to the conversation list.
-   */
-  $effect(() => {
+  useDeepLink('messages', () => {
     if (conversationId && conversationId !== selectedConversationId) {
       handleSelectConversation(conversationId);
-      consumeDeepLink('messages');
-    } else if (phone && (!currentConv || currentConv.target !== phone)) {
-      const existing = $conversationsStore.find((c) => c.target === phone);
-      if (existing) {
-        handleSelectConversation(existing.id);
-        consumeDeepLink('messages');
-      }
-    } else if (initialContact && !selectedConversationId && !isComposing) {
-      handleSelectContactRaw(initialContact);
-      consumeDeepLink('messages');
+      return true;
     }
+    if (phone && (!currentConv || currentConv.target !== phone)) {
+      const existing = $conversationsStore.find((c) => c.target === phone);
+      if (!existing) return false;
+      handleSelectConversation(existing.id);
+      return true;
+    }
+    if (initialContact && !selectedConversationId && !isComposing) {
+      handleSelectContactRaw(initialContact);
+      return true;
+    }
+    return false;
   });
 
   useScrollDetect((v) => (isScrolled = v));
-
-  const getTitle = () => {
-    if (isComposing) return 'New Message';
-    if (currentConv) return currentConv.targetName || currentConv.target;
-    if (selectedConversationId) return 'Chat';
-    return viewingArchive ? 'Archived Messages' : 'Messages';
-  };
 
   const focus = (el: HTMLInputElement) => el.focus();
 </script>
@@ -450,8 +437,8 @@
 {/snippet}
 
 <Screen
-  title={getTitle()}
-  onback={goBack}
+  title={app.title}
+  onback={app.back}
   ontitleclick={selectedConversationId ? handleTitleClick : undefined}
   actions={headerActions}
   overlay={fabOverlay}
@@ -636,7 +623,7 @@
             type="button"
             class="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-blue-600 text-white shadow-md transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
             onclick={handleSendMessage}
-            disabled={!newMessageText.trim() && selectedAttachments.length === 0}
+            disabled={$busy || (!newMessageText.trim() && selectedAttachments.length === 0)}
             aria-label="Send"
           >
             <SendIcon class="h-4 w-4 text-white" />
@@ -763,7 +750,11 @@
         </ListItem>
       {/each}
 
-      {#if filteredConversations.length === 0}
+      {#if !$conversationsLoaded}
+        <div class="p-3">
+          <Skeleton count={5} height="h-16" />
+        </div>
+      {:else if filteredConversations.length === 0}
         <div class="py-16 text-center">
           <EmptyState
             title={searchQuery.trim()

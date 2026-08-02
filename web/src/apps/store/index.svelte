@@ -1,11 +1,12 @@
 <script lang="ts">
   import {
     useAppRegistry,
-    usePhoneNotification,
     useNavigation,
     type AppManifest,
     type AppPermission,
     ConfirmDialog,
+    SegmentedControl,
+    useAppAction,
     formatDate,
     formatRelativeTime
   } from '@gphone/sdk';
@@ -13,7 +14,7 @@
   let { onback } = $props<{ onback?: () => void }>();
 
   const { registryStore, unregisterApp, registerApp } = useAppRegistry();
-  const { sendNotification } = usePhoneNotification();
+  const { run } = useAppAction();
   const { openApp: openPhoneApp } = useNavigation();
 
   let activeTab = $state<'catalog' | 'installed'>('catalog');
@@ -165,21 +166,14 @@
   }
 
   function handleInstall(app: AppManifest) {
-    try {
-      const component = registryStore.getComponent(app.id) || createCatalogMockComponent(app.name);
-      registerApp(app, component);
-      sendNotification({
-        title: 'Store',
-        message: `${app.name} installed successfully!`,
-        type: 'success'
-      });
-    } catch (err: any) {
-      sendNotification({
-        title: 'Installation Error',
-        message: err.message || 'Failed to install app',
-        type: 'error'
-      });
-    }
+    void run(
+      () => {
+        const component =
+          registryStore.getComponent(app.id) || createCatalogMockComponent(app.name);
+        registerApp(app, component);
+      },
+      { title: 'Store', success: `${app.name} installed successfully!` }
+    );
   }
 
   function requestUninstall(app: AppManifest) {
@@ -193,24 +187,12 @@
     handleUninstall(targetApp);
   }
 
-  function handleUninstall(app: AppManifest) {
-    try {
-      unregisterApp(app.id);
-      sendNotification({
-        title: 'Store',
-        message: `${app.name} uninstalled`,
-        type: 'info'
-      });
-      if (selectedApp?.id === app.id) {
-        selectedApp = null;
-      }
-    } catch (err: any) {
-      sendNotification({
-        title: 'Uninstall Error',
-        message: err.message || 'Failed to uninstall app',
-        type: 'error'
-      });
-    }
+  async function handleUninstall(app: AppManifest) {
+    const removed = await run(() => unregisterApp(app.id), {
+      title: 'Store',
+      success: `${app.name} uninstalled`
+    });
+    if (removed && selectedApp?.id === app.id) selectedApp = null;
   }
 </script>
 
@@ -425,25 +407,16 @@
     </div>
 
     <!-- Tab Switcher Bar -->
-    <div class="flex shrink-0 border-b border-gray-800 bg-gray-950/60 p-1">
-      <button
-        onclick={() => (activeTab = 'catalog')}
-        aria-pressed={activeTab === 'catalog'}
-        class="flex-1 rounded-md py-1.5 text-xs font-medium transition {activeTab === 'catalog'
-          ? 'bg-indigo-600 text-white'
-          : 'text-gray-400 hover:text-gray-200'}"
-      >
-        Store Catalog
-      </button>
-      <button
-        onclick={() => (activeTab = 'installed')}
-        aria-pressed={activeTab === 'installed'}
-        class="flex-1 rounded-md py-1.5 text-xs font-medium transition {activeTab === 'installed'
-          ? 'bg-indigo-600 text-white'
-          : 'text-gray-400 hover:text-gray-200'}"
-      >
-        Installed ({$registryStore.length})
-      </button>
+    <div class="shrink-0 border-b border-gray-800 bg-gray-950/60 p-1">
+      <SegmentedControl
+        aria-label="Store sections"
+        selected={activeTab}
+        onchange={(id) => (activeTab = id as 'catalog' | 'installed')}
+        options={[
+          { id: 'catalog', label: 'Store Catalog' },
+          { id: 'installed', label: `Installed (${$registryStore.length})` }
+        ]}
+      />
     </div>
 
     <!-- Main Body Content Area -->

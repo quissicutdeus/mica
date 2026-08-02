@@ -7,6 +7,8 @@
     useNuiBridge,
     usePhoneNotification,
     useSystemHardware,
+    useAppAction,
+    ToggleSwitch,
     isBrowser
   } from '@gphone/sdk';
 
@@ -15,6 +17,7 @@
   const { charge, signalLevel, setSignal, soundVolume, soundMuted, setVolume, toggleMute } =
     useSystemHardware();
   const { toast } = usePhoneNotification();
+  const { run } = useAppAction();
   const { openApp } = useNavigation();
   const { fetchNui } = useNuiBridge();
   const { callStore } = useCall();
@@ -34,11 +37,9 @@
   const applyBatteryLevel = async (level: number) => {
     charge.set(level);
     if (isBrowser()) return;
-    try {
-      await fetchNui('setBatteryLevel', { level });
-    } catch (e) {
-      console.error('Failed to apply battery level', e);
-    }
+    await run(() => fetchNui('setBatteryLevel', { level }), {
+      error: 'Could not set the battery level'
+    });
   };
 
   const triggerCall = () => {
@@ -127,25 +128,13 @@
        re-locks the group, which is why it is not bound to anything two-way — there is no
        state in which this renders "off". -->
   <div class="mb-4 overflow-hidden rounded-xl bg-gray-800">
-    <button
-      type="button"
-      onclick={onhide}
-      class="flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors hover:bg-gray-700"
-      aria-label="Toggle Developer Tools"
-      aria-pressed="true"
-    >
-      <div class="flex flex-col">
-        <span class="text-sm font-medium">Developer Tools</span>
-        <span class="text-xs text-gray-400">Turn off to hide — 10 taps on OS Version restores</span>
-      </div>
-      <div
-        class="relative inline-flex h-6 w-11 items-center rounded-full bg-emerald-600 transition-colors focus:outline-none"
-      >
-        <span
-          class="inline-block h-4 w-4 translate-x-6 transform rounded-full bg-white transition-transform"
-        ></span>
-      </div>
-    </button>
+    <ToggleSwitch
+      label="Developer Tools"
+      description="Turn off to hide — 10 taps on OS Version restores"
+      accent="emerald"
+      checked={true}
+      onchange={onhide}
+    />
   </div>
 
   <div class="space-y-4 overflow-hidden rounded-xl bg-gray-800 p-4 text-xs">

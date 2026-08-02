@@ -9,15 +9,21 @@ test.describe('Settings App E2E', () => {
 
   test('the root is nothing but groups — 24-hour time lives under Display', async ({ page }) => {
     // Nothing is settable from the root itself.
-    await expect(page.locator('button[aria-label="Toggle 24-hour time"]')).toHaveCount(0);
+    await expect(page.getByRole('switch')).toHaveCount(0);
 
     await page.locator('button', { hasText: 'Display' }).first().click();
     await expect(page.locator('h1', { hasText: 'Display' })).toBeVisible();
 
-    const toggleSwitch = page.locator('button[aria-label="Toggle 24-hour time"]');
+    // A switch, announced as one: `ToggleSwitch` carries `role="switch"` and its visible
+    // label is its accessible name. The hand-inlined version this replaced was an
+    // unlabelled `<div>` inside a button called "Toggle 24-hour time".
+    const toggleSwitch = page.getByRole('switch', { name: '24-Hour Time' });
     await expect(toggleSwitch).toBeVisible();
+    await expect(toggleSwitch).toHaveAttribute('aria-checked', 'false');
     await toggleSwitch.click();
+    await expect(toggleSwitch).toHaveAttribute('aria-checked', 'true');
     await toggleSwitch.click();
+    await expect(toggleSwitch).toHaveAttribute('aria-checked', 'false');
 
     // And Backspace steps back up to the hub rather than leaving Settings.
     await page.keyboard.press('Backspace');
@@ -91,9 +97,9 @@ test.describe('Settings App E2E', () => {
     await page.locator("button[aria-label='Go back']").click();
 
     await page.locator('button', { hasText: 'Developer Tools' }).click();
-    const toggle = page.locator("button[aria-label='Toggle Developer Tools']");
+    const toggle = page.getByRole('switch', { name: 'Developer Tools' });
     await expect(toggle).toBeVisible();
-    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
 
     await toggle.click();
     await expect(page.locator('h1', { hasText: 'Settings' })).toBeVisible();

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import {
     useNotes,
     type Note,
@@ -9,27 +8,30 @@
     ListItem,
     Screen,
     SearchBar,
+    Skeleton,
     AddIcon,
     CheckCircleIcon,
     DocumentIcon,
     EditIcon,
     ListBulletIcon,
+    filterByQuery,
+    onAppForeground,
     renderMarkdown,
-    useKeybinds
+    useAppAction,
+    useAppLevels
   } from '@gphone/sdk';
 
   const { notesStore: notes } = useNotes();
+  const notesLoaded = notes.loaded;
+  const { busy, run } = useAppAction();
   import { fade } from 'svelte/transition';
 
   let { onback } = $props();
-
-  const { onKeybind } = useKeybinds();
 
   let selectedNote: Note | null = $state(null);
   let draftNote: Note | null = $state(null); // Draft state for editing
   let isEditing = $state(false);
   let isAdding = $state(false);
-  let isLoading = $state(false);
   let searchQuery = $state('');
   let showDeleteConfirm = $state(false);
   let showHeadingDropdown = $state(false);
@@ -41,85 +43,77 @@
     content: ''
   });
 
-  /**
-   * Backspace closes the open note before it will leave the app.
-   *
-   * The shell owns Backspace, so a `goBack` that is only wired to `<Screen onback>` gets
-   * pre-empted and the key jumps straight home — which is what happened here.
-   */
-  const goBack = () => {
-    if (selectedNote) {
-      selectedNote = null;
-      draftNote = null;
-      isEditing = false;
-      showDeleteConfirm = false;
-    } else {
-      onback?.();
-    }
-  };
-
-  onKeybind('back', goBack);
+  const app = useAppLevels({
+    title: 'Notes',
+    onback: () => onback?.(),
+    levels: [
+      {
+        open: () => showDeleteConfirm,
+        close: () => (showDeleteConfirm = false)
+      },
+      {
+        open: () => isEditing,
+        close: () => (isEditing = false),
+        title: 'Edit Note'
+      },
+      {
+        open: () => !!isAdding,
+        close: () => (isAdding = false),
+        title: 'New Note'
+      },
+      {
+        open: () => !!selectedNote,
+        close: () => {
+          selectedNote = null;
+          draftNote = null;
+        },
+        title: () => selectedNote?.title || 'Untitled'
+      }
+    ]
+  });
 
   const addNote = async () => {
     if (!newNote.title.trim() && !newNote.content.trim()) return;
 
-    isLoading = true;
-    try {
-      await notes.add({
-        ...newNote,
-        title: newNote.title || 'Untitled',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
-      isAdding = false;
-      newNote = { title: '', content: '' };
-    } catch (e) {
-      console.error('Failed to create note', e);
-    } finally {
-      isLoading = false;
-    }
+    const now = new Date().toISOString();
+    const added = await run(
+      () =>
+        notes.add({
+          ...newNote,
+          title: newNote.title || 'Untitled',
+          created_at: now,
+          updated_at: now
+        }),
+      { success: 'Note saved' }
+    );
+    if (!added) return;
+
+    isAdding = false;
+    newNote = { title: '', content: '' };
   };
 
   const updateNote = async () => {
     if (!draftNote) return;
-    isLoading = true;
-    try {
-      const updated = {
-        ...draftNote,
-        updated_at: new Date().toISOString()
-      };
-      await notes.update(updated);
-      selectedNote = updated; // Update the view with saved data
-      // Keep editing or switch to view mode? Let's switch to view mode to see the markdown
-      isEditing = false;
-    } catch (e) {
-      console.error('Failed to update note', e);
-    } finally {
-      isLoading = false;
-    }
+    const updated = { ...draftNote, updated_at: new Date().toISOString() };
+
+    if (!(await run(() => notes.update(updated), { success: 'Note saved' }))) return;
+
+    selectedNote = updated; // Show the saved copy, and the rendered markdown with it
+    isEditing = false;
   };
 
   const deleteNote = async () => {
     if (!selectedNote) return;
-    isLoading = true;
-    try {
-      await notes.delete(selectedNote.id);
-      selectedNote = null;
-      draftNote = null;
-      showDeleteConfirm = false;
-    } catch (e) {
-      console.error('Failed to delete note', e);
-    } finally {
-      isLoading = false;
-    }
+    if (!(await run(() => notes.delete(selectedNote!.id), { success: 'Note deleted' }))) return;
+
+    selectedNote = null;
+    draftNote = null;
+    showDeleteConfirm = false;
   };
 
-  onMount(() => {
-    notes.load();
+  onAppForeground('notes', () => {
+    void notes.load();
   });
-
-  const getTitle = () =>
-    selectedNote ? (isEditing ? 'Edit Note' : selectedNote.title || 'Untitled') : 'Notes';
 
   const focus = (node: HTMLElement) => {
     node.focus();
@@ -162,16 +156,9 @@
     }, 0);
   };
 
-  let filteredNotes = $derived(
-    (searchQuery
-      ? $notes.filter(
-          (n) =>
-            (n.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (n.content || '').toLowerCase().includes(searchQuery.toLowerCase())
-        )
-      : $notes
-    ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-  );
+  // No sort here — the store keeps the list newest-edited-first however it changed, so a
+  // note saved while the list is on screen moves immediately rather than at next load.
+  let filteredNotes = $derived(filterByQuery($notes, searchQuery, (n) => [n.title, n.content]));
 </script>
 
 {#snippet headerActions()}
@@ -194,7 +181,7 @@
   {/if}
 {/snippet}
 
-<Screen title={getTitle()} onback={goBack} actions={headerActions}>
+<Screen title={app.title} onback={app.back} actions={headerActions}>
   {#if !selectedNote}
     {#if isAdding}
       <div
@@ -205,7 +192,7 @@
           placeholder="Title"
           bind:value={newNote.title}
           use:focus
-          disabled={isLoading}
+          disabled={$busy}
         />
         <div class="relative min-h-0 flex-1">
           <textarea
@@ -213,7 +200,7 @@
             placeholder="Content (Markdown supported)"
             bind:this={textAreaRef}
             bind:value={newNote.content}
-            disabled={isLoading}></textarea>
+            disabled={$busy}></textarea>
           <!-- Markdown Toolbar -->
           <div
             class="absolute right-2 bottom-2 left-2 flex justify-evenly gap-1 rounded-lg border border-gray-600 bg-gray-800 p-1 shadow-lg"
@@ -275,12 +262,12 @@
             class="flex-1"
             variant="secondary"
             onclick={() => (isAdding = false)}
-            disabled={isLoading}
+            disabled={$busy}
           >
             Cancel
           </Button>
-          <Button class="flex-1" onclick={addNote} disabled={isLoading}>
-            {isLoading ? 'Saving...' : 'Save'}
+          <Button class="flex-1" onclick={addNote} disabled={$busy}>
+            {$busy ? 'Saving...' : 'Save'}
           </Button>
         </div>
       </div>
@@ -315,7 +302,9 @@
             </div>
           </ListItem>
         {/each}
-        {#if filteredNotes.length === 0}
+        {#if !$notesLoaded}
+          <Skeleton count={4} height="h-20" />
+        {:else if filteredNotes.length === 0}
           <EmptyState title={searchQuery ? 'No matching notes' : 'No notes yet'}>
             {#snippet icon()}
               <DocumentIcon class="h-12 w-12" />
@@ -333,7 +322,7 @@
             class="w-full rounded border border-gray-700 bg-gray-800 p-2 text-xl font-bold placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
             bind:value={draftNote.title}
             placeholder="Title"
-            disabled={isLoading}
+            disabled={$busy}
           />
           <div class="relative min-h-0 flex-1">
             <textarea
@@ -341,7 +330,7 @@
               bind:this={textAreaRef}
               bind:value={draftNote.content}
               placeholder="Markdown content..."
-              disabled={isLoading}></textarea>
+              disabled={$busy}></textarea>
             <!-- Markdown Toolbar -->
             <div
               class="absolute right-2 bottom-2 left-2 flex justify-evenly gap-1 rounded-lg border border-gray-600 bg-gray-700/90 p-1 shadow-lg backdrop-blur"
@@ -404,12 +393,12 @@
               class="flex-1"
               variant="danger"
               onclick={() => (showDeleteConfirm = true)}
-              disabled={isLoading}
+              disabled={$busy}
             >
               Delete
             </Button>
-            <Button class="flex-1" onclick={updateNote} disabled={isLoading}>
-              {isLoading ? 'Saving...' : 'Save'}
+            <Button class="flex-1" onclick={updateNote} disabled={$busy}>
+              {$busy ? 'Saving...' : 'Save'}
             </Button>
           </div>
         </div>
@@ -427,7 +416,7 @@
           title="Delete Note?"
           message={`Are you sure you want to delete "${selectedNote.title || 'Untitled'}"? This action cannot be undone.`}
           confirmText="Delete"
-          {isLoading}
+          isLoading={$busy}
           oncancel={() => (showDeleteConfirm = false)}
           onconfirm={deleteNote}
         />

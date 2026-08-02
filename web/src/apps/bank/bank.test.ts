@@ -7,7 +7,8 @@ vi.mock('../../nui/fetchNui', () => ({
 }));
 
 import Bank from './index.svelte';
-import { transactions, bankBalance, citizenid } from '../../services/account';
+import { transactions, transactionsLoaded, bankBalance, citizenid } from '../../services/account';
+import { currentApp } from '../../shell/state/navigation';
 
 /**
  * Bank's empty state.
@@ -24,12 +25,28 @@ beforeEach(() => {
   bankBalance.set(0);
   citizenid.set('TEST1');
   transactions.set([]);
+  // Module-scoped, so it survives between tests: without the reset the second test
+  // inherits the first one's completed fetch and never sees the loading frame.
+  transactionsLoaded.set(false);
+  // Bank fetches on `onAppForeground`, so it has to actually be the foreground app.
+  // Rendering the component in isolation is not enough — which is the point: it reloads
+  // per visit rather than once per session.
+  currentApp.set({ id: 'bank', props: {} });
 });
 
 describe('Bank', () => {
-  it('says so when there are no transactions', () => {
-    const { getByText } = render(Bank, { props: { onback: () => {} } });
-    expect(getByText('No transactions')).toBeTruthy();
+  it('says so when there are no transactions', async () => {
+    const { findByText } = render(Bank, { props: { onback: () => {} } });
+    // Awaited, because "no transactions" is only true once the fetch has come back.
+    expect(await findByText('No transactions')).toBeTruthy();
+  });
+
+  it('shows a placeholder rather than the empty state while the fetch is in flight', () => {
+    // The distinction the skeleton exists for: on the first frame Bank does not yet know
+    // whether this account has transactions, and it used to state that it had none.
+    const { queryByText, getByText } = render(Bank, { props: { onback: () => {} } });
+    expect(queryByText('No transactions')).toBeNull();
+    expect(getByText('Loading')).toBeTruthy();
   });
 
   it('lists transactions when there are some', () => {

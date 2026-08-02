@@ -6,7 +6,9 @@
     useKeybinds,
     useNavigation,
     useNuiBridge,
-    onAppMount,
+    useAppAction,
+    usePhoneNotification,
+    onAppForeground,
     CloseIcon,
     FlipCameraIcon,
     PhotoIcon,
@@ -16,6 +18,8 @@
   const { isTakingPhoto, isPreviewingPhoto } = useCamera();
   const { capturePhoto, photos } = usePhotos();
   const { openApp } = useNavigation();
+  const { run } = useAppAction();
+  const { toast } = usePhoneNotification();
   import { sampleAvatars } from './mockViewfinder';
   import { onDestroy } from 'svelte';
 
@@ -108,8 +112,9 @@
   const keyLabel = (key: string) =>
     key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key;
 
-  onAppMount(() => {
-    photos.load();
+  // The thumbnail shows the newest photo, which may have arrived from anywhere.
+  onAppForeground('camera', () => {
+    void photos.load();
   });
 
   onDestroy(() => {
@@ -124,18 +129,20 @@
 
   const toggleFlipCamera = async () => {
     const next = !isFrontCamera;
-    try {
-      const res = await fetchNui<{ supported?: boolean }>('flipCamera', {
-        isFrontCamera: next
-      });
-      if (res?.supported === false) {
-        canFlipCamera = false;
-        return;
-      }
-      isFrontCamera = next;
-    } catch (e) {
-      console.error('Failed to flip camera', e);
-    }
+    let supported = true;
+    const flipped = await run(
+      async () => {
+        const res = await fetchNui<{ supported?: boolean }>('flipCamera', {
+          isFrontCamera: next
+        });
+        supported = res?.supported !== false;
+      },
+      { error: 'Could not switch camera' }
+    );
+    if (!flipped) return;
+
+    if (!supported) canFlipCamera = false;
+    else isFrontCamera = next;
   };
 
   const takePhoto = async () => {
@@ -241,7 +248,10 @@
         // Send the frame down into the thumbnail, then bounce it on arrival.
         flyToThumbnail(capturedImage);
       } catch (err) {
+        // Reported rather than swallowed: a shutter press that saves nothing looked
+        // identical to one that worked, because the viewfinder is unchanged either way.
         console.error('Failed to take photo', err);
+        toast.show({ type: 'error', message: 'Could not save that photo' });
       } finally {
         isTakingPhoto.set(false);
       }

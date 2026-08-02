@@ -7,12 +7,14 @@
     FlagIcon,
     ReportDialog,
     Screen,
+    Skeleton,
     ShareSquareIcon,
     TrashIcon,
-    onAppMount,
+    onAppForeground,
+    useAppAction,
+    useAppLevels,
+    useDeepLink,
     usePhotos,
-    useKeybinds,
-    useNavigation,
     usePhoneNotification
   } from '@gphone/sdk';
   import type { Photo } from '@shared/types';
@@ -25,46 +27,34 @@
   }>();
 
   const { photos, deletePhoto } = usePhotos();
-  const { consumeDeepLink } = useNavigation();
-  const { onKeybind } = useKeybinds();
+  const photosLoaded = photos.loaded;
+  const { busy, run } = useAppAction();
   const { toast } = usePhoneNotification();
 
   let selectedPhoto: Photo | null = $state(null);
   let isSelectionMode = $state(false);
   let selectedIds = $state<Set<number>>(new Set());
-  let isLoading = $state(false);
   let showDeleteConfirm = $state(false);
   let reporting = $state(false);
 
-  onAppMount(() => {
+  onAppForeground('photos', () => {
     void photos.load();
   });
 
-  /**
-   * Open the photo a deep link asked for, exactly once.
-   *
-   * An `$effect` rather than mount-time work, because the app stays resident and mount
-   * runs only once — a second tap on the camera thumbnail would otherwise be ignored.
-   *
-   * Consuming the props is what makes the back button work. Without it the prop is
-   * still set when `goBack` clears `selectedPhoto`, this effect re-runs and immediately
-   * reopens the same picture.
-   */
-  $effect(() => {
+  useDeepLink('photos', () => {
     if (initialPhoto) {
       selectedPhoto = initialPhoto;
-      consumeDeepLink('photos');
-      return;
+      return true;
     }
-    if (initialPhotoId) {
-      // Read the store reactively: on a cold open the photo list has not arrived yet,
-      // and the prop must survive until it does.
-      const found = $photos.find((p) => p.id === initialPhotoId);
-      if (found) {
-        selectedPhoto = found;
-        consumeDeepLink('photos');
-      }
-    }
+    if (!initialPhotoId) return false;
+
+    // Read the store reactively: on a cold open the photo list has not arrived yet, and
+    // the link must survive until it does.
+    const found = $photos.find((p) => p.id === initialPhotoId);
+    if (!found) return false;
+
+    selectedPhoto = found;
+    return true;
   });
 
   const toggleSelectionMode = () => {
@@ -88,19 +78,18 @@
   };
 
   const deleteSelected = async () => {
-    isLoading = true;
-    try {
-      for (const id of Array.from(selectedIds)) {
-        await deletePhoto(id);
-      }
-      selectedIds.clear();
-      isSelectionMode = false;
-      showDeleteConfirm = false;
-    } catch (e) {
-      console.error('Failed to delete photos', e);
-    } finally {
-      isLoading = false;
-    }
+    const count = selectedIds.size;
+    const deleted = await run(
+      async () => {
+        for (const id of Array.from(selectedIds)) await deletePhoto(id);
+      },
+      { success: `${count} ${count === 1 ? 'photo' : 'photos'} deleted` }
+    );
+    if (!deleted) return;
+
+    selectedIds.clear();
+    isSelectionMode = false;
+    showDeleteConfirm = false;
   };
 
   const shareSelected = () => {
@@ -112,34 +101,28 @@
 
   const deleteSingle = async () => {
     if (!selectedPhoto) return;
-    isLoading = true;
-    try {
-      await deletePhoto(selectedPhoto.id);
-      selectedPhoto = null;
-      showDeleteConfirm = false;
-    } catch (e) {
-      console.error('Failed to delete photo', e);
-    } finally {
-      isLoading = false;
-    }
+    if (!(await run(() => deletePhoto(selectedPhoto!.id), { success: 'Photo deleted' }))) return;
+
+    selectedPhoto = null;
+    showDeleteConfirm = false;
   };
 
-  /**
-   * Backspace steps up one level inside the app before it will leave.
-   *
-   * Claimed rather than handled raw: the shell owns Backspace, and a local listener
-   * would be pre-empted. The handler stack puts this on top while mounted and returns
-   * the action to the shell on unmount.
-   */
-  const goBack = () => {
-    if (selectedPhoto) {
-      selectedPhoto = null;
-    } else {
-      onback?.();
-    }
-  };
-
-  onKeybind('back', () => goBack());
+  const app = useAppLevels({
+    title: 'Photos',
+    onback: () => onback?.(),
+    levels: [
+      { open: () => reporting, close: () => (reporting = false) },
+      { open: () => showDeleteConfirm, close: () => (showDeleteConfirm = false) },
+      { open: () => !!selectedPhoto, close: () => (selectedPhoto = null), title: 'Photo' },
+      {
+        open: () => isSelectionMode,
+        close: () => {
+          isSelectionMode = false;
+          selectedIds.clear();
+        }
+      }
+    ]
+  });
 </script>
 
 {#snippet headerActions()}
@@ -153,7 +136,7 @@
   {/if}
 {/snippet}
 
-<Screen title={selectedPhoto ? 'Photo' : 'Photos'} onback={goBack} actions={headerActions}>
+<Screen title={app.title} onback={app.back} actions={headerActions}>
   {#if selectedPhoto}
     <!-- Full Screen Image View -->
     <div class="relative flex h-full flex-col bg-black" transition:fade>
@@ -192,7 +175,7 @@
           title="Delete Photo?"
           message="Are you sure you want to delete this photo?"
           confirmText="Delete"
-          {isLoading}
+          isLoading={$busy}
           oncancel={() => (showDeleteConfirm = false)}
           onconfirm={deleteSingle}
         />
@@ -201,7 +184,9 @@
   {:else}
     <!-- Grid View -->
     <div class="no-scrollbar relative h-full overflow-y-auto bg-gray-900 p-1">
-      {#if $photos.length === 0}
+      {#if !$photosLoaded}
+        <Skeleton count={4} height="h-24" rounded="rounded-none" />
+      {:else if $photos.length === 0}
         <EmptyState title="No photos yet">
           {#snippet icon()}
             <EmptyPhotoIcon class="h-16 w-16" />
@@ -272,7 +257,7 @@
           title="Delete {selectedIds.size} Photos?"
           message="Are you sure you want to delete these photos? This cannot be undone."
           confirmText="Delete"
-          {isLoading}
+          isLoading={$busy}
           oncancel={() => (showDeleteConfirm = false)}
           onconfirm={deleteSelected}
         />
