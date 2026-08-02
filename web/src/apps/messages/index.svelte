@@ -9,6 +9,7 @@
     useAppAction,
     useAppLevels,
     useDeepLink,
+    usePagedList,
     type UIMessage,
     type UIConversation,
     Avatar,
@@ -44,7 +45,9 @@
   const { contactsStore: contacts } = useContacts();
   const { photos } = usePhotos();
   const { citizenid } = useAccount();
-  import MessageBubble from './components/MessageBubble.svelte';
+  import ConversationList from './components/ConversationList.svelte';
+  import MessageComposer from './components/MessageComposer.svelte';
+  import MessageThread from './components/MessageThread.svelte';
   import ConversationDetailsModal from './components/ConversationDetailsModal.svelte';
 
   let { onback, initialContact, conversationId, phone } = $props<{
@@ -102,51 +105,21 @@
   );
   let filteredMessages = $derived(filterByQuery(messages, inChatSearchQuery, (m) => [m.message]));
 
-  const MESSAGE_PAGE_SIZE = 50;
-  let displayLimit = $state(MESSAGE_PAGE_SIZE);
-
-  let renderedMessages = $derived.by(() => {
-    if (inChatSearchQuery.trim() || filteredMessages.length <= displayLimit) {
-      return filteredMessages;
-    }
-    return filteredMessages.slice(filteredMessages.length - displayLimit);
+  /**
+   * The thread is revealed a page at a time, newest first, with the scroll anchoring
+   * that stops the view jumping when older messages appear above the fold.
+   *
+   * In-chat search bypasses the window: a match is worth finding wherever it is, and a
+   * search that only looked at the last fifty messages would be quietly wrong.
+   */
+  const page = usePagedList<UIMessage>({
+    items: () => (inChatSearchQuery.trim() ? [] : filteredMessages),
+    olderAt: 'start',
+    container: () => document.getElementById('messages-container')
   });
 
-  let hiddenMessageCount = $derived(
-    !inChatSearchQuery.trim() && filteredMessages.length > displayLimit
-      ? filteredMessages.length - displayLimit
-      : 0
-  );
-
-  let renderIndexOffset = $derived(filteredMessages.length - renderedMessages.length);
-
-  let isLoadingMoreMessages = $state(false);
-  const loadMoreOlderMessages = async () => {
-    if (hiddenMessageCount <= 0 || isLoadingMoreMessages) return;
-    isLoadingMoreMessages = true;
-
-    const container = document.getElementById('messages-container');
-    const prevScrollHeight = container ? container.scrollHeight : 0;
-    const prevScrollTop = container ? container.scrollTop : 0;
-
-    displayLimit += MESSAGE_PAGE_SIZE;
-
-    await tick();
-
-    if (container) {
-      container.scrollTop = container.scrollHeight - prevScrollHeight + prevScrollTop;
-    }
-
-    isLoadingMoreMessages = false;
-  };
-
-  const handleMessagesScroll = (e: Event) => {
-    const target = e.target as HTMLElement;
-    if (!target) return;
-    if (target.scrollTop <= 40 && hiddenMessageCount > 0) {
-      loadMoreOlderMessages();
-    }
-  };
+  const renderedMessages = $derived(inChatSearchQuery.trim() ? filteredMessages : page.visible);
+  const renderIndexOffset = $derived(inChatSearchQuery.trim() ? 0 : page.offset);
 
   const isMessageReadByOther = (msg: UIMessage) => {
     if (!currentConv || !currentConv.participants || currentConv.participants.length === 0)
@@ -192,7 +165,7 @@
     recipientQuery = '';
     selectedAttachments = [];
     unreadDividerIndex = -1;
-    displayLimit = MESSAGE_PAGE_SIZE;
+    page.reset();
   };
 
   const app = useAppLevels({
@@ -233,7 +206,7 @@
   };
 
   const handleSelectConversation = async (id: number) => {
-    displayLimit = MESSAGE_PAGE_SIZE;
+    page.reset();
     const conv = $conversationsStore.find((c) => c.id === id);
     initialUnreadCount = conv?.unreadCount || 0;
     selectedConversationId = id;
@@ -502,270 +475,45 @@
     <div class="flex h-full flex-col bg-gray-900">
       {#if showInChatSearch}
         <!-- In-Chat Search Bar -->
-        <div
-          class="animate-in slide-in-from-top sticky top-0 z-20 border-b border-gray-800 bg-gray-900/95 p-3 backdrop-blur-md duration-200"
-        >
-          <SearchBar bind:value={inChatSearchQuery} placeholder="Search messages in this chat..." />
+        <div class="border-b border-gray-800 bg-gray-900/95 p-2 backdrop-blur-md">
+          <SearchBar bind:value={inChatSearchQuery} placeholder="Search in conversation..." />
         </div>
       {/if}
 
-      <!-- Messages List -->
-      <div
-        id="messages-container"
-        class="no-scrollbar flex-1 space-y-4 overflow-y-auto p-4"
-        onscroll={handleMessagesScroll}
-      >
-        {#if hiddenMessageCount > 0}
-          <div class="my-2 flex justify-center">
-            <button
-              type="button"
-              class="flex cursor-pointer items-center gap-2 rounded-full border border-blue-500/20 bg-gray-800/80 px-3.5 py-1.5 text-xs font-medium text-blue-400 shadow-sm transition-colors hover:bg-gray-800"
-              onclick={loadMoreOlderMessages}
-            >
-              {#if isLoadingMoreMessages}
-                <span class="relative flex h-2 w-2">
-                  <span
-                    class="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75"
-                  ></span>
-                  <span class="relative inline-flex h-2 w-2 rounded-full bg-blue-500"></span>
-                </span>
-                <span>Loading older messages...</span>
-              {:else}
-                <span>Load older messages ({hiddenMessageCount} hidden)</span>
-              {/if}
-            </button>
-          </div>
-        {/if}
+      <MessageThread
+        messages={renderedMessages}
+        offset={renderIndexOffset}
+        hiddenCount={page.hiddenCount}
+        loadingMore={page.loading}
+        {unreadDividerIndex}
+        {currentConv}
+        {lastReadMyMessageId}
+        isReadByOther={isMessageReadByOther}
+        onloadmore={page.loadMore}
+        onscroll={page.onScroll}
+        unreadCount={initialUnreadCount}
+        searching={!!inChatSearchQuery.trim()}
+      />
 
-        {#each renderedMessages as msg, index (msg.id)}
-          {#if unreadDividerIndex >= 0 && index + renderIndexOffset === unreadDividerIndex}
-            <div id="unread-divider" class="my-4 flex items-center gap-3 py-1">
-              <div class="h-px flex-1 bg-blue-500/40"></div>
-              <span
-                class="rounded-full border border-blue-500/30 bg-blue-950/90 px-3 py-1 text-[10px] font-bold tracking-wider text-blue-400 uppercase shadow-md"
-              >
-                Unread Messages ({initialUnreadCount})
-              </span>
-              <div class="h-px flex-1 bg-blue-500/40"></div>
-            </div>
-          {/if}
-          {#if currentConv}
-            <MessageBubble
-              {msg}
-              {currentConv}
-              isLastReadMyMessage={msg.id === lastReadMyMessageId}
-              isReadByOther={isMessageReadByOther(msg)}
-            />
-          {/if}
-        {/each}
-        {#if filteredMessages.length === 0}
-          <div class="mt-10">
-            <EmptyState
-              title={inChatSearchQuery.trim()
-                ? 'No matching messages found in this chat'
-                : 'No messages yet'}
-            />
-          </div>
-        {/if}
-      </div>
-
-      <!-- Input Area -->
-      <div class="border-t border-gray-700 bg-gray-800/50 p-3 backdrop-blur-md">
-        {#if selectedAttachments.length > 0}
-          <div class="no-scrollbar mb-2 flex gap-2 overflow-x-auto p-1">
-            {#each selectedAttachments as att}
-              <div
-                class="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-gray-600 shadow-md"
-              >
-                <img src={att.image} alt="Attachment" class="h-full w-full object-cover" />
-                <button
-                  class="absolute top-0 right-0 cursor-pointer rounded-bl-lg bg-black/60 p-0.5 text-white hover:bg-black"
-                  onclick={() =>
-                    (selectedAttachments = selectedAttachments.filter(
-                      (a) => a.photo_id !== att.photo_id
-                    ))}
-                  aria-label="Remove attachment"
-                >
-                  <CloseIcon class="h-3 w-3" />
-                </button>
-              </div>
-            {/each}
-          </div>
-        {/if}
-
-        <div class="flex w-full items-center gap-2.5">
-          <button
-            type="button"
-            class="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-700/50 hover:text-blue-400"
-            onclick={() => (showAttachMenu = !showAttachMenu)}
-            aria-label="Attachments"
-          >
-            <PaperclipIcon class="h-5 w-5" />
-          </button>
-
-          <div
-            class="flex flex-1 items-center rounded-2xl border border-transparent bg-gray-700/50 px-3.5 py-1.5 text-white focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500"
-          >
-            <textarea
-              class="no-scrollbar h-[22px] max-h-32 min-h-[22px] w-full resize-none bg-transparent p-0 text-sm leading-normal text-white placeholder-gray-400 focus:outline-none"
-              placeholder="Message"
-              rows="1"
-              bind:value={newMessageText}
-              onkeydown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendMessage();
-                }
-              }}></textarea>
-          </div>
-
-          <button
-            type="button"
-            class="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-blue-600 text-white shadow-md transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
-            onclick={handleSendMessage}
-            disabled={$busy || (!newMessageText.trim() && selectedAttachments.length === 0)}
-            aria-label="Send"
-          >
-            <SendIcon class="h-4 w-4 text-white" />
-          </button>
-        </div>
-
-        {#if showAttachMenu}
-          <div
-            class="absolute bottom-16 left-4 grid w-48 grid-cols-2 gap-2 rounded-xl border border-gray-700 bg-gray-800 p-2 shadow-xl"
-            transition:fly={{ y: 20, duration: 200 }}
-          >
-            <button
-              class="flex flex-col items-center justify-center rounded-lg p-3 transition-colors hover:bg-gray-700/50"
-              onclick={openPhotoPicker}
-            >
-              <div
-                class="mb-1 flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/20 text-blue-400"
-              >
-                <PhotoIcon class="h-5 w-5" />
-              </div>
-              <span class="text-xs">Photo</span>
-            </button>
-            <button
-              class="flex flex-col items-center justify-center rounded-lg p-3 transition-colors hover:bg-gray-700/50"
-            >
-              <div
-                class="mb-1 flex h-8 w-8 items-center justify-center rounded-full bg-green-500/20 text-green-400"
-              >
-                <LocationIcon class="h-5 w-5" />
-              </div>
-              <span class="text-xs">Location</span>
-            </button>
-          </div>
-        {/if}
-      </div>
-
-      {#if showPhotoPicker}
-        <PhotoPickerModal
-          title="Select Photos"
-          multiSelect={true}
-          selectedIds={selectedAttachments.map((a) => a.photo_id)}
-          onmultichange={(photoId, image) => {
-            const existing = selectedAttachments.find((a) => a.photo_id === photoId);
-            if (existing) {
-              selectedAttachments = selectedAttachments.filter((a) => a.photo_id !== photoId);
-            } else {
-              selectedAttachments = [...selectedAttachments, { photo_id: photoId, image }];
-            }
-          }}
-          onclose={() => (showPhotoPicker = false)}
-        />
-      {/if}
+      <MessageComposer
+        bind:text={newMessageText}
+        bind:attachments={selectedAttachments}
+        busy={$busy}
+        onsend={handleSendMessage}
+        onopenphotos={openPhotoPicker}
+      />
     </div>
   {:else}
-    {#if showSearch}
-      <!-- Search Dropdown Overlay -->
-      <div
-        class="animate-in slide-in-from-top sticky top-0 z-20 border-b border-gray-800 bg-gray-900/95 p-3 backdrop-blur-md duration-200"
-      >
-        <SearchBar bind:value={searchQuery} placeholder="Search chats, names, or messages..." />
-      </div>
-    {/if}
-
-    <!-- Conversation List -->
-    <div class="divide-y divide-gray-800">
-      {#each filteredConversations as conv}
-        <ListItem
-          class="items-start hover:bg-gray-800/40"
-          onclick={() => handleSelectConversation(conv.id)}
-        >
-          <div class="relative mr-4 shrink-0">
-            <Avatar
-              src={conv.targetAvatar}
-              initials={conv.targetName ? conv.targetName[0] : conv.target[0] || '?'}
-              size="w-12 h-12"
-              textClass="text-lg"
-              bgClass={conv.is_group ? 'bg-indigo-700' : 'bg-gray-800 border border-gray-700/60'}
-            />
-            {#if conv.unreadCount > 0}
-              <div
-                class="absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full border-2 border-gray-900 bg-blue-500 px-1 text-[10px] font-bold shadow-md"
-              >
-                {conv.unreadCount}
-              </div>
-            {/if}
-          </div>
-
-          <div class="min-w-0 flex-1">
-            <div class="mb-1 flex items-baseline justify-between">
-              <span
-                class="truncate text-[15px] font-semibold {conv.unreadCount > 0
-                  ? 'font-bold text-white'
-                  : 'text-gray-200'}"
-              >
-                {conv.targetName || conv.target}
-              </span>
-              <span
-                class="text-xs {conv.unreadCount > 0
-                  ? 'font-semibold text-blue-400'
-                  : 'text-gray-500'} ml-2 whitespace-nowrap"
-              >
-                {formatRelativeTime(conv.lastMessageAt)}
-              </span>
-            </div>
-            <div class="flex items-center">
-              {#if conv.last_message?.citizenid === $citizenid}
-                <MessageStatusIcon
-                  status={isConvLastMsgReadByOther(conv) ? 'read' : 'delivered'}
-                  class="mr-1.5 h-3.5 w-3.5 shrink-0"
-                />
-              {/if}
-              <p
-                class="flex-1 truncate text-sm {conv.unreadCount > 0
-                  ? 'font-medium text-gray-100'
-                  : 'text-gray-400'}"
-              >
-                {conv.lastMessage || 'No messages'}
-              </p>
-              <ChevronRightIcon
-                class="ml-2 h-4 w-4 text-gray-600 opacity-0 transition-opacity group-hover:opacity-100"
-              />
-            </div>
-          </div>
-        </ListItem>
-      {/each}
-
-      {#if !$conversationsLoaded}
-        <div class="p-3">
-          <Skeleton count={5} height="h-16" />
-        </div>
-      {:else if filteredConversations.length === 0}
-        <div class="py-16 text-center">
-          <EmptyState
-            title={searchQuery.trim()
-              ? 'No matching messages found'
-              : viewingArchive
-                ? 'No archived conversations'
-                : 'No active conversations'}
-          />
-        </div>
-      {/if}
-    </div>
+    <ConversationList
+      conversations={filteredConversations}
+      loaded={$conversationsLoaded}
+      bind:query={searchQuery}
+      {showSearch}
+      {viewingArchive}
+      myCitizenId={$citizenid}
+      isLastMsgReadByOther={isConvLastMsgReadByOther}
+      onselect={handleSelectConversation}
+    />
   {/if}
 
   {#if showDetailsModal && currentConv}
