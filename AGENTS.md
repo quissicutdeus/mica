@@ -685,7 +685,7 @@ and why — worth reading once, then let the generator do it.
 
 ```
 web/src/apps/journal/
-├── manifest.ts     defineApp({ id: 'journal', name: 'Journal', ... })
+├── manifest.ts     defineApp({ id: 'journal', ... })  — name is derived from the id
 ├── index.svelte    the app itself; receives `onback`
 └── Icon.svelte     32x32, sized `h-8 w-8` like every other icon
 ```
@@ -693,8 +693,18 @@ web/src/apps/journal/
 Nothing registers these. `shell/state/registry.ts` discovers them with `import.meta.glob`, so
 creating the directory is the whole installation step.
 
-**Name it for the launcher.** Anything past about eight characters truncates under the icon —
-"Administration" became "Admin" for exactly this reason.
+**Name it for the launcher.** The display name is derived from the id — `journal` becomes
+"Journal", `crypto_tracker` becomes "Crypto Tracker" — so the id is what has to read well. Pass
+`name` explicitly only when the id cannot express it ("GPS"). Anything past about eight characters
+truncates under the icon; "Administration" became "Admin" for exactly this reason.
+
+The id is a key rather than a label: the directory, the `gphone:<id>:` storage namespace, the
+`<app>` event segment, the keybind claim and the `?app=` deep link all use it, so renaming one is a
+data migration. `defineApp` lowercases it and warns, because an id with a capital in it used to
+produce a launcher icon whose tap rendered nothing at all.
+
+A human-facing version of this section lives in [`docs/writing-an-app.md`](docs/writing-an-app.md).
+It links back here rather than repeating it; keep it that way.
 
 ### 2. The service, if it needs one
 

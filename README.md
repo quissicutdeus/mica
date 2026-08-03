@@ -31,7 +31,8 @@
 
 ### 🛠️ Backend & Core Architecture
 
-- **SDK-First Architecture (`@gphone/sdk`)**: Complete OS hook coverage (`useNavigation`, `usePhoneNotification`, `useContacts`, `usePhotos`, `useCamera`, `useClock`, `useAppRegistry`, `useAccount`, `useCall`, `useMail`, `useNotes`, `useMessages`, `useStorage`, `useSystemHardware`, `useNuiBridge`, `useKeybinds`) and domain type exports (`Transaction`, `UIMessage`, `UIConversation`, `Contact`, `Mail`, `Note`). Apps import the SDK and nothing else — enforced by a test, not just documented.
+- **SDK-First Architecture (`@gphone/sdk`)**: OS hooks for data (`useContacts`, `usePhotos`, `useMail`, `useNotes`, `useMessages`, `useAccount`, `useCall`, `useReports`), for the device (`useSystemHardware`, `useClock`, `useCamera`, `useSound`, `useKeybinds`, `useNuiBridge`), and for the app itself (`useNavigation`, `useAppLevels`, `useAppAction`, `useStorage`, `usePersisted`, `useTimer`, `useDeepLink`, `usePagedList`, `usePhoneNotification`, `useAppRegistry`). Plus `AppProps` — the one boundary every app crosses, and typechecked. Apps import the SDK and nothing else, enforced by a test rather than documented and hoped for.
+- **Written for app authors**: `pnpm new:app <id>` scaffolds a working app, `localhost:5173/?app=<id>` boots straight into one, and `renderApp` from `@gphone/sdk/testing` unit-tests one. See [docs/writing-an-app.md](docs/writing-an-app.md).
 - **Client & NUI Transport Safety**: Deterministic ID generation and 15-second safety timeouts (`ClientApp.ts`) preventing NUI callbacks from hanging CEF indefinitely.
 - **System vs. Add-on Protection Engine**: Immutable System App protection for core OS apps alongside dynamic Add-on app management and granular permission auditing.
 - **App Isolation & Guardrails**: Wrapped dynamic app rendering with Svelte 5 `<svelte:boundary>` (`ErrorBoundary.svelte`) preventing third-party app runtime exceptions from locking FiveM NUI mouse focus or breaking OS navigation.
@@ -41,7 +42,7 @@
 - **Dynamic App Registry**: Reactive `appRegistryStore` supporting persistent `firstBoot` timestamps, app installation dates, runtime third-party app registration (`registerApp`, `unregisterApp`), and home screen grid updates.
 - **Framework Bridge**: Built-in support for **QBX Core** (`qbx_core`) and **QBCore** (`qb-core`) with automatic player lookup and money handlers.
 - **Banking Bridge**: Reads transaction history through the banking resource's own exports rather than its tables (**Renewed-Banking** supported), normalizing each script's record shape onto one contract. Degrades to an empty list when no supported resource is present.
-- **Declarative Server Schema**: Each app declares its server half once via `defineServerApp` — the schema drives the SQL identifier allowlist, the client-writable field set, and the generated DDL in `sql/apps/`, so they cannot drift apart.
+- **Declarative Server Schema**: Each app declares its server half once via `defineService` — the schema drives the SQL identifier allowlist, the client-writable field set, and the generated DDL in `sql/apps/`, so they cannot drift apart.
 - **Inventory Integration**: Out-of-the-box support for `ox_inventory` item registration and removal.
 - **Central Audit Logging**: Comprehensive action auditing (`gphone_audit_logs`) tracking archive, deletion, moderation, and participant events.
 - **Animation & Control**: Client-side animation, camera capture, and freelook camera systems.
@@ -79,7 +80,7 @@ Before installing, ensure your server environment meets the following requiremen
 2. **Database Setup**
    Import [`gphone.sql`](gphone.sql) — the framework schema, which is just the moderation audit ledger — and then every file in [`sql/apps/`](sql/apps), which holds one file per app (contacts, conversations, messages, mail, notes, photos) including their join tables.
 
-   App tables are **generated** from each app's `defineServerApp` declaration by `pnpm generate:sql`, so the declaration is the single source of truth for the schema. They are deliberately not duplicated into `gphone.sql`: two hand-maintained copies of the same DDL drift, and the column allowlist that protects against SQL injection is only safe while it matches the real table.
+   App tables are **generated** from each app's `defineService` declaration by `pnpm generate:sql`, so the declaration is the single source of truth for the schema. They are deliberately not duplicated into `gphone.sql`: two hand-maintained copies of the same DDL drift, and the column allowlist that protects against SQL injection is only safe while it matches the real table.
 
    Every statement is `CREATE TABLE IF NOT EXISTS`, so re-importing is harmless.
 
@@ -122,6 +123,30 @@ pnpm dev
 
 This runs watch scripts for client/server bundles (`pnpm watch`) and the Vite web development server (`pnpm watch:web`) concurrently.
 
+### Every Gate, One Command
+
+`pnpm verify` runs the full pipeline in order — barrels, format, typecheck, unit, e2e, build,
+dead-code — and stops at the first failure. CI runs the same command, so a green local run means
+a green CI run.
+
+```sh
+pnpm verify         # everything
+pnpm verify:quick   # skips e2e and build, for a fast inner loop
+```
+
+Check its exit code rather than eyeballing the output: piping it through `tail` reports `tail`'s
+status, not the suite's.
+
+### Scaffolding an App
+
+```sh
+pnpm new:app journal            # the app
+pnpm new:app journal --service  # and its server half
+```
+
+Then `pnpm dev` and open `http://localhost:5173/?app=journal` to boot straight into it instead of
+clicking through the launcher.
+
 ### Type Checking
 
 Run type checks across all three targets (client, server, and web):
@@ -158,12 +183,28 @@ gphone/
 ├── server/           # Server-side services, FrameworkBridge, AuditLogger, & Database access
 ├── shared/           # Shared types, interfaces, and constants
 ├── web/              # Svelte 5 + Vite + Tailwind CSS v4 frontend application
+│   └── src/
+│       ├── apps/     # One directory per app — the registry discovers them, nothing registers them
+│       ├── sdk/      # @gphone/sdk: the only thing an app may import
+│       ├── shell/    # The phone around the apps: frame, launcher, navigation, state
+│       └── services/ # Stores backing the SDK hooks; apps reach these through the SDK, never by path
 ├── scripts/          # Manifest generation, SQL generation, and build automation
 ├── build/            # esbuild bundle configuration
 ├── sql/apps/         # Generated per-app tables + join tables (pnpm generate:sql)
 ├── gphone.sql        # Framework schema (moderation audit ledger)
 └── fxmanifest.lua    # Resource manifest file
 ```
+
+---
+
+## Contributing
+
+- [docs/writing-an-app.md](docs/writing-an-app.md) — the five-minute path to a working app.
+- [AGENTS.md](AGENTS.md) — the full engineering guide: hard constraints (§2), the CEF capability
+  baseline (§6), the service layer (§10), and adding an app end to end (§11). Written for AI
+  agents working in this repo, and the most complete description of how it fits together.
+
+`pnpm verify` is the gate for any change, and CI runs the same command.
 
 ---
 
