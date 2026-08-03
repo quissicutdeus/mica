@@ -278,19 +278,29 @@ mostly redundant under Tailwind 4 but harmless; leave it.
 
 ### Known gaps the postcss config does _not_ cover
 
-| Feature           | Needs      | Tailwind 4 uses it for                                      |
-| ----------------- | ---------- | ----------------------------------------------------------- |
-| `color-mix()`     | Chrome 111 | **Every opacity modifier** — `bg-white/10`, `text-black/70` |
-| `:has()`          | Chrome 105 | `has-*`, `group-has-*` variants                             |
-| Container queries | Chrome 105 | `@container`, `@min-*`, `@max-*` variants                   |
+| Feature           | Needs      | Tailwind 4 uses it for                             |
+| ----------------- | ---------- | -------------------------------------------------- |
+| `color-mix()`     | Chrome 111 | Opacity modifiers — `bg-white/10`, `text-black/70` |
+| `:has()`          | Chrome 105 | `has-*`, `group-has-*` variants                    |
+| Container queries | Chrome 105 | `@container`, `@min-*`, `@max-*` variants          |
 
-`postcss-preset-env` has a `color-mix-function` transform, but it computes only static fallbacks.
-Tailwind passes `var(--color-*)` arguments that cannot be resolved at build time, so the polyfill
-bails exactly where it is needed. **Opacity modifiers are the highest-risk utility class here.**
+`:has()` and container queries have no fallback. They are absolute — use Svelte state instead.
 
-For translucency, define an explicit token in `@theme` with a pre-resolved `rgb(... / ...)` value
-rather than using the `/` modifier. For `:has()` or container-query behavior, use Svelte state
-instead of CSS.
+**Opacity modifiers are the qualified case.** This section used to call them the highest-risk
+utility class here, on the reasoning that `postcss-preset-env` computes only static fallbacks and
+Tailwind hands it unresolvable `var(--color-*)` arguments. Reading the built CSS says otherwise:
+`bg-gray-900/95` emits three rules — an unguarded `#101828f2`, then `lab()` and `color-mix()` _both_
+behind `@supports (color: color-mix(...))`. CEF 103 fails that test and takes the plain hex, so the
+utility renders. Tailwind emits that fallback whenever it can resolve the color at build time.
+
+What still breaks is a color it **cannot** resolve at build time — an arbitrary `var()`-based color
+with a `/` modifier. There the `color-mix()` form is all that is emitted.
+
+So for translucency, still prefer an explicit `@theme` token with a pre-resolved `rgb(... / ...)`
+value: one declaration whose in-game behaviour does not depend on cascade error-recovery, and one
+value per role rather than a family per call site. `src/app.css` holds the set, and
+`src/sdk/cef.test.ts` ratchets the remaining `/` modifiers downward. But treat an existing one as
+untidy rather than broken — do not rewrite working screens on the strength of this rule alone.
 
 ### Verifying in-game
 
