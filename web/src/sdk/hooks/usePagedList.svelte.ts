@@ -18,6 +18,18 @@ export interface PagedListOptions<T> {
   container?: () => HTMLElement | null;
   /** Distance from the edge, in pixels, at which scrolling asks for more. */
   threshold?: number;
+  /**
+   * Fetch the next page from the server once the local window is exhausted.
+   *
+   * Omit it and this hook behaves exactly as it always did — a window over a list somebody else
+   * loaded. Supplying it is what turns a client-side window into a window over a server-side
+   * one, which is what a public feed needs: the whole list is never in memory.
+   *
+   * Returns whether anything arrived.
+   */
+  loadOlder?: () => Promise<boolean>;
+  /** Whether the server has more. Suppresses the call at the end of the feed. */
+  hasMore?: () => boolean;
 }
 
 /**
@@ -73,14 +85,32 @@ export function usePagedList<T>(options: PagedListOptions<T>) {
   const offset = $derived(olderAt === 'start' ? all.length - visible.length : 0);
 
   const loadMore = async (): Promise<void> => {
-    if (hiddenCount <= 0 || loading) return;
+    if (loading) return;
+    /**
+     * Reveal locally first, and only reach for the server once nothing is left hidden.
+     *
+     * Both paths run under the same re-entrancy guard and the same scroll compensation below.
+     * The compensation is exactly as necessary for rows arriving from the server as for rows
+     * revealed from memory, and forgetting it is invisible until a list is long enough to
+     * scroll — which is why the two share one code path rather than each getting their own.
+     */
+    const revealLocally = hiddenCount > 0;
+    if (!revealLocally && (!options.loadOlder || options.hasMore?.() === false)) return;
+
     loading = true;
 
     const el = olderAt === 'start' ? (options.container?.() ?? null) : null;
     const previousHeight = el ? el.scrollHeight : 0;
     const previousTop = el ? el.scrollTop : 0;
 
-    limit += pageSize;
+    if (revealLocally) {
+      limit += pageSize;
+    } else {
+      const arrived = await options.loadOlder!();
+      // Grow the window to cover what arrived, or the new rows sit hidden behind the old limit
+      // and a second scroll would be needed to see rows that are already loaded.
+      if (arrived) limit += pageSize;
+    }
     await tick();
 
     // Keep the reader where they were. The list just grew above them, so the same
@@ -92,7 +122,10 @@ export function usePagedList<T>(options: PagedListOptions<T>) {
 
   const onScroll = (event: Event): void => {
     const el = event.target as HTMLElement | null;
-    if (!el || hiddenCount <= 0) return;
+    // `hiddenCount` alone is no longer the test: with a server page there may be nothing hidden
+    // locally and still more to fetch.
+    const exhausted = hiddenCount <= 0 && (!options.loadOlder || options.hasMore?.() === false);
+    if (!el || exhausted) return;
 
     const atEdge =
       olderAt === 'start'

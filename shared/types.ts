@@ -151,6 +151,32 @@ export interface Account {
   updated_at: Date | string;
 }
 
+/**
+ * One short public post.
+ *
+ * `citizenid` is the ownership anchor and never crosses to a public reader; `account_id` is the
+ * display identity, because a player may hold several accounts and switch between them.
+ * Correlating two of them back to one person is exactly what an alt exists to prevent.
+ *
+ * A reply is a Blab with `reply_to` set, rather than a separate table — duplicating the shape
+ * would mean duplicating the edit window, the moderation predicate and the paging.
+ */
+export interface Blab {
+  id: number;
+  /** Absent from any public read. */
+  citizenid?: string;
+  account_id: number;
+  body: string;
+  reply_to?: number | null;
+  status?: 'active' | 'deleted' | 'moderated';
+  created_at: Date | string;
+  updated_at: Date | string;
+  /** Hydrated for display; not a column. */
+  handle?: string;
+  display_name?: string | null;
+  avatar?: string | null;
+}
+
 export interface Note {
   id: number;
   citizenid: string;

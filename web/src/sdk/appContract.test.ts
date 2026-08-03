@@ -6,6 +6,7 @@ import { bundledAddOns, registeredApps } from '../shell/state/registry';
 
 import Admin from '../apps/admin/index.svelte';
 import Bank from '../apps/bank/index.svelte';
+import Blabber from '../apps/blabber/index.svelte';
 import Calculator from '../apps/calculator/index.svelte';
 import Camera from '../apps/camera/index.svelte';
 import Contacts from '../apps/contacts/index.svelte';
@@ -35,6 +36,7 @@ import Store from '../apps/store/index.svelte';
 const APPS: Record<string, AppComponent> = {
   admin: Admin,
   bank: Bank,
+  blabber: Blabber,
   calculator: Calculator,
   camera: Camera,
   contacts: Contacts,

@@ -246,15 +246,29 @@ export abstract class Repository<T> {
 
     const keys = Object.keys(filter);
     this.assertColumns(keys, 'findAll');
-    const values = keys.map((key) => filter[key]);
-
-    const conditions = keys.map((key) => `\`${key}\` = ?`);
+    /**
+     * `null` means IS NULL, not `= NULL`.
+     *
+     * SQL's `= NULL` is never true, so a filter of `{ reply_to: null }` — the obvious way to
+     * ask for top-level posts — silently matched nothing and rendered an empty list. Latent for
+     * every nullable filterable column, and invisible: no error, just no rows.
+     */
+    const conditions: string[] = [];
+    const bound: unknown[] = [];
+    for (const key of keys) {
+      if (filter[key] === null) {
+        conditions.push(`\`${key}\` IS NULL`);
+      } else {
+        conditions.push(`\`${key}\` = ?`);
+        bound.push(filter[key]);
+      }
+    }
 
     // Strictly less-than, so a cursor names the last row already delivered rather than the
     // first one still to come. Off by one here duplicates a row at every page boundary.
     if (page?.cursor !== undefined) {
       conditions.push('`id` < ?');
-      values.push(page.cursor);
+      bound.push(page.cursor);
     }
 
     let selection = '*';
@@ -272,11 +286,11 @@ export abstract class Repository<T> {
       query += ' ORDER BY `id` DESC';
       if (page.limit !== undefined) {
         query += ' LIMIT ?';
-        values.push(page.limit);
+        bound.push(page.limit);
       }
     }
 
-    return await Database.query<T[]>(query, values);
+    return await Database.query<T[]>(query, bound);
   }
 
   /**

@@ -20,3 +20,17 @@ export {
 } from '../lib/formatters';
 export { renderMarkdown } from '../lib/markdown';
 export { useScrollDetect } from '../lib/useScrollDetect';
+
+/**
+ * Split player-written text into styleable pieces — text, `@mention`, `#tag`.
+ *
+ * Re-exported so every app renders a mention the same way, and so there is one place to audit.
+ * Lives in `shared/`, because the server needs the same definition to decide who a mention
+ * notifies. `mentionedHandles` is that half, re-exported here when a caller needs it.
+ *
+ * It returns **data, not markup**, which is the point: each token goes to the DOM through
+ * Svelte's `{text}` and escapes, so no sanitizer is involved because nothing is ever parsed as
+ * HTML. Building an HTML string for `{@html}` is the alternative, and it is how a message
+ * becomes script.
+ */
+export { tokenizeRichText } from '@shared/richText';

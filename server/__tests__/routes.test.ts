@@ -91,6 +91,20 @@ const collectCrudStoreEvents = (): { action: string; file: string }[] => {
         found.push({ action: m[1], file: relative(ROOT, file) });
       }
     }
+
+    /**
+     * `createPagedStore('getBlabs')` takes its action as the first argument rather than in a
+     * config object, so the pattern above cannot see it — and a route it cannot see is reported
+     * as dead weight the moment somebody adds a paged feed.
+     *
+     * Both factories are matched rather than one generic "any call with a string literal",
+     * because the point of this scan is to follow the *known* ways an action name reaches
+     * `fetchNui`. A pattern loose enough to catch every string would also catch strings that
+     * are not actions, and a false pass here is worse than a false failure.
+     */
+    for (const m of text.matchAll(/createPagedStore\s*(?:<[\s\S]*?>)?\s*\(\s*['"](\w+)['"]/g)) {
+      found.push({ action: m[1], file: relative(ROOT, file) });
+    }
   }
   return found;
 };

@@ -38,6 +38,22 @@ export const ROUTES: readonly Route[] = [
   // Bank — read-only, backed by the banking resource's export rather than a table.
   route('getTransactions', 'bank', 'getTransactions'),
 
+  // Accounts — social identities, shared by every social app. `mine` is a custom action
+  // scoped server-side; making citizenid client-filterable would let anyone list anyone's.
+  route('getMyAccounts', 'accounts', 'mine'),
+  route('createAccount', 'accounts', 'create'),
+  // Public handle lookup, paged. Used by a profile page to resolve @handle -> account.
+  route('getAccounts', 'accounts', 'get'),
+
+  // Blabber. `getBlabs` is a public paged read: `{ cursor, limit }` in,
+  // `{ rows, nextCursor }` out.
+  route('getBlabs', 'blabber', 'get'),
+  route('createBlab', 'blabber', 'create'),
+  route('updateBlab', 'blabber', 'update'),
+  route('deleteBlab', 'blabber', 'delete'),
+  // One account's public profile, split into Blabs and Replies.
+  route('getProfileBlabs', 'blabber', 'profile'),
+
   // Contacts
   route('getContacts', 'contacts', 'get'),
   route('createContact', 'contacts', 'create'),

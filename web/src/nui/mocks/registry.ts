@@ -7,7 +7,17 @@ import {
   mockPhotos,
   sampleAvatars
 } from './data';
-import type { Contact, Conversation, Mail, Message, Note, Photo, Transaction } from '@shared/types';
+import type {
+  Account,
+  Blab,
+  Contact,
+  Conversation,
+  Mail,
+  Message,
+  Note,
+  Photo,
+  Transaction
+} from '@shared/types';
 import { defineMockCrud } from './defineMockCrud';
 
 // Helper to simulate delays
@@ -34,7 +44,161 @@ const mockReports: any[] = [
   }
 ];
 
+/**
+ * Blabber's mock state: two accounts for the player and a short feed.
+ *
+ * Hand-written rather than through `defineMockCrud`, because the feed is a **paged public**
+ * read and answers `{ rows, nextCursor }`. A mock that returned a bare array would let the app
+ * look fine in `pnpm dev` while being wrong against the real server — the exact failure mode
+ * the route table exists to outlaw.
+ */
+const mockAccounts: Account[] = [
+  {
+    id: 1,
+    app: 'blabber',
+    handle: 'ada',
+    display_name: 'Ada',
+    status: 'active',
+    created_at: '2026-08-01T10:00:00Z',
+    updated_at: '2026-08-01T10:00:00Z'
+  },
+  {
+    id: 2,
+    app: 'blabber',
+    handle: 'nightowl',
+    display_name: 'Night Owl',
+    status: 'active',
+    created_at: '2026-08-02T10:00:00Z',
+    updated_at: '2026-08-02T10:00:00Z'
+  }
+];
+
+const mockBlabs: Blab[] = [
+  {
+    id: 3,
+    account_id: 1,
+    handle: 'ada',
+    display_name: 'Ada',
+    body: 'traffic on the interstate is unreal today #losangeles',
+    reply_to: null,
+    status: 'active',
+    created_at: '2026-08-02T12:00:00Z',
+    updated_at: '2026-08-02T12:00:00Z'
+  },
+  {
+    id: 2,
+    account_id: 2,
+    handle: 'nightowl',
+    display_name: 'Night Owl',
+    body: 'anyone up? @ada',
+    reply_to: null,
+    status: 'active',
+    created_at: '2026-08-02T11:00:00Z',
+    updated_at: '2026-08-02T11:00:00Z'
+  },
+  {
+    id: 1,
+    account_id: 1,
+    handle: 'ada',
+    display_name: 'Ada',
+    body: 'first',
+    reply_to: null,
+    status: 'active',
+    created_at: '2026-08-02T10:00:00Z',
+    updated_at: '2026-08-02T10:00:00Z'
+  }
+];
+
+let nextBlabId = 100;
+let nextAccountId = 10;
+
 const mockRegistry: Record<string, MockHandler> = {
+  // Accounts
+  getMyAccounts: () => mockAccounts.filter((a) => a.app === 'blabber'),
+  createAccount: ({ handle, display_name }: { handle: string; display_name?: string }) => {
+    if (mockAccounts.some((a) => a.handle === handle)) throw new Error(`@${handle} is taken.`);
+    const created: Account = {
+      id: nextAccountId++,
+      app: 'blabber',
+      handle,
+      display_name: display_name ?? null,
+      status: 'active',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    mockAccounts.push(created);
+    return created;
+  },
+  getAccounts: ({ handle, limit = 30 }: { handle?: string; limit?: number } = {}) => {
+    const matches = mockAccounts.filter(
+      (a) => a.app === 'blabber' && (handle === undefined || a.handle === handle)
+    );
+    return { rows: matches.slice(0, limit), nextCursor: null };
+  },
+
+  // Blabber. Keyset paging on `id DESC`, matching the server: a cursor names the last row
+  // already delivered, and `nextCursor: null` means the end.
+  getBlabs: ({ cursor, limit = 30 }: { cursor?: number; limit?: number } = {}) => {
+    const visible = mockBlabs
+      .filter((b) => b.status === 'active' && (cursor === undefined || b.id < cursor))
+      .sort((a, b) => b.id - a.id);
+    const page = visible.slice(0, limit);
+    const hasMore = visible.length > page.length;
+    return { rows: page, nextCursor: hasMore ? page[page.length - 1].id : null };
+  },
+  createBlab: ({ account_id, body, reply_to }: Partial<Blab>) => {
+    const account = mockAccounts.find((a) => a.id === account_id);
+    if (!account) throw new Error('That account is not yours to post from.');
+    const created: Blab = {
+      id: nextBlabId++,
+      account_id: account.id,
+      handle: account.handle,
+      display_name: account.display_name,
+      body: String(body ?? ''),
+      reply_to: reply_to ?? null,
+      status: 'active',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    mockBlabs.unshift(created);
+    return { ...created, editWindow: 900 };
+  },
+  updateBlab: ({ id, body }: { id: number; body: string }) => {
+    const blab = mockBlabs.find((b) => b.id === id);
+    if (blab) blab.body = body;
+    return true;
+  },
+  getProfileBlabs: ({
+    account_id,
+    tab,
+    cursor,
+    limit = 30
+  }: {
+    account_id: number;
+    tab?: string;
+    cursor?: number;
+    limit?: number;
+  }) => {
+    const repliesOnly = tab === 'replies';
+    const visible = mockBlabs
+      .filter(
+        (b) =>
+          b.status === 'active' &&
+          b.account_id === account_id &&
+          (repliesOnly ? b.reply_to != null : b.reply_to == null) &&
+          (cursor === undefined || b.id < cursor)
+      )
+      .sort((a, b) => b.id - a.id);
+    const page = visible.slice(0, limit);
+    const hasMore = visible.length > page.length;
+    return { rows: page, nextCursor: hasMore ? page[page.length - 1].id : null };
+  },
+  deleteBlab: ({ id }: { id: number }) => {
+    const blab = mockBlabs.find((b) => b.id === id);
+    if (blab) blab.status = 'deleted';
+    return true;
+  },
+
   // Contacts
   ...defineMockCrud<Contact>(mockContacts, {
     list: 'getContacts',

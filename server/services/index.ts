@@ -4,6 +4,7 @@ import './Accounts';
 import './Admin';
 import './Bank';
 import './Battery';
+import './Blabber';
 import './Contacts';
 import './Conversations';
 import './Mail';
