@@ -40,12 +40,29 @@ const FIXTURES: Record<TestToast, { action: string; data: unknown }> = {
   }
 };
 
-/** Seed the phone so a browser session starts with something on screen. */
+/**
+ * Seed the phone so a browser session starts with something on screen.
+ *
+ * Immediately, not on `debugData`'s default 1000ms timer. That delay is there to emulate
+ * NUI latency, which is a reasonable thing to emulate for a *reply* and actively wrong
+ * for the initial state: `visible` already starts `true` in a browser, so the delayed
+ * `setVisible: true` changes nothing you can see — unless you closed the phone inside
+ * that first second, in which case it silently reopens under you.
+ *
+ * That was a real dev annoyance and an invisible test race. `keybinds.spec.ts` pressed
+ * Escape immediately after load and lost whenever the machine was busy enough to push
+ * its assertion past the one-second mark, which read as a flaky test rather than as the
+ * seed reopening the phone. `nui.spec.ts` dispatches its own `setVisible` and could
+ * have been clobbered the same way.
+ */
 export function seedBrowserPhone(now: Date): void {
-  debugData([
-    { action: 'setVisible', data: true },
-    { action: 'setTime', data: { hours: now.getHours(), minutes: now.getMinutes() } }
-  ]);
+  debugData(
+    [
+      { action: 'setVisible', data: true },
+      { action: 'setTime', data: { hours: now.getHours(), minutes: now.getMinutes() } }
+    ],
+    0
+  );
 }
 
 /**

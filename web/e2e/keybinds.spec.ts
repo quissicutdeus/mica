@@ -46,10 +46,31 @@ test.describe('Keyboard Shortcuts E2E', () => {
   test('the Open Phone key reopens a collapsed phone in the browser', async ({ page }) => {
     // `openPhone` is a FiveM key mapping, so in a browser nothing was listening and the
     // only way back was the mouse.
+    //
+    // Asserted on the collapsed-phone affordance rather than the phone's absence. It is a
+    // plain `{#if !visible}` with no transition on it, so it flips the moment the state
+    // does, where `<main>` waits out a 500ms fly and only then leaves the DOM.
+    //
+    // This test used to fail only in a full-suite run, which read as flakiness and was
+    // not: `seedBrowserPhone` re-sent `setVisible: true` on a 1000ms timer, so a test that
+    // closed the phone in that first second had it reopened underneath it. Fixed at the
+    // source — the seed now lands immediately — so pressing Escape straight after `goto`
+    // is safe.
+    const openPhone = page.getByRole('button', { name: /Open gPhone/i });
+
+    // And wait for the shell to be listening before pressing anything. The `keydown`
+    // handler attaches in `onMount`, so a key sent between first paint and mount is
+    // simply dropped — the phone never closes and the assertion below fails with no
+    // indication that the press went nowhere. `appRegistryStore` is assigned at the end
+    // of `installDevHarness`, which `onMount` calls, so it is a direct signal that the
+    // listeners are up rather than a guess about timing.
+    await page.waitForFunction(() => 'appRegistryStore' in window);
+
     await page.keyboard.press('Escape');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toHaveCount(0);
+    await expect(openPhone).toBeVisible();
 
     await page.keyboard.press('m');
+    await expect(openPhone).toBeHidden();
     await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
   });
 
