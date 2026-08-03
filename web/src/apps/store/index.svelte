@@ -11,6 +11,7 @@
   } from '@gphone/sdk';
   import { catalogApps, isSystemApp } from './appInfo';
   import AppDetails from './components/AppDetails.svelte';
+  import UnavailableApp from './components/UnavailableApp.svelte';
   import CatalogList from './components/CatalogList.svelte';
   import InstalledList from './components/InstalledList.svelte';
 
@@ -55,22 +56,20 @@
   );
 
   /**
-   * A demo catalog entry has no component in this repo; the registry needs something.
+   * A demo catalogue entry has no component in this repo, and the registry mounts whatever
+   * it is given — so it gets a real one that says so.
    *
-   * The cast is load-bearing and worth reading twice: this object is not a Svelte
-   * component, so installing one of the four demo apps and then tapping it renders nothing
-   * useful — `ErrorBoundary` catches it. That predates `AppComponent`; the type merely
-   * stopped hiding it. A real placeholder component saying "not available in this build"
-   * would be the fix, and is a UX call rather than a typing one.
+   * This used to hand over `{ name, type }`, which is not a component: tapping the icon
+   * afterwards reached `ErrorBoundary` and reported that the app had stopped working, for an
+   * app that had never existed. `UnavailableApp` reads its own name back out of the registry,
+   * so one component covers all four entries.
    */
-  const createCatalogMockComponent = (appName: string) =>
-    ({ name: appName, type: 'CatalogMockApp' }) as unknown as AppComponent;
+  const placeholderComponent = (): AppComponent => UnavailableApp;
 
   function handleInstall(app: AppManifest) {
     void run(
       () => {
-        const component =
-          registryStore.getComponent(app.id) || createCatalogMockComponent(app.name);
+        const component = registryStore.getComponent(app.id) || placeholderComponent();
         registerApp(app, component);
       },
       { title: 'Store', success: `${app.name} installed successfully!` }
