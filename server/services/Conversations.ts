@@ -3,6 +3,7 @@ import { defineService } from '../lib/defineService';
 import { Conversation } from '@shared/types';
 import { Database } from '../lib/Database';
 import { AuditLogger } from '../lib/AuditLogger';
+import { resolveByPhone } from '../lib/PlayerDirectory';
 import {
   conversationIdFrom,
   fields,
@@ -135,18 +136,6 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
   return list;
 });
 
-// Helper to find citizenid by phone (Offline fallback)
-const findCitizenIdByPhone = async (phone: string): Promise<string | null> => {
-  // Assuming QB-Core standard schema: players table with charinfo JSON column
-  const query = `
-        SELECT citizenid 
-        FROM players 
-        WHERE JSON_UNQUOTE(JSON_EXTRACT(charinfo, '$.phone')) = ?
-        LIMIT 1
-    `;
-  return await Database.scalar<string>(query, [phone]);
-};
-
 // Helper to hydrate participants with names
 const hydrateParticipants = async (conversationId: number) => {
   const query = `
@@ -183,45 +172,25 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
 
   let targetCitizenId = typeof participant === 'string' ? participant : undefined;
 
-  // Resolve phone to citizenid if needed
+  /**
+   * Resolve the number to a person, online or off.
+   *
+   * This used to be forty lines here: two direct `exports[...]` calls bypassing
+   * `FrameworkBridge`, a display name assembled inline from `charinfo`, and its own
+   * `JSON_EXTRACT` fallback. It also carried a real defect — on a framework object with no
+   * `PlayerData` it did `targetCitizenId = targetPlayer.phone_number`, putting a **phone
+   * number** where a citizenid goes, and `gphone_messages_participants.citizenid` is a foreign
+   * key onto `players`.
+   */
   let targetName: string | null = null;
   if (!isGroup && phone) {
-    let targetPlayer: any = null;
-    try {
-      if (exports['qbx_core']?.GetPlayerByPhone) {
-        targetPlayer = exports['qbx_core'].GetPlayerByPhone(phone);
-      } else if (exports['qb-core']?.GetCoreObject) {
-        targetPlayer = exports['qb-core'].GetCoreObject().Functions.GetPlayerByPhone(phone);
-      }
-    } catch (e) {
-      targetPlayer = null;
+    const target = await resolveByPhone(phone);
+    if (!target) {
+      console.log(`[Conversation] No player holds phone ${phone}; refusing to start a thread.`);
+      return null;
     }
-
-    if (targetPlayer) {
-      // Online player logic
-      if (targetPlayer.PlayerData) {
-        targetCitizenId = targetPlayer.PlayerData.citizenid;
-        if (targetPlayer.PlayerData.charinfo) {
-          targetName = `${targetPlayer.PlayerData.charinfo.firstname} ${targetPlayer.PlayerData.charinfo.lastname}`;
-        }
-      } else if (targetPlayer.phone_number) {
-        targetCitizenId = targetPlayer.phone_number;
-      }
-      console.log(`[Conversation] Resolved phone ${phone} to ${targetCitizenId} via QBX`);
-    } else {
-      // Offline fallback
-      console.log(`[Conversation] Player offline for phone ${phone}. Attempting SQL fallback...`);
-      const fallbackId = await findCitizenIdByPhone(phone);
-      if (fallbackId) {
-        targetCitizenId = fallbackId;
-        console.log(
-          `[Conversation] Resolved phone ${phone} to ${targetCitizenId} via SQL fallback`
-        );
-      } else {
-        console.log(`[Conversation] Could not resolve phone ${phone} via QBX or SQL`);
-        return null;
-      }
-    }
+    targetCitizenId = target.citizenid;
+    targetName = target.displayName;
   }
 
   // Logic for 1-on-1: existing check

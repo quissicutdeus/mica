@@ -23,10 +23,14 @@ the add-on path end to end, which has never had a genuine consumer.
 - **Editing.** An author can fix a typo for a few minutes after posting, then the post
   freezes. Configurable per server; not a rewrite window.
 - **Icon.** A megaphone — stroke-only, matching the house style.
-- **Blocked on:** public-read / owner-write services with keyset paging (platform item 1);
-  a player directory so an `@handle` resolves for someone who is not in your contacts
-  (item 3). Replies want the server→app push channel (item 2), though the app is usable
-  without it.
+- **Ready on the server side.** Public-read + keyset paging (item 1) and name resolution
+  (item 3) are in. Still needed, and they belong _with_ this app rather than before it:
+  - `gphone_profiles` for `@handle` and avatar — item 3 stopped at names on purpose.
+  - The web-side paged store (`createPagedStore`, `usePagedList.loadOlder`), deferred from
+    item 1 because `pnpm deadcode` would flag an SDK export nothing consumes.
+  - The server→app push channel (item 2) for replies. **It cannot land before this app**: knip
+    has no `ignoreExports`, so an unused `useAppEvents` fails the verify gate, and adding an
+    ignore would be the wrong fix.
 
 ---
 
@@ -88,8 +92,11 @@ Tracked separately; summarised here so the dependencies above resolve to somethi
    what remains is `read: 'public'` and paging, which is what a feed needs.
 2. **A generic server→app push channel** — `shell/nuiMessages.ts` is a closed route table
    that an add-on cannot join.
-3. **A shared player directory** — resolving a citizenid to a display name, handle and
-   avatar, including for offline players.
+3. **A shared player directory** — done for names. `server/lib/PlayerDirectory.ts` resolves a
+   citizenid or a phone number to a display name, online or offline, and absorbed the fork
+   `Conversations.ts` had been carrying. **Handles and avatars are not built** — those are
+   Blabber's requirement and want a `gphone_profiles` table, which should land with the app
+   that reads it.
 4. **Abuse controls at the `ServiceEndpoint` chokepoint** — done. Rate limit at the transport
    boundary, and per-column validation derived from the schema.
 5. **An economy primitive** — done. `addMoney` on both framework paths, failing closed, and
