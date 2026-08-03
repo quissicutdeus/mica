@@ -200,6 +200,8 @@ gphone/
 ## Contributing
 
 - [docs/writing-an-app.md](docs/writing-an-app.md) — the five-minute path to a working app.
+- [docs/roadmap.md](docs/roadmap.md) — app ideas worth building, and what the platform still
+  owes each of them.
 - [AGENTS.md](AGENTS.md) — the full engineering guide: hard constraints (§2), the CEF capability
   baseline (§6), the service layer (§10), and adding an app end to end (§11). Written for AI
   agents working in this repo, and the most complete description of how it fits together.
