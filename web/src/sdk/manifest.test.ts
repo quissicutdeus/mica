@@ -68,6 +68,42 @@ describe('defineApp: id casing', () => {
   });
 });
 
+describe('defineApp: name', () => {
+  it('derives the display name from the id when it is omitted', () => {
+    // Every one of the twelve apps in this repo had `name` spelled out and every one of
+    // them matched the title-cased id exactly, so the field was pure duplication.
+    expect(defineApp({ id: 'notes', color: 'bg-yellow-400', icon: null }).name).toBe('Notes');
+  });
+
+  it('title-cases each word of a snake_case id', () => {
+    expect(defineApp({ id: 'crypto_tracker', color: 'bg-blue-600', icon: null }).name).toBe(
+      'Crypto Tracker'
+    );
+  });
+
+  it('keeps an explicit name, for the cases the id cannot express', () => {
+    // `GPS` and `My Bank` are not title-cased ids, which is why deriving is a default
+    // rather than a rule.
+    expect(defineApp({ id: 'gps', name: 'GPS', color: 'bg-blue-600', icon: null }).name).toBe(
+      'GPS'
+    );
+  });
+
+  it('derives rather than trusting an explicit undefined', () => {
+    // `{ name: undefined }` spreads as a present key, so a naive default placed before the
+    // spread would be clobbered by it and the launcher would render nothing for a label.
+    expect(
+      defineApp({ id: 'notes', name: undefined, color: 'bg-yellow-400', icon: null }).name
+    ).toBe('Notes');
+  });
+
+  it('still refuses a name that is present and empty', () => {
+    expect(() => defineApp({ id: 'notes', name: '', color: 'bg-yellow-400', icon: null })).toThrow(
+      /non-empty string/
+    );
+  });
+});
+
 describe('defineApp: color', () => {
   it('warns that a hex string produces an invisible icon', () => {
     // The docstring promised "Tailwind class or hex string" and `AppIcon` interpolates the

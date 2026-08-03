@@ -40,10 +40,33 @@ export interface AppProps {
  */
 export type AppComponent = Component<AppProps>;
 
+/**
+ * A manifest as an author writes it, before `defineApp` fills in the defaults.
+ *
+ * Separate from `AppManifest` for one reason: `name` is optional here and guaranteed on the
+ * way out, so everything downstream can read `manifest.name` without a fallback.
+ */
+export type AppManifestInput = Omit<AppManifest, 'name'> & { name?: string };
+
 export interface AppManifest {
-  /** Unique ID for the application (e.g., "contacts", "crypto_tracker") */
+  /**
+   * Unique id — `contacts`, `crypto_tracker`. lower_snake_case.
+   *
+   * The stable one. It is a directory name, the `gphone:<id>:` storage namespace, the
+   * `<app>` segment of every net event, a keybind claim and the `?app=` deep link. Renaming
+   * it is a data migration, not a rename, which is exactly why it is not derived from
+   * `name`: a display string should be free to change without orphaning stored data or
+   * altering event names that server code handles.
+   */
   id: string;
-  /** Human-readable display name on home screen */
+  /**
+   * Display name on the home screen. Cosmetic — the launcher label, the Store listing and
+   * the error-boundary message, nothing that is keyed on.
+   *
+   * Optional on input. `defineApp` title-cases the id when it is omitted, so `crypto_tracker`
+   * becomes "Crypto Tracker" and all twelve apps in this repo needed only the id. Give it
+   * explicitly when the display name is not simply the id — "GPS", "My Bank".
+   */
   name: string;
   /**
    * Tailwind background class for the launcher icon — `bg-indigo-600`.
@@ -94,15 +117,23 @@ import { MICA_VERSION } from './version';
  * Helper function to define and validate a gPhone application manifest.
  * Ensures required fields exist and applies sensible defaults for third-party apps.
  */
+/** `crypto_tracker` -> `Crypto Tracker`. */
+const titleCase = (id: string) =>
+  id
+    .split('_')
+    .filter(Boolean)
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join(' ');
+
 /** What `pnpm new:app` enforces for a scaffolded app; a hand-written manifest bypassed it. */
 const ID_PATTERN = /^[a-z][a-z0-9_]*$/;
 
-export function defineApp(manifest: AppManifest): AppManifest {
+export function defineApp(manifest: AppManifestInput): AppManifest {
   if (!manifest.id || typeof manifest.id !== 'string') {
     throw new Error("gPhone App Manifest error: 'id' is required and must be a string.");
   }
-  if (!manifest.name || typeof manifest.name !== 'string') {
-    throw new Error("gPhone App Manifest error: 'name' is required and must be a string.");
+  if (manifest.name !== undefined && (typeof manifest.name !== 'string' || !manifest.name)) {
+    throw new Error("gPhone App Manifest error: 'name' must be a non-empty string.");
   }
 
   /**
@@ -149,7 +180,10 @@ export function defineApp(manifest: AppManifest): AppManifest {
     isSystem,
     author,
     ...manifest,
-    // After the spread: the normalised id has to win over the one that was passed in.
-    id
+    // Both after the spread, so they win over whatever was passed in: the normalised id
+    // over the raw one, and the derived name over an explicit `name: undefined` — which
+    // spreads as a present key and would otherwise clobber the default.
+    id,
+    name: manifest.name ?? titleCase(id)
   };
 }

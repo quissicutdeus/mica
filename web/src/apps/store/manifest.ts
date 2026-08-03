@@ -3,7 +3,6 @@ import { defineApp } from '@gphone/sdk';
 
 export default defineApp({
   id: 'store',
-  name: 'Store',
   color: 'bg-indigo-600',
   icon: Icon,
   author: 'gPhone',

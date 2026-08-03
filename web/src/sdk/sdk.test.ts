@@ -61,12 +61,14 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       expect(MICA_BUILD_INFO).toBeDefined();
     });
 
-    it('throws error when required manifest fields are missing', () => {
+    it('throws when id is missing, or name is present and empty', () => {
       expect(() => defineApp({ id: '', name: 'Test', color: 'red', icon: null } as any)).toThrow(
         "gPhone App Manifest error: 'id' is required"
       );
+      // `name` is optional now and derived from the id when absent — but an empty string is
+      // a supplied value rather than an omission, and there is nothing to derive from it.
       expect(() => defineApp({ id: 'app1', name: '', color: 'red', icon: null } as any)).toThrow(
-        "gPhone App Manifest error: 'name' is required"
+        "gPhone App Manifest error: 'name' must be a non-empty string"
       );
     });
   });

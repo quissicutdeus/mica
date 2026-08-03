@@ -3,7 +3,6 @@ import { defineApp, unreadMessagesCount } from '@gphone/sdk';
 
 export default defineApp({
   id: 'messages',
-  name: 'Messages',
   color: 'bg-green-400',
   icon: Icon,
   badgeStore: unreadMessagesCount,

@@ -3,7 +3,6 @@ import { defineApp } from '@gphone/sdk';
 
 export default defineApp({
   id: 'bank',
-  name: 'Bank',
   color: 'bg-purple-600',
   icon: Icon,
   description: 'Manage bank accounts and transfer funds',

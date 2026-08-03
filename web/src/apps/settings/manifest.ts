@@ -3,7 +3,6 @@ import { defineApp } from '@gphone/sdk';
 
 export default defineApp({
   id: 'settings',
-  name: 'Settings',
   color: 'bg-gray-700',
   icon: Icon,
   description: 'Configure phone settings, wallpapers, and preferences'

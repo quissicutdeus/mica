@@ -3,7 +3,6 @@ import { defineApp } from '@gphone/sdk';
 
 export default defineApp({
   id: 'photos',
-  name: 'Photos',
   color: 'bg-blue-500 text-white',
   icon: Icon,
   description: 'View photo gallery and captured images',
