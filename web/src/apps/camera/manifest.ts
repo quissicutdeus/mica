@@ -6,5 +6,5 @@ export default defineApp({
   color: 'bg-gray-200 text-gray-900',
   icon: Icon,
   description: 'Take photos and view camera preview',
-  permissions: ['camera', 'storage']
+  permissions: ['camera', 'media', 'notifications', 'storage']
 });

@@ -338,6 +338,26 @@ Why this is sharper in CEF than on the web: injected script can `fetch` against
 `https://<resource>/<event>` and invoke any registered NUI callback, including ones with server-side
 effects. XSS here is privilege escalation, not just defacement.
 
+### App permissions are a disclosure, not a sandbox
+
+`permissions` on a manifest is what the Store shows a player. It is **not** access control and
+cannot become it: every app runs in the shell's own JS context, so any check the browser makes is
+one an add-on can walk around. §2.9 stays the boundary — the server gates privileged actions and
+does not treat a NUI request as proof of intent.
+
+It used to be decorative in a worse sense than unused. Nothing read it beyond the Store's renderer
+and a storage-size figure invented from `permissions.length`, so an app declaring `permissions: []`
+had exactly the access of one declaring all seven — and half the manifests understated what they
+touched. Settings declared nothing and used ten hooks.
+
+`web/src/sdk/permissions.test.ts` reads each app's `@gphone/sdk` imports and fails the build where
+the manifest understates them. The mapping is deliberately narrow — `useContacts`, `usePhotos`,
+`useCamera`, `usePhoneNotification`, `useStorage`/`usePersisted` — because those are the ones a
+player would want disclosed. `network` and `location` stay hand-declared: every app talks to its own
+service, so inferring `network` would mark all twelve and tell nobody anything.
+
+Declaring more than the scan finds is fine. Declaring less is a lie to the person reading it.
+
 ---
 
 ## 8. Repo layout, NUI, and testing

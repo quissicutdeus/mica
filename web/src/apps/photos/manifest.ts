@@ -7,5 +7,5 @@ export default defineApp({
   icon: Icon,
   preload: () => usePhotos().photos.load(),
   description: 'View photo gallery and captured images',
-  permissions: ['storage']
+  permissions: ['media', 'notifications', 'storage']
 });

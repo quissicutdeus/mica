@@ -7,5 +7,5 @@ export default defineApp({
   icon: Icon,
   preload: () => useContacts().contactsStore.load(),
   description: 'Manage phone address book and saved contacts',
-  permissions: ['contacts']
+  permissions: ['contacts', 'media', 'notifications']
 });

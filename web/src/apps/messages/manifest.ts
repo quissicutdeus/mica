@@ -8,5 +8,5 @@ export default defineApp({
   badgeStore: unreadMessagesCount,
   preload: () => useMessages().conversationsStore.loadConversations(),
   description: 'Send text messages and share content with contacts',
-  permissions: ['notifications', 'contacts']
+  permissions: ['contacts', 'media', 'notifications']
 });

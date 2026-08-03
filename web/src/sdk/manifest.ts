@@ -100,7 +100,19 @@ export interface AppManifest {
   author?: string;
   /** Brief description of app functionality */
   description?: string;
-  /** Declared platform permissions required by app */
+  /**
+   * What this app reaches for, as shown to a player in the Store.
+   *
+   * **A disclosure, not a sandbox.** Nothing stops an app importing a hook it did not
+   * declare — every app runs in the same JS context as the shell, so a browser-side check
+   * could always be walked around. §2.9 is the real boundary: the server gates privileged
+   * actions and does not take a NUI request as proof of intent.
+   *
+   * What is enforced is that the disclosure is **true**. `sdk/permissions.test.ts` reads
+   * each app's SDK imports and fails the build if it reaches for contacts, photos, the
+   * camera, notifications or local storage without saying so. Declaring more than the scan
+   * finds is allowed — `network` and `location` have no hook to infer them from.
+   */
   permissions?: AppPermission[];
   /** Default props passed when launching app component */
   defaultProps?: Record<string, unknown>;
