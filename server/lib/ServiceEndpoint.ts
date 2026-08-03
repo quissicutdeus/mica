@@ -27,6 +27,11 @@ export interface ServiceOptions {
   publicRead?: boolean;
   /** Set from a resolved `paging` declaration. Required alongside `publicRead`. */
   paging?: { pageSize: number; maxPageSize: number };
+  /**
+   * Columns a public read may select. Set from `publicColumns`, which never includes
+   * `citizenid` — with several accounts per player it is a de-anonymisation vector.
+   */
+  publicColumns?: readonly string[];
 }
 
 export class ServiceEndpoint<T> {
@@ -181,9 +186,13 @@ export class ServiceEndpoint<T> {
             (filter as Record<string, unknown>).citizenid = citizenid;
           }
 
+          // Only a public read narrows the projection; an owner reading their own rows has
+          // every business seeing all of them.
+          const projection = this.options.publicRead ? this.options.publicColumns : undefined;
+
           const paging = this.options.paging;
           if (!paging) {
-            return await this.repository.findAll(filter as any);
+            return await this.repository.findAll(filter as any, undefined, projection);
           }
 
           const limit = this.readLimit(data, paging);
@@ -197,10 +206,11 @@ export class ServiceEndpoint<T> {
            * still races the next insert. Over-fetching by one is exact, and the extra row is
            * dropped rather than returned.
            */
-          const rows = await this.repository.findAll(filter as any, {
-            limit: limit + 1,
-            cursor
-          });
+          const rows = await this.repository.findAll(
+            filter as any,
+            { limit: limit + 1, cursor },
+            projection
+          );
 
           const hasMore = rows.length > limit;
           const pageRows = hasMore ? rows.slice(0, limit) : rows;

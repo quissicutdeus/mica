@@ -614,6 +614,15 @@ a silent divergence breaks either security or writes. One schema drives both, pl
     job, a dispatch, a bank alert. Nothing becomes client-writable and create/update are not
     registered. Delete stays, because the row still belongs to exactly one citizenid.
   - **`write: 'members'`** registers no generic mutation at all, for the same reason as the read.
+- **`ColumnDef.private: true` withholds a column from a public read's projection**, and
+  `citizenid` is withheld from every public projection automatically without being declared.
+  That is not hygiene: a public table returns rows the reader does not own, and once a player
+  can hold several accounts in one app, the owner's citizenid correlates two
+  deliberately-separate identities back to one person — which is the entire thing an alt
+  account exists to prevent. Enforced in the `SELECT`, not by dropping keys from the returned
+  rows, so a `repositoryFactory` override cannot re-add a column the query never named. A
+  client establishes "this is mine" from ids it already holds; the server authorizes writes
+  from the session regardless.
 - **`paging` is keyset, on `id DESC`, and the order is not configurable.** Four reasons, and
   they all come from `id` being the primary key: in InnoDB it _is_ the clustered index, so the
   scan needs no sort step; every primary table already emits `KEY status (status)` and InnoDB

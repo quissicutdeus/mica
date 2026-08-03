@@ -101,6 +101,16 @@ export interface ColumnDef {
    * database-level constraint, so this is required when the type is `enum`.
    */
   values?: readonly string[];
+  /**
+   * Withhold this column from a **public** read's projection.
+   *
+   * For an app-specific secret on an otherwise public table. `citizenid` is excluded from
+   * every public projection automatically and does not need declaring — see `publicColumns`.
+   *
+   * Enforced in the SELECT rather than by filtering rows afterwards, so a
+   * `repositoryFactory` override cannot re-add a field the query never named.
+   */
+  private?: boolean;
   /** Foreign key onto another table. */
   references?: ColumnReference;
 }
@@ -336,6 +346,18 @@ export interface ResolvedService {
   paging: ResolvedPaging | null;
   /** Per-column write validation, derived from the schema. Keyed by column name. */
   columnRules: Record<string, ColumnRule>;
+  /**
+   * What a public read is allowed to select.
+   *
+   * `citizenid` is always absent, and that is the load-bearing part rather than tidiness.
+   * A public table is the first thing here that returns rows a player does not own, and once
+   * one player can hold several accounts, the owner's citizenid is a **de-anonymisation
+   * vector**: it correlates two deliberately-separate identities back to one person, which is
+   * the entire thing an alt account exists to prevent. No public reader has ever needed it —
+   * a client establishes "this is mine" from the account ids it already holds, and the server
+   * authorizes writes from the session either way.
+   */
+  publicColumns: string[];
   statuses: readonly string[];
   /** Declared fields only, in declaration order — implicit columns excluded. */
   fields: { name: string; def: ColumnDef }[];
@@ -555,6 +577,11 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     }
   }
 
+  const publicColumns = columns.filter(
+    (column) =>
+      column !== 'citizenid' && !fields.some((f) => f.name === column && f.def.private === true)
+  );
+
   const columnRules: Record<string, ColumnRule> = {};
   for (const { name, def } of fields) {
     columnRules[name] = {
@@ -571,6 +598,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     membership,
     paging,
     columnRules,
+    publicColumns,
     statuses,
     fields,
     indexes,
@@ -666,7 +694,9 @@ export function defineService<T>(definition: ServiceDefinition): ServerAppHandle
 
   const app = new ServiceEndpoint<T>(resolved.id, repo, {
     tableName: resolved.table,
-    ...(resolved.access.read === 'public' ? { publicRead: true } : {}),
+    ...(resolved.access.read === 'public'
+      ? { publicRead: true, publicColumns: resolved.publicColumns }
+      : {}),
     ...(resolved.paging ? { paging: resolved.paging } : {}),
     ...accessLockdown,
     ...definition.options

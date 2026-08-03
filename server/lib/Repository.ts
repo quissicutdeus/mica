@@ -219,7 +219,23 @@ export abstract class Repository<T> {
    * for why all four of its properties (clustered index, index already emitted,
    * single-column cursor, immunity to edits) come from it being the primary key.
    */
-  async findAll(where: Partial<T> = {}, page?: { limit?: number; cursor?: number }): Promise<T[]> {
+  async findAll(
+    where: Partial<T> = {},
+    page?: { limit?: number; cursor?: number },
+    /**
+     * Columns to select instead of `*`.
+     *
+     * Only a public read passes one, and it passes `publicColumns` — which never contains
+     * `citizenid`. Withholding it in the **projection** rather than by dropping the key from
+     * the returned rows is deliberate: a `repositoryFactory` override that re-shapes results
+     * cannot re-add a column the query never asked for.
+     *
+     * Every name is checked against the table's own allowlist first, for the reason §2.9
+     * gives: MySQL cannot parameterize an identifier, so anything interpolated has to be
+     * something this table actually has.
+     */
+    projection?: readonly string[]
+  ): Promise<T[]> {
     const filter = { ...where } as Record<string, unknown>;
     if (this.hasStatusColumn && !('status' in filter)) {
       filter.status = 'active';
@@ -238,7 +254,13 @@ export abstract class Repository<T> {
       values.push(page.cursor);
     }
 
-    let query = `SELECT * FROM \`${this.tableName}\``;
+    let selection = '*';
+    if (projection && projection.length > 0) {
+      this.assertColumns([...projection], 'findAll projection');
+      selection = projection.map((column) => `\`${column}\``).join(', ');
+    }
+
+    let query = `SELECT ${selection} FROM \`${this.tableName}\``;
     if (conditions.length > 0) {
       query += ` WHERE ${conditions.join(' AND ')}`;
     }

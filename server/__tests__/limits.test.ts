@@ -201,3 +201,81 @@ describe('rate limiting', () => {
     expect(allow(11, 'notes', 'create')).toBe(false);
   });
 });
+
+/**
+ * What a public read is allowed to select.
+ *
+ * `citizenid` is absent from every public projection, and that is the load-bearing part.
+ * A public table returns rows the reader does not own; once a player can hold several
+ * accounts, the owner's citizenid correlates two deliberately-separate identities back to one
+ * person — which is the entire thing an alt account exists to prevent.
+ */
+describe('public projection', () => {
+  it('withholds citizenid from a public read', () => {
+    const resolved = resolveAppSchema({
+      id: 'feed',
+      access: { read: 'public', write: 'owner' },
+      paging: {},
+      schema: { body: 'string' }
+    });
+
+    expect(resolved.publicColumns).not.toContain('citizenid');
+    expect(resolved.publicColumns).toContain('body');
+    expect(resolved.publicColumns).toContain('id');
+  });
+
+  it('withholds a column the schema marked private', () => {
+    const resolved = resolveAppSchema({
+      id: 'feed',
+      access: { read: 'public', write: 'owner' },
+      paging: {},
+      schema: { body: 'string', draft_note: { type: 'string', private: true } }
+    });
+
+    expect(resolved.publicColumns).not.toContain('draft_note');
+    expect(resolved.columns).toContain('draft_note');
+  });
+
+  it('selects the named columns rather than star, so nothing can re-add one', async () => {
+    // In the projection, not by dropping keys afterwards: a repositoryFactory override that
+    // re-shapes rows cannot put back a column the query never asked for.
+    dbMock.query.mockReset();
+    dbMock.query.mockResolvedValue([]);
+    const repo = buildRepository(
+      resolveAppSchema({
+        id: 'feed',
+        access: { read: 'public', write: 'owner' },
+        paging: {},
+        schema: { body: 'string' }
+      })
+    );
+
+    await repo.findAll({} as never, { limit: 5 }, ['id', 'body']);
+
+    const sql = String(dbMock.query.mock.calls[0][0]);
+    expect(sql).toContain('SELECT `id`, `body` FROM');
+    expect(sql).not.toContain('SELECT *');
+    expect(sql).not.toContain('citizenid');
+  });
+
+  it('rejects a projection column the table does not have', async () => {
+    // Interpolated, so it goes through the same allowlist as every other identifier (§2.9).
+    const repo = buildRepository(resolveAppSchema({ id: 'feed', schema: { body: 'string' } }));
+
+    await expect(repo.findAll({} as never, undefined, ['body', 'secret'] as never)).rejects.toThrow(
+      /rejected unknown column 'secret'/
+    );
+  });
+
+  it('still selects star for an owner-scoped read', async () => {
+    // An owner reading their own rows has every business seeing all of them, and the unpaged
+    // byte-identical guarantee depends on this staying `*`.
+    dbMock.query.mockReset();
+    dbMock.query.mockResolvedValue([]);
+    const repo = buildRepository(resolveAppSchema({ id: 'own', schema: { body: 'string' } }));
+
+    await repo.findAll({ citizenid: 'CIT_A' } as never);
+
+    expect(String(dbMock.query.mock.calls[0][0])).toContain('SELECT * FROM');
+  });
+});

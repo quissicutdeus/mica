@@ -123,6 +123,34 @@ export interface Report {
   updated_at: Date | string;
 }
 
+/**
+ * One social identity a player posts under.
+ *
+ * A player may hold several per app and switch between them, which is why this is an
+ * *account* rather than a profile: a profile is the presentation, an account is the thing you
+ * log into. `citizenid` is the owner and never crosses to a public reader — with alts, it
+ * correlates two deliberately-separate identities back to one person.
+ *
+ * Shared across social apps with `app` as a column rather than a table per app, because the
+ * fields do not differ: Blabber, Instagram and a TikTok-alike all want exactly a handle, a
+ * display name, an avatar and a bio. What differs is the *content* model, which stays per app.
+ */
+export interface Account {
+  id: number;
+  /** Absent from any public read. */
+  citizenid?: string;
+  /** Which app this identity belongs to — `blabber`. */
+  app: string;
+  /** Unique within an app. lower_snake_case, 3-32 characters, no leading @. */
+  handle: string;
+  display_name?: string | null;
+  avatar?: string | null;
+  bio?: string | null;
+  status?: 'active' | 'deleted' | 'moderated';
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
 export interface Note {
   id: number;
   citizenid: string;
