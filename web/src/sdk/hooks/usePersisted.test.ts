@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 import { usePersisted } from './usePersisted';
-import { useStorage, clearAppStorage } from './useStorage';
+import { useStorage, clearAppStorage, appStorageBytes } from './useStorage';
 
 const storage = useStorage('testapp');
 
@@ -99,5 +99,32 @@ describe('clearAppStorage', () => {
     expect(useStorage('notes').getItem<string>('x')).toBe('long');
 
     clearAppStorage('notes');
+  });
+});
+
+describe('appStorageBytes', () => {
+  it('is zero for an app that has stored nothing', () => {
+    clearAppStorage('empty');
+    expect(appStorageBytes('empty')).toBe(0);
+  });
+
+  it('grows with what the app actually wrote', () => {
+    // The Store used to derive this from `id.length + name.length + permissions.length`, so
+    // declaring one more permission made an app look bigger on disk.
+    clearAppStorage('hoarder');
+    const before = appStorageBytes('hoarder');
+    useStorage('hoarder').setItem('note', 'x'.repeat(500));
+
+    expect(appStorageBytes('hoarder')).toBeGreaterThan(before + 500);
+    clearAppStorage('hoarder');
+  });
+
+  it('counts only the asking app', () => {
+    clearAppStorage('mine');
+    clearAppStorage('yours');
+    useStorage('yours').setItem('big', 'y'.repeat(1000));
+
+    expect(appStorageBytes('mine')).toBe(0);
+    clearAppStorage('yours');
   });
 });

@@ -1,4 +1,4 @@
-import { useAppRegistry, type AppManifest, type AppPermission } from '@gphone/sdk';
+import { appStorageBytes, useAppRegistry, type AppManifest, type AppPermission } from '@gphone/sdk';
 
 /**
  * What the Store knows about an app before anyone taps it.
@@ -86,11 +86,20 @@ export function isSystemApp(app: AppManifest): boolean {
   return !app.isRemote && (app.author === 'gPhone' || !app.author);
 }
 
-/** A plausible size, derived from the manifest. Nothing measures real storage. */
+/**
+ * What the app has actually stored.
+ *
+ * This used to be `(id.length + name.length + permissions.length) * 85`, invented to fill the
+ * row. It was also quietly coupled to the manifest: declaring one more permission made the
+ * app look bigger. Storage is namespaced per app, so the true figure was always available.
+ */
 export function getAppStorageSize(app: AppManifest): string {
   if (isSystemApp(app)) return 'System Protected';
-  const length = (app.id.length + app.name.length + (app.permissions?.length || 0)) * 85;
-  return `${(length / 10).toFixed(0)} KB`;
+
+  const bytes = appStorageBytes(app.id);
+  if (bytes === 0) return 'No data stored';
+  if (bytes < 1024) return `${bytes} B`;
+  return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
 /** A permission as a player should read it. */

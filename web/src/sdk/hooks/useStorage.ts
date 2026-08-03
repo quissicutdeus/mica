@@ -41,6 +41,35 @@ export function clearAppStorage(appId: string): void {
 }
 
 /**
+ * How many bytes an app has actually stored.
+ *
+ * The Store used to show a made-up number here — `(id.length + name.length +
+ * permissions.length) * 85`, which meant declaring one more permission grew the app's
+ * reported footprint. Everything an app writes is under `gphone:<appId>:` already, so the
+ * real answer is a sum away.
+ *
+ * Keys are counted alongside values: both occupy the quota, and an app storing many tiny
+ * entries is not free.
+ */
+export function appStorageBytes(appId: string): number {
+  const prefix = namespaceOf(appId);
+  try {
+    const entries =
+      typeof window !== 'undefined' && window.localStorage
+        ? Object.keys(window.localStorage).map(
+            (key) => [key, window.localStorage.getItem(key) ?? ''] as const
+          )
+        : [...memoryStore.entries()];
+
+    return entries
+      .filter(([key]) => key.startsWith(prefix))
+      .reduce((total, [key, value]) => total + key.length + value.length, 0);
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * OS Service Hook for app key-value storage.
  */
 export function useStorage(appId: string) {
