@@ -4,6 +4,11 @@ import { type CallbackId, requirePositiveInt } from './payload';
 import { requestEventFor, responseEventFor } from '@shared/rpc';
 import { FrameworkBridge, FrameworkPlayer } from './FrameworkBridge';
 import { registerService } from './services';
+import { allow, installRateLimitCleanup } from './rateLimit';
+
+// Once per process, not once per service: `on('playerDropped')` would otherwise be registered
+// thirteen times and do the same sweep thirteen times per disconnect.
+installRateLimitCleanup();
 
 export interface ServiceOptions {
   disableGet?: boolean;
@@ -79,9 +84,20 @@ export class ServiceEndpoint<T> {
     return picked;
   }
 
-  /** Reduce a raw NUI payload to the columns this table lets clients write. */
+  /**
+   * Reduce a raw NUI payload to the columns this table lets clients write, and check each
+   * surviving value against what the column can actually hold.
+   *
+   * Two steps, in this order, and the order matters: the allowlist decides *whether* a value
+   * gets a slot, and only then is it worth asking whether it fits. Validating first would mean
+   * inspecting keys that have no destination.
+   */
   private sanitizeWrite(data: unknown): Record<string, unknown> {
-    return this.pickColumns(data, this.repository.writableColumns);
+    const picked = this.pickColumns(data, this.repository.writableColumns);
+    for (const [column, value] of Object.entries(picked)) {
+      this.repository.assertWritableValue(column, value);
+    }
+    return picked;
   }
 
   /** Reduce a raw NUI payload to the columns this table lets clients filter on. */
@@ -278,6 +294,25 @@ export class ServiceEndpoint<T> {
     onNet(eventName, async (cbId: CallbackId, data: unknown) => {
       const src = source;
       try {
+        /**
+         * Before anything else, including the player lookup.
+         *
+         * `FrameworkBridge.getPlayer` walks the framework's player table, so doing it first
+         * would make the flood pay for itself in exactly the way a flood wants. And a caller
+         * with no loaded character still has a source and can still emit events.
+         *
+         * Answered rather than dropped: `fetchNui` waits on a reply and `ServiceProxy` times
+         * out after 15 seconds, so silence would cost the honest client a hang and tell it
+         * nothing. This is also why the message says what happened — a rate limit that reads
+         * as "Unknown error" gets debugged as a bug.
+         */
+        if (!allow(src, this.serviceName, action)) {
+          emitNet(clientEventName, src, cbId, {
+            error: `Too many ${this.serviceName} ${action} requests. Slow down and try again.`
+          });
+          return;
+        }
+
         const player = FrameworkBridge.getPlayer(src);
 
         if (!player) {

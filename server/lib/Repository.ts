@@ -1,5 +1,5 @@
 import { Database } from './Database';
-import type { ResolvedMembership } from './defineService';
+import type { ColumnRule, ResolvedMembership } from './defineService';
 
 /**
  * Columns no client payload may ever write, on any table.
@@ -38,6 +38,50 @@ export abstract class Repository<T> {
    * Null unless the service declared it. See `isMember`.
    */
   protected membership: ResolvedMembership | null = null;
+
+  /**
+   * What a client-supplied value for each column has to look like, derived from the schema.
+   * Empty for a hand-written repository, which then gets no length checking.
+   */
+  protected columnRules: Record<string, ColumnRule> = {};
+
+  /**
+   * Reject a client-supplied value the column cannot actually hold.
+   *
+   * The declaration has always carried the answer — `length: 50`, `values: [...]` — and
+   * nothing read it: both reached the DDL and stopped there. So the generic write path would
+   * hand MySQL a 10,000-character value for a `varchar(50)`, and MySQL decides. In non-strict
+   * mode it **silently truncates**: the row is written, the write reports success, and the
+   * data is quietly wrong — the exact failure shape this codebase keeps deleting. In strict
+   * mode it errors, and the player is told "Unknown error".
+   *
+   * Enum is worth the check for a different reason. `status` is never client-writable, but an
+   * app declaring its own enum column gets the database constraint *and* a readable rejection
+   * rather than MySQL's, which for an out-of-range enum in non-strict mode is the empty string.
+   */
+  public assertWritableValue(column: string, value: unknown): void {
+    const rule = this.columnRules[column];
+    if (!rule || value === null || value === undefined) return;
+
+    /**
+     * These messages reach **players**, not developers, which is easy to miss.
+     * `ServiceEndpoint` puts `error.message` on the wire, `fetchNui` throws it, and
+     * `useAppAction` shows it in a toast — so no `[Repository]` prefix and no table name.
+     * Every other throw in this class is a programming error the player can never trigger;
+     * these are the ones an ordinary long contact name reaches.
+     */
+    if (rule.values && !rule.values.includes(String(value))) {
+      throw new Error(`'${column}' must be one of: ${rule.values.join(', ')}.`);
+    }
+
+    if (rule.maxLength !== null && typeof value === 'string' && value.length > rule.maxLength) {
+      throw new Error(`'${column}' is limited to ${rule.maxLength} characters.`);
+    }
+
+    if (rule.type === 'int' && typeof value === 'number' && !Number.isInteger(value)) {
+      throw new Error(`'${column}' must be a whole number.`);
+    }
+  }
 
   public get tableColumns(): readonly string[] {
     return this.columns;

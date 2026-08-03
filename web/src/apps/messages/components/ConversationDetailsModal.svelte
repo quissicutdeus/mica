@@ -94,6 +94,7 @@
           <input
             id="group-name-input"
             type="text"
+            maxlength="50"
             bind:value={editNameValue}
             class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none"
             placeholder="Enter group name"

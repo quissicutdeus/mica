@@ -21,6 +21,45 @@ import { ServiceEndpoint, ServiceOptions } from './ServiceEndpoint';
 export type ColumnType =
   'string' | 'text' | 'mediumtext' | 'int' | 'bool' | 'json' | 'blob' | 'timestamp' | 'enum';
 
+/**
+ * The most a column of each type can actually hold, in characters.
+ *
+ * The schema has always known this and nothing ever read it: `length: 50` reached the DDL
+ * and no further, so the generic write path would hand MySQL a 10,000-character value for a
+ * `varchar(50)` and let the database decide. Which it does, badly — in non-strict mode it
+ * **silently truncates**, so the row is written, the write reports success, and the data is
+ * quietly wrong. In strict mode it errors, and the player sees "Unknown error".
+ *
+ * Checking here is close to free, because the declaration is the answer. `photos.image` is
+ * `mediumtext` and legitimately holds a base64 screenshot, which is exactly why the cap is
+ * derived per column rather than being one number invented for the whole payload.
+ */
+const MAX_LENGTH_BY_TYPE: Record<ColumnType, number | null> = {
+  // varchar(n) — the declared length, resolved per column below.
+  string: 255,
+  text: 65535,
+  mediumtext: 16777215,
+  // Emitted as longtext. Capped at mediumtext rather than 4GB: nothing in the phone has a
+  // use for a gigabyte of JSON, and an honest ceiling beats a theoretical one.
+  json: 16777215,
+  // Emitted as mediumblob.
+  blob: 16777215,
+  // Not length-limited; range- or value-checked instead.
+  int: null,
+  bool: null,
+  timestamp: null,
+  enum: null
+};
+
+/** What the generic write path checks a value against, derived from one column's declaration. */
+export interface ColumnRule {
+  type: ColumnType;
+  /** Characters, for the text-ish types. Null when length is not the constraint. */
+  maxLength: number | null;
+  /** Permitted values, for `enum`. Null otherwise. */
+  values: readonly string[] | null;
+}
+
 /** A foreign key onto another table. `players` is implied for `citizenid`. */
 interface ColumnReference {
   table: string;
@@ -295,6 +334,8 @@ export interface ResolvedService {
   membership: ResolvedMembership | null;
   /** Resolved defaults filled in; null unless the service declared `paging`. */
   paging: ResolvedPaging | null;
+  /** Per-column write validation, derived from the schema. Keyed by column name. */
+  columnRules: Record<string, ColumnRule>;
   statuses: readonly string[];
   /** Declared fields only, in declaration order — implicit columns excluded. */
   fields: { name: string; def: ColumnDef }[];
@@ -514,12 +555,22 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     }
   }
 
+  const columnRules: Record<string, ColumnRule> = {};
+  for (const { name, def } of fields) {
+    columnRules[name] = {
+      type: def.type,
+      maxLength: def.type === 'string' ? (def.length ?? 255) : MAX_LENGTH_BY_TYPE[def.type],
+      values: def.type === 'enum' ? (def.values ?? null) : null
+    };
+  }
+
   return {
     id,
     table,
     access,
     membership,
     paging,
+    columnRules,
     statuses,
     fields,
     indexes,
@@ -553,6 +604,7 @@ export class SchemaRepository<T> extends Repository<T> {
     this.clientWritable = resolved.clientWritable;
     this.clientFilterable = resolved.clientFilterable;
     this.membership = resolved.membership;
+    this.columnRules = resolved.columnRules;
   }
 }
 

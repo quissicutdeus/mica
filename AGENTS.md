@@ -155,21 +155,50 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
    `gphone:server:*` payload is attacker-controlled — CEF XSS can `fetch` any registered callback
    (§7), so a NUI request is not proof of intent. Two rules follow, both enforced in
    `server/lib/Repository.ts`:
-   - **Never interpolate a payload key into SQL.** Column lists are built from object keys and MySQL
-     cannot parameterize an identifier. Every key is checked against the repository's `columns`
-     allowlist first. New apps get this from their `defineService` schema (§10); a hand-written
-     repository must declare `columns` itself.
-   - **Never mutate a row without an ownership predicate.** `update` and `delete` require a
-     `citizenid` and put it in the `WHERE`; a row id alone is never authorization. For rows shared
-     between players (conversations, messages) ownership is the wrong question — check membership,
-     e.g. `ConversationRepository.isParticipant`. Privileged writes go through a **named** repository
-     method built on the `protected updateUnscoped`, never a service-level bypass.
 
-   Client-writable fields are declared per table via `clientWritable` — derived from the schema for
-   declared apps (§10), hand-written otherwise; `ServiceEndpoint` reduces the payload to that set before it
-   reaches SQL. `id`, `citizenid`, `created_at`, `updated_at` are never
-   client-writable, and `status` is deliberately excluded everywhere — moderation and soft-delete
-   state is not the client's to set.
+- **Never interpolate a payload key into SQL.** Column lists are built from object keys and MySQL
+  cannot parameterize an identifier. Every key is checked against the repository's `columns`
+  allowlist first. New apps get this from their `defineService` schema (§10); a hand-written
+  repository must declare `columns` itself.
+- **Never mutate a row without an ownership predicate.** `update` and `delete` require a
+  `citizenid` and put it in the `WHERE`; a row id alone is never authorization. For rows shared
+  between players (conversations, messages) ownership is the wrong question — check membership,
+  e.g. the derived `Repository.isMember` (§10). Privileged writes go through a **named** repository
+  method built on the `protected updateUnscoped`, never a service-level bypass.
+
+Client-writable fields are declared per table via `clientWritable` — derived from the schema for
+declared apps (§10), hand-written otherwise; `ServiceEndpoint` reduces the payload to that set before it
+reaches SQL. `id`, `citizenid`, `created_at`, `updated_at` are never
+client-writable, and `status` is deliberately excluded everywhere — moderation and soft-delete
+state is not the client's to set.
+
+**The rate and the size are attacker-controlled too**, and neither was checked.
+
+Both were absent: `ServiceEndpoint` authenticated the caller and reduced the payload to an
+allowlist, then answered as many requests of any size as arrived.
+
+- The limiter sits at the **transport boundary** in `registerEvent`, not inside the generic
+  CRUD handlers, so it covers custom actions too — `messages:send`, `conversations:create`,
+  `reports:resolve` are the expensive ones and a limiter on the generic path only would miss
+  every one. Keyed on `(source, service, action)`, fixed 60-second window,
+  `gphone_rate_limit` requests per window (default 60). Checked **before**
+  `FrameworkBridge.getPlayer`, since that walks the framework's player table and a flood
+  should not get to make the server pay for it. Cleared on `playerDropped`, because FiveM
+  reuses server ids and the next player would inherit a partly-spent window.
+- Values are checked against `columnRules`, derived from the schema. `length: 50` and
+  `values: [...]` used to reach the DDL and stop there, so the write path handed MySQL a
+  10,000-character value for a `varchar(50)` — which in non-strict mode **silently
+  truncates**: row written, success reported, data quietly wrong. Per column rather than one
+  payload-wide number, because `photos.image` is `mediumtext` and legitimately carries a
+  base64 screenshot.
+- **`assertWritableValue`'s messages reach players.** `ServiceEndpoint` puts `error.message`
+  on the wire, `fetchNui` throws it and `useAppAction` toasts it, and an ordinary long
+  contact name gets there — so no `[Repository]` prefix and no table name. Every other throw
+  in that class is a programming error a player cannot trigger; these are not.
+- **There is no blanket read cap, deliberately.** A public read is bounded by the
+  `paging`-is-required rule (§10); an owner-scoped read is bounded by its citizenid
+  predicate. An unconditional `LIMIT` would silently truncate a player's own notes list,
+  which is a worse failure than the one it prevents.
 
 10. **Never write AI attribution into anything that reaches GitHub.** No `Co-Authored-By:` naming an
     assistant, no `Assisted-By:`, no "Generated with" footer, no 🤖 — in commit messages, PR bodies,

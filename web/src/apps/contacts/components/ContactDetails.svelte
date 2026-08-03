@@ -156,11 +156,13 @@
       <div class="space-y-3">
         <input
           class="w-full rounded bg-gray-700 p-2"
+          maxlength="50"
           bind:value={contact.firstname}
           placeholder="First Name *"
         />
         <input
           class="w-full rounded bg-gray-700 p-2"
+          maxlength="50"
           bind:value={contact.lastname}
           placeholder="Last Name"
         />

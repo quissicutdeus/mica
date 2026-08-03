@@ -69,16 +69,19 @@
   <input
     class="w-full rounded bg-gray-700 p-2 text-sm text-white placeholder-gray-400"
     placeholder="First Name *"
+    maxlength="50"
     bind:value={draft.firstname}
   />
   <input
     class="w-full rounded bg-gray-700 p-2 text-sm text-white placeholder-gray-400"
     placeholder="Last Name"
+    maxlength="50"
     bind:value={draft.lastname}
   />
   <input
     class="w-full rounded bg-gray-700 p-2 text-sm text-white placeholder-gray-400"
     placeholder="Phone Number *"
+    maxlength="20"
     bind:value={draft.phone}
   />
   <label class="flex items-center space-x-2 text-sm text-gray-300">
