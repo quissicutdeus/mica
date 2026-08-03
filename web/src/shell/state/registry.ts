@@ -30,6 +30,8 @@ const firstBoot = getFirstBootTime();
 
 // Parse manifests
 const loadedApps: AppManifest[] = [];
+/** In-repo apps shipping `isSystem: false` — present in the tree, absent from the launcher. */
+const addOns: AppManifest[] = [];
 const componentRegistry: Record<string, AppComponent> = {};
 
 for (const path in manifestFiles) {
@@ -59,12 +61,23 @@ for (const path in manifestFiles) {
     // Community add-on apps start uninstalled by default to allow installation/uninstallation via App Store.
     if (manifest.isSystem !== false) {
       loadedApps.push(manifest);
+    } else {
+      addOns.push(manifest);
     }
   }
 }
 loadedApps.sort((a, b) => a.name.localeCompare(b.name));
 
 export const registeredApps = loadedApps;
+
+/**
+ * The add-ons this repo ships, for the Store to offer.
+ *
+ * Derived rather than listed. `CATALOG_APPS` used to carry a hand-written copy of each
+ * one's manifest, so Notes appeared in the Store only because somebody had duplicated it
+ * there — and the copy then drifted from the real thing.
+ */
+export const bundledAddOns = [...addOns].sort((a, b) => a.name.localeCompare(b.name));
 
 const SYSTEM_APP_IDS = new Set(loadedApps.filter((a) => a.isSystem !== false).map((a) => a.id));
 const LOCAL_STORAGE_KEY = 'gphone_installed_remote_apps';

@@ -1,4 +1,4 @@
-import type { AppManifest, AppPermission } from '@gphone/sdk';
+import { useAppRegistry, type AppManifest, type AppPermission } from '@gphone/sdk';
 
 /**
  * What the Store knows about an app before anyone taps it.
@@ -8,8 +8,11 @@ import type { AppManifest, AppPermission } from '@gphone/sdk';
  * know them.
  */
 
-/** The add-ons on offer, sorted alphabetically by name. */
-export const CATALOG_APPS: AppManifest[] = [
+/**
+ * Add-ons that exist only as catalogue entries — there is no code for these in the tree.
+ * A real in-repo add-on does not belong here; see `catalogApps` below.
+ */
+const DEMO_APPS: AppManifest[] = [
   {
     id: 'chirper_social',
     name: 'Chirper',
@@ -53,19 +56,24 @@ export const CATALOG_APPS: AppManifest[] = [
     description: 'Peer-to-peer marketplace to buy, sell, and auction items.',
     permissions: ['contacts', 'notifications', 'storage', 'network'],
     isRemote: true
-  },
-  {
-    id: 'notes',
-    name: 'Notes',
-    color: 'bg-yellow-400',
-    icon: 'https://raw.githubusercontent.com/feathericons/feather/master/icons/file-text.svg',
-    version: '1.0.0',
-    author: 'Community',
-    description: 'Create and store personal notes',
-    permissions: ['storage'],
-    isSystem: false
   }
 ];
+
+/**
+ * Everything the Store offers, sorted by name.
+ *
+ * A function, not a constant, and it has to be. The registry globs every manifest eagerly,
+ * each manifest imports `@gphone/sdk`, and the SDK barrel reaches back into the registry —
+ * so anything reading `bundledAddOns` at module scope reads it before that glob has
+ * finished and gets `undefined`. Calling it at render time sidesteps the cycle entirely.
+ *
+ * The in-repo half is derived. Notes used to be listed above as a hand-written copy of its
+ * own manifest — an app with `isSystem: false` is kept out of the launcher and was reachable
+ * only if somebody remembered to duplicate it here, and the duplicate then drifted from the
+ * real one. Now any app shipping `isSystem: false` shows up by existing.
+ */
+export const catalogApps = (): AppManifest[] =>
+  [...DEMO_APPS, ...useAppRegistry().bundledAddOns].sort((a, b) => a.name.localeCompare(b.name));
 
 /**
  * A system app ships with the phone and cannot be uninstalled.

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import manifest from './manifest';
 import { useAppRegistry } from '@gphone/sdk';
 import { renderApp } from '@gphone/sdk/testing';
+import { catalogApps } from './appInfo';
 import type { AppComponent } from '@gphone/sdk';
 import { get } from 'svelte/store';
 
@@ -40,6 +41,24 @@ describe('Store Module', () => {
     expect(() => appRegistryStore.unregisterApp('store')).toThrow(
       "gPhone App Registry error: Unregistering system app 'store' is prohibited."
     );
+  });
+});
+
+describe('Store catalogue', () => {
+  it('offers an in-repo add-on without it being listed by hand', () => {
+    // Notes ships `isSystem: false`, so it is kept out of the launcher and used to reach
+    // the Store only via a hand-written copy of its own manifest in `appInfo.ts` — which
+    // then drifted from the real one. It is derived from the registry now.
+    expect(catalogApps().map((a) => a.id)).toContain('notes');
+  });
+
+  it('takes the real manifest, not a copy of it', () => {
+    // The copy carried its own name, icon URL and version. The derived entry is the same
+    // object the launcher and the registry see, so there is nothing left to drift.
+    const notes = catalogApps().find((a) => a.id === 'notes');
+
+    expect(notes?.name).toBe('Notes');
+    expect(notes?.isSystem).toBe(false);
   });
 });
 

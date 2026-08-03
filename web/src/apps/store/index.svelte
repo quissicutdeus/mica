@@ -6,9 +6,10 @@
     ConfirmDialog,
     SegmentedControl,
     useAppAction,
+    type AppComponent,
     type AppProps
   } from '@gphone/sdk';
-  import { CATALOG_APPS, isSystemApp } from './appInfo';
+  import { catalogApps, isSystemApp } from './appInfo';
   import AppDetails from './components/AppDetails.svelte';
   import CatalogList from './components/CatalogList.svelte';
   import InstalledList from './components/InstalledList.svelte';
@@ -53,11 +54,17 @@
       })
   );
 
-  /** A catalog add-on has no component in this repo; the registry needs something. */
-  const createCatalogMockComponent = (appName: string) => ({
-    name: appName,
-    type: 'CatalogMockApp'
-  });
+  /**
+   * A demo catalog entry has no component in this repo; the registry needs something.
+   *
+   * The cast is load-bearing and worth reading twice: this object is not a Svelte
+   * component, so installing one of the four demo apps and then tapping it renders nothing
+   * useful — `ErrorBoundary` catches it. That predates `AppComponent`; the type merely
+   * stopped hiding it. A real placeholder component saying "not available in this build"
+   * would be the fix, and is a UX call rather than a typing one.
+   */
+  const createCatalogMockComponent = (appName: string) =>
+    ({ name: appName, type: 'CatalogMockApp' }) as unknown as AppComponent;
 
   function handleInstall(app: AppManifest) {
     void run(
@@ -143,7 +150,7 @@
     <div class="flex-1 space-y-4 overflow-y-auto p-4">
       {#if activeTab === 'catalog'}
         <CatalogList
-          apps={CATALOG_APPS}
+          apps={catalogApps()}
           {isInstalled}
           onselect={(app) => (selectedApp = app)}
           oninstall={handleInstall}
