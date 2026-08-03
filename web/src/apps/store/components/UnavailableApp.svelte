@@ -2,16 +2,19 @@
   import { EmptyState, Screen, useAppRegistry, useNavigation, type AppProps } from '@gphone/sdk';
 
   /**
-   * What opens when a demo catalogue entry is tapped.
+   * What opens when an app is installed but has no component to mount.
    *
-   * The four catalogue apps — Chirper, Crypto Tracker, Downtown Taxi, Marketplace — have no
-   * code in this repo; they exist so the Store has something to show. Installing one had
+   * Written for the four invented catalogue entries — Blabber, Crypto Tracker, Downtown
+   * Taxi, Marketplace — which were manifests with no code behind them. Installing one had
    * nothing to register, so the Store handed the registry a plain `{ name, type }` object in
    * its place, and tapping the icon afterwards landed in `ErrorBoundary` telling the player
    * the app had stopped working. It had not. It was never there.
    *
-   * A real component, because the registry mounts whatever it is given and the honest answer
-   * is a screen rather than a caught exception.
+   * Those entries are gone, so the only way to reach this now is a malformed app directory:
+   * `apps/<id>/manifest.ts` present, `index.svelte` missing. The registry lists such an app
+   * and has no component for it. That is a developer mistake rather than anything a player
+   * can cause, which is why this survives the fictions it was written for — the alternative
+   * is `registerApp(app, undefined)`, and the registry mounts whatever it is given.
    */
   let { onback }: AppProps = $props();
 

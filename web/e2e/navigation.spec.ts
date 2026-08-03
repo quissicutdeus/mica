@@ -23,34 +23,40 @@ test.describe('Phone Navigation & Home Screen', () => {
     }
   });
 
+  /**
+   * Notes rather than Crypto Tracker, which was one of four invented catalogue entries with
+   * no code behind them and has been removed. Notes is a real in-repo add-on, which is what
+   * makes this round trip mean anything: installing a fiction registered a placeholder
+   * screen and still reported success, so the assertions below passed without the install
+   * having produced a usable app.
+   */
   test('installs and uninstalls add-on app via the Store', async ({ page }) => {
-    // 1. Go to Store and install an add-on app (Crypto Tracker)
+    // 1. Go to Store and install an add-on app
     await page.locator('button', { hasText: 'Store' }).first().click();
     await expect(page.locator('h1', { hasText: 'Store' })).toBeVisible();
 
-    // Click Install button specifically for Crypto Tracker
     await page
-      .locator('div.rounded-xl', { hasText: 'Crypto Tracker' })
+      .locator('div.rounded-xl', { hasText: 'Notes' })
       .locator('button', { hasText: 'Install' })
       .click();
     await page.locator("button[aria-label='Back to Home']").click();
 
-    // 2. Verify Crypto Tracker icon appears on home screen
-    // Scoped to the home screen: apps stay resident once opened, so the Store's own
-    // list row is still in the DOM behind it and a bare text match hits both.
-    await expect(page.getByRole('button', { name: /Crypto Tracker/ })).toBeVisible();
+    // 2. Verify the Notes icon appears on the home screen.
+    // Role-based: apps stay resident once opened, so the Store's own catalogue row is still
+    // in the DOM behind this one, and only `inert` keeps it out of the accessibility tree.
+    await expect(page.getByRole('button', { name: /Notes/ })).toBeVisible();
 
     // 3. Return to Store and open app details page to uninstall
     await page.locator('button', { hasText: 'Store' }).first().click();
-    await page.locator('div.rounded-xl', { hasText: 'Crypto Tracker' }).click();
+    await page.locator('div.rounded-xl', { hasText: 'Notes' }).click();
     await page.locator('button', { hasText: 'Uninstall' }).first().click();
 
     // Confirm uninstallation in ConfirmDialog modal
-    await expect(page.locator('h3', { hasText: 'Uninstall Crypto Tracker' })).toBeVisible();
+    await expect(page.locator('h3', { hasText: 'Uninstall Notes' })).toBeVisible();
     await page.locator('button', { hasText: 'Uninstall' }).last().click();
 
-    // 4. Return Home and verify Crypto Tracker is uninstalled
+    // 4. Return Home and verify Notes is uninstalled
     await page.locator("button[aria-label='Back to Home']").click();
-    await expect(page.getByRole('button', { name: /Crypto Tracker/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Notes/ })).toHaveCount(0);
   });
 });

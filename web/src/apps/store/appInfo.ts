@@ -9,71 +9,26 @@ import { appStorageBytes, useAppRegistry, type AppManifest, type AppPermission }
  */
 
 /**
- * Add-ons that exist only as catalogue entries — there is no code for these in the tree.
- * A real in-repo add-on does not belong here; see `catalogApps` below.
- */
-const DEMO_APPS: AppManifest[] = [
-  {
-    id: 'chirper_social',
-    name: 'Chirper',
-    color: 'bg-sky-500',
-    icon: 'https://raw.githubusercontent.com/feathericons/feather/master/icons/twitter.svg',
-    version: '2.0.1',
-    author: 'Chirper Media Inc.',
-    description: 'Social media networking app to post updates, photos, and follow friends.',
-    permissions: ['notifications', 'media', 'network', 'storage'],
-    isRemote: true
-  },
-  {
-    id: 'crypto_tracker',
-    name: 'Crypto Tracker',
-    color: 'bg-amber-500',
-    icon: 'https://raw.githubusercontent.com/feathericons/feather/master/icons/trending-up.svg',
-    version: '1.2.0',
-    author: 'Satoshi Labs',
-    description: 'Real-time cryptocurrency prices, portfolio tracking, and market analytics.',
-    permissions: ['network', 'storage'],
-    isRemote: true
-  },
-  {
-    id: 'taxi_share',
-    name: 'Downtown Taxi',
-    color: 'bg-yellow-500',
-    icon: 'https://raw.githubusercontent.com/feathericons/feather/master/icons/navigation.svg',
-    version: '1.0.4',
-    author: 'Los Santos Transit',
-    description: 'Order rides, track cab locations, and pay fares directly from your phone.',
-    permissions: ['location', 'network', 'notifications'],
-    isRemote: true
-  },
-  {
-    id: 'marketplace_app',
-    name: 'Marketplace',
-    color: 'bg-emerald-600',
-    icon: 'https://raw.githubusercontent.com/feathericons/feather/master/icons/shopping-bag.svg',
-    version: '1.1.0',
-    author: 'Community Trade',
-    description: 'Peer-to-peer marketplace to buy, sell, and auction items.',
-    permissions: ['contacts', 'notifications', 'storage', 'network'],
-    isRemote: true
-  }
-];
-
-/**
  * Everything the Store offers, sorted by name.
+ *
+ * Entirely derived — there is no hand-written list here, and that is the point.
+ *
+ * Two rounds of the same lesson got us here. Notes was once a hand-written copy of its own
+ * manifest, reachable only while somebody remembered to duplicate it, and the copy drifted
+ * from the real one. Then four invented add-ons — Blabber, Crypto Tracker, Downtown Taxi,
+ * Marketplace — sat here as manifests with no code behind them, so the Store's catalogue was
+ * mostly fiction and installing any of it got a screen apologising for itself. Both are gone.
+ * An app appears in the Store by *existing* and shipping `isSystem: false`; the ideas the
+ * fictions stood in for are recorded in `docs/roadmap.md`, which cannot pretend to be
+ * installable.
  *
  * A function, not a constant, and it has to be. The registry globs every manifest eagerly,
  * each manifest imports `@gphone/sdk`, and the SDK barrel reaches back into the registry —
  * so anything reading `bundledAddOns` at module scope reads it before that glob has
  * finished and gets `undefined`. Calling it at render time sidesteps the cycle entirely.
- *
- * The in-repo half is derived. Notes used to be listed above as a hand-written copy of its
- * own manifest — an app with `isSystem: false` is kept out of the launcher and was reachable
- * only if somebody remembered to duplicate it here, and the duplicate then drifted from the
- * real one. Now any app shipping `isSystem: false` shows up by existing.
  */
 export const catalogApps = (): AppManifest[] =>
-  [...DEMO_APPS, ...useAppRegistry().bundledAddOns].sort((a, b) => a.name.localeCompare(b.name));
+  [...useAppRegistry().bundledAddOns].sort((a, b) => a.name.localeCompare(b.name));
 
 /**
  * A system app ships with the phone and cannot be uninstalled.

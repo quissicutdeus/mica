@@ -56,13 +56,13 @@
   );
 
   /**
-   * A demo catalogue entry has no component in this repo, and the registry mounts whatever
-   * it is given — so it gets a real one that says so.
+   * The registry mounts whatever it is given, so an app with no component gets a real one
+   * that says so rather than `undefined`.
    *
    * This used to hand over `{ name, type }`, which is not a component: tapping the icon
    * afterwards reached `ErrorBoundary` and reported that the app had stopped working, for an
-   * app that had never existed. `UnavailableApp` reads its own name back out of the registry,
-   * so one component covers all four entries.
+   * app that had never existed. Now that the invented catalogue entries are gone, the only
+   * way here is a manifest whose `index.svelte` is missing — see `UnavailableApp` itself.
    */
   const placeholderComponent = (): AppComponent => UnavailableApp;
 

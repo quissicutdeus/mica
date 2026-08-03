@@ -7,30 +7,39 @@ test.describe('Store E2E', () => {
     await expect(page.locator('h1', { hasText: 'Store' })).toBeVisible();
   });
 
+  /**
+   * These used to run against Crypto Tracker, one of four invented catalogue entries with no
+   * code behind them. They now run against Notes — a real in-repo add-on — which is the only
+   * thing that makes the install assertion below mean anything: installing a fiction
+   * registered a placeholder screen and still reported "installed successfully".
+   *
+   * Card locators rather than `text=Notes`, because `text=` matches substrings
+   * case-insensitively and Notes' own description ends in "personal notes" — a bare text
+   * match hits the name and the description and trips strict mode.
+   */
+  const catalogCard = (page: import('@playwright/test').Page, name: string) =>
+    page.locator('div.rounded-xl', { hasText: name });
+
   test('renders tabs and catalog apps correctly', async ({ page }) => {
     await expect(page.locator('button', { hasText: 'Store Catalog' })).toBeVisible();
     await expect(page.locator('button', { hasText: 'Installed (' })).toBeVisible();
-    await expect(page.locator('text=Crypto Tracker')).toBeVisible();
-    await expect(page.locator('text=Chirper')).toBeVisible();
+    await expect(catalogCard(page, 'Notes')).toBeVisible();
   });
 
   test('opens app permission and details inspector modal', async ({ page }) => {
-    await page.locator('text=Crypto Tracker').first().click();
+    await catalogCard(page, 'Notes').locator('button').first().click();
 
-    await expect(page.locator('h3', { hasText: 'Crypto Tracker' })).toBeVisible();
-    await expect(page.locator('text=Network Access')).toBeVisible();
+    await expect(page.locator('h3', { hasText: 'Notes' })).toBeVisible();
     await expect(page.locator('text=Local Storage')).toBeVisible();
-    await expect(page.locator('text=Satoshi Labs')).toBeVisible();
+    // Exact: the details page also carries a "Community Add-on" type badge, and an
+    // unquoted `text=` match is a case-insensitive substring, so it hits both.
+    await expect(page.getByText('Community', { exact: true })).toBeVisible();
   });
 
   test('installs community add-on app and verifies icon appears on home screen', async ({
     page
   }) => {
-    // Click Install button on Crypto Tracker specifically
-    const installBtn = page
-      .locator('div.rounded-xl', { hasText: 'Crypto Tracker' })
-      .locator('button', { hasText: 'Install' });
-    await installBtn.click();
+    await catalogCard(page, 'Notes').locator('button', { hasText: 'Install' }).click();
 
     // Verify toast or button state updates
     await expect(page.locator('text=installed successfully')).toBeVisible();
@@ -38,10 +47,10 @@ test.describe('Store E2E', () => {
     // Go back home
     await page.locator("button[aria-label='Back to Home']").click();
 
-    // Verify new Crypto Tracker app icon exists on home screen
-    // Scoped to the home screen: apps stay resident once opened, so the Store's own
-    // list row is still in the DOM behind it and a bare text match hits both.
-    await expect(page.getByRole('button', { name: /Crypto Tracker/ })).toBeVisible();
+    // Verify the new Notes icon exists on the home screen. Role-based, because apps stay
+    // resident once opened: the Store's own catalogue row is still in the DOM behind this
+    // one, and only `inert` on the backgrounded app keeps it out of the accessibility tree.
+    await expect(page.getByRole('button', { name: /Notes/ })).toBeVisible();
   });
 
   test('displays installed system vs add-on filter and sort order in Installed tab', async ({
