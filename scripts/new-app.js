@@ -73,7 +73,6 @@ import { defineApp } from '@gphone/sdk';
 
 export default defineApp({
   id: '${id}',
-  name: '${title}',
   color: 'bg-slate-500',
   icon: Icon,
   description: 'TODO: one line, shown in the Store.',
@@ -106,9 +105,11 @@ const dataImports = WITH_SERVICE ? `,\n  Skeleton,\n  onAppForeground,\n  use${P
 write(
   `web/src/apps/${id}/index.svelte`,
   `<script lang="ts">
-  import { EmptyState, Screen, useAppLevels${dataImports} } from '@gphone/sdk';
+  import { EmptyState, Screen, useAppLevels, type AppProps${dataImports} } from '@gphone/sdk';
 
-  let { onback } = $props<{ onback?: () => void }>();
+  // The annotation, not \`$props<AppProps>()\` — that form only works for an inline object
+  // literal and reports "Expected 0 type arguments" for a named type.
+  let { onback }: AppProps = $props();
 ${
   WITH_SERVICE
     ? `
@@ -128,7 +129,7 @@ ${
   const app = useAppLevels({
     appId: '${id}',
     title: '${title}',
-    onback: () => onback?.(),
+    onback: () => onback(),
     levels: []
   });
 </script>
@@ -152,6 +153,52 @@ ${
 </Screen>
 `
 );
+
+// --- keep the typed app contract covering it -----------------------------------------
+
+/**
+ * Add the app to `appContract.test.ts`.
+ *
+ * That file imports every app explicitly and assigns them to `Record<string, AppComponent>`,
+ * which is the only way TypeScript can actually check an app against `AppProps` — the
+ * registry loads apps through `import.meta.glob`, and Vite types that result by assertion
+ * rather than by knowing what the modules export.
+ *
+ * Written rather than printed, because the companion test compares the list against the
+ * directories on disk: leaving it to a human would mean `pnpm new:app` handed you a repo
+ * that failed the `pnpm verify` it tells you to run next. That exact bug has been fixed here
+ * once already.
+ */
+const registerInAppContract = () => {
+  const relative = 'web/src/sdk/appContract.test.ts';
+  const full = path.join(ROOT, relative);
+  let contract = fs.readFileSync(full, 'utf8');
+
+  if (contract.includes(`../apps/${id}/index.svelte`)) return;
+
+  const importLine = `import ${Pascal} from '../apps/${id}/index.svelte';`;
+  const imports = [
+    ...contract.matchAll(/^import \w+ from '\.\.\/apps\/\w+\/index\.svelte';$/gm)
+  ].map((m) => m[0]);
+  const sortedImports = [...imports, importLine].sort((a, b) => a.localeCompare(b));
+  contract = contract.replace(imports.join('\n'), sortedImports.join('\n'));
+
+  const entries = contract.match(/const APPS: Record<string, AppComponent> = \{\n([\s\S]*?)\n\};/);
+  const rows = entries[1]
+    .split('\n')
+    .map((line) => line.trim().replace(/,$/, ''))
+    .filter(Boolean);
+  const sortedRows = [...rows, `${id}: ${Pascal}`].sort((a, b) => a.localeCompare(b));
+  contract = contract.replace(
+    entries[0],
+    `const APPS: Record<string, AppComponent> = {\n${sortedRows.map((r) => `  ${r}`).join(',\n')}\n};`
+  );
+
+  fs.writeFileSync(full, contract);
+  console.log(`  updated  ${relative}`);
+};
+
+registerInAppContract();
 
 // --- the data half -------------------------------------------------------------------
 
