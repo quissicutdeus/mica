@@ -1,5 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
-import { useStorage } from '../../sdk/hooks/useStorage';
+import { usePersisted } from '../../sdk/hooks/usePersisted';
 
 export type SoundEffect = 'click' | 'pop' | 'camera' | 'notification' | 'ringtone';
 
@@ -14,7 +14,6 @@ export const volumeHudVisible = writable<boolean>(false);
  * scale because that is the unit the setting is expressed in, and round-tripping
  * 5 → 0.05 → 5 through a float is a needless source of 4.999999.
  */
-const storage = useStorage('settings');
 const VOLUME_STEP_KEY = 'volumeStep';
 
 export const VOLUME_STEP_DEFAULT = 5;
@@ -26,15 +25,15 @@ const sanitizeStep = (value: unknown): number =>
     ? Number(value)
     : VOLUME_STEP_DEFAULT;
 
-export const volumeStep = writable<number>(
-  sanitizeStep(storage.getItem<number>(VOLUME_STEP_KEY, VOLUME_STEP_DEFAULT))
-);
+/**
+ * This was the hand-written read-at-init-plus-write-on-change that `usePersisted`
+ * exists to absorb — it is now the hook's first consumer rather than its prototype.
+ */
+export const volumeStep = usePersisted<number>('settings', VOLUME_STEP_KEY, VOLUME_STEP_DEFAULT, {
+  sanitize: sanitizeStep
+});
 
-export const setVolumeStep = (percent: number) => {
-  const next = sanitizeStep(percent);
-  volumeStep.set(next);
-  storage.setItem(VOLUME_STEP_KEY, next);
-};
+export const setVolumeStep = (percent: number) => volumeStep.set(percent);
 
 let hudTimeout: ReturnType<typeof setTimeout> | null = null;
 

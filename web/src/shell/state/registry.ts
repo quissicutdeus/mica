@@ -1,5 +1,5 @@
 import { get, writable } from 'svelte/store';
-import { type AppManifest, defineApp } from '@gphone/sdk';
+import { type AppManifest, clearAppStorage, defineApp } from '@gphone/sdk';
 import { messageOf } from '../../lib/errors';
 
 export type { AppManifest } from '@gphone/sdk';
@@ -156,6 +156,7 @@ function createAppRegistry() {
         removeSavedRemoteAppUrl(targetApp.bundleUrl);
       }
       delete componentRegistry[appId];
+      clearAppStorage(appId);
       update((apps) => apps.filter((a) => a.id !== appId));
     },
     getComponent: (appId: string) => componentRegistry[appId],

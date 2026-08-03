@@ -11,11 +11,40 @@ function getStorageBackend() {
   };
 }
 
+const namespaceOf = (appId: string) => `gphone:${appId}:`;
+
+/**
+ * Delete everything an app has stored.
+ *
+ * Uninstalling used to drop the component and the saved bundle URL and leave the app's
+ * keys behind, so reinstalling resurrected the old state — and an app removed for good
+ * kept its storage for the life of the browser profile. The `gphone:<appId>:`
+ * namespace was already there; nothing swept it.
+ */
+export function clearAppStorage(appId: string): void {
+  const prefix = namespaceOf(appId);
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      // Snapshot the keys before removing any. Walking localStorage by index while
+      // deleting from it renumbers the entries and skips every other match.
+      for (const key of Object.keys(window.localStorage)) {
+        if (key.startsWith(prefix)) window.localStorage.removeItem(key);
+      }
+      return;
+    }
+    for (const key of [...memoryStore.keys()]) {
+      if (key.startsWith(prefix)) memoryStore.delete(key);
+    }
+  } catch (e) {
+    console.error(`Failed to clear storage for ${appId}`, e);
+  }
+}
+
 /**
  * OS Service Hook for app key-value storage.
  */
 export function useStorage(appId: string) {
-  const getStorageKey = (key: string) => `gphone:${appId}:${key}`;
+  const getStorageKey = (key: string) => `${namespaceOf(appId)}${key}`;
 
   return {
     getItem: <T = unknown>(key: string, defaultValue?: T): T | null => {
