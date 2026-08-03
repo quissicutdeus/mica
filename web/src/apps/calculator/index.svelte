@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { useAppLevels, Screen, BackspaceIcon } from '@gphone/sdk';
+  import { useAppLevels, useSound, Screen, BackspaceIcon } from '@gphone/sdk';
 
   let { onback } = $props();
+
+  const { play } = useSound();
 
   let display = $state('0');
 
@@ -108,7 +110,11 @@
     }
   };
 
+  // Taps click; the hardware keyboard does not. A physical keyboard has its own noise,
+  // and `handleKeydown` also fires for keys the keypad has no button for.
   const handleInput = (value: string) => {
+    play('click');
+
     if (/[0-9]/.test(value)) {
       inputDigit(value);
     } else if (value === '.') {

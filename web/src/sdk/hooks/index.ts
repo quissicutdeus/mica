@@ -22,5 +22,6 @@ export * from './usePagedList.svelte';
 export * from './usePhoneNotification';
 export * from './usePhotos';
 export * from './useReports';
+export * from './useSound';
 export * from './useStorage';
 export * from './useSystemHardware';

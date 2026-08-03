@@ -1,7 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { useStorage } from '../../sdk/hooks/useStorage';
 
-type SoundEffect = 'click' | 'pop' | 'camera' | 'notification' | 'ringtone';
+export type SoundEffect = 'click' | 'pop' | 'camera' | 'notification' | 'ringtone';
 
 export const soundVolume = writable<number>(0.5);
 export const soundMuted = writable<boolean>(false);
