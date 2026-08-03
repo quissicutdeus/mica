@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AppComponent } from './manifest';
+import { bundledAddOns, registeredApps } from '../shell/state/registry';
 
 import Admin from '../apps/admin/index.svelte';
 import Bank from '../apps/bank/index.svelte';
@@ -57,6 +58,19 @@ describe('app component contract', () => {
       .sort();
 
     expect(Object.keys(APPS).sort(), 'add the new app to APPS above').toEqual(onDisk);
+  });
+
+  it('preloads every badge it draws', () => {
+    // The badge-staleness rule, made mechanical. `bootstrap.ts` used to name each store by
+    // hand with nothing tying that list to the apps it loaded for, so an app shipping a
+    // `badgeStore` and forgotten there showed a stale count until somebody opened it — the
+    // one moment a badge has stopped being useful. Declaring `preload` in the manifest is
+    // what makes "forgotten" impossible; this is what makes it checkable.
+    const unpreloaded = [...registeredApps, ...bundledAddOns]
+      .filter((app) => app.badgeStore && !app.preload)
+      .map((app) => app.id);
+
+    expect(unpreloaded, 'declare preload alongside badgeStore').toEqual([]);
   });
 
   it('gives every app the same way out', () => {

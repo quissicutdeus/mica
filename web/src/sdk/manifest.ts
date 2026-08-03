@@ -82,6 +82,18 @@ export interface AppManifest {
   icon: Component<any> | Snippet | string | null;
   /** Reactive unread count for the launcher badge — `unreadMailCount` and friends. */
   badgeStore?: Readable<number>;
+  /**
+   * Load this app's data while the phone opens, before the launcher draws.
+   *
+   * Declared by the app rather than listed by the shell. `bootstrap.ts` used to name each
+   * store by hand, and nothing connected that list to the apps it was loading for — so an
+   * app that shipped a `badgeStore` and was forgotten there showed a stale badge until
+   * somebody opened it, which is precisely when a badge no longer matters.
+   *
+   * Only for what has to be right *before* first paint. Everything else belongs in
+   * `onAppForeground`, which reloads per visit; this runs once per phone-open.
+   */
+  preload?: () => Promise<unknown> | void;
   /** Semantic version string (e.g. "1.0.0") */
   version?: string;
   /** App author or developer team */
