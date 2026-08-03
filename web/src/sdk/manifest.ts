@@ -45,7 +45,14 @@ export interface AppManifest {
   id: string;
   /** Human-readable display name on home screen */
   name: string;
-  /** Tailwind background color class or hex string for launcher icon badge */
+  /**
+   * Tailwind background class for the launcher icon — `bg-indigo-600`.
+   *
+   * A **class**, not a color value. `AppIcon` interpolates this straight into a `class`
+   * attribute, so a hex string becomes a class name matching no rule and the icon renders
+   * with no background at all. The docstring here used to offer "or hex string", which is
+   * why that is worth stating outright.
+   */
   color: string;
   /** A Svelte component, a snippet, or an image URL. Null renders no glyph, which
    *  is what a remote app that shipped without one gets. */
@@ -87,12 +94,49 @@ import { MICA_VERSION } from './version';
  * Helper function to define and validate a gPhone application manifest.
  * Ensures required fields exist and applies sensible defaults for third-party apps.
  */
+/** What `pnpm new:app` enforces for a scaffolded app; a hand-written manifest bypassed it. */
+const ID_PATTERN = /^[a-z][a-z0-9_]*$/;
+
 export function defineApp(manifest: AppManifest): AppManifest {
   if (!manifest.id || typeof manifest.id !== 'string') {
     throw new Error("gPhone App Manifest error: 'id' is required and must be a string.");
   }
   if (!manifest.name || typeof manifest.name !== 'string') {
     throw new Error("gPhone App Manifest error: 'name' is required and must be a string.");
+  }
+
+  /**
+   * Lowercased, because `navigation.ts` lowercases on the way in and the registry keys on
+   * whatever this returns. When those disagreed, an app with a capital in its id got a
+   * launcher icon whose tap resolved to `undefined` — and `Shell.svelte` renders nothing
+   * for that. No icon, no error, no crash.
+   *
+   * Normalised rather than merely reported: `id` is also the storage namespace and an
+   * event segment, and one canonical spelling is the only way those stay in step.
+   */
+  const id = manifest.id.toLowerCase();
+
+  if (import.meta.env.DEV) {
+    if (id !== manifest.id) {
+      console.warn(
+        `gPhone App Manifest: id '${manifest.id}' is not lowercase and has been read as ` +
+          `'${id}'. It is a directory name, a storage namespace and an event segment — ` +
+          `spell it lower_snake_case in the manifest.`
+      );
+    } else if (!ID_PATTERN.test(id)) {
+      console.warn(
+        `gPhone App Manifest: id '${id}' is not lower_snake_case. ` +
+          `'pnpm new:app' enforces ${ID_PATTERN}; a hand-written manifest does not.`
+      );
+    }
+
+    if (typeof manifest.color === 'string' && manifest.color.trim().startsWith('#')) {
+      console.warn(
+        `gPhone App Manifest: color '${manifest.color}' on '${id}' is a hex value, and ` +
+          `AppIcon interpolates it into a class attribute — the icon will have no ` +
+          `background. Use a Tailwind class such as 'bg-indigo-600'.`
+      );
+    }
   }
 
   const isSystem = manifest.isSystem ?? (!manifest.isRemote && manifest.author !== 'Community');
@@ -104,6 +148,8 @@ export function defineApp(manifest: AppManifest): AppManifest {
     defaultProps: {},
     isSystem,
     author,
-    ...manifest
+    ...manifest,
+    // After the spread: the normalised id has to win over the one that was passed in.
+    id
   };
 }

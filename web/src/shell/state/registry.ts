@@ -42,6 +42,15 @@ for (const path in manifestFiles) {
     });
     // Find corresponding component
     const componentPath = path.replace('manifest.ts', 'index.svelte');
+    if (import.meta.env.DEV && componentRegistry[manifest.id]) {
+      // Two manifest files claiming one id. The second silently replaced the first's
+      // component while both stayed listed in the launcher, so one of the two icons opened
+      // the other app and nothing said why.
+      console.warn(
+        `gPhone App Registry: '${manifest.id}' is declared by more than one app in apps/. ` +
+          `The last one loaded wins, and ids are also storage namespaces — rename one.`
+      );
+    }
     if (appComponents[componentPath]) {
       componentRegistry[manifest.id] = (appComponents[componentPath] as any).default;
     }
@@ -108,6 +117,14 @@ function createAppRegistry() {
       ) {
         throw new Error(
           `gPhone App Registry error: Overwriting system app '${validatedManifest.id}' is prohibited.`
+        );
+      }
+
+      if (import.meta.env.DEV && componentRegistry[validatedManifest.id]) {
+        console.warn(
+          `gPhone App Registry: '${validatedManifest.id}' is already registered and is ` +
+            `being replaced. Expected when reinstalling that app; a bug if this is a ` +
+            `different one claiming a taken id.`
         );
       }
 
