@@ -13,10 +13,12 @@ import { test, expect } from '@playwright/test';
  * the boundary rendering a blank screen. No conditionals.
  */
 
+// `core: false` because `defineApp` requires it, and because these tests uninstall what
+// they register — a core app refuses to be unregistered at all.
 const CRASHING_APP = `
   (id, name) => {
     window.appRegistryStore.registerApp(
-      { id, name, color: 'bg-red-500', icon: null },
+      { id, name, color: 'bg-red-500', icon: null, core: false },
       () => { throw new Error('Simulated third-party app crash!'); }
     );
   }

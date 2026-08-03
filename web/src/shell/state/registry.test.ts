@@ -24,7 +24,8 @@ describe('App Registry Store', () => {
       id: 'crypto_app',
       name: 'Crypto',
       color: '#f59e0b',
-      icon: null
+      icon: null,
+      core: false
     };
     // Registry bookkeeping only — nothing here renders, so a stub stands in for the
     // component the registry now insists on having.
@@ -53,9 +54,9 @@ describe('App Registry Store', () => {
     expect(reRegistered?.installedAt).toBe(initialInstalledAt);
   });
 
-  it('prohibits unregistering built-in system apps', () => {
+  it('prohibits unregistering built-in core apps', () => {
     expect(() => appRegistryStore.unregisterApp('contacts')).toThrow(
-      "gPhone App Registry error: Unregistering system app 'contacts' is prohibited."
+      "gPhone App Registry error: Unregistering core app 'contacts' is prohibited."
     );
   });
 

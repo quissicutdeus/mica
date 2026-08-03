@@ -15,7 +15,7 @@ test.describe('?app= deep link', () => {
   });
 
   test('opens an app that is not installed by default', async ({ page }) => {
-    // Notes ships `isSystem: false`, so it is absent from the launcher until it is
+    // Notes ships `core: false`, so it is absent from the launcher until it is
     // installed from the Store. Resolving against the component registry is what makes
     // this work, and it is the case `notes.spec.ts` pays for on every run.
     await page.goto('/?app=notes');

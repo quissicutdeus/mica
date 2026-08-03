@@ -6,5 +6,6 @@ export default defineApp({
   color: 'bg-gray-700',
   icon: Icon,
   description: 'Configure phone settings, wallpapers, and preferences',
-  permissions: ['notifications']
+  permissions: ['notifications'],
+  core: true
 });

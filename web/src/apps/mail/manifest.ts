@@ -8,5 +8,6 @@ export default defineApp({
   badgeStore: unreadMailCount,
   preload: () => useMail().mailStore.load(),
   description: 'Read and manage incoming email messages',
-  permissions: ['notifications', 'network']
+  permissions: ['notifications', 'network'],
+  core: true
 });

@@ -31,8 +31,8 @@ describe('defineApp: id casing', () => {
       name: 'My App',
       color: 'bg-blue-600',
       icon: null,
-      // Non-system, or the registry refuses to let the test clean up after itself.
-      isSystem: false
+      // Non-core, or the registry refuses to let the test clean up after itself.
+      core: false
     });
     appRegistryStore.registerApp(manifest, stub);
 
@@ -46,15 +46,15 @@ describe('defineApp: id casing', () => {
   it('normalises the id so every downstream key agrees', () => {
     // `id` is the storage namespace, the keybind claim and an event segment. Lowercasing it
     // once here is what keeps those consistent with `openApp`, which lowercases anyway.
-    expect(defineApp({ id: 'MyApp', name: 'x', color: 'bg-blue-600', icon: null }).id).toBe(
-      'myapp'
-    );
+    expect(
+      defineApp({ id: 'MyApp', name: 'x', color: 'bg-blue-600', icon: null, core: false }).id
+    ).toBe('myapp');
   });
 
   it('warns about it, so the manifest gets fixed rather than silently rewritten', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    defineApp({ id: 'MyApp', name: 'x', color: 'bg-blue-600', icon: null });
+    defineApp({ id: 'MyApp', name: 'x', color: 'bg-blue-600', icon: null, core: false });
 
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('MyApp'));
   });
@@ -62,7 +62,7 @@ describe('defineApp: id casing', () => {
   it('says nothing about an id that was already lower_snake_case', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    defineApp({ id: 'crypto_tracker', name: 'x', color: 'bg-blue-600', icon: null });
+    defineApp({ id: 'crypto_tracker', name: 'x', color: 'bg-blue-600', icon: null, core: false });
 
     expect(warn).not.toHaveBeenCalled();
   });
@@ -72,35 +72,38 @@ describe('defineApp: name', () => {
   it('derives the display name from the id when it is omitted', () => {
     // Every one of the twelve apps in this repo had `name` spelled out and every one of
     // them matched the title-cased id exactly, so the field was pure duplication.
-    expect(defineApp({ id: 'notes', color: 'bg-yellow-400', icon: null }).name).toBe('Notes');
+    expect(defineApp({ id: 'notes', color: 'bg-yellow-400', icon: null, core: false }).name).toBe(
+      'Notes'
+    );
   });
 
   it('title-cases each word of a snake_case id', () => {
-    expect(defineApp({ id: 'crypto_tracker', color: 'bg-blue-600', icon: null }).name).toBe(
-      'Crypto Tracker'
-    );
+    expect(
+      defineApp({ id: 'crypto_tracker', color: 'bg-blue-600', icon: null, core: false }).name
+    ).toBe('Crypto Tracker');
   });
 
   it('keeps an explicit name, for the cases the id cannot express', () => {
     // `GPS` and `My Bank` are not title-cased ids, which is why deriving is a default
     // rather than a rule.
-    expect(defineApp({ id: 'gps', name: 'GPS', color: 'bg-blue-600', icon: null }).name).toBe(
-      'GPS'
-    );
+    expect(
+      defineApp({ id: 'gps', name: 'GPS', color: 'bg-blue-600', icon: null, core: false }).name
+    ).toBe('GPS');
   });
 
   it('derives rather than trusting an explicit undefined', () => {
     // `{ name: undefined }` spreads as a present key, so a naive default placed before the
     // spread would be clobbered by it and the launcher would render nothing for a label.
     expect(
-      defineApp({ id: 'notes', name: undefined, color: 'bg-yellow-400', icon: null }).name
+      defineApp({ id: 'notes', name: undefined, color: 'bg-yellow-400', icon: null, core: false })
+        .name
     ).toBe('Notes');
   });
 
   it('still refuses a name that is present and empty', () => {
-    expect(() => defineApp({ id: 'notes', name: '', color: 'bg-yellow-400', icon: null })).toThrow(
-      /non-empty string/
-    );
+    expect(() =>
+      defineApp({ id: 'notes', name: '', color: 'bg-yellow-400', icon: null, core: false })
+    ).toThrow(/non-empty string/);
   });
 });
 
@@ -112,7 +115,7 @@ describe('defineApp: color', () => {
     // test fixtures does this.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    defineApp({ id: 'hexy', name: 'Hexy', color: '#f59e0b', icon: null });
+    defineApp({ id: 'hexy', name: 'Hexy', color: '#f59e0b', icon: null, core: false });
 
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('#f59e0b'));
   });
@@ -120,7 +123,7 @@ describe('defineApp: color', () => {
   it('accepts a Tailwind class without complaint', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    defineApp({ id: 'classy', name: 'Classy', color: 'bg-indigo-600', icon: null });
+    defineApp({ id: 'classy', name: 'Classy', color: 'bg-indigo-600', icon: null, core: false });
 
     expect(warn).not.toHaveBeenCalled();
   });
@@ -131,7 +134,7 @@ describe('registry: duplicate ids', () => {
     // Two manifests with the same `id` used to mean the second silently replaced the
     // first's component, with both still listed in the launcher.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const opts = { color: 'bg-blue-600', icon: null, isSystem: false } as const;
+    const opts = { color: 'bg-blue-600', icon: null, core: false } as const;
     const first = defineApp({ id: 'dupe', name: 'First', ...opts });
 
     appRegistryStore.registerApp(first, stub);
@@ -142,5 +145,62 @@ describe('registry: duplicate ids', () => {
     expect(get(appRegistryStore).filter((a) => a.id === 'dupe')).toHaveLength(1);
 
     appRegistryStore.unregisterApp('dupe');
+  });
+});
+
+/**
+ * `core` decides whether an app can be uninstalled, and it is the one manifest field with
+ * teeth. It replaced `isSystem`, which was defaulted from `author` — so a **display string**
+ * decided a protection boundary, and naming your app's author 'gPhone' was enough to make it
+ * permanent. These pin down the three ways that went wrong.
+ */
+describe('defineApp: core', () => {
+  it('refuses a manifest that does not declare it', () => {
+    // Not defaulted, in either direction. Defaulting to `true` makes every scaffolded app
+    // unremovable; defaulting to `false` makes every core app removable the moment somebody
+    // forgets the line. The only safe default for a protection boundary is no default.
+    expect(() =>
+      // @ts-expect-error - the whole point is that the type requires this and the runtime
+      // check exists for callers that are not typed, i.e. remote bundles.
+      defineApp({ id: 'undeclared', color: 'bg-blue-600', icon: null })
+    ).toThrow(/must declare 'core'/);
+  });
+
+  it('does not let author decide it', () => {
+    // The original defect. 'gPhone' was the derivation's trigger value, so this exact
+    // manifest used to come back protected.
+    const app = defineApp({
+      id: 'authored',
+      color: 'bg-blue-600',
+      icon: null,
+      author: 'gPhone',
+      core: false
+    });
+
+    expect(app.core).toBe(false);
+    expect(app.author).toBe('gPhone');
+  });
+
+  it('forces a remote app to be non-core even when it claims otherwise', () => {
+    // `core` used to sit *before* the `...manifest` spread, so a downloaded bundle
+    // declaring `isSystem: true` survived normalisation intact — and `unregisterApp` then
+    // refused to remove it, for the rest of the session. Spreading and then normalising is
+    // what closes that; a bundle cannot opt into protection.
+    expect(() =>
+      defineApp({ id: 'hostile', color: 'bg-blue-600', icon: null, core: true, isRemote: true })
+    ).toThrow(/remote app 'hostile' declares 'core: true'/);
+  });
+
+  it('lets a remote app omit it entirely, so older bundles still load', () => {
+    // A remote app is never core, so requiring the declaration would be ceremony that
+    // breaks every bundle written before this field existed.
+    const app = defineApp(
+      // A remote manifest is untyped by definition — `loadRemoteApp` spreads whatever the
+      // bundle exported. Cast rather than `@ts-expect-error`, because the assertion under
+      // test is a runtime one and the cast is what the real call site effectively does.
+      { id: 'legacy_remote', color: 'bg-blue-600', icon: null, isRemote: true } as never
+    );
+
+    expect(app.core).toBe(false);
   });
 });

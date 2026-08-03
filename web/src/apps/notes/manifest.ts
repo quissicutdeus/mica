@@ -8,6 +8,8 @@ export default defineApp({
   preload: () => useNotes().notesStore.load(),
   description: 'Create and store personal notes',
   permissions: ['storage'],
-  author: 'Community',
-  isSystem: false
+  // No `author`: it is written in this repo, so it inherits 'gPhone' from defineApp. It
+  // claimed 'Community' back when that string was what kept it out of the launcher —
+  // `core: false` does that now, and the author is free to be true.
+  core: false
 });

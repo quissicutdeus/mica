@@ -31,9 +31,10 @@ test.describe('Store E2E', () => {
 
     await expect(page.locator('h3', { hasText: 'Notes' })).toBeVisible();
     await expect(page.locator('text=Local Storage')).toBeVisible();
-    // Exact: the details page also carries a "Community Add-on" type badge, and an
-    // unquoted `text=` match is a case-insensitive substring, so it hits both.
-    await expect(page.getByText('Community', { exact: true })).toBeVisible();
+    // gPhone, not 'Community': Notes is written in this repo, and its author no longer has
+    // to lie to keep it out of the launcher. Exact, because `text=` is a case-insensitive
+    // substring match and 'gPhone' appears in the OS name too.
+    await expect(page.getByText('gPhone', { exact: true })).toBeVisible();
   });
 
   test('installs community add-on app and verifies icon appears on home screen', async ({

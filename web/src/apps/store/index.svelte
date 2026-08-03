@@ -9,7 +9,7 @@
     type AppComponent,
     type AppProps
   } from '@gphone/sdk';
-  import { catalogApps, isSystemApp } from './appInfo';
+  import { catalogApps } from './appInfo';
   import AppDetails from './components/AppDetails.svelte';
   import UnavailableApp from './components/UnavailableApp.svelte';
   import CatalogList from './components/CatalogList.svelte';
@@ -32,8 +32,8 @@
   const filteredInstalledApps = $derived(
     $registryStore
       .filter((app) => {
-        if (installedFilter === 'system') return isSystemApp(app);
-        if (installedFilter === 'addon') return !isSystemApp(app);
+        if (installedFilter === 'system') return app.core;
+        if (installedFilter === 'addon') return !app.core;
         return true;
       })
       .slice()

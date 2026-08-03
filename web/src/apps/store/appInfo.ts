@@ -18,7 +18,7 @@ import { appStorageBytes, useAppRegistry, type AppManifest, type AppPermission }
  * from the real one. Then four invented add-ons — Blabber, Crypto Tracker, Downtown Taxi,
  * Marketplace — sat here as manifests with no code behind them, so the Store's catalogue was
  * mostly fiction and installing any of it got a screen apologising for itself. Both are gone.
- * An app appears in the Store by *existing* and shipping `isSystem: false`; the ideas the
+ * An app appears in the Store by *existing* and shipping `core: false`; the ideas the
  * fictions stood in for are recorded in `docs/roadmap.md`, which cannot pretend to be
  * installable.
  *
@@ -31,15 +31,14 @@ export const catalogApps = (): AppManifest[] =>
   [...useAppRegistry().bundledAddOns].sort((a, b) => a.name.localeCompare(b.name));
 
 /**
- * A system app ships with the phone and cannot be uninstalled.
+ * There is no `isSystemApp()` here any more, and its absence is the point.
  *
- * Inferred rather than declared: anything remote is an add-on, and anything without an
- * author, or authored by gPhone itself, came in the box.
+ * It re-derived "does this ship with the phone" from `isRemote` and `author`, which is the
+ * same question `defineApp` was answering separately — and the two answers differed. An
+ * in-repo app authored by anyone but 'gPhone' or 'Community' was core to the registry
+ * (so `unregisterApp` threw) and an add-on to this file, so the Store rendered an Uninstall
+ * button that could only fail. Read `app.core`: one answer, decided once, by the manifest.
  */
-export function isSystemApp(app: AppManifest): boolean {
-  if (app.isSystem === false) return false;
-  return !app.isRemote && (app.author === 'gPhone' || !app.author);
-}
 
 /**
  * What the app has actually stored.
@@ -49,7 +48,7 @@ export function isSystemApp(app: AppManifest): boolean {
  * app look bigger. Storage is namespaced per app, so the true figure was always available.
  */
 export function getAppStorageSize(app: AppManifest): string {
-  if (isSystemApp(app)) return 'System Protected';
+  if (app.core) return 'System Protected';
 
   const bytes = appStorageBytes(app.id);
   if (bytes === 0) return 'No data stored';

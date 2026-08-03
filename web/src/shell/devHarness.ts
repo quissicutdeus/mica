@@ -73,7 +73,7 @@ export function seedBrowserPhone(now: Date): void {
  * For an app author that is the inner loop, run on every reload.
  *
  * Resolved against the *component* registry rather than the installed list, so an app
- * with `isSystem: false` opens without being installed from the Store first. That is
+ * with `core: false` opens without being installed from the Store first. That is
  * the case that hurt most: `notes.spec.ts` reinstalls Notes through the Store on every
  * run to get at it.
  */

@@ -723,6 +723,15 @@ The id is a key rather than a label: the directory, the `gphone:<id>:` storage n
 data migration. `defineApp` lowercases it and warns, because an id with a capital in it used to
 produce a launcher icon whose tap rendered nothing at all.
 
+**`core` is required, and it is the one field with teeth.** `core: true` ships with the phone and
+cannot be uninstalled; `core: false` is an add-on — kept out of the launcher, offered by the Store,
+removable. `defineApp` throws if it is absent, deliberately: it used to be `isSystem`, defaulted
+from `author`, so a **display string** decided whether an app could be removed and naming yourself
+`'gPhone'` was enough to make one permanent. The derivation was also circular, and the Store grew a
+second, subtly different copy of it — so the registry and the uninstall button could disagree, and
+the button threw. Read `manifest.core` and nothing else. A remote app is never core: `defineApp`
+forces `false` when `isRemote` is set and throws on an explicit `core: true` beside it.
+
 A human-facing version of this section lives in [`docs/writing-an-app.md`](docs/writing-an-app.md).
 It links back here rather than repeating it; keep it that way.
 

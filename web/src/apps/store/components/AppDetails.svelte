@@ -1,6 +1,6 @@
 <script lang="ts">
   import { type AppManifest, formatDate } from '@gphone/sdk';
-  import { formatPermission, getAppStorageSize, isSystemApp } from '../appInfo';
+  import { formatPermission, getAppStorageSize } from '../appInfo';
 
   /**
    * One app's full details page — permissions, storage, install state.
@@ -26,7 +26,7 @@
     onopen: (id: string) => void;
   } = $props();
 
-  const system = $derived(isSystemApp(app));
+  const system = $derived(app.core);
 </script>
 
 <!-- FULL APP DETAILS VIEW PAGE -->
@@ -67,7 +67,7 @@
       <div>
         <h3 class="text-xl font-bold text-white">{app.name}</h3>
         <div class="mt-0.5 flex items-center justify-center gap-2 text-xs text-gray-400">
-          <span>{app.author || 'gPhone'}</span>
+          <span>{app.author}</span>
           <span>•</span>
           <span>v{app.version || '1.0.0'}</span>
         </div>
@@ -139,9 +139,7 @@
       <div class="grid grid-cols-2 gap-2 text-xs">
         <div class="rounded-xl border border-gray-800 bg-gray-800/40 p-3">
           <span class="block text-[10px] font-medium text-gray-400 uppercase">Type</span>
-          <span class="font-semibold text-white"
-            >{system ? 'System Application' : 'Community Add-on'}</span
-          >
+          <span class="font-semibold text-white">{system ? 'System Application' : 'Add-on'}</span>
         </div>
         <div class="rounded-xl border border-gray-800 bg-gray-800/40 p-3">
           <span class="block text-[10px] font-medium text-gray-400 uppercase"

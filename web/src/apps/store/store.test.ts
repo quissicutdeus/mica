@@ -39,14 +39,14 @@ describe('Store Module', () => {
   it('prohibits unregistering the Store system app', () => {
     appRegistryStore.registerApp(manifest, stubComponent);
     expect(() => appRegistryStore.unregisterApp('store')).toThrow(
-      "gPhone App Registry error: Unregistering system app 'store' is prohibited."
+      "gPhone App Registry error: Unregistering core app 'store' is prohibited."
     );
   });
 });
 
 describe('Store catalogue', () => {
   it('offers an in-repo add-on without it being listed by hand', () => {
-    // Notes ships `isSystem: false`, so it is kept out of the launcher and used to reach
+    // Notes ships `core: false`, so it is kept out of the launcher and used to reach
     // the Store only via a hand-written copy of its own manifest in `appInfo.ts` — which
     // then drifted from the real one. It is derived from the registry now.
     expect(catalogApps().map((a) => a.id)).toContain('notes');
@@ -58,7 +58,7 @@ describe('Store catalogue', () => {
     const notes = catalogApps().find((a) => a.id === 'notes');
 
     expect(notes?.name).toBe('Notes');
-    expect(notes?.isSystem).toBe(false);
+    expect(notes?.core).toBe(false);
   });
 });
 

@@ -120,8 +120,23 @@ export interface AppManifest {
   isRemote?: boolean;
   /** Remote bundle URL if dynamically loaded */
   bundleUrl?: string;
-  /** Explicit flag indicating whether app is a protected system core app */
-  isSystem?: boolean;
+  /**
+   * Does this app ship with the phone, and is it therefore not uninstallable?
+   *
+   * **Required, and deliberately not inferred.** It was once `isSystem`, defaulted from
+   * `author` — a display string — so an app whose author was anything other than
+   * `'Community'` silently became unremovable, and naming yourself `'gPhone'` was enough to
+   * do it. Two things followed from deriving a protection boundary instead of stating it:
+   * the derivation was circular (`isSystem` read `author`, then `author` read `isSystem`),
+   * and a second, subtly different copy of it grew in the Store — so the registry and the
+   * uninstall button could disagree about the same app, and the button threw.
+   *
+   * A remote app is never core. `defineApp` forces `false` when `isRemote` is set and
+   * throws on an explicit `core: true` beside it: a downloaded bundle asking for protection
+   * is broken or hostile. That closes a footgun rather than preventing an attack — an
+   * add-on runs in the shell's own JS context regardless (§7).
+   */
+  core: boolean;
   /**
    * Hide the app entirely unless the player holds an admin ace.
    *
@@ -194,20 +209,47 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
     }
   }
 
-  const isSystem = manifest.isSystem ?? (!manifest.isRemote && manifest.author !== 'Community');
-  const author = manifest.author || (isSystem ? 'gPhone' : 'Community');
+  const isRemote = manifest.isRemote === true;
+
+  if (isRemote && manifest.core === true) {
+    throw new Error(
+      `gPhone App Manifest error: remote app '${id}' declares 'core: true'. A downloaded ` +
+        `bundle must stay uninstallable.`
+    );
+  }
+
+  /**
+   * A remote app is never core, and does not have to say so — which is also what keeps a
+   * bundle written before `core` existed loading at all.
+   */
+  const core = isRemote ? false : manifest.core;
+
+  if (typeof core !== 'boolean') {
+    throw new Error(
+      `gPhone App Manifest error: '${id}' must declare 'core'. It decides whether the app ` +
+        `can be uninstalled, and is deliberately not inferred — it used to be derived from ` +
+        `'author', which made a display string load-bearing.`
+    );
+  }
+
+  const author = manifest.author || 'gPhone';
 
   return {
     version: MICA_VERSION,
     permissions: [],
     defaultProps: {},
-    isSystem,
-    author,
     ...manifest,
-    // Both after the spread, so they win over whatever was passed in: the normalised id
-    // over the raw one, and the derived name over an explicit `name: undefined` — which
-    // spreads as a present key and would otherwise clobber the default.
+    // All after the spread, so they win over whatever was passed in: the normalised id over
+    // the raw one, and the derived name over an explicit `name: undefined` — which spreads
+    // as a present key and would otherwise clobber the default.
+    //
+    // `core` is here rather than above the spread for a sharper reason. It used to sit
+    // before it, so a remote manifest declaring `isSystem: true` survived normalisation
+    // intact and `unregisterApp` then refused to remove it, forever. Normalising and *then*
+    // spreading is what let the bundle win; spreading and then normalising is what stops it.
     id,
-    name: manifest.name ?? titleCase(id)
+    name: manifest.name ?? titleCase(id),
+    core,
+    author
   };
 }

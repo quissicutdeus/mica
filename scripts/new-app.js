@@ -77,7 +77,11 @@ export default defineApp({
   icon: Icon,
   description: 'TODO: one line, shown in the Store.',
   permissions: [],
-  author: 'gPhone'
+  author: 'gPhone',
+  // Required. \`false\` makes this an add-on: absent from the launcher, offered by the
+  // Store, and uninstallable. Set it to \`true\` only for something that ships with the
+  // phone and must not be removable.
+  core: false
 });
 `
 );
@@ -305,7 +309,13 @@ if (WITH_SERVICE) {
   );
   console.log(`\nThen: \x1b[1mpnpm generate:sql\x1b[0m and apply \`sql/apps/${id}.sql\`.`);
 } else {
-  console.log(`Then: \x1b[1mpnpm dev\x1b[0m, and the icon is on the home screen.`);
+  console.log(
+    `Then: \x1b[1mpnpm dev\x1b[0m and open \x1b[1mlocalhost:5173/?app=${id}\x1b[0m.\n` +
+      `\n\x1b[2mNot the home screen: the template ships \`core: false\`, so this is an add-on and\n` +
+      `the launcher does not carry it until it is installed from the Store. The \`?app=\`\n` +
+      `link opens it either way. Set \`core: true\` only for something that comes in the\n` +
+      `box and must not be uninstallable.\x1b[0m`
+  );
 }
 
 console.log(`\nFinally: \x1b[1mpnpm verify\x1b[0m\n`);

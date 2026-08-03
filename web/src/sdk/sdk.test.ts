@@ -41,7 +41,8 @@ describe('gPhone SDK (@gphone/sdk)', () => {
         name: 'Crypto Tracker',
         color: 'bg-yellow-500',
         icon: 'BitcoinIcon',
-        author: 'Community'
+        author: 'Community',
+        core: false
       };
 
       const app = defineApp(rawManifest);

@@ -43,9 +43,16 @@ export default defineApp({
   color: 'bg-emerald-600',
   icon: Icon,
   description: 'Keep a diary',
-  permissions: ['storage']
+  permissions: ['storage'],
+  core: false
 });
 ```
+
+`core` is required and `defineApp` throws without it. `false` is what you want almost always: an
+add-on, kept out of the launcher, offered by the Store, uninstallable. `true` is for something that
+ships with the phone and must not be removable. It is stated rather than inferred because it used
+to be derived from `author` — a display string — which meant naming yourself "gPhone" silently made
+your app permanent.
 
 `id` is the only name that matters. It is lower_snake_case and it is a **key**, not a
 label: the directory name, the `gphone:journal:` storage namespace, the `<app>` segment of

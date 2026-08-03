@@ -30,7 +30,7 @@ const firstBoot = getFirstBootTime();
 
 // Parse manifests
 const loadedApps: AppManifest[] = [];
-/** In-repo apps shipping `isSystem: false` — present in the tree, absent from the launcher. */
+/** In-repo apps shipping `core: false` — present in the tree, absent from the launcher. */
 const addOns: AppManifest[] = [];
 const componentRegistry: Record<string, AppComponent> = {};
 
@@ -57,9 +57,9 @@ for (const path in manifestFiles) {
       componentRegistry[manifest.id] = (appComponents[componentPath] as any).default;
     }
 
-    // System core apps start installed on OS startup.
-    // Community add-on apps start uninstalled by default to allow installation/uninstallation via App Store.
-    if (manifest.isSystem !== false) {
+    // Core apps start installed on OS startup.
+    // Add-on apps start uninstalled by default to allow installation/uninstallation via App Store.
+    if (manifest.core) {
       loadedApps.push(manifest);
     } else {
       addOns.push(manifest);
@@ -79,7 +79,7 @@ export const registeredApps = loadedApps;
  */
 export const bundledAddOns = [...addOns].sort((a, b) => a.name.localeCompare(b.name));
 
-const SYSTEM_APP_IDS = new Set(loadedApps.filter((a) => a.isSystem !== false).map((a) => a.id));
+const CORE_APP_IDS = new Set(loadedApps.filter((a) => a.core).map((a) => a.id));
 const LOCAL_STORAGE_KEY = 'gphone_installed_remote_apps';
 
 function getSavedRemoteAppUrls(): string[] {
@@ -125,11 +125,11 @@ function createAppRegistry() {
       const validatedManifest = defineApp(manifest);
 
       if (
-        SYSTEM_APP_IDS.has(validatedManifest.id) &&
+        CORE_APP_IDS.has(validatedManifest.id) &&
         !loadedApps.some((a) => a.id === validatedManifest.id)
       ) {
         throw new Error(
-          `gPhone App Registry error: Overwriting system app '${validatedManifest.id}' is prohibited.`
+          `gPhone App Registry error: Overwriting core app '${validatedManifest.id}' is prohibited.`
         );
       }
 
@@ -156,8 +156,7 @@ function createAppRegistry() {
           updated = [...apps];
           updated[existingIndex] = appWithDates;
         } else {
-          const isSystem = validatedManifest.isSystem !== false;
-          const defaultTime = isSystem ? getFirstBootTime() : now;
+          const defaultTime = validatedManifest.core ? getFirstBootTime() : now;
           const appWithDates: AppManifest = {
             installedAt: defaultTime,
             updatedAt: defaultTime,
@@ -173,13 +172,16 @@ function createAppRegistry() {
       subscribe((apps) => (currentApps = apps))();
       const targetApp = currentApps.find((a) => a.id === appId);
 
-      let isSystemApp = SYSTEM_APP_IDS.has(appId);
-      if (targetApp && targetApp.isSystem !== false) {
-        isSystemApp = true;
-      }
-      if (isSystemApp) {
+      /**
+       * Both halves matter. `CORE_APP_IDS` is the boot-time set, which catches an app that
+       * is core but somehow absent from the store; `targetApp.core` catches one registered
+       * after boot. An app registered at runtime claiming to be core used to reach only the
+       * second check, and `defineApp` would happily have handed it `core: true` — which is
+       * why the remote path is now normalised there rather than trusted here.
+       */
+      if (CORE_APP_IDS.has(appId) || targetApp?.core) {
         throw new Error(
-          `gPhone App Registry error: Unregistering system app '${appId}' is prohibited.`
+          `gPhone App Registry error: Unregistering core app '${appId}' is prohibited.`
         );
       }
       if (targetApp?.bundleUrl) {
