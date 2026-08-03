@@ -79,6 +79,12 @@
       <!-- Announced as a button only when tapping the body actually does something.
            A toast whose actions are its own inner buttons stays presentational, so it
            does not put an extra stop in the tab order that leads nowhere. -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <!-- `role` and `tabindex` are both keyed on `t.onClick`, so the pairing is always
+           button+0 or presentation+none, and a presentational toast never takes a tab
+           stop. The compiler checks the two attributes independently and cannot see that
+           they move together; splitting the element in two to prove it would duplicate
+           forty lines of markup to satisfy a static analysis rather than a user. -->
       <div
         transition:fly={{ y: -20, duration: 250 }}
         class="pointer-events-auto flex cursor-pointer flex-col space-y-2.5 rounded-2xl border p-3 shadow-2xl backdrop-blur-2xl transition-all hover:scale-[1.01] active:scale-[0.99] {getBgColor(
