@@ -2,6 +2,68 @@
 @plugin 'tailwindcss-animate';
 @plugin '@tailwindcss/typography';
 
+/**
+ * The phone's palette.
+ *
+ * Two problems this solves at once.
+ *
+ * Translucency. AGENTS.md §6 prescribes a pre-resolved value rather than an opacity
+ * modifier, because `color-mix()` needs Chromium 111 and FiveM's release CEF is 103.
+ *
+ * Worth recording what the build actually emits, because it is narrower than §6 states:
+ * `bg-gray-900/95` produces three rules — an unguarded `#101828f2`, then `lab()` and
+ * `color-mix()` *both* behind `@supports (color: color-mix(...))`. CEF 103 fails that
+ * test and takes the plain hex, so an opacity modifier on a palette color does render
+ * in game. Tailwind emits that fallback whenever it can resolve the color at build
+ * time; where it cannot — an arbitrary `var()`-based color — only the `color-mix()`
+ * form is emitted and the utility genuinely breaks.
+ *
+ * So these tokens are not a workaround for something broken. They are one resolved
+ * value per role instead of a three-rule emission whose in-game correctness depends on
+ * cascade error-recovery, and they are checkable: each compiles to a single unguarded
+ * declaration.
+ *
+ * Forking: "danger" was `bg-red-600` in `Button`, `bg-rose-600` in `SegmentedControl`
+ * and `bg-rose-500` in `AppIcon` — three families for one meaning, with no way to tell
+ * which was intended. Named roles below; the raw scales stay available for everything
+ * that is genuinely one-off.
+ *
+ * The comment on each line records the scale the value came from. For the surfaces this
+ * is a pure rename — identical hex, no visual change. The danger role is not: `AppIcon`
+ * (`rose-500`) and `SegmentedControl` (`rose-600`) now render red-600 like `Button`
+ * always did. Three families for one meaning was the thing worth losing, and collapsing
+ * them necessarily moves two of the three.
+ */
+@theme {
+  /* Surfaces */
+  --color-surface: #101828; /* gray-900 */
+  --color-surface-raised: rgb(30 41 57 / 0.5); /* gray-800/50 */
+  --color-surface-sunken: rgb(30 41 57 / 0.7); /* gray-800/70 */
+  --color-surface-overlay: rgb(3 7 18 / 0.95); /* gray-950/95 */
+  --color-scrim: rgb(0 0 0 / 0.8); /* black/80 */
+
+  /* Lines and secondary text */
+  --color-hairline: rgb(54 65 83 / 0.5); /* gray-700/50 */
+  --color-muted: #99a1af; /* gray-400 */
+
+  /* One family per meaning */
+  --color-accent: #155dfc; /* blue-600 */
+  --color-accent-ring: rgb(50 128 255 / 0.5); /* blue-500/50 */
+  --color-accent-hairline: rgb(86 162 255 / 0.2); /* blue-400/20 */
+  --color-accent-glow: rgb(21 93 252 / 0.3); /* blue-600/30 */
+  --color-danger: #e40016; /* red-600 */
+  --color-danger-hover: #fb2c36; /* red-500 */
+  --color-danger-surface: rgb(77 2 24 / 0.5); /* rose-950/50 */
+
+  /**
+   * The frame's own insets. `PhoneFrame` expressed these as bare `pt-8`/`pb-4` with
+   * nothing exported, so an app had no way to ask how much of the screen it actually
+   * owns. Same numbers, now with a name.
+   */
+  --spacing-safe-top: 2rem; /* pt-8 */
+  --spacing-safe-bottom: 1rem; /* pb-4 */
+}
+
 body {
   user-select: none;
 }

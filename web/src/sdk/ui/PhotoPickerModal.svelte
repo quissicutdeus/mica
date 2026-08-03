@@ -33,7 +33,7 @@
 </script>
 
 <div
-  class="animate-in fade-in absolute inset-0 z-30 flex flex-col bg-gray-950/95 backdrop-blur-md duration-200"
+  class="animate-in fade-in bg-surface-overlay absolute inset-0 z-30 flex flex-col backdrop-blur-md duration-200"
 >
   <!-- Header -->
   <div class="flex items-center justify-between border-b border-gray-800 p-4">
@@ -58,8 +58,8 @@
         <button
           type="button"
           class="group relative aspect-square overflow-hidden rounded-xl border bg-gray-800 transition-all {selected
-            ? 'border-blue-500 ring-2 ring-blue-500/50'
-            : 'border-gray-700/50 hover:border-gray-500'}"
+            ? 'ring-accent-ring border-blue-500 ring-2'
+            : 'border-hairline hover:border-gray-500'}"
           onclick={() => onmultichange?.(photo.id, photo.image)}
         >
           <img
@@ -76,7 +76,7 @@
       {:else}
         <button
           type="button"
-          class="group relative aspect-square overflow-hidden rounded-xl border border-gray-700/50 bg-gray-800 transition-all hover:border-blue-500"
+          class="group border-hairline relative aspect-square overflow-hidden rounded-xl border bg-gray-800 transition-all hover:border-blue-500"
           onclick={() => onselect?.(photo.image)}
         >
           <img

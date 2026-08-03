@@ -45,7 +45,7 @@
 <div
   role="group"
   aria-label={ariaLabel}
-  class="flex w-full rounded-xl border border-gray-700/50 bg-gray-800/70 p-1 backdrop-blur-md"
+  class="border-hairline bg-surface-sunken flex w-full rounded-xl border p-1 backdrop-blur-md"
 >
   {#each options as opt (opt.id)}
     <button
@@ -59,7 +59,7 @@
     >
       {opt.label}
       {#if opt.badge}
-        <span class="ml-1 rounded-full bg-rose-600 px-1.5 text-xs text-white">{opt.badge}</span>
+        <span class="bg-danger ml-1 rounded-full px-1.5 text-xs text-white">{opt.badge}</span>
       {/if}
     </button>
   {/each}

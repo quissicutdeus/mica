@@ -141,7 +141,7 @@
 
     <!-- Content Area -->
     {#if !$isBatteryDead}
-      <div class="h-full" class:pt-8={!transparent} class:pb-4={!transparent}>
+      <div class="h-full" class:pt-safe-top={!transparent} class:pb-safe-bottom={!transparent}>
         {@render children()}
       </div>
     {/if}

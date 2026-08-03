@@ -54,7 +54,7 @@
     {#if displayBadge > 0}
       <!-- Red Unread Notification Badge -->
       <div
-        class="absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full border-2 border-gray-900 bg-rose-500 px-1 text-[10px] font-bold text-white shadow-md"
+        class="bg-danger absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full border-2 border-gray-900 px-1 text-[10px] font-bold text-white shadow-md"
       >
         {displayBadge > 99 ? '99+' : displayBadge}
       </div>

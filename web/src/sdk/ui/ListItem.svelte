@@ -34,7 +34,7 @@
 </script>
 
 <div
-  class="group flex w-full cursor-pointer items-center p-4 transition-colors hover:bg-gray-800/50 {className}"
+  class="group hover:bg-surface-raised flex w-full cursor-pointer items-center p-4 transition-colors {className}"
   {onclick}
   {onkeydown}
   role="button"

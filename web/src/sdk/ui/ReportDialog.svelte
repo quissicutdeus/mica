@@ -52,7 +52,7 @@
 </script>
 
 <div
-  class="absolute inset-0 z-50 flex items-end bg-black/80 backdrop-blur-sm"
+  class="bg-scrim absolute inset-0 z-50 flex items-end backdrop-blur-sm"
   transition:fade={{ duration: 150 }}
 >
   <div class="max-h-full w-full overflow-y-auto rounded-t-3xl bg-gray-900 p-5">
@@ -67,7 +67,7 @@
           aria-pressed={category === option.id}
           class="flex w-full cursor-pointer items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition-colors {category ===
           option.id
-            ? 'border-rose-500 bg-rose-950/50 text-white'
+            ? 'border-danger bg-danger-surface text-white'
             : 'border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700'}"
         >
           {option.label}

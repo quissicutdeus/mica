@@ -22,7 +22,7 @@
       case 'secondary':
         return 'bg-gray-700 hover:bg-gray-600 text-white';
       case 'danger':
-        return 'bg-red-600 hover:bg-red-500 text-white font-bold';
+        return 'bg-danger hover:bg-danger-hover text-white font-bold';
       case 'icon':
         return 'hover:bg-gray-700 text-gray-300 hover:text-white';
       default:

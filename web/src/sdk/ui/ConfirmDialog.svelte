@@ -26,7 +26,7 @@
 </script>
 
 <div
-  class="absolute inset-0 z-50 flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm"
+  class="bg-scrim absolute inset-0 z-50 flex items-center justify-center p-6 backdrop-blur-sm"
   transition:fade
 >
   <div class="w-full rounded-xl bg-gray-800 p-6 shadow-2xl">

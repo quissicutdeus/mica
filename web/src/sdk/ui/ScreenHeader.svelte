@@ -15,7 +15,9 @@
   } = $props();
 </script>
 
-<div class="flex items-center border-b border-gray-700 bg-gray-800/50 px-4 py-4 backdrop-blur-md">
+<div
+  class="bg-surface-raised flex items-center border-b border-gray-700 px-4 py-4 backdrop-blur-md"
+>
   {#if onback}
     <button
       class="-ml-2 rounded-full p-2 transition-colors hover:bg-gray-700"
