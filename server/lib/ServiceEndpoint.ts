@@ -12,6 +12,16 @@ export interface ServiceOptions {
   disableDelete?: boolean;
   tableName?: string;
   onAfterDelete?: (citizenid: string, targetId: number) => Promise<void>;
+  /**
+   * Drop the ownership predicate from the generic `get`, so every active row is readable.
+   *
+   * Set from `access.read === 'public'`. Plain booleans and numbers rather than an imported
+   * `ResolvedService`, because `defineService` imports *this* file and the reverse would be
+   * a runtime cycle rather than a type-only one.
+   */
+  publicRead?: boolean;
+  /** Set from a resolved `paging` declaration. Required alongside `publicRead`. */
+  paging?: { pageSize: number; maxPageSize: number };
 }
 
 export class ServiceEndpoint<T> {
@@ -79,6 +89,43 @@ export class ServiceEndpoint<T> {
     return this.pickColumns(data, this.repository.filterableColumns);
   }
 
+  /**
+   * How many rows this request may have, clamped to what the service declared.
+   *
+   * A client asking for a million is answered with `maxPageSize` rather than an error: the
+   * request is legitimate, only the number is not, and refusing it would make a paged read
+   * fail for a caller that simply guessed high. An absent or unparseable limit falls back to
+   * `pageSize`, which is the same thing a client that does not care about paging gets.
+   */
+  private readLimit(data: unknown, paging: { pageSize: number; maxPageSize: number }): number {
+    const raw =
+      data && typeof data === 'object' ? (data as Record<string, unknown>).limit : undefined;
+    if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 1) {
+      return paging.pageSize;
+    }
+    return Math.min(raw, paging.maxPageSize);
+  }
+
+  /**
+   * The id the last page ended on, or undefined for the first page.
+   *
+   * A bare positive integer, and nothing more: the cursor names a position in a result set
+   * the caller is already authorized to read, so it needs no signing. What it must never do
+   * is name a **column** — the sort column comes from the declaration, and a payload that
+   * tries to supply one is ignored rather than honoured. That is the whole reason this is an
+   * integer through `requirePositiveInt` instead of an opaque encoded string.
+   */
+  private readCursor(data: unknown): number | undefined {
+    const raw =
+      data && typeof data === 'object' ? (data as Record<string, unknown>).cursor : undefined;
+    if (raw === undefined || raw === null) return undefined;
+    try {
+      return requirePositiveInt(raw, 'cursor');
+    } catch {
+      throw new Error(`A cursor for ${this.serviceName} must be a positive row id.`);
+    }
+  }
+
   /** Pull a usable row id out of a payload, accepting `{ id }` or a bare id. */
   private requireId(data: unknown): number {
     const raw = data && typeof data === 'object' ? (data as Record<string, unknown>).id : data;
@@ -110,11 +157,46 @@ export class ServiceEndpoint<T> {
       this.registerEvent(
         'get',
         async (source: number, cbId: CallbackId, data: unknown, citizenid: string) => {
-          const result = await this.repository.findAll({
-            ...this.sanitizeFilter(data),
-            citizenid
-          } as any);
-          return result;
+          const filter = this.sanitizeFilter(data);
+
+          // The ownership predicate is the *default*, and dropping it is opt-in per service
+          // rather than per request — a payload cannot ask to see everyone's rows.
+          if (!this.options.publicRead) {
+            (filter as Record<string, unknown>).citizenid = citizenid;
+          }
+
+          const paging = this.options.paging;
+          if (!paging) {
+            return await this.repository.findAll(filter as any);
+          }
+
+          const limit = this.readLimit(data, paging);
+          const cursor = this.readCursor(data);
+
+          /**
+           * Ask for one more row than the page, and use its existence as the answer to
+           * "is there more?".
+           *
+           * The alternative is a COUNT, which is a second query over the same predicate and
+           * still races the next insert. Over-fetching by one is exact, and the extra row is
+           * dropped rather than returned.
+           */
+          const rows = await this.repository.findAll(filter as any, {
+            limit: limit + 1,
+            cursor
+          });
+
+          const hasMore = rows.length > limit;
+          const pageRows = hasMore ? rows.slice(0, limit) : rows;
+          const last = pageRows[pageRows.length - 1] as { id?: number } | undefined;
+
+          return {
+            rows: pageRows,
+            // Null means the end, and the client must be able to tell that apart from "ask
+            // again" — a cursor that keeps being handed back is an infinite scroll that
+            // never terminates.
+            nextCursor: hasMore && typeof last?.id === 'number' ? last.id : null
+          };
         }
       );
     }

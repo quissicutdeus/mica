@@ -660,3 +660,69 @@ describe('toCreateTableSql', () => {
     expect(out).toContain(`\`field\` ${expected} DEFAULT NULL`);
   });
 });
+
+/**
+ * Public reads and keyset paging.
+ *
+ * A public table is the first thing in this codebase whose row count is not bounded by one
+ * player's citizenid, and `Repository.findAll` returns every matching row. So the two arrive
+ * together, and the declaration refuses to let them come apart.
+ */
+describe('resolveAppSchema — public reads and paging', () => {
+  it('refuses a public read with no paging declared', () => {
+    // The single highest-value rule here: it makes the unbounded findAll structurally
+    // unreachable from a public table rather than merely discouraged in a docstring.
+    expect(() =>
+      resolveAppSchema({
+        id: 'feed',
+        access: { read: 'public', write: 'owner' },
+        schema: { body: 'string' }
+      })
+    ).toThrow(/no 'paging' is declared/);
+  });
+
+  it('accepts a public read that declares paging, and fills in the defaults', () => {
+    const resolved = resolveAppSchema({
+      id: 'feed',
+      access: { read: 'public', write: 'owner' },
+      paging: {},
+      schema: { body: 'string' }
+    });
+
+    expect(resolved.access).toEqual({ read: 'public', write: 'owner' });
+    expect(resolved.paging).toEqual({ pageSize: 50, maxPageSize: 100 });
+  });
+
+  it('leaves paging null for every table that did not ask for it', () => {
+    // Which is what keeps the unpaged findAll emitting byte-identical SQL: an owner-scoped
+    // read is already bounded by its citizenid predicate and should not pay for a LIMIT.
+    expect(resolveAppSchema({ id: 'plain', schema: { label: 'string' } }).paging).toBeNull();
+  });
+
+  it('refuses a maxPageSize below the default page size', () => {
+    expect(() =>
+      resolveAppSchema({
+        id: 'backwards',
+        paging: { pageSize: 50, maxPageSize: 10 },
+        schema: { label: 'string' }
+      })
+    ).toThrow(/maxPageSize >= pageSize/);
+  });
+
+  it('still registers a plain get for a public table', () => {
+    // Public changes *what* the get returns, not whether it exists. Contrast `members`,
+    // which cannot express its read through the generic filter path at all.
+    const registered: string[] = [];
+    (globalThis as Record<string, unknown>).onNet = (event: string) => {
+      registered.push(event);
+    };
+    defineService({
+      id: 'feed_b',
+      access: { read: 'public', write: 'owner' },
+      paging: {},
+      schema: { body: 'string' }
+    });
+
+    expect(registered).toContain('gphone:server:feed_b:get');
+  });
+});

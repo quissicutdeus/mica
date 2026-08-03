@@ -136,12 +136,16 @@ type ServiceSchema = Record<string, ColumnType | ColumnDef>;
 interface AccessDefinition {
   /**
    * `owner`   — the caller's citizenid is forced into the WHERE. The default.
+   * `public`  — any authenticated player may read every active row. A feed. **Requires
+   *             `paging`**, which is the single most valuable rule in this file: it makes
+   *             the unbounded `findAll` structurally unreachable from a public table
+   *             rather than merely discouraged.
    * `members` — decided by `membership`, and the generic `get` is **not** registered:
    *             a membership read needs the parent id from the payload, which the
    *             generic filter path has no way to require. Supply a custom action and
    *             call `repo.isMember(...)`.
    */
-  read: 'owner' | 'members';
+  read: 'owner' | 'public' | 'members';
   /**
    * `owner`   — create/update/delete scoped to the row's citizenid.
    * `server`  — rows are written by the server, never the phone's owner. Nothing becomes
@@ -180,6 +184,50 @@ interface MembershipDefinition {
   liveWhileNull?: string;
 }
 
+/**
+ * Keyset pagination for a table whose row count is not bounded by one player.
+ *
+ * **Ordered by `id DESC`, and that is not configurable.** Four reasons, and they compound:
+ *
+ * `id` is the primary key, so in InnoDB it *is* the clustered index — `ORDER BY id DESC` is a
+ * backward scan with no sort step and no secondary lookup. `ORDER BY created_at DESC` needs
+ * an index of its own or it is a filesort over the whole table.
+ *
+ * The index it needs already exists. Every primary table emits `KEY status (status)`, and
+ * InnoDB appends the primary key to every secondary index — so that key *is* physically
+ * `(status, id)`, and `WHERE status = 'active' AND id < ? ORDER BY id DESC LIMIT ?` is a
+ * plain range scan on something already shipped.
+ *
+ * The cursor is one column and needs no tie-break, because `id` is unique by construction.
+ * A `created_at` cursor needs `(created_at < ? OR (created_at = ? AND id < ?))`: the column
+ * is second-resolution, two rows in the same second are routine, and the naive form silently
+ * drops one at every page boundary — a bug you find in production and never in a test.
+ *
+ * And `id` never changes, so editing a row cannot reorder a feed under a reader mid-scroll.
+ * A configurable `orderBy` would hand all four of those back.
+ *
+ * Not offset paging, either: a feed takes inserts at the head, so `OFFSET N` skips and
+ * duplicates rows across pages, and MySQL walks N rows to throw them away. Nothing in the
+ * phone has a jump-to-page control to pay for that with.
+ *
+ * The one caveat, noted rather than designed around: `AUTO_INCREMENT` is monotonic per table,
+ * but under `innodb_autoinc_lock_mode = 2` with *concurrent multi-row* inserts ids can be
+ * assigned out of commit order, so a paginating reader could in principle skip a row. The
+ * phone only ever inserts single rows, which serialize. `created_at` has the same exposure
+ * and worse, since its values actually collide.
+ */
+interface PagingDefinition {
+  /** Rows per page when the client does not ask. Default 50. */
+  pageSize?: number;
+  /** Ceiling on what a client may ask for. Default 100. */
+  maxPageSize?: number;
+}
+
+interface ResolvedPaging {
+  pageSize: number;
+  maxPageSize: number;
+}
+
 export interface ResolvedMembership {
   table: string;
   foreignKey: string;
@@ -195,6 +243,8 @@ export interface ServiceDefinition {
   table?: string;
   /** Defaults to `{ read: 'owner', write: 'owner' }`. */
   access?: AccessDefinition;
+  /** Keyset paging on the generic read. **Required** when `access.read` is `public`. */
+  paging?: PagingDefinition;
   schema: ServiceSchema;
   /** Values the `status` column accepts. Defaults to active/deleted. */
   statuses?: readonly string[];
@@ -243,6 +293,8 @@ export interface ResolvedService {
   access: Required<Pick<AccessDefinition, 'read' | 'write'>>;
   /** Resolved defaults filled in; null unless an axis is `members`. */
   membership: ResolvedMembership | null;
+  /** Resolved defaults filled in; null unless the service declared `paging`. */
+  paging: ResolvedPaging | null;
   statuses: readonly string[];
   /** Declared fields only, in declaration order — implicit columns excluded. */
   fields: { name: string; def: ColumnDef }[];
@@ -291,6 +343,35 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
    * Rejecting that would push it back to a hand-written predicate, which is the
    * duplication this whole declaration exists to remove.
    */
+
+  const paging: ResolvedPaging | null = definition.paging
+    ? {
+        pageSize: definition.paging.pageSize ?? 50,
+        maxPageSize: definition.paging.maxPageSize ?? 100
+      }
+    : null;
+
+  /**
+   * The rule that makes the unbounded read unreachable rather than merely discouraged.
+   *
+   * `Repository.findAll` returns every matching row, and until now the only thing bounding
+   * that was the citizenid predicate — one player's notes, one player's photos. A public
+   * table has no such bound, so it has to declare how it is paged before it can be read at
+   * all. Enforced here, at declaration time, because the alternative is finding out when a
+   * feed reaches a hundred thousand rows.
+   */
+  if (access.read === 'public' && !paging) {
+    throw new Error(
+      `defineService('${id}'): access.read is 'public' but no 'paging' is declared. A public ` +
+        'read has no per-player bound, so an unpaged one returns the whole table.'
+    );
+  }
+
+  if (paging && (paging.pageSize < 1 || paging.maxPageSize < paging.pageSize)) {
+    throw new Error(
+      `defineService('${id}'): paging needs pageSize >= 1 and maxPageSize >= pageSize.`
+    );
+  }
 
   const table = definition.table ?? `gphone_${id}`;
 
@@ -438,6 +519,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     table,
     access,
     membership,
+    paging,
     statuses,
     fields,
     indexes,
@@ -532,6 +614,8 @@ export function defineService<T>(definition: ServiceDefinition): ServerAppHandle
 
   const app = new ServiceEndpoint<T>(resolved.id, repo, {
     tableName: resolved.table,
+    ...(resolved.access.read === 'public' ? { publicRead: true } : {}),
+    ...(resolved.paging ? { paging: resolved.paging } : {}),
     ...accessLockdown,
     ...definition.options
   });

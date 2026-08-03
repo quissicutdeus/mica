@@ -572,6 +572,11 @@ a silent divergence breaks either security or writes. One schema drives both, pl
   shared is _visibility_. A table can need ownership-scoped writes and membership-scoped reads at the
   same time, and one value could not say that. Defaults to `{ read: 'owner', write: 'owner' }`.
   - **`read: 'owner'`** forces the caller's citizenid into the WHERE.
+  - **`read: 'public'`** drops the ownership predicate: any authenticated player reads every
+    active row. **It requires `paging`, and `defineService` throws without it** — which is the
+    highest-value rule in the file. `Repository.findAll` returns every matching row, and until
+    a public table existed the only thing bounding that was the citizenid predicate. A public
+    read has no per-player bound, so an unpaged one is the whole table.
   - **`read: 'members'`** does not register the generic `get` at all. A membership read needs the
     parent id, and the generic filter path has no way to require one — so the endpoint the old
     `shared` scope left registered could only ever have answered by ownership.
@@ -580,6 +585,25 @@ a silent divergence breaks either security or writes. One schema drives both, pl
     job, a dispatch, a bank alert. Nothing becomes client-writable and create/update are not
     registered. Delete stays, because the row still belongs to exactly one citizenid.
   - **`write: 'members'`** registers no generic mutation at all, for the same reason as the read.
+- **`paging` is keyset, on `id DESC`, and the order is not configurable.** Four reasons, and
+  they all come from `id` being the primary key: in InnoDB it _is_ the clustered index, so the
+  scan needs no sort step; every primary table already emits `KEY status (status)` and InnoDB
+  appends the PK to every secondary index, so that key is physically `(status, id)` and the feed
+  query is a plain range scan on something already shipped; the cursor is one column and needs no
+  tie-break, where a `created_at` cursor needs `(created_at < ? OR (created_at = ? AND id < ?))`
+  because the column is second-resolution and the naive form silently drops a row at every page
+  boundary; and `id` never changes, so editing a row cannot reorder a feed under a reader.
+  Not offset paging either — a feed takes inserts at the head, so `OFFSET N` skips and duplicates
+  across pages, and nothing in the phone has a jump-to-page control to pay for that with.
+  - Wire shape is a payload concern, so `get` stays `get` and `shared/routes.ts` needs nothing:
+    `{ cursor?, limit? }` in, `{ rows, nextCursor }` out. `nextCursor: null` means the end, and
+    a client must be able to tell that from "ask again" or the scroll never terminates.
+  - The cursor is a **bare row id**, validated by `requirePositiveInt`. It needs no signing — it
+    names a position in a result set the caller is already authorized to read — but it must never
+    name a _column_: the sort column comes from the declaration, and a payload offering one is
+    ignored rather than honoured.
+  - An over-large `limit` is clamped to `maxPageSize` rather than rejected. The request is
+    legitimate; only the number is not.
 - **`access.membership` declares how membership is decided, as data.** Never a SQL fragment: §2.9's
   identifier allowlist has to extend across the join, and a caller-supplied `where` is the exact hole
   it exists to close. `{ table, foreignKey, localKey?, citizenColumn?, liveWhileNull? }` derives the

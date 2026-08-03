@@ -161,7 +161,21 @@ export abstract class Repository<T> {
     return await Database.single<T>(query, params);
   }
 
-  async findAll(where: Partial<T> = {}): Promise<T[]> {
+  /**
+   * Every matching row, or one keyset page of them.
+   *
+   * `page` is optional and the unpaged form emits **byte-identical** SQL to what it always
+   * did — no `ORDER BY`, no `LIMIT`. That is deliberate rather than incidental: every
+   * owner-scoped caller is already bounded by its citizenid predicate, several
+   * `repositoryFactory` subclasses call `super.findAll(where)`, and `Repository.test.ts`
+   * asserts on the exact query string. Paging is what a table with no per-player bound
+   * needs, and only that table should pay for it.
+   *
+   * Ordered by `id DESC` when paged, which is not configurable — see `PagingDefinition`
+   * for why all four of its properties (clustered index, index already emitted,
+   * single-column cursor, immunity to edits) come from it being the primary key.
+   */
+  async findAll(where: Partial<T> = {}, page?: { limit?: number; cursor?: number }): Promise<T[]> {
     const filter = { ...where } as Record<string, unknown>;
     if (this.hasStatusColumn && !('status' in filter)) {
       filter.status = 'active';
@@ -171,9 +185,26 @@ export abstract class Repository<T> {
     this.assertColumns(keys, 'findAll');
     const values = keys.map((key) => filter[key]);
 
+    const conditions = keys.map((key) => `\`${key}\` = ?`);
+
+    // Strictly less-than, so a cursor names the last row already delivered rather than the
+    // first one still to come. Off by one here duplicates a row at every page boundary.
+    if (page?.cursor !== undefined) {
+      conditions.push('`id` < ?');
+      values.push(page.cursor);
+    }
+
     let query = `SELECT * FROM \`${this.tableName}\``;
-    if (keys.length > 0) {
-      query += ` WHERE ${keys.map((key) => `\`${key}\` = ?`).join(' AND ')}`;
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
+    }
+
+    if (page) {
+      query += ' ORDER BY `id` DESC';
+      if (page.limit !== undefined) {
+        query += ' LIMIT ?';
+        values.push(page.limit);
+      }
     }
 
     return await Database.query<T[]>(query, values);

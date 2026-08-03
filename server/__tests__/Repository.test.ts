@@ -296,3 +296,67 @@ describe('Repository — declared client policy', () => {
     expect(new TestRepo().tableColumns).toContain('citizenid');
   });
 });
+
+/**
+ * Keyset paging.
+ *
+ * Ordered by `id DESC` and not configurable — see `PagingDefinition`. These lock the parts
+ * that are easy to get subtly wrong and impossible to notice: the strictness of the cursor
+ * comparison, and the promise that an unpaged read is untouched.
+ */
+describe('Repository: keyset paging', () => {
+  beforeEach(() => {
+    dbMock.query.mockReset();
+    dbMock.query.mockResolvedValue([]);
+  });
+
+  it('emits byte-identical SQL when no page is asked for', async () => {
+    // The guarantee the whole optional-argument shape exists to keep. Owner-scoped reads are
+    // already bounded by their citizenid predicate, several repositoryFactory subclasses call
+    // super.findAll(where), and adding an unconditional ORDER BY would change all of them.
+    await new TestRepo().findAll({ citizenid: 'CIT_A' } as never);
+
+    expect(dbMock.query.mock.calls[0][0]).toBe(
+      'SELECT * FROM `gphone_test` WHERE `citizenid` = ? AND `status` = ?'
+    );
+    expect(dbMock.query.mock.calls[0][0]).not.toContain('ORDER BY');
+    expect(dbMock.query.mock.calls[0][0]).not.toContain('LIMIT');
+  });
+
+  it('orders by the primary key descending, and limits, when paged', async () => {
+    await new TestRepo().findAll({} as never, { limit: 30 });
+
+    const [sql, params] = dbMock.query.mock.calls[0];
+    expect(sql).toBe('SELECT * FROM `gphone_test` WHERE `status` = ? ORDER BY `id` DESC LIMIT ?');
+    expect(params).toEqual(['active', 30]);
+  });
+
+  it('compares the cursor strictly, so a page boundary does not repeat a row', async () => {
+    // `id <= ?` would re-deliver the row the previous page ended on, once per page, forever.
+    await new TestRepo().findAll({} as never, { limit: 10, cursor: 500 });
+
+    const [sql, params] = dbMock.query.mock.calls[0];
+    expect(sql).toContain('`id` < ?');
+    expect(sql).not.toContain('`id` <= ?');
+    expect(params).toEqual(['active', 500, 10]);
+  });
+
+  it('keeps the cursor bound rather than interpolated', async () => {
+    // A cursor is client-supplied. It is a value, so it parameterizes; the only identifier
+    // in the ORDER BY comes from the declaration, never from the payload.
+    await new TestRepo().findAll({} as never, { limit: 5, cursor: 42 });
+
+    expect(dbMock.query.mock.calls[0][0]).not.toContain('42');
+    expect(dbMock.query.mock.calls[0][1]).toContain(42);
+  });
+
+  it('pages a table with no other filter at all', async () => {
+    // A public feed with no status column and no owner predicate: the cursor has to be able
+    // to open the WHERE clause on its own rather than assuming something precedes it.
+    await new NoStatusRepo().findAll({} as never, { limit: 20, cursor: 7 });
+
+    expect(dbMock.query.mock.calls[0][0]).toBe(
+      'SELECT * FROM `player_ledger` WHERE `id` < ? ORDER BY `id` DESC LIMIT ?'
+    );
+  });
+});
