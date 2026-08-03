@@ -52,8 +52,10 @@ A rider posts a request, a driver accepts, the fare moves at drop-off.
 - **Blocked on:** a location capability. `location` is the other decorative permission — the
   only `GetEntityCoords` call in the tree drives the phone prop animation, and nothing is
   exposed to apps.
-- **Blocked on:** paying a player. `FrameworkPlayer` has `getMoney` and `removeMoney` and
-  **no `addMoney`** — money can only flow out of a player today (item 5).
+- **Payment is available now** (item 5): `FrameworkPlayer.addMoney` exists and
+  `server/lib/Payments.ts` has `transfer`. One restriction — **both players must be online**,
+  because crediting an offline player would mean writing the framework's own `players` table.
+  A driver paid at drop-off is online by definition, so this app is unaffected.
 - Wants the push channel (item 2) badly: "a driver accepted" is the entire product.
 - Membership-scoped rows (item 1) for the rider + driver pair.
 
@@ -61,8 +63,11 @@ A rider posts a request, a driver accepts, the fare moves at drop-off.
 
 List an item, browse, make an offer, buy.
 
-- **Blocked on:** the same missing `addMoney` / transfer primitive as the taxi app. A
-  marketplace that cannot pay a seller is a noticeboard.
+- **Partly unblocked** (item 5): `transfer` can pay a seller. But it refuses an offline
+  recipient, and a marketplace sale to a seller who logged off is the case that matters. The
+  fix is a gPhone-owned pending-payments table flushed on `playerLoaded` — a mailbox, which is
+  legitimate here because the money would sit in _our_ ledger rather than being pretended into
+  the framework's. Not built ahead of the app that needs it.
 - **Blocked on:** membership-scoped rows for an offer thread between buyer and seller
   (item 1), and public-read for the listing index.
 - Wants push (item 2) for "your listing sold" — a known, small recipient set, which is
@@ -85,9 +90,12 @@ Tracked separately; summarised here so the dependencies above resolve to somethi
    that an add-on cannot join.
 3. **A shared player directory** — resolving a citizenid to a display name, handle and
    avatar, including for offline players.
-4. **Abuse controls at the `ServiceEndpoint` chokepoint** — rate limiting, payload caps, and
-   the length validation the schema already declares but nothing enforces.
-5. **An economy primitive** — `addMoney`, and a transfer that audits and refunds on failure.
+4. **Abuse controls at the `ServiceEndpoint` chokepoint** — done. Rate limit at the transport
+   boundary, and per-column validation derived from the schema.
+5. **An economy primitive** — done. `addMoney` on both framework paths, failing closed, and
+   `transfer` with a compensating refund and a `PaymentOutcome` union that cannot be mistaken
+   for success. Best-effort, not ACID: there is no transaction spanning another resource's
+   money system. Offline recipients are refused rather than dropped.
 
 Also decorative and worth knowing about: **`location` and `network` are permissions with no
 capability behind them.** An app can declare either and nothing changes, because there is no

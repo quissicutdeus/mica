@@ -4,6 +4,19 @@ export interface FrameworkPlayer {
   phone?: string;
   getMoney(type: 'bank' | 'cash'): number;
   removeMoney(type: 'bank' | 'cash', amount: number): boolean;
+  /**
+   * Credit a player.
+   *
+   * Absent until now, which meant money could only ever flow *out* of a player: `getMoney`
+   * and `removeMoney` existed and nothing could pay anyone. A marketplace could take from a
+   * buyer and had no way to pay the seller, so it was a noticeboard.
+   *
+   * Fails **closed** like `removeMoney` — returns false when the framework exposes no handler
+   * — rather than the fail-open pattern `removeInventoryItem` uses. That trade is defensible
+   * for a consumable whose effect already happened; it is not defensible for money, where
+   * fail-open means inventing currency.
+   */
+  addMoney(type: 'bank' | 'cash', amount: number): boolean;
   setMeta(key: string, value: any): void;
   removeItem(item: string, count: number): boolean;
   rawPlayer: any;
@@ -49,6 +62,12 @@ export class FrameworkBridge {
             if (player.Functions?.RemoveMoney) return player.Functions.RemoveMoney(type, amount);
             return false;
           },
+          addMoney: (type: 'bank' | 'cash', amount: number) => {
+            if (player.Functions?.AddMoney) return player.Functions.AddMoney(type, amount);
+            if (resource('qbx_core')?.AddMoney)
+              return resource('qbx_core').AddMoney(src, type, amount);
+            return false;
+          },
           setMeta: (key: string, value: any) => {
             if (player.Functions?.SetMetaData) {
               player.Functions.SetMetaData(key, value);
@@ -88,6 +107,8 @@ export class FrameworkBridge {
               : (player.PlayerData?.money?.[type] ?? 0),
           removeMoney: (type: 'bank' | 'cash', amount: number) =>
             player.Functions?.RemoveMoney ? player.Functions.RemoveMoney(type, amount) : false,
+          addMoney: (type: 'bank' | 'cash', amount: number) =>
+            player.Functions?.AddMoney ? player.Functions.AddMoney(type, amount) : false,
           setMeta: (key: string, value: any) => {
             if (player.Functions?.SetMetaData) {
               player.Functions.SetMetaData(key, value);
