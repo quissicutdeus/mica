@@ -1,5 +1,5 @@
 import { writable, derived } from 'svelte/store';
-import type { Account, Blab, BlabEngagement } from '@shared/types';
+import type { Account, Blab, BlabEngagement, BlabberDm, BlabberDmThread } from '@shared/types';
 import { fetchNui } from '../nui/fetchNui';
 import { createPagedStore } from './createPagedStore';
 import { subscribeAppEvent } from '../shell/state/appEvents';
@@ -206,3 +206,60 @@ subscribeAppEvent('blabber', 'mention', () => {
 
 /** Called when the feed is read, since the mentions are in it. */
 export const clearUnreadMentions = (): void => unreadMentions.set(0);
+
+/**
+ * Direct messages. Strictly 1:1, so a thread is identified by the peer account rather than by a
+ * conversation row — there is no thread entity to create, and none to accidentally add a third
+ * person to.
+ */
+export const dmThreads = writable<BlabberDmThread[]>([]);
+export const dmMessages = writable<BlabberDm[]>([]);
+
+/** Unread DMs across every account, for the badge. */
+export const unreadDms = derived(dmThreads, (threads) =>
+  threads.reduce((total, thread) => total + thread.unread, 0)
+);
+
+export const loadDmThreads = async (): Promise<void> => {
+  dmThreads.set(await fetchNui<BlabberDmThread[]>('getDmThreads', {}, { defaultValue: [] }));
+};
+
+export const loadDmMessages = async (peerAccountId: number): Promise<void> => {
+  const accountId = getActiveAccountId();
+  if (accountId === null) return;
+  const reply = await fetchNui<{ rows: BlabberDm[] }>(
+    'getDmMessages',
+    { account_id: accountId, peer_account_id: peerAccountId },
+    { defaultValue: { rows: [] } }
+  );
+  dmMessages.set(reply.rows ?? []);
+
+  // Opening the thread is what marks it read, so the badge falls for the same reason the player
+  // would expect it to.
+  await fetchNui('markDmRead', { account_id: accountId, peer_account_id: peerAccountId });
+  await loadDmThreads();
+};
+
+export const sendDm = async (peerAccountId: number, body: string): Promise<void> => {
+  const accountId = getActiveAccountId();
+  if (accountId === null) throw new Error('Claim a handle first.');
+
+  const created = await fetchNui<BlabberDm>('sendDm', {
+    account_id: accountId,
+    peer_account_id: peerAccountId,
+    body
+  });
+  dmMessages.update((current) => [created, ...current]);
+  await loadDmThreads();
+};
+
+/**
+ * An incoming DM, subscribed at module scope.
+ *
+ * Same reasoning as the mention badge: the registry imports this file before anything mounts and
+ * the CEF page never unloads, so this survives the phone closing. A subscription inside the app
+ * would only see DMs that arrived while Blabber happened to be on screen.
+ */
+subscribeAppEvent('blabber', 'dm', () => {
+  void loadDmThreads();
+});

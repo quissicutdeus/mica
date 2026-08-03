@@ -16,7 +16,13 @@ import {
   postBlab,
   toggleLike,
   unreadMentions,
-  clearUnreadMentions
+  clearUnreadMentions,
+  dmMessages,
+  dmThreads,
+  loadDmMessages,
+  loadDmThreads,
+  sendDm,
+  unreadDms
 } from '../../services/blabber';
 
 /**
@@ -36,6 +42,12 @@ export function useBlabber() {
     engagement,
     unreadMentions,
     clearUnreadMentions: () => clearUnreadMentions(),
+    dmThreads,
+    dmMessages,
+    unreadDms,
+    loadDmThreads: () => loadDmThreads(),
+    loadDmMessages: (peerAccountId: number) => loadDmMessages(peerAccountId),
+    sendDm: (peerAccountId: number, body: string) => sendDm(peerAccountId, body),
     loadEngagement: (ids: number[]) => loadEngagement(ids),
     loadThread: (blabId: number) => loadThread(blabId),
     toggleLike: (blabId: number) => toggleLike(blabId),

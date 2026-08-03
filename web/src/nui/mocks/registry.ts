@@ -10,6 +10,7 @@ import {
 import type {
   Account,
   Blab,
+  BlabberDm,
   Contact,
   Conversation,
   Mail,
@@ -135,6 +136,20 @@ const mockBlabs: Blab[] = [
 
 const mockLikes: { blab_id: number; account_id: number }[] = [{ blab_id: 1, account_id: 2 }];
 
+const mockDms: BlabberDm[] = [
+  {
+    id: 1,
+    from_account: 2,
+    to_account: 1,
+    body: 'saw your post, funny stuff',
+    read_at: null,
+    status: 'active',
+    created_at: '2026-08-02T12:30:00Z',
+    updated_at: '2026-08-02T12:30:00Z'
+  }
+];
+
+let nextDmId = 50;
 let nextBlabId = 100;
 let nextAccountId = 10;
 
@@ -160,6 +175,59 @@ const mockRegistry: Record<string, MockHandler> = {
       (a) => a.app === 'blabber' && (handle === undefined || a.handle === handle)
     );
     return { rows: matches.slice(0, limit), nextCursor: null };
+  },
+
+  // Blabber DMs. 1:1, so a thread is the union of both directions between two accounts.
+  getDmThreads: () => {
+    const peers = new Map<number, (typeof mockDms)[number]>();
+    for (const dm of [...mockDms].sort((a, b) => b.id - a.id)) {
+      const peer = dm.from_account === 1 ? dm.to_account : dm.from_account;
+      if (!peers.has(peer)) peers.set(peer, dm);
+    }
+    return [...peers.entries()].map(([peer_account_id, last]) => {
+      const account = mockAccounts.find((a) => a.id === peer_account_id);
+      return {
+        peer_account_id,
+        handle: account?.handle ?? null,
+        display_name: account?.display_name ?? null,
+        last,
+        unread: mockDms.filter(
+          (d) => d.to_account === 1 && d.from_account === peer_account_id && !d.read_at
+        ).length
+      };
+    });
+  },
+  getDmMessages: ({ peer_account_id }: { peer_account_id: number }) => {
+    const rows = mockDms
+      .filter(
+        (d) =>
+          (d.from_account === 1 && d.to_account === peer_account_id) ||
+          (d.from_account === peer_account_id && d.to_account === 1)
+      )
+      .sort((a, b) => b.id - a.id);
+    return { rows, nextCursor: null };
+  },
+  sendDm: ({ peer_account_id, body }: { peer_account_id: number; body: string }) => {
+    const created = {
+      id: nextDmId++,
+      from_account: 1,
+      to_account: peer_account_id,
+      body,
+      read_at: null,
+      status: 'active' as const,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    mockDms.push(created);
+    return created;
+  },
+  markDmRead: ({ peer_account_id }: { peer_account_id: number }) => {
+    for (const dm of mockDms) {
+      if (dm.to_account === 1 && dm.from_account === peer_account_id) {
+        dm.read_at = new Date().toISOString();
+      }
+    }
+    return true;
   },
 
   // Blabber. Keyset paging on `id DESC`, matching the server: a cursor names the last row

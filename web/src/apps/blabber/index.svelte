@@ -18,6 +18,7 @@
   import ClaimHandle from './components/ClaimHandle.svelte';
   import Profile from './components/Profile.svelte';
   import Thread from './components/Thread.svelte';
+  import Messages from './components/Messages.svelte';
 
   let { onback }: AppProps = $props();
 
@@ -36,11 +37,14 @@
     loadEngagement,
     toggleLike,
     mouthBlab,
-    clearUnreadMentions
+    clearUnreadMentions,
+    unreadDms
   } = useBlabber();
   const { run, busy } = useAppAction();
 
-  let view = $state<'feed' | 'profile' | 'thread'>('feed');
+  let view = $state<'feed' | 'profile' | 'thread' | 'dms'>('feed');
+  /** Which correspondent's thread is open, or null for the inbox. */
+  let dmPeer = $state<number | null>(null);
   let profileHandle = $state<string | null>(null);
   let editing = $state<Blab | null>(null);
   /**
@@ -90,6 +94,11 @@
    * `replayed` distinguishes a catch-up from something that just happened: on mount the buffer
    * flushes whatever arrived while the app was unmounted, and that should not scroll the feed.
    */
+  const openDms = (peer: number | null = null) => {
+    dmPeer = peer;
+    view = 'dms';
+  };
+
   useAppEvents('blabber').on('mention', (event) => {
     clearUnreadMentions();
     if (!event.replayed) void feed.load({ reply_to: null });
@@ -115,7 +124,13 @@
         },
         title: () => 'Thread'
       },
-      { open: () => view === 'profile', close: () => (view = 'feed'), title: () => 'Profile' }
+      { open: () => view === 'profile', close: () => (view = 'feed'), title: () => 'Profile' },
+      {
+        open: () => view === 'dms' && dmPeer !== null,
+        close: () => (dmPeer = null),
+        title: () => 'Message'
+      },
+      { open: () => view === 'dms', close: () => (view = 'feed'), title: () => 'Messages' }
     ]
   });
 
@@ -169,7 +184,15 @@
 </script>
 
 <Screen title={app.title} onback={app.back}>
-  {#if view === 'thread' && threads.length > 0}
+  {#if view === 'dms'}
+    <Messages
+      handle={$activeAccount?.handle}
+      busy={$busy}
+      peer={dmPeer}
+      onopen={(peer) => (dmPeer = peer)}
+      onhandle={openProfile}
+    />
+  {:else if view === 'thread' && threads.length > 0}
     <Thread
       root={threads[threads.length - 1]}
       handle={$activeAccount?.handle}
@@ -195,6 +218,24 @@
         })}
     />
   {:else}
+    <div class="flex items-center justify-between border-b border-gray-800 px-3 py-2">
+      <p class="text-xs text-gray-500">
+        Posting as <span class="text-sky-400">@{$activeAccount?.handle ?? ''}</span>
+      </p>
+      <button
+        type="button"
+        class="relative flex items-center gap-1.5 text-xs text-sky-400 hover:underline"
+        onclick={() => openDms(null)}
+      >
+        Messages
+        {#if $unreadDms > 0}
+          <span class="rounded-full bg-sky-500 px-1.5 text-[10px] font-bold text-white">
+            {$unreadDms}
+          </span>
+        {/if}
+      </button>
+    </div>
+
     {#if $myAccounts.length > 1}
       <div class="border-b border-gray-800 p-2">
         <SegmentedControl

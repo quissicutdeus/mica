@@ -59,6 +59,13 @@ export const ROUTES: readonly Route[] = [
   route('likeBlab', 'blabber', 'like'),
   route('unlikeBlab', 'blabber', 'unlike'),
 
+  // Blabber DMs. Strictly 1:1, so a thread is identified by the peer account rather than by a
+  // conversation row.
+  route('getDmThreads', 'blabber_dms', 'threads'),
+  route('getDmMessages', 'blabber_dms', 'get'),
+  route('sendDm', 'blabber_dms', 'send'),
+  route('markDmRead', 'blabber_dms', 'read'),
+
   // Contacts
   route('getContacts', 'contacts', 'get'),
   route('createContact', 'contacts', 'create'),

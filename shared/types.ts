@@ -191,6 +191,36 @@ export interface BlabEngagement {
   mouthedByMe: boolean;
 }
 
+/**
+ * One direct message in Blabber. Strictly between two accounts.
+ *
+ * 1:1 by construction — two account columns and no participants table, so there is no shape a
+ * third person could be added to. Identity is the *account*, not the citizenid, so two alts can
+ * talk without either learning who is behind the other.
+ */
+export interface BlabberDm {
+  id: number;
+  /** The sender's owner. Never crosses to the other party. */
+  citizenid?: string;
+  from_account: number;
+  to_account: number;
+  body: string;
+  /** Null until the recipient opens the thread. */
+  read_at?: Date | string | null;
+  status?: 'active' | 'deleted' | 'moderated';
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+/** One correspondent in the DM inbox, with the last thing said and what is unread. */
+export interface BlabberDmThread {
+  peer_account_id: number;
+  handle: string | null;
+  display_name: string | null;
+  last: BlabberDm | null;
+  unread: number;
+}
+
 export interface Note {
   id: number;
   citizenid: string;

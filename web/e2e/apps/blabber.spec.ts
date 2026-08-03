@@ -119,4 +119,36 @@ test.describe('Blabber', () => {
     await page.getByRole('button', { name: 'Post', exact: true }).click();
     await expect(page.locator('text=and again')).toBeVisible();
   });
+
+  test('opens a DM thread from the inbox and replies', async ({ page }) => {
+    await page.getByRole('button', { name: /Messages/ }).click();
+
+    // One correspondent in the fixture, with an unread message.
+    await expect(page.locator('text=saw your post')).toBeVisible();
+    await page.locator('button', { hasText: 'nightowl' }).click();
+
+    await page.locator('textarea').fill('thanks!');
+    await page.getByRole('button', { name: 'Post', exact: true }).click();
+
+    await expect(page.locator('text=thanks!')).toBeVisible();
+  });
+
+  test('a pushed mention raises a toast and moves the badge', async ({ page }) => {
+    // Straight down the real `appEvent` path via the dev harness, rather than reaching into the
+    // bus — a harness that skipped the parsing would let a malformed envelope look fine in dev.
+    await page.evaluate(() =>
+      window.pushAppEvent?.(
+        'blabber',
+        'mention',
+        { blab_id: 1 },
+        {
+          type: 'info',
+          title: '@nightowl mentioned you',
+          message: 'over here'
+        }
+      )
+    );
+
+    await expect(page.locator('text=@nightowl mentioned you')).toBeVisible();
+  });
 });
