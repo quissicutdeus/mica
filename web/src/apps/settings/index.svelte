@@ -9,7 +9,8 @@
     Screen,
     ChevronRightIcon,
     useDevTools,
-    useTimer
+    useTimer,
+    type AppProps
   } from '@gphone/sdk';
   import About from './panes/About.svelte';
   import Display from './panes/Display.svelte';
@@ -17,7 +18,7 @@
   import Shortcuts from './panes/Shortcuts.svelte';
   import Sound from './panes/Sound.svelte';
 
-  let { onback } = $props<{ onback?: () => void }>();
+  let { onback }: AppProps = $props();
 
   const { fetchPhoneNumber } = useAccount();
   const { toast } = usePhoneNotification();
@@ -49,7 +50,7 @@
   const app = useAppLevels({
     appId: 'settings',
     title: 'Settings',
-    onback: () => onback?.(),
+    onback: () => onback(),
     levels: [
       {
         open: () => pane !== 'root',

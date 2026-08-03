@@ -12,20 +12,21 @@
     ArchiveIcon,
     EmptyMailIcon,
     TrashIcon,
-    formatRelativeTime
+    formatRelativeTime,
+    type AppProps
   } from '@gphone/sdk';
 
   const { mailStore } = useMail();
   const mailLoaded = mailStore.loaded;
 
-  let { onback, mailId } = $props<{ onback?: () => void; mailId?: number }>();
+  let { onback, mailId }: AppProps & { mailId?: number } = $props();
   let selectedMail = $state<Mail | null>(null);
   let activeTab = $state<'inbox' | 'archive'>('inbox');
 
   const app = useAppLevels({
     appId: 'mail',
     title: () => (activeTab === 'inbox' ? 'Mail' : 'Archived Mail'),
-    onback: () => onback?.(),
+    onback: () => onback(),
     levels: [{ open: () => !!selectedMail, close: closeDetail, title: 'Message' }]
   });
 

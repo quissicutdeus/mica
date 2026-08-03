@@ -19,7 +19,8 @@
     renderMarkdown,
     useAppAction,
     useAppLevels,
-    useTimer
+    useTimer,
+    type AppProps
   } from '@gphone/sdk';
 
   const { notesStore: notes } = useNotes();
@@ -28,7 +29,7 @@
   const { after } = useTimer();
   import { fade } from 'svelte/transition';
 
-  let { onback } = $props();
+  let { onback }: AppProps = $props();
 
   let selectedNote: Note | null = $state(null);
   let draftNote: Note | null = $state(null); // Draft state for editing
@@ -48,7 +49,7 @@
   const app = useAppLevels({
     appId: 'notes',
     title: 'Notes',
-    onback: () => onback?.(),
+    onback: () => onback(),
     levels: [
       {
         open: () => showDeleteConfirm,

@@ -2,6 +2,7 @@ import { vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 import type { Component } from 'svelte';
 import { currentApp } from '../shell/state/navigation';
+import type { AppComponent, AppProps } from './manifest';
 
 /**
  * Test-only SDK surface. **Not exported from `@gphone/sdk`** — importing this pulls in
@@ -41,7 +42,7 @@ export interface RenderAppOptions<Props> {
  *   in the same file — the second test inherits the first one's completed fetch and
  *   never sees the loading frame. Which stores those are is app-specific.
  */
-export function renderApp<Props extends Record<string, unknown>>(
+export function renderApp<Props extends AppProps>(
   App: Component<Props>,
   { id, props }: RenderAppOptions<Props>
 ) {
@@ -51,14 +52,11 @@ export function renderApp<Props extends Record<string, unknown>>(
 
   const onback = vi.fn();
 
-  // The casts are the price of injecting `onback` into a component whose prop type is
-  // still a generic here. Apps disagree on whether `onback` is optional — six declare a
-  // bare `$props()` and the seven that type it are split — and there is no `AppProps` to
-  // appeal to, since `Shell.svelte` renders every app as `any`. The public signature
-  // above stays honest: callers get their own component's props checked.
-  const result = render(App as unknown as Component<Record<string, unknown>>, {
-    props: { onback, ...props } as Record<string, unknown>
-  });
+  // One cast, and only because `Props` is still open here: the compiler cannot know that
+  // `{ onback, ...props }` covers whatever an individual app added on top of `AppProps`.
+  // The bound above is what carries the guarantee — a component that does not accept
+  // `onback` is no longer something this function will take.
+  const result = render(App as AppComponent, { props: { onback, ...props } as AppProps });
 
   // Returned so a test can assert the app leaves when asked, which is the one prop every
   // app takes and the easiest to wire backwards.

@@ -1,9 +1,16 @@
 <script lang="ts">
-  import { EmptyState, Screen, Skeleton, onAppForeground, useAccount } from '@gphone/sdk';
+  import {
+    EmptyState,
+    Screen,
+    Skeleton,
+    onAppForeground,
+    useAccount,
+    type AppProps
+  } from '@gphone/sdk';
   import CreditCard from './components/CreditCard.svelte';
   import TransactionItem from './components/TransactionItem.svelte';
 
-  let { onback } = $props();
+  let { onback }: AppProps = $props();
 
   const {
     bankBalance,

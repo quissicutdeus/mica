@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import type { AppComponent } from '@gphone/sdk';
 import { get } from 'svelte/store';
 import { appRegistryStore, registeredApps, getFirstBootTime, type AppManifest } from './registry';
 
@@ -25,7 +26,9 @@ describe('App Registry Store', () => {
       color: '#f59e0b',
       icon: null
     };
-    const mockComponent = {};
+    // Registry bookkeeping only — nothing here renders, so a stub stands in for the
+    // component the registry now insists on having.
+    const mockComponent = {} as unknown as AppComponent;
 
     appRegistryStore.registerApp(mockManifest, mockComponent);
 

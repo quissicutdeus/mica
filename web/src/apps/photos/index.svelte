@@ -15,16 +15,17 @@
     useAppLevels,
     useDeepLink,
     usePhotos,
-    usePhoneNotification
+    usePhoneNotification,
+    type AppProps
   } from '@gphone/sdk';
   import type { Photo } from '@shared/types';
   import { fade } from 'svelte/transition';
 
-  let { onback, initialPhoto, initialPhotoId } = $props<{
-    onback?: () => void;
-    initialPhoto?: Photo;
-    initialPhotoId?: number;
-  }>();
+  let {
+    onback,
+    initialPhoto,
+    initialPhotoId
+  }: AppProps & { initialPhoto?: Photo; initialPhotoId?: number } = $props();
 
   const { photos, deletePhoto } = usePhotos();
   const photosLoaded = photos.loaded;
@@ -110,7 +111,7 @@
   const app = useAppLevels({
     appId: 'photos',
     title: 'Photos',
-    onback: () => onback?.(),
+    onback: () => onback(),
     levels: [
       { open: () => reporting, close: () => (reporting = false) },
       { open: () => showDeleteConfirm, close: () => (showDeleteConfirm = false) },

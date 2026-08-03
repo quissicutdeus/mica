@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { useAppLevels, useSound, Screen, BackspaceIcon } from '@gphone/sdk';
+  import { useAppLevels, useSound, Screen, BackspaceIcon, type AppProps } from '@gphone/sdk';
 
-  let { onback } = $props();
+  let { onback }: AppProps = $props();
 
   const { play } = useSound();
 
@@ -12,7 +12,7 @@
   const app = useAppLevels({
     appId: 'calculator',
     title: 'Calculator',
-    onback: () => onback?.(),
+    onback: () => onback(),
     levels: [{ open: () => display !== '0', close: () => handleBackspace() }]
   });
   let firstOperand: number | null = $state(null);

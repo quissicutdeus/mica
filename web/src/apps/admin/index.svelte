@@ -7,11 +7,12 @@
     useAppAction,
     useReports,
     onAppForeground,
-    formatRelativeTime
+    formatRelativeTime,
+    type AppProps
   } from '@gphone/sdk';
   import type { Report } from '@shared/types';
 
-  let { onback } = $props<{ onback?: () => void }>();
+  let { onback }: AppProps = $props();
 
   const { busy, run } = useAppAction();
   const {

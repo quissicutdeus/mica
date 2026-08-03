@@ -9,13 +9,14 @@
     KeypadIcon,
     MicrophoneIcon,
     PhoneIcon,
-    SpeakerIcon
+    SpeakerIcon,
+    type AppProps
   } from '@gphone/sdk';
 
   const { callStore } = useCall();
   const { contactsStore, favoriteContacts } = useContacts();
 
-  let { onback } = $props();
+  let { onback }: AppProps = $props();
 
   let enteredNumber = $state('');
   /** The DTMF pad shown over an active call. Local only. */

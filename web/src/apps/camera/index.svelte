@@ -13,7 +13,8 @@
     CloseIcon,
     FlipCameraIcon,
     PhotoIcon,
-    isBrowser
+    isBrowser,
+    type AppProps
   } from '@gphone/sdk';
 
   const { isTakingPhoto, isPreviewingPhoto } = useCamera();
@@ -25,7 +26,7 @@
   import { sampleAvatars } from './mockViewfinder';
   import { onDestroy } from 'svelte';
 
-  let { onback } = $props<{ onback: () => void }>();
+  let { onback }: AppProps = $props();
 
   const { fetchNui, useNuiEvent } = useNuiBridge();
 

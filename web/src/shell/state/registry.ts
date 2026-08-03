@@ -1,5 +1,5 @@
 import { get, writable } from 'svelte/store';
-import { type AppManifest, clearAppStorage, defineApp } from '@gphone/sdk';
+import { type AppComponent, type AppManifest, clearAppStorage, defineApp } from '@gphone/sdk';
 import { messageOf } from '../../lib/errors';
 
 export type { AppManifest } from '@gphone/sdk';
@@ -30,7 +30,7 @@ const firstBoot = getFirstBootTime();
 
 // Parse manifests
 const loadedApps: AppManifest[] = [];
-const componentRegistry: Record<string, any> = {};
+const componentRegistry: Record<string, AppComponent> = {};
 
 for (const path in manifestFiles) {
   const rawManifest = (manifestFiles[path] as any).default as AppManifest;
@@ -99,7 +99,7 @@ function createAppRegistry() {
 
   const store = {
     subscribe,
-    registerApp: (manifest: AppManifest, component: any) => {
+    registerApp: (manifest: AppManifest, component: AppComponent) => {
       const validatedManifest = defineApp(manifest);
 
       if (
@@ -159,7 +159,7 @@ function createAppRegistry() {
       clearAppStorage(appId);
       update((apps) => apps.filter((a) => a.id !== appId));
     },
-    getComponent: (appId: string) => componentRegistry[appId],
+    getComponent: (appId: string): AppComponent | undefined => componentRegistry[appId],
     /**
      * The manifest for an installed app.
      *

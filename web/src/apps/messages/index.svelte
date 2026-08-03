@@ -34,7 +34,8 @@
     TrashIcon,
     filterByQuery,
     formatRelativeTime,
-    useScrollDetect
+    useScrollDetect,
+    type AppProps
   } from '@gphone/sdk';
   import { fly } from 'svelte/transition';
   import type { Contact, Photo } from '@shared/types';
@@ -50,12 +51,12 @@
   import MessageThread from './components/MessageThread.svelte';
   import ConversationDetailsModal from './components/ConversationDetailsModal.svelte';
 
-  let { onback, initialContact, conversationId, phone } = $props<{
-    onback?: () => void;
-    initialContact?: Contact;
-    conversationId?: number;
-    phone?: string;
-  }>();
+  let {
+    onback,
+    initialContact,
+    conversationId,
+    phone
+  }: AppProps & { initialContact?: Contact; conversationId?: number; phone?: string } = $props();
 
   // Local state for UI
   let selectedConversationId: number | null = $state(null);
@@ -176,7 +177,7 @@
       if (selectedConversationId) return 'Chat';
       return viewingArchive ? 'Archived Messages' : 'Messages';
     },
-    onback: () => onback?.(),
+    onback: () => onback(),
     levels: [
       { open: () => showDetailsModal, close: () => (showDetailsModal = false) },
       { open: () => showPhotoPicker, close: () => (showPhotoPicker = false) },

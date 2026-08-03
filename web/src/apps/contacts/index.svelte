@@ -31,7 +31,8 @@
     filterByQuery,
     formatRelativeTime,
     useScrollDetect,
-    useAppLevels
+    useAppLevels,
+    type AppProps
   } from '@gphone/sdk';
   import ContactDetails from './components/ContactDetails.svelte';
   import ContactForm from './components/ContactForm.svelte';
@@ -41,7 +42,7 @@
   const { callStore } = useCall();
   const { conversationsStore } = useMessages();
 
-  let { onback } = $props();
+  let { onback }: AppProps = $props();
 
   const { contactsStore, favoriteContacts } = useContacts();
   const { photos } = usePhotos();
@@ -126,7 +127,7 @@
   const app = useAppLevels({
     appId: 'contacts',
     title: 'Contacts',
-    onback: () => onback?.(),
+    onback: () => onback(),
     levels: [
       { open: () => showPhotoPicker, close: () => (showPhotoPicker = false) },
       { open: () => isEditing, close: () => (isEditing = false) },

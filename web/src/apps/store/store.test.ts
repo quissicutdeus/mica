@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import manifest from './manifest';
 import { useAppRegistry } from '@gphone/sdk';
 import { renderApp } from '@gphone/sdk/testing';
+import type { AppComponent } from '@gphone/sdk';
 import { get } from 'svelte/store';
 
 vi.mock('../../nui/fetchNui', () => ({
@@ -13,6 +14,10 @@ import Store from './index.svelte';
 
 const { registryStore: appRegistryStore } = useAppRegistry();
 
+// The registry insists on a component now. These three cases are about bookkeeping —
+// registration, lookup, and the system-app guard — and never mount anything.
+const stubComponent = {} as unknown as AppComponent;
+
 describe('Store Module', () => {
   it('exports a valid system app manifest', () => {
     expect(manifest.id).toBe('store');
@@ -23,7 +28,7 @@ describe('Store Module', () => {
   });
 
   it('is registered in appRegistryStore automatically', () => {
-    appRegistryStore.registerApp(manifest, {});
+    appRegistryStore.registerApp(manifest, stubComponent);
     const apps = get(appRegistryStore);
     const storeApp = apps.find((a) => a.id === 'store');
     expect(storeApp).toBeDefined();
@@ -31,7 +36,7 @@ describe('Store Module', () => {
   });
 
   it('prohibits unregistering the Store system app', () => {
-    appRegistryStore.registerApp(manifest, {});
+    appRegistryStore.registerApp(manifest, stubComponent);
     expect(() => appRegistryStore.unregisterApp('store')).toThrow(
       "gPhone App Registry error: Unregistering system app 'store' is prohibited."
     );

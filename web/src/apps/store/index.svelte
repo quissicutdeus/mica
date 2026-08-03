@@ -5,14 +5,15 @@
     type AppManifest,
     ConfirmDialog,
     SegmentedControl,
-    useAppAction
+    useAppAction,
+    type AppProps
   } from '@gphone/sdk';
   import { CATALOG_APPS, isSystemApp } from './appInfo';
   import AppDetails from './components/AppDetails.svelte';
   import CatalogList from './components/CatalogList.svelte';
   import InstalledList from './components/InstalledList.svelte';
 
-  let { onback } = $props<{ onback?: () => void }>();
+  let { onback }: AppProps = $props();
 
   const { registryStore, unregisterApp, registerApp } = useAppRegistry();
   const { openApp: openPhoneApp } = useNavigation();
