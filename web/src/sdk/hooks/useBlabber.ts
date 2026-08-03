@@ -14,7 +14,9 @@ import {
   mouthBlab,
   myAccounts,
   postBlab,
-  toggleLike
+  toggleLike,
+  unreadMentions,
+  clearUnreadMentions
 } from '../../services/blabber';
 
 /**
@@ -32,6 +34,8 @@ export function useBlabber() {
     activeAccountId,
     editWindow,
     engagement,
+    unreadMentions,
+    clearUnreadMentions: () => clearUnreadMentions(),
     loadEngagement: (ids: number[]) => loadEngagement(ids),
     loadThread: (blabId: number) => loadThread(blabId),
     toggleLike: (blabId: number) => toggleLike(blabId),

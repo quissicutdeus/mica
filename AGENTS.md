@@ -544,6 +544,43 @@ do not "fix" it by changing the port or the config.
 
 ---
 
+### A server push touches four files
+
+Mirroring the NUI round trip above, and failing just as silently if one is missing —
+`server/__tests__/appEventContract.test.ts` is what catches that.
+
+| File                           | Does                                                                |
+| ------------------------------ | ------------------------------------------------------------------- |
+| `shared/appEvents.ts`          | The one net event name, the NUI action, and `parseAppEventEnvelope` |
+| `server/lib/appEvents.ts`      | `appEventChannel(appId).push(...)`, returning a `PushOutcome`       |
+| `client/services/AppEvents.ts` | Forwards the envelope into the NUI. Not `ServiceProxy`              |
+| `web/src/shell/nuiMessages.ts` | The one generic `appEvent` route, dispatching by app id             |
+
+Then an app subscribes with `useAppEvents(appId)`.
+
+**One net event, `gphone:client:shell:appEvent`, and it is a literal.** `eventNames.test.ts`
+scans for string literals, so a templated per-app name would be an _unchecked_ name. `shell` is
+the segment because the transport belongs to the phone rather than any app; the target rides in
+the envelope.
+
+**Where you subscribe decides whether you can miss anything.** The CEF page loads at resource
+start and never unloads — closing the phone destroys the components, not the module scope. So a
+subscription in an app's **store** is permanent and is what a `badgeStore` must be fed from,
+while one **inside a component** lives as long as the component and is replayed from a bounded
+per-app buffer on mount. Residency is a subscription-lifetime question, not a delivery one.
+
+**At-most-once, ordered within a session, best-effort across sessions.** Nothing is queued
+server-side: the row that occasioned the push is already written, so an offline player gets it
+from the ordinary fetch. §11.6 still applies — a push does not excuse `onAppForeground`, and the
+contract test enforces that for any app that subscribes. `push` returns a discriminated
+`PushOutcome` precisely so `offline` cannot be read as delivered.
+
+**`notifications` gates the toast, not the data.** Withholding the payload would be theatre —
+the app can fetch the same rows through its own service — but the disclosure stays true at
+runtime.
+
+---
+
 ## 9. Definition of done
 
 Run these from the repo root before reporting any code change complete (§2.8). All four, in any

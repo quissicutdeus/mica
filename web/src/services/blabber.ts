@@ -2,6 +2,7 @@ import { writable, derived } from 'svelte/store';
 import type { Account, Blab, BlabEngagement } from '@shared/types';
 import { fetchNui } from '../nui/fetchNui';
 import { createPagedStore } from './createPagedStore';
+import { subscribeAppEvent } from '../shell/state/appEvents';
 
 /**
  * Blabber's data: a paged public feed, plus the accounts the player can post from.
@@ -187,3 +188,21 @@ export const loadThread = async (
     { reply_to: blabId },
     { defaultValue: { rows: [], nextCursor: null } }
   );
+
+/**
+ * Unread mentions, for the launcher badge.
+ *
+ * Subscribed at **module scope**, which is the load-bearing part. The registry imports this file
+ * before anything mounts and the CEF page never unloads, so this subscription outlives every
+ * open/close of the phone — a badge fed from inside a component would only count mentions that
+ * arrived while the app happened to be on screen, which is precisely when a badge stops
+ * mattering.
+ */
+export const unreadMentions = writable(0);
+
+subscribeAppEvent('blabber', 'mention', () => {
+  unreadMentions.update((n) => n + 1);
+});
+
+/** Called when the feed is read, since the mentions are in it. */
+export const clearUnreadMentions = (): void => unreadMentions.set(0);

@@ -4,6 +4,7 @@ export * from './lifecycle';
 export * from './useAccount';
 export * from './useAdmin';
 export * from './useAppAction';
+export * from './useAppEvents';
 export * from './useAppLevels';
 export * from './useAppRegistry';
 export * from './useBlabber';

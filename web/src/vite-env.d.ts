@@ -20,6 +20,13 @@ declare const __MICA_BUILD_INFO__: string;
  * browser console.
  */
 interface Window {
+  /** Dev harness: fire a server push without a server. See `devHarness.ts`. */
+  pushAppEvent?: (
+    app: string,
+    event: string,
+    payload?: Record<string, unknown>,
+    notify?: unknown
+  ) => void;
   /** Present only inside CEF. Its absence is what `isBrowser()` checks. */
   invokeNative?: unknown;
   GetParentResourceName?: () => string;

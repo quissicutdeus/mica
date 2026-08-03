@@ -6,6 +6,7 @@
     Skeleton,
     onAppForeground,
     useAppAction,
+    useAppEvents,
     useAppLevels,
     useBlabber,
     usePagedList,
@@ -34,7 +35,8 @@
     engagement,
     loadEngagement,
     toggleLike,
-    mouthBlab
+    mouthBlab,
+    clearUnreadMentions
   } = useBlabber();
   const { run, busy } = useAppAction();
 
@@ -76,6 +78,22 @@
 
   let hasMoreSnapshot = $state(false);
   feed.hasMore.subscribe((value) => (hasMoreSnapshot = value));
+
+  /**
+   * A mention arriving while the app is on screen.
+   *
+   * Component-scoped on purpose: this is the *live* half. The badge is fed by a module-scope
+   * subscription in the store, which is what keeps it correct while the app is closed — here the
+   * player is already looking, so the useful response is to pull the new Blab in and drop the
+   * badge rather than raise a count they can see the cause of.
+   *
+   * `replayed` distinguishes a catch-up from something that just happened: on mount the buffer
+   * flushes whatever arrived while the app was unmounted, and that should not scroll the feed.
+   */
+  useAppEvents('blabber').on('mention', (event) => {
+    clearUnreadMentions();
+    if (!event.replayed) void feed.load({ reply_to: null });
+  });
 
   const app = useAppLevels({
     appId: 'blabber',

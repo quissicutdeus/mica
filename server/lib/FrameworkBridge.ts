@@ -179,16 +179,33 @@ export class FrameworkBridge {
    * Everything else here goes the other way, from a source to their data.
    */
   public static getSourceByCitizenId(citizenid: string): number | null {
-    if (!citizenid) return null;
+    return FrameworkBridge.getSourcesByCitizenId([citizenid]).get(citizenid) ?? null;
+  }
+
+  /**
+   * Server ids for many citizenids, from one snapshot.
+   *
+   * `getSourceByCitizenId` walks `getAllPlayers()` per call, so notifying forty followers was
+   * forty full walks. One pass here, and the single lookup is reimplemented on top so there is
+   * still only one place that knows the framework's shape.
+   */
+  public static getSourcesByCitizenId(citizenids: readonly string[]): Map<string, number> {
+    const found = new Map<string, number>();
+    if (citizenids.length === 0) return found;
+
+    const wanted = new Set(citizenids.filter(Boolean));
+    if (wanted.size === 0) return found;
+
     try {
       const players = FrameworkBridge.getAllPlayers();
       for (const src in players) {
-        if (players[src]?.PlayerData?.citizenid === citizenid) return parseInt(src, 10);
+        const citizenid = players[src]?.PlayerData?.citizenid;
+        if (citizenid && wanted.has(citizenid)) found.set(citizenid, parseInt(src, 10));
       }
     } catch (error) {
-      console.error(`[FrameworkBridge] Error finding source for ${citizenid}:`, error);
+      console.error('[FrameworkBridge] Error resolving sources:', error);
     }
-    return null;
+    return found;
   }
 
   public static getPlayerByPhone(phone: string): FrameworkPlayer | null {

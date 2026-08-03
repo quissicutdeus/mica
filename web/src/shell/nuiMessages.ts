@@ -7,6 +7,8 @@ import { setSignal } from './state/signal';
 import { time, type TimeState } from './state/time';
 import { toast, type ToastMessage } from './state/toast';
 import { messageOf } from '../lib/errors';
+import { APP_EVENT_NUI_ACTION, parseAppEventEnvelope } from '@shared/appEvents';
+import { deliverAppEvent } from './state/appEvents';
 
 /**
  * A message that arrived from the client, as something with readable fields.
@@ -159,7 +161,55 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     });
   };
 
+  /**
+   * The one route that is not a fixed name.
+   *
+   * `setTime`, `setCharge` and `setSignal` genuinely are a closed shell set and stay hardcoded.
+   * App-space stops being one: a new app joins by subscribing at runtime, with nothing added
+   * here — which is the whole point, because an add-on installed from the Store cannot edit this
+   * file (`sdk/boundary.test.ts` forbids importing outside `@gphone/sdk`).
+   */
+  const appEvent = (data: unknown) => {
+    const envelope = parseAppEventEnvelope(data);
+    if (!envelope) return;
+
+    // Data first, unconditionally. The permission gates the *toast*, not the payload.
+    deliverAppEvent(envelope);
+
+    if (!envelope.notify) return;
+
+    /**
+     * `notifications` gates the toast and nothing else.
+     *
+     * Withholding the data would be theatre: the app can fetch the same rows through its own
+     * service, and §7 already says permissions are a disclosure rather than a sandbox. What this
+     * buys is that the disclosure stays *true* at runtime — an app that did not declare it does
+     * not get to interrupt the player.
+     */
+    const manifest = appRegistryStore.getManifest(envelope.app);
+    if (!manifest?.permissions?.includes('notifications')) {
+      if (import.meta.env.DEV) {
+        console.warn(
+          `[appEvent] '${envelope.app}' asked for a toast without declaring 'notifications'.`
+        );
+      }
+      return;
+    }
+
+    toast.show({
+      type: envelope.notify.type ?? 'info',
+      title: envelope.notify.title,
+      message: envelope.notify.message,
+      avatar: envelope.notify.avatar,
+      // One rule, no options: tapping opens the app with the payload as deep-link props.
+      // `openApp` merges them and `consumeAppProps` makes them one-shot, so this composes with
+      // `useDeepLink` for free.
+      onClick: () => bridge.openFromNotification(envelope.app, envelope.payload)
+    });
+  };
+
   const routes: Record<string, (data: unknown) => void> = {
+    [APP_EVENT_NUI_ACTION]: appEvent,
     setTime: (data) => time.set(data as TimeState),
     setCharge: (data) => {
       if (typeof data === 'number') charge.set(data);

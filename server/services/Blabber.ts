@@ -3,6 +3,8 @@ import { ownedAccount } from './Accounts';
 import { Blab } from '@shared/types';
 import { fields, optionalString, requirePositiveInt } from '../lib/payload';
 import { Database } from '../lib/Database';
+import { appEventChannel } from '../lib/appEvents';
+import { mentionedHandles } from '@shared/richText';
 
 /** The app id, which is also the handle namespace accounts are claimed in. */
 const APP = 'blabber';
@@ -143,6 +145,7 @@ export const blabber = defineService<Blab>({
 
 const app = blabber.app;
 const repo = blabber.repo;
+const channel = appEventChannel(APP);
 
 const EDIT_WINDOW_CONVAR = 'gphone_blabber_edit_window';
 
@@ -160,6 +163,41 @@ const EDIT_WINDOW_CONVAR = 'gphone_blabber_edit_window';
 const editWindowSeconds = (): number => {
   const raw = Number.parseInt(GetConvar(EDIT_WINDOW_CONVAR, '900'), 10);
   return Number.isFinite(raw) && raw > 0 ? raw : 900;
+};
+
+/**
+ * Notify every account mentioned in a Blab, once per owner.
+ *
+ * Handles resolve to accounts, and accounts to citizenids — several handles can belong to one
+ * player, so the fan-out is deduplicated by owner rather than by handle. Being mentioned twice
+ * in one post is one notification.
+ *
+ * Self-mentions are dropped: telling somebody they said their own name is noise.
+ *
+ * `pushMany` takes one `getAllPlayers()` snapshot for the whole set. Offline recipients are
+ * skipped rather than queued — the row is written, so they get it from the ordinary fetch, which
+ * is the rule §11.6 already states for message delivery.
+ */
+const notifyMentions = async (body: string, fromHandle: string, blabId: number): Promise<void> => {
+  const handles = mentionedHandles(body).filter((handle) => handle !== fromHandle);
+  if (handles.length === 0) return;
+
+  const placeholders = handles.map(() => '?').join(', ');
+  const rows = await Database.query<{ citizenid: string }[]>(
+    `SELECT DISTINCT \`citizenid\` FROM \`gphone_accounts\`
+     WHERE \`app\` = ? AND \`status\` = 'active' AND \`handle\` IN (${placeholders})`,
+    [APP, ...handles.slice(0, 20)]
+  );
+
+  const citizenids = rows.map((row) => row.citizenid);
+  if (citizenids.length === 0) return;
+
+  channel.pushMany(
+    citizenids,
+    'mention',
+    { blab_id: blabId, handle: fromHandle },
+    { notify: { type: 'info', title: `@${fromHandle} mentioned you`, message: body.slice(0, 120) } }
+  );
 };
 
 /**
@@ -219,6 +257,20 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
       reply_to: replyTo,
       mouth_of: mouthOf
     } as Partial<Blab>);
+
+    /**
+     * Tell whoever was mentioned.
+     *
+     * Derived with the **same tokenizer the UI renders with** (`@shared/richText`), which is why
+     * that file lives in `shared/` rather than under `web/`. Two definitions of "what counts as
+     * a mention" is how you get one that highlights and never notifies.
+     *
+     * After the row is written, and never allowed to fail the post: the Blab is committed either
+     * way, and the author should not see an error for something that already happened.
+     */
+    void notifyMentions(text, account.handle, id).catch((error) =>
+      console.error('[blabber] Mention notification failed for', id, error)
+    );
 
     return {
       id,

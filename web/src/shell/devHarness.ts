@@ -95,6 +95,23 @@ function openDeepLinkedApp(): void {
 
 /** `window.triggerTestToast('call')` from the console. Dev builds only. */
 export function installDevHarness(): void {
+  /**
+   * Fire a server push without a server.
+   *
+   * `window.pushAppEvent('blabber', 'mention', { blab_id: 1 })` from the console. It posts the
+   * real `appEvent` message down the real path, rather than reaching into the bus — a harness
+   * that bypassed the parsing would let a malformed envelope look fine in `pnpm dev`.
+   *
+   * Without this every add-on author is blind in the browser, which is the mirror image of the
+   * mock-registry problem §8 warns about.
+   */
+  window.pushAppEvent = (app: string, event: string, payload = {}, notify?: unknown) => {
+    window.postMessage(
+      { action: 'appEvent', data: { app, event, payload, at: Date.now(), notify } },
+      '*'
+    );
+  };
+
   if (!import.meta.env.DEV) return;
 
   window.triggerTestToast = (type: TestToast = 'message') => {
