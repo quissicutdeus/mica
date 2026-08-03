@@ -63,7 +63,17 @@ const collectFetchNuiCalls = (): { action: string; file: string }[] => {
     // Mocks and tests describe the surface rather than consume it.
     if (file.includes('/mocks/') || file.endsWith('.test.ts')) continue;
     const text = readFileSync(file, 'utf8');
-    for (const m of text.matchAll(/fetchNui\s*(?:<[^>]*>)?\s*\(\s*['"]([a-zA-Z][\w]*)['"]/g)) {
+    /**
+     * The generic is optional and may itself contain generics.
+     *
+     * `<[^>]*>` stopped at the first `>`, which for `fetchNui<Record<number, Engagement>>(...)`
+     * lands inside the `Record` — so the call did not match, the action looked uncalled, and
+     * this test reported a live route as dead weight. One level of nesting is enough for every
+     * shape in this codebase and keeps it a scanner rather than a parser.
+     */
+    for (const m of text.matchAll(
+      /fetchNui\s*(?:<(?:[^<>]|<[^<>]*>)*>)?\s*\(\s*['"]([a-zA-Z][\w]*)['"]/g
+    )) {
       found.push({ action: m[1], file: relative(ROOT, file) });
     }
   }

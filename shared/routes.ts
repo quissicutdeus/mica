@@ -53,6 +53,11 @@ export const ROUTES: readonly Route[] = [
   route('deleteBlab', 'blabber', 'delete'),
   // One account's public profile, split into Blabs and Replies.
   route('getProfileBlabs', 'blabber', 'profile'),
+  // Reply, mouth and like counts for a page of Blabs, batched — one read rather than three
+  // per row.
+  route('getBlabEngagement', 'blabber', 'engagement'),
+  route('likeBlab', 'blabber', 'like'),
+  route('unlikeBlab', 'blabber', 'unlike'),
 
   // Contacts
   route('getContacts', 'contacts', 'get'),

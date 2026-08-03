@@ -86,6 +86,21 @@ describe('the declaration', () => {
     expect(blabber.resolved.editWindow).toBe(900);
   });
 
+  it('lets one account mouth a Blab only once, by index', () => {
+    // Safe as a unique index because MySQL permits many NULLs in one: every ordinary post has
+    // `mouth_of NULL`, so this constrains mouths only. A find-then-insert would have a race two
+    // rapid taps would find.
+    const unique = blabber.resolved.indexes.find((i) => i.name === 'account_mouth');
+    expect(unique).toMatchObject({ columns: ['account_id', 'mouth_of'], unique: true });
+  });
+
+  it('makes a like unique per account, in the child table', () => {
+    const likes = blabber.resolved.childTables.find((t) => t.name === 'gphone_blabber_likes');
+    expect(likes).toBeDefined();
+    const unique = (likes?.indexes ?? []).find((i: any) => i.name === 'blab_account');
+    expect(unique).toMatchObject({ unique: true });
+  });
+
   it('lets an author edit only the body', () => {
     // account_id and reply_to are set at create and never after: either being writable would
     // let somebody reattribute their words to an alt, or re-parent them into another thread.
@@ -175,5 +190,145 @@ describe('a profile feed', () => {
 
     expect(reply.error).toBeTruthy();
     expect(dbMock.query).not.toHaveBeenCalled();
+  });
+});
+
+describe('replies, mouths and likes', () => {
+  it('accepts a reply to a reply, because a reply is just a Blab', async () => {
+    // The reason `reply_to` self-references rather than getting its own table: nesting is the
+    // same column one level deeper, so a thread needs no recursive query and no second shape.
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.single.mockResolvedValueOnce({ id: 4, status: 'active', reply_to: 1 });
+
+    const reply = await call('create', { account_id: 1, body: 'thank you', reply_to: 4 });
+
+    expect(reply).toMatchObject({ id: 50, reply_to: 4 });
+  });
+
+  it('accepts a plain mouth with no body of its own', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.single.mockResolvedValueOnce({ id: 9, status: 'active' });
+
+    const reply = await call('create', { account_id: 1, mouth_of: 9 });
+
+    expect(reply).toMatchObject({ mouth_of: 9, body: null });
+  });
+
+  it('accepts a mouth with a body as a quote', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.single.mockResolvedValueOnce({ id: 9, status: 'active' });
+
+    const reply = await call('create', { account_id: 1, mouth_of: 9, body: 'look at this' });
+
+    expect(reply).toMatchObject({ mouth_of: 9, body: 'look at this' });
+  });
+
+  it('refuses a Blab that is neither a body nor a mouth', async () => {
+    // It would render as an empty row nobody can explain.
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+
+    const reply = await call('create', { account_id: 1, body: '  ' });
+
+    expect(reply.error).toMatch(/needs something in it/);
+  });
+
+  it('refuses a Blab that tries to be both a reply and a mouth', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.single.mockResolvedValueOnce({ id: 4, status: 'active' });
+    dbMock.single.mockResolvedValueOnce({ id: 9, status: 'active' });
+
+    const reply = await call('create', { account_id: 1, body: 'x', reply_to: 4, mouth_of: 9 });
+
+    expect(reply.error).toMatch(/reply or mouth, not both/);
+  });
+
+  it('refuses mouthing a moderated Blab', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.single.mockResolvedValueOnce({ id: 9, status: 'moderated' });
+
+    const reply = await call('create', { account_id: 1, mouth_of: 9 });
+
+    expect(reply.error).toMatch(/no longer available/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('translates a second mouth of the same Blab into something readable', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.single.mockResolvedValueOnce({ id: 9, status: 'active' });
+    dbMock.insert.mockRejectedValueOnce(new Error("Duplicate entry '1-9' for key 'account_mouth'"));
+
+    const reply = await call('create', { account_id: 1, mouth_of: 9 });
+
+    expect(reply.error).toBe('You have already mouthed that.');
+  });
+
+  it('treats a duplicate like as success, so a double tap is not an error', async () => {
+    // The unique index makes it idempotent; a read-then-write would have a race two taps find.
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.single.mockResolvedValueOnce({ id: 9, status: 'active' });
+    dbMock.insert.mockRejectedValueOnce(new Error('Duplicate entry for key blab_account'));
+
+    await expect(call('like', { account_id: 1, blab_id: 9 })).resolves.toBe(true);
+  });
+
+  it('scopes an unlike to the caller own account', async () => {
+    // A row id is not authorization to remove somebody else's like (§2.9).
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+
+    await call('unlike', { account_id: 1, blab_id: 9 });
+
+    const params = dbMock.update.mock.calls[0][1] as unknown[];
+    expect(params).toEqual([9, 1]);
+  });
+
+  it('refuses to like as an account the caller does not own', async () => {
+    dbMock.single.mockResolvedValueOnce(null);
+
+    const reply = await call('like', { account_id: 999, blab_id: 9 });
+
+    expect(reply.error).toMatch(/not yours/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+});
+
+describe('engagement', () => {
+  it('answers nothing for an empty id list without querying', async () => {
+    await expect(call('engagement', { ids: [] })).resolves.toEqual({});
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('caps the number of ids it will answer for', async () => {
+    // The ids become a placeholder list, so an unbounded array is both injection-shaped and a
+    // way to ask for one enormous query (§2.9).
+    dbMock.query.mockResolvedValue([]);
+
+    await call('engagement', { ids: Array.from({ length: 500 }, (_, i) => i + 1) });
+
+    // First query is the caller's own accounts; the counts follow with the capped list.
+    const countCall = dbMock.query.mock.calls[1];
+    expect((countCall[1] as unknown[]).length).toBe(60);
+  });
+
+  it('drops ids that are not positive integers rather than failing the page', async () => {
+    dbMock.query.mockResolvedValue([]);
+
+    await call('engagement', { ids: [1, 'x', -2, 0, 3.5, 4] });
+
+    const countCall = dbMock.query.mock.calls[1];
+    expect(countCall[1]).toEqual([1, 4]);
+  });
+
+  it('reports zeroes for a Blab nothing has happened to', async () => {
+    dbMock.query.mockResolvedValue([]);
+
+    const reply = await call('engagement', { ids: [7] });
+
+    expect(reply[7]).toEqual({
+      replies: 0,
+      mouths: 0,
+      likes: 0,
+      likedByMe: false,
+      mouthedByMe: false
+    });
   });
 });

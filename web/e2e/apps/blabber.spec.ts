@@ -54,8 +54,9 @@ test.describe('Blabber', () => {
     await expect(page.getByRole('button', { name: 'Replies', exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Replies', exact: true }).click();
-    // Ada has no replies in the mock, and the empty state says so rather than showing her posts.
-    await expect(page.locator('text=No replies yet')).toBeVisible();
+    // Ada's replies, not her posts — the tabs are separate server reads, so this is the proof
+    // they do not bleed into each other.
+    await expect(page.locator('text=thank you')).toBeVisible();
 
     await page.getByRole('button', { name: 'Blabs', exact: true }).click();
     await expect(page.locator('text=first')).toBeVisible();
@@ -71,5 +72,51 @@ test.describe('Blabber', () => {
     // Present as characters, and no element was created from it.
     await expect(page.locator('text=<b>not bold</b>')).toBeVisible();
     await expect(page.locator('article b')).toHaveCount(0);
+  });
+
+  test('likes a Blab and fills the heart', async ({ page }) => {
+    const first = page.locator('article').first();
+
+    await first.getByRole('button', { name: 'Like' }).click();
+
+    // The label flips because the state did — an optimistic update that only changed a colour
+    // would leave the control lying to a screen reader.
+    await expect(first.getByRole('button', { name: 'Unlike' })).toBeVisible();
+    await expect(first.getByRole('button', { name: 'Unlike' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+  });
+
+  test('mouths a Blab and shows it repeated at the top', async ({ page }) => {
+    await page.locator('article').first().getByRole('button', { name: 'Mouth' }).click();
+
+    await expect(page.locator('article').first().locator('text=Mouthed')).toBeVisible();
+  });
+
+  test('opens a thread and replies to a reply', async ({ page }) => {
+    // `first` has a reply in the fixture, and that reply has its own — which is the point of a
+    // reply being a Blab: the same read one level deeper.
+    // Scoped by author: "first" also appears inside "congratulations on being first", so a text
+    // filter alone matches the reply too.
+    await page
+      .locator('article', { hasText: '@ada' })
+      .filter({ hasText: 'first' })
+      .getByRole('button', { name: 'View thread' })
+      .click();
+
+    await expect(page.locator('text=congratulations on being first')).toBeVisible();
+
+    // Down another level, into the reply's own thread.
+    await page
+      .locator('article', { hasText: 'congratulations' })
+      .getByRole('button', { name: 'View thread' })
+      .click();
+
+    await expect(page.locator('text=thank you')).toBeVisible();
+
+    await page.locator('textarea').fill('and again');
+    await page.getByRole('button', { name: 'Post', exact: true }).click();
+    await expect(page.locator('text=and again')).toBeVisible();
   });
 });

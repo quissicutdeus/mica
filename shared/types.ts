@@ -166,8 +166,11 @@ export interface Blab {
   /** Absent from any public read. */
   citizenid?: string;
   account_id: number;
-  body: string;
+  /** Null for a plain mouth, which has nothing of its own to say. */
+  body?: string | null;
   reply_to?: number | null;
+  /** The Blab this one repeats. With a body it is a quote; without one, a plain repeat. */
+  mouth_of?: number | null;
   status?: 'active' | 'deleted' | 'moderated';
   created_at: Date | string;
   updated_at: Date | string;
@@ -175,6 +178,17 @@ export interface Blab {
   handle?: string;
   display_name?: string | null;
   avatar?: string | null;
+  /** The Blab being mouthed, hydrated for display. */
+  mouthed?: Blab | null;
+}
+
+/** Counts for one Blab, plus what the asking player has already done to it. */
+export interface BlabEngagement {
+  replies: number;
+  mouths: number;
+  likes: number;
+  likedByMe: boolean;
+  mouthedByMe: boolean;
 }
 
 export interface Note {

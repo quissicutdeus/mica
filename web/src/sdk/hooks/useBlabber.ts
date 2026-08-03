@@ -6,10 +6,15 @@ import {
   deleteBlab,
   editBlab,
   editWindow,
+  engagement,
   feed,
+  loadEngagement,
   loadMyAccounts,
+  loadThread,
+  mouthBlab,
   myAccounts,
-  postBlab
+  postBlab,
+  toggleLike
 } from '../../services/blabber';
 
 /**
@@ -26,6 +31,11 @@ export function useBlabber() {
     activeAccount,
     activeAccountId,
     editWindow,
+    engagement,
+    loadEngagement: (ids: number[]) => loadEngagement(ids),
+    loadThread: (blabId: number) => loadThread(blabId),
+    toggleLike: (blabId: number) => toggleLike(blabId),
+    mouthBlab: (blabId: number, body?: string) => mouthBlab(blabId, body),
     loadMyAccounts: () => loadMyAccounts(),
     claimAccount: (handle: string, displayName?: string) => claimAccount(handle, displayName),
     postBlab: (body: string, replyTo?: number | null) => postBlab(body, replyTo),

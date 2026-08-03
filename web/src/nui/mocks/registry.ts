@@ -106,8 +106,34 @@ const mockBlabs: Blab[] = [
     status: 'active',
     created_at: '2026-08-02T10:00:00Z',
     updated_at: '2026-08-02T10:00:00Z'
+  },
+  // A reply, and a reply to that reply — replies nest through the same column, so a thread is
+  // the same read one level deeper.
+  {
+    id: 4,
+    account_id: 2,
+    handle: 'nightowl',
+    display_name: 'Night Owl',
+    body: 'congratulations on being first',
+    reply_to: 1,
+    status: 'active',
+    created_at: '2026-08-02T10:05:00Z',
+    updated_at: '2026-08-02T10:05:00Z'
+  },
+  {
+    id: 5,
+    account_id: 1,
+    handle: 'ada',
+    display_name: 'Ada',
+    body: 'thank you',
+    reply_to: 4,
+    status: 'active',
+    created_at: '2026-08-02T10:06:00Z',
+    updated_at: '2026-08-02T10:06:00Z'
   }
 ];
+
+const mockLikes: { blab_id: number; account_id: number }[] = [{ blab_id: 1, account_id: 2 }];
 
 let nextBlabId = 100;
 let nextAccountId = 10;
@@ -138,15 +164,29 @@ const mockRegistry: Record<string, MockHandler> = {
 
   // Blabber. Keyset paging on `id DESC`, matching the server: a cursor names the last row
   // already delivered, and `nextCursor: null` means the end.
-  getBlabs: ({ cursor, limit = 30 }: { cursor?: number; limit?: number } = {}) => {
+  getBlabs: ({
+    cursor,
+    limit = 30,
+    reply_to
+  }: { cursor?: number; limit?: number; reply_to?: number | null } = {}) => {
+    // `reply_to: null` means top-level, matching the server's IS NULL. Honoured here or the
+    // browser mock would show a feed the real server never returns.
+    const matchesParent = (b: Blab) =>
+      reply_to === undefined
+        ? true
+        : reply_to === null
+          ? b.reply_to == null
+          : b.reply_to === reply_to;
     const visible = mockBlabs
-      .filter((b) => b.status === 'active' && (cursor === undefined || b.id < cursor))
+      .filter(
+        (b) => b.status === 'active' && matchesParent(b) && (cursor === undefined || b.id < cursor)
+      )
       .sort((a, b) => b.id - a.id);
     const page = visible.slice(0, limit);
     const hasMore = visible.length > page.length;
     return { rows: page, nextCursor: hasMore ? page[page.length - 1].id : null };
   },
-  createBlab: ({ account_id, body, reply_to }: Partial<Blab>) => {
+  createBlab: ({ account_id, body, reply_to, mouth_of }: Partial<Blab>) => {
     const account = mockAccounts.find((a) => a.id === account_id);
     if (!account) throw new Error('That account is not yours to post from.');
     const created: Blab = {
@@ -154,8 +194,9 @@ const mockRegistry: Record<string, MockHandler> = {
       account_id: account.id,
       handle: account.handle,
       display_name: account.display_name,
-      body: String(body ?? ''),
+      body: body ?? null,
       reply_to: reply_to ?? null,
+      mouth_of: mouth_of ?? null,
       status: 'active',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -166,6 +207,32 @@ const mockRegistry: Record<string, MockHandler> = {
   updateBlab: ({ id, body }: { id: number; body: string }) => {
     const blab = mockBlabs.find((b) => b.id === id);
     if (blab) blab.body = body;
+    return true;
+  },
+  getBlabEngagement: ({ ids = [] }: { ids?: number[] } = {}) => {
+    const out: Record<number, unknown> = {};
+    for (const id of ids) {
+      out[id] = {
+        replies: mockBlabs.filter((b) => b.reply_to === id && b.status === 'active').length,
+        mouths: mockBlabs.filter((b) => b.mouth_of === id && b.status === 'active').length,
+        likes: mockLikes.filter((l) => l.blab_id === id).length,
+        likedByMe: mockLikes.some((l) => l.blab_id === id && l.account_id === 1),
+        mouthedByMe: mockBlabs.some(
+          (b) => b.mouth_of === id && b.account_id === 1 && b.status === 'active'
+        )
+      };
+    }
+    return out;
+  },
+  likeBlab: ({ blab_id }: { blab_id: number }) => {
+    if (!mockLikes.some((l) => l.blab_id === blab_id && l.account_id === 1)) {
+      mockLikes.push({ blab_id, account_id: 1 });
+    }
+    return true;
+  },
+  unlikeBlab: ({ blab_id }: { blab_id: number }) => {
+    const at = mockLikes.findIndex((l) => l.blab_id === blab_id && l.account_id === 1);
+    if (at >= 0) mockLikes.splice(at, 1);
     return true;
   },
   getProfileBlabs: ({

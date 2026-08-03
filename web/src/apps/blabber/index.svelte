@@ -16,6 +16,7 @@
   import Composer from './components/Composer.svelte';
   import ClaimHandle from './components/ClaimHandle.svelte';
   import Profile from './components/Profile.svelte';
+  import Thread from './components/Thread.svelte';
 
   let { onback }: AppProps = $props();
 
@@ -29,13 +30,25 @@
     claimAccount,
     postBlab,
     editBlab,
-    deleteBlab
+    deleteBlab,
+    engagement,
+    loadEngagement,
+    toggleLike,
+    mouthBlab
   } = useBlabber();
   const { run, busy } = useAppAction();
 
-  let view = $state<'feed' | 'profile'>('feed');
+  let view = $state<'feed' | 'profile' | 'thread'>('feed');
   let profileHandle = $state<string | null>(null);
   let editing = $state<Blab | null>(null);
+  /**
+   * The thread stack, not a single value.
+   *
+   * Opening a reply's own thread pushes onto it, so Back walks out one level at a time instead
+   * of jumping to the feed. Replies nest through one column, so the depth is whatever the
+   * conversation is.
+   */
+  let threads = $state<Blab[]>([]);
 
   /**
    * Every visit, not once per session — apps stay resident, so `onMount` would fetch whatever
@@ -43,7 +56,10 @@
    */
   onAppForeground('blabber', () => {
     void loadMyAccounts();
-    void feed.load();
+    // Top-level only. A timeline that mixed replies in would show half a conversation with no
+    // way to see what it was replying to — and `reply_to: null` is expressible only because a
+    // null filter now means IS NULL rather than `= NULL`.
+    void feed.load({ reply_to: null });
   });
 
   /**
@@ -66,8 +82,21 @@
     title: 'Blabber',
     onback: () => onback(),
     levels: [
-      // Deepest first. A profile is a level up from the feed, so Back returns to it rather
-      // than leaving the app.
+      // Deepest first. Back pops one thread, then leaves the thread view, then the profile,
+      // and only then leaves the app.
+      {
+        open: () => view === 'thread' && threads.length > 1,
+        close: () => threads.pop(),
+        title: () => 'Thread'
+      },
+      {
+        open: () => view === 'thread',
+        close: () => {
+          threads = [];
+          view = 'feed';
+        },
+        title: () => 'Thread'
+      },
       { open: () => view === 'profile', close: () => (view = 'feed'), title: () => 'Profile' }
     ]
   });
@@ -76,6 +105,33 @@
     profileHandle = handle;
     view = 'profile';
   };
+
+  const openThread = (blab: Blab) => {
+    threads = view === 'thread' ? [...threads, blab] : [blab];
+    view = 'thread';
+  };
+
+  const like = (blab: Blab) => void run(() => toggleLike(blab.id), { title: 'Blabber' });
+
+  const mouth = (blab: Blab) =>
+    void run(() => mouthBlab(blab.id), { title: 'Blabber', success: 'Mouthed' });
+
+  const replyTo = async (parent: Blab, body: string): Promise<void> => {
+    // Awaited and discarded: Thread refreshes itself afterwards, and `run` resolves to a
+    // success flag the reply composer has no use for.
+    await run(() => postBlab(body, parent.id), { title: 'Blabber', success: 'Replied' });
+  };
+
+  /**
+   * Counts for whatever is on screen, refreshed when the window grows.
+   *
+   * One batched read per page rather than three per row — thirty posts asking individually is
+   * ninety round trips through NUI.
+   */
+  $effect(() => {
+    const ids = page.visible.map((blab) => blab.id);
+    if (ids.length > 0) void loadEngagement(ids);
+  });
 
   const post = (body: string) =>
     void run(() => postBlab(body), { title: 'Blabber', success: 'Posted' });
@@ -95,7 +151,18 @@
 </script>
 
 <Screen title={app.title} onback={app.back}>
-  {#if view === 'profile' && profileHandle}
+  {#if view === 'thread' && threads.length > 0}
+    <Thread
+      root={threads[threads.length - 1]}
+      handle={$activeAccount?.handle}
+      busy={$busy}
+      onhandle={openProfile}
+      onopen={openThread}
+      onreply={replyTo}
+      onmouth={mouth}
+      onlike={like}
+    />
+  {:else if view === 'profile' && profileHandle}
     <Profile handle={profileHandle} onhandle={openProfile} />
   {:else if !$accountsLoaded}
     <div class="p-4"><Skeleton count={4} height="h-16" /></div>
@@ -124,7 +191,7 @@
     {#if editing}
       <Composer
         handle={$activeAccount?.handle}
-        initial={editing.body}
+        initial={editing.body ?? ''}
         placeholder="Fix a typo"
         busy={$busy}
         onsubmit={saveEdit}
@@ -142,9 +209,14 @@
           <BlabRow
             {blab}
             editable={isMine(blab)}
+            stats={$engagement[blab.id]}
             onhandle={openProfile}
             onedit={(b) => (editing = b)}
             ondelete={remove}
+            onreply={openThread}
+            onmouth={mouth}
+            onlike={like}
+            onopen={openThread}
           />
         {/each}
         {#if page.loading}
