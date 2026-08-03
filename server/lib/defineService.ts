@@ -207,6 +207,22 @@ interface AccessDefinition {
   write: 'owner' | 'server' | 'members';
   /** Required when either axis is `members`; rejected otherwise. */
   membership?: MembershipDefinition;
+  /**
+   * How long after creation an owner may still edit a row, in seconds. Omit for unlimited,
+   * which is what every table did before this existed.
+   *
+   * For "fix a typo", not "rewrite history". Enforced as a predicate in the same `UPDATE`
+   * rather than a check before it, so there is no window between deciding and writing — the
+   * same reasoning membership uses. A UI that hides the Edit button is a courtesy; §2.9 says
+   * the server is the boundary.
+   *
+   * `NOW()` and `created_at` are both the database's clock, so the comparison is immune to
+   * server and client clock skew. That is the argument for doing it in SQL rather than TS.
+   *
+   * Applies to `update` only, never `delete`: you should be able to remove your own post
+   * forever, and it would be easy to apply to both by accident.
+   */
+  editWindow?: number;
 }
 
 /**
@@ -342,6 +358,8 @@ export interface ResolvedService {
   access: Required<Pick<AccessDefinition, 'read' | 'write'>>;
   /** Resolved defaults filled in; null unless an axis is `members`. */
   membership: ResolvedMembership | null;
+  /** Seconds an owner may still edit for; null for unlimited. */
+  editWindow: number | null;
   /** Resolved defaults filled in; null unless the service declared `paging`. */
   paging: ResolvedPaging | null;
   /** Per-column write validation, derived from the schema. Keyed by column name. */
@@ -433,6 +451,19 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
   if (paging && (paging.pageSize < 1 || paging.maxPageSize < paging.pageSize)) {
     throw new Error(
       `defineService('${id}'): paging needs pageSize >= 1 and maxPageSize >= pageSize.`
+    );
+  }
+
+  const editWindow = definition.access?.editWindow ?? null;
+  if (editWindow !== null && (!Number.isInteger(editWindow) || editWindow <= 0)) {
+    throw new Error(
+      `defineService('${id}'): access.editWindow must be a positive whole number of seconds.`
+    );
+  }
+  if (editWindow !== null && access.write !== 'owner') {
+    throw new Error(
+      `defineService('${id}'): access.editWindow only applies to 'owner' writes — nothing ` +
+        'else goes through the ownership-scoped update it constrains.'
     );
   }
 
@@ -596,6 +627,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     table,
     access,
     membership,
+    editWindow,
     paging,
     columnRules,
     publicColumns,
@@ -633,6 +665,7 @@ export class SchemaRepository<T> extends Repository<T> {
     this.clientFilterable = resolved.clientFilterable;
     this.membership = resolved.membership;
     this.columnRules = resolved.columnRules;
+    this.editWindow = resolved.editWindow;
   }
 }
 

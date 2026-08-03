@@ -142,7 +142,7 @@ describe('Repository — ownership scoping', () => {
     await repo.update(7, { title: 'renamed' } as Partial<TestRow>, 'CIT_OWNER');
 
     expect(sqlOf(dbMock.update.mock.calls[0])).toBe(
-      'UPDATE `gphone_test` SET `title` = ? WHERE `id` = ? AND `citizenid` = ?'
+      "UPDATE `gphone_test` SET `title` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` != 'moderated'"
     );
     expect(paramsOf(dbMock.update.mock.calls[0])).toEqual(['renamed', 7, 'CIT_OWNER']);
   });
@@ -193,7 +193,7 @@ describe('Repository — soft delete', () => {
 
     expect(success).toBe(true);
     expect(sqlOf(dbMock.update.mock.calls[0])).toBe(
-      'UPDATE `gphone_test` SET `status` = ? WHERE `id` = ? AND `citizenid` = ?'
+      "UPDATE `gphone_test` SET `status` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` != 'moderated'"
     );
     expect(paramsOf(dbMock.update.mock.calls[0])).toEqual(['deleted', 9, 'CIT_OWNER']);
   });

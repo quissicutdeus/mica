@@ -279,3 +279,119 @@ describe('public projection', () => {
     expect(String(dbMock.query.mock.calls[0][0])).toContain('SELECT * FROM');
   });
 });
+
+/**
+ * The edit window, and the one status an owner may not write over.
+ *
+ * Both are predicates in the same `UPDATE` rather than checks before it, which is the property
+ * worth locking: a check-then-write has a gap between deciding and writing, and the obvious
+ * "simplification" is to split them.
+ */
+describe('edit window', () => {
+  beforeEach(() => {
+    dbMock.update.mockReset();
+    dbMock.update.mockResolvedValue(true);
+  });
+
+  it('carries the window in the same statement as the write', async () => {
+    const repo = buildRepository(
+      resolveAppSchema({
+        id: 'blabs',
+        access: { read: 'owner', write: 'owner', editWindow: 900 },
+        schema: { body: 'string' }
+      })
+    );
+
+    await repo.update(7, { body: 'fixed' } as never, 'CIT_A');
+
+    const [sql, params] = dbMock.update.mock.calls[0];
+    expect(String(sql)).toContain('`created_at` > NOW() - INTERVAL ? SECOND');
+    // Bound, not interpolated, and the window is the last parameter.
+    expect(params).toEqual(['fixed', 7, 'CIT_A', 900]);
+  });
+
+  it('leaves the statement alone when no window is declared', async () => {
+    const repo = buildRepository(resolveAppSchema({ id: 'notes2', schema: { body: 'string' } }));
+
+    await repo.update(7, { body: 'x' } as never, 'CIT_A');
+
+    expect(String(dbMock.update.mock.calls[0][0])).not.toContain('INTERVAL');
+  });
+
+  it('never constrains a delete', async () => {
+    // You should be able to remove your own post forever. Easy to apply to both by accident.
+    const repo = buildRepository(
+      resolveAppSchema({
+        id: 'blabs',
+        access: { read: 'owner', write: 'owner', editWindow: 900 },
+        schema: { body: 'string' }
+      })
+    );
+
+    await repo.delete(7, 'CIT_A');
+
+    expect(String(dbMock.update.mock.calls[0][0])).not.toContain('INTERVAL');
+  });
+
+  it('refuses a window on a table whose writes are not owner-scoped', () => {
+    // Nothing else goes through the ownership-scoped update the window constrains, so
+    // declaring one there would read as a limit that is silently not applied.
+    expect(() =>
+      resolveAppSchema({
+        id: 'server_rows',
+        access: { read: 'owner', write: 'server', editWindow: 900 },
+        schema: { body: 'string' }
+      })
+    ).toThrow(/only applies to 'owner' writes/);
+  });
+
+  it.each([
+    ['zero', 0],
+    ['negative', -60],
+    ['fractional', 1.5]
+  ])('refuses a %s window', (_label, editWindow) => {
+    expect(() =>
+      resolveAppSchema({
+        id: 'bad',
+        access: { read: 'owner', write: 'owner', editWindow },
+        schema: { body: 'string' }
+      })
+    ).toThrow(/positive whole number of seconds/);
+  });
+});
+
+describe('moderated rows', () => {
+  beforeEach(() => {
+    dbMock.update.mockReset();
+    dbMock.update.mockResolvedValue(true);
+  });
+
+  it('an owner cannot write over content a moderator removed', async () => {
+    // The row is already out of every read, so this is not a visibility hole by itself. But
+    // without it an author keeps rewriting a moderated post, and a moderator who later
+    // reinstates it reinstates text nobody reviewed.
+    const repo = buildRepository(resolveAppSchema({ id: 'posts', schema: { body: 'string' } }));
+
+    await repo.update(7, { body: 'sneaky' } as never, 'CIT_A');
+
+    expect(String(dbMock.update.mock.calls[0][0])).toContain("`status` != 'moderated'");
+  });
+
+  it('does not exclude an app own away-states like archived', async () => {
+    // Notes and Conversations both declare `archived`. Excluding it would break editing a row
+    // that is merely put away; moderation is the one state that is a decision about the author.
+    const repo = buildRepository(
+      resolveAppSchema({
+        id: 'archivable',
+        statuses: ['active', 'archived', 'deleted'],
+        schema: { body: 'string' }
+      })
+    );
+
+    await repo.update(7, { body: 'x' } as never, 'CIT_A');
+
+    const sql = String(dbMock.update.mock.calls[0][0]);
+    expect(sql).not.toContain('archived');
+    expect(sql).not.toContain("!= 'deleted'");
+  });
+});

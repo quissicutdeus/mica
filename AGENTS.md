@@ -614,6 +614,21 @@ a silent divergence breaks either security or writes. One schema drives both, pl
     job, a dispatch, a bank alert. Nothing becomes client-writable and create/update are not
     registered. Delete stays, because the row still belongs to exactly one citizenid.
   - **`write: 'members'`** registers no generic mutation at all, for the same reason as the read.
+- **`access.editWindow` (seconds) time-boxes the ownership-scoped update.** For "fix a typo",
+  not "rewrite history". A predicate in the same `UPDATE` rather than a check before it, so
+  there is no gap between deciding and writing; both sides of the comparison are the database's
+  clock, so it is immune to server/client skew. **It never applies to `delete`** — removing your
+  own post stays possible forever, and the first version of this shared one code path and
+  silently made an expired post undeletable. Declaring it on anything but `write: 'owner'`
+  throws, since nothing else goes through the update it constrains.
+- **An owner cannot write over a `moderated` row.** The ownership-scoped update carries
+  `status != 'moderated'`. The row is already out of every read, so it is not a visibility hole
+  alone — but without it an author keeps rewriting a moderated post, and a moderator who later
+  reinstates it reinstates text nobody reviewed. Only `moderated`: excluding `deleted` would
+  make deleting an already-deleted row report failure, and excluding an app's own away-state
+  (Notes and Conversations both declare `archived`) would break editing a row merely put away.
+  `updateUnscoped` is exempt, because moderating and un-moderating are the writes that must
+  reach those rows.
 - **`ColumnDef.private: true` withholds a column from a public read's projection**, and
   `citizenid` is withheld from every public projection automatically without being declared.
   That is not hygiene: a public table returns rows the reader does not own, and once a player

@@ -45,6 +45,9 @@ export abstract class Repository<T> {
    */
   protected columnRules: Record<string, ColumnRule> = {};
 
+  /** Seconds an owner may still edit a row for; null for unlimited. See `applyUpdate`. */
+  protected editWindow: number | null = null;
+
   /**
    * Reject a client-supplied value the column cannot actually hold.
    *
@@ -281,13 +284,22 @@ export abstract class Repository<T> {
    * the caller does not own cannot be modified even when they know its id.
    */
   async update(id: number | string, data: Partial<T>, citizenid: string): Promise<boolean> {
-    return await this.updateOwned(id, data as Record<string, unknown>, citizenid);
+    return await this.updateOwned(id, data as Record<string, unknown>, citizenid, true);
   }
 
   private async updateOwned(
     id: number | string,
     data: Record<string, unknown>,
-    citizenid: string
+    citizenid: string,
+    /**
+     * Whether the service's `editWindow` applies.
+     *
+     * False for the soft delete, and that distinction is the whole reason this is a parameter
+     * rather than read off `this`. Removing your own post has to stay possible forever; the
+     * window is about rewriting, not about withdrawing. The first version of this shared one
+     * code path and silently made an expired post undeletable.
+     */
+    enforceEditWindow: boolean
   ): Promise<boolean> {
     if (!citizenid) {
       throw new Error(`[Repository] update on '${this.tableName}' requires a citizenid.`);
@@ -297,7 +309,7 @@ export abstract class Repository<T> {
         `[Repository] update on '${this.tableName}' cannot scope by owner: no 'citizenid' column.`
       );
     }
-    return await this.applyUpdate(id, data, citizenid);
+    return await this.applyUpdate(id, data, citizenid, enforceEditWindow);
   }
 
   /**
@@ -315,7 +327,8 @@ export abstract class Repository<T> {
   private async applyUpdate(
     id: number | string,
     data: Record<string, unknown>,
-    citizenid?: string
+    citizenid?: string,
+    enforceEditWindow = false
   ): Promise<boolean> {
     const { keys, values } = this.prepareColumns(data, 'update');
     const setClause = keys.map((key) => `\`${key}\` = ?`).join(', ');
@@ -326,6 +339,38 @@ export abstract class Repository<T> {
     if (citizenid) {
       query += ' AND `citizenid` = ?';
       params.push(citizenid);
+
+      /**
+       * An owner may not edit content a moderator has removed.
+       *
+       * The row stays out of every read (`findAll` filters `status = 'active'`), so this is
+       * not a visibility hole on its own — but without it an author can keep rewriting a
+       * moderated post, and if a moderator later reinstates it they reinstate text nobody
+       * reviewed.
+       *
+       * Only `moderated`, deliberately. Excluding `deleted` too would make deleting an
+       * already-deleted row report failure, and excluding an app's own states — Notes and
+       * Conversations both declare `archived` — would break editing a row that is merely put
+       * away. Moderation is the one state that is a decision *about* the author.
+       *
+       * Not applied to `updateUnscoped`: moderating and un-moderating are exactly the writes
+       * that have to reach these rows.
+       */
+      if (this.hasStatusColumn) {
+        query += " AND `status` != 'moderated'";
+      }
+
+      /**
+       * And not after the edit window has closed, when the service declares one.
+       *
+       * In the same statement rather than a check before it, so there is no gap between
+       * deciding and writing. Both sides of the comparison are the database's clock, which is
+       * what makes it immune to skew.
+       */
+      if (enforceEditWindow && this.editWindow !== null && this.columns.includes('created_at')) {
+        query += ' AND `created_at` > NOW() - INTERVAL ? SECOND';
+        params.push(this.editWindow);
+      }
     }
 
     return await Database.update(query, params);
@@ -341,6 +386,8 @@ export abstract class Repository<T> {
         `[Repository] delete on '${this.tableName}' requires a 'status' column for soft delete.`
       );
     }
-    return await this.updateOwned(id, { status: 'deleted' }, citizenid);
+    // `enforceEditWindow: false` — see `updateOwned`. The moderation predicate still
+    // applies: deleting a moderated row would overwrite the moderation record with 'deleted'.
+    return await this.updateOwned(id, { status: 'deleted' }, citizenid, false);
   }
 }
