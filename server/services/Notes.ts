@@ -10,7 +10,7 @@ import { Note } from '@shared/types';
  */
 export const notes = defineService<Note>({
   id: 'notes',
-  scope: 'owner',
+  access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'archived', 'deleted', 'moderated'],
   schema: {
     title: { type: 'string', length: 255 },

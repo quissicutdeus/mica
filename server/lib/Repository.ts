@@ -1,4 +1,5 @@
 import { Database } from './Database';
+import type { ResolvedMembership } from './defineService';
 
 /**
  * Columns no client payload may ever write, on any table.
@@ -32,6 +33,12 @@ export abstract class Repository<T> {
   /** Columns a client payload may filter on through the generic `get` path. */
   protected clientFilterable: readonly string[] = [];
 
+  /**
+   * How membership is decided for this table, when ownership is the wrong question.
+   * Null unless the service declared it. See `isMember`.
+   */
+  protected membership: ResolvedMembership | null = null;
+
   public get tableColumns(): readonly string[] {
     return this.columns;
   }
@@ -52,6 +59,46 @@ export abstract class Repository<T> {
 
   protected get hasOwnerColumn(): boolean {
     return this.columns.includes('citizenid');
+  }
+
+  /**
+   * Is this player a live member of the given parent row?
+   *
+   * The authorization question for rows several players can see, and §2.9's answer to it:
+   * *"For rows shared between players ownership is the wrong question — check membership."*
+   *
+   * Derived from the service's `membership` declaration rather than hand-written. Two things
+   * that buys:
+   *
+   * Messages used to authorize itself through `ConversationRepository.isParticipant` — one
+   * service reaching into another service's repository for its own access control, so a
+   * change to how Conversations stores membership silently changed who could read a message.
+   * It now asks its own declaration.
+   *
+   * And the liveness rule stops being a string. `left_at IS NULL` is repeated across five
+   * hand-written queries in `ConversationRepository`; each new one is another chance to omit
+   * it, and omitting it means a player who left a thread can still act on it.
+   *
+   * `parentId` is what `membership.localKey` holds — a conversation's own `id`, or a
+   * message's `conversation_id`. Every identifier here is validated at declaration time
+   * (§2.9: MySQL cannot parameterize an identifier), and both values stay bound.
+   */
+  async isMember(parentId: number | string, citizenid: string): Promise<boolean> {
+    if (!this.membership) {
+      throw new Error(
+        `[Repository] isMember on '${this.tableName}' requires a 'membership' declaration. ` +
+          "Add one to the service's `access`, or authorize by ownership instead."
+      );
+    }
+    if (!citizenid) return false;
+
+    const { table, foreignKey, citizenColumn, liveWhileNull } = this.membership;
+    const live = liveWhileNull ? ` AND \`${liveWhileNull}\` IS NULL` : '';
+    const query =
+      `SELECT 1 FROM \`${table}\` ` +
+      `WHERE \`${foreignKey}\` = ? AND \`${citizenColumn}\` = ?${live} LIMIT 1`;
+
+    return Boolean(await Database.single<unknown>(query, [parentId, citizenid]));
   }
 
   /** Reject any key that is not a real column on this table. */

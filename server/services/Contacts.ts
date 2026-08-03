@@ -10,7 +10,7 @@ import { Contact } from '@shared/types';
  */
 export const contacts = defineService<Contact>({
   id: 'contacts',
-  scope: 'owner',
+  access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
   schema: {
     firstname: { type: 'string', length: 50, notNull: true },

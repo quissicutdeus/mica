@@ -549,7 +549,7 @@ Declare it once instead of hand-writing a repository and an endpoint.
 ```ts
 export const notes = defineService<Note>({
   id: 'notes', // matches the app manifest id, and the <service> event segment
-  scope: 'owner',
+  access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'archived', 'deleted', 'moderated'],
   schema: {
     title: { type: 'string', length: 255 },
@@ -567,13 +567,31 @@ a silent divergence breaks either security or writes. One schema drives both, pl
   them in `schema` is an error.
 - Declared fields are client-writable by default; opt out with `clientWritable: false`. Filtering is
   opt-in via `clientFilterable: true`.
-- **`scope: 'shared'`** disables the generic create/update/delete events entirely, because ownership
-  by `citizenid` is not a valid authorization check for rows several players can see. A shared app
-  writes its own actions with an explicit membership check — see `ConversationRepository.isParticipant`.
-- **`serverAuthored: true`** means rows arrive from the server, never from the phone's owner — mail
-  from a job, a dispatch, a bank alert. Nothing becomes client-writable and create/update are not
-  registered. Distinct from `shared`: the row still belongs to exactly one citizenid, so reads and
-  deletes stay ownership-scoped and remain available.
+- **`access` is two axes, not one.** It replaced a single `scope`, which conflated them — the thing
+  Conversations' own header had been complaining about: the row genuinely has an owner, and what is
+  shared is _visibility_. A table can need ownership-scoped writes and membership-scoped reads at the
+  same time, and one value could not say that. Defaults to `{ read: 'owner', write: 'owner' }`.
+  - **`read: 'owner'`** forces the caller's citizenid into the WHERE.
+  - **`read: 'members'`** does not register the generic `get` at all. A membership read needs the
+    parent id, and the generic filter path has no way to require one — so the endpoint the old
+    `shared` scope left registered could only ever have answered by ownership.
+  - **`write: 'owner'`** scopes create/update/delete by the row's citizenid.
+  - **`write: 'server'`** means rows arrive from the server, never the phone's owner — mail from a
+    job, a dispatch, a bank alert. Nothing becomes client-writable and create/update are not
+    registered. Delete stays, because the row still belongs to exactly one citizenid.
+  - **`write: 'members'`** registers no generic mutation at all, for the same reason as the read.
+- **`access.membership` declares how membership is decided, as data.** Never a SQL fragment: §2.9's
+  identifier allowlist has to extend across the join, and a caller-supplied `where` is the exact hole
+  it exists to close. `{ table, foreignKey, localKey?, citizenColumn?, liveWhileNull? }` derives the
+  inherited `Repository.isMember`, which is what a custom action calls.
+  - `localKey` is what makes it general rather than a Conversations special case. A conversation's
+    membership is keyed on its own `id`; a _message_'s on its `conversation_id`. Same join table,
+    different local column — without it, Messages was inexpressible.
+  - Declaring `membership` with neither axis set to `members` is **allowed**, and Conversations is
+    why: its generic writes really are owner-scoped, while `read`/`archive`/`delete` are custom
+    actions that check participation. Rejecting that would push it back to a hand-written predicate.
+  - `liveWhileNull: 'left_at'` is the liveness rule. It used to be re-typed into every participants
+    query by hand; omitting it means a player who left a thread can still act on it.
 - `indexes` takes full ordered column lists, either bare (`['citizenid', 'status']`, named by joining)
   or explicit (`{ name: 'citizenid_status_updated', columns: [...] }`). Prefer explicit: the derived
   name is what appears in EXPLAIN output, and MySQL caps index names at 64 characters. A name that

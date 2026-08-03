@@ -16,7 +16,7 @@ import { Photo } from '@shared/types';
  */
 export const photos = defineService<Photo>({
   id: 'photos',
-  scope: 'owner',
+  access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
   schema: {
     image: { type: 'mediumtext', notNull: true }

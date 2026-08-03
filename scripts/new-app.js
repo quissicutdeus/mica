@@ -219,7 +219,7 @@ if (WITH_SERVICE) {
  */
 export const ${id} = defineService({
   id: '${id}',
-  scope: 'owner',
+  access: { read: 'owner', write: 'owner' },
   schema: {
     title: { type: 'string', length: 100, notNull: true }
   }

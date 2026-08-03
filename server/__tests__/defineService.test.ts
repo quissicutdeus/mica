@@ -85,32 +85,99 @@ describe('resolveAppSchema — derived lists', () => {
     expect(resolved.clientFilterable).toEqual(['phone']);
   });
 
-  it('makes nothing client-writable for a server-authored app', () => {
-    // Mail: rows arrive from jobs and dispatches, never from the phone's owner. The
-    // row still belongs to one citizenid, so this is distinct from shared scope.
+  it('makes nothing client-writable when the server authors the rows', () => {
+    // Mail: rows arrive from jobs and dispatches, never from the phone's owner. The row
+    // still belongs to one citizenid, which is why the *read* axis stays `owner` — that
+    // is the distinction the old single `scope` could not express.
     const resolved = resolveAppSchema({
       id: 'mail',
-      serverAuthored: true,
+      access: { read: 'owner', write: 'server' },
       schema: { sender: 'string', subject: { type: 'string', clientFilterable: true } }
     });
 
     expect(resolved.clientWritable).toEqual([]);
     expect(resolved.clientFilterable).toEqual([]);
-    expect(resolved.scope).toBe('owner');
+    expect(resolved.access).toEqual({ read: 'owner', write: 'server' });
     expect(resolved.columns).toContain('sender');
   });
 
-  it('shuts the generic write path for shared-scope apps', () => {
+  it('shuts the generic write path when writes are member-scoped', () => {
     // Rows several players can see cannot be authorized by ownership, so nothing is
     // client-writable through the generic path — membership checks must be explicit.
     const resolved = resolveAppSchema({
-      id: 'conversations',
-      scope: 'shared',
+      id: 'shared_rows',
+      access: {
+        read: 'members',
+        write: 'members',
+        membership: { table: 'gphone_members', foreignKey: 'parent_id' }
+      },
       schema: { name: 'string' }
     });
 
     expect(resolved.clientWritable).toEqual([]);
     expect(resolved.clientFilterable).toEqual([]);
+  });
+
+  it('fills in the membership defaults it did not have to be told', () => {
+    const resolved = resolveAppSchema({
+      id: 'rides',
+      access: {
+        read: 'members',
+        write: 'members',
+        membership: { table: 'gphone_ride_members', foreignKey: 'ride_id' }
+      },
+      schema: { destination: 'string' }
+    });
+
+    expect(resolved.membership).toEqual({
+      table: 'gphone_ride_members',
+      foreignKey: 'ride_id',
+      localKey: 'id',
+      citizenColumn: 'citizenid',
+      liveWhileNull: null
+    });
+  });
+
+  it('refuses a members axis with no membership to check', () => {
+    expect(() =>
+      resolveAppSchema({
+        id: 'nomembers',
+        access: { read: 'members', write: 'members' },
+        schema: { label: 'string' }
+      })
+    ).toThrow(/no 'membership'/);
+  });
+
+  it('refuses a membership table that is the primary table', () => {
+    // MySQL error 1093 — it cannot subquery the table it is updating — and it would only
+    // surface at runtime, on a member write.
+    expect(() =>
+      resolveAppSchema({
+        id: 'selfref',
+        access: {
+          read: 'members',
+          write: 'members',
+          membership: { table: 'gphone_selfref', foreignKey: 'parent_id' }
+        },
+        schema: { label: 'string' }
+      })
+    ).toThrow(/is the primary table/);
+  });
+
+  it('refuses a membership identifier that is not a safe SQL identifier', () => {
+    // Every one of these is interpolated, because MySQL cannot parameterize an
+    // identifier. Same rule as the column allowlist, extended across the join.
+    expect(() =>
+      resolveAppSchema({
+        id: 'injected',
+        access: {
+          read: 'members',
+          write: 'members',
+          membership: { table: 'gphone_m; DROP TABLE users', foreignKey: 'parent_id' }
+        },
+        schema: { label: 'string' }
+      })
+    ).toThrow(/must be lower_snake_case/);
   });
 });
 
@@ -183,25 +250,30 @@ describe('defineService — event registration', () => {
     ]);
   });
 
-  it('registers only get for a shared-scope app', () => {
-    // The important half of "shared scope": not just an empty clientWritable, but no
-    // generic mutation endpoint existing at all. A membership check cannot be
-    // expressed by ownership, so create/update/delete must be written by hand.
+  it('registers nothing generic when both axes are member-scoped', () => {
+    // The important half: not just an empty clientWritable, but no generic endpoint
+    // existing at all. `get` goes too, which the old `shared` scope kept — a membership
+    // read needs the parent id, and the generic filter path cannot require one, so the
+    // endpoint it left registered could only ever answer by ownership.
     const events = mountAndCapture({
       id: 'shared_a',
-      scope: 'shared',
+      access: {
+        read: 'members',
+        write: 'members',
+        membership: { table: 'gphone_shared_a_members', foreignKey: 'parent_id' }
+      },
       schema: { label: 'string' }
     });
 
-    expect(events).toEqual(['gphone:server:shared_a:get']);
+    expect(events).toEqual([]);
   });
 
-  it('registers get and delete but not create or update when server-authored', () => {
+  it('registers get and delete but not create or update when the server authors', () => {
     // A server-authored row still belongs to one citizenid, so reading and deleting
     // your own mail is legitimate. Only authoring is closed.
     const events = mountAndCapture({
       id: 'authored_a',
-      serverAuthored: true,
+      access: { read: 'owner', write: 'server' },
       schema: { sender: 'string' }
     });
 
@@ -211,7 +283,7 @@ describe('defineService — event registration', () => {
     ]);
   });
 
-  it('lets an explicit option override the scope default', () => {
+  it('lets an explicit option override the access default', () => {
     const events = mountAndCapture({
       id: 'owned_b',
       schema: { label: 'string' },

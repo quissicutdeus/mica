@@ -17,21 +17,10 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
   }
 
   /**
-   * Is this player currently in the conversation?
-   *
-   * The authorization primitive for everything conversation-scoped. Rows here are
-   * shared between players, so ownership by `citizenid` is not the right question —
-   * membership is.
+   * `isParticipant` used to live here. It is now the inherited `Repository.isMember`,
+   * derived from this service's `membership` declaration — same query, one definition, and
+   * Messages no longer reaches into this class to authorize its own reads.
    */
-  async isParticipant(conversationId: number, citizenid: string): Promise<boolean> {
-    const query = `
-            SELECT 1 FROM gphone_messages_participants
-            WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL
-            LIMIT 1
-        `;
-    const result = await Database.single<unknown>(query, [conversationId, citizenid]);
-    return Boolean(result);
-  }
 
   /**
    * Soft-delete a conversation for everyone in it.

@@ -16,13 +16,12 @@ import { notifyPlayer } from '../lib/shell';
  * `ensure gphone`.
  *
  * No NUI surface: all four generic actions are off and the client reaches battery only
- * through the named events below. `serverAuthored` keeps the columns non-client-writable
+ * through the named events below. `write: 'server'` keeps the columns non-client-writable
  * on top of that.
  */
 export const batteryApp = defineService<PhoneBattery>({
   id: 'battery',
-  scope: 'owner',
-  serverAuthored: true,
+  access: { read: 'owner', write: 'server' },
   schema: {
     level: { type: 'int', notNull: true, default: 100 }
   },

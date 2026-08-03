@@ -12,13 +12,17 @@ import {
 } from '../lib/payload';
 
 /**
- * Conversations: owner scope, deliberately not `shared`.
+ * Conversations: owner on both axes, with membership declared alongside.
  *
  * The row genuinely has an owner — `citizenid` is the creator — and renaming is
  * correctly restricted to them by the ownership-scoped generic update. What is shared
  * is *visibility*, and that is decided by the participants join table, which every
- * custom action below checks. Declaring this `shared` would disable the generic
+ * custom action below checks. Setting either axis to `members` would disable the generic
  * update and silently break rename.
+ *
+ * That split is exactly why `access` has two axes rather than one `scope`: this table
+ * needs ownership-scoped writes *and* membership-scoped reads at the same time, which a
+ * single value could not say.
  *
  * The participants join table is declared as a child table so `pnpm generate:sql`
  * emits a complete schema: it carries `role`, a different status enum, and two
@@ -27,7 +31,17 @@ import {
 export const conversations = defineService<Conversation>({
   id: 'conversations',
   table: 'gphone_messages_conversations',
-  scope: 'owner',
+  access: {
+    read: 'owner',
+    write: 'owner',
+    membership: {
+      table: 'gphone_messages_participants',
+      foreignKey: 'conversation_id',
+      // A conversation's membership is keyed on its own id.
+      localKey: 'id',
+      liveWhileNull: 'left_at'
+    }
+  },
   statuses: ['active', 'archived', 'deleted', 'moderated'],
   schema: {
     // Set by the custom create; never client-writable.

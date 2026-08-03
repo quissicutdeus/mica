@@ -6,10 +6,10 @@ import { Database } from '../lib/Database';
 import { fields, flagUnlessFalse, requirePositiveInt } from '../lib/payload';
 
 /**
- * Mail: owner-scoped but server-authored.
+ * Mail: `read: 'owner'`, `write: 'server'`.
  *
  * Nobody writes mail from their own phone — it arrives from jobs, dispatches and
- * bank alerts via the `SendSystemEmail` export below. `serverAuthored` therefore
+ * bank alerts via the `SendSystemEmail` export below. The `server` write axis therefore
  * closes the generic create/update path entirely, while reads and deletes stay
  * ownership-scoped because a mail row still belongs to exactly one citizenid.
  *
@@ -47,8 +47,7 @@ let mailRepo!: MailRepository;
 
 export const mail = defineService<Mail>({
   id: 'mail',
-  scope: 'owner',
-  serverAuthored: true,
+  access: { read: 'owner', write: 'server' },
   statuses: ['active', 'archived', 'deleted', 'moderated'],
   schema: {
     sender: { type: 'string', length: 100, notNull: true },
@@ -117,7 +116,7 @@ app.registerEvent('deleteMail', async (source, cbId, data, citizenid) => {
  *
  * Lets external resources (jobs, dispatches, bank alerts) drop mail into a player's
  * mailbox. This is the only write path into the table, which is what
- * `serverAuthored` is asserting.
+ * `write: 'server'` is asserting.
  */
 const SendSystemEmail = async (
   targetCitizenId: string,

@@ -79,8 +79,8 @@ List an item, browse, make an offer, buy.
 Tracked separately; summarised here so the dependencies above resolve to something.
 
 1. **Multiplayer authorization in `defineService`** — public-read and membership-scoped
-   services, plus keyset paging. Today `scope: 'shared'` disables writes rather than sharing
-   anything, so every multiplayer app hand-writes its server half.
+   services, plus keyset paging. The read/write axes and declared membership have landed;
+   what remains is `read: 'public'` and paging, which is what a feed needs.
 2. **A generic server→app push channel** — `shell/nuiMessages.ts` is a closed route table
    that an add-on cannot join.
 3. **A shared player directory** — resolving a citizenid to a display name, handle and

@@ -50,8 +50,7 @@ class ReportRepository extends SchemaRepository<Report> {
  */
 export const reports = defineService<Report>({
   id: 'reports',
-  scope: 'owner',
-  serverAuthored: true,
+  access: { read: 'owner', write: 'server' },
   schema: {
     // Not a foreign key, matching gphone_audit_logs: a report has to outlive the
     // content it describes, which is the entire point once that content is moderated.

@@ -9,12 +9,17 @@ import { Message } from '@shared/types';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 
 /**
- * Messages: shared scope.
+ * Messages: membership on both axes.
  *
- * `gphone_messages.citizenid` is the **sender**, not an owner, so ownership scoping
- * is the wrong authorization question — access is decided by conversation
- * membership. `scope: 'shared'` therefore registers no generic mutation events at
- * all; both actions below check membership explicitly.
+ * `gphone_messages.citizenid` is the **sender**, not an owner, so ownership scoping is the
+ * wrong authorization question — access is decided by conversation membership. Both axes
+ * are therefore `members`, which registers no generic CRUD at all: a membership check needs
+ * the parent conversation id, and that is not part of the generic payload contract. Both
+ * actions below supply it and check first.
+ *
+ * Note `localKey: 'conversation_id'`. A conversation's membership is keyed on its own `id`;
+ * a *message*'s is keyed on its parent's. Same join table, different local column — which
+ * is exactly why `localKey` exists, and why this table was inexpressible before it did.
  *
  * The attachments join table is declared as a child table so `pnpm generate:sql`
  * emits a complete schema. It carries neither `status` nor timestamps, which is why
@@ -23,7 +28,16 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
 export const messages = defineService<Message>({
   id: 'messages',
   table: 'gphone_messages',
-  scope: 'shared',
+  access: {
+    read: 'members',
+    write: 'members',
+    membership: {
+      table: 'gphone_messages_participants',
+      foreignKey: 'conversation_id',
+      localKey: 'conversation_id',
+      liveWhileNull: 'left_at'
+    }
+  },
   statuses: ['active', 'deleted', 'moderated'],
   schema: {
     conversation_id: {
@@ -78,10 +92,14 @@ const photoRepo = photos.repo;
  * Messages live in a table shared between players, so ownership by `citizenid` is
  * the wrong question — membership is. Without this check, a client can walk
  * conversation ids and read or write anyone's threads.
+ *
+ * The predicate itself comes from this service's own `membership` declaration via the
+ * inherited `isMember`, rather than from a second hand-written query in
+ * `ConversationRepository`. Both used to exist and had to agree on what "still in the
+ * thread" meant; now there is one definition and it is the declaration.
  */
 const requireParticipant = async (conversationId: number, citizenid: string): Promise<void> => {
-  const isParticipant = await conversationRepo.isParticipant(conversationId, citizenid);
-  if (!isParticipant) {
+  if (!(await messageRepo.isMember(conversationId, citizenid))) {
     throw new Error('Not a participant in this conversation.');
   }
 };

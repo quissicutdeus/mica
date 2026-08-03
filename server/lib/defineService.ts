@@ -125,30 +125,76 @@ export const normalizeIndex = (index: IndexDefinition): ResolvedIndex =>
 type ServiceSchema = Record<string, ColumnType | ColumnDef>;
 
 /**
- * `owner` — rows belong to one citizenid; the generic CRUD path is safe as-is.
- * `shared` — rows are visible to several players (conversations, messages), so
- *   ownership is the wrong authorization question and the generic mutation path
- *   is disabled. A shared app must supply custom actions that check membership.
+ * Who may read a row through the generic `get`, and who may write one.
+ *
+ * Two axes, because the old single `scope` conflated them and the code already knew it.
+ * `Conversations.ts` says so in its own header: the row genuinely has an owner, and what
+ * is shared is *visibility*. So Conversations declared `owner` and hand-wrote membership,
+ * while Messages declared `shared` and hand-wrote membership — the same check, in two
+ * different spellings, each free to drift from the other.
  */
-type ServiceScope = 'owner' | 'shared';
+interface AccessDefinition {
+  /**
+   * `owner`   — the caller's citizenid is forced into the WHERE. The default.
+   * `members` — decided by `membership`, and the generic `get` is **not** registered:
+   *             a membership read needs the parent id from the payload, which the
+   *             generic filter path has no way to require. Supply a custom action and
+   *             call `repo.isMember(...)`.
+   */
+  read: 'owner' | 'members';
+  /**
+   * `owner`   — create/update/delete scoped to the row's citizenid.
+   * `server`  — rows are written by the server, never the phone's owner. Nothing becomes
+   *             client-writable and create/update are not registered; delete stays
+   *             owner-scoped, because a server-authored row still belongs to one player.
+   * `members` — the generic mutation path is not registered. Ownership is the wrong
+   *             question and the parent id is not on the payload contract, so the app
+   *             supplies actions that check `repo.isMember(...)` first.
+   */
+  write: 'owner' | 'server' | 'members';
+  /** Required when either axis is `members`; rejected otherwise. */
+  membership?: MembershipDefinition;
+}
+
+/**
+ * How membership is decided, as data rather than as a SQL string.
+ *
+ * Never a caller-supplied fragment: §2.9's identifier allowlist has to extend across the
+ * join, and a `where` string is precisely the hole that allowlist exists to close.
+ *
+ * `localKey` is what makes this reusable rather than a Conversations special case. A
+ * conversation's membership is decided by its own `id`; a *message*'s is decided by its
+ * `conversation_id`. Same join table, different local column — without `localKey`,
+ * membership only ever works one hop from the parent row and Messages is inexpressible.
+ */
+interface MembershipDefinition {
+  /** Join table holding the members. Not prefixed; give the full name. */
+  table: string;
+  /** Column on the join table holding the parent id. */
+  foreignKey: string;
+  /** Column on *this* table that `foreignKey` matches. Defaults to `id`. */
+  localKey?: string;
+  /** Column on the join table holding the member. Defaults to `citizenid`. */
+  citizenColumn?: string;
+  /** Membership is live only while this column IS NULL — `left_at`. */
+  liveWhileNull?: string;
+}
+
+export interface ResolvedMembership {
+  table: string;
+  foreignKey: string;
+  localKey: string;
+  citizenColumn: string;
+  liveWhileNull: string | null;
+}
 
 export interface ServiceDefinition {
   /** Matches the web module's manifest id. */
   id: string;
   /** Defaults to `gphone_<id>`. */
   table?: string;
-  /** Defaults to 'owner'. */
-  scope?: ServiceScope;
-  /**
-   * Rows are written by the server, never by the phone's owner — mail arriving from
-   * a job, a bank alert, a dispatch. Nothing becomes client-writable and the generic
-   * create/update events are not registered, so an app cannot accidentally expose a
-   * write path for data the client has no business authoring.
-   *
-   * Distinct from `scope: 'shared'`: a server-authored row still belongs to exactly
-   * one citizenid, so ownership scoping on reads and deletes is still correct.
-   */
-  serverAuthored?: boolean;
+  /** Defaults to `{ read: 'owner', write: 'owner' }`. */
+  access?: AccessDefinition;
   schema: ServiceSchema;
   /** Values the `status` column accepts. Defaults to active/deleted. */
   statuses?: readonly string[];
@@ -185,17 +231,18 @@ const normalizeColumn = (spec: ColumnType | ColumnDef): ColumnDef =>
   typeof spec === 'string' ? { type: spec } : spec;
 
 /**
- * A field is client-writable unless it opts out. Shared-scope and server-authored
- * apps opt every field out wholesale.
+ * A field is client-writable unless it opts out. Only an owner-write table has a generic
+ * client write path at all, so `server` and `members` opt every field out wholesale.
  */
-const isClientWritable = (def: ColumnDef, scope: ServiceScope, serverAuthored: boolean): boolean =>
-  scope === 'owner' && !serverAuthored && def.clientWritable !== false;
+const isClientWritable = (def: ColumnDef, write: AccessDefinition['write']): boolean =>
+  write === 'owner' && def.clientWritable !== false;
 
 export interface ResolvedService {
   id: string;
   table: string;
-  scope: ServiceScope;
-  serverAuthored: boolean;
+  access: Required<Pick<AccessDefinition, 'read' | 'write'>>;
+  /** Resolved defaults filled in; null unless an axis is `members`. */
+  membership: ResolvedMembership | null;
   statuses: readonly string[];
   /** Declared fields only, in declaration order — implicit columns excluded. */
   fields: { name: string; def: ColumnDef }[];
@@ -220,9 +267,70 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     throw new Error(`defineService('${id}'): 'schema' must declare at least one field.`);
   }
 
-  const scope = definition.scope ?? 'owner';
-  const serverAuthored = definition.serverAuthored === true;
+  const access = {
+    read: definition.access?.read ?? 'owner',
+    write: definition.access?.write ?? 'owner'
+  } as const;
+  const usesMembership = access.read === 'members' || access.write === 'members';
+  const rawMembership = definition.access?.membership;
+
+  if (usesMembership && !rawMembership) {
+    throw new Error(
+      `defineService('${id}'): access declares 'members' but no 'membership'. Membership has ` +
+        'to name the join table, or there is nothing to check against.'
+    );
+  }
+  /**
+   * Deliberately no "declared but unused" error here.
+   *
+   * Conversations is the case that rules it out: its generic path is genuinely
+   * owner-scoped — renaming rides the ownership-scoped `update`, so only the creator can
+   * do it — while `read`, `archive` and `delete` are custom actions that each have to
+   * check *participation*. So it declares `membership` with neither axis set to `members`,
+   * and `repo.isMember` is consumed by its own handlers rather than by the generic path.
+   * Rejecting that would push it back to a hand-written predicate, which is the
+   * duplication this whole declaration exists to remove.
+   */
+
   const table = definition.table ?? `gphone_${id}`;
+
+  let membership: ResolvedMembership | null = null;
+  if (rawMembership) {
+    const identifiers: [string, string | undefined][] = [
+      ['table', rawMembership.table],
+      ['foreignKey', rawMembership.foreignKey],
+      ['localKey', rawMembership.localKey],
+      ['citizenColumn', rawMembership.citizenColumn],
+      ['liveWhileNull', rawMembership.liveWhileNull]
+    ];
+    for (const [field, value] of identifiers) {
+      // Every one of these is interpolated into SQL, and MySQL cannot parameterize an
+      // identifier. Same rule as the column allowlist, applied across the join.
+      if (value !== undefined && !/^[a-z][a-z0-9_]*$/.test(value)) {
+        throw new Error(
+          `defineService('${id}'): membership.${field} '${value}' must be lower_snake_case — ` +
+            'it becomes a SQL identifier.'
+        );
+      }
+    }
+    if (!rawMembership.table || !rawMembership.foreignKey) {
+      throw new Error(`defineService('${id}'): membership needs both 'table' and 'foreignKey'.`);
+    }
+    if (rawMembership.table === table) {
+      throw new Error(
+        `defineService('${id}'): membership.table '${table}' is the primary table. MySQL ` +
+          'cannot subquery the table it is updating (error 1093), and it would only surface ' +
+          'on a member write at runtime.'
+      );
+    }
+    membership = {
+      table: rawMembership.table,
+      foreignKey: rawMembership.foreignKey,
+      localKey: rawMembership.localKey ?? 'id',
+      citizenColumn: rawMembership.citizenColumn ?? 'citizenid',
+      liveWhileNull: rawMembership.liveWhileNull ?? null
+    };
+  }
   const statuses = definition.statuses ?? DEFAULT_STATUSES;
 
   if (!statuses.includes('active') || !statuses.includes('deleted')) {
@@ -328,20 +436,16 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
   return {
     id,
     table,
-    scope,
-    serverAuthored,
+    access,
+    membership,
     statuses,
     fields,
     indexes,
     childTables,
     columns,
-    clientWritable: fields
-      .filter((f) => isClientWritable(f.def, scope, serverAuthored))
-      .map((f) => f.name),
+    clientWritable: fields.filter((f) => isClientWritable(f.def, access.write)).map((f) => f.name),
     clientFilterable: fields
-      .filter(
-        (f) => f.def.clientFilterable === true && isClientWritable(f.def, scope, serverAuthored)
-      )
+      .filter((f) => f.def.clientFilterable === true && isClientWritable(f.def, access.write))
       .map((f) => f.name)
   };
 }
@@ -358,6 +462,7 @@ export class SchemaRepository<T> extends Repository<T> {
   protected columns: readonly string[];
   protected clientWritable: readonly string[];
   protected clientFilterable: readonly string[];
+  protected membership: ResolvedMembership | null;
 
   constructor(resolved: ResolvedService) {
     super();
@@ -365,6 +470,7 @@ export class SchemaRepository<T> extends Repository<T> {
     this.columns = resolved.columns;
     this.clientWritable = resolved.clientWritable;
     this.clientFilterable = resolved.clientFilterable;
+    this.membership = resolved.membership;
   }
 }
 
@@ -390,8 +496,17 @@ export const declaredServices: ResolvedService[] = [];
  * Declare an app's server half: derives the repository, registers the generic CRUD
  * events, and hands back the pieces so custom actions can be added on top.
  *
- * A `shared`-scope app gets no generic mutation events — ownership by citizenid is
- * not a valid authorization check for rows several players can see.
+ * What the access axes turn off, and why each one has to:
+ *
+ * - `write: 'server'` — create and update. The client has no business authoring the row.
+ *   Delete stays, because a server-authored row still belongs to exactly one citizenid.
+ * - `write: 'members'` — create, update and delete. Ownership is the wrong question, and
+ *   the parent id a membership check needs is not part of the generic payload contract.
+ * - `read: 'members'` — get, for the same reason: the generic filter path cannot require
+ *   a parent id, so it would have nothing to check membership against.
+ *
+ * A `members` app therefore supplies its own actions and calls `repo.isMember(...)` — one
+ * derived query rather than the two hand-written copies Conversations and Messages had.
  */
 export function defineService<T>(definition: ServiceDefinition): ServerAppHandle<T> {
   const resolved = resolveAppSchema(definition);
@@ -407,18 +522,17 @@ export function defineService<T>(definition: ServiceDefinition): ServerAppHandle
   }
   declaredServices.push(resolved);
 
-  // Shared scope cannot authorize any mutation by ownership. Server-authored tables
-  // still own their rows, so delete stays available — only authoring is closed.
-  const scopeLockdown: ServiceOptions =
-    resolved.scope === 'shared'
+  const accessLockdown: ServiceOptions = {
+    ...(resolved.access.read === 'members' ? { disableGet: true } : {}),
+    ...(resolved.access.write === 'server' ? { disableCreate: true, disableUpdate: true } : {}),
+    ...(resolved.access.write === 'members'
       ? { disableCreate: true, disableUpdate: true, disableDelete: true }
-      : resolved.serverAuthored
-        ? { disableCreate: true, disableUpdate: true }
-        : {};
+      : {})
+  };
 
   const app = new ServiceEndpoint<T>(resolved.id, repo, {
     tableName: resolved.table,
-    ...scopeLockdown,
+    ...accessLockdown,
     ...definition.options
   });
 

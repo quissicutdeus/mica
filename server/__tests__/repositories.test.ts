@@ -103,10 +103,39 @@ describe('shipped repositories — inherited guarantees', () => {
 
   it('conversation membership is a positive check, not an absence of error', async () => {
     dbMock.single.mockResolvedValueOnce({ 1: 1 });
-    await expect((conversations.repo as any).isParticipant(3, 'CIT_A')).resolves.toBe(true);
+    await expect(conversations.repo.isMember(3, 'CIT_A')).resolves.toBe(true);
 
     dbMock.single.mockResolvedValueOnce(null);
-    await expect((conversations.repo as any).isParticipant(3, 'CIT_STRANGER')).resolves.toBe(false);
+    await expect(conversations.repo.isMember(3, 'CIT_STRANGER')).resolves.toBe(false);
+  });
+
+  it('membership carries the liveness rule, so someone who left is not a member', async () => {
+    // `left_at IS NULL` used to be re-typed into every participants query by hand, and an
+    // omission is invisible: the check passes and a player who left the thread keeps acting
+    // on it. It comes from the declaration now, so it cannot be forgotten at a call site.
+    dbMock.single.mockClear();
+    dbMock.single.mockResolvedValueOnce(null);
+
+    await conversations.repo.isMember(3, 'CIT_A');
+
+    const sql = String(dbMock.single.mock.calls[0][0]);
+    expect(sql).toContain('`left_at` IS NULL');
+    expect(sql).toContain('`gphone_messages_participants`');
+    expect(dbMock.single.mock.calls[0][1]).toEqual([3, 'CIT_A']);
+  });
+
+  it('keys a message on its parent conversation, not on its own id', async () => {
+    // The reason `localKey` exists. Messages and Conversations share one join table but
+    // reach it from different columns; without the distinction, a message's membership
+    // would be looked up by the message id and match nothing.
+    expect(messages.resolved.membership?.localKey).toBe('conversation_id');
+    expect(conversations.resolved.membership?.localKey).toBe('id');
+  });
+
+  it('refuses isMember on a table that never declared membership', async () => {
+    // Better than silently answering false, which would read as "not a member" and deny
+    // access for a reason that has nothing to do with the player.
+    await expect(mail.repo.isMember(1, 'CIT_OWNER')).rejects.toThrow(/requires a 'membership'/);
   });
 
   it('markRead only moves the caller own read cursor, and only while still joined', async () => {
