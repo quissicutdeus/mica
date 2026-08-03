@@ -8,6 +8,7 @@
     useNuiBridge,
     useAppAction,
     usePhoneNotification,
+    useTimer,
     onAppForeground,
     CloseIcon,
     FlipCameraIcon,
@@ -20,6 +21,7 @@
   const { openApp } = useNavigation();
   const { run } = useAppAction();
   const { toast } = usePhoneNotification();
+  const { after } = useTimer();
   import { sampleAvatars } from './mockViewfinder';
   import { onDestroy } from 'svelte';
 
@@ -47,7 +49,7 @@
    * the browser has an initial position to animate away from.
    */
   let flyingPhoto = $state<{ src: string; box: string; style: string } | null>(null);
-  let flyTimer: ReturnType<typeof setTimeout> | undefined;
+  let cancelFly: (() => void) | undefined;
 
   const FLY_MS = 480;
 
@@ -92,18 +94,18 @@
       });
     });
 
-    clearTimeout(flyTimer);
-    flyTimer = setTimeout(() => {
+    cancelFly?.();
+    cancelFly = after(FLY_MS, () => {
       flyingPhoto = null;
       bounceThumbnail();
-    }, FLY_MS);
+    });
   };
 
   const bounceThumbnail = () => {
     isThumbnailBouncing = true;
-    setTimeout(() => {
+    after(600, () => {
       isThumbnailBouncing = false;
-    }, 600);
+    });
   };
 
   const { onKeybind, bindings } = useKeybinds();
@@ -119,7 +121,6 @@
 
   onDestroy(() => {
     isPreviewingPhoto.set(false);
-    clearTimeout(flyTimer);
   });
 
   // The client reports whether the scripted camera is up. It answers `supported: false`
@@ -156,16 +157,16 @@
     // viewfinder shows the live world. The overlay stays mounted and fades, so the
     // ramp down is visible instead of the element simply vanishing.
     isFlashing = true;
-    setTimeout(() => {
+    after(60, () => {
       isFlashing = false;
-    }, 60);
+    });
 
     // The chrome fades out over `duration-75`, and the screenshot is a crop of this
     // exact region — so the capture has to wait for the fade to finish or the shutter
     // bar is still half-visible in the photo. Was 50ms against a 75ms fade.
     const CHROME_FADE_MS = 75;
 
-    setTimeout(async () => {
+    after(CHROME_FADE_MS + 30, async () => {
       try {
         let capturedImage: string;
 
@@ -255,7 +256,7 @@
       } finally {
         isTakingPhoto.set(false);
       }
-    }, CHROME_FADE_MS + 30);
+    });
   };
 
   const shoot = () => {

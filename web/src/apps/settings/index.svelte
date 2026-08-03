@@ -8,7 +8,8 @@
     usePhoneNotification,
     Screen,
     ChevronRightIcon,
-    useDevTools
+    useDevTools,
+    useTimer
   } from '@gphone/sdk';
   import About from './panes/About.svelte';
   import Display from './panes/Display.svelte';
@@ -67,7 +68,8 @@
    * fresh open until the taps are done again.
    */
   let devToolsTaps = $state(0);
-  let tapResetTimer: ReturnType<typeof setTimeout> | undefined;
+  let cancelTapReset: (() => void) | undefined;
+  const { after } = useTimer();
 
   const TAPS_TO_UNLOCK = 10;
 
@@ -91,16 +93,16 @@
     }
 
     devToolsTaps += 1;
-    clearTimeout(tapResetTimer);
+    cancelTapReset?.();
     // Taps must be consecutive; drifting off resets the count.
-    tapResetTimer = setTimeout(() => (devToolsTaps = 0), 2000);
+    cancelTapReset = after(2000, () => (devToolsTaps = 0));
 
     const remaining = TAPS_TO_UNLOCK - devToolsTaps;
 
     if (remaining <= 0) {
       devToolsUnlocked.set(true);
       devToolsTaps = 0;
-      clearTimeout(tapResetTimer);
+      cancelTapReset?.();
       toast.show({ type: 'success', message: 'Developer Tools unlocked' });
     } else if (remaining <= 3) {
       toast.show({ type: 'info', message: `${remaining} more to unlock Developer Tools` });

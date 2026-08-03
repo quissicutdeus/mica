@@ -18,12 +18,14 @@
     onAppForeground,
     renderMarkdown,
     useAppAction,
-    useAppLevels
+    useAppLevels,
+    useTimer
   } from '@gphone/sdk';
 
   const { notesStore: notes } = useNotes();
   const notesLoaded = notes.loaded;
   const { busy, run } = useAppAction();
+  const { after } = useTimer();
   import { fade } from 'svelte/transition';
 
   let { onback } = $props();
@@ -135,10 +137,10 @@
     const text = textAreaRef.value;
     const selectedText = text.substring(start, end) || placeholder;
 
-    const before = text.substring(0, start);
-    const after = text.substring(end);
+    const textBefore = text.substring(0, start);
+    const textAfter = text.substring(end);
 
-    const newText = before + prefix + selectedText + suffix + after;
+    const newText = textBefore + prefix + selectedText + suffix + textAfter;
 
     // Update draft content
     if (draftNote) {
@@ -148,13 +150,13 @@
     }
 
     // Restore focus and selection
-    setTimeout(() => {
+    after(0, () => {
       if (textAreaRef) {
         textAreaRef.focus();
         const newCursorPos = start + prefix.length + selectedText.length + suffix.length;
         textAreaRef.setSelectionRange(newCursorPos, newCursorPos);
       }
-    }, 0);
+    });
   };
 
   // No sort here — the store keeps the list newest-edited-first however it changed, so a

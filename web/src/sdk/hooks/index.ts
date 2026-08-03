@@ -26,3 +26,4 @@ export * from './useReports';
 export * from './useSound';
 export * from './useStorage';
 export * from './useSystemHardware';
+export * from './useTimer';
