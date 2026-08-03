@@ -8,7 +8,7 @@ export interface CrudEvents {
   remove?: string;
 }
 
-export interface CrudOptions<T> {
+export interface CrudOptions<T, TDraft> {
   /**
    * One order for the list, however it changed.
    *
@@ -18,8 +18,15 @@ export interface CrudOptions<T> {
    * until the next reload. A comparator settles it once for every path.
    */
   sort?: (a: T, b: T) => number;
-  /** Throw to refuse a write before it leaves the phone. The message reaches the user. */
-  validate?: (draft: any) => void;
+  /**
+   * Throw to refuse a write before it leaves the phone. The message reaches the user.
+   *
+   * Runs on both paths, and they do not carry the same shape: `add` passes a `TDraft`
+   * with no `id` yet, `update` passes a whole `T`. A validator therefore has to accept
+   * either — `Partial<Contact>` is what the one implementation actually takes — which is
+   * what the previous `any` was standing in for.
+   */
+  validate?: (draft: TDraft | T) => void;
 }
 
 const timeOf = (value: unknown): number => {
@@ -55,7 +62,7 @@ export const byNewest =
 export function createCrudStore<T extends { id: number }, TDraft = Omit<T, 'id'>>(
   name: string,
   events: CrudEvents,
-  options: CrudOptions<T> = {}
+  options: CrudOptions<T, TDraft> = {}
 ) {
   const { subscribe, set, update: mutate } = writable<T[]>([]);
 

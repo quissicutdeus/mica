@@ -25,7 +25,7 @@ export interface RunningApp {
    * problem". The manifest holds the display name; this is the key you look it up with.
    */
   id: string;
-  props: Record<string, any>;
+  props: Record<string, unknown>;
 }
 
 /**
