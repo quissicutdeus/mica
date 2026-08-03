@@ -5,3 +5,12 @@ updates:
     directory: /
     schedule:
       interval: 'daily'
+
+  # Workflow actions were not watched, which is why they drifted onto a deprecated runtime
+  # with nothing saying so: `upload-artifact@v4` and `pnpm/action-setup@v4` both target
+  # Node 20, and the runner now forces them onto 24 and warns on every run. Dependabot
+  # proposes versions that actually exist, which beats bumping a tag by hand and hoping.
+  - package-ecosystem: 'github-actions'
+    directory: /
+    schedule:
+      interval: 'weekly'

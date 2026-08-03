@@ -27,7 +27,20 @@ export default defineConfig({
   webServer: {
     command: 'pnpm dev',
     url: `http://localhost:${PORT}`,
-    reuseExistingServer: !process.env.CI,
+    /**
+     * Always reuse, including in CI.
+     *
+     * The usual reason to refuse in CI is that a leftover server would serve stale code —
+     * but nothing here is left over. `scripts/verify.js` starts one Vite server up front
+     * and runs the whole e2e suite against it, precisely because Playwright's own cold
+     * start costs about two and a half minutes against twenty-seven seconds warm.
+     *
+     * With `!process.env.CI` that arrangement could not work: `verify` started the server,
+     * then Playwright found the port occupied and refused it, so **every CI run failed at
+     * the e2e gate** while the identical command passed locally. Each CI job is a fresh
+     * container, so there is no stale server for the strict setting to protect against.
+     */
+    reuseExistingServer: true,
     timeout: 120 * 1000
   }
 });
