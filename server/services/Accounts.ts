@@ -70,6 +70,51 @@ export const accounts = defineService<Account>({
     // The switcher's read: my accounts in this app.
     { name: 'citizenid_app', columns: ['citizenid', 'app'] }
   ],
+  /**
+   * The follow graph, declared here rather than in Blabber.
+   *
+   * It is account-to-account, and accounts are shared, so a future Instagram-alike inherits the
+   * graph instead of growing a parallel one. **No `citizenid` column**, and none is needed:
+   * every `gphone_accounts` row carries an `app`, so a row can only ever link two accounts in
+   * the same app — following `@bob` on Blabber cannot touch `@bob` somewhere else, because that
+   * is a different account id. Ownership stays behind each account and invisible to readers,
+   * exactly as it is for a Blab.
+   *
+   * DDL-only, like the likes table. What it needs is insert, delete and count, and the generic
+   * CRUD path would only offer ways to get that wrong.
+   */
+  childTables: [
+    {
+      name: 'gphone_account_follows',
+      columns: {
+        follower_account_id: {
+          type: 'int',
+          notNull: true,
+          references: { table: 'gphone_accounts', column: 'id' }
+        },
+        followee_account_id: {
+          type: 'int',
+          notNull: true,
+          references: { table: 'gphone_accounts', column: 'id' }
+        },
+        created_at: { type: 'timestamp', notNull: true, defaultNow: true }
+      },
+      indexes: [
+        /**
+         * One row per relation, enforced by the database rather than by find-then-insert —
+         * the same constraint the likes table uses, and for the same reason: two rapid taps
+         * would find the race.
+         */
+        {
+          name: 'follower_followee',
+          columns: ['follower_account_id', 'followee_account_id'],
+          unique: true
+        },
+        // The other direction: who follows this account.
+        { name: 'followee_account_id', columns: ['followee_account_id'] }
+      ]
+    }
+  ],
   // Custom: validates the handle, caps how many a player may hold, and translates a
   // duplicate-key collision into something a player can read.
   options: { disableCreate: true }
@@ -164,6 +209,130 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     if (/duplicate/i.test(message)) throw new Error(`@${handle} is taken.`);
     throw error;
   }
+});
+
+/**
+ * The follow graph.
+ *
+ * Every one of these verifies the *acting* account with `ownedAccount` before touching a row.
+ * `follower_account_id` arrives in the payload and nothing about a payload proves it belongs to
+ * the session that sent it (§2.9) — without the check, a player follows and unfollows on anyone
+ * else's behalf by guessing an id.
+ *
+ * The same shape as `blabber:like`/`unlike`, which already got this right: insert-only with the
+ * unique index making it idempotent, and a delete scoped to the caller's own account.
+ */
+app.registerEvent('follow', async (source, cbId, data, citizenid) => {
+  const body = fields(data);
+  const appId = optionalString(body.app);
+  if (!appId) throw new Error('An app id is required.');
+
+  const follower = await ownedAccount(body.follower_account_id, citizenid, appId);
+  if (!follower) throw new Error('That account is not yours.');
+
+  const followeeId = requirePositiveInt(body.followee_account_id, 'followee account id');
+
+  /**
+   * Following yourself is refused rather than stored. It would put your own posts in your
+   * Following feed, which already has them nowhere else to be, and inflate both counts by one
+   * for everybody.
+   */
+  if (followeeId === follower.id) throw new Error('You cannot follow yourself.');
+
+  /**
+   * The target must exist, be active, and be **in the same app**. Not decoration: a row linking
+   * a Blabber account to an Instagram-alike one would be a following relation neither app's
+   * feed could explain, and the app segment is the only thing keeping the two graphs apart.
+   */
+  const followee = await Database.single<{ id: number }>(
+    `SELECT \`id\` FROM \`gphone_accounts\`
+     WHERE \`id\` = ? AND \`app\` = ? AND \`status\` = 'active' LIMIT 1`,
+    [followeeId, appId]
+  );
+  if (!followee) throw new Error('That account is no longer available.');
+
+  try {
+    await Database.insert(
+      'INSERT INTO `gphone_account_follows` (`follower_account_id`, `followee_account_id`) VALUES (?, ?)',
+      [follower.id, followee.id]
+    );
+  } catch (error) {
+    // The unique index refusing a duplicate. Reported as success: from the player's point of
+    // view the follow is exactly as applied as they wanted.
+    const message = error instanceof Error ? error.message : '';
+    if (!/duplicate/i.test(message)) throw error;
+  }
+  return true;
+});
+
+app.registerEvent('unfollow', async (source, cbId, data, citizenid) => {
+  const body = fields(data);
+  const appId = optionalString(body.app);
+  if (!appId) throw new Error('An app id is required.');
+
+  const follower = await ownedAccount(body.follower_account_id, citizenid, appId);
+  if (!follower) throw new Error('That account is not yours.');
+
+  const followeeId = requirePositiveInt(body.followee_account_id, 'followee account id');
+
+  // Scoped to the caller's own account, so a row id is not authorization to remove somebody
+  // else's follow (§2.9).
+  await Database.update(
+    'DELETE FROM `gphone_account_follows` WHERE `follower_account_id` = ? AND `followee_account_id` = ?',
+    [follower.id, followeeId]
+  );
+  return true;
+});
+
+/**
+ * Follower and following counts for one account, plus whether the viewer follows it.
+ *
+ * Counted rather than denormalised onto `gphone_accounts`. A `follower_count` column is a second
+ * copy of a fact the graph already holds, and it drifts the first time a follow is removed by a
+ * path that forgets to decrement — the same reasoning that keeps Blabber's like counts out of
+ * the Blab row.
+ *
+ * `viewer_account_id` is optional and checked when present. It decides the state of a Follow
+ * button, and the button acts as one specific account of the caller's — so unlike `engagement`,
+ * which answers across every account a player holds, this has to be about exactly one. An
+ * unowned or absent viewer answers `false` rather than erroring: reading a profile is not a
+ * privileged act, and only the *button* needs an identity.
+ */
+app.registerEvent('follows', async (source, cbId, data, citizenid) => {
+  const body = fields(data);
+  const appId = optionalString(body.app);
+  if (!appId) throw new Error('An app id is required.');
+
+  const accountId = requirePositiveInt(body.account_id, 'account id');
+
+  const viewer =
+    body.viewer_account_id === undefined || body.viewer_account_id === null
+      ? null
+      : await ownedAccount(body.viewer_account_id, citizenid, appId);
+
+  const [followers, following, mine] = await Promise.all([
+    Database.scalar<number>(
+      'SELECT COUNT(*) FROM `gphone_account_follows` WHERE `followee_account_id` = ?',
+      [accountId]
+    ),
+    Database.scalar<number>(
+      'SELECT COUNT(*) FROM `gphone_account_follows` WHERE `follower_account_id` = ?',
+      [accountId]
+    ),
+    viewer
+      ? Database.single<{ id: number }>(
+          `SELECT \`id\` FROM \`gphone_account_follows\`
+           WHERE \`follower_account_id\` = ? AND \`followee_account_id\` = ? LIMIT 1`,
+          [viewer.id, accountId]
+        )
+      : Promise.resolve(null)
+  ]);
+
+  return {
+    followers: followers ?? 0,
+    following: following ?? 0,
+    followedByMe: mine !== null
+  };
 });
 
 /**

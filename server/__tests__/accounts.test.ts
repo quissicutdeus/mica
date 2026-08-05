@@ -223,3 +223,203 @@ describe('ownedAccount', () => {
     expect(dbMock.single).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The follow graph.
+ *
+ * Shared rather than Blabber's, so it lives here. Every action verifies the *acting* account
+ * first: `follower_account_id` arrives in a payload and nothing about a payload proves it belongs
+ * to the session that sent it (§2.9). Without that check a player follows and unfollows on anyone
+ * else's behalf by guessing an id.
+ */
+describe('following', () => {
+  const MINE = { id: 3, citizenid: 'CIT_A', app: 'blabber', handle: 'ada', status: 'active' };
+
+  it('refuses to follow as an account the caller does not own', async () => {
+    dbMock.single.mockResolvedValueOnce(null);
+
+    const reply = await call('follow', {
+      app: 'blabber',
+      follower_account_id: 9,
+      followee_account_id: 4
+    });
+
+    expect(reply.error).toMatch(/not yours/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('refuses to follow yourself', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE);
+
+    const reply = await call('follow', {
+      app: 'blabber',
+      follower_account_id: 3,
+      followee_account_id: 3
+    });
+
+    // It would put your own posts in your Following feed and inflate both counts for everybody.
+    expect(reply.error).toMatch(/cannot follow yourself/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('refuses a followee that is gone or in another app', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE);
+    // The followee lookup, scoped by app — a row linking two apps' accounts is a relation
+    // neither app's feed could explain.
+    dbMock.single.mockResolvedValueOnce(null);
+
+    const reply = await call('follow', {
+      app: 'blabber',
+      follower_account_id: 3,
+      followee_account_id: 4
+    });
+
+    expect(reply.error).toMatch(/no longer available/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+    expect(dbMock.single.mock.calls[1][1]).toEqual([4, 'blabber']);
+  });
+
+  it('inserts the verified account id, never the payload’s', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE);
+    dbMock.single.mockResolvedValueOnce({ id: 4 });
+
+    await call('follow', {
+      app: 'blabber',
+      follower_account_id: 3,
+      followee_account_id: 4
+    });
+
+    expect(dbMock.insert.mock.calls[0][1]).toEqual([MINE.id, 4]);
+  });
+
+  it('treats a duplicate as success, because the unique index is what makes it idempotent', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE);
+    dbMock.single.mockResolvedValueOnce({ id: 4 });
+    dbMock.insert.mockRejectedValueOnce(new Error('ER_DUP_ENTRY: Duplicate entry'));
+
+    const reply = await call('follow', {
+      app: 'blabber',
+      follower_account_id: 3,
+      followee_account_id: 4
+    });
+
+    // From the player's point of view the follow is exactly as applied as they wanted.
+    expect(reply).toBe(true);
+  });
+
+  it('does not swallow a real insert failure', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE);
+    dbMock.single.mockResolvedValueOnce({ id: 4 });
+    dbMock.insert.mockRejectedValueOnce(new Error('ER_NO_SUCH_TABLE'));
+
+    const reply = await call('follow', {
+      app: 'blabber',
+      follower_account_id: 3,
+      followee_account_id: 4
+    });
+
+    expect(reply.error).toBeTruthy();
+  });
+
+  it('scopes an unfollow to the caller’s own account', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE);
+
+    await call('unfollow', {
+      app: 'blabber',
+      follower_account_id: 3,
+      followee_account_id: 4
+    });
+
+    // A row id alone is never authorization to remove somebody else's follow.
+    expect(dbMock.update.mock.calls[0][1]).toEqual([MINE.id, 4]);
+  });
+
+  it('refuses an unfollow as an account the caller does not own', async () => {
+    dbMock.single.mockResolvedValueOnce(null);
+
+    const reply = await call('unfollow', {
+      app: 'blabber',
+      follower_account_id: 9,
+      followee_account_id: 4
+    });
+
+    expect(reply.error).toMatch(/not yours/);
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  it('counts both directions and answers whether the viewer follows', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE); // the viewer, owned
+    dbMock.scalar.mockResolvedValueOnce(12); // followers of the profile
+    dbMock.scalar.mockResolvedValueOnce(4); // accounts the profile follows
+    dbMock.single.mockResolvedValueOnce({ id: 77 }); // the viewer's own follow row
+
+    const reply = await call('follows', {
+      app: 'blabber',
+      account_id: 4,
+      viewer_account_id: 3
+    });
+
+    expect(reply).toEqual({ followers: 12, following: 4, followedByMe: true });
+  });
+
+  it('answers followedByMe false for a viewer the caller does not own', async () => {
+    // Reading a profile is not a privileged act, so this is `false` rather than an error — only
+    // the Follow *button* needs an identity.
+    dbMock.single.mockResolvedValueOnce(null);
+    dbMock.scalar.mockResolvedValueOnce(1);
+    dbMock.scalar.mockResolvedValueOnce(2);
+
+    const reply = await call('follows', {
+      app: 'blabber',
+      account_id: 4,
+      viewer_account_id: 999
+    });
+
+    expect(reply).toMatchObject({ followers: 1, following: 2, followedByMe: false });
+  });
+
+  it('answers counts with no viewer at all', async () => {
+    dbMock.scalar.mockResolvedValueOnce(0);
+    dbMock.scalar.mockResolvedValueOnce(0);
+
+    const reply = await call('follows', { app: 'blabber', account_id: 4 });
+
+    expect(reply).toEqual({ followers: 0, following: 0, followedByMe: false });
+  });
+
+  it('requires an app id, since the graph is per app', async () => {
+    const reply = await call('follow', { follower_account_id: 3, followee_account_id: 4 });
+
+    expect(reply.error).toMatch(/app id is required/);
+  });
+});
+
+describe('the follow graph declaration', () => {
+  it('is a child table with no citizenid', () => {
+    const follows = accounts.resolved.childTables?.find(
+      (table) => table.name === 'gphone_account_follows'
+    );
+
+    expect(follows).toBeDefined();
+    // None is needed: every account row carries an `app`, so a row can only link two accounts in
+    // the same app. Ownership stays behind each account and invisible to readers.
+    expect(Object.keys(follows!.columns)).toEqual([
+      'follower_account_id',
+      'followee_account_id',
+      'created_at'
+    ]);
+  });
+
+  it('constrains one row per relation in the database', () => {
+    const follows = accounts.resolved.childTables?.find(
+      (table) => table.name === 'gphone_account_follows'
+    );
+    const unique = follows!.indexes?.find((index: any) => index.unique);
+
+    // A constraint rather than find-then-insert, which has a race two rapid taps would find.
+    expect(unique).toMatchObject({
+      columns: ['follower_account_id', 'followee_account_id'],
+      unique: true
+    });
+  });
+});
