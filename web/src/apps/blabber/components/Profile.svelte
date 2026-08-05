@@ -2,6 +2,7 @@
   import {
     Avatar,
     EmptyState,
+    MessageIcon,
     SegmentedControl,
     Skeleton,
     useBlabber,
@@ -18,7 +19,20 @@
    * (`reply_to IS NULL` / `IS NOT NULL`) so each tab pages independently; filtering one fetched
    * list client-side would be wrong the moment a page happened to be all replies.
    */
-  let { handle, onhandle }: { handle: string; onhandle?: (handle: string) => void } = $props();
+  /**
+   * `onmessage` is what makes a DM reachable from a profile — the DM empty state has always told
+   * players to "tap a handle to start a conversation" and no code path implemented it, because
+   * the inbox was the only way in and the inbox only lists threads that already exist.
+   */
+  let {
+    handle,
+    onhandle,
+    onmessage
+  }: {
+    handle: string;
+    onhandle?: (handle: string) => void;
+    onmessage?: (account: Account) => void;
+  } = $props();
 
   const { myAccounts } = useBlabber();
   const { fetchNui } = useNuiBridge();
@@ -107,6 +121,19 @@
         <p class="mt-1 text-xs text-gray-300">{account.bio}</p>
       {/if}
     </div>
+    <!-- Not on your own profile: a DM to yourself is a thread with one participant, which the
+         1:1 shape has no room for. -->
+    {#if account && !mine && onmessage}
+      <button
+        type="button"
+        class="ml-auto shrink-0 rounded-full bg-sky-600 p-2 text-white transition-colors hover:bg-sky-500"
+        onclick={() => account && onmessage(account)}
+        title="Message @{handle}"
+        aria-label="Message @{handle}"
+      >
+        <MessageIcon class="h-4 w-4" />
+      </button>
+    {/if}
   </div>
 
   {#if !account && !loading}

@@ -1,7 +1,16 @@
 <script lang="ts">
   import { Avatar, EmptyState, Skeleton, formatDate, useBlabber } from '@gphone/sdk';
+  import type { Account } from '@shared/types';
   import DmComposer from './DmComposer.svelte';
   import BlabBody from './BlabBody.svelte';
+
+  /**
+   * The little the header needs about a correspondent.
+   *
+   * Not the whole `Account`: the inbox row carries a handle and a display name and no more, and
+   * a type demanding an avatar would force one of the two call sites to invent a field.
+   */
+  type DmPeer = Pick<Account, 'handle' | 'display_name'> & { avatar?: string | null };
 
   /**
    * The DM inbox, and one thread.
@@ -10,16 +19,26 @@
    * row — there is nothing to create before the first message, and nothing a third person could
    * be added to. That is the whole reason DMs here are not Conversations, which needs a
    * participants table precisely because its threads can grow.
+   *
+   * `peerAccount` is who the thread is with when the inbox has no row for them yet — a
+   * conversation started from a profile, before either side has sent anything. Without it the
+   * header resolved the peer out of `$dmThreads` alone and rendered `@` with a `?` avatar under
+   * the literal title "Message".
    */
   let {
     busy = false,
     peer = null,
+    peerAccount = null,
     onopen,
+    onpeername,
     onhandle
   }: {
     busy?: boolean;
     peer?: number | null;
-    onopen?: (peerAccountId: number | null) => void;
+    peerAccount?: DmPeer | null;
+    onopen?: (peerAccountId: number | null, account?: DmPeer | null) => void;
+    /** Reports the peer's name upward, so the screen title can be it rather than "Message". */
+    onpeername?: (name: string | null) => void;
     onhandle?: (handle: string) => void;
   } = $props();
 
@@ -33,7 +52,15 @@
     void task.finally(() => (loading = false));
   });
 
-  const active = $derived($dmThreads.find((thread) => thread.peer_account_id === peer));
+  const thread = $derived($dmThreads.find((row) => row.peer_account_id === peer));
+  /** The inbox's row wins once it exists; the handed-down account covers the first message. */
+  const active = $derived(
+    thread ?? (peerAccount ? { ...peerAccount, peer_account_id: peer } : undefined)
+  );
+
+  $effect(() => {
+    onpeername?.(active ? active.display_name || `@${active.handle}` : null);
+  });
 </script>
 
 {#if peer === null}
@@ -47,7 +74,11 @@
         <button
           type="button"
           class="flex w-full items-center gap-3 border-b border-gray-800 px-4 py-3 text-left"
-          onclick={() => onopen?.(thread.peer_account_id)}
+          onclick={() =>
+            onopen?.(thread.peer_account_id, {
+              handle: thread.handle ?? '',
+              display_name: thread.display_name
+            })}
         >
           <Avatar
             initials={(thread.handle ?? '?').slice(0, 2).toUpperCase()}
@@ -78,16 +109,22 @@
   <div class="flex h-full flex-col">
     <div class="flex items-center gap-2 border-b border-gray-800 px-4 py-2.5">
       <Avatar
-        initials={(active?.handle ?? '?').slice(0, 2).toUpperCase()}
+        initials={(active?.handle || '?').slice(0, 2).toUpperCase()}
+        src={peerAccount?.avatar ?? ''}
         size="w-8 h-8"
         showSilhouette={false}
       />
       <button
         type="button"
-        class="truncate text-sm font-semibold text-white hover:underline"
+        class="min-w-0 text-left hover:underline"
         onclick={() => active?.handle && onhandle?.(active.handle)}
       >
-        @{active?.handle ?? ''}
+        <span class="block truncate text-sm font-semibold text-white">
+          {active?.display_name || (active?.handle ? `@${active.handle}` : 'Message')}
+        </span>
+        {#if active?.display_name && active.handle}
+          <span class="block truncate text-xs text-gray-500">@{active.handle}</span>
+        {/if}
       </button>
     </div>
 

@@ -1,7 +1,24 @@
 <script lang="ts">
   import { Button } from '@gphone/sdk';
 
-  let { busy = false, onclaim }: { busy?: boolean; onclaim: (handle: string) => void } = $props();
+  /**
+   * `oncancel` is optional, and its absence is the point.
+   *
+   * This screen is two things. As the **gate**, shown when the player holds no account at all,
+   * there is nothing behind it to go back to — the feed needs an identity to post from, so a
+   * Cancel there would dismiss the only thing on screen and leave the app empty. As the **claim
+   * another handle** overlay it is reached from the identity menu, so it must be leaveable: it is
+   * `inset-0` like every other overlay here and therefore paints over the header, so without this
+   * the only way out was the Backspace keybind and there was no on-screen way at all.
+   *
+   * Same shape as `Composer`'s `oncancel`, for the same reason: one component, one caller that
+   * can be backed out of and one that cannot.
+   */
+  let {
+    busy = false,
+    onclaim,
+    oncancel
+  }: { busy?: boolean; onclaim: (handle: string) => void; oncancel?: () => void } = $props();
 
   let handle = $state('');
 
@@ -27,7 +44,12 @@
     />
   </div>
 
-  <Button disabled={!valid || busy} class="w-full" onclick={() => onclaim(handle)}>
-    {busy ? '…' : 'Claim'}
-  </Button>
+  <div class="flex w-full gap-2">
+    {#if oncancel}
+      <Button variant="secondary" class="flex-1" disabled={busy} onclick={oncancel}>Cancel</Button>
+    {/if}
+    <Button disabled={!valid || busy} class="flex-1" onclick={() => onclaim(handle)}>
+      {busy ? '…' : 'Claim'}
+    </Button>
+  </div>
 </div>

@@ -43,13 +43,32 @@
   );
 </script>
 
-<article class="flex gap-3 border-b border-gray-800 px-4 py-3">
+{#snippet avatar()}
   <Avatar
     src={blab.avatar ?? undefined}
     initials={(blab.handle ?? '?').slice(0, 2).toUpperCase()}
     size="w-9 h-9"
     showSilhouette={!blab.handle}
   />
+{/snippet}
+
+<article class="flex gap-3 border-b border-gray-800 px-4 py-3">
+  <!-- The avatar goes to the profile, like the name beside it. A picture of somebody that does
+       nothing when tapped is the one part of a row that looks like a link and is not. Named for
+       where it goes rather than what it shows, so a screen reader hears a destination — and so it
+       stays distinct from the name button, which announces the display name alone. -->
+  {#if onhandle && blab.handle}
+    <button
+      type="button"
+      class="shrink-0 cursor-pointer rounded-full transition-transform hover:scale-105"
+      onclick={() => blab.handle && onhandle(blab.handle)}
+      aria-label="{blab.display_name || blab.handle}'s profile"
+    >
+      {@render avatar()}
+    </button>
+  {:else}
+    {@render avatar()}
+  {/if}
 
   <div class="min-w-0 flex-1">
     <div class="flex items-baseline gap-1.5 text-xs">
