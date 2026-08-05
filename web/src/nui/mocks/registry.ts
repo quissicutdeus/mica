@@ -260,11 +260,21 @@ const mockRegistry: Record<string, MockHandler> = {
     const created: Blab = {
       id: nextBlabId++,
       account_id: account.id,
+      // Hydrated exactly as the server's echo is, avatar and quoted Blab included. The client
+      // prepends this row straight into the feed and no longer grafts the mouthed target on
+      // itself, so a mock that omitted `mouthed` would render an empty quote card in the browser
+      // while the real server rendered a full one — the mock disagreeing with the server is the
+      // failure this file exists to avoid.
       handle: account.handle,
       display_name: account.display_name,
+      avatar: account.avatar ?? null,
       body: body ?? null,
       reply_to: reply_to ?? null,
       mouth_of: mouth_of ?? null,
+      mouthed:
+        mouth_of == null
+          ? null
+          : (mockBlabs.find((b) => b.id === mouth_of && b.status === 'active') ?? null),
       status: 'active',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()

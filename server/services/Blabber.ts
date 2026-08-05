@@ -5,6 +5,7 @@ import { fields, optionalString, requirePositiveInt } from '../lib/payload';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { mentionedHandles } from '@shared/richText';
+import { BlabberRepository } from '../repositories/BlabberRepository';
 
 /** The app id, which is also the handle namespace accounts are claimed in. */
 const APP = 'blabber';
@@ -140,11 +141,17 @@ export const blabber = defineService<Blab>({
     }
   ],
   // Custom: has to verify the account is the caller's before accepting a post.
-  options: { disableCreate: true }
+  options: { disableCreate: true },
+  /**
+   * Author hydration. Every read here returns rows the reader does not own, so the handle,
+   * display name and avatar have to be joined on — see `BlabberRepository` for why the join
+   * names its columns rather than selecting everything.
+   */
+  repositoryFactory: (resolved) => new BlabberRepository(resolved)
 });
 
 const app = blabber.app;
-const repo = blabber.repo;
+const repo = blabber.repo as BlabberRepository;
 const channel = appEventChannel(APP);
 
 const EDIT_WINDOW_CONVAR = 'gphone_blabber_edit_window';
@@ -272,14 +279,22 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
       console.error('[blabber] Mention notification failed for', id, error)
     );
 
+    /**
+     * The echo is shaped like a hydrated row, because the client prepends it straight into the
+     * feed. Anything absent here renders blank until the next fetch — which is how mouthing
+     * came to attach its quoted Blab client-side from whatever happened to be in the local
+     * feed, and so showed nothing at all for a Blab mouthed from a profile or a thread.
+     */
     return {
       id,
       account_id: account.id,
       handle: account.handle,
       display_name: account.display_name ?? null,
+      avatar: account.avatar ?? null,
       body: text || null,
       reply_to: replyTo,
       mouth_of: mouthOf,
+      mouthed: mouthOf === null ? null : await repo.findPublicById(mouthOf),
       status: 'active',
       editWindow: editWindowSeconds()
     };
@@ -492,7 +507,12 @@ app.registerEvent('profile', async (source, cbId, data) => {
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
   return {
-    rows: page,
+    /**
+     * Through the same hydration the generic read uses, so the two feeds cannot disagree about
+     * what an author looks like. Hydrated after slicing: the probe row exists only to answer
+     * "is there more" and is never returned.
+     */
+    rows: await repo.hydrate(page),
     nextCursor: hasMore ? page[page.length - 1].id : null
   };
 });

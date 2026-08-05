@@ -24,6 +24,28 @@ vi.mock('../lib/FrameworkBridge', () => ({
 }));
 
 import { blabber } from '../services/Blabber';
+import type { BlabberRepository } from '../repositories/BlabberRepository';
+
+const repo = blabber.repo as BlabberRepository;
+
+/** A row as it comes off the Blab table, before anything has been joined onto it. */
+const blab = (over: Record<string, unknown> = {}): any => ({
+  id: 10,
+  account_id: 1,
+  body: 'something',
+  reply_to: null,
+  mouth_of: null,
+  status: 'active',
+  ...over
+});
+
+const author = (id: number, handle: string, over: Record<string, unknown> = {}) => ({
+  id,
+  handle,
+  display_name: null,
+  avatar: null,
+  ...over
+});
 
 const call = async (action: string, data: unknown, citizenid = 'CIT_A') => {
   const handler = handlers.get(`gphone:server:blabber:${action}`);
@@ -288,6 +310,127 @@ describe('replies, mouths and likes', () => {
 
     expect(reply.error).toMatch(/not yours/);
     expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Author hydration.
+ *
+ * The bug this covers was invisible to every other suite: `Blab.handle`, `display_name` and
+ * `avatar` are rendered by `BlabRow`, `Thread` and `Profile`, nothing joined `gphone_accounts`,
+ * and the browser mock embeds a handle on every fixture — so `pnpm dev` and Playwright were
+ * green while the feed in game rendered `@` and a blank name. A server test is the only place
+ * this can be held, which is the point AGENTS.md §9 makes about server code being outside `tsc`.
+ */
+describe('author hydration', () => {
+  it('attaches the handle, display name and avatar to every row', async () => {
+    dbMock.query.mockResolvedValueOnce([
+      author(1, 'ada', { display_name: 'Ada', avatar: 'a.png' })
+    ]);
+
+    const rows = await repo.hydrate([blab({ id: 10 }), blab({ id: 11 })]);
+
+    expect(rows[0]).toMatchObject({ handle: 'ada', display_name: 'Ada', avatar: 'a.png' });
+    expect(rows[1]).toMatchObject({ handle: 'ada', display_name: 'Ada', avatar: 'a.png' });
+  });
+
+  it('never selects the author citizenid', async () => {
+    // The whole reason `publicColumns` withholds Blabber's own: a public read returns rows the
+    // reader does not own, and with several accounts per player the owner's citizenid correlates
+    // an alt back to whoever holds it. A join is the other route to the same disclosure.
+    await repo.hydrate([blab()]);
+
+    const sql = String(dbMock.query.mock.calls[0][0]);
+    expect(sql).toContain('gphone_accounts');
+    expect(sql).not.toContain('citizenid');
+  });
+
+  it('reads the whole page in one query, deduplicated by account', async () => {
+    // Per row this would be thirty round trips for one feed page. `MessageRepository` batches
+    // its attachment join for the same reason.
+    const rows = Array.from({ length: 30 }, (_, i) => blab({ id: i + 1, account_id: (i % 2) + 1 }));
+
+    await repo.hydrate(rows);
+
+    expect(dbMock.query).toHaveBeenCalledTimes(1);
+    expect(dbMock.query.mock.calls[0][1]).toEqual([1, 2]);
+  });
+
+  it('queries nothing at all for an empty page', async () => {
+    await expect(repo.hydrate([])).resolves.toEqual([]);
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('hydrates the quoted Blab, and its author, in the same pass', async () => {
+    dbMock.query
+      .mockResolvedValueOnce([blab({ id: 9, account_id: 2, body: 'the original' })])
+      .mockResolvedValueOnce([author(1, 'ada'), author(2, 'bob', { display_name: 'Bob' })]);
+
+    const [row] = await repo.hydrate([blab({ id: 20, account_id: 1, mouth_of: 9 })]);
+
+    expect(row.handle).toBe('ada');
+    expect(row.mouthed).toMatchObject({ id: 9, handle: 'bob', display_name: 'Bob' });
+    // Both pages of authors in one read: a quote is usually somebody else's, so splitting this
+    // would double the query count on any feed with mouths in it.
+    expect(dbMock.query).toHaveBeenCalledTimes(2);
+    expect(dbMock.query.mock.calls[1][1]).toEqual([1, 2]);
+  });
+
+  it('reads the quoted Blab through the public projection', async () => {
+    dbMock.query.mockResolvedValueOnce([blab({ id: 9, account_id: 2 })]).mockResolvedValueOnce([]);
+
+    await repo.hydrate([blab({ id: 20, mouth_of: 9 })]);
+
+    const sql = String(dbMock.query.mock.calls[0][0]);
+    expect(sql).not.toContain('citizenid');
+    expect(sql).toContain("`status` = 'active'");
+  });
+
+  it('leaves the quote empty when the Blab it mouths is gone', async () => {
+    // A moderated or deleted target drops out of the projection. Null rather than a stale card:
+    // the row should say it mouthed something and show nothing, not show removed content.
+    dbMock.query.mockResolvedValueOnce([]).mockResolvedValueOnce([author(1, 'ada')]);
+
+    const [row] = await repo.hydrate([blab({ id: 20, account_id: 1, mouth_of: 9 })]);
+
+    expect(row.mouthed).toBeNull();
+    expect(row.handle).toBe('ada');
+  });
+
+  it('leaves a row alone when its account has vanished', async () => {
+    // Rather than throwing and taking the whole page down with it.
+    dbMock.query.mockResolvedValueOnce([]);
+
+    const [row] = await repo.hydrate([blab({ id: 10, account_id: 404 })]);
+
+    expect(row.handle).toBeUndefined();
+  });
+
+  it('hydrates a profile feed through the same path as the public one', async () => {
+    // `blabber:profile` builds its projection by hand, so it was the read most able to disagree
+    // with the feed about what an author looks like — and did, carrying no author at all.
+    dbMock.query
+      .mockResolvedValueOnce([blab({ id: 5, account_id: 1 })])
+      .mockResolvedValueOnce([author(1, 'ada', { display_name: 'Ada' })]);
+
+    const reply = await call('profile', { account_id: 1, tab: 'blabs' });
+
+    expect(reply.rows[0]).toMatchObject({ id: 5, handle: 'ada', display_name: 'Ada' });
+  });
+
+  it("carries the quoted Blab in create's echo", async () => {
+    // The client prepends the echo straight into the feed, so anything missing here renders
+    // blank until the next fetch. This used to be grafted on client-side from whatever was in
+    // the local window, which showed nothing for a Blab mouthed from a profile or a thread.
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.single.mockResolvedValueOnce({ id: 9, status: 'active' });
+    dbMock.query
+      .mockResolvedValueOnce([blab({ id: 9, account_id: 2, body: 'the original' })])
+      .mockResolvedValueOnce([author(2, 'bob', { display_name: 'Bob' })]);
+
+    const reply = await call('create', { account_id: 1, mouth_of: 9 });
+
+    expect(reply.mouthed).toMatchObject({ id: 9, handle: 'bob' });
   });
 });
 

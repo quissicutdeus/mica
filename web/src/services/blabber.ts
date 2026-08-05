@@ -174,7 +174,10 @@ export const mouthBlab = async (blabId: number, body?: string): Promise<Blab> =>
     mouth_of: blabId,
     body: body?.trim() || undefined
   });
-  feed.prepend({ ...created, mouthed: findInFeed(blabId) as Blab });
+  // The server hydrates `mouthed` into its echo. This used to graft it on from the local feed,
+  // which meant mouthing from a profile or a thread — anywhere the target was not already in the
+  // window — prepended a row whose quote card was empty.
+  feed.prepend(created);
   await loadEngagement([blabId]);
   return created;
 };
