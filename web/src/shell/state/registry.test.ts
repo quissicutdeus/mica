@@ -54,6 +54,54 @@ describe('App Registry Store', () => {
     expect(reRegistered?.installedAt).toBe(initialInstalledAt);
   });
 
+  /**
+   * A bundled add-on survives being uninstalled and installed again.
+   *
+   * This is the defect the split between `bundledComponents` and `componentRegistry` exists for.
+   * One map meant `unregisterApp` deleted the only reference to code still sitting in the bundle,
+   * so the Store's `getComponent(id) || placeholderComponent()` handed the registry the "Not part
+   * of this build" screen on reinstall — for an app whose code had never left. In CEF the page
+   * never unloads, so it stayed broken for the rest of the session.
+   */
+  it('keeps a bundled add-on mountable across uninstall and reinstall', () => {
+    const blabber = get(appRegistryStore).find((a) => a.id === 'blabber');
+    // Blabber ships `core: false`, so it starts uninstalled and the glob is the only thing that
+    // has ever supplied its component.
+    expect(blabber).toBeUndefined();
+
+    const bundled = appRegistryStore.getComponent('blabber');
+    expect(bundled).toBeDefined();
+
+    // Install, exactly as the Store does.
+    appRegistryStore.registerApp(
+      { id: 'blabber', name: 'Blabber', color: 'bg-sky-500', icon: null, core: false },
+      appRegistryStore.getComponent('blabber') as AppComponent
+    );
+    expect(get(appRegistryStore).some((a) => a.id === 'blabber')).toBe(true);
+
+    appRegistryStore.unregisterApp('blabber');
+    expect(get(appRegistryStore).some((a) => a.id === 'blabber')).toBe(false);
+
+    // The component is still there, because the code is still in the build.
+    expect(appRegistryStore.getComponent('blabber')).toBe(bundled);
+  });
+
+  it('forgets a remote app’s component on uninstall, because that code really is gone', async () => {
+    const code = `
+      export const manifest = { id: 'remote_gone', name: 'Gone', color: 'bg-gray-600', icon: null };
+      export const component = { type: 'MockRemoteComponent' };
+    `;
+    const url = `data:text/javascript;charset=utf-8,${encodeURIComponent(code)}`;
+
+    await appRegistryStore.loadRemoteApp(url);
+    expect(appRegistryStore.getComponent('remote_gone')).toBeDefined();
+
+    appRegistryStore.unregisterApp('remote_gone');
+
+    // No bundle to fall back to — the asymmetry with a bundled add-on is the whole point.
+    expect(appRegistryStore.getComponent('remote_gone')).toBeUndefined();
+  });
+
   it('prohibits unregistering built-in core apps', () => {
     expect(() => appRegistryStore.unregisterApp('contacts')).toThrow(
       "gPhone App Registry error: Unregistering core app 'contacts' is prohibited."

@@ -32,7 +32,29 @@ const firstBoot = getFirstBootTime();
 const loadedApps: AppManifest[] = [];
 /** In-repo apps shipping `core: false` — present in the tree, absent from the launcher. */
 const addOns: AppManifest[] = [];
+
+/**
+ * What this build ships, from the glob above. **Never written to after startup.**
+ *
+ * Split from the runtime registry below, and the split is the fix for a real defect: there was
+ * one map, so `unregisterApp` deleting from it deleted the only reference to code that is still
+ * sitting in the bundle. Uninstalling a bundled add-on and installing it again then found no
+ * component, and the Store's `getComponent(id) || placeholderComponent()` handed the registry the
+ * "Not part of this build" screen — for an app whose code had never left. In CEF the page never
+ * unloads, so it stayed wrong for the rest of the session rather than until a refresh.
+ *
+ * The two maps are genuinely different facts. This one is what the resource contains; the other
+ * is what has been installed since boot. A remote app's component belongs only to the second,
+ * because its code came from a URL and really is gone once uninstalled.
+ */
+const bundledComponents: Record<string, AppComponent> = {};
+
+/** Registered since boot: a reinstall, or a remote bundle. Cleared by `unregisterApp`. */
 const componentRegistry: Record<string, AppComponent> = {};
+
+/** Runtime registration wins, so a remote app may shadow a bundled id; the bundle is fallback. */
+const resolveComponent = (appId: string): AppComponent | undefined =>
+  componentRegistry[appId] ?? bundledComponents[appId];
 
 for (const path in manifestFiles) {
   const rawManifest = (manifestFiles[path] as any).default as AppManifest;
@@ -44,7 +66,7 @@ for (const path in manifestFiles) {
     });
     // Find corresponding component
     const componentPath = path.replace('manifest.ts', 'index.svelte');
-    if (import.meta.env.DEV && componentRegistry[manifest.id]) {
+    if (import.meta.env.DEV && bundledComponents[manifest.id]) {
       // Two manifest files claiming one id. The second silently replaced the first's
       // component while both stayed listed in the launcher, so one of the two icons opened
       // the other app and nothing said why.
@@ -54,7 +76,7 @@ for (const path in manifestFiles) {
       );
     }
     if (appComponents[componentPath]) {
-      componentRegistry[manifest.id] = (appComponents[componentPath] as any).default;
+      bundledComponents[manifest.id] = (appComponents[componentPath] as any).default;
     }
 
     // Core apps start installed on OS startup.
@@ -133,7 +155,7 @@ function createAppRegistry() {
         );
       }
 
-      if (import.meta.env.DEV && componentRegistry[validatedManifest.id]) {
+      if (import.meta.env.DEV && resolveComponent(validatedManifest.id)) {
         console.warn(
           `gPhone App Registry: '${validatedManifest.id}' is already registered and is ` +
             `being replaced. Expected when reinstalling that app; a bug if this is a ` +
@@ -187,11 +209,16 @@ function createAppRegistry() {
       if (targetApp?.bundleUrl) {
         removeSavedRemoteAppUrl(targetApp.bundleUrl);
       }
+      /**
+       * The runtime map only. A bundled add-on's component stays where the glob put it, because
+       * uninstalling an app does not remove its code from the resource — and deleting it there
+       * is what made a reinstall mount the "not part of this build" placeholder.
+       */
       delete componentRegistry[appId];
       clearAppStorage(appId);
       update((apps) => apps.filter((a) => a.id !== appId));
     },
-    getComponent: (appId: string): AppComponent | undefined => componentRegistry[appId],
+    getComponent: (appId: string): AppComponent | undefined => resolveComponent(appId),
     /**
      * The manifest for an installed app.
      *
