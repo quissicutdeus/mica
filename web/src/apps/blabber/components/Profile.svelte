@@ -29,11 +29,18 @@
   let {
     handle,
     onhandle,
-    onmessage
+    onmessage,
+    onfollows
   }: {
     handle: string;
     onhandle?: (handle: string) => void;
     onmessage?: (account: Account) => void;
+    /**
+     * What the counts became. They were plain text with a comment saying so — an honest number
+     * rather than a link to a screen that did not exist — and now that the screen exists, the
+     * number is the way in.
+     */
+    onfollows?: (account: Account, kind: 'followers' | 'following') => void;
   } = $props();
 
   const { myAccounts, followStats, loadFollowStats, toggleFollow, activeAccount } = useBlabber();
@@ -73,6 +80,16 @@
    * coming back to a profile shows what it showed before rather than blanking while it refetches.
    */
   const stats = $derived(account ? $followStats[account.id] : undefined);
+
+  /** The two counts, so the markup below renders one row shape rather than two copies of it. */
+  const counts = $derived(
+    stats
+      ? ([
+          { kind: 'followers', count: stats.followers, label: 'followers' },
+          { kind: 'following', count: stats.following, label: 'following' }
+        ] as const)
+      : []
+  );
 
   /** Following acts as the *active* account, which is what the server verifies. */
   const follow = () => {
@@ -140,11 +157,28 @@
         <p class="mt-1 text-xs text-gray-300">{account.bio}</p>
       {/if}
       {#if stats}
-        <!-- Not tappable yet: a count is a fact, and a list of who they are is another screen
-             this does not have. Better an honest number than a link to nothing. -->
+        <!-- Buttons now that there is somewhere to go. `onfollows` is optional, so a caller that
+             has no list screen still gets the numbers rather than a dead control — and the markup
+             says which it is, because a count that looks tappable and is not is the same broken
+             promise the other way round. -->
         <p class="mt-1 flex gap-3 text-xs text-gray-400">
-          <span><span class="font-semibold text-gray-200">{stats.followers}</span> followers</span>
-          <span><span class="font-semibold text-gray-200">{stats.following}</span> following</span>
+          {#each counts as entry (entry.kind)}
+            {#if onfollows && account}
+              <button
+                type="button"
+                class="hover:text-gray-200"
+                onclick={() => account && onfollows(account, entry.kind)}
+              >
+                <span class="font-semibold text-gray-200">{entry.count}</span>
+                {entry.label}
+              </button>
+            {:else}
+              <span>
+                <span class="font-semibold text-gray-200">{entry.count}</span>
+                {entry.label}
+              </span>
+            {/if}
+          {/each}
         </p>
       {/if}
     </div>

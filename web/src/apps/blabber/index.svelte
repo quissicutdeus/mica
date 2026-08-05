@@ -24,6 +24,7 @@
   import Composer from './components/Composer.svelte';
   import ClaimHandle from './components/ClaimHandle.svelte';
   import EditProfile from './components/EditProfile.svelte';
+  import FollowList from './components/FollowList.svelte';
   import Profile from './components/Profile.svelte';
   import Thread from './components/Thread.svelte';
   import Messages from './components/Messages.svelte';
@@ -69,7 +70,7 @@
    */
   const feedLoaded = feed.loaded;
 
-  let view = $state<'feed' | 'profile' | 'thread' | 'dms'>('feed');
+  let view = $state<'feed' | 'profile' | 'thread' | 'dms' | 'follows'>('feed');
   /**
    * Which top-level destination the bottom nav is on.
    *
@@ -93,6 +94,13 @@
   /** The inbox's own answer, for a thread opened from it rather than from a profile. */
   let dmThreadName = $state<string | null>(null);
   let profileHandle = $state<string | null>(null);
+  /**
+   * Whose follow list is open, and which direction.
+   *
+   * The account rather than the handle, because the list is read by account id — a handle would
+   * mean resolving it a second time when the profile that opened it already had the row in hand.
+   */
+  let follows = $state<{ account: Account; kind: 'followers' | 'following' } | null>(null);
   let editing = $state<Blab | null>(null);
   /** Composing a new Blab. Separate from `editing`, which reuses the same overlay. */
   let composing = $state(false);
@@ -247,6 +255,19 @@
         },
         title: () => 'Thread'
       },
+      /**
+       * One rung for both lists, with the title telling you which — the shape Settings' panes use.
+       * Two rungs would be two predicates only one of which can ever be true, which is a dead
+       * branch pretending to be a ladder.
+       *
+       * Above the profile rung, so Back from a follower list returns to the profile it was opened
+       * from rather than to the feed.
+       */
+      {
+        open: () => view === 'follows',
+        close: () => (view = 'profile'),
+        title: () => (follows?.kind === 'following' ? 'Following' : 'Followers')
+      },
       { open: () => view === 'profile', close: () => (view = 'feed'), title: () => 'Profile' },
       {
         open: () => view === 'dms' && dmPeer !== null,
@@ -264,9 +285,23 @@
     ]
   });
 
+  /**
+   * Profile navigation is flat, and stays flat.
+   *
+   * Tapping a handle from a profile replaces the one on screen rather than pushing, which is what
+   * this app has always done — so Back from a profile goes to whatever opened the first one. A row
+   * in a follower list therefore lands on the profile rung, which is one level *out* of the list
+   * it was tapped in. Stacking it would need a profile stack like `threads`, and the two would
+   * have to agree about depth; the flat behaviour is the one already shipped and tested.
+   */
   const openProfile = (handle: string) => {
     profileHandle = handle;
     view = 'profile';
+  };
+
+  const openFollows = (account: Account, kind: 'followers' | 'following') => {
+    follows = { account, kind };
+    view = 'follows';
   };
 
   const openThread = (blab: Blab) => {
@@ -498,11 +533,19 @@
       onmouth={mouth}
       onlike={like}
     />
+  {:else if view === 'follows' && follows}
+    <FollowList
+      accountId={follows.account.id}
+      kind={follows.kind}
+      handle={follows.account.handle}
+      onhandle={openProfile}
+    />
   {:else if view === 'profile' && profileHandle}
     <Profile
       handle={profileHandle}
       onhandle={openProfile}
       onmessage={(account) => openDms(account.id, account)}
+      onfollows={openFollows}
     />
   {:else if !$accountsLoaded}
     <div class="p-4"><Skeleton count={4} height="h-16" /></div>

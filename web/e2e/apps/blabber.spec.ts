@@ -405,6 +405,73 @@ test.describe('Blabber', () => {
       await expect(page.locator('h1', { hasText: 'Blabber' })).toBeVisible();
     });
 
+    /**
+     * The two lists behind the counts.
+     *
+     * The counts shipped honest-but-inert, with a comment in `Profile.svelte` saying the screens
+     * did not exist. These are those screens, so what has to hold is that the number is now a way
+     * in, that it lands on the right list, and that Back comes out to the profile it was opened
+     * from rather than to the feed.
+     */
+    test('a follower count opens the list of who they are', async ({ page }) => {
+      await page
+        .locator('article', { hasText: 'anyone up?' })
+        .getByRole('button', { name: "Night Owl's profile" })
+        .click();
+
+      // Empty first, because the mock's graph is: nobody follows @nightowl yet.
+      await page.getByRole('button', { name: /followers$/ }).click();
+      await expect(page.locator('h1', { hasText: 'Followers' })).toBeVisible();
+      await expect(page.locator('text=No followers yet')).toBeVisible();
+      await expect(page.locator('text=Nobody follows @nightowl yet')).toBeVisible();
+
+      // Back is the profile, one rung down, not the feed two rungs down. Read off the header,
+      // which is the level ladder's own answer — @nightowl's handle appears on both screens and on
+      // every Blab in the list below, so matching it proves nothing about where we are.
+      await page.keyboard.press('Backspace');
+      await expect(page.locator('h1', { hasText: 'Profile' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Follow', exact: true })).toBeVisible();
+    });
+
+    test('following somebody puts you in their followers and them in your following', async ({
+      page
+    }) => {
+      await followNightowl(page);
+
+      // @ada now follows @nightowl, so @nightowl's followers list holds @ada.
+      await page.getByRole('button', { name: /followers$/ }).click();
+      await expect(page.locator('h1', { hasText: 'Followers' })).toBeVisible();
+      await expect(page.locator('text=@ada')).toBeVisible();
+
+      // And a row is a way to that account's profile. From the list, which is one rung deeper than
+      // the profile — this app's profile navigation is deliberately flat, so it lands there.
+      await page.getByRole('button', { name: /Ada/ }).first().click();
+      await expect(page.locator('h1', { hasText: 'Profile' })).toBeVisible();
+      // Your own profile, so no Follow button on it.
+      await expect(page.getByRole('button', { name: 'Follow', exact: true })).toHaveCount(0);
+
+      // The other direction of the same relation, off the other end of the same table.
+      await page.getByRole('button', { name: /following$/ }).click();
+      await expect(page.locator('h1', { hasText: 'Following' })).toBeVisible();
+      await expect(page.locator('text=Night Owl')).toBeVisible();
+    });
+
+    test('an account following nobody says so, rather than showing an empty list', async ({
+      page
+    }) => {
+      await page
+        .locator('article', { hasText: 'traffic on the interstate' })
+        .getByRole('button', { name: "Ada's profile" })
+        .click();
+
+      await page.getByRole('button', { name: /following$/ }).click();
+
+      // "Not following anyone" and "no followers" are two different facts about an empty list, and
+      // the screen has to pick the right sentence.
+      await expect(page.locator('text=Not following anyone')).toBeVisible();
+      await expect(page.locator('text=@ada has not followed anybody yet')).toBeVisible();
+    });
+
     test('no Follow button on your own profile', async ({ page }) => {
       // Following yourself is refused server-side; offering it would be a button that can only
       // fail. Same reasoning as the Store's Uninstall on a core app.
