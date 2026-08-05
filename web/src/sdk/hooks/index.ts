@@ -14,6 +14,7 @@ export * from './useClock';
 export * from './useContacts';
 export * from './useDeepLink.svelte';
 export * from './useDevTools';
+export * from './useDisplay';
 export * from './useKeybinds';
 export * from './useMail';
 export * from './useMessages';
