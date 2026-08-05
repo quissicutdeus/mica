@@ -38,7 +38,16 @@ const REQUIRED_BY: Record<string, AppPermission> = {
   useCamera: 'camera',
   usePhoneNotification: 'notifications',
   useStorage: 'storage',
-  usePersisted: 'storage'
+  usePersisted: 'storage',
+  /**
+   * The cross-app half of storage, and the sharper one.
+   *
+   * `useStorage` reaches one namespace — the app's own. These two take an id, so they read and
+   * delete anything any app has stored, which is more worth disclosing rather than less. They
+   * were absent, so Settings' Apps pane could clear every app's data while declaring nothing.
+   */
+  appStorageBytes: 'storage',
+  clearAppStorage: 'storage'
 };
 
 const APPS_DIR = join(__dirname, '..', 'apps');
