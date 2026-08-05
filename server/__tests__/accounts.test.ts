@@ -175,6 +175,24 @@ describe('listing my own accounts', () => {
 
     expect(reply.error).toMatch(/app id is required/);
   });
+
+  it('reports the per-app cap, so the UI does not have to guess a convar', async () => {
+    dbMock.query.mockResolvedValueOnce([{ id: 1, handle: 'ada' }]);
+
+    const reply = await call('mine', { app: 'blabber' });
+
+    expect(reply).toMatchObject({ rows: [{ handle: 'ada' }], limit: 3 });
+  });
+
+  it('reports a raised cap from the convar', async () => {
+    (globalThis as any).GetConvar = (name: string, f: string) =>
+      name === 'gphone_max_accounts_per_app' ? '5' : f;
+    dbMock.query.mockResolvedValueOnce([]);
+
+    const reply = await call('mine', { app: 'blabber' });
+
+    expect(reply).toMatchObject({ rows: [], limit: 5 });
+  });
 });
 
 describe('ownedAccount', () => {

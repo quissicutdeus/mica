@@ -96,22 +96,29 @@ const maxPerApp = (): number => {
 };
 
 /**
- * The accounts this player holds in an app.
+ * The accounts this player holds in an app, and how many they are allowed.
  *
  * Scoped to the caller server-side and deliberately **not** a filter on the public `get`:
  * making `citizenid` client-filterable would let anyone list anyone's accounts, which is the
  * de-anonymisation this table is built to avoid.
+ *
+ * `limit` rides along for the same reason `createBlab` echoes `editWindow`: it is a convar the
+ * client cannot see, and an app that guesses it either hides a Claim button a player is entitled
+ * to or offers one the server will refuse. The cap is still enforced in `create` — this only
+ * decides what the UI draws.
  */
 app.registerEvent('mine', async (source, cbId, data, citizenid) => {
   const appId = optionalString(fields(data).app);
   if (!appId) throw new Error('An app id is required.');
 
-  return await Database.query<Account[]>(
+  const rows = await Database.query<Account[]>(
     `SELECT * FROM \`gphone_accounts\`
      WHERE \`citizenid\` = ? AND \`app\` = ? AND \`status\` = 'active'
      ORDER BY \`id\` ASC`,
     [citizenid, appId]
   );
+
+  return { rows, limit: maxPerApp() };
 });
 
 app.registerEvent('create', async (source, cbId, data, citizenid) => {
