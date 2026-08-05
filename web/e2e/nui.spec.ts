@@ -8,9 +8,10 @@ test.describe('FiveM NUI Phone Interface', () => {
     const mainElement = page.locator('main');
     await expect(mainElement).toBeVisible();
 
-    // Verify phone frame container element
-    const phoneContainer = page.locator('.h-\\[850px\\]');
-    await expect(phoneContainer).toBeVisible();
+    // Verify phone frame container element. By test id rather than by its height class:
+    // the frame's size is now a `style` attribute driven by `state/display.ts`, because
+    // the phone is scaled to fit the window (`display.spec.ts` covers that).
+    await expect(page.getByTestId('phone-frame')).toBeVisible();
   });
 
   test('handles NUI window message events', async ({ page }) => {

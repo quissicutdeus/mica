@@ -7,6 +7,7 @@
   import { clampedSignalLevel } from './state/signal';
   import { stepVolume } from './state/audio';
   import { enableDragScroll } from '../lib/dragScroll';
+  import { PHONE_HEIGHT, PHONE_WIDTH } from './state/display';
   import LightningWarningIcon from '../sdk/ui/icons/LightningWarningIcon.svelte';
   import SignalIcon from '../sdk/ui/icons/SignalIcon.svelte';
   import VolumeHud from './VolumeHud.svelte';
@@ -27,11 +28,17 @@
      only to the inner screen div while this one kept an unconditional `bg-gray-950` —
      near-black and fully opaque — so the camera viewfinder rendered as a black box in
      game no matter what the screen did. The bezel border stays either way; it is the
-     phone body, not the display. -->
+     phone body, not the display.
+
+     Always the design size, from `state/display.ts`. The zoom is a `transform` on a
+     wrapper in `Shell.svelte` and deliberately not here: `transition:fly` writes
+     `transform` on this element, so a scale set alongside it would be overwritten for
+     the duration of every open and close. -->
 <div
   transition:fly={{ y: 1000, duration: 500 }}
   data-testid="phone-frame"
-  class="relative h-[850px] w-[400px] rounded-[3.5rem] border-[8px] border-gray-950 shadow-2xl ring-1 ring-gray-600 transition-colors duration-200"
+  style="width: {PHONE_WIDTH}px; height: {PHONE_HEIGHT}px;"
+  class="relative rounded-[3.5rem] border-[8px] border-gray-950 shadow-2xl ring-1 ring-gray-600 transition-colors duration-200"
   class:bg-gray-950={!transparent || $isBatteryDead}
 >
   <!-- Hardware Side Buttons -->

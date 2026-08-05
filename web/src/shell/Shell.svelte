@@ -7,6 +7,15 @@
   import { currentApp, runningApps, openApp, goHome, closePhone } from './state/navigation';
   import { bindings, dispatchKey, isTypingTarget, registerHandler } from './state/keybinds';
   import { lockDevTools } from './state/devtools';
+  import {
+    frameMargin,
+    observeViewport,
+    phoneBox,
+    phoneScale,
+    viewportSize,
+    PHONE_HEIGHT,
+    PHONE_WIDTH
+  } from './state/display';
   import { callStore } from '../services/call';
   import { isPreviewingPhoto } from '../services/camera';
   import PhoneFrame from './PhoneFrame.svelte';
@@ -200,6 +209,10 @@
     window.addEventListener('focusin', handleFocusIn);
     window.addEventListener('focusout', handleFocusOut);
 
+    // Sized from a measured viewport rather than `100vh` — see `state/display.ts` for why
+    // that unit is wrong in a mobile browser and why `dvh` is not available to us.
+    const stopObservingViewport = observeViewport();
+
     seedBrowserPhone(new Date());
     installDevHarness();
 
@@ -208,6 +221,7 @@
       window.removeEventListener('keydown', handleKeydown);
       window.removeEventListener('focusin', handleFocusIn);
       window.removeEventListener('focusout', handleFocusOut);
+      stopObservingViewport();
     };
   });
 
@@ -277,68 +291,89 @@
 {/if}
 
 {#if visible}
+  <!-- The window, and the phone's place in it.
+
+       Width and height are measured pixels, not `w-screen h-screen`: `100vh` in a mobile
+       browser is the viewport with the URL bar retracted, so a phone anchored to the
+       bottom of it hangs below the fold, and `dvh` — the unit that fixes that — needs
+       Chromium 108 against a CEF baseline of 103 (AGENTS.md §6). The padding is the same
+       number `fitScale` subtracted, so what fits is what is drawn. -->
   <main
-    class="flex h-screen w-screen overflow-hidden p-12"
+    class="flex overflow-hidden"
+    style="width: {$viewportSize.width}px; height: {$viewportSize.height}px; padding: {$frameMargin}px;"
     class:items-center={$currentApp.id === 'camera'}
     class:justify-center={$currentApp.id === 'camera'}
     class:items-end={$currentApp.id !== 'camera'}
     class:justify-end={$currentApp.id !== 'camera'}
     class:bg-transparent={true}
   >
-    <PhoneFrame
-      transparent={$currentApp.id === 'camera' && !$isPreviewingPhoto}
-      onClose={() => {
-        if (isBrowser()) {
-          visible = false;
-        }
-        closePhone();
-      }}
+    <!-- Two elements, because a transform is invisible to layout: the outer box is the
+         size the phone actually occupies so the flex anchoring is right, and the inner one
+         stays at the design size and is scaled from its top-left corner into it. -->
+    <div
+      class="relative shrink-0"
+      style="width: {$phoneBox.width}px; height: {$phoneBox.height}px;"
     >
-      <ToastContainer />
-      <!-- Every resident app is mounted; only the active one is visible.
+      <div
+        class="absolute top-0 left-0 origin-top-left"
+        style="width: {PHONE_WIDTH}px; height: {PHONE_HEIGHT}px; transform: scale({$phoneScale});"
+      >
+        <PhoneFrame
+          transparent={$currentApp.id === 'camera' && !$isPreviewingPhoto}
+          onClose={() => {
+            if (isBrowser()) {
+              visible = false;
+            }
+            closePhone();
+          }}
+        >
+          <ToastContainer />
+          <!-- Every resident app is mounted; only the active one is visible.
 
-           Keyed by name so Svelte reuses the instance instead of tearing it down —
-           that reuse *is* the state preservation.
+               Keyed by name so Svelte reuses the instance instead of tearing it down —
+               that reuse *is* the state preservation.
 
-           Inactive apps are `display:none`, not `visibility:hidden`. Visibility was the
-           first choice, to keep them laid out and their scroll offset guaranteed — but
-           in game the outgoing app stayed partly on screen over the home screen. These
-           apps are full of `backdrop-blur`, `transform` and `hover:scale`, each of which
-           promotes an element to its own compositor layer, and a hidden *ancestor* does
-           not reliably force those layers to repaint on CEF's Chromium 103. Removing the
-           box leaves nothing to retain.
+               Inactive apps are `display:none`, not `visibility:hidden`. Visibility was the
+               first choice, to keep them laid out and their scroll offset guaranteed — but
+               in game the outgoing app stayed partly on screen over the home screen. These
+               apps are full of `backdrop-blur`, `transform` and `hover:scale`, each of which
+               promotes an element to its own compositor layer, and a hidden *ancestor* does
+               not reliably force those layers to repaint on CEF's Chromium 103. Removing the
+               box leaves nothing to retain.
 
-           Scroll survives it: `display:none` preserves scrollTop in Chromium, which the
-           residency e2e asserts rather than assumes.
+               Scroll survives it: `display:none` preserves scrollTop in Chromium, which the
+               residency e2e asserts rather than assumes.
 
-           `inert` is what keeps them out of the tab order and the accessibility tree.
-           Their DOM is still present and matchable — that is inherent to residency, and
-           why tests here use role-based locators.
+               `inert` is what keeps them out of the tab order and the accessibility tree.
+               Their DOM is still present and matchable — that is inherent to residency, and
+               why tests here use role-based locators.
 
-           `inert` and nothing else. It carried `aria-hidden` too, which is what `inert`
-           already implies, and the pair is invalid the instant focus is inside: pressing
-           Back leaves focus on the app's own back button, and Chrome refuses to hide a
-           subtree containing the focused element. The console said so on every trip
-           home. -->
-      <div class="relative h-full w-full">
-        {#if $currentApp.id === 'home'}
-          <Home {openApp} />
-        {/if}
+               `inert` and nothing else. It carried `aria-hidden` too, which is what `inert`
+               already implies, and the pair is invalid the instant focus is inside: pressing
+               Back leaves focus on the app's own back button, and Chrome refuses to hide a
+               subtree containing the focused element. The console said so on every trip
+               home. -->
+          <div class="relative h-full w-full">
+            {#if $currentApp.id === 'home'}
+              <Home {openApp} />
+            {/if}
 
-        {#each $runningApps as instance (instance.id)}
-          {@const AppComponent = appRegistryStore.getComponent(instance.id)}
-          {#if AppComponent}
-            {@const isActive = $currentApp.id === instance.id}
-            <div class="absolute inset-0" class:hidden={!isActive} inert={!isActive}>
-              <ErrorBoundary
-                appName={appRegistryStore.getManifest(instance.id)?.name ?? instance.id}
-              >
-                <AppComponent onback={goHome} {...instance.props} />
-              </ErrorBoundary>
-            </div>
-          {/if}
-        {/each}
+            {#each $runningApps as instance (instance.id)}
+              {@const AppComponent = appRegistryStore.getComponent(instance.id)}
+              {#if AppComponent}
+                {@const isActive = $currentApp.id === instance.id}
+                <div class="absolute inset-0" class:hidden={!isActive} inert={!isActive}>
+                  <ErrorBoundary
+                    appName={appRegistryStore.getManifest(instance.id)?.name ?? instance.id}
+                  >
+                    <AppComponent onback={goHome} {...instance.props} />
+                  </ErrorBoundary>
+                </div>
+              {/if}
+            {/each}
+          </div>
+        </PhoneFrame>
       </div>
-    </PhoneFrame>
+    </div>
   </main>
 {/if}
