@@ -1,5 +1,5 @@
 import { writable, type Writable } from 'svelte/store';
-import { useStorage } from './useStorage';
+import { registerPersistedReset, useStorage } from './useStorage';
 
 export interface PersistedOptions<T> {
   /**
@@ -39,6 +39,17 @@ export function usePersisted<T>(
 
   const stored = storage.getItem<T>(key, initial);
   const { subscribe, set, update } = writable<T>(sanitize(stored ?? initial));
+
+  /**
+   * Back to the shipped default when the app's storage is cleared.
+   *
+   * Through the inner `set`, not the persisting one below — otherwise resetting would write
+   * the key that clearing had just removed. The value is read once at construction, and for
+   * every store in the phone that is module scope on a page CEF never unloads, so without
+   * this a cleared app went on showing whatever it was holding and re-persisted it on the
+   * next write.
+   */
+  registerPersistedReset(appId, () => set(sanitize(initial)));
 
   // Deliberately no write here. Constructing the store must not create the key: an app
   // that only ever reads a preference should leave no trace in storage, and writing the

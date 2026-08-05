@@ -14,12 +14,43 @@ function getStorageBackend() {
 const namespaceOf = (appId: string) => `gphone:${appId}:`;
 
 /**
+ * Live `usePersisted` stores, per app, so clearing storage resets them too.
+ *
+ * Sweeping the keys is not enough on its own, and the gap is not theoretical. A persisted
+ * store reads its key **once**, at construction — which for every one of them is module
+ * scope, and the CEF page never unloads. So clearing an app's storage while its store is in
+ * memory left the old value on screen, and the store's next write put the key straight back.
+ * "Back to a freshly installed state" would have been true only of the keys nothing was
+ * holding.
+ *
+ * A registry rather than an event because the reset has to reach the *inner* writable:
+ * `usePersisted`'s own `set` persists, so resetting through it would recreate the key it was
+ * just asked to delete.
+ */
+const persistedResets = new Map<string, Set<() => void>>();
+
+/**
+ * Internal, for `usePersisted`. Not something an app has a reason to call.
+ *
+ * Stores are never disposed — they live in module scope for the life of the page — so there is
+ * nothing to unregister and no leak in keeping them.
+ */
+export function registerPersistedReset(appId: string, reset: () => void): void {
+  const existing = persistedResets.get(appId);
+  if (existing) existing.add(reset);
+  else persistedResets.set(appId, new Set([reset]));
+}
+
+/**
  * Delete everything an app has stored.
  *
  * Uninstalling used to drop the component and the saved bundle URL and leave the app's
  * keys behind, so reinstalling resurrected the old state — and an app removed for good
  * kept its storage for the life of the browser profile. The `gphone:<appId>:`
  * namespace was already there; nothing swept it.
+ *
+ * Live persisted stores are reset alongside the keys — see `persistedResets` above for why
+ * the sweep alone leaves the app looking untouched.
  */
 export function clearAppStorage(appId: string): void {
   const prefix = namespaceOf(appId);
@@ -30,14 +61,18 @@ export function clearAppStorage(appId: string): void {
       for (const key of Object.keys(window.localStorage)) {
         if (key.startsWith(prefix)) window.localStorage.removeItem(key);
       }
-      return;
-    }
-    for (const key of [...memoryStore.keys()]) {
-      if (key.startsWith(prefix)) memoryStore.delete(key);
+    } else {
+      for (const key of [...memoryStore.keys()]) {
+        if (key.startsWith(prefix)) memoryStore.delete(key);
+      }
     }
   } catch (e) {
     console.error(`Failed to clear storage for ${appId}`, e);
   }
+
+  // Outside the try, and after the sweep: a storage backend that threw must not leave the
+  // stores holding values whose keys may already be gone.
+  for (const reset of persistedResets.get(appId) ?? []) reset();
 }
 
 /**
