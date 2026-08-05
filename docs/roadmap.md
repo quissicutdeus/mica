@@ -146,6 +146,42 @@ hand rather than from the inbox list — which is what makes **starting a DM fro
 something the DM empty state has always promised and no code path implemented. A thread with a peer
 not yet in the inbox used to title as `@` with a `?` avatar.
 
+#### The follow graph, and a nav with somewhere to go
+
+`gphone_account_follows` is a child table of the **accounts** service rather than Blabber's, because
+it is account-to-account and accounts are shared — a future Instagram-alike inherits the graph instead
+of growing a parallel one. Two account columns, `created_at`, a unique index over the pair, and a key
+on the followee. **No `citizenid` column and none needed:** every account row carries an `app`, so a
+row can only ever link two accounts in the same app, and ownership stays behind each account where a
+reader cannot see it.
+
+`follow`, `unfollow` and `follows` all call `ownedAccount` first — `follower_account_id` arrives in a
+payload and a payload is not proof of intent (§2.9). `follow` is insert-only with the unique index
+making it idempotent, so a duplicate is reported as success; `unfollow` is a `DELETE` scoped to the
+caller's own account. Both refuse a self-follow, which would put your own posts in your Following feed
+and inflate both counts for everybody, and refuse a followee in another app.
+
+Counts are read from the graph rather than denormalised onto the account row — a `follower_count`
+column is a second copy of a fact the table already holds, and it drifts the first time a follow is
+removed by a path that forgets to decrement. `followedByMe` is about **one** of the viewer's accounts,
+not all of them, because a main and an alt follow different people and the button acts as whichever is
+active. That is the one place this differs from `engagement`, which answers across every account a
+player holds.
+
+**The Following feed is `IN (subquery)`, not a join.** A join emits one row per matching follow row, so
+the feed would duplicate a post if the graph ever held a duplicate — which the unique index prevents,
+but which the query should not depend on. It also keeps one table in the FROM, which is what lets the
+projection name bare `publicColumns`. Top-level only, like the public feed. Client-side it is a second
+`createPagedStore` with its own cursor: one shared store would mean one cursor walking two result sets,
+so switching tabs would resume the other feed's position.
+
+**The bottom nav landed with it, and that was the point of holding it back.** `TabBar` was written once
+before Following existed and deleted unbuilt — `components.ts` says exactly that about `ActionSheet`,
+and `pnpm deadcode` enforces it. It carries Feed and Following, not the four the end state wants,
+because Search and Notifications have no server behind them. `FloatingActionButton` gained an opt-in
+`raised` so it clears the bar they share the `overlay` snippet with, and a non-default tab is its own
+back rung so Back returns to the feed rather than sending the player home.
+
 #### Two things that made first-run unreachable
 
 **Uninstalling a bundled add-on deleted a component that was still in the build.**
@@ -238,51 +274,18 @@ Decisions already settled, recorded so they are not re-litigated:
 | Reactions / emoji / GIF | Private surfaces only; Blabber DMs first, Messages adopts the same primitives later |
 | Media                   | Generic `gphone_media` table via the `table:` override; app id stays `photos`       |
 
-#### 1. The bottom nav — what is left of the shell
+#### 1. Search and Notifications as tabs
 
-Pure UI, no schema, and **most of this step has shipped** — see "Identity, and the composer as a FAB"
-under Shipped. What remains is the nav itself, and it is waiting on content rather than on work:
+The nav exists — see "The follow graph, and a nav with somewhere to go" under Shipped — with Feed and
+Following in it. The two remaining destinations are waiting on the servers below them, in steps 2
+and 3, and a tab that apologises for itself is the Store's invented add-ons one layer down.
 
-- **`TabBar` as a new SDK primitive**, `web/src/sdk/ui/TabBar.svelte`, exported from
-  `sdk/components.ts`. No bottom nav exists anywhere in the repo yet; `SegmentedControl` is the
-  top-mounted idiom and the wrong shape for four icon+label destinations. Shared rather than
-  Blabber-local, because the accounts service already anticipates an Instagram-alike that wants the
-  identical component. Follow `SegmentedControl`'s conventions — `aria-pressed` over `role="tab"`, a
-  click sound on change, a `badge` per option. It renders in `Screen`'s `overlay` snippet, which sits
-  outside the scroll container, and so does the FAB.
-- **`FloatingActionButton` needs a raised position.** Its `right-5 bottom-5` is hardcoded, so it
-  overlaps a tab bar. Add an optional bottom-offset prop; the Messages and Contacts call sites keep
-  today's behaviour by default.
-- **The tabs**, `feed | following | search | notifications`, with the non-default tab as a rung of its
-  own so Back returns to Feed before leaving the app.
+#### 2. Follower and following lists
 
-**Deliberately not built ahead of step 2.** Only Feed exists today — DMs are the header icon, not a
-tab — so a nav shipped now carries one live destination and three that apologise for themselves. That
-is the same thing the Store's four invented add-ons were, one layer down. `components.ts` says it
-directly about `ActionSheet`: a primitive imported by nobody is deleted rather than kept warm, and
-`pnpm deadcode` enforces it. The nav lands with the Following feed, which is what gives it a second
-real tab.
-
-#### 2. Follow graph and the Following feed
-
-`gphone_account_follows`, declared as a child table of the `accounts` service so a future social app
-inherits it: `follower_account_id` and `followee_account_id` onto `gphone_accounts.id`, `created_at`,
-`UNIQUE (follower_account_id, followee_account_id)`, and a key on the followee.
-
-Strictly one account → one account, with **no `citizenid` column**. Because every `gphone_accounts`
-row carries an `app`, a row can only ever link two Blabber accounts — following `@bob` on Blabber
-cannot touch `@bob` on a future Instagram-alike, since that is a different account id. Ownership stays
-behind each account in `gphone_accounts.citizenid` and stays invisible to readers.
-
-`follow`, `unfollow`, `followers`, `following` on the accounts service, each calling `ownedAccount`
-first: the payload's `follower_account_id` is attacker-controlled and a row id is never authorization
-(§2.9). `follow` is insert-only with the unique index making it idempotent, `unfollow` a `DELETE`
-scoped to the caller's account — the same shape `blabber:like`/`unlike` already gets right.
-
-The **Following feed** is a new paged action on the blabber service, because the generic public `get`
-cannot express a join, and paging stays keyset on `id DESC` like every other read. It is scoped to the
-**active** account's follows, so switching accounts changes the feed; client-side it is a second
-`createPagedStore`. Profile gains follow/unfollow, counts, and tappable follower/following lists.
+The counts on a profile are real and read from the graph; they are **not tappable**, because the
+screens behind them do not exist. `followers` and `following` actions on the accounts service, each
+paged like everything else, and two rungs on the ladder. A count is a fact and a link to nothing is a
+promise, which is why the counts shipped without the lists rather than the other way round.
 
 #### 3. Notifications
 
@@ -373,13 +376,11 @@ accommodates but no capture path exists for; a quote-Blab composer, though `mout
 a body with no UI to supply one; pull-to-refresh and a new-posts indicator; and whether Blabber should
 stay `core: false` at all once it is a flagship app.
 
-New server logic here gets a server test (§9), and the ones worth naming in advance: `follow` and
-`unfollow` rejecting an account the caller does not own, the Following feed paging keyset-correctly
-and containing only followed accounts, a notification row per kind with `read_at` clearing the count,
-tag extraction agreeing with `tokenizeRichText` on the same input, a GIF URL off the host allowlist
-being refused, and a blocked account being unable to DM or appear in a feed. `routes.test.ts` and
-`appEventContract.test.ts` are what catch a missing NUI or push layer — the failure mode that silently
-does nothing in game.
+New server logic here gets a server test (§9), and the ones worth naming in advance: a notification
+row per kind with `read_at` clearing the count, tag extraction agreeing with `tokenizeRichText` on the
+same input, a GIF URL off the host allowlist being refused, and a blocked account being unable to DM
+or appear in a feed. `routes.test.ts` and `appEventContract.test.ts` are what catch a missing NUI or
+push layer — the failure mode that silently does nothing in game.
 
 ### `gphone_photos` → `gphone_media`
 
