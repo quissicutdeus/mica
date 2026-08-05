@@ -6,7 +6,7 @@ This directory contains the Svelte 5 frontend application and NUI bridge for **[
 
 ## 🚀 Tech Stack
 
-- **Framework**: [Svelte 5](https://svelte.dev/) (utilizing Svelte 5 runes `$state`, `$derived`, `$effect`)
+- **Framework**: [Svelte 5](https://svelte.dev/) — runes (`$state`, `$derived`, `$effect`) for component-local state only. Global state is `writable`/`derived` **stores** in `src/services/` and `src/shell/state/`, one file per domain. This split is a policy rather than a leftover: see [`AGENTS.md` §4](../AGENTS.md), which is the authority, and do not introduce `.svelte.ts` rune-based state modules or convert existing stores.
 - **Build Tool**: [Vite](https://vitejs.dev/)
 - **Styling**: [Tailwind CSS v4](https://tailwindcss.com/)
 - **Language**: [TypeScript](https://www.typescriptlang.org/)
@@ -19,20 +19,25 @@ This directory contains the Svelte 5 frontend application and NUI bridge for **[
 ```text
 web/
 ├── e2e/                # Playwright End-to-End test suites
-│   ├── apps/           # Individual app E2E tests (Phone, Mail, Messages, Contacts, Bank, Calculator, Camera, Notes, Photos, Settings, Store)
+│   ├── apps/           # Individual app E2E tests (Admin, Bank, Blabber, Calculator, Camera, Contacts, Mail, Messages, Notes, Phone, Photos, Settings, Sound, Store)
+│   ├── app-residency.spec.ts
+│   ├── deep-link.spec.ts
+│   ├── defects.spec.ts
 │   ├── error_boundary.spec.ts
+│   ├── keybinds.spec.ts
 │   ├── navigation.spec.ts
 │   ├── notifications.spec.ts
 │   └── nui.spec.ts
 ├── src/
-│   ├── apps/           # One directory per app (admin, bank, calculator, camera, contacts, mail, messages, notes, phone, photos, settings, store)
+│   ├── apps/           # One directory per app (admin, bank, blabber, calculator, camera, contacts, mail, messages, notes, phone, photos, settings, store)
 │   ├── shell/          # The OS itself: Shell.svelte, PhoneFrame, Launcher, ToastHost, VolumeHud, ErrorBoundary
-│   │   └── state/      # State the phone owns (navigation, keybinds, registry, bootstrap, devtools, charge, signal, time, audio, toast)
-│   ├── services/       # Client-side cache of each server service (account, admin, call, camera, contacts, conversations, mail, notes, photos, reports)
+│   │   └── state/      # State the phone owns (navigation, keybinds, registry, bootstrap, devtools, charge, signal, time, audio, toast, appEvents)
+│   ├── services/       # Client-side cache of each server service (account, admin, blabber, call, camera, contacts, conversations, mail, notes, photos, reports)
+│   │                   # plus the two factories they are built from: createCrudStore, createPagedStore
 │   ├── sdk/            # @gphone/sdk — the only thing apps may import
 │   │   └── ui/         # UI primitives and icons apps build with
 │   ├── nui/            # The bridge: transport adapters, fetchNui, useNuiEvent, browser mocks
-│   ├── lib/            # Helpers with no gPhone state and no I/O (debug, dragScroll, filterByQuery, formatters, isBrowser, markdown, useScrollDetect)
+│   ├── lib/            # Helpers with no gPhone state and no I/O (debug, dragScroll, errors, filterByQuery, formatters, isBrowser, markdown, useScrollDetect)
 │   └── main.ts         # Mounts shell/Shell.svelte
 ├── package.json
 └── playwright.config.ts
@@ -46,7 +51,7 @@ gPhone includes a full suite of automated unit (Vitest) and Playwright End-to-En
 
 ### Running Unit Tests
 
-Run unit test suites covering the service caches (`account`, `call`, `camera`, `contacts`, `conversations`, `mail`, `notes`, `photos`), shell state (`bootstrap`, `charge`, `keybinds`, `navigation`, `registry`, `signal`, `time`, `audio`, `toast`), transport adapters, SDK helpers and boundaries, and the pure helpers in `lib/`:
+Run unit test suites covering the service caches (`account`, `admin`, `call`, `camera`, `contacts`, `conversations`, `mail`, `notes`, `photos`, `reports`) and the `createCrudStore` factory behind them, shell state (`bootstrap`, `charge`, `keybinds`, `navigation`, `registry`, `signal`, `time`, `audio`, `toast`, `appEvents`), transport adapters, SDK helpers and boundaries, and the pure helpers in `lib/`:
 
 ```sh
 pnpm test:unit

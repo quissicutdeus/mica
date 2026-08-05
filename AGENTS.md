@@ -55,8 +55,8 @@ to `gphone.admin` and `command`. The server console (`source` 0) is trusted.
 | Command                                 | Does                                                         |
 | --------------------------------------- | ------------------------------------------------------------ |
 | `gphoneschema`                          | Prints what a migration would change, without changing it    |
-| `gphonecharge <id> <0-100>`             | Sets a player's battery level                                |
-| `gphoneseed`                            | Creates test characters, contacts and threads for the caller |
+| `gphonecharge [id] <0-100>`             | Sets a player's battery level; omit the id for yourself      |
+| `gphoneseed` / `gphoneseed add`         | Creates test characters, contacts and threads for the caller |
 | `gphoneseed text <firstname> <message>` | Has a seeded character text you — exercises inbound delivery |
 | `gphoneseed clear`                      | Removes everything `gphoneseed` created                      |
 
@@ -108,7 +108,7 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
 5. **No new dependencies** without asking.
 6. **Do not change** TypeScript versions in either package, Vite `build.outDir`, or
    `scripts/generate-barrels.js` output paths without asking.
-7. **SDK First.** Everything in `web/src/apps/`, and every external add-on, consumes the OS strictly through `@gphone/sdk` hooks — data (`useContacts`, `usePhotos`, `useNotes`, `useMail`, `useMessages`, `useAccount`, `useCall`, `useReports`), OS services (`useNavigation`, `usePhoneNotification`, `useKeybinds`, `useClock`, `useSystemHardware`, `useAppRegistry`, `useNuiBridge`, `useStorage`, `useCamera`, `useAdmin`, `useDevTools`), and the four an app is built out of: `useAppLevels` for its internal levels, `useAppAction` for a write, `useDeepLink` for the props it was opened with, and `onAppForeground` for loading. Relative imports out of an app — into `shell/`, `services/`, `nui/`, `lib/`, or `sdk/` by path — are prohibited and enforced by `web/src/sdk/boundary.test.ts`. An add-on installed from the Store resolves `@gphone/sdk` and nothing else, so a relative import is a thing a third-party app cannot do. UI primitives (`Screen`, `ListItem`, `Button`, `Avatar`, `SearchBar`, `EmptyState`, `ConfirmDialog`, `FloatingActionButton`, `PhotoPickerModal`, `ReportDialog`, `SegmentedControl`, `ToggleSwitch`, `Skeleton`) live in `web/src/sdk/ui/` and are re-exported from `web/src/sdk/components.ts`. The shell's own pieces — `PhoneFrame`, `Launcher`, `ToastHost`, `VolumeHud`, `ErrorBoundary` — are deliberately **not** exported, because an app rendering its own phone frame or toast host is a bug.
+7. **SDK First.** Everything in `web/src/apps/`, and every external add-on, consumes the OS strictly through `@gphone/sdk` hooks — data (`useContacts`, `usePhotos`, `useNotes`, `useMail`, `useMessages`, `useBlabber`, `useAccount`, `useCall`, `useReports`), OS services (`useNavigation`, `usePhoneNotification`, `useKeybinds`, `useClock`, `useSystemHardware`, `useAppRegistry`, `useNuiBridge`, `useAppEvents`, `useStorage`, `useCamera`, `useAdmin`, `useDevTools`), and the four an app is built out of: `useAppLevels` for its internal levels, `useAppAction` for a write, `useDeepLink` for the props it was opened with, and `onAppForeground` for loading. Relative imports out of an app — into `shell/`, `services/`, `nui/`, `lib/`, or `sdk/` by path — are prohibited and enforced by `web/src/sdk/boundary.test.ts`. An add-on installed from the Store resolves `@gphone/sdk` and nothing else, so a relative import is a thing a third-party app cannot do. UI primitives (`Screen`, `ListItem`, `Button`, `Avatar`, `SearchBar`, `EmptyState`, `ConfirmDialog`, `FloatingActionButton`, `PhotoPickerModal`, `ReportDialog`, `SegmentedControl`, `ToggleSwitch`, `Skeleton`) live in `web/src/sdk/ui/` and are re-exported from `web/src/sdk/components.ts`. The shell's own pieces — `PhoneFrame`, `Launcher`, `ToastHost`, `VolumeHud`, `ErrorBoundary` — are deliberately **not** exported, because an app rendering its own phone frame or toast host is a bug.
 
    **Keyboard shortcuts specifically.** Never add a raw `keydown` listener or a
    `<svelte:window on:keydown>` for a phone-level action; declare the action in
@@ -383,7 +383,7 @@ touched. Settings declared nothing and used ten hooks.
 the manifest understates them. The mapping is deliberately narrow — `useContacts`, `usePhotos`,
 `useCamera`, `usePhoneNotification`, `useStorage`/`usePersisted` — because those are the ones a
 player would want disclosed. `network` and `location` stay hand-declared: every app talks to its own
-service, so inferring `network` would mark all twelve and tell nobody anything.
+service, so inferring `network` would mark all thirteen and tell nobody anything.
 
 Declaring more than the scan finds is fine. Declaring less is a lie to the person reading it.
 
@@ -401,26 +401,27 @@ Four words carry the structure, and they mean exactly one thing each:
   so are `battery`, `reports`, `shell` and `phone`, none of which are apps.
 - **SDK** — the contract apps build against, and the only thing they may import.
 
-| Path                   | Runs in      | Notes                                                           |
-| ---------------------- | ------------ | --------------------------------------------------------------- |
-| `client/services/`     | FiveM client | The client half of each service — NUI callbacks, server pushes  |
-| `client/game/`         | FiveM client | GTA world: camera, freelook, phone prop and animations          |
-| `client/lib/`          | FiveM client | `ServiceProxy` (NUI↔server relay), `FrameworkBridge`, `nui`     |
-| `server/services/`     | FiveM server | One file per service, named for the service, auto-indexed       |
-| `server/lib/`          | FiveM server | `ServiceEndpoint`, `defineService`, `Repository`, `Database`    |
-| `server/repositories/` | FiveM server | Hand-written repos, for tables not yet migrated to §10          |
-| `sql/apps/`            | generated    | Per-service DDL from `pnpm generate:sql`; applied by hand       |
-| `gphone.sql`           | hand-written | Framework schema only — the moderation audit ledger             |
-| `server/__tests__/`    | Vitest/node  | Excluded from `tsc`; see §1                                     |
-| `shared/types.ts`      | both         | `@shared/types` path alias, not a workspace package (§3)        |
-| `web/src/shell/`       | CEF+browser  | The OS: `Shell.svelte`, `PhoneFrame`, `Launcher`, `ToastHost`   |
-| `web/src/shell/state/` | CEF+browser  | State the phone itself owns: navigation, keybinds, hardware     |
-| `web/src/services/`    | CEF+browser  | Client-side cache of each server service. Reached via the SDK   |
-| `web/src/sdk/`         | CEF+browser  | `@gphone/sdk` — the public surface for apps (§2.7)              |
-| `web/src/sdk/ui/`      | CEF+browser  | UI primitives and icons apps may build with                     |
-| `web/src/apps/`        | CEF+browser  | One dir per app: `manifest.ts` + `index.svelte` + `Icon.svelte` |
-| `web/src/nui/`         | CEF+browser  | The bridge: transport, `fetchNui`, `useNuiEvent`, browser mocks |
-| `web/src/lib/`         | CEF+browser  | Helpers with no gPhone state and no I/O — formatters, markdown  |
+| Path                   | Runs in      | Notes                                                                        |
+| ---------------------- | ------------ | ---------------------------------------------------------------------------- |
+| `client/services/`     | FiveM client | The client half of each service — NUI callbacks, server pushes               |
+| `client/game/`         | FiveM client | GTA world: camera, freelook, phone prop and animations                       |
+| `client/lib/`          | FiveM client | `ServiceProxy` (NUI↔server relay), `FrameworkBridge`, `nui`                  |
+| `server/services/`     | FiveM server | One file per service, named for the service, auto-indexed                    |
+| `server/lib/`          | FiveM server | `ServiceEndpoint`, `defineService`, `Repository`, `Database`                 |
+| `server/repositories/` | FiveM server | `SchemaRepository` subclasses — the joins the generic path cannot express    |
+| `sql/apps/`            | generated    | Per-service DDL from `pnpm generate:sql`; applied by hand                    |
+| `gphone.sql`           | hand-written | Framework schema only — the moderation audit ledger                          |
+| `server/__tests__/`    | Vitest/node  | Excluded from `tsc`; see §1                                                  |
+| `shared/types.ts`      | both         | `@shared/types` path alias, not a workspace package (§3)                     |
+| `shared/richText.ts`   | both         | One tokenizer for `@handle` — the UI renders and the server notifies from it |
+| `web/src/shell/`       | CEF+browser  | The OS: `Shell.svelte`, `PhoneFrame`, `Launcher`, `ToastHost`                |
+| `web/src/shell/state/` | CEF+browser  | State the phone itself owns: navigation, keybinds, hardware                  |
+| `web/src/services/`    | CEF+browser  | Client-side cache of each server service. Reached via the SDK                |
+| `web/src/sdk/`         | CEF+browser  | `@gphone/sdk` — the public surface for apps (§2.7)                           |
+| `web/src/sdk/ui/`      | CEF+browser  | UI primitives and icons apps may build with                                  |
+| `web/src/apps/`        | CEF+browser  | One dir per app: `manifest.ts` + `index.svelte` + `Icon.svelte`              |
+| `web/src/nui/`         | CEF+browser  | The bridge: transport, `fetchNui`, `useNuiEvent`, browser mocks              |
+| `web/src/lib/`         | CEF+browser  | Helpers with no gPhone state and no I/O — formatters, markdown               |
 
 `client/services/index.ts`, `client/game/index.ts`, `server/services/index.ts`, `web/src/sdk/hooks/index.ts` and
 `web/src/sdk/icons.ts` are **generated** by `scripts/generate-barrels.js`. Add a file to the
@@ -468,7 +469,7 @@ only if every layer exists:
 
 Two traps:
 
-- **Mocks make a missing layer invisible.** `web/src/mocks/registry.ts` answers by action name, so a
+- **Mocks make a missing layer invisible.** `web/src/nui/mocks/registry.ts` answers by action name, so a
   feature with no client/server wiring works perfectly in `pnpm dev` and in Playwright, and is dead
   in game. When adding an endpoint, add all three layers _and_ the mock. When touching an existing
   one, grep `client/` and `server/` for the action name before assuming it is wired.
@@ -513,8 +514,9 @@ Two scopes are not apps:
 
 - **`shell`** — the phone itself rather than any app (`gphone:client:shell:notify`). `shell` is
   the word this codebase already uses for the layer that owns navigation, key dispatch, and
-  anything above an individual app. Not `core`: `web/src/core/` is the transport directory and
-  every other use of "core" in the tree means QBCore / qbx_core.
+  anything above an individual app. Not `core`: `web/src/nui/` is the transport directory and
+  every other use of "core" in the tree means QBCore / qbx_core — and `core` is now also a
+  manifest field (§11.1), which would make it the third meaning of one word.
 - **`admin`** — the privileged surface, grouped by who may call it rather than by subject.
 
 Names drifted before this was enforced. Fifteen events omitted the app segment and
@@ -574,6 +576,17 @@ server-side: the row that occasioned the push is already written, so an offline 
 from the ordinary fetch. §11.6 still applies — a push does not excuse `onAppForeground`, and the
 contract test enforces that for any app that subscribes. `push` returns a discriminated
 `PushOutcome` precisely so `offline` cannot be read as delivered.
+
+**`pushMany` for a set of recipients**, and it is not a loop around `push`: it takes one
+`getAllPlayers()` snapshot for the whole fan-out rather than walking the player list per
+recipient. Deduplicate by **owner** before calling it where identity is an account rather than a
+citizenid (§10) — several handles can belong to one player, and being mentioned twice in one post
+is one notification. Blabber's mention fan-out is the worked example, and it also drops
+self-mentions: telling somebody they said their own name is noise.
+
+A push must never be allowed to fail the write that occasioned it. The row is committed either
+way, so the notification is dispatched after the write and its rejection is logged rather than
+thrown — an author seeing an error for a post that already exists is worse than a missed toast.
 
 **`notifications` gates the toast, not the data.** Withholding the payload would be theatre —
 the app can fetch the same rows through its own service — but the disclosure stays true at
@@ -713,7 +726,70 @@ a silent divergence breaks either security or writes. One schema drives both, pl
   declaration time — it would otherwise be MySQL error 1061 at apply time.
 - `default` on a field emits a SQL default. Set it when migrating an existing table —
   `favorite tinyint(1) DEFAULT 0` behaves differently from `DEFAULT NULL` once anything aggregates.
-- Two apps may not declare the same table.
+- **`table` overrides the table name; the default is `gphone_<id>`.** Two apps may not declare the
+  same table, and the check is on the resolved name rather than the id.
+- **`options` passes through to `ServiceEndpoint` to turn a generic action off** —
+  `{ disableGet, disableCreate, disableUpdate, disableDelete }`. Reach for it when the generic
+  shape is not merely incomplete but wrong: Blabber disables `create` because a post has to prove
+  the account it claims belongs to the caller, and Blabber DMs additionally disables `update`
+  because a sent message is not editable, so there is nothing for it to do. Some of these are set
+  for you — `read: 'members'` implies `disableGet`, `write: 'server'` implies no create or update
+  (§10 above) — and declaring one that is already implied is harmless.
+- **An index may be `unique: true`.** Either form takes it: `{ name, columns, unique: true }`.
+  It is a constraint, not an optimisation, and it is the right tool where the alternative is
+  find-then-insert with a race two rapid taps will find — Blabber's one-mouth-per-account and one
+  like per account per post are both enforced this way, and both translate the driver's duplicate
+  error into something a player can read. A unique index over a nullable column constrains only
+  the non-null rows, which is what makes `(account_id, mouth_of)` safe on a table where ordinary
+  posts have no `mouth_of` at all.
+- Per-column `index: true` is shorthand for an index paired with `citizenid`. Right for an
+  owner-scoped table, dead weight on a public one that never filters by owner — declare those
+  explicitly instead.
+- The generic filter now understands null: `{ reply_to: null }` emits `IS NULL`. There is still no
+  equality meaning "has a parent", which is why Blabber's profile tabs are a custom action.
+
+### Identity: one accounts table, shared
+
+`gphone_accounts` (`server/services/Accounts.ts`) is the identity every social app posts under — a
+handle, a display name, an avatar, a bio — with `app` as a column rather than one table per app,
+because those fields do not differ between a Twitter-alike and an Instagram-alike. An app-specific
+_presentation_ field, if one ever genuinely exists, goes in its own table keyed on `account_id`.
+
+Two consequences worth knowing before building on it:
+
+- **A player may hold several accounts per app**, so nothing keyed on identity here is
+  one-per-citizenid. `citizenid` stays the ownership anchor and never leaves the server; the
+  display identity is `account_id`. This is the concrete reason `private`/`publicColumns` exists
+  above — a public read that carried the citizenid would correlate two deliberately-separate
+  identities back to one person.
+- **A payload naming an account is not proof of owning it.** `ownedAccount(id, citizenid, app)` is
+  the check, and every action that writes as an account calls it first (§2.9). Without it a player
+  posts under anyone's handle by guessing an id.
+
+`handle` is `clientWritable: false` and claimed once: renaming it would silently break every
+mention of it, and there is nothing to un-break it with.
+
+### Blabber is the worked example of a public read
+
+`server/services/Blabber.ts` is the first table in this codebase whose rows are readable by players
+who do not own them, so it is the first real consumer of nearly everything in this section:
+`read: 'public'` with mandatory keyset paging, `access.editWindow`, `publicColumns` withholding
+`citizenid`, and the accounts table above. Read it before writing another public service — the
+comments there record which decisions were forced and which were free.
+
+A reply and a **mouth** (a repeat; with a body, a quote) are both self-references on the same
+table rather than tables of their own, because a reply is a Blab and a mouth is a Blab: they
+inherit the feed, the paging, the edit window and the moderation predicate instead of duplicating
+them. Counts are read in one batched `engagement` action rather than three per row, and are
+deliberately **not** denormalised onto the Blab row — a `like_count` column is a second copy of a
+fact the likes table already holds, and it drifts the first time a like is removed by a path that
+forgets to decrement.
+
+`server/services/BlabberDms.ts` is one-to-one **by construction**: two account columns and no
+participants table, so there is no shape a third person could be added to. Contrast Conversations,
+which needs a join table precisely because a thread there can grow, and pays for it with `left_at`,
+roles, and a membership predicate in every query. Reach for `access.membership` when a thread can
+grow; reach for two columns when it cannot.
 
 ### Apps that own more than one table
 
@@ -792,10 +868,19 @@ whole schema. Development only.
 - Nothing in this repo connects to a database. Apply the file yourself in a DB client; it uses
   `PREPARE`/`EXECUTE`, so it will not run through oxmysql.
 
-`pnpm generate:sql` writes `sql/apps/<id>.sql`, which is **committed and applied by hand**. There is
+`pnpm generate:sql` writes `sql/apps/<NN>-<id>.sql`, which is **committed and applied by hand**. There is
 deliberately no runtime DDL: `CREATE TABLE IF NOT EXISTS` silently does nothing against an existing
 table, so a schema change would be a no-op with no error — the same silent-failure shape as a missing
 NUI layer (§8). Regenerate and review the diff.
+
+**The numeric prefix is apply order, and alphabetical would be wrong.** Foreign keys cross app
+boundaries — `gphone_messages_attachments` references `gphone_photos`, and `messages` sorts before
+`photos`; `gphone_blabber` references `gphone_accounts`. `orderAppsByDependency` in
+`scripts/generate-sql.js` topologically sorts the declared services and numbers the files, so
+globbing the directory or importing it in name order is correct by default rather than correct if
+you happen to read the DDL first. Targets nothing owns (`players`) are external and do not
+constrain the order. The prefix is positional, so **adding an app can renumber existing files** —
+that is a real diff, not a spurious one, and stale output is deleted rather than left to orphan.
 
 Every gPhone-owned table is now declared. `server/repositories/` holds `SchemaRepository` subclasses
 for the two apps with multi-table queries — the declaration owns the schema, the subclass owns the
@@ -864,6 +949,20 @@ second, subtly different copy of it — so the registry and the uninstall button
 the button threw. Read `manifest.core` and nothing else. A remote app is never core: `defineApp`
 forces `false` when `isRemote` is set and throws on an explicit `core: true` beside it.
 
+Blabber is the first app that is genuinely `core: false` — the add-on path's first real consumer,
+and the Store's first genuine listing rather than a manifest with nothing behind it. The Store's
+catalogue must never again carry an installable manifest with no code behind it: an unbuilt app
+belongs in a document, because an idea recorded in prose is honest and the same idea rendered as an
+Install button is not.
+
+**A `badgeStore` requires a `preload`, and `sdk/appContract.test.ts` enforces the pair.** A badge
+count has to be right _before_ the launcher paints, and `onAppForeground` is too late by
+definition — it does not run until the app is opened, so an unread count fed only from there reads
+zero until you visit the thing it was supposed to tell you about. `preload` is the one sanctioned
+exception to §11.6's fetch rule. Feed the store itself from a **module-scope** subscription, not a
+component one (§8): a subscription inside a component lives as long as the component, and a badge
+whose feed dies when the app closes is a badge that stops counting.
+
 A human-facing version of this section lives in [`docs/writing-an-app.md`](docs/writing-an-app.md).
 It links back here rather than repeating it; keep it that way.
 
@@ -903,6 +1002,12 @@ append vs prepend and sorted on load but not after a write. `validate` refuses a
 leaves the phone. Anything that is not list/create/update/delete stays a named method on the store,
 as Mail's `archive` does; do not stretch the factory to cover it.
 
+**A paged read gets `createPagedStore` instead** (`web/src/services/createPagedStore.ts`), which
+holds the keyset cursor and knows that `nextCursor: null` is the end rather than "ask again". Pair
+it with `usePagedList`'s `loadOlder` in the app. Do not page a `createCrudStore`: that factory
+fetches a whole list and re-sorts it, which is the opposite of a cursor walking backwards through
+one, and §10's whole reason for keyset paging is that a feed takes inserts at the head.
+
 Then expose it through a hook in `web/src/sdk/hooks/`. Stores are never reached by path from an app.
 
 ### 5. The browser mock
@@ -925,7 +1030,9 @@ a mock that disagrees with the server is a bug you cannot see in the browser.
   the old answer for the rest of the session; an `$effect` that reads `$state` becomes a refetch
   loop. Every app that fetches uses `onAppForeground` — there is no second rule to weigh, and a
   push channel does not exempt one, because a push only covers what arrives while you are looking.
-  `onAppMount` and `onAppUnmount` remain for setup and teardown that is not a fetch.
+  `onAppMount` and `onAppUnmount` remain for setup and teardown that is not a fetch. The single
+  exception is a manifest `preload`, which exists because a launcher badge has to be right before
+  the app is ever opened (§11.1).
 - Show `Skeleton` until the store's `loaded` says the first fetch has come back, and only then the
   `EmptyState`. An empty list is not the same statement as "you have nothing"; every list in the
   phone used to make the second one while still waiting for the first.

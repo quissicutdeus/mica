@@ -25,13 +25,14 @@
 - **Photos & Camera**: In-game screenshot/camera integration, automatic image compression, gallery view, and attachment sharing.
 - **Notes**: Full-featured note-taking app with instant saving.
 - **Calculator**: Full mathematical calculator with an optimized touchscreen keypad layout.
+- **Blabber** _(add-on)_: Short public posts under an `@handle`. Replies, **mouths** (a repeat, or a quote when you add your own words), likes, `@mention` notifications, and strictly one-to-one direct messages. An author can fix a typo for 15 minutes — `gphone_blabber_edit_window` — and then the post freezes. A player may hold several accounts and switch between them, and the owning `citizenid` never reaches another reader, so alts stay uncorrelated. Not on the home screen out of the box: it is the first genuinely non-core app and installs from the Store.
 - **Store Application**: Built-in app marketplace to browse, install, and manage community add-on apps. Features Installed tab sorting (`newest`, `oldest`, `updated`, `name`), installation date metrics (`installedAt`, `updatedAt`), permissions inspector, and app storage footprint metrics.
 - **Settings & Status**: Settings application with an **About** section (phone number, OS version, first boot timestamp, and smart git build/commit info), 24-hour time toggles, embedded Developer Tools, dynamic battery drain lifecycle, and hardware controls.
 - **Home Screen Edit Mode**: Right-click icon gesture to trigger Edit Mode, swapping unread notification badges for grey minus action buttons on removable add-on apps with automatic Edit Mode exit when no add-on apps remain.
 
 ### 🛠️ Backend & Core Architecture
 
-- **SDK-First Architecture (`@gphone/sdk`)**: OS hooks for data (`useContacts`, `usePhotos`, `useMail`, `useNotes`, `useMessages`, `useAccount`, `useCall`, `useReports`), for the device (`useSystemHardware`, `useClock`, `useCamera`, `useSound`, `useKeybinds`, `useNuiBridge`), and for the app itself (`useNavigation`, `useAppLevels`, `useAppAction`, `useStorage`, `usePersisted`, `useTimer`, `useDeepLink`, `usePagedList`, `usePhoneNotification`, `useAppRegistry`). Plus `AppProps` — the one boundary every app crosses, and typechecked. Apps import the SDK and nothing else, enforced by a test rather than documented and hoped for.
+- **SDK-First Architecture (`@gphone/sdk`)**: OS hooks for data (`useContacts`, `usePhotos`, `useMail`, `useNotes`, `useMessages`, `useBlabber`, `useAccount`, `useCall`, `useReports`), for the device (`useSystemHardware`, `useClock`, `useCamera`, `useSound`, `useKeybinds`, `useNuiBridge`), and for the app itself (`useNavigation`, `useAppLevels`, `useAppAction`, `useStorage`, `usePersisted`, `useTimer`, `useDeepLink`, `usePagedList`, `usePhoneNotification`, `useAppRegistry`, `useAppEvents`). Plus `AppProps` — the one boundary every app crosses, and typechecked. Apps import the SDK and nothing else, enforced by a test rather than documented and hoped for.
 - **Written for app authors**: `pnpm new:app <id>` scaffolds a working app, `localhost:5173/?app=<id>` boots straight into one, and `renderApp` from `@gphone/sdk/testing` unit-tests one. See [docs/writing-an-app.md](docs/writing-an-app.md).
 - **Client & NUI Transport Safety**: Deterministic ID generation and 15-second safety timeouts (`ClientApp.ts`) preventing NUI callbacks from hanging CEF indefinitely.
 - **Core vs. Add-on Protection Engine**: Every manifest declares `core` explicitly — `true` ships with the phone and cannot be uninstalled, `false` is a Store-managed add-on. Stated rather than inferred, because it was once derived from the app's `author` string, which made a display value decide whether an app could be removed. A remote bundle is never core.
@@ -78,7 +79,9 @@ Before installing, ensure your server environment meets the following requiremen
    Clone or download `gphone` into your server's `resources` directory (e.g., `resources/[standalone]/gphone`).
 
 2. **Database Setup**
-   Import [`gphone.sql`](gphone.sql) — the framework schema, which is just the moderation audit ledger — and then every file in [`sql/apps/`](sql/apps), which holds one file per app (contacts, conversations, messages, mail, notes, photos) including their join tables.
+   Import [`gphone.sql`](gphone.sql) — the framework schema, which is just the moderation audit ledger — and then every file in [`sql/apps/`](sql/apps), which holds one file per service (accounts, battery, blabber, blabber_dms, contacts, conversations, mail, notes, photos, messages, reports) including their join and attachment tables.
+
+   **Import them in filename order.** The numeric prefix is apply order, not decoration: foreign keys cross app boundaries, so `gphone_blabber` needs `gphone_accounts` to exist first and the messages app's attachment table references `gphone_photos`. Alphabetical order gets both wrong. The files are generated in dependency order, so importing the directory as it sorts is correct by default — and the prefixes shift when an app is added, which is expected.
 
    App tables are **generated** from each app's `defineService` declaration by `pnpm generate:sql`, so the declaration is the single source of truth for the schema. They are deliberately not duplicated into `gphone.sql`: two hand-maintained copies of the same DDL drift, and the column allowlist that protects against SQL injection is only safe while it matches the real table.
 
@@ -200,8 +203,6 @@ gphone/
 ## Contributing
 
 - [docs/writing-an-app.md](docs/writing-an-app.md) — the five-minute path to a working app.
-- [docs/roadmap.md](docs/roadmap.md) — app ideas worth building, and what the platform still
-  owes each of them.
 - [AGENTS.md](AGENTS.md) — the full engineering guide: hard constraints (§2), the CEF capability
   baseline (§6), the service layer (§10), and adding an app end to end (§11). Written for AI
   agents working in this repo, and the most complete description of how it fits together.
