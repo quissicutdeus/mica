@@ -1,21 +1,29 @@
 # Roadmap
 
-> **Local working file. Untracked on purpose** — it records unshipped intent, which is the thing that
-> should not read as a promise in a public repo. Nothing in the committed tree links here.
+> **Tracked and pushed.** It records unshipped intent, which is the thing that must not read as a
+> promise in a public repo — so write it as something a stranger will read, because a stranger can.
+> No document links here: `README.md` and `AGENTS.md` had their roadmap links removed deliberately,
+> which keeps unshipped intent reachable but never advertised. The one place in the committed tree
+> that names this path is a comment in `web/src/apps/store/appInfo.ts`, recording where the Store's
+> four invented add-ons went.
 
 What exists, what is proposed but unbuilt, the app ideas after that, and what the platform owes each
-of them. Every statement here describes the code as it is today; a proposal is only ever under a
-heading that says so.
+of them.
+
+**Every statement here describes the code as it is today; a proposal is only ever under a heading
+that says so.** That rule is the structure of the file rather than a style note, and it is the one
+thing not to relax. Description and intent were merged once, and it went badly: a section describing
+what existed asserted a fact a later section renamed, so the document undid itself as you read down.
+The failure mode is not an inaccurate line — it is a reader who cannot tell which half they are in.
+So the reasoning behind an unbuilt thing belongs under its own proposal heading here, not in a second
+document that this one defers to and a reader may not have.
 
 This file exists because the Store's catalogue used to carry four app ideas as **installable
 manifests with no code behind them** — Blabber, Crypto Tracker, Downtown Taxi and Marketplace,
 complete with invented studios and version numbers. Tapping any of them opened a screen apologising
 for itself. An idea recorded in a document is honest; the same idea rendered as an Install button is
-not, which is the whole reason they moved here.
-
-The detailed phase plan for Blabber's next iteration lives in `BLABBER-TODO.md`, also local. It is
-kept separate deliberately: this file describes what is true, that one describes what is intended,
-and merging them produced a document whose later sections contradicted its earlier ones.
+not, which is the whole reason they moved here. Blabber has since been built and is a real Store
+listing; the other three are still ideas, further down.
 
 ---
 
@@ -50,12 +58,328 @@ accounts per app and switch between them, which is what forced `ColumnDef.privat
 withholding of `citizenid` from every public projection — a public read carrying the owner's
 citizenid would correlate two deliberately-separate identities back to one person.
 
+#### Author hydration, and the bug the mock hid
+
+`Blab.handle`, `display_name` and `avatar` are hydrated for display, and for a while nothing joined
+`gphone_accounts` to supply them — only `create`'s echo carried a handle, so a feed, a profile and a
+quote card each rendered a blank author **in game only**. Every fixture in
+`web/src/nui/mocks/registry.ts` embedded a handle, so the feed looked correct in `pnpm dev` and
+Playwright stayed green throughout. That is the reusable lesson rather than a footnote: a mock that
+over-provides hides exactly the layer it stands in for.
+
+`server/repositories/BlabberRepository.ts` overrides `findAll` and exposes `hydrate` and
+`findPublicById`, batching the join for a whole page as `MessageRepository` already did for
+attachments. Three consumers go through it — the generic public read, `blabber:profile`, and
+`create`'s echo of a mouth — so the two feeds cannot disagree. Two queries per page regardless of
+page length, with quoted rows' authors fetched alongside the page's own, since a quote is usually
+somebody else's. The join **never** selects the author's `citizenid`: re-adding it through a join
+would defeat the alt-privacy property `publicColumns` exists for. `server/__tests__/blabber.test.ts`
+is what stands behind it, including that neither query returns an author citizenid, that a missing
+quote target resolves to `null` rather than a stale card, and that a vanished account leaves the page
+standing.
+
+**One level of mouthing.** A quote of a quote renders its immediate target and no further, because
+`BlabRow` paints one nested card and a deeper walk would fetch rows nothing shows.
+
+This is the one shipped item that still wants in-game eyes, and for the same reason it was missed:
+Playwright being green says nothing about it. Against a real database, confirm a feed, a profile, a
+thread and a quote card each render an author.
+
+#### Two composers, deliberately not one
+
+The DM thread reused the post `Composer` with a `placeholder`, so its send button read "Post", a
+280-character counter sat over a `varchar(500)` column, and "Posting as @handle" appeared inside a
+private conversation. `Composer.svelte` now keeps the public shape — text button, 280 counter,
+"Posting as @x" — and `DmComposer.svelte` mirrors Messages' icon-only send instead. The two are
+diverging rather than converging, which is the argument against parameterising one: a shared
+component would force the public composer to carry the GIF and reaction affordances that are
+explicitly ruled out for Blabs. `Composer`'s `placeholder` prop stays, because `Thread` and the edit
+path both pass one and both are public.
+
+The DM e2e spec had been **asserting the bug** — it clicked a button named `Post` — so it was green
+_because_ the composer was wrong. Three smaller defects went with it: the `EmptyState` flashed before
+the first page returned (now gated on `feed.loaded`, per AGENTS.md §11.6), the DM unread badge read 0
+until a push arrived (`loadDmThreads` now runs on `onAppForeground`), and the active account reset to
+the first one every session (`activeAccountId` is `usePersisted`).
+
+#### Identity, and the composer as a FAB
+
+The app was one screen with a permanently-expanded composer, a "Posting as @x" strip, an account
+switcher and a text link to DMs. Identity is now a small avatar in the header opening a menu beneath
+it, and the composer a FAB and a full-screen overlay reused for editing. `Screen`'s `actions` snippet
+also carries the DM icon and its unread badge.
+
+**The identity menu drops from the top, and that is a correction.** It was first built as a bottom
+sheet copying `ReportDialog`, the repo's only one, and the borrowing was wrong: a sheet rises from the
+bottom because a phone is tall and a thumb lives down there. gPhone is a mouse-driven overlay inside a
+game, so that reasoning does not transfer, and a five-item menu opening a full screen-height away from
+the control that triggered it is only travel. A dialog that wants the player's whole attention —
+reporting content — still belongs at the bottom. The scrim is a real `<button>` rather than a dimmed
+`div`, so the menu is dismissable by the gesture a menu is dismissed by and not only by Back.
+
+**A Blab's avatar goes to the profile**, like the name beside it. It is a picture of a person sitting
+next to a link to that person, and it did nothing when tapped — the one part of a row that looked like
+a link and was not. Labelled for its destination rather than its contents, which also keeps it
+distinct from the name button in the accessibility tree.
+
+**Two features the server already allowed were unreachable from the phone**, and the sheet is what
+reaches them:
+
+- **A second handle.** `gphone_max_accounts_per_app` has always permitted three, while `ClaimHandle`
+  rendered only when the account list was _empty_ — so accounts two and three could not be created at
+  all. The cap now rides along with the account list rather than being copied into the client: it is a
+  convar, and a hardcoded 3 goes wrong the first time an owner raises it. Same reasoning as
+  `createBlab` echoing `editWindow`.
+- **Editing a profile.** `display_name` and `bio` were client-writable columns with no UI and no
+  route. `updateAccount` is the generic owner-scoped `accounts:update`, which is only safe to expose
+  because `app` and `handle` are `clientWritable: false` — a renamed handle would break every mention
+  already posted.
+
+**No avatar picker, and it is blocked rather than skipped.** `gphone_accounts.avatar` is
+`varchar(255)`; `PhotoPickerModal` hands back the base64 image rather than a reference, so wiring it
+up produces a value the per-column length rule correctly refuses. It needs the column to hold a media
+reference — the `gphone_media` work — and widening it is a type change `SchemaMigrator` will not
+apply.
+
+**The DM title is the peer**, not the literal `'Message'`, and resolved from the account already in
+hand rather than from the inbox list — which is what makes **starting a DM from a profile** possible,
+something the DM empty state has always promised and no code path implemented. A thread with a peer
+not yet in the inbox used to title as `@` with a `?` avatar.
+
+#### Two things that made first-run unreachable
+
+**Uninstalling a bundled add-on deleted a component that was still in the build.**
+`shell/state/registry.ts` kept one `componentRegistry` for two different facts — what the glob found
+in `apps/` at startup, and what has been registered since boot — and `unregisterApp` deleted from it.
+So installing Blabber, uninstalling it and installing it again left the Store's
+`getComponent(id) || placeholderComponent()` with nothing to find, and the icon opened **"Not part of
+this build"** for an app whose code had never left the resource. In CEF the page never unloads, so it
+stayed wrong for the rest of the session rather than until a refresh. The two maps are now separate and
+`getComponent` falls back to the bundled one; a remote app's component is still forgotten on uninstall,
+because that code really is gone. `registry.test.ts` pins the map and the e2e spec pins the path a
+player walks.
+
+**And the first-run screen could not be seen in the browser at all.** The mock fixture always held
+accounts, so Blabber's claim gate — the only thing a new player sees — never rendered in `pnpm dev` or
+under Playwright. `?state=fresh` presents the phone as never used, alongside the existing `?app=`
+harness: `?app=blabber&state=fresh`. A path no developer can look at is a path that rots, and this one
+is every player's first impression.
+
+Two things about that flag are deliberate. It is **one axis rather than a list of app ids** — it began
+as `?fresh=blabber`, which made the ordinary invocation repeat the id `?app=` had just named, buying
+per-app independence nothing wanted. And it is **not the default for `?app=`**: opening an app to look
+at a populated feed is what the harness is mostly for, and every other spec in `e2e/apps/` needs the
+fixtures.
+
+Worth being explicit about what first run _is_, since it is easy to assume there is more to it: install
+from the Store, tap the icon, and the app asks for a handle — lowercase, 3–32 characters — with no feed
+and no composer until one is claimed. Uninstalling does **not** surrender it: the account lives in
+`gphone_accounts` keyed on citizenid, so reinstalling goes straight to the feed. Only the app's local
+storage is cleared, which is where the active-account choice lives.
+
+**The mock could not say no, and that hid two things.** `getMyAccounts` filtered by `app` alone, so
+every account in the fixture came back as the player's: every profile rendered as your own, and the DM
+fixture had @nightowl messaging an account it supposedly was. The fixture now records which accounts
+the player owns, `createBlab` checks ownership rather than mere existence — its error message had been
+claiming that check for a while — and the browser can therefore reach a profile that is somebody
+else's.
+
+Every overlay is its own `useAppLevels` rung, or Backspace skips it and sends the player home from
+what looks like a modal (§2.7). The overlays are `inset-0` like `PhotoPickerModal`, so they paint over
+the header: the arrow is hidden rather than broken, and the shell dispatches `back` regardless of what
+is on top.
+
+**Which makes an on-screen exit per overlay mandatory, not decorative.** With the header covered, an
+overlay whose only way out is the keybind has no visible way out at all — and Claim shipped exactly
+like that for a moment, since `ClaimHandle` had a Claim button and nothing else. Its `oncancel` is
+optional for the reason `Composer`'s is: the same component is also the zero-account gate, where there
+is nothing behind it to go back to and a Cancel would dismiss the only thing on screen. The other
+three were already covered — the composer's Cancel, Edit profile's Cancel, and the menu's scrim, which
+is a real button precisely so clicking away works.
+
 ---
 
 ## Proposed, not built
 
-Nothing in this section exists in the code. Each is a rename or a table that would need a
-hand-written migration, which is why it is recorded rather than done quietly.
+Nothing in this section exists in the code. The reasoning sits beside each item rather than in a
+companion planning file: a proposal whose justification lives somewhere else is one nobody can
+evaluate, and the somewhere else goes missing.
+
+Two constraints shape every schema item below:
+
+- **`SchemaMigrator` is additive-only** (AGENTS.md §8). A **new** table costs nothing extra — declare
+  it, run `pnpm generate:sql`, apply the file by hand; there is no runtime DDL. A **rename** or a type
+  change, _including widening an enum_, is printed for a human and never applied, so it needs a
+  hand-written migration and an existing install that skips one loses data. Anything enum-shaped has
+  to be over-provisioned now, because every value added later costs another migration.
+- **Base64 will not carry video.** `gphone_photos.image` is `mediumtext` holding base64; a video or
+  voice clip at that size will not survive crossing NUI.
+
+### Blabber, next iteration
+
+Blabber today is **one screen**: a permanently-expanded composer pinned above the global public feed,
+a "Posting as @x" strip, a prominent account switcher, and a text link to DMs. No tabs, no follow
+graph, no search, no notifications list.
+
+The intent is a signed-up-only tabbed shell — public feed as the default, the feed of people you
+follow one tap away, search and notifications in a bottom nav — with the composer demoted to a FAB and
+identity demoted to a small avatar in the top-right.
+
+Decisions already settled, recorded so they are not re-litigated:
+
+| Decision                | Choice                                                                              |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| Tabs                    | Public feed (default), Following, Search, Notifications — bottom nav                |
+| Identity                | Small avatar top-right, opening a sheet for switch / claim / edit profile — done    |
+| Composer                | FAB, matching Messages' "Start Chat" and Contacts' "Add Contact" — done             |
+| Notifications           | A real table, which also raises native phone notifications                          |
+| Follow graph            | `gphone_account_follows`, declared on the shared `accounts` service                 |
+| Public-feed affordance  | **Ear** — pairs with Mouth, one speaks and one listens. No reaction bar in a feed   |
+| Reactions / emoji / GIF | Private surfaces only; Blabber DMs first, Messages adopts the same primitives later |
+| Media                   | Generic `gphone_media` table via the `table:` override; app id stays `photos`       |
+
+#### 1. The bottom nav — what is left of the shell
+
+Pure UI, no schema, and **most of this step has shipped** — see "Identity, and the composer as a FAB"
+under Shipped. What remains is the nav itself, and it is waiting on content rather than on work:
+
+- **`TabBar` as a new SDK primitive**, `web/src/sdk/ui/TabBar.svelte`, exported from
+  `sdk/components.ts`. No bottom nav exists anywhere in the repo yet; `SegmentedControl` is the
+  top-mounted idiom and the wrong shape for four icon+label destinations. Shared rather than
+  Blabber-local, because the accounts service already anticipates an Instagram-alike that wants the
+  identical component. Follow `SegmentedControl`'s conventions — `aria-pressed` over `role="tab"`, a
+  click sound on change, a `badge` per option. It renders in `Screen`'s `overlay` snippet, which sits
+  outside the scroll container, and so does the FAB.
+- **`FloatingActionButton` needs a raised position.** Its `right-5 bottom-5` is hardcoded, so it
+  overlaps a tab bar. Add an optional bottom-offset prop; the Messages and Contacts call sites keep
+  today's behaviour by default.
+- **The tabs**, `feed | following | search | notifications`, with the non-default tab as a rung of its
+  own so Back returns to Feed before leaving the app.
+
+**Deliberately not built ahead of step 2.** Only Feed exists today — DMs are the header icon, not a
+tab — so a nav shipped now carries one live destination and three that apologise for themselves. That
+is the same thing the Store's four invented add-ons were, one layer down. `components.ts` says it
+directly about `ActionSheet`: a primitive imported by nobody is deleted rather than kept warm, and
+`pnpm deadcode` enforces it. The nav lands with the Following feed, which is what gives it a second
+real tab.
+
+#### 2. Follow graph and the Following feed
+
+`gphone_account_follows`, declared as a child table of the `accounts` service so a future social app
+inherits it: `follower_account_id` and `followee_account_id` onto `gphone_accounts.id`, `created_at`,
+`UNIQUE (follower_account_id, followee_account_id)`, and a key on the followee.
+
+Strictly one account → one account, with **no `citizenid` column**. Because every `gphone_accounts`
+row carries an `app`, a row can only ever link two Blabber accounts — following `@bob` on Blabber
+cannot touch `@bob` on a future Instagram-alike, since that is a different account id. Ownership stays
+behind each account in `gphone_accounts.citizenid` and stays invisible to readers.
+
+`follow`, `unfollow`, `followers`, `following` on the accounts service, each calling `ownedAccount`
+first: the payload's `follower_account_id` is attacker-controlled and a row id is never authorization
+(§2.9). `follow` is insert-only with the unique index making it idempotent, `unfollow` a `DELETE`
+scoped to the caller's account — the same shape `blabber:like`/`unlike` already gets right.
+
+The **Following feed** is a new paged action on the blabber service, because the generic public `get`
+cannot express a join, and paging stays keyset on `id DESC` like every other read. It is scoped to the
+**active** account's follows, so switching accounts changes the feed; client-side it is a second
+`createPagedStore`. Profile gains follow/unfollow, counts, and tappable follower/following lists.
+
+#### 3. Notifications
+
+`gphone_blabber_notifications`, `access: { read: 'owner', write: 'server' }` — rows arrive from the
+server and never the phone, so nothing becomes client-writable and create/update are not registered
+(§10). `account_id` and `actor_account_id` onto `gphone_accounts.id`, a
+`kind enum('mention','follow','reply','ear','dm')`, a nullable `blab_id`, a nullable `read_at`, and a
+key on `(account_id, read_at)`.
+
+This replaces `unreadMentions` in `web/src/services/blabber.ts`, an in-memory counter that resets on
+resource restart and can only ever count what arrived while subscribed. A stored count is also the
+only way to build a notifications **list**, which a counter can never become.
+
+**One write path, two outputs.** `notifyMentions` already fans out through
+`appEventChannel('blabber').pushMany(...)` with a `notify` option, which is what raises the phone-level
+toast. Generalize it to write the row _and_ push, for every kind, so the in-app tab and the native
+notification read from one source and cannot disagree. Keep the existing discipline: fired after the
+row is written, never allowed to fail the originating action, and `PushOutcome` distinguishing
+`offline` from delivered (AGENTS.md §8). A `mark read` action clears the badge; the manifest's
+`badgeStore` switches to the unread count and its subscription stays at **module scope**, which is the
+reason the current one keeps counting while the app is closed.
+
+DMs appear here as a notification kind _and_ keep their own unread badge on the header DM icon. Those
+are two different questions — "anything new?" versus "unread in this thread".
+
+#### 4. Search and hashtags
+
+Hashtags are render-only today: `tokenizeRichText` emits a `tag` token and `BlabBody` renders it as a
+non-interactive `<span>`. There is no tag storage, so "popular recent hashtags" has nothing to
+aggregate.
+
+- **`taggedTopics(input)`** as a sibling of `mentionedHandles` in `shared/richText.ts`, so what the UI
+  highlights and what the server indexes cannot disagree — the same reasoning that file's header
+  already gives for living in `shared/`.
+- **`gphone_blabber_tags`** child table (`blab_id`, `tag`), written at create time. That buys three
+  things a body scan cannot: an indexed tag feed, a real trending aggregate, and tappable tags.
+- **Tags become tappable in Blabs and DMs at once.** A mention is already a `<button>`; give the tag
+  the same treatment with an `ontag` callback that switches to the Search tab with that tag loaded.
+  One change covers both surfaces, because the DM thread renders bodies through `BlabBody` too. Keep
+  the token discipline exactly as it is — tokens through `{text}`, never an HTML string through
+  `{@html}` (§7). Turning a `<span>` into a `<button>` changes nothing about that.
+- **Search tab**: a `SearchBar` over three server-side searches — accounts by handle or display name,
+  Blabs by body, tags — plus trending shown before anything is typed. Server-side, not
+  `filterByQuery`, which filters an in-memory list that a public feed never fully loads. Every search
+  action needs `paging`; `defineService` throws for a public read without it (§10). While here, fix
+  `SearchBar`'s `use:focus` action, whose body is an empty stub, so the field actually autofocuses.
+
+#### 5. Media, private-surface richness, and moderation
+
+- **The `gphone_media` rename**, below — the prerequisite for everything else in this step. Bundle the
+  `gphone_blabber_likes` → `gphone_blabber_ears` rename into the same migration file: doing it while
+  Blabber is a fresh `core: false` add-on is far cheaper than later.
+- **Blab attachments**, `gphone_blabber_attachments` (`blab_id`, `citizenid`, `media_id`), ordered by
+  `id ASC` as Messages already relies on. Reuse `resolveOwnedAttachments` from `Messages.ts` — or lift
+  it to `server/lib/` — so a `media_id` the poster does not own is dropped rather than trusted, and
+  reuse `PhotoPickerModal`'s existing `multiSelect`. Hydrate through the Blabber repository subclass,
+  batched per page.
+- **Ear.** Rename Like across the UI copy, the wire actions (`likeBlab`/`unlikeBlab` →
+  `earBlab`/`unearBlab`, `blabber:like`/`unlike` → `blabber:ear`/`unear`), the `BlabEngagement` fields
+  (`likes`/`likedByMe` → `ears`/`earedByMe`) and the table. Keep Mouth — the pair is the point. Route
+  renames must land in all three layers plus the mock or the feature silently no-ops (§8), and
+  `routes.test.ts` cross-references them. Keep the two-literal `fetchNui` calls: a computed action name
+  is invisible to that test.
+- **Private-surface richness, Blabber DMs only.** No reaction bar and no GIF button on a Blab
+  composer; a public post gets Ear and nothing else. `gphone_account_reactions` declared as a shared
+  table now (keyed on account plus target) so Messages needs no migration when it adopts this. New
+  `EmojiPicker`, `GifPicker` and `ReactionBar` primitives, exported from `components.ts` so they are
+  reachable — a primitive nobody can import is not a primitive — and wired into `DmComposer` and the
+  DM thread only. GIF sourcing goes through `gphone_gif_provider` / `gphone_gif_api_key` convars with
+  the **server** calling the provider, so the key never reaches the client, and a stored `url`
+  validated against an allowlist of that provider's CDN hosts before it is ever rendered: an
+  unvalidated client-supplied URL rendered in CEF is an IP-leak beacon and a way to display
+  unmoderated content (§2.9). Server-side fetch, no new npm dependency.
+- **Report and block.** `REPORTABLE` in `server/lib/moderation.ts` lists only messages and photos, so
+  a Blab, a DM and an account cannot be reported at all, and nothing ever writes `moderated` on those
+  tables — Blabber only respects the status defensively through `visibleTarget`. Add `gphone_blabber`,
+  `gphone_blabber_dms` and `gphone_accounts` with preview columns, and surface the existing
+  `ReportDialog` from `BlabRow`, the DM thread and profiles. **Block/mute** is a new shared table
+  alongside follows, and it matters most once strangers can DM you: a block has to filter the
+  blocker's feeds, suppress notifications and refuse DMs **server-side**, because a client-side filter
+  is not a block.
+
+#### Deliberately out of scope
+
+Listed so nothing above reads as covering them: Messages adopting the emoji, GIF and reaction
+primitives, and threaded replies in Messages; video and voice **capture**, which the schema
+accommodates but no capture path exists for; a quote-Blab composer, though `mouthBlab` already accepts
+a body with no UI to supply one; pull-to-refresh and a new-posts indicator; and whether Blabber should
+stay `core: false` at all once it is a flagship app.
+
+New server logic here gets a server test (§9), and the ones worth naming in advance: `follow` and
+`unfollow` rejecting an account the caller does not own, the Following feed paging keyset-correctly
+and containing only followed accounts, a notification row per kind with `read_at` clearing the count,
+tag extraction agreeing with `tokenizeRichText` on the same input, a GIF URL off the host allowlist
+being refused, and a blocked account being unable to DM or appear in a feed. `routes.test.ts` and
+`appEventContract.test.ts` are what catch a missing NUI or push layer — the failure mode that silently
+does nothing in game.
 
 ### `gphone_photos` → `gphone_media`
 
@@ -63,37 +387,32 @@ The photos table is `gphone_photos` today and holds one base64 `image` column. T
 rename it to `gphone_media` via the `table:` override on the `photos` service — **the service and app
 id would stay `photos`**, so event names, `?app=photos` deep links, the `gphone:photos:` storage
 namespace, `usePhotos` and the launcher label are all untouched — and to replace the single column
-with `kind` + nullable `data` (base64) + nullable `url`, plus dimensions, duration and `alt_text`.
+with a shape that can hold more than one kind of thing:
 
-Two reasons it is not a quick change:
+| Column        | Type                                                          | For                                              |
+| ------------- | ------------------------------------------------------------- | ------------------------------------------------ |
+| `kind`        | `enum('photo','video','audio','gif','sticker','file','link')` | default `photo`                                  |
+| `data`        | `mediumtext` NULL                                             | base64 for locally captured photos — was `image` |
+| `url`         | `varchar(512)` NULL                                           | hotlinks: GIFs, remote video                     |
+| `thumbnail`   | `mediumtext` NULL                                             | poster frame for video and GIF                   |
+| `mime_type`   | `varchar(64)` NULL                                            |                                                  |
+| `width`       | `int` NULL                                                    | reserve layout space so a feed does not reflow   |
+| `height`      | `int` NULL                                                    | as media loads                                   |
+| `duration_ms` | `int` NULL                                                    | video and audio                                  |
+| `byte_size`   | `int` NULL                                                    |                                                  |
+| `alt_text`    | `varchar(255)` NULL                                           | accessibility, and what RCS carries              |
 
-- **`SchemaMigrator` is additive-only** (AGENTS.md §8). A rename, a type change, and widening an
-  enum are each printed for a human and never applied, so this needs a hand-written migration, and
-  an existing install that skips it loses its gallery.
-- **Base64 will not carry video.** `image` is `mediumtext`; a video or voice clip at that size will
-  not survive crossing NUI. That is the actual motivation — the rename is a consequence of needing
-  more than one storage shape, not a tidying exercise.
+`audio` covers voice clips, `file` covers RCS-style transfer, `link` covers rich URL previews and
+`sticker` covers tapback-adjacent stickers. The enum is **deliberately over-provisioned**, because
+widening one later is another hand-written migration.
 
-It would touch `server/lib/moderation.ts` (`REPORTABLE.gphone_photos`), `ReportDialog.svelte`'s
-`targetTable` union, the FK in `Messages.ts`, `MessageRepository.ts`'s join, and the audit and report
-tests.
+The migration is hand-written and lives in `sql/`: rename the table, rename `image` → `data`, add the
+new columns. An existing install must run it or lose its gallery, and the file has to say so. It
+touches `server/lib/moderation.ts` (`REPORTABLE.gphone_photos`), `ReportDialog.svelte`'s `targetTable`
+union, the FK in `Messages.ts`, `MessageRepository.ts`'s join, and the audit and report tests.
 
-### Other unbuilt proposals
-
-Recorded here so they are not mistaken for existing behaviour; the reasoning is in
-`BLABBER-TODO.md`.
-
-- **Like → Ear.** Renaming the public-feed affordance so it pairs with Mouth — one speaks, one
-  listens. Touches the table, the routes, the `BlabEngagement` fields and the UI copy, and route
-  renames must land in all three layers plus the mock or the feature silently no-ops (§8).
-- **A follow graph** (`gphone_account_follows`) and a Following feed.
-- **A notifications table** (`gphone_blabber_notifications`), replacing the in-memory
-  `unreadMentions` counter, which resets on resource restart and can only count what arrived while
-  subscribed.
-- **Hashtag storage and search.** `tokenizeRichText` already emits a `tag` token and renders it
-  inert; there is no tag table, so there is nothing to aggregate a trending list from.
-- **Report and block for social surfaces.** `REPORTABLE` lists only messages and photos, so a Blab,
-  a DM and an account cannot currently be reported at all.
+The rename is a **consequence** of needing more than one storage shape, not a tidying exercise — the
+base64 constraint above is the actual motivation.
 
 ---
 
