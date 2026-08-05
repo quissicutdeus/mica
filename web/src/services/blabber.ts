@@ -50,20 +50,54 @@ export const activeAccount = derived(
  */
 export const editWindow = writable(900);
 
+/**
+ * How many accounts this player may hold in Blabber, as reported by the server.
+ *
+ * A convar (`gphone_max_accounts_per_app`) the phone cannot read, so it arrives with the account
+ * list. Not hardcoded here: a copy of a server default drifts the first time an owner raises it,
+ * and the symptom is a Claim button missing for a player who is entitled to another handle.
+ */
+export const accountLimit = writable(3);
+
+/** Room for another identity. What decides whether the account sheet offers to claim one. */
+export const canClaimAnother = derived(
+  [myAccounts, accountLimit],
+  ([accounts, limit]) => accounts.length < limit
+);
+
 export const loadMyAccounts = async (): Promise<void> => {
   try {
-    const rows = await fetchNui<Account[]>(
+    const reply = await fetchNui<{ rows: Account[]; limit: number }>(
       'getMyAccounts',
       { app: 'blabber' },
-      { defaultValue: [] }
+      { defaultValue: { rows: [], limit: 3 } }
     );
+    const rows = reply.rows ?? [];
     myAccounts.set(rows);
+    if (typeof reply.limit === 'number') accountLimit.set(reply.limit);
     activeAccountId.update((current) =>
       current !== null && rows.some((a) => a.id === current) ? current : (rows[0]?.id ?? null)
     );
   } finally {
     accountsLoaded.set(true);
   }
+};
+
+/**
+ * Edit the display half of an identity.
+ *
+ * `handle` is absent on purpose and cannot be added: it is `clientWritable: false` server-side,
+ * because renaming it would silently break every mention already posted and there is nothing to
+ * un-break them with.
+ */
+export const updateAccount = async (
+  id: number,
+  patch: Pick<Partial<Account>, 'display_name' | 'avatar' | 'bio'>
+): Promise<void> => {
+  await fetchNui('updateAccount', { id, ...patch });
+  myAccounts.update((current) =>
+    current.map((account) => (account.id === id ? { ...account, ...patch } : account))
+  );
 };
 
 /** Claim a handle. Throws with a readable message when it is taken or malformed. */

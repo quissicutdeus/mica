@@ -42,6 +42,10 @@ export const ROUTES: readonly Route[] = [
   // scoped server-side; making citizenid client-filterable would let anyone list anyone's.
   route('getMyAccounts', 'accounts', 'mine'),
   route('createAccount', 'accounts', 'create'),
+  // Editing the display half of an identity — `display_name`, `avatar`, `bio`. The generic
+  // owner-scoped update, which is safe to expose because `app` and `handle` are
+  // `clientWritable: false`: a renamed handle would break every mention of it.
+  route('updateAccount', 'accounts', 'update'),
   // Public handle lookup, paged. Used by a profile page to resolve @handle -> account.
   route('getAccounts', 'accounts', 'get'),
 

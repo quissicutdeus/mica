@@ -1,8 +1,11 @@
 import {
+  accountLimit,
   accountsLoaded,
   activeAccount,
   activeAccountId,
+  canClaimAnother,
   claimAccount,
+  updateAccount,
   deleteBlab,
   editBlab,
   editWindow,
@@ -36,6 +39,8 @@ export function useBlabber() {
     feed,
     myAccounts,
     accountsLoaded,
+    accountLimit,
+    canClaimAnother,
     activeAccount,
     activeAccountId,
     editWindow,
@@ -54,6 +59,8 @@ export function useBlabber() {
     mouthBlab: (blabId: number, body?: string) => mouthBlab(blabId, body),
     loadMyAccounts: () => loadMyAccounts(),
     claimAccount: (handle: string, displayName?: string) => claimAccount(handle, displayName),
+    updateAccount: (id: number, patch: Parameters<typeof updateAccount>[1]) =>
+      updateAccount(id, patch),
     postBlab: (body: string, replyTo?: number | null) => postBlab(body, replyTo),
     editBlab: (id: number, body: string) => editBlab(id, body),
     deleteBlab: (id: number) => deleteBlab(id)
