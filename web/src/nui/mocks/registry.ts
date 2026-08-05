@@ -46,7 +46,7 @@ const mockReports: any[] = [
 ];
 
 /**
- * Blabber's mock state: two accounts for the player and a short feed.
+ * Blabber's mock state: three accounts — two the player owns, one they do not — and a short feed.
  *
  * Hand-written rather than through `defineMockCrud`, because the feed is a **paged public**
  * read and answers `{ rows, nextCursor }`. A mock that returned a bare array would let the app
@@ -71,8 +71,56 @@ const mockAccounts: Account[] = [
     status: 'active',
     created_at: '2026-08-02T10:00:00Z',
     updated_at: '2026-08-02T10:00:00Z'
+  },
+  {
+    id: 4,
+    app: 'blabber',
+    handle: 'ada_alt',
+    display_name: null,
+    status: 'active',
+    created_at: '2026-08-03T10:00:00Z',
+    updated_at: '2026-08-03T10:00:00Z'
   }
 ];
+
+/**
+ * `?state=fresh` presents the phone as never used before.
+ *
+ * Without it the first-run experience was **unreachable in the browser**: the fixtures always hold
+ * data, so Blabber's claim gate — the screen that asks for your first handle, and the only thing a
+ * new player sees — never rendered in `pnpm dev` or under Playwright. A path no developer can look
+ * at is a path that rots, and this one is every player's first impression.
+ *
+ * **One axis, not a list of app ids.** This began as `?fresh=blabber`, which made the ordinary
+ * invocation repeat the id it had just handed `?app=` — `?app=blabber&fresh=blabber` — to buy
+ * per-app independence nothing asked for. Whether the data is fresh is orthogonal to which app you
+ * open, so it reads as `?app=blabber&state=fresh`. An app that later grows its own notion of prior
+ * use reads the same flag and needs no entry anywhere.
+ *
+ * **Not the default for `?app=`, deliberately.** Opening an app to look at a populated feed is the
+ * ordinary case — every other spec in `e2e/apps/` needs one — so a deep link that always started
+ * empty would take away the thing the harness is mostly for.
+ *
+ * Dev-only in the sense that nothing in the game supplies a query string.
+ */
+const startFresh =
+  (typeof window === 'undefined'
+    ? null
+    : new URLSearchParams(window.location.search).get('state')) === 'fresh';
+
+/**
+ * Which of those the player owns.
+ *
+ * The mock had no notion of ownership at all — `getMyAccounts` filtered by `app` alone, so every
+ * account in the fixture came back as the player's. Two consequences, both invisible in the
+ * browser: every profile rendered as your own, and the DM fixture had @nightowl messaging an
+ * account it supposedly *was*. The server has always answered this from `citizenid`, so a mock
+ * that cannot say no is a mock that hides whatever depends on the answer.
+ *
+ * Two owned accounts rather than one, because switching identity needs something to switch to,
+ * and two of a cap of three leaves room to claim another.
+ */
+const mockOwnedAccountIds = new Set<number>(startFresh ? [] : [1, 4]);
 
 const mockBlabs: Blab[] = [
   {
@@ -153,11 +201,22 @@ let nextDmId = 50;
 let nextBlabId = 100;
 let nextAccountId = 10;
 
+/** Mirrors `gphone_max_accounts_per_app`'s default. The server is the boundary. */
+const MOCK_ACCOUNT_LIMIT = 3;
+
 const mockRegistry: Record<string, MockHandler> = {
-  // Accounts
-  getMyAccounts: () => mockAccounts.filter((a) => a.app === 'blabber'),
+  // Accounts. `limit` is the per-app cap the server reports from a convar — matched here
+  // because a mock that omitted it would hide the Claim button in `pnpm dev` and show it
+  // in game, or the reverse.
+  getMyAccounts: () => ({
+    rows: mockAccounts.filter((a) => a.app === 'blabber' && mockOwnedAccountIds.has(a.id)),
+    limit: MOCK_ACCOUNT_LIMIT
+  }),
   createAccount: ({ handle, display_name }: { handle: string; display_name?: string }) => {
     if (mockAccounts.some((a) => a.handle === handle)) throw new Error(`@${handle} is taken.`);
+    if (mockOwnedAccountIds.size >= MOCK_ACCOUNT_LIMIT) {
+      throw new Error(`You already hold ${MOCK_ACCOUNT_LIMIT} accounts here.`);
+    }
     const created: Account = {
       id: nextAccountId++,
       app: 'blabber',
@@ -168,7 +227,35 @@ const mockRegistry: Record<string, MockHandler> = {
       updated_at: new Date().toISOString()
     };
     mockAccounts.push(created);
+    mockOwnedAccountIds.add(created.id);
     return created;
+  },
+  /**
+   * The generic owner-scoped update, which answers a bare boolean.
+   *
+   * `handle` and `app` are ignored rather than applied, because they are
+   * `clientWritable: false` on the server and `ServiceEndpoint` drops them before SQL. A mock
+   * that honoured them would let a rename look like it worked here and fail in game.
+   */
+  updateAccount: ({
+    id,
+    display_name,
+    avatar,
+    bio
+  }: {
+    id: number;
+    display_name?: string | null;
+    avatar?: string | null;
+    bio?: string | null;
+  }) => {
+    // Owner-scoped, as the generic update is: a row id alone is never authorization (§2.9).
+    const account = mockAccounts.find((a) => a.id === id && mockOwnedAccountIds.has(a.id));
+    if (!account) return false;
+    if (display_name !== undefined) account.display_name = display_name;
+    if (avatar !== undefined) account.avatar = avatar;
+    if (bio !== undefined) account.bio = bio;
+    account.updated_at = new Date().toISOString();
+    return true;
   },
   getAccounts: ({ handle, limit = 30 }: { handle?: string; limit?: number } = {}) => {
     const matches = mockAccounts.filter(
@@ -255,7 +342,9 @@ const mockRegistry: Record<string, MockHandler> = {
     return { rows: page, nextCursor: hasMore ? page[page.length - 1].id : null };
   },
   createBlab: ({ account_id, body, reply_to, mouth_of }: Partial<Blab>) => {
-    const account = mockAccounts.find((a) => a.id === account_id);
+    // Ownership, not mere existence — this is `ownedAccount` on the server, and the message was
+    // already claiming it while the check only asked whether the row existed at all.
+    const account = mockAccounts.find((a) => a.id === account_id && mockOwnedAccountIds.has(a.id));
     if (!account) throw new Error('That account is not yours to post from.');
     const created: Blab = {
       id: nextBlabId++,

@@ -76,6 +76,11 @@ export function seedBrowserPhone(now: Date): void {
  * with `core: false` opens without being installed from the Store first. That is
  * the case that hurt most: `notes.spec.ts` reinstalls Notes through the Store on every
  * run to get at it.
+ *
+ * Pairs with `?state=fresh`, handled in `nui/mocks/registry.ts`, which presents the phone
+ * as never used — `?app=blabber&state=fresh` is Blabber's first-run screen. Deliberately a
+ * separate axis: opening an app to look at populated data is the ordinary case, so `?app=`
+ * on its own keeps the fixtures.
  */
 function openDeepLinkedApp(): void {
   const requested = new URLSearchParams(window.location.search).get('app');
