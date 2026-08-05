@@ -128,7 +128,9 @@ test.describe('Blabber', () => {
     await page.locator('button', { hasText: 'nightowl' }).click();
 
     await page.locator('textarea').fill('thanks!');
-    await page.getByRole('button', { name: 'Post', exact: true }).click();
+    // `Send`, not `Post`. The DM thread had been reusing the public composer, so its button
+    // carried the public verb — this assertion is what pins the two composers apart.
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
 
     await expect(page.locator('text=thanks!')).toBeVisible();
   });

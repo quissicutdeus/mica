@@ -5,6 +5,13 @@
   /** 280, matching `gphone_blabber.body`. The server enforces it from the same declaration. */
   const LIMIT = 280;
 
+  /**
+   * `placeholder` varies the prompt between the three things this composer does — post, reply,
+   * fix a typo — and nothing else. It is **not** the knob for a different kind of composer: the
+   * DM thread used to reach it with `placeholder="Message"` and inherited a **Post** button, a
+   * 280 counter against a `varchar(500)` column, and "Posting as @x" inside a private
+   * conversation with one other person. That caller is `DmComposer.svelte` now.
+   */
   let {
     handle,
     placeholder = "What's happening?",

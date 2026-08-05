@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Avatar, EmptyState, Skeleton, formatDate, useBlabber } from '@gphone/sdk';
-  import Composer from './Composer.svelte';
+  import DmComposer from './DmComposer.svelte';
   import BlabBody from './BlabBody.svelte';
 
   /**
@@ -12,13 +12,11 @@
    * participants table precisely because its threads can grow.
    */
   let {
-    handle,
     busy = false,
     peer = null,
     onopen,
     onhandle
   }: {
-    handle?: string;
     busy?: boolean;
     peer?: number | null;
     onopen?: (peerAccountId: number | null) => void;
@@ -116,6 +114,6 @@
       {/if}
     </div>
 
-    <Composer {handle} placeholder="Message" {busy} onsubmit={(body) => sendDm(peer, body)} />
+    <DmComposer {busy} onsubmit={(body) => sendDm(peer, body)} />
   </div>
 {/if}
