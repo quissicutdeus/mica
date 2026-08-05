@@ -1,10 +1,12 @@
 <script lang="ts">
   import {
     Avatar,
+    Button,
     EmptyState,
     MessageIcon,
     SegmentedControl,
     Skeleton,
+    useAppAction,
     useBlabber,
     useNuiBridge
   } from '@gphone/sdk';
@@ -34,8 +36,9 @@
     onmessage?: (account: Account) => void;
   } = $props();
 
-  const { myAccounts } = useBlabber();
+  const { myAccounts, followStats, loadFollowStats, toggleFollow, activeAccount } = useBlabber();
   const { fetchNui } = useNuiBridge();
+  const { run, busy } = useAppAction();
 
   let account = $state<Account | null>(null);
   let tab = $state<'blabs' | 'replies'>('blabs');
@@ -60,6 +63,22 @@
       { defaultValue: { rows: [] } }
     );
     account = reply.rows?.[0] ?? null;
+    // Counts come from the graph rather than from a column on the account: a stored
+    // `follower_count` is a second copy of a fact `gphone_account_follows` already holds.
+    if (account) await loadFollowStats(account.id);
+  };
+
+  /**
+   * This account's standing in the graph, keyed by id like `engagement` is keyed by Blab — so
+   * coming back to a profile shows what it showed before rather than blanking while it refetches.
+   */
+  const stats = $derived(account ? $followStats[account.id] : undefined);
+
+  /** Following acts as the *active* account, which is what the server verifies. */
+  const follow = () => {
+    const target = account;
+    if (!target) return;
+    void run(() => toggleFollow(target.id), { title: 'Blabber' });
   };
 
   const loadPage = async (from: number | null) => {
@@ -120,19 +139,41 @@
       {#if account?.bio}
         <p class="mt-1 text-xs text-gray-300">{account.bio}</p>
       {/if}
+      {#if stats}
+        <!-- Not tappable yet: a count is a fact, and a list of who they are is another screen
+             this does not have. Better an honest number than a link to nothing. -->
+        <p class="mt-1 flex gap-3 text-xs text-gray-400">
+          <span><span class="font-semibold text-gray-200">{stats.followers}</span> followers</span>
+          <span><span class="font-semibold text-gray-200">{stats.following}</span> following</span>
+        </p>
+      {/if}
     </div>
     <!-- Not on your own profile: a DM to yourself is a thread with one participant, which the
-         1:1 shape has no room for. -->
-    {#if account && !mine && onmessage}
-      <button
-        type="button"
-        class="ml-auto shrink-0 rounded-full bg-sky-600 p-2 text-white transition-colors hover:bg-sky-500"
-        onclick={() => account && onmessage(account)}
-        title="Message @{handle}"
-        aria-label="Message @{handle}"
-      >
-        <MessageIcon class="h-4 w-4" />
-      </button>
+         1:1 shape has no room for, and following yourself is refused server-side. -->
+    {#if account && !mine}
+      <div class="ml-auto flex shrink-0 items-center gap-2">
+        {#if $activeAccount}
+          <Button
+            variant={stats?.followedByMe ? 'secondary' : 'primary'}
+            class="px-3 py-1.5 text-xs"
+            disabled={$busy}
+            onclick={follow}
+          >
+            {stats?.followedByMe ? 'Following' : 'Follow'}
+          </Button>
+        {/if}
+        {#if onmessage}
+          <button
+            type="button"
+            class="rounded-full bg-sky-600 p-2 text-white transition-colors hover:bg-sky-500"
+            onclick={() => account && onmessage(account)}
+            title="Message @{handle}"
+            aria-label="Message @{handle}"
+          >
+            <MessageIcon class="h-4 w-4" />
+          </button>
+        {/if}
+      </div>
     {/if}
   </div>
 

@@ -331,6 +331,93 @@ test.describe('Blabber', () => {
     await expect(page.locator('text=hello from a profile')).toBeVisible();
   });
 
+  /**
+   * The follow graph and the Following tab.
+   *
+   * The mock's graph starts empty on purpose, so the first thing these exercise is the empty
+   * state — the screen a real player sees before they have followed anybody, and the one most
+   * likely to be wrong.
+   */
+  test.describe('Following', () => {
+    const followNightowl = async (page: import('@playwright/test').Page) => {
+      await page
+        .locator('article', { hasText: 'anyone up?' })
+        .getByRole('button', { name: "Night Owl's profile" })
+        .click();
+      await page.getByRole('button', { name: 'Follow', exact: true }).click();
+      // The label flips because the state did, not just the colour.
+      await expect(page.getByRole('button', { name: 'Following', exact: true })).toBeVisible();
+    };
+
+    test('starts empty, and says which kind of empty it is', async ({ page }) => {
+      await page.getByRole('button', { name: 'Following' }).click();
+
+      await expect(page.locator('text=Nothing from anyone yet')).toBeVisible();
+      // Not "nobody has posted" — nobody has been followed, which is a different statement and
+      // the one the player can act on.
+      await expect(page.locator('text=Follow somebody from their profile')).toBeVisible();
+    });
+
+    test('a followed account’s Blabs turn up in the tab', async ({ page }) => {
+      await followNightowl(page);
+
+      // Out of the profile, then into the tab.
+      await page.keyboard.press('Backspace');
+      await page.getByRole('button', { name: 'Following' }).click();
+
+      await expect(page.locator('text=anyone up?')).toBeVisible();
+      // Only followed accounts: @ada is the player's own and was never followed.
+      await expect(page.locator('text=traffic on the interstate')).toHaveCount(0);
+    });
+
+    test('unfollowing empties the tab again', async ({ page }) => {
+      await followNightowl(page);
+      await page.getByRole('button', { name: 'Following', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Follow', exact: true })).toBeVisible();
+
+      await page.keyboard.press('Backspace');
+      await page.getByRole('button', { name: 'Following' }).click();
+
+      await expect(page.locator('text=Nothing from anyone yet')).toBeVisible();
+    });
+
+    test('the follower count moves with the button', async ({ page }) => {
+      await page
+        .locator('article', { hasText: 'anyone up?' })
+        .getByRole('button', { name: "Night Owl's profile" })
+        .click();
+
+      // Counted from the graph rather than stored on the account row, so this is the graph's
+      // answer and not a column that could have drifted.
+      await expect(page.locator('text=0 followers')).toBeVisible();
+      await page.getByRole('button', { name: 'Follow', exact: true }).click();
+      await expect(page.locator('text=1 followers')).toBeVisible();
+    });
+
+    test('Back leaves Following for the feed before leaving the app', async ({ page }) => {
+      // A non-default tab is its own rung. Without it Back sent the player home from Following.
+      await page.getByRole('button', { name: 'Following' }).click();
+      await expect(page.locator('text=Nothing from anyone yet')).toBeVisible();
+
+      await page.keyboard.press('Backspace');
+
+      await expect(page.locator('text=traffic on the interstate')).toBeVisible();
+      await expect(page.locator('h1', { hasText: 'Blabber' })).toBeVisible();
+    });
+
+    test('no Follow button on your own profile', async ({ page }) => {
+      // Following yourself is refused server-side; offering it would be a button that can only
+      // fail. Same reasoning as the Store's Uninstall on a core app.
+      await page
+        .locator('article', { hasText: 'traffic on the interstate' })
+        .getByRole('button', { name: "Ada's profile" })
+        .click();
+
+      await expect(page.getByRole('button', { name: 'Follow', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /^Message @/ })).toHaveCount(0);
+    });
+  });
+
   test('a pushed mention raises a toast and moves the badge', async ({ page }) => {
     // Straight down the real `appEvent` path via the dev harness, rather than reaching into the
     // bus — a harness that skipped the parsing would let a malformed envelope look fine in dev.

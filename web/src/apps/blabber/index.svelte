@@ -4,9 +4,12 @@
     Avatar,
     EmptyState,
     FloatingActionButton,
+    ListBulletIcon,
     MessageIcon,
     Screen,
     Skeleton,
+    TabBar,
+    UsersIcon,
     onAppForeground,
     useAppAction,
     useAppEvents,
@@ -36,6 +39,8 @@
 
   const {
     feed,
+    followingFeed,
+    loadFollowing,
     myAccounts,
     accountsLoaded,
     accountLimit,
@@ -65,6 +70,15 @@
   const feedLoaded = feed.loaded;
 
   let view = $state<'feed' | 'profile' | 'thread' | 'dms'>('feed');
+  /**
+   * Which top-level destination the bottom nav is on.
+   *
+   * Separate from `view`, which is the overlay stack above it — a thread opened from Following
+   * comes back to Following. Two tabs, not the four the end state wants: Search and Notifications
+   * have no server behind them yet, and a tab that apologises for itself is the Store's invented
+   * add-ons one layer down.
+   */
+  let tab = $state<'feed' | 'following'>('feed');
   /** Which correspondent's thread is open, or null for the inbox. */
   let dmPeer = $state<number | null>(null);
   /**
@@ -112,6 +126,9 @@
      * makes it right on arrival.
      */
     void loadDmThreads();
+    // Only the tab actually on screen. The other is fetched when it is switched to — two feeds
+    // loaded on every visit is one round trip nobody asked for.
+    if (tab === 'following') void loadFollowing();
   });
 
   /**
@@ -128,6 +145,32 @@
 
   let hasMoreSnapshot = $state(false);
   feed.hasMore.subscribe((value) => (hasMoreSnapshot = value));
+
+  /**
+   * The Following window, its own `usePagedList` over its own store.
+   *
+   * Two server reads answering two questions, each with its own cursor. One shared window would
+   * mean one cursor walking two result sets, so switching tabs would resume the other feed's
+   * position.
+   */
+  const followingPage = usePagedList<Blab>({
+    items: () => $followingFeed,
+    olderAt: 'end',
+    pageSize: 30,
+    loadOlder: () => followingFeed.loadMore(),
+    hasMore: () => followingHasMore
+  });
+
+  let followingHasMore = $state(false);
+  followingFeed.hasMore.subscribe((value) => (followingHasMore = value));
+
+  const followingLoaded = followingFeed.loaded;
+
+  /** Switching tabs is what fetches the one being switched to. */
+  const selectTab = (next: string) => {
+    tab = next === 'following' ? 'following' : 'feed';
+    if (tab === 'following') void loadFollowing();
+  };
 
   const openDms = (peer: number | null = null, account: DmPeer | null = null) => {
     dmPeer = peer;
@@ -214,7 +257,10 @@
         // The peer, not the literal `Message` this used to be.
         title: dmTitle
       },
-      { open: () => view === 'dms', close: () => (view = 'feed'), title: () => 'Messages' }
+      { open: () => view === 'dms', close: () => (view = 'feed'), title: () => 'Messages' },
+      // A non-default tab is the last rung before leaving: Back returns to the public feed rather
+      // than sending the player home from Following.
+      { open: () => tab !== 'feed', close: () => (tab = 'feed'), title: () => 'Following' }
     ]
   });
 
@@ -246,7 +292,9 @@
    * ninety round trips through NUI.
    */
   $effect(() => {
-    const ids = page.visible.map((blab) => blab.id);
+    // Whichever tab is on screen. Batching both would ask for counts nobody is looking at.
+    const visible = tab === 'following' ? followingPage.visible : page.visible;
+    const ids = visible.map((blab) => blab.id);
     if (ids.length > 0) void loadEngagement(ids);
   });
 
@@ -290,8 +338,13 @@
   /** Mine to edit if it was posted by one of my accounts. The server decides for real. */
   const isMine = (blab: Blab) => $myAccounts.some((account) => account.id === blab.account_id);
 
-  /** The feed is the only place the composer FAB belongs — every other view has its own action. */
-  const showFab = $derived(
+  /**
+   * A tab, and only a tab, is where the composer FAB and the nav belong.
+   *
+   * Every other view is an overlay with its own action, and a nav under a thread would offer to
+   * navigate away from something the player is reading rather than out of it.
+   */
+  const onTabs = $derived(
     view === 'feed' &&
       $accountsLoaded &&
       $myAccounts.length > 0 &&
@@ -385,6 +438,9 @@
       onswitch={(id) => {
         activeAccountId.set(id);
         menu = false;
+        // A main and an alt follow different people, so the Following feed belongs to the account
+        // rather than to the phone — switching identity has to refetch it.
+        if (tab === 'following') void loadFollowing();
       }}
       onclaim={() => {
         menu = false;
@@ -398,12 +454,23 @@
     />
   {/if}
 
-  {#if showFab}
-    <FloatingActionButton label="Blab" collapsed onclick={() => (composing = true)}>
+  {#if onTabs}
+    <!-- `raised` so it clears the nav they share this snippet with. -->
+    <FloatingActionButton label="Blab" collapsed raised onclick={() => (composing = true)}>
       {#snippet icon()}
         <AddIcon class="h-4 w-4 shrink-0 text-white" />
       {/snippet}
     </FloatingActionButton>
+
+    <TabBar
+      aria-label="Blabber sections"
+      selected={tab}
+      onchange={selectTab}
+      options={[
+        { id: 'feed', label: 'Feed', icon: ListBulletIcon },
+        { id: 'following', label: 'Following', icon: UsersIcon }
+      ]}
+    />
   {/if}
 {/snippet}
 
@@ -442,8 +509,41 @@
   {:else if $myAccounts.length === 0}
     <!-- Nothing to post from yet. Told, rather than shown an empty feed and a dead composer. -->
     <ClaimHandle busy={$busy} onclaim={claim} />
+  {:else if tab === 'following'}
+    <!-- `pb-16` clears the nav, which lives outside this scroll container: without it the last
+         row hides underneath the bar. -->
+    <div class="flex-1 overflow-y-auto pb-16" onscroll={followingPage.onScroll}>
+      {#if !$followingLoaded}
+        <div class="p-4"><Skeleton count={4} height="h-16" /></div>
+      {:else if $followingFeed.length === 0}
+        <!-- Two different statements, and the app has to pick the right one: nobody followed yet
+             versus followed people who have not posted. -->
+        <EmptyState
+          title="Nothing from anyone yet"
+          description="Follow somebody from their profile and their Blabs turn up here."
+        />
+      {:else}
+        {#each followingPage.visible as blab (blab.id)}
+          <BlabRow
+            {blab}
+            editable={isMine(blab)}
+            stats={$engagement[blab.id]}
+            onhandle={openProfile}
+            onedit={(b) => (editing = b)}
+            ondelete={remove}
+            onreply={openThread}
+            onmouth={mouth}
+            onlike={like}
+            onopen={openThread}
+          />
+        {/each}
+        {#if followingPage.loading}
+          <div class="p-4"><Skeleton count={2} height="h-16" /></div>
+        {/if}
+      {/if}
+    </div>
   {:else}
-    <div class="flex-1 overflow-y-auto" onscroll={page.onScroll}>
+    <div class="flex-1 overflow-y-auto pb-16" onscroll={page.onScroll}>
       {#if !$feedLoaded}
         <!-- Still waiting on the first page. "Nothing here yet" is a claim about the feed, and
              making it before the server has answered is a claim the app cannot support. -->
