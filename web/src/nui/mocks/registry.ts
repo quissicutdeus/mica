@@ -184,6 +184,14 @@ const mockBlabs: Blab[] = [
 
 const mockLikes: { blab_id: number; account_id: number }[] = [{ blab_id: 1, account_id: 2 }];
 
+/**
+ * The follow graph, empty to begin with.
+ *
+ * Account-to-account, with no citizenid, exactly as the table is: every `gphone_accounts` row
+ * carries an `app`, so a row can only link two accounts in the same one.
+ */
+const mockFollows: { follower: number; followee: number }[] = [];
+
 const mockDms: BlabberDm[] = [
   {
     id: 1,
@@ -264,6 +272,69 @@ const mockRegistry: Record<string, MockHandler> = {
     return { rows: matches.slice(0, limit), nextCursor: null };
   },
 
+  /**
+   * The follow graph. Starts empty on purpose.
+   *
+   * A fixture with follows already in it would show a populated Following feed on a phone that
+   * has never followed anybody, which hides the empty state — the screen a real player sees
+   * first, and the one most likely to be wrong.
+   */
+  followAccount: ({
+    follower_account_id,
+    followee_account_id
+  }: {
+    follower_account_id: number;
+    followee_account_id: number;
+  }) => {
+    if (follower_account_id === followee_account_id) {
+      throw new Error('You cannot follow yourself.');
+    }
+    if (!mockOwnedAccountIds.has(follower_account_id)) {
+      throw new Error('That account is not yours.');
+    }
+    // Idempotent, as the unique index makes the server's insert. A duplicate is success.
+    if (
+      !mockFollows.some(
+        (f) => f.follower === follower_account_id && f.followee === followee_account_id
+      )
+    ) {
+      mockFollows.push({ follower: follower_account_id, followee: followee_account_id });
+    }
+    return true;
+  },
+  unfollowAccount: ({
+    follower_account_id,
+    followee_account_id
+  }: {
+    follower_account_id: number;
+    followee_account_id: number;
+  }) => {
+    if (!mockOwnedAccountIds.has(follower_account_id)) {
+      throw new Error('That account is not yours.');
+    }
+    const at = mockFollows.findIndex(
+      (f) => f.follower === follower_account_id && f.followee === followee_account_id
+    );
+    if (at >= 0) mockFollows.splice(at, 1);
+    return true;
+  },
+  getFollowStats: ({
+    account_id,
+    viewer_account_id
+  }: {
+    account_id: number;
+    viewer_account_id?: number;
+  }) => ({
+    followers: mockFollows.filter((f) => f.followee === account_id).length,
+    following: mockFollows.filter((f) => f.follower === account_id).length,
+    // Only for an account the viewer owns, matching the server — an unowned viewer answers false
+    // rather than erroring, because reading a profile is not a privileged act.
+    followedByMe:
+      viewer_account_id !== undefined &&
+      mockOwnedAccountIds.has(viewer_account_id) &&
+      mockFollows.some((f) => f.follower === viewer_account_id && f.followee === account_id)
+  }),
+
   // Blabber DMs. 1:1, so a thread is the union of both directions between two accounts.
   getDmThreads: () => {
     const peers = new Map<number, (typeof mockDms)[number]>();
@@ -335,6 +406,39 @@ const mockRegistry: Record<string, MockHandler> = {
     const visible = mockBlabs
       .filter(
         (b) => b.status === 'active' && matchesParent(b) && (cursor === undefined || b.id < cursor)
+      )
+      .sort((a, b) => b.id - a.id);
+    const page = visible.slice(0, limit);
+    const hasMore = visible.length > page.length;
+    return { rows: page, nextCursor: hasMore ? page[page.length - 1].id : null };
+  },
+  /**
+   * The Following feed: top-level Blabs by accounts this account follows.
+   *
+   * Paged the same way as every other read here — `id DESC`, cursor is the last id delivered,
+   * `nextCursor: null` is the end. A mock that answered a bare array would let the app look right
+   * in `pnpm dev` while being wrong against the real server.
+   */
+  getFollowingBlabs: ({
+    account_id,
+    cursor,
+    limit = 30
+  }: {
+    account_id: number;
+    cursor?: number;
+    limit?: number;
+  }) => {
+    if (!mockOwnedAccountIds.has(account_id)) throw new Error('That account is not yours.');
+    const followed = new Set(
+      mockFollows.filter((f) => f.follower === account_id).map((f) => f.followee)
+    );
+    const visible = mockBlabs
+      .filter(
+        (b) =>
+          b.status === 'active' &&
+          b.reply_to == null &&
+          followed.has(b.account_id) &&
+          (cursor === undefined || b.id < cursor)
       )
       .sort((a, b) => b.id - a.id);
     const page = visible.slice(0, limit);

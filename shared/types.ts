@@ -192,6 +192,22 @@ export interface BlabEngagement {
 }
 
 /**
+ * One account's standing in the follow graph.
+ *
+ * Counted on read rather than stored on the account row: a `follower_count` column is a second
+ * copy of a fact `gphone_account_follows` already holds, and it drifts the first time a follow is
+ * removed by a path that forgets to decrement.
+ *
+ * `followedByMe` is about **one** of the viewer's accounts, not all of them — a main and an alt
+ * follow different people, and the Follow button acts as whichever is active.
+ */
+export interface FollowStats {
+  followers: number;
+  following: number;
+  followedByMe: boolean;
+}
+
+/**
  * One direct message in Blabber. Strictly between two accounts.
  *
  * 1:1 by construction — two account columns and no participants table, so there is no shape a

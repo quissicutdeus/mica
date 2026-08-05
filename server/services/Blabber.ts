@@ -466,21 +466,31 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
  * `nextCursor: null` means the end — because a client that has to page two different ways is a
  * client that will get one of them wrong.
  */
+/**
+ * The page bounds every paged read here shares.
+ *
+ * `defineService` clamps the generic `get`; a custom action has to do it itself, and doing it in
+ * one place is what keeps `profile` and `following` from disagreeing about what a page is.
+ */
+const pageBounds = (body: Record<string, unknown>) => ({
+  limit: Math.min(
+    typeof body.limit === 'number' && Number.isInteger(body.limit) && body.limit > 0
+      ? body.limit
+      : 30,
+    60
+  ),
+  cursor:
+    body.cursor === undefined || body.cursor === null
+      ? null
+      : requirePositiveInt(body.cursor, 'cursor')
+});
+
 app.registerEvent('profile', async (source, cbId, data) => {
   const body = fields(data);
   const accountId = requirePositiveInt(body.account_id, 'account id');
   const repliesOnly = body.tab === 'replies';
 
-  const limit = Math.min(
-    typeof body.limit === 'number' && Number.isInteger(body.limit) && body.limit > 0
-      ? body.limit
-      : 30,
-    60
-  );
-  const cursor =
-    body.cursor === undefined || body.cursor === null
-      ? null
-      : requirePositiveInt(body.cursor, 'cursor');
+  const { limit, cursor } = pageBounds(body);
 
   /**
    * Every identifier here is a literal in this file and every value is bound — the account id,
@@ -512,6 +522,62 @@ app.registerEvent('profile', async (source, cbId, data) => {
      * what an author looks like. Hydrated after slicing: the probe row exists only to answer
      * "is there more" and is never returned.
      */
+    rows: await repo.hydrate(page),
+    nextCursor: hasMore ? page[page.length - 1].id : null
+  };
+});
+
+/**
+ * The feed of accounts one of the caller's accounts follows.
+ *
+ * A custom action rather than the generic `get`, and unavoidably so: the generic filter compares
+ * a column to a value and this needs a set the database has to look up. The shape is otherwise
+ * identical to every other paged read — `id DESC`, cursor is the last id delivered, `nextCursor:
+ * null` means the end — because a client paging two different ways is a client that will get one
+ * of them wrong.
+ *
+ * Scoped to **one** account rather than every account the player holds, which is the whole point
+ * of holding several: a main and an alt follow different people, so switching accounts changes
+ * the feed. `ownedAccount` is what makes that safe, since the id arrives in the payload (§2.9).
+ *
+ * `IN (subquery)` rather than a join, for two reasons. A join would emit one row per matching
+ * follow row, so a duplicate follow — which the unique index prevents, but which the query should
+ * not depend on — would duplicate a post; and the projection below names bare columns from
+ * `publicColumns`, which stay unambiguous only while one table is in the FROM.
+ *
+ * Top-level only, like the public feed: a timeline with replies mixed in shows half a
+ * conversation with no way to see what it was replying to.
+ */
+app.registerEvent('following', async (source, cbId, data, citizenid) => {
+  const body = fields(data);
+
+  const viewer = await ownedAccount(body.account_id, citizenid, APP);
+  if (!viewer) throw new Error('That account is not yours.');
+
+  const { limit, cursor } = pageBounds(body);
+
+  const projection = blabber.resolved.publicColumns.map((column) => `\`${column}\``).join(', ');
+  const cursorClause = cursor === null ? '' : ' AND `id` < ?';
+
+  const params: unknown[] = [viewer.id];
+  if (cursor !== null) params.push(cursor);
+  params.push(limit + 1);
+
+  const rows = await Database.query<Blab[]>(
+    `SELECT ${projection} FROM \`gphone_blabber\`
+     WHERE \`account_id\` IN (
+       SELECT \`followee_account_id\` FROM \`gphone_account_follows\`
+       WHERE \`follower_account_id\` = ?
+     )
+     AND \`status\` = 'active' AND \`reply_to\` IS NULL${cursorClause}
+     ORDER BY \`id\` DESC
+     LIMIT ?`,
+    params
+  );
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  return {
     rows: await repo.hydrate(page),
     nextCursor: hasMore ? page[page.length - 1].id : null
   };

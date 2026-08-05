@@ -48,6 +48,11 @@ export const ROUTES: readonly Route[] = [
   route('updateAccount', 'accounts', 'update'),
   // Public handle lookup, paged. Used by a profile page to resolve @handle -> account.
   route('getAccounts', 'accounts', 'get'),
+  // The follow graph, shared by every social app rather than owned by Blabber. Counts are read
+  // rather than denormalised onto the account row, which would be a second copy free to drift.
+  route('followAccount', 'accounts', 'follow'),
+  route('unfollowAccount', 'accounts', 'unfollow'),
+  route('getFollowStats', 'accounts', 'follows'),
 
   // Blabber. `getBlabs` is a public paged read: `{ cursor, limit }` in,
   // `{ rows, nextCursor }` out.
@@ -57,6 +62,9 @@ export const ROUTES: readonly Route[] = [
   route('deleteBlab', 'blabber', 'delete'),
   // One account's public profile, split into Blabs and Replies.
   route('getProfileBlabs', 'blabber', 'profile'),
+  // The feed of accounts the active account follows. A custom action because the generic filter
+  // compares a column to a value, and this needs a set the database looks up.
+  route('getFollowingBlabs', 'blabber', 'following'),
   // Reply, mouth and like counts for a page of Blabs, batched — one read rather than three
   // per row.
   route('getBlabEngagement', 'blabber', 'engagement'),

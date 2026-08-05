@@ -475,3 +475,114 @@ describe('engagement', () => {
     });
   });
 });
+
+/**
+ * The Following feed.
+ *
+ * A custom action because the generic filter compares a column to a value and this needs a set
+ * the database looks up. The two things worth pinning are that it is scoped to an account the
+ * caller actually owns — the id arrives in a payload, and a payload is not proof of intent
+ * (§2.9) — and that it pages by the same keyset rule as every other read, since a client paging
+ * two ways will get one of them wrong.
+ */
+describe('the Following feed', () => {
+  it('refuses an account the caller does not own', async () => {
+    dbMock.single.mockResolvedValueOnce(null);
+
+    const reply = await call('following', { account_id: 99 });
+
+    expect(reply.error).toMatch(/not yours/);
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('reads only the accounts that account follows, as a subquery', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.query.mockResolvedValueOnce([]);
+
+    await call('following', { account_id: 1 });
+
+    const [sql, params] = dbMock.query.mock.calls[0];
+    // A subquery rather than a join: a join emits one row per matching follow row, so the feed
+    // would duplicate a post if the graph ever held a duplicate.
+    expect(sql).toMatch(/IN \(\s*SELECT `followee_account_id`/);
+    expect(sql).toMatch(/`follower_account_id` = \?/);
+    // The verified account, never the id from the payload.
+    expect(params[0]).toBe(MY_ACCOUNT.id);
+  });
+
+  it('never selects the author citizenid', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.query.mockResolvedValueOnce([]);
+
+    await call('following', { account_id: 1 });
+
+    expect(dbMock.query.mock.calls[0][0]).not.toContain('citizenid');
+  });
+
+  it('is top-level only, like the public feed', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.query.mockResolvedValueOnce([]);
+
+    await call('following', { account_id: 1 });
+
+    // A timeline with replies mixed in shows half a conversation with nothing to open.
+    expect(dbMock.query.mock.calls[0][0]).toContain('`reply_to` IS NULL');
+  });
+
+  it('pages on id DESC and reports the end as null', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.query.mockResolvedValueOnce([blab({ id: 9 }), blab({ id: 8 })]);
+    // Hydration's author lookup.
+    dbMock.query.mockResolvedValueOnce([author(1, 'ada')]);
+
+    const reply = await call('following', { account_id: 1, limit: 5 });
+
+    expect(dbMock.query.mock.calls[0][0]).toContain('ORDER BY `id` DESC');
+    // Two rows against a limit of five, so there is no further page.
+    expect(reply.nextCursor).toBeNull();
+    expect(reply.rows).toHaveLength(2);
+  });
+
+  it('asks for one row more than the page, and does not return the probe', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.query.mockResolvedValueOnce([blab({ id: 9 }), blab({ id: 8 }), blab({ id: 7 })]);
+    dbMock.query.mockResolvedValueOnce([author(1, 'ada')]);
+
+    const reply = await call('following', { account_id: 1, limit: 2 });
+
+    // limit + 1: the extra row exists only to answer "is there more" and is never delivered.
+    expect(dbMock.query.mock.calls[0][1].at(-1)).toBe(3);
+    expect(reply.rows.map((row: any) => row.id)).toEqual([9, 8]);
+    expect(reply.nextCursor).toBe(8);
+  });
+
+  it('clamps an over-large page rather than refusing it', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.query.mockResolvedValueOnce([]);
+
+    await call('following', { account_id: 1, limit: 5000 });
+
+    // The request is legitimate; only the number is not.
+    expect(dbMock.query.mock.calls[0][1].at(-1)).toBe(61);
+  });
+
+  it('binds the cursor rather than interpolating it', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.query.mockResolvedValueOnce([]);
+
+    await call('following', { account_id: 1, cursor: 42 });
+
+    const [sql, params] = dbMock.query.mock.calls[0];
+    expect(sql).toContain('`id` < ?');
+    expect(params).toContain(42);
+  });
+
+  it('rejects a cursor that is not a positive integer', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+
+    const reply = await call('following', { account_id: 1, cursor: 'DROP' });
+
+    expect(reply.error).toBeTruthy();
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+});

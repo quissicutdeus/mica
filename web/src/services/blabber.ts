@@ -1,5 +1,12 @@
 import { writable, derived } from 'svelte/store';
-import type { Account, Blab, BlabEngagement, BlabberDm, BlabberDmThread } from '@shared/types';
+import type {
+  Account,
+  Blab,
+  BlabEngagement,
+  BlabberDm,
+  BlabberDmThread,
+  FollowStats
+} from '@shared/types';
 import { fetchNui } from '../nui/fetchNui';
 import { createPagedStore } from './createPagedStore';
 import { subscribeAppEvent } from '../shell/state/appEvents';
@@ -14,6 +21,16 @@ import { usePersisted } from '../sdk/hooks/usePersisted';
  */
 
 export const feed = createPagedStore<Blab>('getBlabs', { pageSize: 30 });
+
+/**
+ * The Following feed, a second paged store rather than a filter on the first.
+ *
+ * They are two server reads answering two different questions, each with its own cursor. Sharing
+ * one store would mean one cursor walking two result sets, so switching tabs would resume the
+ * other feed's position — and re-filtering a loaded page client-side is exactly what keyset
+ * paging exists to avoid.
+ */
+export const followingFeed = createPagedStore<Blab>('getFollowingBlabs', { pageSize: 30 });
 
 /** Every account this player holds in Blabber. Not anyone else's — the server scopes it. */
 export const myAccounts = writable<Account[]>([]);
@@ -211,6 +228,89 @@ export const toggleLike = async (blabId: number): Promise<void> => {
     await loadEngagement([blabId]);
     throw error;
   }
+};
+
+/**
+ * The follow graph.
+ *
+ * Keyed by the account being looked at, like `engagement` is keyed by Blab — a profile is opened,
+ * read, and left, so caching by id means going back to one shows what it showed before rather
+ * than a blank while it refetches.
+ */
+export const followStats = writable<Record<number, FollowStats>>({});
+
+const NO_FOLLOWS: FollowStats = { followers: 0, following: 0, followedByMe: false };
+
+export const loadFollowStats = async (accountId: number): Promise<void> => {
+  const reply = await fetchNui<FollowStats>(
+    'getFollowStats',
+    { app: 'blabber', account_id: accountId, viewer_account_id: getActiveAccountId() ?? undefined },
+    { defaultValue: NO_FOLLOWS }
+  );
+  followStats.update((current) => ({ ...current, [accountId]: reply }));
+};
+
+/**
+ * Follow or unfollow, optimistically.
+ *
+ * Same shape as `toggleLike`, and for the same reason: a Follow button must change on tap rather
+ * than after a round trip. A failure puts it back, because an optimistic update that survives a
+ * refused write is a lie the UI tells.
+ *
+ * The count moves with the button. Following somebody and watching their follower count sit still
+ * reads as the tap not having worked.
+ */
+export const toggleFollow = async (accountId: number): Promise<void> => {
+  const follower = getActiveAccountId();
+  if (follower === null) throw new Error('Claim a handle first.');
+  if (follower === accountId) throw new Error('You cannot follow yourself.');
+
+  let wasFollowing = false;
+  followStats.update((current) => {
+    const existing = current[accountId] ?? NO_FOLLOWS;
+    wasFollowing = existing.followedByMe;
+    return {
+      ...current,
+      [accountId]: {
+        ...existing,
+        followedByMe: !wasFollowing,
+        followers: Math.max(0, existing.followers + (wasFollowing ? -1 : 1))
+      }
+    };
+  });
+
+  try {
+    // Two literal calls rather than one with a computed action name, which `routes.test.ts`
+    // cannot see — and a route it cannot see is reported as dead weight.
+    if (wasFollowing) {
+      await fetchNui('unfollowAccount', {
+        app: 'blabber',
+        follower_account_id: follower,
+        followee_account_id: accountId
+      });
+    } else {
+      await fetchNui('followAccount', {
+        app: 'blabber',
+        follower_account_id: follower,
+        followee_account_id: accountId
+      });
+    }
+  } catch (error) {
+    await loadFollowStats(accountId);
+    throw error;
+  }
+};
+
+/**
+ * The Following feed for whichever account is active.
+ *
+ * The account id is a filter rather than something the server infers, because a player may hold
+ * several and only one of them is posting — the server still verifies it belongs to the caller.
+ */
+export const loadFollowing = async (): Promise<void> => {
+  const accountId = getActiveAccountId();
+  if (accountId === null) return;
+  await followingFeed.load({ account_id: accountId });
 };
 
 /** Mouth a Blab — a repeat, or a quote when a body is supplied. */

@@ -11,6 +11,11 @@ import {
   editWindow,
   engagement,
   feed,
+  followingFeed,
+  followStats,
+  loadFollowing,
+  loadFollowStats,
+  toggleFollow,
   loadEngagement,
   loadMyAccounts,
   loadThread,
@@ -37,6 +42,11 @@ import {
 export function useBlabber() {
   return {
     feed,
+    followingFeed,
+    followStats,
+    loadFollowing: () => loadFollowing(),
+    loadFollowStats: (accountId: number) => loadFollowStats(accountId),
+    toggleFollow: (accountId: number) => toggleFollow(accountId),
     myAccounts,
     accountsLoaded,
     accountLimit,
