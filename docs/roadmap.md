@@ -182,6 +182,41 @@ because Search and Notifications have no server behind them. `FloatingActionButt
 `raised` so it clears the bar they share the `overlay` snippet with, and a non-default tab is its own
 back rung so Back returns to the feed rather than sending the player home.
 
+#### The lists behind the counts
+
+The counts above shipped deliberately inert, with a comment in `Profile.svelte` saying the screens
+behind them did not exist — a count is a fact and a link to nothing is a promise. `followers` and
+`following` on the **accounts** service are those screens, so the numbers are buttons now.
+
+**Public, like the counts.** No `ownedAccount` check, and there must not be one: requiring ownership
+would mean you could only see your own followers, which is not what the number on a stranger's
+profile is counting. Every row is a public projection of `gphone_accounts`, so `citizenid` is withheld
+exactly as it is on a Blab — a follower list is the one screen that would otherwise correlate every
+alt in the graph back to its owner.
+
+**Keyset paged on the follow row's own id, not the account's.** That is the only ordering a reader can
+make sense of: most-recently-followed first. Account id order is "whoever signed up first", and a
+`created_at` cursor is second-resolution, so the naive form silently drops a row wherever two follows
+share a second. `gphone_account_follows` gained a `(follower_account_id, id)` index to make the
+following direction a plain range scan — the unique index starts with the same column but InnoDB
+appends the primary key after `followee_account_id`, so it yields followee order and the list would
+have taken a filesort. The other direction needs no key: `followee_account_id` is non-unique, so its
+appended primary key already makes it `(followee_account_id, id)`.
+
+**A join here, where the Following _feed_ used `IN (subquery)`.** Not an inconsistency. There the
+follows table was a filter over posts and a duplicate row would have duplicated a post; here it **is**
+the list, one row per relation, so it belongs in the FROM with the account joined onto it.
+
+**One rung, not two, and no Follow button on a row.** Both lists are the same depth, so two
+predicates only one of which can ever be true would be a dead branch pretending to be a ladder — the
+title says which list it is, the way Settings' panes do. A per-row Follow button would need this
+viewer's follow state for all thirty rows, which is the round-trip storm the batched `engagement` read
+exists to avoid; a row opens the profile, which already owns the button.
+
+`pageBounds` moved from a local helper in `Blabber.ts` to `lib/payload.ts` on the way, since these
+were its third and fourth call sites, and it now reads the numbers from the service's own `paging`
+declaration rather than from two retyped constants.
+
 #### Two things that made first-run unreachable
 
 **Uninstalling a bundled add-on deleted a component that was still in the build.**
@@ -269,7 +304,7 @@ Decisions already settled, recorded so they are not re-litigated:
 | Identity                | Small avatar top-right, opening a sheet for switch / claim / edit profile — done    |
 | Composer                | FAB, matching Messages' "Start Chat" and Contacts' "Add Contact" — done             |
 | Notifications           | A real table, which also raises native phone notifications                          |
-| Follow graph            | `gphone_account_follows`, declared on the shared `accounts` service                 |
+| Follow graph            | `gphone_account_follows`, declared on the shared `accounts` service — done          |
 | Public-feed affordance  | **Ear** — pairs with Mouth, one speaks and one listens. No reaction bar in a feed   |
 | Reactions / emoji / GIF | Private surfaces only; Blabber DMs first, Messages adopts the same primitives later |
 | Media                   | Generic `gphone_media` table via the `table:` override; app id stays `photos`       |
@@ -277,17 +312,10 @@ Decisions already settled, recorded so they are not re-litigated:
 #### 1. Search and Notifications as tabs
 
 The nav exists — see "The follow graph, and a nav with somewhere to go" under Shipped — with Feed and
-Following in it. The two remaining destinations are waiting on the servers below them, in steps 2
-and 3, and a tab that apologises for itself is the Store's invented add-ons one layer down.
+Following in it. The two remaining destinations are waiting on the servers below them, in steps 2 and
+3, and a tab that apologises for itself is the Store's invented add-ons one layer down.
 
-#### 2. Follower and following lists
-
-The counts on a profile are real and read from the graph; they are **not tappable**, because the
-screens behind them do not exist. `followers` and `following` actions on the accounts service, each
-paged like everything else, and two rungs on the ladder. A count is a fact and a link to nothing is a
-promise, which is why the counts shipped without the lists rather than the other way round.
-
-#### 3. Notifications
+#### 2. Notifications
 
 `gphone_blabber_notifications`, `access: { read: 'owner', write: 'server' }` — rows arrive from the
 server and never the phone, so nothing becomes client-writable and create/update are not registered
@@ -311,7 +339,7 @@ reason the current one keeps counting while the app is closed.
 DMs appear here as a notification kind _and_ keep their own unread badge on the header DM icon. Those
 are two different questions — "anything new?" versus "unread in this thread".
 
-#### 4. Search and hashtags
+#### 3. Search and hashtags
 
 Hashtags are render-only today: `tokenizeRichText` emits a `tag` token and `BlabBody` renders it as a
 non-interactive `<span>`. There is no tag storage, so "popular recent hashtags" has nothing to
@@ -333,7 +361,7 @@ aggregate.
   action needs `paging`; `defineService` throws for a public read without it (§10). While here, fix
   `SearchBar`'s `use:focus` action, whose body is an empty stub, so the field actually autofocuses.
 
-#### 5. Media, private-surface richness, and moderation
+#### 4. Media, private-surface richness, and moderation
 
 - **The `gphone_media` rename**, below — the prerequisite for everything else in this step. Bundle the
   `gphone_blabber_likes` → `gphone_blabber_ears` rename into the same migration file: doing it while

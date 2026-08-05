@@ -720,6 +720,13 @@ a silent divergence breaks either security or writes. One schema drives both, pl
     ignored rather than honoured.
   - An over-large `limit` is clamped to `maxPageSize` rather than rejected. The request is
     legitimate; only the number is not.
+  - **A custom action pages itself, so it clamps itself** — `ServiceEndpoint` only wraps the generic
+    `get`. Use `pageBounds(data, service.resolved.paging)` from `server/lib/payload.ts` rather than
+    writing the four lines again, and pass the resolved declaration rather than retyping the numbers:
+    that is what stops a change to a `paging` block from silently missing that service's own actions.
+    `id DESC` still, and the cursor is still the row id of whichever table the query walks — for a
+    join that is the **driving** table, not the one being joined on. Blabber's `profile` and
+    `following` and the accounts service's `followers` and `following` are the four worked examples.
 - **`access.membership` declares how membership is decided, as data.** Never a SQL fragment: §2.9's
   identifier allowlist has to extend across the join, and a caller-supplied `where` is the exact hole
   it exists to close. `{ table, foreignKey, localKey?, citizenColumn?, liveWhileNull? }` derives the
@@ -778,6 +785,12 @@ Two consequences worth knowing before building on it:
 - **A payload naming an account is not proof of owning it.** `ownedAccount(id, citizenid, app)` is
   the check, and every action that writes as an account calls it first (§2.9). Without it a player
   posts under anyone's handle by guessing an id.
+- **But a _read_ about an account is usually nobody's to own.** `followers` and `following` have no
+  ownership check on purpose: requiring one would mean you could only see your own followers, which
+  is not what the count on a stranger's profile is counting. What has to hold instead is the
+  projection — `publicColumns`, so `citizenid` is withheld. A follower list is the single screen that
+  would otherwise correlate every alt in the graph back to one person, so the rule to carry over from
+  a write is "check the projection", not "check the owner".
 
 `handle` is `clientWritable: false` and claimed once: renaming it would silently break every
 mention of it, and there is nothing to un-break it with.
