@@ -35,3 +35,4 @@ export { default as SignalIcon } from './ui/icons/SignalIcon.svelte';
 export { default as SpeakerIcon } from './ui/icons/SpeakerIcon.svelte';
 export { default as StarIcon } from './ui/icons/StarIcon.svelte';
 export { default as TrashIcon } from './ui/icons/TrashIcon.svelte';
+export { default as UsersIcon } from './ui/icons/UsersIcon.svelte';

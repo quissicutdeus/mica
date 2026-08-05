@@ -31,4 +31,5 @@ export { default as Screen } from './ui/Screen.svelte';
 export { default as SearchBar } from './ui/SearchBar.svelte';
 export { default as SegmentedControl } from './ui/SegmentedControl.svelte';
 export { default as Skeleton } from './ui/Skeleton.svelte';
+export { default as TabBar } from './ui/TabBar.svelte';
 export { default as ToggleSwitch } from './ui/ToggleSwitch.svelte';
