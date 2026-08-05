@@ -11,6 +11,28 @@ export function enableDragScroll(container: HTMLElement): () => void {
   let initialScrollLeft = 0;
   let activeScrollableElement: HTMLElement | null = null;
 
+  /**
+   * How many CSS pixels of content one pixel of cursor travel is worth.
+   *
+   * The phone is drawn through a `transform: scale()` (see `shell/state/display.ts`), and
+   * the two sides of this calculation live on opposite sides of it: `clientX` is in
+   * on-screen pixels, `scrollTop` in the element's own unscaled ones. Applied 1:1, a
+   * phone drawn at 75% scrolled three quarters as far as the cursor moved — the content
+   * visibly lagged behind the grab.
+   *
+   * Measured off the element rather than read from the store so this stays a DOM helper
+   * with no gPhone state (AGENTS.md §8), and so it is right for any transform in the
+   * ancestry rather than only the one we know about. Zero on either side means nothing has
+   * been laid out — jsdom — so there is no ratio to apply.
+   */
+  let dragRatio = 1;
+
+  function measureDragRatio(element: HTMLElement): number {
+    const rendered = element.getBoundingClientRect().width;
+    const layout = element.offsetWidth;
+    return rendered > 0 && layout > 0 ? rendered / layout : 1;
+  }
+
   function findScrollableParent(target: HTMLElement | null): HTMLElement | null {
     let curr: HTMLElement | null = target;
     while (curr && curr !== container) {
@@ -54,6 +76,7 @@ export function enableDragScroll(container: HTMLElement): () => void {
     startY = e.clientY;
     initialScrollTop = scrollable.scrollTop;
     initialScrollLeft = scrollable.scrollLeft;
+    dragRatio = measureDragRatio(scrollable);
 
     window.addEventListener('mousemove', handlePointerMove, { passive: false });
     window.addEventListener('mouseup', handlePointerUp, { capture: true, once: true });
@@ -71,8 +94,8 @@ export function enableDragScroll(container: HTMLElement): () => void {
 
     if (isDragging) {
       e.preventDefault();
-      activeScrollableElement.scrollTop = initialScrollTop - deltaY;
-      activeScrollableElement.scrollLeft = initialScrollLeft - deltaX;
+      activeScrollableElement.scrollTop = initialScrollTop - deltaY / dragRatio;
+      activeScrollableElement.scrollLeft = initialScrollLeft - deltaX / dragRatio;
     }
   }
 
