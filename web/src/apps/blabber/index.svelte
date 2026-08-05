@@ -38,9 +38,16 @@
     toggleLike,
     mouthBlab,
     clearUnreadMentions,
+    loadDmThreads,
     unreadDms
   } = useBlabber();
   const { run, busy } = useAppAction();
+
+  /**
+   * False until the first page has come back. An empty feed and a feed that has not answered yet
+   * are different statements, and the app made the second one look like the first (§11.6).
+   */
+  const feedLoaded = feed.loaded;
 
   let view = $state<'feed' | 'profile' | 'thread' | 'dms'>('feed');
   /** Which correspondent's thread is open, or null for the inbox. */
@@ -66,6 +73,13 @@
     // way to see what it was replying to — and `reply_to: null` is expressible only because a
     // null filter now means IS NULL rather than `= NULL`.
     void feed.load({ reply_to: null });
+    /**
+     * The DM badge is derived from `dmThreads`, and nothing filled that until the inbox was
+     * opened — so the count next to Messages read 0 on every visit unless a DM happened to
+     * arrive while the app was on screen. The push subscription keeps it live; this is what
+     * makes it right on arrival.
+     */
+    void loadDmThreads();
   });
 
   /**
@@ -186,7 +200,6 @@
 <Screen title={app.title} onback={app.back}>
   {#if view === 'dms'}
     <Messages
-      handle={$activeAccount?.handle}
       busy={$busy}
       peer={dmPeer}
       onopen={(peer) => (dmPeer = peer)}
@@ -261,7 +274,11 @@
     {/if}
 
     <div class="flex-1 overflow-y-auto" onscroll={page.onScroll}>
-      {#if $feed.length === 0}
+      {#if !$feedLoaded}
+        <!-- Still waiting on the first page. "Nothing here yet" is a claim about the feed, and
+             making it before the server has answered is a claim the app cannot support. -->
+        <div class="p-4"><Skeleton count={4} height="h-16" /></div>
+      {:else if $feed.length === 0}
         <EmptyState title="Nothing here yet" description="Be the first to say something." />
       {:else}
         {#each page.visible as blab (blab.id)}

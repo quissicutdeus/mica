@@ -3,6 +3,7 @@ import type { Account, Blab, BlabEngagement, BlabberDm, BlabberDmThread } from '
 import { fetchNui } from '../nui/fetchNui';
 import { createPagedStore } from './createPagedStore';
 import { subscribeAppEvent } from '../shell/state/appEvents';
+import { usePersisted } from '../sdk/hooks/usePersisted';
 
 /**
  * Blabber's data: a paged public feed, plus the accounts the player can post from.
@@ -18,8 +19,22 @@ export const feed = createPagedStore<Blab>('getBlabs', { pageSize: 30 });
 export const myAccounts = writable<Account[]>([]);
 export const accountsLoaded = writable(false);
 
-/** Which account new posts are attributed to. Null until accounts have loaded. */
-export const activeAccountId = writable<number | null>(null);
+/**
+ * Which account new posts are attributed to. Null until accounts have loaded.
+ *
+ * Persisted, because it is a choice rather than a cache: a player with a main and an alt was
+ * silently returned to the first account every time the phone reloaded, so the next post went
+ * out under the wrong handle with nothing on screen having changed.
+ *
+ * `useStorage` is `localStorage`, so this is per-PC and shared between characters — which is
+ * survivable here precisely because `loadMyAccounts` re-validates the stored id against the
+ * accounts the server actually returned and falls back to the first one. A stale id from
+ * another character corrects itself on the next load rather than posting as somebody else.
+ */
+export const activeAccountId = usePersisted<number | null>('blabber', 'activeAccountId', null, {
+  sanitize: (value) =>
+    typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null
+});
 
 export const activeAccount = derived(
   [myAccounts, activeAccountId],
