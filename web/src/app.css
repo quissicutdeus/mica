@@ -42,6 +42,17 @@
   --color-surface-overlay: rgb(3 7 18 / 0.95); /* gray-950/95 */
   --color-scrim: rgb(0 0 0 / 0.8); /* black/80 */
 
+  /**
+   * A list row reacting to the pointer.
+   *
+   * Every settings row, and now the app list, wrote `hover:bg-gray-700/40
+   * active:bg-gray-700/60` inline — two opacity modifiers per row, which is what
+   * `cef.test.ts` ratchets down. One value per role instead: the roles are "the pointer is
+   * over this" and "the pointer is down on this", and they do not vary by screen.
+   */
+  --color-row-hover: rgb(54 65 83 / 0.4); /* gray-700/40 */
+  --color-row-press: rgb(54 65 83 / 0.6); /* gray-700/60 */
+
   /* Lines and secondary text */
   --color-hairline: rgb(54 65 83 / 0.5); /* gray-700/50 */
   --color-muted: #99a1af; /* gray-400 */

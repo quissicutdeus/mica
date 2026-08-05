@@ -79,7 +79,6 @@ const GRANDFATHERED: Record<string, number> = {
   'src/apps/notes/index.svelte': 1,
   'src/apps/phone/index.svelte': 3,
   'src/apps/photos/index.svelte': 3,
-  'src/apps/settings/index.svelte': 10,
   'src/apps/settings/panes/About.svelte': 4,
   'src/apps/settings/panes/Shortcuts.svelte': 1,
   'src/apps/store/components/AppDetails.svelte': 11,

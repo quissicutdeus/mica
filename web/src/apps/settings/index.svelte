@@ -4,6 +4,7 @@
     useAdmin,
     onAppForeground,
     useAppLevels,
+    useAppRegistry,
     useNuiBridge,
     usePhoneNotification,
     Screen,
@@ -13,6 +14,8 @@
     type AppProps
   } from '@gphone/sdk';
   import About from './panes/About.svelte';
+  import AppInfo from './panes/AppInfo.svelte';
+  import Apps from './panes/Apps.svelte';
   import Display from './panes/Display.svelte';
   import DeveloperTools from './panes/DeveloperTools.svelte';
   import Shortcuts from './panes/Shortcuts.svelte';
@@ -33,17 +36,29 @@
    * own screens, and because `App.svelte` re-keys on `currentApp.name` — routing through
    * the registry would destroy and rebuild the whole module on every drill-in.
    */
-  type Pane = 'root' | 'display' | 'sound' | 'shortcuts' | 'devtools' | 'about';
+  type Pane = 'root' | 'apps' | 'display' | 'sound' | 'shortcuts' | 'devtools' | 'about';
   let pane = $state<Pane>('root');
 
   const PANE_TITLES: Record<Pane, string> = {
     root: 'Settings',
+    apps: 'Apps',
     display: 'Display',
     sound: 'Sound',
     shortcuts: 'Shortcuts',
     devtools: 'Developer Tools',
     about: 'About'
   };
+
+  /**
+   * Which app's details are open, inside the Apps pane.
+   *
+   * Held here rather than in the pane because `useAppLevels` lives here, and a screen that is
+   * not a rung is a screen Back walks straight past — from an app's details to the Settings
+   * root, skipping the list (§2.7).
+   */
+  let selectedAppId = $state<string | null>(null);
+  const { registryStore } = useAppRegistry();
+  const selectedApp = $derived($registryStore.find((a) => a.id === selectedAppId) ?? null);
 
   // Back steps up one pane before it will leave, and the Back keybind is claimed as part
   // of saying so — Escape would otherwise jump straight home from inside a pane.
@@ -52,9 +67,18 @@
     title: 'Settings',
     onback: () => onback(),
     levels: [
+      // Deepest first: out of an app's details, then out of the pane, then out of Settings.
+      {
+        open: () => selectedApp !== null,
+        close: () => (selectedAppId = null),
+        title: () => selectedApp?.name ?? 'App'
+      },
       {
         open: () => pane !== 'root',
-        close: () => (pane = 'root'),
+        close: () => {
+          pane = 'root';
+          selectedAppId = null;
+        },
         title: () => PANE_TITLES[pane]
       }
     ]
@@ -128,7 +152,13 @@
 </script>
 
 <Screen title={app.title} onback={app.back}>
-  {#if pane === 'sound'}
+  {#if pane === 'apps'}
+    {#if selectedApp}
+      <AppInfo app={selectedApp} onremoved={() => (selectedAppId = null)} />
+    {:else}
+      <Apps onselect={(id) => (selectedAppId = id)} />
+    {/if}
+  {:else if pane === 'sound'}
     <Sound />
   {:else if pane === 'shortcuts'}
     <Shortcuts />
@@ -142,12 +172,31 @@
     <div class="space-y-6 p-4">
       <!-- Every setting lives in a group; the root is nothing but the way in. -->
       <div>
+        <h2 class="mb-2 px-2 text-sm font-medium tracking-wider text-gray-400 uppercase">Apps</h2>
+        <div class="divide-y divide-gray-700 overflow-hidden rounded-xl bg-gray-800 text-sm">
+          <!-- Its own group rather than a row under System: this is management of what is
+               installed, not a preference of the phone's. -->
+          <button
+            type="button"
+            onclick={() => (pane = 'apps')}
+            class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          >
+            <div class="flex flex-col">
+              <span class="font-medium text-gray-200">Apps</span>
+              <span class="text-xs text-gray-400">Storage and uninstall, per app</span>
+            </div>
+            <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+          </button>
+        </div>
+      </div>
+
+      <div>
         <h2 class="mb-2 px-2 text-sm font-medium tracking-wider text-gray-400 uppercase">System</h2>
         <div class="divide-y divide-gray-700 overflow-hidden rounded-xl bg-gray-800 text-sm">
           <button
             type="button"
             onclick={() => (pane = 'display')}
-            class="flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors hover:bg-gray-700/40 active:bg-gray-700/60"
+            class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
           >
             <div class="flex flex-col">
               <span class="font-medium text-gray-200">Display</span>
@@ -158,7 +207,7 @@
           <button
             type="button"
             onclick={() => (pane = 'sound')}
-            class="flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors hover:bg-gray-700/40 active:bg-gray-700/60"
+            class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
           >
             <div class="flex flex-col">
               <span class="font-medium text-gray-200">Sound</span>
@@ -169,7 +218,7 @@
           <button
             type="button"
             onclick={() => (pane = 'shortcuts')}
-            class="flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors hover:bg-gray-700/40 active:bg-gray-700/60"
+            class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
           >
             <div class="flex flex-col">
               <span class="font-medium text-gray-200">Shortcuts</span>
@@ -180,7 +229,7 @@
           <button
             type="button"
             onclick={() => (pane = 'about')}
-            class="flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors hover:bg-gray-700/40 active:bg-gray-700/60"
+            class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
           >
             <div class="flex flex-col">
               <span class="font-medium text-gray-200">About</span>
@@ -192,7 +241,7 @@
             <button
               type="button"
               onclick={() => (pane = 'devtools')}
-              class="flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors hover:bg-gray-700/40 active:bg-gray-700/60"
+              class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
             >
               <div class="flex flex-col">
                 <span class="font-medium text-gray-200">Developer Tools</span>
