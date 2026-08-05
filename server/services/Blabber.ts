@@ -1,7 +1,7 @@
 import { defineService } from '../lib/defineService';
 import { ownedAccount } from './Accounts';
 import { Blab } from '@shared/types';
-import { fields, optionalString, requirePositiveInt } from '../lib/payload';
+import { fields, optionalString, pageBounds, requirePositiveInt } from '../lib/payload';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { mentionedHandles } from '@shared/richText';
@@ -153,6 +153,15 @@ export const blabber = defineService<Blab>({
 const app = blabber.app;
 const repo = blabber.repo as BlabberRepository;
 const channel = appEventChannel(APP);
+
+/**
+ * The declared page bounds, for the custom paged reads below. Non-null by construction: this is a
+ * public read, and `defineService` throws for one without `paging` (§10).
+ */
+const paging = blabber.resolved.paging;
+if (!paging) {
+  throw new Error("defineService('blabber'): a public read must declare paging.");
+}
 
 const EDIT_WINDOW_CONVAR = 'gphone_blabber_edit_window';
 
@@ -467,30 +476,22 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
  * client that will get one of them wrong.
  */
 /**
- * The page bounds every paged read here shares.
+ * The page bounds every paged read here shares, from the declaration above rather than from two
+ * numbers retyped.
  *
- * `defineService` clamps the generic `get`; a custom action has to do it itself, and doing it in
- * one place is what keeps `profile` and `following` from disagreeing about what a page is.
+ * `defineService` clamps the generic `get` inside `ServiceEndpoint`; a custom action does its own
+ * paging and so has to clamp its own. This lived here as a local helper until the accounts
+ * service's follower lists needed the same thing, at which point copying it a third time was the
+ * wrong move — it is `pageBounds` in `lib/payload.ts` now.
  */
-const pageBounds = (body: Record<string, unknown>) => ({
-  limit: Math.min(
-    typeof body.limit === 'number' && Number.isInteger(body.limit) && body.limit > 0
-      ? body.limit
-      : 30,
-    60
-  ),
-  cursor:
-    body.cursor === undefined || body.cursor === null
-      ? null
-      : requirePositiveInt(body.cursor, 'cursor')
-});
+const pageOf = (body: Record<string, unknown>) => pageBounds(body, paging);
 
 app.registerEvent('profile', async (source, cbId, data) => {
   const body = fields(data);
   const accountId = requirePositiveInt(body.account_id, 'account id');
   const repliesOnly = body.tab === 'replies';
 
-  const { limit, cursor } = pageBounds(body);
+  const { limit, cursor } = pageOf(body);
 
   /**
    * Every identifier here is a literal in this file and every value is bound — the account id,
@@ -554,7 +555,7 @@ app.registerEvent('following', async (source, cbId, data, citizenid) => {
   const viewer = await ownedAccount(body.account_id, citizenid, APP);
   if (!viewer) throw new Error('That account is not yours.');
 
-  const { limit, cursor } = pageBounds(body);
+  const { limit, cursor } = pageOf(body);
 
   const projection = blabber.resolved.publicColumns.map((column) => `\`${column}\``).join(', ');
   const cursorClause = cursor === null ? '' : ' AND `id` < ?';

@@ -66,3 +66,38 @@ export function optionalString(raw: unknown): string | undefined {
 export function flagUnlessFalse(raw: unknown): boolean {
   return raw !== false;
 }
+
+/**
+ * The page a custom action was asked for, clamped to what the service declared.
+ *
+ * `defineService` clamps the generic `get` inside `ServiceEndpoint`; a custom action does its own
+ * paging and so has to clamp its own. This was written once inside `Blabber.ts` for `profile` and
+ * `following`, and the accounts service's follower lists made it the third and fourth call site —
+ * so it moves here rather than being copied again. It takes the resolved `paging` instead of
+ * hardcoding the numbers, which is what stops a change to a declaration from silently missing that
+ * service's custom actions.
+ *
+ * An over-large `limit` is clamped rather than refused (§10): the request is legitimate, only the
+ * number is not. The cursor is a bare row id and never a column — the sort order comes from the
+ * query, so a payload offering one is ignored rather than honoured.
+ *
+ * `ServiceEndpoint` keeps its own private pair on the generic path deliberately, because its cursor
+ * error names the service it was asked of; the numbers still come from one declaration either way.
+ */
+export function pageBounds(
+  data: unknown,
+  paging: { pageSize: number; maxPageSize: number }
+): { limit: number; cursor: number | null } {
+  const body = fields(data);
+  const rawLimit = body.limit;
+  return {
+    limit:
+      typeof rawLimit === 'number' && Number.isInteger(rawLimit) && rawLimit > 0
+        ? Math.min(rawLimit, paging.maxPageSize)
+        : paging.pageSize,
+    cursor:
+      body.cursor === undefined || body.cursor === null
+        ? null
+        : requirePositiveInt(body.cursor, 'cursor')
+  };
+}
