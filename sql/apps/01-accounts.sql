@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS `gphone_account_follows` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `follower_followee` (`follower_account_id`, `followee_account_id`),
     KEY `followee_account_id` (`followee_account_id`),
+    KEY `follower_recent` (`follower_account_id`, `id`),
     CONSTRAINT `fk_gphone_account_follows_follower_account_id` FOREIGN KEY (`follower_account_id`)
         REFERENCES `gphone_accounts` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_gphone_account_follows_followee_account_id` FOREIGN KEY (`followee_account_id`)

@@ -1,7 +1,7 @@
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { Account } from '@shared/types';
-import { fields, optionalString, requirePositiveInt } from '../lib/payload';
+import { fields, optionalString, pageBounds, requirePositiveInt } from '../lib/payload';
 
 /**
  * Social identities, shared by every social app.
@@ -111,7 +111,21 @@ export const accounts = defineService<Account>({
           unique: true
         },
         // The other direction: who follows this account.
-        { name: 'followee_account_id', columns: ['followee_account_id'] }
+        { name: 'followee_account_id', columns: ['followee_account_id'] },
+        /**
+         * The following **list**, paged on this table's own `id DESC`.
+         *
+         * The unique index above already starts with `follower_account_id`, and InnoDB appends
+         * the primary key to every secondary index — so for one follower it is physically
+         * `(follower_account_id, followee_account_id, id)` and yields rows in followee order,
+         * not id order. The list query would take a filesort. Bounded and small, but a range
+         * scan for free is worth one key on a narrow table, and §10's argument applies: correct
+         * by default beats correct if you happen to read the DDL first.
+         *
+         * The other direction needs no such key: `followee_account_id` is not unique, so InnoDB's
+         * appended primary key makes it `(followee_account_id, id)` already.
+         */
+        { name: 'follower_recent', columns: ['follower_account_id', 'id'] }
       ]
     }
   ],
@@ -122,6 +136,19 @@ export const accounts = defineService<Account>({
 
 const app = accounts.app;
 const repo = accounts.repo;
+
+/**
+ * The declared page bounds, for the custom paged reads below.
+ *
+ * Non-null by construction — `access.read` is `public` and `defineService` throws for a public
+ * read without `paging` (§10) — so the guard is an invariant assertion rather than a branch that
+ * can happen. Read from the declaration instead of restating 30 and 60, which is what keeps a
+ * change up there from silently missing the follower lists down here.
+ */
+const paging = accounts.resolved.paging;
+if (!paging) {
+  throw new Error("defineService('accounts'): a public read must declare paging.");
+}
 
 /** 3–32 characters, lowercase, alphanumeric and underscore. No leading `@`; that is display. */
 const HANDLE_PATTERN = /^[a-z0-9_]{3,32}$/;
@@ -334,6 +361,95 @@ app.registerEvent('follows', async (source, cbId, data, citizenid) => {
     followedByMe: mine !== null
   };
 });
+
+/**
+ * Who follows this account, and who it follows.
+ *
+ * The counts above have been real since the graph shipped and were deliberately not tappable,
+ * because these two screens did not exist: a count is a fact and a link to nothing is a promise.
+ * These are that link.
+ *
+ * **Public, like the counts.** Reading who follows an account is not a privileged act — every row
+ * returned is a public projection of `gphone_accounts`, so `citizenid` is withheld exactly as it is
+ * on a Blab. There is no `ownedAccount` check and there must not be one: requiring ownership would
+ * mean you could only see your own followers, which is not what the number on a stranger's profile
+ * is counting.
+ *
+ * **Keyset paged on the follow row's own id, not the account's.** Three things follow from that.
+ * It orders the list most-recently-followed first, which is the only ordering a reader can make
+ * sense of — account id order is "whoever signed up first", and `created_at` is second-resolution,
+ * so a naive cursor on it silently drops a row wherever two follows share a second (§10). It is a
+ * single column that never changes. And each direction has an index that makes it a plain range
+ * scan; see the declaration above.
+ *
+ * **A join here, where the Following *feed* deliberately used `IN (subquery)`.** Not an
+ * inconsistency: there the follows table was a filter over posts, and a duplicate follow row would
+ * have duplicated a post, so it belonged in a subquery. Here the follows table **is** the list —
+ * one row per relation, enforced by the unique index — so it belongs in the FROM, and the account
+ * is what is joined on. That is also why the projection is qualified: two tables in the FROM makes
+ * a bare `id` ambiguous.
+ */
+const followList = async (
+  data: unknown,
+  direction: 'followers' | 'following'
+): Promise<{ rows: Account[]; nextCursor: number | null }> => {
+  const body = fields(data);
+  const appId = optionalString(body.app);
+  if (!appId) throw new Error('An app id is required.');
+
+  const accountId = requirePositiveInt(body.account_id, 'account id');
+  const { limit, cursor } = pageBounds(body, paging);
+
+  /**
+   * Which end of the relation is the subject and which is the row being listed. Both are literals
+   * chosen by this function from a two-value union — never a payload field, which is the whole
+   * reason the two actions below pass a constant instead of forwarding `data.direction`.
+   */
+  const subjectColumn = direction === 'followers' ? 'followee_account_id' : 'follower_account_id';
+  const listedColumn = direction === 'followers' ? 'follower_account_id' : 'followee_account_id';
+
+  /**
+   * From `publicColumns`, qualified onto the accounts alias. `citizenid` is not in that list and
+   * cannot be added to it by a payload — on a follower list it would correlate every alt in the
+   * graph back to its owner, which is precisely what the projection rule exists to prevent (§10).
+   */
+  const projection = accounts.resolved.publicColumns.map((column) => `a.\`${column}\``).join(', ');
+  const cursorClause = cursor === null ? '' : ' AND f.`id` < ?';
+
+  /**
+   * The app is bound as well as the subject. A graph row can only ever link two accounts in one
+   * app — `follow` enforces that on the way in — so this is belt and braces rather than the only
+   * guard, and it costs nothing on a query already filtering the accounts table.
+   */
+  const params: unknown[] = [accountId, appId];
+  if (cursor !== null) params.push(cursor);
+  params.push(limit + 1);
+
+  const rows = await Database.query<(Account & { cursor_id: number })[]>(
+    `SELECT ${projection}, f.\`id\` AS \`cursor_id\`
+     FROM \`gphone_account_follows\` f
+     JOIN \`gphone_accounts\` a ON a.\`id\` = f.\`${listedColumn}\`
+     WHERE f.\`${subjectColumn}\` = ? AND a.\`app\` = ? AND a.\`status\` = 'active'${cursorClause}
+     ORDER BY f.\`id\` DESC
+     LIMIT ?`,
+    params
+  );
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  return {
+    /**
+     * The cursor rides back on the envelope, not on the rows. It is a position in this result
+     * set rather than anything about the account, and a client that received it per row would
+     * have two plausible things to page from.
+     */
+    rows: page.map(({ cursor_id, ...account }) => account as Account),
+    nextCursor: hasMore ? page[page.length - 1].cursor_id : null
+  };
+};
+
+app.registerEvent('followers', (source, cbId, data) => followList(data, 'followers'));
+app.registerEvent('following', (source, cbId, data) => followList(data, 'following'));
 
 /**
  * Is this account one the caller may post as?

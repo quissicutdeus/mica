@@ -12,8 +12,12 @@ import {
   engagement,
   feed,
   followingFeed,
+  followers,
+  following,
   followStats,
+  loadFollowers,
   loadFollowing,
+  loadFollowingList,
   loadFollowStats,
   toggleFollow,
   loadEngagement,
@@ -43,6 +47,14 @@ export function useBlabber() {
   return {
     feed,
     followingFeed,
+    /**
+     * The two lists behind a profile's counts. Read-only from an app's side: they are filled by
+     * the loaders below, which name whose list is wanted.
+     */
+    followers,
+    following,
+    loadFollowers: (accountId: number) => loadFollowers(accountId),
+    loadFollowingList: (accountId: number) => loadFollowingList(accountId),
     followStats,
     loadFollowing: () => loadFollowing(),
     loadFollowStats: (accountId: number) => loadFollowStats(accountId),

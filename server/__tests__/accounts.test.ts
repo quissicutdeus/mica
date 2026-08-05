@@ -394,6 +394,125 @@ describe('following', () => {
   });
 });
 
+/**
+ * The two lists behind the counts.
+ *
+ * Public, like the counts they hang off: requiring ownership would mean you could only see your own
+ * followers, which is not what the number on a stranger's profile is counting. So what has to hold
+ * is that the projection still withholds `citizenid` — a follower list is the one screen that would
+ * otherwise correlate every alt in the graph back to its owner — and that the paging is the keyset
+ * shape every other paged read uses.
+ */
+describe('follower and following lists', () => {
+  const rowsFrom = (ids: number[]) =>
+    ids.map((id) => ({
+      id,
+      handle: `h${id}`,
+      app: 'blabber',
+      status: 'active',
+      cursor_id: id * 10
+    }));
+
+  it('lists who follows an account, newest relation first', async () => {
+    dbMock.query.mockResolvedValueOnce(rowsFrom([7, 8]));
+
+    const reply = await call('followers', { app: 'blabber', account_id: 4 });
+
+    const [sql, params] = dbMock.query.mock.calls[0];
+    // The subject is the followee, and the row listed is the follower.
+    expect(sql).toMatch(/WHERE f\.`followee_account_id` = \?/);
+    expect(sql).toMatch(/JOIN `gphone_accounts` a ON a\.`id` = f\.`follower_account_id`/);
+    // On the follow row's own id, not the account's: account order is "whoever signed up first",
+    // which is not a thing a reader can make sense of in a follower list.
+    expect(sql).toMatch(/ORDER BY f\.`id` DESC/);
+    expect(params.slice(0, 2)).toEqual([4, 'blabber']);
+    expect(reply.rows).toHaveLength(2);
+  });
+
+  it('lists who an account follows, off the other end of the same table', async () => {
+    dbMock.query.mockResolvedValueOnce(rowsFrom([1]));
+
+    await call('following', { app: 'blabber', account_id: 4 });
+
+    const [sql] = dbMock.query.mock.calls[0];
+    expect(sql).toMatch(/WHERE f\.`follower_account_id` = \?/);
+    expect(sql).toMatch(/JOIN `gphone_accounts` a ON a\.`id` = f\.`followee_account_id`/);
+  });
+
+  it('never projects citizenid, on either direction', async () => {
+    dbMock.query.mockResolvedValueOnce([]);
+    await call('followers', { app: 'blabber', account_id: 4 });
+    dbMock.query.mockResolvedValueOnce([]);
+    await call('following', { app: 'blabber', account_id: 4 });
+
+    for (const [sql] of dbMock.query.mock.calls) {
+      // Enforced in the SELECT rather than by dropping a key afterwards, so no override can
+      // re-add a column the query never named.
+      expect(sql).not.toMatch(/citizenid/);
+      expect(sql).toMatch(/a\.`handle`/);
+    }
+  });
+
+  it('is public — no ownership check, because the count on a stranger’s profile is not yours', async () => {
+    dbMock.query.mockResolvedValueOnce(rowsFrom([7]));
+
+    const reply = await call('followers', { app: 'blabber', account_id: 4 }, 'SOMEONE_ELSE');
+
+    expect(reply.rows).toHaveLength(1);
+    // `ownedAccount` would have gone through `single`. Nothing here needs an identity.
+    expect(dbMock.single).not.toHaveBeenCalled();
+  });
+
+  it('returns the cursor on the envelope and not on the rows', async () => {
+    // The probe row is what says there is more; it is never returned.
+    dbMock.query.mockResolvedValueOnce(rowsFrom([7, 8, 9]));
+
+    const reply = await call('followers', { app: 'blabber', account_id: 4, limit: 2 });
+
+    expect(reply.rows).toHaveLength(2);
+    expect(reply.nextCursor).toBe(80);
+    // A position in this result set, not a fact about the account — a client handed both would
+    // have two plausible things to page from.
+    for (const row of reply.rows) expect(row).not.toHaveProperty('cursor_id');
+  });
+
+  it('says the end is the end', async () => {
+    dbMock.query.mockResolvedValueOnce(rowsFrom([7]));
+
+    const reply = await call('followers', { app: 'blabber', account_id: 4, limit: 30 });
+
+    // A client that cannot tell "no more" from "ask again" scrolls forever.
+    expect(reply.nextCursor).toBeNull();
+  });
+
+  it('clamps an over-large limit rather than refusing it', async () => {
+    dbMock.query.mockResolvedValueOnce([]);
+
+    await call('followers', { app: 'blabber', account_id: 4, limit: 5000 });
+
+    // The request is legitimate; only the number is not. `maxPageSize` is 60, plus the probe row.
+    const params = dbMock.query.mock.calls[0][1];
+    expect(params[params.length - 1]).toBe(61);
+  });
+
+  it('binds a cursor and rejects one that is not a row id', async () => {
+    dbMock.query.mockResolvedValueOnce([]);
+    await call('followers', { app: 'blabber', account_id: 4, cursor: 42 });
+    expect(dbMock.query.mock.calls[0][0]).toMatch(/AND f\.`id` < \?/);
+    expect(dbMock.query.mock.calls[0][1]).toEqual([4, 'blabber', 42, 31]);
+
+    const reply = await call('followers', { app: 'blabber', account_id: 4, cursor: 'DROP TABLE' });
+    // A cursor names a position, never a column, which is why it is an integer and not an
+    // opaque string.
+    expect(reply.error).toBeTruthy();
+  });
+
+  it('requires an app id and an account id', async () => {
+    expect((await call('followers', { account_id: 4 })).error).toMatch(/app id is required/);
+    expect((await call('following', { app: 'blabber' })).error).toMatch(/account id/);
+  });
+});
+
 describe('the follow graph declaration', () => {
   it('is a child table with no citizenid', () => {
     const follows = accounts.resolved.childTables?.find(
@@ -408,6 +527,23 @@ describe('the follow graph declaration', () => {
       'followee_account_id',
       'created_at'
     ]);
+  });
+
+  it('indexes the following list so its paging is a range scan', () => {
+    const follows = accounts.resolved.childTables?.find(
+      (table) => table.name === 'gphone_account_follows'
+    );
+
+    /**
+     * The unique index starts with `follower_account_id` and InnoDB appends the primary key, so
+     * for one follower it is physically `(follower_account_id, followee_account_id, id)` — rows in
+     * followee order, not id order, which is a filesort for a list paged on `id DESC`. The other
+     * direction needs no such key: `followee_account_id` is non-unique, so its appended primary
+     * key already makes it `(followee_account_id, id)`.
+     */
+    expect(follows!.indexes).toEqual(
+      expect.arrayContaining([{ name: 'follower_recent', columns: ['follower_account_id', 'id'] }])
+    );
   });
 
   it('constrains one row per relation in the database', () => {

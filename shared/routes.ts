@@ -53,6 +53,11 @@ export const ROUTES: readonly Route[] = [
   route('followAccount', 'accounts', 'follow'),
   route('unfollowAccount', 'accounts', 'unfollow'),
   route('getFollowStats', 'accounts', 'follows'),
+  // The two lists behind those counts, each keyset paged on the follow row's own id so the order
+  // is most-recently-followed first. Public, like the counts: they answer a question about a
+  // stranger's profile, not about the caller.
+  route('getFollowers', 'accounts', 'followers'),
+  route('getFollowing', 'accounts', 'following'),
 
   // Blabber. `getBlabs` is a public paged read: `{ cursor, limit }` in,
   // `{ rows, nextCursor }` out.

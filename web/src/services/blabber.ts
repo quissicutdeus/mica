@@ -251,6 +251,33 @@ export const loadFollowStats = async (accountId: number): Promise<void> => {
 };
 
 /**
+ * The two lists behind the counts, each its own paged store.
+ *
+ * Two stores rather than one keyed by direction, for the reason `followingFeed` is separate from
+ * `feed`: each holds a cursor, and one cursor cannot walk two result sets. They are *not* keyed by
+ * account, though — unlike `followStats`, which caches per profile because a profile is opened,
+ * read and left. A list is opened deliberately, is expected to be current, and only one is ever on
+ * screen, so `load` replacing the window is the right behaviour and a per-account cache would just
+ * be a way to show a stale list.
+ */
+export const followers = createPagedStore<Account>('getFollowers', { pageSize: 30 });
+export const following = createPagedStore<Account>('getFollowing', { pageSize: 30 });
+
+/**
+ * Whose followers, or whose following. Public, so no viewer identity is sent: these read the same
+ * whoever is looking, and the Follow button lives on the profile a row opens rather than in the
+ * list — thirty rows each asking for their own follow state is the round-trip storm the batched
+ * `engagement` read exists to avoid.
+ */
+export const loadFollowers = async (accountId: number): Promise<void> => {
+  await followers.load({ app: 'blabber', account_id: accountId });
+};
+
+export const loadFollowingList = async (accountId: number): Promise<void> => {
+  await following.load({ app: 'blabber', account_id: accountId });
+};
+
+/**
  * Follow or unfollow, optimistically.
  *
  * Same shape as `toggleLike`, and for the same reason: a Follow button must change on tap rather

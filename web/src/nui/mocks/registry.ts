@@ -205,6 +205,30 @@ const mockDms: BlabberDm[] = [
   }
 ];
 
+interface FollowListArgs {
+  account_id: number;
+  cursor?: number;
+  limit?: number;
+}
+
+/**
+ * One page of accounts out of a list of ids, newest relation first.
+ *
+ * Only `active` accounts, as the server's join requires — a moderated account drops out of a
+ * follower list and makes the page shorter than asked for, which is correct and is a thing the
+ * browser should be able to reproduce.
+ */
+const mockFollowPage = (accountIds: number[], cursor: number | undefined, limit: number) => {
+  const newestFirst = [...accountIds].reverse();
+  const from = cursor ?? 0;
+  const slice = newestFirst.slice(from, from + limit);
+  const rows = slice
+    .map((id) => mockAccounts.find((a) => a.id === id && a.status === 'active'))
+    .filter((a): a is Account => a !== undefined);
+  const end = from + limit;
+  return { rows, nextCursor: end < newestFirst.length ? end : null };
+};
+
 let nextDmId = 50;
 let nextBlabId = 100;
 let nextAccountId = 10;
@@ -318,6 +342,28 @@ const mockRegistry: Record<string, MockHandler> = {
     if (at >= 0) mockFollows.splice(at, 1);
     return true;
   },
+  /**
+   * The two lists behind the counts, paged the way the server pages them: on the **follow row's**
+   * position, most-recently-followed first, not on the account id. `mockFollows` is append-only, so
+   * its reversed index is that order — matching it here is what makes a dev-mode list arrive in the
+   * same order as a real one rather than in whatever order the fixture happens to hold.
+   *
+   * `nextCursor` is an index into that reversed order rather than a row id, because these fixtures
+   * have no follow-row ids to hand. It is opaque to the client either way — the store only ever
+   * hands it back — which is the property that lets a mock differ here at all.
+   */
+  getFollowers: ({ account_id, cursor, limit = 30 }: FollowListArgs) =>
+    mockFollowPage(
+      mockFollows.filter((f) => f.followee === account_id).map((f) => f.follower),
+      cursor,
+      limit
+    ),
+  getFollowing: ({ account_id, cursor, limit = 30 }: FollowListArgs) =>
+    mockFollowPage(
+      mockFollows.filter((f) => f.follower === account_id).map((f) => f.followee),
+      cursor,
+      limit
+    ),
   getFollowStats: ({
     account_id,
     viewer_account_id
