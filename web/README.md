@@ -22,6 +22,7 @@ web/
 │   ├── apps/           # Individual app E2E tests (Admin, Bank, Blabber, Calculator, Camera, Contacts, Mail, Messages, Notes, Phone, Photos, Settings, Sound, Store)
 │   ├── app-residency.spec.ts
 │   ├── deep-link.spec.ts
+│   ├── display.spec.ts
 │   ├── defects.spec.ts
 │   ├── error_boundary.spec.ts
 │   ├── keybinds.spec.ts
@@ -31,7 +32,7 @@ web/
 ├── src/
 │   ├── apps/           # One directory per app (admin, bank, blabber, calculator, camera, contacts, mail, messages, notes, phone, photos, settings, store)
 │   ├── shell/          # The OS itself: Shell.svelte, PhoneFrame, Launcher, ToastHost, VolumeHud, ErrorBoundary
-│   │   └── state/      # State the phone owns (navigation, keybinds, registry, bootstrap, devtools, charge, signal, time, audio, toast, appEvents)
+│   │   └── state/      # State the phone owns (navigation, keybinds, registry, bootstrap, devtools, charge, display, signal, time, audio, toast, appEvents)
 │   ├── services/       # Client-side cache of each server service (account, admin, blabber, call, camera, contacts, conversations, mail, notes, photos, reports)
 │   │                   # plus the two factories they are built from: createCrudStore, createPagedStore
 │   ├── sdk/            # @gphone/sdk — the only thing apps may import

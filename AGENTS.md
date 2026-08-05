@@ -108,7 +108,7 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
 5. **No new dependencies** without asking.
 6. **Do not change** TypeScript versions in either package, Vite `build.outDir`, or
    `scripts/generate-barrels.js` output paths without asking.
-7. **SDK First.** Everything in `web/src/apps/`, and every external add-on, consumes the OS strictly through `@gphone/sdk` hooks — data (`useContacts`, `usePhotos`, `useNotes`, `useMail`, `useMessages`, `useBlabber`, `useAccount`, `useCall`, `useReports`), OS services (`useNavigation`, `usePhoneNotification`, `useKeybinds`, `useClock`, `useSystemHardware`, `useAppRegistry`, `useNuiBridge`, `useAppEvents`, `useStorage`, `useCamera`, `useAdmin`, `useDevTools`), and the four an app is built out of: `useAppLevels` for its internal levels, `useAppAction` for a write, `useDeepLink` for the props it was opened with, and `onAppForeground` for loading. Relative imports out of an app — into `shell/`, `services/`, `nui/`, `lib/`, or `sdk/` by path — are prohibited and enforced by `web/src/sdk/boundary.test.ts`. An add-on installed from the Store resolves `@gphone/sdk` and nothing else, so a relative import is a thing a third-party app cannot do. UI primitives (`Screen`, `ListItem`, `Button`, `Avatar`, `SearchBar`, `EmptyState`, `ConfirmDialog`, `FloatingActionButton`, `PhotoPickerModal`, `ReportDialog`, `SegmentedControl`, `ToggleSwitch`, `Skeleton`) live in `web/src/sdk/ui/` and are re-exported from `web/src/sdk/components.ts`. The shell's own pieces — `PhoneFrame`, `Launcher`, `ToastHost`, `VolumeHud`, `ErrorBoundary` — are deliberately **not** exported, because an app rendering its own phone frame or toast host is a bug.
+7. **SDK First.** Everything in `web/src/apps/`, and every external add-on, consumes the OS strictly through `@gphone/sdk` hooks — data (`useContacts`, `usePhotos`, `useNotes`, `useMail`, `useMessages`, `useBlabber`, `useAccount`, `useCall`, `useReports`), OS services (`useNavigation`, `usePhoneNotification`, `useKeybinds`, `useClock`, `useDisplay`, `useSystemHardware`, `useAppRegistry`, `useNuiBridge`, `useAppEvents`, `useStorage`, `useCamera`, `useAdmin`, `useDevTools`), and the four an app is built out of: `useAppLevels` for its internal levels, `useAppAction` for a write, `useDeepLink` for the props it was opened with, and `onAppForeground` for loading. Relative imports out of an app — into `shell/`, `services/`, `nui/`, `lib/`, or `sdk/` by path — are prohibited and enforced by `web/src/sdk/boundary.test.ts`. An add-on installed from the Store resolves `@gphone/sdk` and nothing else, so a relative import is a thing a third-party app cannot do. UI primitives (`Screen`, `ListItem`, `Button`, `Avatar`, `SearchBar`, `EmptyState`, `ConfirmDialog`, `FloatingActionButton`, `PhotoPickerModal`, `ReportDialog`, `SegmentedControl`, `ToggleSwitch`, `Skeleton`) live in `web/src/sdk/ui/` and are re-exported from `web/src/sdk/components.ts`. The shell's own pieces — `PhoneFrame`, `Launcher`, `ToastHost`, `VolumeHud`, `ErrorBoundary` — are deliberately **not** exported, because an app rendering its own phone frame or toast host is a bug.
 
    **Keyboard shortcuts specifically.** Never add a raw `keydown` listener or a
    `<svelte:window on:keydown>` for a phone-level action; declare the action in
@@ -285,6 +285,13 @@ nothing," with no error anywhere. Theme customization goes in CSS: `@import "tai
 - **No visible scrollbars.** Scrollbars must never be visible anywhere inside the phone interface. Global CSS rules in `web/src/app.css` (`scrollbar-width: none` / `::-webkit-scrollbar { display: none }`) enforce this across all scrollable containers.
 - **Read §6 before writing any color, layout, or variant utility.** Tailwind 4 targets a browser
   several years newer than the one this UI actually runs in.
+- **The screen is always 400x850, and an app must not try to be responsive.** Those numbers live
+  in `shell/state/display.ts` and nowhere else. Settings > Display resizes the phone, but it does
+  it with one `transform: scale()` on a wrapper in `Shell.svelte` — a zoom, so the layout inside is
+  the same at every size and text scales with the frame instead of staying 14px in a narrower box.
+  It follows that responsive breakpoints (`sm:`, `md:`) and viewport units (`vh`, `vw`, `dvh`)
+  inside an app are always wrong: they respond to the _window_, which is not the phone. Size against
+  the frame — `h-full`, `flex-1`, and the `safe-top`/`safe-bottom` insets in `app.css`.
 
 ---
 
@@ -312,8 +319,14 @@ mostly redundant under Tailwind 4 but harmless; leave it.
 | `color-mix()`     | Chrome 111 | Opacity modifiers — `bg-white/10`, `text-black/70` |
 | `:has()`          | Chrome 105 | `has-*`, `group-has-*` variants                    |
 | Container queries | Chrome 105 | `@container`, `@min-*`, `@max-*` variants          |
+| `dvh` / `svh`     | Chrome 108 | `h-dvh`, `min-h-dvh` — sizing to a mobile viewport |
 
 `:has()` and container queries have no fallback. They are absolute — use Svelte state instead.
+
+`dvh` has no fallback either, and the thing it would have fixed is real: `100vh` on a phone
+browser is the viewport with the URL bar retracted, so the phone hung below the fold. The way out
+is a measured pixel value — `shell/state/display.ts` tracks `window.innerHeight` and `Shell.svelte`
+sizes from it, which is correct in CEF and in a browser without needing the unit at all.
 
 **Opacity modifiers are the qualified case.** This section used to call them the highest-risk
 utility class here, on the reasoning that `postcss-preset-env` computes only static fallbacks and
@@ -415,7 +428,7 @@ Four words carry the structure, and they mean exactly one thing each:
 | `shared/types.ts`      | both         | `@shared/types` path alias, not a workspace package (§3)                     |
 | `shared/richText.ts`   | both         | One tokenizer for `@handle` — the UI renders and the server notifies from it |
 | `web/src/shell/`       | CEF+browser  | The OS: `Shell.svelte`, `PhoneFrame`, `Launcher`, `ToastHost`                |
-| `web/src/shell/state/` | CEF+browser  | State the phone itself owns: navigation, keybinds, hardware                  |
+| `web/src/shell/state/` | CEF+browser  | State the phone itself owns: navigation, keybinds, hardware, size            |
 | `web/src/services/`    | CEF+browser  | Client-side cache of each server service. Reached via the SDK                |
 | `web/src/sdk/`         | CEF+browser  | `@gphone/sdk` — the public surface for apps (§2.7)                           |
 | `web/src/sdk/ui/`      | CEF+browser  | UI primitives and icons apps may build with                                  |
