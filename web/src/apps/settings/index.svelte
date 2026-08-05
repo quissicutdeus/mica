@@ -200,7 +200,7 @@
           >
             <div class="flex flex-col">
               <span class="font-medium text-gray-200">Display</span>
-              <span class="text-xs text-gray-400">Clock and time format</span>
+              <span class="text-xs text-gray-400">Phone size, clock, and time format</span>
             </div>
             <ChevronRightIcon class="h-4 w-4 text-gray-500" />
           </button>
