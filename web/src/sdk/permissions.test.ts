@@ -113,7 +113,8 @@ describe('declared permissions', () => {
       'media',
       'storage',
       'location',
-      'network'
+      'network',
+      'bluetooth'
     ];
     const unknown = APPS.flatMap((app) =>
       (app.permissions ?? []).filter((p) => !valid.includes(p)).map((p) => `${app.id}: '${p}'`)

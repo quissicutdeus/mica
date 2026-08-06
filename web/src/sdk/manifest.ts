@@ -2,7 +2,14 @@ import type { Component, Snippet } from 'svelte';
 import type { Readable } from 'svelte/store';
 
 export type AppPermission =
-  'notifications' | 'contacts' | 'camera' | 'media' | 'storage' | 'location' | 'network';
+  | 'notifications'
+  | 'contacts'
+  | 'camera'
+  | 'media'
+  | 'storage'
+  | 'location'
+  | 'network'
+  | 'bluetooth';
 
 /**
  * What the shell hands an app component.

@@ -1,5 +1,15 @@
 import { charge } from '../../shell/state/charge';
-import { signalLevel, setSignal } from '../../shell/state/signal';
+import {
+  signalLevel,
+  setSignal,
+  cellServiceEnabled,
+  toggleCellService
+} from '../../shell/state/signal';
+import {
+  bluetoothEnabled,
+  toggleBluetooth,
+  isBluetoothDiscoverable
+} from '../../shell/state/bluetooth';
 import {
   soundVolume,
   soundMuted,
@@ -11,16 +21,18 @@ import {
 } from '../../shell/state/audio';
 
 /**
- * The phone's hardware: battery, signal, and the volume buttons.
- *
- * The time format used to be here too. It is a locale preference rather than hardware,
- * and it now lives in `useClock` with the clock it formats.
+ * The phone's hardware: battery, cellular signal, cell service, bluetooth, and volume controls.
  */
 export function useSystemHardware() {
   return {
     charge,
     signalLevel,
     setSignal,
+    cellServiceEnabled,
+    toggleCellService,
+    bluetoothEnabled,
+    toggleBluetooth,
+    isBluetoothDiscoverable,
     soundVolume,
     soundMuted,
     setVolume,

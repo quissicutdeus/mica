@@ -5,12 +5,16 @@
   import { goHome } from './state/navigation';
   import { displayCharge, isBatteryDead } from './state/charge';
   import { clampedSignalLevel } from './state/signal';
+  import { bluetoothEnabled } from './state/bluetooth';
   import { stepVolume } from './state/audio';
   import { enableDragScroll } from '../lib/dragScroll';
   import { PHONE_HEIGHT, PHONE_WIDTH } from './state/display';
   import LightningWarningIcon from '../sdk/ui/icons/LightningWarningIcon.svelte';
   import SignalIcon from '../sdk/ui/icons/SignalIcon.svelte';
+  import BluetoothIcon from '../sdk/ui/icons/BluetoothIcon.svelte';
   import VolumeHud from './VolumeHud.svelte';
+  import NotificationShade from './NotificationShade.svelte';
+  import { openShade } from './state/shade';
 
   let { transparent = false, onClose, children } = $props();
   let screenElement = $state<HTMLElement | null>(null);
@@ -78,6 +82,9 @@
     <!-- On-Screen Volume HUD Overlay -->
     <VolumeHud />
 
+    <!-- Notification Shade Overlay -->
+    <NotificationShade />
+
     <!-- Dead Phone Screen Overlay -->
     {#if $isBatteryDead}
       <div
@@ -112,11 +119,17 @@
 
     <!-- Status Bar -->
     {#if !transparent && !$isBatteryDead}
-      <div
-        class="absolute top-0 z-20 flex w-full items-center justify-between px-8 pt-3 text-sm font-medium text-white"
+      <button
+        type="button"
+        class="absolute top-0 z-20 flex w-full cursor-pointer items-center justify-between px-8 pt-3 text-sm font-medium text-white transition-opacity hover:opacity-90 active:opacity-75"
+        onclick={openShade}
+        aria-label="Open notification shade"
       >
         <span>{$formattedTime}</span>
         <div class="flex items-center gap-2">
+          {#if $bluetoothEnabled}
+            <BluetoothIcon class="h-3.5 w-3.5 opacity-90" />
+          {/if}
           <SignalIcon level={$clampedSignalLevel} />
 
           <!-- Battery Status Indicator -->
@@ -138,7 +151,7 @@
             </div>
           </div>
         </div>
-      </div>
+      </button>
     {/if}
 
     <!-- Hole Punch Camera -->
