@@ -257,7 +257,7 @@ export const loadFollowStats = async (accountId: number): Promise<void> => {
  * `feed`: each holds a cursor, and one cursor cannot walk two result sets. They are *not* keyed by
  * account, though — unlike `followStats`, which caches per profile because a profile is opened,
  * read and left. A list is opened deliberately, is expected to be current, and only one is ever on
- * screen, so `load` replacing the window is the right behaviour and a per-account cache would just
+ * screen, so `load` replacing the window is the right behavior and a per-account cache would just
  * be a way to show a stale list.
  */
 export const followers = createPagedStore<Account>('getFollowers', { pageSize: 30 });
@@ -397,14 +397,6 @@ export const dmMessages = writable<BlabberDm[]>([]);
 /** Unread DMs across every account, for the badge. */
 export const unreadDms = derived(dmThreads, (threads) =>
   threads.reduce((total, thread) => total + thread.unread, 0)
-);
-
-import { unreadCounts } from './notifications';
-
-/** Total unread badge count for Blabber combining mentions, unread DMs, and persistent notifications. */
-export const blabberTotalUnread = derived(
-  [unreadMentions, unreadDms, unreadCounts],
-  ([mentions, dms, counts]) => mentions + dms + (counts['blabber'] ?? 0)
 );
 
 export const loadDmThreads = async (): Promise<void> => {

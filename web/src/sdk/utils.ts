@@ -10,6 +10,7 @@
  * lives there.
  */
 export { isBrowser } from '../lib/isBrowser';
+export { lazyBadge } from './lazyBadge';
 export { filterByQuery } from '../lib/filterByQuery';
 export {
   formatCurrency,
@@ -34,7 +35,3 @@ export { useScrollDetect } from '../lib/useScrollDetect';
  * becomes script.
  */
 export { tokenizeRichText } from '@shared/richText';
-
-/** Blabber's total unread badge (mentions, DMs, persistent notifications), for its manifest. */
-/** @public — `blabberTotalUnread` feeds the manifest badge; `unreadMentions` is for add-ons. */
-export { unreadMentions, blabberTotalUnread } from '../services/blabber';
