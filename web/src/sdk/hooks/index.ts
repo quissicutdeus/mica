@@ -31,4 +31,6 @@ export * from './useReports';
 export * from './useSound';
 export * from './useStorage';
 export * from './useSystemHardware';
+export * from './useTheme';
 export * from './useTimer';
+export * from './useWallpaper';

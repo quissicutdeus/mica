@@ -15,9 +15,13 @@
   import VolumeHud from './VolumeHud.svelte';
   import NotificationShade from './NotificationShade.svelte';
   import { openShade, isShadeOpen, closeShade } from './state/shade';
+  import { wallpaperStore } from './state/wallpaper';
+  import { themeStyleStore } from './state/theme';
 
   let { transparent = false, onClose, children } = $props();
   let screenElement = $state<HTMLElement | null>(null);
+  const activeWallpaper = $derived($wallpaperStore);
+  const themeStyle = $derived($themeStyleStore);
 
   onMount(() => {
     if (screenElement) {
@@ -70,12 +74,28 @@
     ></button>
   </div>
 
-  <!-- Screen -->
+  <!-- Screen.
+
+       Also the theme root: `themeStyle` writes all 47 `--color-*` roles here as inline
+       custom properties, and they inherit into every app inside. It has to be this
+       element rather than the frame or the document — the bezel above is the physical
+       phone body and stays outside the theme, and touching `document.documentElement`
+       would leak across jsdom test files and need teardown.
+
+       There is no `bg-*` fallback class. One used to sit here as
+       `class:bg-gray-900={… && !activeWallpaper}`, which never applied: `activeWallpaper`
+       is a `$derived` object and is never falsy. The opaque fill in normal mode comes
+       from the wallpaper, and a `bg-surface` here would be worse than dead — it would
+       occlude the game world behind the camera viewfinder in transparent mode. -->
   <div
     bind:this={screenElement}
     data-testid="phone-screen"
-    class="relative h-full w-full overflow-hidden rounded-[3rem] transition-colors duration-200"
-    class:bg-gray-900={!transparent && !$isBatteryDead}
+    class={`relative h-full w-full overflow-hidden rounded-[3rem] transition-colors duration-200 ${
+      !transparent && !$isBatteryDead && activeWallpaper.type === 'preset'
+        ? activeWallpaper.value
+        : ''
+    }`}
+    style={`${!transparent && !$isBatteryDead && activeWallpaper.type !== 'preset' ? `background: ${activeWallpaper.value};` : ''} ${themeStyle}`}
     class:bg-black={$isBatteryDead}
     class:bg-transparent={transparent && !$isBatteryDead}
   >
@@ -121,9 +141,9 @@
     {#if !transparent && !$isBatteryDead}
       <button
         type="button"
-        class="absolute top-0 z-20 flex w-full cursor-pointer items-center justify-between px-8 pt-3 text-sm font-medium text-white transition-opacity hover:opacity-90 active:opacity-75"
-        onclick={openShade}
-        aria-label="Open notification shade"
+        class="text-on-surface absolute top-0 z-60 flex w-full cursor-pointer items-center justify-between px-8 pt-3 text-sm font-medium transition-opacity hover:opacity-90 active:opacity-75"
+        onclick={() => ($isShadeOpen ? closeShade() : openShade())}
+        aria-label={$isShadeOpen ? 'Close notification shade' : 'Open notification shade'}
       >
         <span>{$formattedTime}</span>
         <div class="flex items-center gap-2">
@@ -132,20 +152,27 @@
           {/if}
           <SignalIcon level={$clampedSignalLevel} />
 
-          <!-- Battery Status Indicator -->
+          <!-- Battery Status Indicator.
+
+               The fill is a traffic light, so only two thirds of it is themed. Red maps
+               to `error`, which is safe because M3's error palette is fixed rather than
+               generated from the seed — it is red under every theme. Yellow has no role
+               to map to and stays a raw palette class deliberately: `tertiary` *is*
+               seeded, so using it here would render "battery getting low" in whatever
+               hue the player picked, which is not what a warning colour is for. -->
           <div class="flex items-center gap-1.5">
-            <span class="text-xs" class:text-red-400={$displayCharge <= 20}>{$displayCharge}%</span>
+            <span class="text-xs" class:text-error={$displayCharge <= 20}>{$displayCharge}%</span>
             <div
-              class="relative flex h-2.5 w-5 items-center justify-start rounded-[3px] border border-white/80 p-[1px]"
+              class="border-on-surface-variant relative flex h-2.5 w-5 items-center justify-start rounded-[3px] border p-[1px]"
             >
               <div
-                class="absolute top-1/2 -right-[3px] h-1 w-[2px] -translate-y-1/2 rounded-r-[1px] bg-white/80"
+                class="bg-on-surface-variant absolute top-1/2 -right-[3px] h-1 w-[2px] -translate-y-1/2 rounded-r-[1px]"
               ></div>
               <div
                 class="h-full rounded-[1px] transition-all duration-300"
-                class:bg-red-500={$displayCharge <= 20}
+                class:bg-error={$displayCharge <= 20}
                 class:bg-yellow-400={$displayCharge > 20 && $displayCharge <= 40}
-                class:bg-white={$displayCharge > 40}
+                class:bg-on-surface={$displayCharge > 40}
                 style="width: {Math.max(8, $displayCharge)}%;"
               ></div>
             </div>

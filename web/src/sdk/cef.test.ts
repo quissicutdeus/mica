@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { ROLE_NAMES } from '../lib/m3';
 
 /**
  * The CEF capability baseline, enforced.
@@ -54,10 +55,15 @@ const CONTAINER_QUERY = /@container\b|@(?:min|max)-\[/g;
 /**
  * How many opacity modifiers each file is still allowed.
  *
- * A ratchet, not an exemption list. These 146 predate the token set and are grandfathered
- * so the gate is green on day one; the numbers may only go down. Migrating a file to the
- * `@theme` tokens in `app.css` means lowering its number, and emptying it means deleting
- * the line.
+ * A ratchet, not an exemption list. It started at 146 across 23 files, predating the
+ * token set; the numbers may only go down, and the M3 migration took it to 30 across 9.
+ * Migrating a file means lowering its number, and emptying it means deleting the line.
+ *
+ * What is left is deliberate rather than unfinished. Every survivor is translucency over
+ * something the theme does not own — the camera viewfinder and the phone's own bezel show
+ * the game world through them, the volume HUD floats on its own slab, and the browser-only
+ * launch button in `Shell` lives outside the phone entirely. A role token would be the
+ * wrong answer for all of those, not merely an unmade change.
  *
  * `src/sdk` is deliberately absent: the primitives were migrated first, so a scaffolded
  * app inherits a CEF-safe palette without knowing this rule exists.
@@ -66,10 +72,9 @@ const GRANDFATHERED: Record<string, number> = {
   'src/apps/bank/components/CreditCard.svelte': 3,
   'src/apps/camera/index.svelte': 15,
   'src/apps/contacts/components/ContactDetails.svelte': 11,
-  'src/apps/contacts/components/ContactForm.svelte': 1,
-  'src/apps/contacts/components/ContactList.svelte': 3,
+  'src/apps/contacts/components/ContactList.svelte': 1,
   'src/apps/contacts/index.svelte': 1,
-  'src/apps/mail/index.svelte': 5,
+  'src/apps/mail/index.svelte': 3,
   'src/apps/messages/components/ConversationDetailsModal.svelte': 7,
   'src/apps/messages/components/ConversationList.svelte': 3,
   'src/apps/messages/components/MessageBubble.svelte': 1,
@@ -82,11 +87,9 @@ const GRANDFATHERED: Record<string, number> = {
   'src/apps/settings/panes/About.svelte': 4,
   'src/apps/settings/panes/Shortcuts.svelte': 1,
   'src/apps/store/components/AppDetails.svelte': 11,
-  'src/apps/store/components/CatalogList.svelte': 2,
-  'src/apps/store/components/InstalledList.svelte': 2,
-  'src/apps/store/index.svelte': 2,
+  'src/apps/store/components/CatalogList.svelte': 1,
   'src/shell/ErrorBoundary.svelte': 3,
-  'src/shell/PhoneFrame.svelte': 5,
+  'src/shell/PhoneFrame.svelte': 3,
   'src/shell/Shell.svelte': 1,
   'src/shell/ToastHost.svelte': 20,
   'src/shell/VolumeHud.svelte': 5
@@ -145,6 +148,37 @@ describe('CEF capability baseline (AGENTS.md §6)', () => {
       );
 
     expect(stale, 'the ratchet tightened; update GRANDFATHERED to match').toEqual([]);
+  });
+
+  it('puts no opacity modifier on a themed role token', () => {
+    // A hard zero, not a budget, and the reasoning is different from the rule above.
+    //
+    // For a *palette* colour Tailwind emits an unguarded hex fallback beside the
+    // `@supports`-guarded `color-mix()`, so `bg-gray-800/50` does render in CEF 103 —
+    // that is why the rule above is a consistency ratchet rather than a bug count.
+    //
+    // A role token is themed at runtime: `PhoneFrame` writes all 47 as inline custom
+    // properties from the player's seed. Tailwind still computes its fallback from the
+    // literal in `app.css`, which is the *default* seed — so `bg-surface/50` renders the
+    // shipped theme's colour for anybody who changed theirs. It fails silently, only for
+    // some players, and only for the colour they explicitly picked.
+    //
+    // State layers are the sanctioned alternative and are already flattened to opaque
+    // values by `lib/m3.ts`: write `hover:bg-surface-container-hover`, not
+    // `hover:bg-surface-container/8`.
+    const roles = [...ROLE_NAMES].sort((a, b) => b.length - a.length).join('|');
+    const themedOpacity = new RegExp(
+      String.raw`\b(?:[a-z-]+:)*(?:${COLOR_PROPS})-(?:${roles})\/\d{1,3}\b`,
+      'g'
+    );
+
+    const offenders = FILES.flatMap(({ path, text }) =>
+      (text.match(themedOpacity) ?? []).map((hit) => `${path}: ${hit}`)
+    );
+
+    expect(offenders, 'use a pre-composited state-layer token, not an opacity modifier').toEqual(
+      []
+    );
   });
 
   it('uses no :has() variant', () => {

@@ -18,8 +18,18 @@ import { charge } from './state/charge';
  * element being right is what made the original bug so easy to miss.
  */
 
-/** Tailwind background utilities that would occlude the game world. */
-const OPAQUE_BG = /(^|\s)bg-(gray|black|white|slate|zinc|neutral|stone)-?\d*(\s|$)/;
+/**
+ * Tailwind background utilities that would occlude the game world.
+ *
+ * `surface*` is in the list because of how nearly this test stopped working. The
+ * original pattern named only raw palette families, so when the phone moved to M3
+ * colour roles a `bg-surface` on the screen — the obvious thing to reach for, and an
+ * opaque colour — matched nothing here. The suite would have stayed green while the
+ * viewfinder went black in game, which is the precise failure this file exists to
+ * catch. A role token is opaque like any other fill; the naming scheme changed, the
+ * hazard did not.
+ */
+const OPAQUE_BG = /(^|\s)bg-(gray|black|white|slate|zinc|neutral|stone|surface)[\w-]*(\s|$)/;
 
 // jsdom has no Web Animations API and Svelte's `transition:fly` calls it on mount.
 if (!Element.prototype.animate) {
@@ -64,7 +74,38 @@ describe('PhoneFrame transparency', () => {
   it('is opaque as normal when not transparent', () => {
     const { getByTestId } = renderFrame(false);
     expect(getByTestId('phone-frame').className).toMatch(/bg-gray-950/);
-    expect(getByTestId('phone-screen').className).toMatch(/bg-gray-900/);
+
+    // The screen's fill is the wallpaper, which is a class for a preset and an inline
+    // `background:` for a picked colour or a photo — so assert the *intent* rather than
+    // one of the two shapes. The previous assertion looked for `bg-gray-900|gradient`
+    // and was passing on the `gradient` half by coincidence: the `bg-gray-900` branch
+    // beside it could never apply, and the default wallpaper simply happens to be a
+    // gradient. Change the default to a solid colour and it would have failed for a
+    // reason that had nothing to do with anything being wrong.
+    const screen = getByTestId('phone-screen');
+    const painted =
+      /(^|\s)bg-gradient|(^|\s)bg-\w/.test(screen.className) ||
+      /background:/.test(screen.getAttribute('style') ?? '');
+    expect(painted, 'phone-screen has no wallpaper fill').toBe(true);
+  });
+
+  it('writes the theme onto the screen', () => {
+    // The screen is the theme root: these custom properties inherit from here into every
+    // app, so an app writing `bg-surface-container` resolves against whatever the player
+    // seeded. Nothing else in the suite would notice if they stopped being emitted —
+    // every utility would silently fall back to the shipped literal in `app.css`.
+    const style = renderFrame(false).getByTestId('phone-screen').getAttribute('style') ?? '';
+    expect(style).toContain('--color-surface:');
+    expect(style).toContain('--color-on-surface:');
+  });
+
+  it('writes the theme but not the wallpaper when transparent', () => {
+    // The wallpaper is withheld so the game world shows through, but the UI drawn over
+    // it still has to be themed. These two travel on the same attribute, so it is worth
+    // asserting that suppressing one does not take the other with it.
+    const style = renderFrame(true).getByTestId('phone-screen').getAttribute('style') ?? '';
+    expect(style).toContain('--color-surface:');
+    expect(style).not.toContain('background:');
   });
 
   it('stays opaque when the battery is dead, even if transparent was asked for', () => {

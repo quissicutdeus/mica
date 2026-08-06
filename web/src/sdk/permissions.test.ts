@@ -47,7 +47,14 @@ const REQUIRED_BY: Record<string, AppPermission> = {
    * were absent, so Settings' Apps pane could clear every app's data while declaring nothing.
    */
   appStorageBytes: 'storage',
-  clearAppStorage: 'storage'
+  clearAppStorage: 'storage',
+  /**
+   * Both persist a preference through `usePersisted`, so they carry its disclosure. The
+   * theme and the wallpaper are the phone's own appearance rather than anybody's data —
+   * but an app that sets them writes to storage, and that is what `storage` says.
+   */
+  useTheme: 'storage',
+  useWallpaper: 'storage'
 };
 
 const APPS_DIR = join(__dirname, '..', 'apps');
