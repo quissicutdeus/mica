@@ -406,6 +406,145 @@ capturing the pointer on its own `pointerdown` takes every touch that starts on 
 Doing it properly needs a grab handle to attach to and a transform that follows the finger, and
 swipe-to-clear needs per-row pointer handling that does not fight vertical scrolling.
 
+### A resource-facing export API
+
+gPhone exposes **one** export to the rest of the server: `exports('SendSystemEmail', ...)` in
+`server/services/Mail.ts`. Everything else in the tree named `exports` is gPhone _consuming_ somebody
+else — `pma-voice`, `screencapture`, `oxmysql`. There is no surface for another resource to make the
+phone do anything.
+
+That is the gap, and the worked example is signal. `signalLevel` is a `writable(4)` living in
+`web/src/shell/state/signal.ts`, set from the NUI. There is no entry in `shared/routes.ts`, no client
+handler and no server state, so the only way to change a player's bars today is Developer Tools on
+their own phone. A dispatch script cannot black out a district, and an EMP cannot exist, because there
+is nothing to call.
+
+**This is the interface half of _Cellular dead zones and outages_ above.** That entry describes the
+mechanism — server-held zones, client polling, pushed signal. This one describes how anything outside
+gPhone reaches it. Neither is much use alone.
+
+#### What makes this different from adding functions
+
+An export is a **public contract**. Once a server owner's dispatch script calls `SetSignalOutage`, the
+name, the argument order and the return shape cannot drift the way an internal function can, because
+breaking them breaks somebody else's resource silently and at runtime. So the surface needs the same
+treatment `shared/routes.ts` gets: one place that declares it, and a test that pins it. A rename that
+compiles is exactly the failure mode `routes.test.ts` exists to catch one layer down.
+
+Five rules the surface should be built to, each earned by something already in the tree:
+
+- **Return a discriminated outcome, never a bare boolean.** `PushOutcome` already does this —
+  `{ delivered: false, reason: 'offline' }` cannot be mistaken for success. An export returning
+  `false` for "player offline", "bad coordinates" and "gPhone has not started yet" is unusable from
+  the calling script.
+- **Never throw across the boundary.** An exception in an export propagates into the caller's
+  resource. `SendSystemEmail` already catches and returns `null`; that discipline has to be uniform
+  rather than incidental.
+- **Say which identity each export takes, and mean it.** Anything that must work for an offline
+  player — a notification, an email — takes a `citizenid`, because that is what the row is keyed on.
+  Anything inherently live — opening an app, reading whether the phone is on screen — takes a
+  `source`. Mixing them is how an export ends up silently no-opping for exactly the players it was
+  written for.
+- **Explicit parameters, not an implicit `source`.** The existing
+  `onNet('gphone:server:battery:useItem')` reads the net-event `source` global. `onNet` also
+  registers a local handler, so another _server_ resource can fire it with `TriggerEvent` — and gets
+  whatever `source` happens to hold, which for a locally-triggered event is not the player it meant.
+  An export taking the player explicitly cannot go wrong that way.
+- **A version, and a contract test.** `GetApiVersion()` so a caller can degrade rather than crash,
+  and a test that pins every exported name and arity so a rename has to be a deliberate act.
+
+Where it lives: one `server/lib/exports.ts` collecting the server surface and one `client/lib/exports.ts`
+for the client half, rather than an `exports(...)` call scattered through each service. The point is
+that the whole public surface can be read in one file — the same reason `shared/routes.ts` is one
+table. Both need the existing `typeof exports === 'function'` guard, since these modules are imported
+by the SQL codegen and by tests where `exports` is not callable.
+
+Server owners are the audience, so it is documented in `README.md`, not here — `web/README.md` is for
+frontend work and this file is not linked from anywhere.
+
+#### The proposed surface
+
+**Notifications and mail** — the two that need no new mechanism, because the services already exist
+and already persist for offline players.
+
+| Export                                      | Notes                                                       |
+| ------------------------------------------- | ----------------------------------------------------------- |
+| `SendSystemEmail(citizenid, mail)`          | Built.                                                      |
+| `SendNotification(citizenid, notification)` | Through `appEventChannel`, so it toasts and persists a row. |
+| `GetUnreadCount(citizenid, appId?)`         |                                                             |
+
+`SendNotification` has one design question worth settling before it ships: a notification names an
+`app`, and the shade groups by it. An external resource pushing under an app id it does not own would
+put its rows in another app's group. Either it always writes under a reserved `system` id, or the app
+id is validated against the registry and refused otherwise.
+
+**Battery** — the fun one, and the cheapest, because `server/services/Battery.ts` already owns saved
+charge and already pushes `gphone:client:battery:recharge`. These are thin wrappers over machinery
+that exists.
+
+| Export                            | Use                                                                                                  |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `SetBatteryLevel(source, level)`  | Set outright.                                                                                        |
+| `AddBatteryCharge(source, delta)` | Negative to drain — an EMP, a taser, a solar flare.                                                  |
+| `SetCharging(source, isCharging)` | A state, not an event: stand in your house or a vehicle and the drain loop reverses until you leave. |
+| `GetBatteryLevel(source)`         |                                                                                                      |
+
+`SetCharging` is the one that is not a one-liner. The drain loop lives client-side and reports every
+15 seconds; a charging state has to reverse its sign and survive the phone being closed, so it belongs
+in the same place the drain rate does rather than as a repeated `AddBatteryCharge` from outside.
+
+**Signal and reception** — the original ask.
+
+| Export                                   | Use                                                     |
+| ---------------------------------------- | ------------------------------------------------------- |
+| `SetGlobalSignal(level)`                 | City-wide outage. `0` is a blackout.                    |
+| `ClearGlobalSignal()`                    |                                                         |
+| `AddDeadZone({ coords, radius, level })` | Returns an id. An AOE — a jammer, a tunnel, a basement. |
+| `RemoveDeadZone(id)`                     |                                                         |
+| `SetSignal(source, level)`               | One player, overriding zones. A tinfoil hat.            |
+| `GetSignal(source)`                      |                                                         |
+
+Global and per-zone are deliberately the same primitive with a precedence order rather than two
+mechanisms, because two would drift the first time they disagreed. The client polling is the expensive
+part and wants a coarse interval with a cheap early-out, not a per-tick distance check per zone.
+
+**Phone state and identity.**
+
+| Export                             | Use                                                                          |
+| ---------------------------------- | ---------------------------------------------------------------------------- |
+| `GetPhoneNumber(citizenid)`        |                                                                              |
+| `GetCitizenId(phoneNumber)`        | The inverse; `PlayerDirectory` already resolves both directions.             |
+| `IsPhoneOpen(source)`              | Whether the player is currently looking at it.                               |
+| `SetPhoneEnabled(source, enabled)` | Confiscated, jailed, hospitalised — the phone will not open.                 |
+| `OpenApp(source, appId, props)`    | Deep-link from outside; `openFromNotification` already does this internally. |
+| `AddContact(citizenid, contact)`   | A job handing out its dispatch number.                                       |
+
+#### What this unblocks, beyond the ask
+
+Both decorative permissions in the capabilities list get a partial answer from the other direction. An
+export API means a resource that **already** has outbound HTTP can push prices into a gPhone app, and
+one that already tracks position can push location-derived state in — without gPhone growing
+`PerformHttpRequest` or a location capability of its own. That is a smaller, safer surface than either
+capability built natively, and it fits the pattern AGENTS.md §10 already sets for bank data: gPhone
+does not reach into another resource's domain, it accepts what that resource chooses to hand over.
+
+Crypto Tracker and Downtown Taxi are both listed below as blocked on exactly those two capabilities.
+Neither is unblocked outright by this — an app still needs somewhere to put the data — but it changes
+the question from "gPhone must grow HTTP" to "a companion resource pushes and gPhone stores".
+
+#### Deliberately out of scope
+
+Listed so nothing above reads as covering it: **client-side exports for other resources' client
+scripts** beyond what signal polling needs; anything that lets an external resource _read_ a player's
+messages, photos or notes, which is a privacy surface rather than an integration one and should stay
+closed; and a general "run any service action" export, which would hand out the whole `ServiceEndpoint`
+surface without the payload validation and rate limiting that §2.9 puts in front of it.
+
+New server logic here gets a server test (§9). The ones worth naming: an export returning its outcome
+rather than throwing when gPhone has not finished starting, a dead zone applying to a player inside it
+and not one outside, a notification refused under an app id that is not registered, and the contract
+test that pins the exported names.
+
 ### Blabber, next iteration
 
 Blabber today is **one screen**: a permanently-expanded composer pinned above the global public feed,
@@ -639,6 +778,11 @@ Referenced by number from the ideas above.
    `transfer` with a compensating refund and a `PaymentOutcome` union that cannot be mistaken for
    success. Best-effort, not ACID: there is no transaction spanning another resource's money system.
    Offline recipients are refused rather than dropped.
+
+6. **A resource-facing export API** — **not built.** One export exists, `SendSystemEmail`. There is
+   no way for another resource to raise a notification, change a player's signal or battery, or open
+   an app. _A resource-facing export API_ above is the proposal, and it is the interface half of
+   _Cellular dead zones and outages_.
 
 **`location` and `network` are permissions with no capability behind them.** An app can declare
 either and nothing changes, because there is no hook, endpoint or client surface to grant. The
