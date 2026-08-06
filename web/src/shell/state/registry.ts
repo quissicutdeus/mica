@@ -155,7 +155,7 @@ function createAppRegistry() {
         );
       }
 
-      if (import.meta.env.DEV && resolveComponent(validatedManifest.id)) {
+      if (import.meta.env.DEV && get(installed).some((a) => a.id === validatedManifest.id)) {
         console.warn(
           `gPhone App Registry: '${validatedManifest.id}' is already registered and is ` +
             `being replaced. Expected when reinstalling that app; a bug if this is a ` +

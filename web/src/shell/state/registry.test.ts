@@ -1,9 +1,41 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { AppComponent } from '@gphone/sdk';
 import { get } from 'svelte/store';
 import { appRegistryStore, registeredApps, getFirstBootTime, type AppManifest } from './registry';
 
 describe('App Registry Store', () => {
+  it('does not warn when installing a bundled add-on, but warns when replacing an already installed app', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const blabberComponent = appRegistryStore.getComponent('blabber') as AppComponent;
+      expect(get(appRegistryStore).some((a) => a.id === 'blabber')).toBe(false);
+
+      // Clean bundled add-on install should log no warning
+      appRegistryStore.registerApp(
+        { id: 'blabber', name: 'Blabber', color: 'bg-sky-500', icon: null, core: false },
+        blabberComponent
+      );
+      expect(warnSpy).not.toHaveBeenCalled();
+
+      // Registering over an already installed app should trigger warning
+      appRegistryStore.registerApp(
+        {
+          id: 'blabber',
+          name: 'Blabber Reinstalled',
+          color: 'bg-sky-500',
+          icon: null,
+          core: false
+        },
+        blabberComponent
+      );
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toContain('is already registered and is being replaced');
+    } finally {
+      warnSpy.mockRestore();
+      appRegistryStore.unregisterApp('blabber');
+    }
+  });
+
   it('loads built-in manifests on startup with first boot timestamps', () => {
     const apps = get(appRegistryStore);
     expect(apps.length).toBeGreaterThan(0);

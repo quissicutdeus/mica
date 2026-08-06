@@ -286,6 +286,10 @@ Two constraints shape every schema item below:
 - **Base64 will not carry video.** `gphone_photos.image` is `mediumtext` holding base64; a video or
   voice clip at that size will not survive crossing NUI.
 
+### Wallpapers & Camera Decoupled Capture Resolution
+
+Wallpapers in Settings are unbuilt and removed from the manifest description. Image capture in `apps/camera/index.svelte` crops `containerRef.getBoundingClientRect()` against `window.innerWidth`/`Height`, tying capture resolution directly to on-screen container bounds. Capture resolution must be decoupled from display scale before custom wallpaper functionality can be implemented cleanly.
+
 ### Blabber, next iteration
 
 Blabber today is **one screen**: a permanently-expanded composer pinned above the global public feed,
