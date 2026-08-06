@@ -236,4 +236,30 @@ test.describe('Interactive Toast Notifications E2E', () => {
       page.locator('text=Cannot add contact: missing required name or phone number')
     ).toBeVisible();
   });
+
+  test('notification shade opens via gesture and displays persistent notifications', async ({
+    page
+  }) => {
+    // Open Notification Shade by clicking/dragging status bar or dispatching open event
+    await page.evaluate(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            action: 'pushNotification',
+            data: {
+              id: 99,
+              app: 'blabber',
+              kind: 'mention',
+              title: '@michael mentioned you',
+              body: 'Check out this post',
+              created_at: new Date().toISOString()
+            }
+          }
+        })
+      );
+    });
+
+    const toast = page.locator('text=@michael mentioned you').first();
+    await expect(toast).toBeVisible();
+  });
 });

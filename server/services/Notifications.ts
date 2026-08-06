@@ -1,7 +1,7 @@
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { NotificationItem } from '@shared/types';
 import { Database } from '../lib/Database';
-import { fields, optionalString, requirePositiveInt } from '../lib/payload';
+import { fields, requirePositiveInt } from '../lib/payload';
 
 export class NotificationsRepository extends SchemaRepository<NotificationItem> {
   /** Unscoped batch create for background persistent pushes to online and offline recipients. */

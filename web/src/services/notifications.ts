@@ -1,4 +1,4 @@
-import { writable, derived, get } from 'svelte/store';
+import { writable, derived } from 'svelte/store';
 import type { NotificationItem } from '@shared/types';
 import { fetchNui } from '../nui/fetchNui';
 import { subscribeAppEvent } from '../shell/state/appEvents';

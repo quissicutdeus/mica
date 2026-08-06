@@ -3,6 +3,7 @@ import { Mail } from '@shared/types';
 import { AuditLogger } from '../lib/AuditLogger';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { Database } from '../lib/Database';
+import { appEventChannel } from '../lib/appEvents';
 import { fields, flagUnlessFalse, requirePositiveInt } from '../lib/payload';
 
 /**
@@ -154,6 +155,23 @@ const SendSystemEmail = async (
         break;
       }
     }
+
+    const channel = appEventChannel('mail');
+    channel.push(
+      targetCitizenId,
+      'email',
+      { id, sender: emailData.sender, subject: emailData.subject },
+      {
+        notify: {
+          type: 'info',
+          title: `Email from ${emailData.sender}`,
+          message: emailData.subject
+        },
+        kind: 'email',
+        title: `Email from ${emailData.sender}`,
+        deepLink: `mail/${id}`
+      }
+    );
 
     return newMail;
   } catch (error) {

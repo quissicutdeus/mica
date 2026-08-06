@@ -212,7 +212,12 @@ const notifyMentions = async (body: string, fromHandle: string, blabId: number):
     citizenids,
     'mention',
     { blab_id: blabId, handle: fromHandle },
-    { notify: { type: 'info', title: `@${fromHandle} mentioned you`, message: body.slice(0, 120) } }
+    {
+      notify: { type: 'info', title: `@${fromHandle} mentioned you`, message: body.slice(0, 120) },
+      kind: 'mention',
+      title: `@${fromHandle} mentioned you`,
+      deepLink: `blab/${blabId}`
+    }
   );
 };
 

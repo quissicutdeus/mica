@@ -2,9 +2,10 @@
   import {
     AddIcon,
     Avatar,
+    BellIcon,
     EmptyState,
     FloatingActionButton,
-    ListBulletIcon,
+    HomeIcon,
     MessageIcon,
     Screen,
     Skeleton,
@@ -79,7 +80,9 @@
    * have no server behind them yet, and a tab that apologises for itself is the Store's invented
    * add-ons one layer down.
    */
-  let tab = $state<'feed' | 'following'>('feed');
+  import NotificationsTab from './components/NotificationsTab.svelte';
+
+  let tab = $state<'feed' | 'following' | 'notifications'>('feed');
   /** Which correspondent's thread is open, or null for the inbox. */
   let dmPeer = $state<number | null>(null);
   /**
@@ -502,8 +505,9 @@
       selected={tab}
       onchange={selectTab}
       options={[
-        { id: 'feed', label: 'Feed', icon: ListBulletIcon },
-        { id: 'following', label: 'Following', icon: UsersIcon }
+        { id: 'feed', label: 'Feed', icon: HomeIcon },
+        { id: 'following', label: 'Following', icon: UsersIcon },
+        { id: 'notifications', label: 'Notifications', icon: BellIcon }
       ]}
     />
   {/if}
@@ -552,10 +556,14 @@
   {:else if $myAccounts.length === 0}
     <!-- Nothing to post from yet. Told, rather than shown an empty feed and a dead composer. -->
     <ClaimHandle busy={$busy} onclaim={claim} />
+  {:else if tab === 'notifications'}
+    <NotificationsTab
+      onopenblab={(blabId) => openThread({ id: blabId } as Blab)}
+      onopenhandle={openProfile}
+    />
   {:else if tab === 'following'}
-    <!-- `pb-16` clears the nav, which lives outside this scroll container: without it the last
-         row hides underneath the bar. -->
-    <div class="flex-1 overflow-y-auto pb-16" onscroll={followingPage.onScroll}>
+    <!-- `pb-20` clears the nav and safe bottom inset: without it the last row hides underneath the bar. -->
+    <div class="flex-1 overflow-y-auto pb-20" onscroll={followingPage.onScroll}>
       {#if !$followingLoaded}
         <div class="p-4"><Skeleton count={4} height="h-16" /></div>
       {:else if $followingFeed.length === 0}
@@ -586,7 +594,7 @@
       {/if}
     </div>
   {:else}
-    <div class="flex-1 overflow-y-auto pb-16" onscroll={page.onScroll}>
+    <div class="flex-1 overflow-y-auto pb-20" onscroll={page.onScroll}>
       {#if !$feedLoaded}
         <!-- Still waiting on the first page. "Nothing here yet" is a claim about the feed, and
              making it before the server has answered is a claim the app cannot support. -->

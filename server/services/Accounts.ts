@@ -1,5 +1,6 @@
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
+import { appEventChannel } from '../lib/appEvents';
 import { Account } from '@shared/types';
 import { fields, optionalString, pageBounds, requirePositiveInt } from '../lib/payload';
 
@@ -271,8 +272,8 @@ app.registerEvent('follow', async (source, cbId, data, citizenid) => {
    * a Blabber account to an Instagram-alike one would be a following relation neither app's
    * feed could explain, and the app segment is the only thing keeping the two graphs apart.
    */
-  const followee = await Database.single<{ id: number }>(
-    `SELECT \`id\` FROM \`gphone_accounts\`
+  const followee = await Database.single<{ id: number; citizenid: string; handle: string }>(
+    `SELECT \`id\`, \`citizenid\`, \`handle\` FROM \`gphone_accounts\`
      WHERE \`id\` = ? AND \`app\` = ? AND \`status\` = 'active' LIMIT 1`,
     [followeeId, appId]
   );
@@ -282,6 +283,23 @@ app.registerEvent('follow', async (source, cbId, data, citizenid) => {
     await Database.insert(
       'INSERT INTO `gphone_account_follows` (`follower_account_id`, `followee_account_id`) VALUES (?, ?)',
       [follower.id, followee.id]
+    );
+
+    const channel = appEventChannel(appId);
+    channel.push(
+      followee.citizenid,
+      'follow',
+      { follower_account_id: follower.id, handle: follower.handle },
+      {
+        notify: {
+          type: 'info',
+          title: `@${follower.handle} followed you`,
+          message: `Started following @${followee.handle}`
+        },
+        kind: 'follow',
+        title: `@${follower.handle} followed you`,
+        deepLink: `profile/${follower.handle}`
+      }
     );
   } catch (error) {
     // The unique index refusing a duplicate. Reported as success: from the player's point of
