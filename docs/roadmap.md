@@ -270,6 +270,66 @@ is a real button precisely so clicking away works.
 
 ---
 
+### Notifications as an OS service
+
+`gphone_notifications` is declared in `server/services/Notifications.ts` with
+`{ read: 'owner', write: 'server' }` — rows arrive from the server and a player can mark them read
+or clear them, which is a soft delete onto `cleared_at` rather than a row disappearing. Three
+indexes, one per read: `(citizenid, cleared_at, id)` for the shade, `(citizenid, app, id)` for a
+per-app tab, `(citizenid, read_at)` for the unread badges. `gphone_notification_retention` (days,
+default 30) prunes on resource start.
+
+Persistence rides on the push channel rather than beside it: `appEventChannel(id).push` with a
+`notify` block writes a row as well as raising the toast, for online and offline recipients alike,
+and the write is fire-and-forget so it cannot fail the event that occasioned it. Mail, Blabber
+mentions, Blabber DMs and new followers all arrive this way.
+
+`useNotifications(appId?)` is the whole client surface — items filtered to one app, that app's
+unread count, `markRead`, `clear`, `clearAll` — and it is **generic**, keyed on an app id rather
+than on anything the SDK knows the name of. That is what lets any app, including one the SDK has
+never heard of, feed a launcher badge: Blabber composes its own from this plus its own mention and
+DM counts, through `lazyBadge`. `usePhoneNotification` remains for ephemeral feedback that should
+not persist — "Copied to clipboard" is not a notification.
+
+The shade itself groups by app, expands a group in place, and has an archive of cleared items that
+can be restored. It opens from the status bar and closes from the home indicator or the backdrop.
+Two things specified alongside it are **not** built and are in _Proposed_ below: its drag and swipe
+gestures, and the toast visual hierarchy.
+
+### Network and Bluetooth settings
+
+Settings > Network holds two persisted toggles, Cellular Service and Bluetooth Visibility, and
+Bluetooth drives the status-bar icon.
+
+**Neither toggle gates anything yet**, and that is worth stating plainly because the UI implies
+otherwise. Turning cellular off changes no app's behaviour, and Bluetooth visibility has no
+proximity surface to be visible to — the privacy model it exists to serve is in _Proposed_ below.
+They are settings that persist a preference, which is the first half of the feature.
+
+### Material 3 color system
+
+Every color in the phone is generated from one seed. `web/src/lib/m3.ts` builds the 34 standard M3
+roles plus 13 derived state-layer values with `@material/material-color-utilities`, and
+`shell/state/theme.ts` writes all 47 as custom properties onto the phone screen element, where they
+inherit into every app. `app.css` holds the shipped dark scheme as literals so first paint and every
+jsdom render are correct before any JS runs, and `m3.test.ts` asserts those literals are exactly what
+the engine produces.
+
+The wallpaper is generated from the same seed, so a preset and a color dragged off the wheel are the
+same operation — a preset is a named color and nothing else. A photo wallpaper instead quantizes the
+image and takes its dominant color as the seed.
+
+Two constraints shape the implementation, both from the Chromium 103 baseline (AGENTS.md §6). All
+tone maths runs in JS and emits resolved `rgb()`, because `color-mix()` and `oklch()` are out of
+reach; M3's state layers are therefore composited numerically into flat opaque tokens rather than
+expressed as opacity modifiers. And `sdk/cef.test.ts` fails outright on an opacity modifier applied
+to a role token, because Tailwind computes its fallback from the build-time literal and would render
+the _default_ seed's color for anyone who changed theirs.
+
+`SchemeVibrant`, not M3's default `SchemeTonalSpot`: the default is documented as "low to medium
+colorfulness" and returned a picked color noticeably muted. Measured across eleven seeds, Vibrant
+carries about half again the chroma at identical worst-case contrast.
+
 ## Proposed, not built
 
 Nothing in this section exists in the code. The reasoning sits beside each item rather than in a
@@ -286,9 +346,65 @@ Two constraints shape every schema item below:
 - **Base64 will not carry video.** `gphone_photos.image` is `mediumtext` holding base64; a video or
   voice clip at that size will not survive crossing NUI.
 
-### Wallpapers & Camera Decoupled Capture Resolution
+### Camera capture resolution is tied to display scale
 
-Wallpapers in Settings are unbuilt and removed from the manifest description. Image capture in `apps/camera/index.svelte` crops `containerRef.getBoundingClientRect()` against `window.innerWidth`/`Height`, tying capture resolution directly to on-screen container bounds. Capture resolution must be decoupled from display scale before custom wallpaper functionality can be implemented cleanly.
+`apps/camera/index.svelte` crops `containerRef.getBoundingClientRect()` against
+`window.innerWidth`/`Height`, so what a photo _is_ depends on how large the phone happened to be
+drawn when it was taken. Settings > Display scales the frame with a `transform`, which means the same
+shot produces a different image at a different setting.
+
+This used to be filed as the blocker for wallpapers. It is not — wallpapers ship, and a photo can be
+one — but it is still wrong on its own terms, and it is the reason a photo wallpaper is sharper or
+softer depending on a setting that has nothing to do with the camera. Capture belongs at a fixed
+resolution independent of the on-screen box.
+
+### Cellular dead zones and outages
+
+The Cellular Service toggle persists a preference and gates nothing. The proposal it came from went
+further: the server holding outage state and a set of spatial dead zones, the game client polling the
+player's coordinates against them, and signal level pushed down from that rather than set by hand.
+
+What has to be decided first is what "no signal" means to an app, and the honest answer is that it is
+a per-app question. Messages, Phone, Blabber, Store, Bank and Mail need a live connection; Notes,
+Camera, Photos, Calculator and Settings are local and should not care. `network` is already a
+declared permission with nothing behind it (see the capabilities list below), and this is the
+capability that would give it meaning — which also makes it the point at which every app needs a
+0-bar path that degrades rather than throws.
+
+### Bluetooth proximity, and the anti-doxxing model it exists for
+
+Bluetooth Visibility is a persisted toggle and a status-bar icon. The feature underneath is
+short-range peer-to-peer between nearby players — contact exchange, local file drops — that works
+where there is no cell reception.
+
+The privacy argument is the part worth keeping. Phone systems that expose a character's name or
+number to anyone nearby whenever the phone is out cause accidental self-doxxing, and the person doxxed
+never chose it. So visibility is the player's switch: off means invisible to proximity scans and
+unsolicited shares are refused, and the setting persists. That is why the toggle shipped ahead of the
+capability rather than with it — the default and the persistence are the parts a player relies on.
+
+Nothing enumerates nearby players yet, on either side.
+
+### Notification toast hierarchy
+
+Toasts carry a title and a body and, for messages and contacts, an avatar. The specified layout also
+has the source app's icon and its name in a smaller header face above the primary line, so a toast
+says which app is talking before it says what about.
+
+`ToastHost.svelte` has no access to an app icon today: a toast is raised by kind, not by app id, so
+this needs the toast payload to carry the originating app and the launcher's manifest lookup to be
+reachable from the shell.
+
+### Notification shade gestures
+
+The shade opens from the status bar and closes from the home indicator or the backdrop. It does not
+drag open, and rows do not swipe to clear.
+
+Handlers for the drag existed and were wired to nothing — removed in the commit that found them,
+because they could not have worked as written: the drawer is `inset-0` around a scrolling list, and
+capturing the pointer on its own `pointerdown` takes every touch that starts on a notification row.
+Doing it properly needs a grab handle to attach to and a transform that follows the finger, and
+swipe-to-clear needs per-row pointer handling that does not fight vertical scrolling.
 
 ### Blabber, next iteration
 
@@ -525,4 +641,7 @@ Referenced by number from the ideas above.
    Offline recipients are refused rather than dropped.
 
 **`location` and `network` are permissions with no capability behind them.** An app can declare
-either and nothing changes, because there is no hook, endpoint or client surface to grant.
+either and nothing changes, because there is no hook, endpoint or client surface to grant. The
+Cellular Service toggle in Settings > Network does not change this: it persists a preference and
+nothing reads it. _Cellular dead zones and outages_ above is the proposal that would give `network`
+something to mean.
