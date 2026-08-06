@@ -218,15 +218,15 @@
   <!-- Notification Shade Drawer -->
   <div
     transition:fly={{ y: -850, duration: 300 }}
-    class="bg-surface-overlay absolute inset-0 z-50 flex h-full w-full flex-col pt-10 pb-2 text-white shadow-2xl backdrop-blur-3xl"
+    class="bg-surface-container-high text-on-surface absolute inset-0 z-50 flex h-full w-full flex-col pt-14 pb-2 shadow-2xl backdrop-blur-3xl"
     role="dialog"
     aria-label="Notification Shade"
   >
     <!-- Header Bar -->
     <div class="mb-4 flex items-center justify-between px-6">
       <div class="flex items-baseline gap-2">
-        <h2 class="text-lg font-bold tracking-tight text-white">Notifications</h2>
-        <span class="text-xs font-semibold tracking-wider text-blue-400 uppercase">
+        <h2 class="text-on-surface text-lg font-bold tracking-tight">Notifications</h2>
+        <span class="text-primary text-xs font-semibold tracking-wider uppercase">
           {showHistory ? 'Archive' : 'Active'}
         </span>
       </div>
@@ -236,7 +236,7 @@
           {#if notifications.length > 0}
             <button
               type="button"
-              class="rounded-full bg-gray-900 p-2 text-gray-400 transition-colors hover:bg-gray-800 hover:text-red-400"
+              class="bg-surface text-on-surface-variant hover:bg-surface-container hover:text-error rounded-full p-2 transition-colors"
               onclick={handleClearAll}
               title="Clear all notifications"
               aria-label="Clear all notifications"
@@ -247,7 +247,7 @@
 
           <button
             type="button"
-            class="rounded-full bg-gray-900 p-2 text-gray-400 transition-colors hover:bg-gray-800 hover:text-blue-400"
+            class="bg-surface text-on-surface-variant hover:bg-surface-container hover:text-primary rounded-full p-2 transition-colors"
             onclick={openHistory}
             title="Notification Archive"
             aria-label="Notification Archive"
@@ -257,7 +257,7 @@
         {:else}
           <button
             type="button"
-            class="rounded-full bg-gray-800 p-2 text-blue-400 ring-1 ring-blue-500 transition-colors hover:bg-gray-700 hover:text-blue-300"
+            class="bg-surface-container text-primary ring-primary hover:bg-surface-container-high hover:text-primary rounded-full p-2 ring-1 transition-colors"
             onclick={closeHistory}
             title="Back to Active Notifications"
             aria-label="Back to Active Notifications"
@@ -268,7 +268,7 @@
 
         <button
           type="button"
-          class="rounded-full bg-gray-900 p-2 text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
+          class="bg-surface text-on-surface-variant hover:bg-surface-container hover:text-on-surface rounded-full p-2 transition-colors"
           onclick={closeShade}
           title="Close"
           aria-label="Close notification shade"
@@ -283,21 +283,23 @@
       {#if showHistory}
         <!-- History List View -->
         {#if loadingHistory}
-          <div class="flex h-full flex-col items-center justify-center space-y-2 text-gray-500">
+          <div
+            class="text-on-surface-variant flex h-full flex-col items-center justify-center space-y-2"
+          >
             <p class="text-sm">Loading archive...</p>
           </div>
         {:else if historyItems.length === 0}
           <div
-            class="flex h-full flex-col items-center justify-center space-y-3 text-center text-gray-500"
+            class="text-on-surface-variant flex h-full flex-col items-center justify-center space-y-3 text-center"
           >
             <div
-              class="flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-900 ring-1 ring-gray-800"
+              class="bg-surface ring-outline-variant flex h-14 w-14 items-center justify-center rounded-2xl ring-1"
             >
-              <ArchiveIcon class="h-7 w-7 text-gray-400" />
+              <ArchiveIcon class="text-on-surface-variant h-7 w-7" />
             </div>
             <div>
-              <p class="text-sm font-semibold text-gray-300">No Archive Yet</p>
-              <p class="text-xs text-gray-500">Cleared notifications will appear here</p>
+              <p class="text-on-surface text-sm font-semibold">No Archive Yet</p>
+              <p class="text-on-surface-variant text-xs">Cleared notifications will appear here</p>
             </div>
           </div>
         {:else}
@@ -308,7 +310,7 @@
                 {@const item = group.latest}
                 <div
                   transition:fly={{ y: 10, duration: 150 }}
-                  class="group relative flex cursor-pointer items-start gap-3 rounded-2xl border border-gray-800 bg-gray-900 p-3.5 opacity-90 shadow-lg backdrop-blur-md transition-all hover:border-gray-700 hover:bg-gray-900 hover:opacity-100 active:scale-[0.99]"
+                  class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface relative flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 opacity-90 shadow-lg backdrop-blur-md transition-all hover:opacity-100 active:scale-[0.99]"
                   onclick={() => handleRowClick(item)}
                   role="button"
                   tabindex={0}
@@ -332,16 +334,16 @@
                   <!-- Content Area -->
                   <div class="min-w-0 flex-1 space-y-0.5">
                     <div class="flex items-center justify-between gap-2">
-                      <span class="text-xs font-semibold tracking-wide text-blue-400 uppercase">
+                      <span class="text-primary text-xs font-semibold tracking-wide uppercase">
                         {item.app}
                       </span>
                       <div class="flex items-center gap-2">
-                        <span class="text-[10px] font-medium text-gray-500">
+                        <span class="text-on-surface-variant text-[10px] font-medium">
                           {formatTimestamp(item.cleared_at ?? item.created_at)}
                         </span>
                         <button
                           type="button"
-                          class="shrink-0 rounded-full p-1 text-red-400 transition-all hover:bg-gray-800 hover:text-white"
+                          class="text-error hover:bg-surface-container hover:text-on-surface shrink-0 rounded-full p-1 transition-all"
                           onclick={(e) => handleRestoreSingle(e, item.id)}
                           title="Restore to Active notifications"
                           aria-label="Restore to Active notifications"
@@ -351,11 +353,11 @@
                       </div>
                     </div>
 
-                    <h3 class="truncate text-sm font-semibold text-white">
+                    <h3 class="text-on-surface truncate text-sm font-semibold">
                       {item.title}
                     </h3>
 
-                    <p class="line-clamp-2 text-xs leading-relaxed text-gray-300">
+                    <p class="text-on-surface line-clamp-2 text-xs leading-relaxed">
                       {item.body}
                     </p>
                   </div>
@@ -363,7 +365,7 @@
               {:else}
                 <!-- Grouped Collapsible Archive Stack -->
                 <div
-                  class="rounded-2xl border border-gray-800 bg-gray-900 p-3.5 opacity-90 shadow-xl backdrop-blur-md hover:opacity-100"
+                  class="border-outline-variant bg-surface rounded-2xl border p-3.5 opacity-90 shadow-xl backdrop-blur-md hover:opacity-100"
                 >
                   <!-- Group Header Card -->
                   <div
@@ -390,22 +392,22 @@
                     <div class="min-w-0 flex-1 space-y-0.5">
                       <div class="flex items-center justify-between gap-2">
                         <div class="flex items-center gap-2">
-                          <span class="text-xs font-bold tracking-wide text-blue-400 uppercase">
+                          <span class="text-primary text-xs font-bold tracking-wide uppercase">
                             {group.app}
                           </span>
                           <span
-                            class="inline-flex items-center rounded-full bg-blue-900 px-2 py-0.5 text-[10px] font-semibold text-blue-300 ring-1 ring-blue-700"
+                            class="bg-primary-container text-on-primary-container ring-primary inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1"
                           >
                             {group.items.length} notifications
                           </span>
                         </div>
                         <div class="flex items-center gap-1.5">
-                          <span class="text-[10px] font-medium text-gray-500">
+                          <span class="text-on-surface-variant text-[10px] font-medium">
                             {formatTimestamp(group.latest.cleared_at ?? group.latest.created_at)}
                           </span>
                           <button
                             type="button"
-                            class="rounded-full p-1 text-red-400 transition-colors hover:bg-gray-800 hover:text-white"
+                            class="text-error hover:bg-surface-container hover:text-on-surface rounded-full p-1 transition-colors"
                             onclick={(e) => handleRestoreGroup(e, group.app)}
                             title={`Restore all ${group.app} notifications`}
                             aria-label={`Restore all ${group.app} notifications`}
@@ -413,19 +415,19 @@
                             <TrashIcon class="h-3.5 w-3.5" />
                           </button>
                           <ChevronDownIcon
-                            class="h-4 w-4 text-gray-400 transition-transform duration-200 {expandedHistoryGroups[
+                            class="text-on-surface-variant h-4 w-4 transition-transform duration-200 {expandedHistoryGroups[
                               group.app
                             ]
-                              ? 'rotate-180 text-blue-400'
+                              ? 'text-primary rotate-180'
                               : ''}"
                           />
                         </div>
                       </div>
 
-                      <h3 class="truncate text-sm font-semibold text-white">
+                      <h3 class="text-on-surface truncate text-sm font-semibold">
                         {group.latest.title}
                       </h3>
-                      <p class="line-clamp-1 text-xs text-gray-400">
+                      <p class="text-on-surface-variant line-clamp-1 text-xs">
                         {group.latest.body}
                       </p>
                     </div>
@@ -435,11 +437,11 @@
                   {#if expandedHistoryGroups[group.app]}
                     <div
                       transition:fly={{ y: -5, duration: 150 }}
-                      class="mt-3 space-y-2 border-t border-gray-800 pt-2.5 pr-1 pl-2"
+                      class="border-outline-variant mt-3 space-y-2 border-t pt-2.5 pr-1 pl-2"
                     >
                       {#each group.items as childItem (childItem.id)}
                         <div
-                          class="group/item flex cursor-pointer items-start gap-2.5 rounded-xl border border-gray-800 bg-gray-950 p-2.5 transition-colors hover:border-gray-700 hover:bg-gray-800 active:scale-[0.99]"
+                          class="group/item border-outline-variant bg-surface-container-lowest hover:border-outline-variant hover:bg-surface-container flex cursor-pointer items-start gap-2.5 rounded-xl border p-2.5 transition-colors active:scale-[0.99]"
                           onclick={() => handleRowClick(childItem)}
                           role="button"
                           tabindex={0}
@@ -452,16 +454,16 @@
                         >
                           <div class="min-w-0 flex-1 space-y-0.5">
                             <div class="flex items-center justify-between gap-2">
-                              <h4 class="truncate text-xs font-semibold text-white">
+                              <h4 class="text-on-surface truncate text-xs font-semibold">
                                 {childItem.title}
                               </h4>
                               <div class="flex items-center gap-1.5">
-                                <span class="text-[10px] text-gray-500">
+                                <span class="text-on-surface-variant text-[10px]">
                                   {formatTimestamp(childItem.cleared_at ?? childItem.created_at)}
                                 </span>
                                 <button
                                   type="button"
-                                  class="rounded-full p-0.5 text-red-400 transition-colors hover:text-white"
+                                  class="text-error hover:text-on-surface rounded-full p-0.5 transition-colors"
                                   onclick={(e) => handleRestoreSingle(e, childItem.id)}
                                   title="Restore to Active notifications"
                                   aria-label="Restore to Active notifications"
@@ -470,7 +472,7 @@
                                 </button>
                               </div>
                             </div>
-                            <p class="line-clamp-2 text-xs leading-relaxed text-gray-300">
+                            <p class="text-on-surface line-clamp-2 text-xs leading-relaxed">
                               {childItem.body}
                             </p>
                           </div>
@@ -491,12 +493,12 @@
             class="flex h-full w-full flex-col items-center justify-center space-y-3.5 text-center select-none"
           >
             <div
-              class="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-900 shadow-md ring-1 ring-gray-800"
+              class="bg-surface ring-outline-variant flex h-16 w-16 items-center justify-center rounded-2xl shadow-md ring-1"
             >
               <CheckIcon class="h-8 w-8 text-emerald-400" />
             </div>
             <div>
-              <p class="text-base font-semibold text-gray-200">No New Notifications</p>
+              <p class="text-on-surface text-base font-semibold">No New Notifications</p>
             </div>
           </div>
         {:else}
@@ -507,7 +509,7 @@
                 {@const item = group.latest}
                 <div
                   transition:fly={{ y: 10, duration: 150 }}
-                  class="group relative flex cursor-pointer items-start gap-3 rounded-2xl border border-gray-800 bg-gray-900 p-3.5 shadow-lg backdrop-blur-md transition-all hover:border-gray-700 hover:bg-gray-900 active:scale-[0.99]"
+                  class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface relative flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 shadow-lg backdrop-blur-md transition-all active:scale-[0.99]"
                   onclick={() => handleRowClick(item)}
                   role="button"
                   tabindex={0}
@@ -531,16 +533,16 @@
                   <!-- Content Area -->
                   <div class="min-w-0 flex-1 space-y-0.5">
                     <div class="flex items-center justify-between gap-2">
-                      <span class="text-xs font-semibold tracking-wide text-blue-400 uppercase">
+                      <span class="text-primary text-xs font-semibold tracking-wide uppercase">
                         {item.app}
                       </span>
                       <div class="flex items-center gap-2">
-                        <span class="text-[10px] font-medium text-gray-500">
+                        <span class="text-on-surface-variant text-[10px] font-medium">
                           {formatTimestamp(item.created_at)}
                         </span>
                         <button
                           type="button"
-                          class="shrink-0 rounded-full p-1 text-gray-400 opacity-0 transition-all group-hover:opacity-100 hover:bg-gray-800 hover:text-red-400"
+                          class="text-on-surface-variant hover:bg-surface-container hover:text-error shrink-0 rounded-full p-1 opacity-0 transition-all group-hover:opacity-100"
                           onclick={(e) => handleClearSingle(e, item.id)}
                           title="Clear notification"
                           aria-label="Clear notification"
@@ -550,11 +552,11 @@
                       </div>
                     </div>
 
-                    <h3 class="truncate text-sm font-semibold text-white">
+                    <h3 class="text-on-surface truncate text-sm font-semibold">
                       {item.title}
                     </h3>
 
-                    <p class="line-clamp-2 text-xs leading-relaxed text-gray-300">
+                    <p class="text-on-surface line-clamp-2 text-xs leading-relaxed">
                       {item.body}
                     </p>
                   </div>
@@ -562,7 +564,7 @@
               {:else}
                 <!-- Grouped Collapsible App Stack -->
                 <div
-                  class="rounded-2xl border border-gray-800 bg-gray-900 p-3.5 shadow-xl backdrop-blur-md"
+                  class="border-outline-variant bg-surface rounded-2xl border p-3.5 shadow-xl backdrop-blur-md"
                 >
                   <!-- Group Header Card -->
                   <div
@@ -589,22 +591,22 @@
                     <div class="min-w-0 flex-1 space-y-0.5">
                       <div class="flex items-center justify-between gap-2">
                         <div class="flex items-center gap-2">
-                          <span class="text-xs font-bold tracking-wide text-blue-400 uppercase">
+                          <span class="text-primary text-xs font-bold tracking-wide uppercase">
                             {group.app}
                           </span>
                           <span
-                            class="inline-flex items-center rounded-full bg-blue-900 px-2 py-0.5 text-[10px] font-semibold text-blue-300 ring-1 ring-blue-700"
+                            class="bg-primary-container text-on-primary-container ring-primary inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1"
                           >
                             {group.items.length} notifications
                           </span>
                         </div>
                         <div class="flex items-center gap-1.5">
-                          <span class="text-[10px] font-medium text-gray-500">
+                          <span class="text-on-surface-variant text-[10px] font-medium">
                             {formatTimestamp(group.latest.created_at)}
                           </span>
                           <button
                             type="button"
-                            class="rounded-full p-1 text-gray-400 transition-colors hover:bg-gray-800 hover:text-red-400"
+                            class="text-on-surface-variant hover:bg-surface-container hover:text-error rounded-full p-1 transition-colors"
                             onclick={(e) => handleClearGroup(e, group.app)}
                             title={`Clear all ${group.app} notifications`}
                             aria-label={`Clear all ${group.app} notifications`}
@@ -612,19 +614,19 @@
                             <TrashIcon class="h-3.5 w-3.5" />
                           </button>
                           <ChevronDownIcon
-                            class="h-4 w-4 text-gray-400 transition-transform duration-200 {expandedGroups[
+                            class="text-on-surface-variant h-4 w-4 transition-transform duration-200 {expandedGroups[
                               group.app
                             ]
-                              ? 'rotate-180 text-blue-400'
+                              ? 'text-primary rotate-180'
                               : ''}"
                           />
                         </div>
                       </div>
 
-                      <h3 class="truncate text-sm font-semibold text-white">
+                      <h3 class="text-on-surface truncate text-sm font-semibold">
                         {group.latest.title}
                       </h3>
-                      <p class="line-clamp-1 text-xs text-gray-400">
+                      <p class="text-on-surface-variant line-clamp-1 text-xs">
                         {group.latest.body}
                       </p>
                     </div>
@@ -634,11 +636,11 @@
                   {#if expandedGroups[group.app]}
                     <div
                       transition:fly={{ y: -5, duration: 150 }}
-                      class="mt-3 space-y-2 border-t border-gray-800 pt-2.5 pr-1 pl-2"
+                      class="border-outline-variant mt-3 space-y-2 border-t pt-2.5 pr-1 pl-2"
                     >
                       {#each group.items as childItem (childItem.id)}
                         <div
-                          class="group/item flex cursor-pointer items-start gap-2.5 rounded-xl border border-gray-800 bg-gray-950 p-2.5 transition-colors hover:border-gray-700 hover:bg-gray-800 active:scale-[0.99]"
+                          class="group/item border-outline-variant bg-surface-container-lowest hover:border-outline-variant hover:bg-surface-container flex cursor-pointer items-start gap-2.5 rounded-xl border p-2.5 transition-colors active:scale-[0.99]"
                           onclick={() => handleRowClick(childItem)}
                           role="button"
                           tabindex={0}
@@ -651,16 +653,16 @@
                         >
                           <div class="min-w-0 flex-1 space-y-0.5">
                             <div class="flex items-center justify-between gap-2">
-                              <h4 class="truncate text-xs font-semibold text-white">
+                              <h4 class="text-on-surface truncate text-xs font-semibold">
                                 {childItem.title}
                               </h4>
                               <div class="flex items-center gap-1.5">
-                                <span class="text-[10px] text-gray-500">
+                                <span class="text-on-surface-variant text-[10px]">
                                   {formatTimestamp(childItem.created_at)}
                                 </span>
                                 <button
                                   type="button"
-                                  class="rounded-full p-0.5 text-gray-500 opacity-0 transition-opacity group-hover/item:opacity-100 hover:text-red-400"
+                                  class="text-on-surface-variant hover:text-error rounded-full p-0.5 opacity-0 transition-opacity group-hover/item:opacity-100"
                                   onclick={(e) => handleClearSingle(e, childItem.id)}
                                   title="Clear notification"
                                   aria-label="Clear notification"
@@ -669,7 +671,7 @@
                                 </button>
                               </div>
                             </div>
-                            <p class="line-clamp-2 text-xs leading-relaxed text-gray-300">
+                            <p class="text-on-surface line-clamp-2 text-xs leading-relaxed">
                               {childItem.body}
                             </p>
                           </div>

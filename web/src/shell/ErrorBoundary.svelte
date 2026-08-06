@@ -40,9 +40,9 @@
 
   {#snippet failed(error, reset)}
     <div
-      class="flex h-full w-full flex-col items-center justify-center bg-gray-900 p-6 text-center text-white"
+      class="bg-surface text-on-surface flex h-full w-full flex-col items-center justify-center p-6 text-center"
     >
-      <div class="mb-4 rounded-full bg-red-500/20 p-4 text-red-400">
+      <div class="bg-error-container text-on-error-container mb-4 rounded-full p-4">
         <svg class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path
             stroke-linecap="round"
@@ -52,17 +52,17 @@
           />
         </svg>
       </div>
-      <h2 class="mb-1 text-xl font-bold text-white">App Stopped Working</h2>
-      <p class="mb-6 text-sm text-gray-400">
-        The <span class="font-semibold text-gray-200 capitalize">{appName}</span> app encountered an unexpected
-        error.
+      <h2 class="text-on-surface mb-1 text-xl font-bold">App Stopped Working</h2>
+      <p class="text-on-surface-variant mb-6 text-sm">
+        The <span class="text-on-surface font-semibold capitalize">{appName}</span> app encountered an
+        unexpected error.
       </p>
 
       <div class="flex w-full max-w-xs flex-col gap-3">
         <button
           type="button"
           onclick={reset}
-          class="w-full cursor-pointer rounded-xl bg-blue-600 px-4 py-2.5 font-medium text-white transition-colors hover:bg-blue-500"
+          class="bg-primary text-on-primary hover:bg-primary w-full cursor-pointer rounded-xl px-4 py-2.5 font-medium transition-colors"
         >
           Restart App
         </button>
@@ -72,7 +72,7 @@
             reset();
             goHome();
           }}
-          class="w-full cursor-pointer rounded-xl border border-gray-700 bg-gray-800 px-4 py-2.5 font-medium text-gray-200 transition-colors hover:bg-gray-700"
+          class="border-outline-variant bg-surface-container text-on-surface hover:bg-surface-container-high w-full cursor-pointer rounded-xl border px-4 py-2.5 font-medium transition-colors"
         >
           Return to Home Screen
         </button>
@@ -80,7 +80,7 @@
 
       {#if import.meta.env.DEV && stackOf(error)}
         <div
-          class="mt-6 max-h-32 w-full overflow-auto rounded-lg border border-red-900/50 bg-black/40 p-3 text-left font-mono text-xs text-red-300"
+          class="border-error bg-error-container text-on-error-container mt-6 max-h-32 w-full overflow-auto rounded-lg border p-3 text-left font-mono text-xs"
         >
           {stackOf(error)}
         </div>

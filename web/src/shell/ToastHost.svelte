@@ -10,6 +10,21 @@
   // Track local reply input state per toast ID
   let replyInputs = $state<Record<string, string>>({});
 
+  /**
+   * A toast's surface, border and text, by kind.
+   *
+   * Two vocabularies on purpose, and the split is the same one the battery indicator
+   * makes. Anything that names a *thing in the phone* — a message, a contact, an error —
+   * is a themed role and follows the player's seed. Anything that is a **signal**, where
+   * the colour itself carries the meaning, stays a raw palette class: green means
+   * "succeeded" and amber means "careful" to everyone, and M3's `tertiary` is generated
+   * from the seed, so routing them through it would render a success toast in whatever
+   * hue somebody picked. There is no M3 role for either, and inventing one would be
+   * inventing a role that lies about what it is for.
+   *
+   * `error` is the exception that proves it: M3's error palette is *not* seeded, so it is
+   * red under every theme and a themed role and a signal colour at the same time.
+   */
   const getBgColor = (type: ToastMessage['type']) => {
     switch (type) {
       case 'success':
@@ -17,16 +32,16 @@
       case 'warning':
         return 'bg-amber-950/95 border-amber-500/40 text-amber-100';
       case 'error':
-        return 'bg-rose-950/95 border-rose-500/40 text-rose-100';
+        return 'bg-error-container border-error text-on-error-container';
       case 'message':
-        return 'bg-gray-900/95 border-blue-500/40 text-gray-100';
+        return 'bg-surface-container-high border-primary text-on-surface';
       case 'call':
-        return 'bg-gray-900/95 border-emerald-500/40 text-gray-100';
+        return 'bg-surface-container-high border-emerald-500/40 text-on-surface';
       case 'contact':
-        return 'bg-gray-900/95 border-indigo-500/40 text-gray-100';
+        return 'bg-surface-container-high border-secondary text-on-surface';
       case 'info':
       default:
-        return 'bg-gray-900/95 border-gray-700/60 text-gray-100';
+        return 'bg-surface-container-high border-outline-variant text-on-surface';
     }
   };
 
@@ -35,12 +50,12 @@
       case 'success':
         return 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/30';
       case 'danger':
-        return 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-900/30';
+        return 'bg-error hover:bg-error-hover text-on-error shadow-md';
       case 'primary':
-        return 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/30';
+        return 'bg-primary hover:bg-primary-hover text-on-primary shadow-md';
       case 'secondary':
       default:
-        return 'bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700';
+        return 'bg-surface-container-high hover:bg-surface-container-high-hover text-on-surface border border-outline-variant';
     }
   };
 
@@ -128,18 +143,18 @@
 
           <div class="min-w-0 flex-1">
             {#if t.title}
-              <h4 class="mb-0.5 truncate text-xs font-bold tracking-tight text-white">
+              <h4 class="text-on-surface mb-0.5 truncate text-xs font-bold tracking-tight">
                 {t.title}
               </h4>
             {/if}
-            <p class="truncate text-xs leading-snug font-medium text-gray-300">
+            <p class="text-on-surface truncate text-xs leading-snug font-medium">
               {t.message}
             </p>
           </div>
 
           <button
             type="button"
-            class="shrink-0 cursor-pointer rounded-full p-1 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+            class="text-on-surface-variant hover:bg-surface-container-high-hover hover:text-on-surface shrink-0 cursor-pointer rounded-full p-1 transition-colors"
             onclick={(e) => {
               e.stopPropagation();
               toast.dismiss(t.id);
@@ -159,7 +174,7 @@
           >
             <input
               type="text"
-              class="flex-1 rounded-xl border border-gray-700/60 bg-gray-950/70 px-3 py-1.5 text-xs text-white placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              class="border-outline-variant bg-surface-container-lowest text-on-surface placeholder-on-surface-variant focus:ring-primary flex-1 rounded-xl border px-3 py-1.5 text-xs focus:ring-1 focus:outline-none"
               placeholder={t.replyPlaceholder || 'Type a reply...'}
               bind:value={replyInputs[t.id]}
               onfocus={() => toast.pauseDismiss(t.id)}
@@ -173,7 +188,7 @@
             />
             <button
               type="button"
-              class="shrink-0 cursor-pointer rounded-xl bg-blue-600 p-1.5 text-white shadow-md transition-colors hover:bg-blue-500 disabled:opacity-50"
+              class="bg-primary text-on-primary hover:bg-primary shrink-0 cursor-pointer rounded-xl p-1.5 shadow-md transition-colors disabled:opacity-50"
               disabled={!replyInputs[t.id]?.trim()}
               onclick={(e) => handleSendReply(t, e)}
               aria-label="Send reply"

@@ -88,10 +88,9 @@ const GRANDFATHERED: Record<string, number> = {
   'src/apps/settings/panes/Shortcuts.svelte': 1,
   'src/apps/store/components/AppDetails.svelte': 11,
   'src/apps/store/components/CatalogList.svelte': 1,
-  'src/shell/ErrorBoundary.svelte': 3,
   'src/shell/PhoneFrame.svelte': 3,
   'src/shell/Shell.svelte': 1,
-  'src/shell/ToastHost.svelte': 20,
+  'src/shell/ToastHost.svelte': 6,
   'src/shell/VolumeHud.svelte': 5
 };
 
