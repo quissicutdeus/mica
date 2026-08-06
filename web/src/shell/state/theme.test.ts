@@ -54,7 +54,7 @@ describe('theme store', () => {
 
   it('refuses a seed it cannot generate from', () => {
     // The stored value is player-editable and is one call away from `argbFromHex`.
-    setThemeSeed('not a colour');
+    setThemeSeed('not a color');
     expect(get(themeStore).seed).toBe(DEFAULT_SEED);
   });
 

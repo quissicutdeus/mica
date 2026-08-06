@@ -54,7 +54,7 @@ describe('adminAces convar', () => {
     expect(adminAces()).toEqual([...DEFAULT_ADMIN_ACES]);
   });
 
-  it('honours an override and trims whitespace', () => {
+  it('honors an override and trims whitespace', () => {
     convar = ' gphone.admin , mygroup.staff ';
     expect(adminAces()).toEqual(['gphone.admin', 'mygroup.staff']);
   });

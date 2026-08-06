@@ -194,7 +194,7 @@
 
       <!-- Controls -->
       <div class="mt-auto grid w-full max-w-[300px] grid-cols-3 gap-8">
-        <!-- Mute. Both this and Keypad were decorative: styled, labelled, no onclick. -->
+        <!-- Mute. Both this and Keypad were decorative: styled, labeled, no onclick. -->
         <button
           onclick={() => callStore.toggleMute()}
           aria-pressed={$callStore.muted}

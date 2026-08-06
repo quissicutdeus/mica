@@ -79,7 +79,7 @@ describe('push', () => {
     expect(emitted).toHaveLength(0);
   });
 
-  it('refuses a payload that cannot be serialised', () => {
+  it('refuses a payload that cannot be serialized', () => {
     online({ 5: 'CIT_A' });
     const cycle: Record<string, unknown> = {};
     cycle.self = cycle;

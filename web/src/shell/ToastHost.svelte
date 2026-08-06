@@ -16,14 +16,14 @@
    * Two vocabularies on purpose, and the split is the same one the battery indicator
    * makes. Anything that names a *thing in the phone* — a message, a contact, an error —
    * is a themed role and follows the player's seed. Anything that is a **signal**, where
-   * the colour itself carries the meaning, stays a raw palette class: green means
+   * the color itself carries the meaning, stays a raw palette class: green means
    * "succeeded" and amber means "careful" to everyone, and M3's `tertiary` is generated
    * from the seed, so routing them through it would render a success toast in whatever
    * hue somebody picked. There is no M3 role for either, and inventing one would be
    * inventing a role that lies about what it is for.
    *
    * `error` is the exception that proves it: M3's error palette is *not* seeded, so it is
-   * red under every theme and a themed role and a signal colour at the same time.
+   * red under every theme and a themed role and a signal color at the same time.
    */
   const getBgColor = (type: ToastMessage['type']) => {
     switch (type) {

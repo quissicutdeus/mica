@@ -143,7 +143,7 @@ describe('claiming a handle', () => {
     expect(dbMock.insert).not.toHaveBeenCalled();
   });
 
-  it('honours a convar raising the cap', async () => {
+  it('honors a convar raising the cap', async () => {
     (globalThis as any).GetConvar = (name: string, f: string) =>
       name === 'gphone_max_accounts_per_app' ? '5' : f;
     dbMock.scalar.mockResolvedValueOnce(3);

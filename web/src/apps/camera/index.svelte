@@ -405,7 +405,7 @@
         </button>
 
         <!-- Right: Flip Camera Button. Kept in the layout as a spacer when unsupported,
-             so removing it does not re-centre the shutter. -->
+             so removing it does not re-center the shutter. -->
         {#if canFlipCamera}
           <button
             type="button"

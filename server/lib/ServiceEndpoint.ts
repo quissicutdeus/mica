@@ -133,7 +133,7 @@ export class ServiceEndpoint<T> {
    * A bare positive integer, and nothing more: the cursor names a position in a result set
    * the caller is already authorized to read, so it needs no signing. What it must never do
    * is name a **column** — the sort column comes from the declaration, and a payload that
-   * tries to supply one is ignored rather than honoured. That is the whole reason this is an
+   * tries to supply one is ignored rather than honored. That is the whole reason this is an
    * integer through `requirePositiveInt` instead of an opaque encoded string.
    */
   private readCursor(data: unknown): number | undefined {

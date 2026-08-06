@@ -14,8 +14,8 @@
    * did by wrapping everything in a `<button>`. Without one, only the switch is.
    *
    * There used to be an `accent` prop taking `'blue' | 'emerald'`, resolved by a ternary
-   * on the literal colour. It was the same mistake in miniature that the M3 roles exist
-   * to end: two hard-coded colours mean exactly two themes are expressible, and neither
+   * on the literal color. It was the same mistake in miniature that the M3 roles exist
+   * to end: two hard-coded colors mean exactly two themes are expressible, and neither
    * follows the one the player picked. The switch is `primary` now, whatever primary
    * happens to be. Developer Tools was the only caller.
    */

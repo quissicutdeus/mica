@@ -30,7 +30,7 @@ class TestRepo extends Repository<TestRow> {
   protected clientWritable = ['title', 'content'];
   protected clientFilterable = ['title'];
 
-  /** Surfaces the protected escape hatch so its behaviour is testable. */
+  /** Surfaces the protected escape hatch so its behavior is testable. */
   public exposeUpdateUnscoped(id: number, data: Partial<TestRow>): Promise<boolean> {
     return this.updateUnscoped(id, data);
   }

@@ -11,7 +11,7 @@
    *
    * Deliberately not a copy of the Store's installed tab. That surface answers "what could I
    * have"; this one answers "what is on my phone and how do I reset it". The Store keeps the
-   * catalogue, the sort orders and the permission disclosure.
+   * catalog, the sort orders and the permission disclosure.
    */
   let { onselect }: { onselect: (id: string) => void } = $props();
 

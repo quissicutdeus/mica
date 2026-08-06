@@ -134,7 +134,7 @@ describe('FrameworkBridge.removeInventoryItem', () => {
 
   it('allows the action, loudly, when there is no inventory to remove from', () => {
     // Deliberate fail-open, and worth knowing about: a server with a framework but no
-    // recognised inventory gets the item's effect without the item being consumed. The
+    // recognized inventory gets the item's effect without the item being consumed. The
     // alternative is a feature that silently never works. Pinned here so the choice is
     // visible rather than a stray `return true`.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

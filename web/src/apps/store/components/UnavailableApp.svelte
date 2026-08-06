@@ -4,7 +4,7 @@
   /**
    * What opens when an app is installed but has no component to mount.
    *
-   * Written for the four invented catalogue entries — Blabber, Crypto Tracker, Downtown
+   * Written for the four invented catalog entries — Blabber, Crypto Tracker, Downtown
    * Taxi, Marketplace — which were manifests with no code behind them. Installing one had
    * nothing to register, so the Store handed the registry a plain `{ name, type }` object in
    * its place, and tapping the icon afterwards landed in `ErrorBoundary` telling the player

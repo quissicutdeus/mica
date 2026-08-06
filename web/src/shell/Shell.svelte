@@ -157,7 +157,7 @@
       if (event.repeat) return;
 
       /**
-       * Browser only: honour the Open Phone binding here.
+       * Browser only: honor the Open Phone binding here.
        *
        * That action is `scope: 'game'`, so in game it is a `RegisterKeyMapping` the
        * client owns and the web never sees it. There is no FiveM in a browser, so

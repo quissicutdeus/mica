@@ -339,7 +339,7 @@ What still breaks is a color it **cannot** resolve at build time — an arbitrar
 with a `/` modifier. There the `color-mix()` form is all that is emitted.
 
 So for translucency, still prefer an explicit `@theme` token with a pre-resolved `rgb(... / ...)`
-value: one declaration whose in-game behaviour does not depend on cascade error-recovery, and one
+value: one declaration whose in-game behavior does not depend on cascade error-recovery, and one
 value per role rather than a family per call site. `src/app.css` holds the set, and
 `src/sdk/cef.test.ts` ratchets the remaining `/` modifiers downward. But treat an existing one as
 untidy rather than broken — do not rewrite working screens on the strength of this rule alone.
@@ -546,7 +546,7 @@ no `gphone:` prefix; the test scans `web/src` precisely to catch one borrowing t
 | e2e    | `pnpm test:e2e`         | Playwright over `web/` against the mock transport                 |
 
 What the suites **cannot** catch: anything that needs the game. The Chromium-103 gap (§6), the
-client/server relay layers above, framework bridge behaviour, and SQL that only fails against a real
+client/server relay layers above, framework bridge behavior, and SQL that only fails against a real
 schema. Playwright drives a modern Chromium against mocks — a green suite is not evidence a NUI
 feature works in game.
 
@@ -623,7 +623,7 @@ Then, before saying it works:
   `tsc`, so tests are the only thing standing behind it.
 - **Report failures as failures.** If a suite is red, say so and paste the output. A pipeline like
   `pnpm test:e2e | tail -5` reports `tail`'s exit code, not the suite's — check the real one.
-- **State what you did not verify.** In-game behaviour, CEF rendering, and framework integration are
+- **State what you did not verify.** In-game behavior, CEF rendering, and framework integration are
   outside the suites. Say so rather than implying coverage.
 - **Untracked files are not staged.** New directories need an explicit `git add`; `git add -u` misses
   them.
@@ -717,7 +717,7 @@ a silent divergence breaks either security or writes. One schema drives both, pl
   - The cursor is a **bare row id**, validated by `requirePositiveInt`. It needs no signing — it
     names a position in a result set the caller is already authorized to read — but it must never
     name a _column_: the sort column comes from the declaration, and a payload offering one is
-    ignored rather than honoured.
+    ignored rather than honored.
   - An over-large `limit` is clamped to `maxPageSize` rather than rejected. The request is
     legitimate; only the number is not.
   - **A custom action pages itself, so it clamps itself** — `ServiceEndpoint` only wraps the generic
@@ -853,7 +853,7 @@ weaker than the real one: `type: 'enum'` with `values` (a varchar stand-in drops
 constraint), `defaultNow` and `onUpdateNow` for timestamps (omitting `onUpdateNow` on an `updated_at`
 produces a column that never moves), and `references` for any FK that is not `citizenid`.
 
-### When an app needs custom repository behaviour
+### When an app needs custom repository behavior
 
 `repositoryFactory` receives the resolved schema; subclass the exported `SchemaRepository` so the
 result still inherits the identifier allowlist and the ownership scoping. Overriding a read is
@@ -977,7 +977,7 @@ forces `false` when `isRemote` is set and throws on an explicit `core: true` bes
 
 Blabber is the first app that is genuinely `core: false` — the add-on path's first real consumer,
 and the Store's first genuine listing rather than a manifest with nothing behind it. The Store's
-catalogue must never again carry an installable manifest with no code behind it: an unbuilt app
+catalog must never again carry an installable manifest with no code behind it: an unbuilt app
 belongs in a document, because an idea recorded in prose is honest and the same idea rendered as an
 Install button is not.
 

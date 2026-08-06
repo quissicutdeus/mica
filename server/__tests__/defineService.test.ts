@@ -437,7 +437,7 @@ describe('child tables', () => {
     expect(sql).toContain('REFERENCES `gphone_messages` (`id`) ON DELETE CASCADE');
   });
 
-  it('honours a non-cascading onDelete', () => {
+  it('honors a non-cascading onDelete', () => {
     const sql = toChildTableSql({
       name: 'soft',
       columns: {
@@ -596,7 +596,7 @@ describe('toCreateTableSql', () => {
     );
   });
 
-  it('honours notNull, length and index', () => {
+  it('honors notNull, length and index', () => {
     const out = toCreateTableSql(
       resolveAppSchema({
         id: 'x',

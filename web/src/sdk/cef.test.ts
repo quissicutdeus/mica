@@ -140,15 +140,15 @@ describe('CEF capability baseline (AGENTS.md §6)', () => {
   it('puts no opacity modifier on a themed role token', () => {
     // A hard zero, not a budget, and the reasoning is different from the rule above.
     //
-    // For a *palette* colour Tailwind emits an unguarded hex fallback beside the
+    // For a *palette* color Tailwind emits an unguarded hex fallback beside the
     // `@supports`-guarded `color-mix()`, so `bg-gray-800/50` does render in CEF 103 —
     // that is why the rule above is a consistency ratchet rather than a bug count.
     //
     // A role token is themed at runtime: `PhoneFrame` writes all 47 as inline custom
     // properties from the player's seed. Tailwind still computes its fallback from the
     // literal in `app.css`, which is the *default* seed — so `bg-surface/50` renders the
-    // shipped theme's colour for anybody who changed theirs. It fails silently, only for
-    // some players, and only for the colour they explicitly picked.
+    // shipped theme's color for anybody who changed theirs. It fails silently, only for
+    // some players, and only for the color they explicitly picked.
     //
     // State layers are the sanctioned alternative and are already flattened to opaque
     // values by `lib/m3.ts`: write `hover:bg-surface-container-hover`, not

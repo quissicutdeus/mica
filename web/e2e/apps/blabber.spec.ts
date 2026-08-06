@@ -182,7 +182,7 @@ test.describe('Blabber', () => {
 
     await first.getByRole('button', { name: 'Like' }).click();
 
-    // The label flips because the state did — an optimistic update that only changed a colour
+    // The label flips because the state did — an optimistic update that only changed a color
     // would leave the control lying to a screen reader.
     await expect(first.getByRole('button', { name: 'Unlike' })).toBeVisible();
     await expect(first.getByRole('button', { name: 'Unlike' })).toHaveAttribute(
@@ -345,7 +345,7 @@ test.describe('Blabber', () => {
         .getByRole('button', { name: "Night Owl's profile" })
         .click();
       await page.getByRole('button', { name: 'Follow', exact: true }).click();
-      // The label flips because the state did, not just the colour.
+      // The label flips because the state did, not just the color.
       await expect(page.getByRole('button', { name: 'Following', exact: true })).toBeVisible();
     };
 

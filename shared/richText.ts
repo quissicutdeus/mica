@@ -27,7 +27,7 @@ export type RichTextToken =
  * Handle and tag shapes, matching what `gphone_accounts.handle` accepts: lowercase letters,
  * numbers and underscore, 3–32 characters.
  *
- * Case-insensitive on the way in because people type `@Ada`, and normalised on the way out —
+ * Case-insensitive on the way in because people type `@Ada`, and normalized on the way out —
  * the account table lowercases handles at claim time, so a mention that kept its capitals
  * would resolve to nobody.
  *

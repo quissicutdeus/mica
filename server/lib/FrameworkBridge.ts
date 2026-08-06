@@ -240,7 +240,7 @@ export class FrameworkBridge {
       // ox_inventory not present
     }
 
-    // Deliberate fail-open, said out loud. A server with a framework but no recognised
+    // Deliberate fail-open, said out loud. A server with a framework but no recognized
     // inventory gets the item's effect without the item being consumed; the alternative
     // is a consumable that silently never works. A silent `return true` here reads as
     // "removed" to every caller, which is the same lie `shareContact` used to tell.

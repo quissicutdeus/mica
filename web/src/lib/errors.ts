@@ -4,7 +4,7 @@
  * Five places wrote `e?.message || 'something went wrong'` by hand, typing the catch as
  * `any` to do it, and two of them wrote `e.message` — which throws a second time inside
  * the catch if what arrived was a string or null. `catch` gives you `unknown` because
- * anything at all can be thrown, and that is worth honouring in the one place that has
+ * anything at all can be thrown, and that is worth honoring in the one place that has
  * to deal with it.
  */
 export function messageOf(error: unknown, fallback: string): string {

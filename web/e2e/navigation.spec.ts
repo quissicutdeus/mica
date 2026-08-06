@@ -24,7 +24,7 @@ test.describe('Phone Navigation & Home Screen', () => {
   });
 
   /**
-   * Notes rather than Crypto Tracker, which was one of four invented catalogue entries with
+   * Notes rather than Crypto Tracker, which was one of four invented catalog entries with
    * no code behind them and has been removed. Notes is a real in-repo add-on, which is what
    * makes this round trip mean anything: installing a fiction registered a placeholder
    * screen and still reported success, so the assertions below passed without the install
@@ -42,7 +42,7 @@ test.describe('Phone Navigation & Home Screen', () => {
     await page.locator("button[aria-label='Back to Home']").click();
 
     // 2. Verify the Notes icon appears on the home screen.
-    // Role-based: apps stay resident once opened, so the Store's own catalogue row is still
+    // Role-based: apps stay resident once opened, so the Store's own catalog row is still
     // in the DOM behind this one, and only `inert` keeps it out of the accessibility tree.
     await expect(page.getByRole('button', { name: /Notes/ })).toBeVisible();
 

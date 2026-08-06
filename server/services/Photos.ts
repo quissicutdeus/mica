@@ -9,7 +9,7 @@ import { Photo } from '@shared/types';
  * get filters to status = 'active' by default, and delete is an ownership-scoped
  * soft delete that writes the audit entry.
  *
- * The repositoryFactory preserves the one piece of custom behaviour the
+ * The repositoryFactory preserves the one piece of custom behavior the
  * hand-written PhotoRepository had: depending on driver and column type, `image`
  * can come back as a Buffer, which would cross NUI as `{type:'Buffer',data:[...]}`
  * and render as nothing. Coerced to a string on the way out.

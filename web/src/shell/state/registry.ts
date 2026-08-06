@@ -199,7 +199,7 @@ function createAppRegistry() {
        * is core but somehow absent from the store; `targetApp.core` catches one registered
        * after boot. An app registered at runtime claiming to be core used to reach only the
        * second check, and `defineApp` would happily have handed it `core: true` — which is
-       * why the remote path is now normalised there rather than trusted here.
+       * why the remote path is now normalized there rather than trusted here.
        */
       if (CORE_APP_IDS.has(appId) || targetApp?.core) {
         throw new Error(

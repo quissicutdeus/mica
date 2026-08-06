@@ -1,9 +1,9 @@
 import { QuantizerCelebi, Score, hexFromArgb } from '@material/material-color-utilities';
 
 /**
- * The dominant colour of a photo, as a theme seed.
+ * The dominant color of a photo, as a theme seed.
  *
- * This is the one part of the colour system that touches the DOM, and it is a separate
+ * This is the one part of the color system that touches the DOM, and it is a separate
  * module for exactly that reason: `lib/m3.ts` stays pure and fully unit-testable, and
  * nothing under test imports this. jsdom has no canvas — `getContext('2d')` returns
  * `null` — so a test that pulled this in through `m3.ts` would take the whole engine
@@ -39,7 +39,7 @@ const loadImage = (src: string): Promise<HTMLImageElement | null> =>
  * Returns `#rrggbb`, or `null` if a seed could not be read.
  *
  * `null` is a real answer rather than a failure to report: the caller keeps whatever
- * seed is already set, which is a better outcome than a theme built from a colour we
+ * seed is already set, which is a better outcome than a theme built from a color we
  * guessed at.
  *
  * **`data:` URLs only.** Anything else — an `https://cfx-nui-…/` asset especially —

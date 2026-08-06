@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
  * The percentage the volume HUD is showing.
  *
  * Read off a testid rather than any `NN%` on screen — the Sound pane's step-size buttons
- * are also labelled that way, and matching text picked one of those instead.
+ * are also labeled that way, and matching text picked one of those instead.
  */
 const hudPercent = async (page: import('@playwright/test').Page): Promise<number> => {
   const hud = page.getByTestId('volume-hud-percent');

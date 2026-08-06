@@ -17,10 +17,10 @@
 
   /**
    * Each variant is a filled M3 container plus the `on-` role that belongs to it. The
-   * pairing is the whole point: nothing here picks a text colour independently, so a
+   * pairing is the whole point: nothing here picks a text color independently, so a
    * button stays legible under any seed the player sets.
    *
-   * Hover uses a pre-composited state-layer token rather than a second, lighter colour
+   * Hover uses a pre-composited state-layer token rather than a second, lighter color
    * chosen by hand. `primary`/`primary-hover` is M3's 8% `on-primary` overlay flattened
    * to an opaque value in `lib/m3.ts` — see `app.css` for why it cannot be an opacity
    * modifier.

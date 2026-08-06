@@ -162,7 +162,7 @@ describe('rate limiting', () => {
     expect(allow(1, 'notes', 'create')).toBe(true);
   });
 
-  it('honours a convar override', () => {
+  it('honors a convar override', () => {
     (globalThis as Record<string, unknown>).GetConvar = (name: string, fallback: string) =>
       name === 'gphone_rate_limit' ? '2' : fallback;
 

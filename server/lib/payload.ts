@@ -79,7 +79,7 @@ export function flagUnlessFalse(raw: unknown): boolean {
  *
  * An over-large `limit` is clamped rather than refused (§10): the request is legitimate, only the
  * number is not. The cursor is a bare row id and never a column — the sort order comes from the
- * query, so a payload offering one is ignored rather than honoured.
+ * query, so a payload offering one is ignored rather than honored.
  *
  * `ServiceEndpoint` keeps its own private pair on the generic path deliberately, because its cursor
  * error names the service it was asked of; the numbers still come from one declaration either way.

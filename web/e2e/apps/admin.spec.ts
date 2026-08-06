@@ -63,7 +63,7 @@ test.describe('Admin app', () => {
   });
 
   test('the badge counts outstanding reports and visiting does not clear it', async ({ page }) => {
-    // The reported behaviour: opening the app cleared the count even with the report
+    // The reported behavior: opening the app cleared the count even with the report
     // still pending. A report is outstanding until somebody decides about it, so this
     // must not behave like an unread badge.
     const icon = page.getByRole('button', { name: /Admin/i }).first();

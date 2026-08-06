@@ -355,7 +355,7 @@ const mockRegistry: Record<string, MockHandler> = {
    *
    * `handle` and `app` are ignored rather than applied, because they are
    * `clientWritable: false` on the server and `ServiceEndpoint` drops them before SQL. A mock
-   * that honoured them would let a rename look like it worked here and fail in game.
+   * that honored them would let a rename look like it worked here and fail in game.
    */
   updateAccount: ({
     id,

@@ -33,7 +33,7 @@ export const asDataUri = (raw: string): string => {
  * At matching quality WebP is meaningfully smaller than JPEG and, more to the point, it
  * does not produce JPEG's 8x8 block edges. CEF's Chromium 103 can encode it.
  *
- * `toDataURL` silently falls back to PNG when it does not recognise the type, so the
+ * `toDataURL` silently falls back to PNG when it does not recognize the type, so the
  * result is checked rather than assumed: an unexpected PNG would be lossless but many
  * times larger, and every one of those goes into a database column.
  */

@@ -101,7 +101,7 @@ describe('usePagedList', () => {
 
     page.onScroll({ target } as unknown as Event);
     // Fires the load; the await happens inside. What matters here is that the edge was
-    // recognised rather than that the page has already grown.
+    // recognized rather than that the page has already grown.
     expect(page.loading).toBe(true);
   });
 

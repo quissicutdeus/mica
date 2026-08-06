@@ -214,7 +214,7 @@
    * Who the open DM thread is with.
    *
    * A plain function rather than a `$derived`, because `useAppLevels` reads it through a callback
-   * and a rune declared after that call would be read before it is initialised.
+   * and a rune declared after that call would be read before it is initialized.
    */
   const dmTitle = (): string => {
     if (dmPeerAccount) return dmPeerAccount.display_name || `@${dmPeerAccount.handle}`;
@@ -295,7 +295,7 @@
    * this app has always done — so Back from a profile goes to whatever opened the first one. A row
    * in a follower list therefore lands on the profile rung, which is one level *out* of the list
    * it was tapped in. Stacking it would need a profile stack like `threads`, and the two would
-   * have to agree about depth; the flat behaviour is the one already shipped and tested.
+   * have to agree about depth; the flat behavior is the one already shipped and tested.
    */
   const openProfile = (handle: string) => {
     profileHandle = handle;

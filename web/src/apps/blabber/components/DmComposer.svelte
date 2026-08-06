@@ -42,7 +42,7 @@
   <div class="flex w-full items-end gap-2.5">
     <!-- A solid `sky-600` focus border rather than `sky-500/50`: an opacity modifier compiles to
          `color-mix()`, which CEF 103 does not have (§6), and one hairline does not earn a theme
-         token. It matches the send button, which is the colour this app already uses. -->
+         token. It matches the send button, which is the color this app already uses. -->
     <div
       class="bg-surface-container flex flex-1 items-center rounded-2xl border border-transparent px-3.5 py-1.5 focus-within:border-sky-600"
     >

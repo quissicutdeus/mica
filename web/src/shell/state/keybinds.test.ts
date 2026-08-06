@@ -87,7 +87,7 @@ describe('keybind resolution', () => {
     }
   });
 
-  it('honours an override over the default', () => {
+  it('honors an override over the default', () => {
     setBinding('back', 'q');
     expect(resolveAction('Backspace', IDLE, get(bindings))).toBeNull();
     expect(resolveAction('q', IDLE, get(bindings))?.id).toBe('back');

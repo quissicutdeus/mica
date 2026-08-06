@@ -8,7 +8,7 @@ test.describe('Store E2E', () => {
   });
 
   /**
-   * These used to run against Crypto Tracker, one of four invented catalogue entries with no
+   * These used to run against Crypto Tracker, one of four invented catalog entries with no
    * code behind them. They now run against Notes — a real in-repo add-on — which is the only
    * thing that makes the install assertion below mean anything: installing a fiction
    * registered a placeholder screen and still reported "installed successfully".
@@ -49,7 +49,7 @@ test.describe('Store E2E', () => {
     await page.locator("button[aria-label='Back to Home']").click();
 
     // Verify the new Notes icon exists on the home screen. Role-based, because apps stay
-    // resident once opened: the Store's own catalogue row is still in the DOM behind this
+    // resident once opened: the Store's own catalog row is still in the DOM behind this
     // one, and only `inert` on the backgrounded app keeps it out of the accessibility tree.
     await expect(page.getByRole('button', { name: /Notes/ })).toBeVisible();
   });

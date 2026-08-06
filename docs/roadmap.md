@@ -18,7 +18,7 @@ The failure mode is not an inaccurate line — it is a reader who cannot tell wh
 So the reasoning behind an unbuilt thing belongs under its own proposal heading here, not in a second
 document that this one defers to and a reader may not have.
 
-This file exists because the Store's catalogue used to carry four app ideas as **installable
+This file exists because the Store's catalog used to carry four app ideas as **installable
 manifests with no code behind them** — Blabber, Crypto Tracker, Downtown Taxi and Marketplace,
 complete with invented studios and version numbers. Tapping any of them opened a screen apologising
 for itself. An idea recorded in a document is honest; the same idea rendered as an Install button is

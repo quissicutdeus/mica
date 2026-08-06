@@ -43,7 +43,7 @@ describe('defineApp: id casing', () => {
     appRegistryStore.unregisterApp(manifest.id);
   });
 
-  it('normalises the id so every downstream key agrees', () => {
+  it('normalizes the id so every downstream key agrees', () => {
     // `id` is the storage namespace, the keybind claim and an event segment. Lowercasing it
     // once here is what keeps those consistent with `openApp`, which lowercases anyway.
     expect(
@@ -183,8 +183,8 @@ describe('defineApp: core', () => {
 
   it('forces a remote app to be non-core even when it claims otherwise', () => {
     // `core` used to sit *before* the `...manifest` spread, so a downloaded bundle
-    // declaring `isSystem: true` survived normalisation intact — and `unregisterApp` then
-    // refused to remove it, for the rest of the session. Spreading and then normalising is
+    // declaring `isSystem: true` survived normalization intact — and `unregisterApp` then
+    // refused to remove it, for the rest of the session. Spreading and then normalizing is
     // what closes that; a bundle cannot opt into protection.
     expect(() =>
       defineApp({ id: 'hostile', color: 'bg-blue-600', icon: null, core: true, isRemote: true })

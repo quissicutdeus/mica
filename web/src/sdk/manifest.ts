@@ -246,14 +246,14 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
     permissions: [],
     defaultProps: {},
     ...manifest,
-    // All after the spread, so they win over whatever was passed in: the normalised id over
+    // All after the spread, so they win over whatever was passed in: the normalized id over
     // the raw one, and the derived name over an explicit `name: undefined` — which spreads
     // as a present key and would otherwise clobber the default.
     //
     // `core` is here rather than above the spread for a sharper reason. It used to sit
-    // before it, so a remote manifest declaring `isSystem: true` survived normalisation
+    // before it, so a remote manifest declaring `isSystem: true` survived normalization
     // intact and `unregisterApp` then refused to remove it, forever. Normalising and *then*
-    // spreading is what let the bundle win; spreading and then normalising is what stops it.
+    // spreading is what let the bundle win; spreading and then normalizing is what stops it.
     id,
     name: manifest.name ?? titleCase(id),
     core,

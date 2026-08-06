@@ -7,7 +7,7 @@
    * from having nothing. Bank rendered "No transactions" — a definite statement of fact —
    * for as long as the fetch took.
    *
-   * `count` repeats the block, because a single grey bar reads as one real row while a
+   * `count` repeats the block, because a single gray bar reads as one real row while a
    * few read as a list arriving.
    *
    * ```svelte

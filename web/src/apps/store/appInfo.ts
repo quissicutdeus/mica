@@ -16,7 +16,7 @@ import { appStorageBytes, useAppRegistry, type AppManifest, type AppPermission }
  * Two rounds of the same lesson got us here. Notes was once a hand-written copy of its own
  * manifest, reachable only while somebody remembered to duplicate it, and the copy drifted
  * from the real one. Then four invented add-ons — Blabber, Crypto Tracker, Downtown Taxi,
- * Marketplace — sat here as manifests with no code behind them, so the Store's catalogue was
+ * Marketplace — sat here as manifests with no code behind them, so the Store's catalog was
  * mostly fiction and installing any of it got a screen apologising for itself. Both are gone.
  * An app appears in the Store by *existing* and shipping `core: false`; the ideas the
  * fictions stood in for are recorded in `docs/roadmap.md`, which cannot pretend to be

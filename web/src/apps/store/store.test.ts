@@ -44,7 +44,7 @@ describe('Store Module', () => {
   });
 });
 
-describe('Store catalogue', () => {
+describe('Store catalog', () => {
   it('offers an in-repo add-on without it being listed by hand', () => {
     // Notes ships `core: false`, so it is kept out of the launcher and used to reach
     // the Store only via a hand-written copy of its own manifest in `appInfo.ts` — which

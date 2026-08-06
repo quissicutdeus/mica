@@ -68,7 +68,7 @@ describe('pageBounds', () => {
     expect(pageBounds({}, paging)).toEqual({ limit: 30, cursor: null });
   });
 
-  it('honours a limit inside the declared ceiling', () => {
+  it('honors a limit inside the declared ceiling', () => {
     expect(pageBounds({ limit: 5 }, paging).limit).toBe(5);
   });
 
