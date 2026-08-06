@@ -4,7 +4,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 import { execSync } from 'child_process';
-import pkg from '../package.json';
+import pkg from '../package.json' with { type: 'json' };
 
 function getGitInfo() {
   const envBranch = process.env.GITHUB_REF_NAME;
@@ -37,12 +37,12 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@shared': path.resolve(__dirname, '../shared'),
+      '@shared': path.resolve(import.meta.dirname, '../shared'),
       // Before the bare `@gphone/sdk` entry, and it has to stay there: aliases are tried
       // in order, and the shorter key matches this specifier as a prefix — resolving it
       // to `src/sdk/index.ts/testing`, which is not a path.
-      '@gphone/sdk/testing': path.resolve(__dirname, './src/sdk/testing.ts'),
-      '@gphone/sdk': path.resolve(__dirname, './src/sdk/index.ts')
+      '@gphone/sdk/testing': path.resolve(import.meta.dirname, './src/sdk/testing.ts'),
+      '@gphone/sdk': path.resolve(import.meta.dirname, './src/sdk/index.ts')
     },
     conditions: ['browser']
   },
