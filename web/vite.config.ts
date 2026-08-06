@@ -54,6 +54,18 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    include: ['src/**/*.test.ts', 'src/**/*.spec.ts']
+    include: ['src/**/*.test.ts', 'src/**/*.spec.ts'],
+    server: {
+      deps: {
+        // `@material/material-color-utilities@0.4.0` ships extensionless relative
+        // imports inside its own ESM (`from '../dynaminccolor/dynamic_color'`, no
+        // `.js`). Node's ESM resolver requires the extension and throws
+        // ERR_MODULE_NOT_FOUND on import; Vite's resolver fills it in from
+        // `resolve.extensions`. Inlining routes the package through Vite in tests, so
+        // the suite resolves it the same way the browser build already does. Not a
+        // workaround for our code — the published package is malformed.
+        inline: ['@material/material-color-utilities']
+      }
+    }
   }
 });

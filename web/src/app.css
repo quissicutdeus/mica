@@ -3,61 +3,149 @@
 @plugin '@tailwindcss/typography';
 
 /**
- * The phone's palette.
+ * The phone's palette: Material 3 colour roles.
  *
- * Two problems this solves at once.
+ * These values are **generated, not hand-picked**. `src/lib/m3.ts` builds them from one
+ * seed colour with `@material/material-color-utilities`, and `src/lib/m3.test.ts`
+ * asserts that what is written below is exactly what the engine produces for
+ * `DEFAULT_SEED`. When that test fails, the diff is the fix — paste the expected values
+ * in. Do not hand-tune a value here; change the seed or the engine.
  *
- * Translucency. AGENTS.md §6 prescribes a pre-resolved value rather than an opacity
- * modifier, because `color-mix()` needs Chromium 111 and FiveM's release CEF is 103.
+ * ## Why these are literals, and why `@theme` rather than `@theme inline`
  *
- * Worth recording what the build actually emits, because it is narrower than §6 states:
- * `bg-gray-900/95` produces three rules — an unguarded `#101828f2`, then `lab()` and
- * `color-mix()` *both* behind `@supports (color: color-mix(...))`. CEF 103 fails that
- * test and takes the plain hex, so an opacity modifier on a palette color does render
- * in game. Tailwind emits that fallback whenever it can resolve the color at build
- * time; where it cannot — an arbitrary `var()`-based color — only the `color-mix()`
- * form is emitted and the utility genuinely breaks.
+ * The live theme is computed in JS and written as custom properties onto the phone
+ * screen element (`shell/PhoneFrame.svelte`), so it follows the wallpaper. Plain
+ * `@theme` emits `:root { --color-x: … }` and compiles each utility to
+ * `var(--color-x)`, which is what makes that override possible. **`@theme inline` would
+ * compile the literal into every utility and the runtime theme would do nothing** — it
+ * is the reflex when a theme value looks static, and it is wrong here.
  *
- * So these tokens are not a workaround for something broken. They are one resolved
- * value per role instead of a three-rule emission whose in-game correctness depends on
- * cascade error-recovery, and they are checkable: each compiles to a single unguarded
- * declaration.
+ * The literals still matter: they are the shipped dark scheme, so first paint before
+ * `PhoneFrame` mounts, and every jsdom render in the unit suite, is already correct
+ * without JS.
  *
- * Forking: "danger" was `bg-red-600` in `Button`, `bg-rose-600` in `SegmentedControl`
- * and `bg-rose-500` in `AppIcon` — three families for one meaning, with no way to tell
- * which was intended. Named roles below; the raw scales stay available for everything
- * that is genuinely one-off.
+ * ## The rule that replaced the old opacity-modifier guidance
  *
- * The comment on each line records the scale the value came from. For the surfaces this
- * is a pure rename — identical hex, no visual change. The danger role is not: `AppIcon`
- * (`rose-500`) and `SegmentedControl` (`rose-600`) now render red-600 like `Button`
- * always did. Three families for one meaning was the thing worth losing, and collapsing
- * them necessarily moves two of the three.
+ * The previous version of this comment explained that `bg-gray-900/95` survives CEF 103
+ * because Tailwind emits an unguarded hex fallback beside the `@supports`-guarded
+ * `color-mix()`. That is still true of a *palette* colour. It is now actively dangerous
+ * on a **role** token: the fallback Tailwind computes is derived from the literal below,
+ * i.e. the default seed — so `bg-surface/50` renders the default theme's colour under
+ * any other seed. Silently, and only for players who changed it.
+ *
+ * So there is no budget for that case. `sdk/cef.test.ts` fails outright on an opacity
+ * modifier applied to any name in `ROLE_NAMES`, and builds its regex from that array so
+ * the rule cannot drift from the token set.
+ *
+ * What replaces it: state layers are real tokens. M3 expresses hover as `on-surface` at
+ * 8% over the container, which is `color-mix()` and therefore Chromium 111. The engine
+ * composites that arithmetically instead, so `--color-surface-container-hover` is a flat
+ * opaque colour and the call site writes `hover:bg-surface-container-hover` — one
+ * declaration, no cascade error-recovery, nothing newer than CSS 2.
+ *
+ * ## Roles, briefly
+ *
+ * `surface*` is what things sit on, in five container tiers plus dim/bright. `on-*` is
+ * what goes on top of the matching role — that pairing is the contract, and its absence
+ * is why 1190 raw utilities each used to guess. There are exactly **two** on-surface
+ * text roles by design; where a screen needs more hierarchy than that, the M3 answer is
+ * type scale and spacing rather than a third grey.
+ *
+ * `error` is not seeded from the source colour — it is red in every scheme. That is what
+ * makes it safe for a destructive button, and it is also why the battery's low-charge
+ * yellow and Bank's money-in green stay raw palette classes: they are signal colours, and
+ * `tertiary` *is* seeded, so a blue seed would produce a blue warning.
  */
 @theme {
-  /* Surfaces */
-  --color-surface: #101828; /* gray-900 */
+  /* --- generated: dark scheme, seed #155dfc. See src/lib/m3.ts --- */
+
+  /* Primary */
+  --color-primary: rgb(182, 196, 255);
+  --color-on-primary: rgb(28, 45, 97);
+  --color-primary-container: rgb(52, 68, 121);
+  --color-on-primary-container: rgb(220, 225, 255);
+  --color-inverse-primary: rgb(76, 92, 146);
+
+  /* Secondary */
+  --color-secondary: rgb(194, 197, 221);
+  --color-on-secondary: rgb(43, 48, 66);
+  --color-secondary-container: rgb(65, 70, 89);
+  --color-on-secondary-container: rgb(222, 225, 249);
+
+  /* Tertiary */
+  --color-tertiary: rgb(227, 186, 218);
+  --color-on-tertiary: rgb(67, 39, 64);
+  --color-tertiary-container: rgb(91, 61, 87);
+  --color-on-tertiary-container: rgb(255, 215, 246);
+
+  /* Error */
+  --color-error: rgb(255, 180, 171);
+  --color-on-error: rgb(105, 0, 5);
+  --color-error-container: rgb(147, 0, 10);
+  --color-on-error-container: rgb(255, 218, 214);
+
+  /* Surfaces, lowest to highest */
+  --color-surface: rgb(18, 19, 24);
+  --color-surface-dim: rgb(18, 19, 24);
+  --color-surface-bright: rgb(56, 57, 63);
+  --color-surface-container-lowest: rgb(13, 14, 19);
+  --color-surface-container-low: rgb(26, 27, 33);
+  --color-surface-container: rgb(30, 31, 37);
+  --color-surface-container-high: rgb(41, 42, 47);
+  --color-surface-container-highest: rgb(52, 52, 58);
+  --color-on-surface: rgb(227, 225, 233);
+  --color-on-surface-variant: rgb(198, 198, 208);
+  --color-inverse-surface: rgb(227, 225, 233);
+  --color-inverse-on-surface: rgb(47, 48, 54);
+
+  /* Lines */
+  --color-outline: rgb(143, 144, 154);
+  --color-outline-variant: rgb(69, 70, 79);
+
+  /* Depth. `scrim` carries M3's 32% usage alpha baked in — it is the one role that
+     cannot be composited ahead of time, since it lies over whatever is behind the
+     dialog, and an opacity modifier on a themed token is now forbidden outright. */
+  --color-shadow: rgb(0, 0, 0);
+  --color-scrim: rgba(0, 0, 0, 0.32);
+  --color-surface-tint: rgb(182, 196, 255);
+
+  /* State layers: `on-X` composited over `X` at M3's 8% hover / 10% pressed, flattened
+     to an opaque value so no call site needs an opacity modifier. */
+  --color-surface-hover: rgb(35, 35, 41);
+  --color-surface-pressed: rgb(39, 40, 45);
+  --color-surface-container-hover: rgb(46, 47, 53);
+  --color-surface-container-pressed: rgb(50, 50, 57);
+  --color-surface-container-high-hover: rgb(56, 57, 62);
+  --color-surface-container-high-pressed: rgb(60, 60, 66);
+  --color-primary-hover: rgb(170, 184, 242);
+  --color-primary-pressed: rgb(167, 181, 239);
+  --color-secondary-container-hover: rgb(78, 82, 102);
+  --color-secondary-container-pressed: rgb(81, 86, 105);
+  --color-error-hover: rgb(243, 166, 158);
+  --color-error-pressed: rgb(240, 162, 154);
+
+  /* The one token with no M3 role behind it: the FAB's coloured bloom, for a
+     `box-shadow`. An elevation effect rather than a semantic role. */
+  --color-primary-glow: rgba(182, 196, 255, 0.3);
+
+  /* --- end generated --- */
+
+  /**
+   * Legacy tokens, being retired.
+   *
+   * Every one of these maps onto a role above — `surface-raised` is `surface-container`,
+   * `hairline` is `outline-variant`, `accent` is `primary`, `danger` is `error`. They stay
+   * only so the migration can move one directory at a time instead of in a single
+   * 1190-line diff, and they are deleted once nothing imports them. Do not reach for one
+   * in new code.
+   */
   --color-surface-raised: rgb(30 41 57 / 0.5); /* gray-800/50 */
   --color-surface-sunken: rgb(30 41 57 / 0.7); /* gray-800/70 */
   --color-surface-overlay: rgb(3 7 18 / 0.95); /* gray-950/95 */
-  --color-scrim: rgb(0 0 0 / 0.8); /* black/80 */
-
-  /**
-   * A list row reacting to the pointer.
-   *
-   * Every settings row, and now the app list, wrote `hover:bg-gray-700/40
-   * active:bg-gray-700/60` inline — two opacity modifiers per row, which is what
-   * `cef.test.ts` ratchets down. One value per role instead: the roles are "the pointer is
-   * over this" and "the pointer is down on this", and they do not vary by screen.
-   */
   --color-row-hover: rgb(54 65 83 / 0.4); /* gray-700/40 */
   --color-row-press: rgb(54 65 83 / 0.6); /* gray-700/60 */
-
-  /* Lines and secondary text */
   --color-hairline: rgb(54 65 83 / 0.5); /* gray-700/50 */
   --color-muted: #99a1af; /* gray-400 */
-
-  /* One family per meaning */
   --color-accent: #155dfc; /* blue-600 */
   --color-accent-ring: rgb(50 128 255 / 0.5); /* blue-500/50 */
   --color-accent-hairline: rgb(86 162 255 / 0.2); /* blue-400/20 */
