@@ -45,7 +45,7 @@
 <div
   role="group"
   aria-label={ariaLabel}
-  class="border-hairline bg-surface-sunken flex w-full rounded-xl border p-1 backdrop-blur-md"
+  class="border-outline-variant bg-surface-container-low flex w-full rounded-xl border p-1 backdrop-blur-md"
 >
   {#each options as opt (opt.id)}
     <button
@@ -53,13 +53,13 @@
       aria-pressed={selected === opt.id}
       class="flex-1 cursor-pointer rounded-lg py-1.5 text-center text-xs font-semibold transition-all {selected ===
       opt.id
-        ? 'bg-gray-700 text-white shadow-md'
-        : 'text-gray-400 hover:text-gray-200'}"
+        ? 'bg-surface-container-high text-on-surface shadow-md'
+        : 'text-on-surface-variant hover:text-on-surface'}"
       onclick={() => select(opt.id)}
     >
       {opt.label}
       {#if opt.badge}
-        <span class="bg-danger ml-1 rounded-full px-1.5 text-xs text-white">{opt.badge}</span>
+        <span class="bg-error text-on-error ml-1 rounded-full px-1.5 text-xs">{opt.badge}</span>
       {/if}
     </button>
   {/each}

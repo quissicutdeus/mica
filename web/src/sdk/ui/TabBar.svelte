@@ -56,7 +56,7 @@
 
 <nav
   aria-label={ariaLabel}
-  class="border-hairline bg-surface-overlay pb-safe-bottom absolute bottom-0 left-0 z-20 flex w-full border-t backdrop-blur-md"
+  class="border-outline-variant bg-surface-container-high pb-safe-bottom absolute bottom-0 left-0 z-20 flex w-full border-t backdrop-blur-md"
 >
   {#each options as opt (opt.id)}
     {@const Icon = opt.icon}
@@ -65,15 +65,15 @@
       aria-pressed={selected === opt.id}
       class="flex flex-1 cursor-pointer flex-col items-center gap-0.5 py-2 transition-colors {selected ===
       opt.id
-        ? 'text-sky-400'
-        : 'text-gray-500 hover:text-gray-300'}"
+        ? 'text-primary'
+        : 'text-on-surface-variant hover:text-on-surface'}"
       onclick={() => select(opt.id)}
     >
       <span class="relative">
         <Icon class="h-5 w-5" />
         {#if opt.badge}
           <span
-            class="bg-danger absolute -top-1.5 -right-2.5 min-w-4 rounded-full px-1 text-[10px] leading-4 font-bold text-white"
+            class="bg-error text-on-error absolute -top-1.5 -right-2.5 min-w-4 rounded-full px-1 text-[10px] leading-4 font-bold"
           >
             {opt.badge > 99 ? '99+' : opt.badge}
           </span>

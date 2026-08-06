@@ -9,8 +9,8 @@
   let {
     value = $bindable(),
     placeholder = 'Search...',
-    focusRingClass = 'focus:ring-blue-500',
-    class: className = 'bg-gray-800 text-white'
+    focusRingClass = 'focus:ring-primary',
+    class: className = 'bg-surface-container text-on-surface'
   }: Props = $props();
 
   const focus = (node: HTMLInputElement) => {
@@ -19,7 +19,7 @@
 </script>
 
 <input
-  class="w-full rounded-lg px-4 py-2 text-sm placeholder-gray-500 focus:ring-1 focus:outline-none {className} {focusRingClass}"
+  class="placeholder-on-surface-variant w-full rounded-lg px-4 py-2 text-sm focus:ring-1 focus:outline-none {className} {focusRingClass}"
   {placeholder}
   bind:value
   use:focus

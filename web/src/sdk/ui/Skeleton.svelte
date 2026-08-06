@@ -35,6 +35,6 @@
 <div class="space-y-2" aria-busy="true" aria-live="polite">
   <span class="sr-only">Loading</span>
   {#each { length: count } as _, i (i)}
-    <div class="animate-pulse bg-gray-800 {height} {rounded} {className}"></div>
+    <div class="bg-surface-container animate-pulse {height} {rounded} {className}"></div>
   {/each}
 </div>

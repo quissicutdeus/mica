@@ -127,20 +127,19 @@
   <!-- The master switch. On by definition while this pane is reachable; turning it off
        re-locks the group, which is why it is not bound to anything two-way — there is no
        state in which this renders "off". -->
-  <div class="mb-4 overflow-hidden rounded-xl bg-gray-800">
+  <div class="bg-surface-container mb-4 overflow-hidden rounded-xl">
     <ToggleSwitch
       label="Developer Tools"
       description="Turn off to hide — 10 taps on OS Version restores"
-      accent="emerald"
       checked={true}
       onchange={onhide}
     />
   </div>
 
-  <div class="space-y-4 overflow-hidden rounded-xl bg-gray-800 p-4 text-xs">
+  <div class="bg-surface-container space-y-4 overflow-hidden rounded-xl p-4 text-xs">
     <!-- Battery Level -->
     <div class="flex flex-col gap-2">
-      <div class="flex items-center justify-between text-gray-300">
+      <div class="text-on-surface flex items-center justify-between">
         <span class="font-semibold">Battery Charge</span>
         <span class="font-mono text-emerald-400">{Math.round($charge)}%</span>
       </div>
@@ -150,13 +149,13 @@
         max="100"
         value={Math.round($charge)}
         oninput={(e) => applyBatteryLevel(Number((e.currentTarget as HTMLInputElement).value))}
-        class="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-gray-900 accent-emerald-500"
+        class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-emerald-500"
       />
       <div class="grid grid-cols-4 gap-1.5 pt-0.5">
         <button
           type="button"
           onclick={() => applyBatteryLevel(0)}
-          class="cursor-pointer rounded border border-red-800 bg-red-950 px-2 py-1.5 text-center text-[10px] font-semibold text-red-300 hover:bg-red-900"
+          class="text-error cursor-pointer rounded border border-red-800 bg-red-950 px-2 py-1.5 text-center text-[10px] font-semibold hover:bg-red-900"
         >
           0% (Dead)
         </button>
@@ -170,7 +169,7 @@
         <button
           type="button"
           onclick={() => applyBatteryLevel(50)}
-          class="cursor-pointer rounded border border-gray-600 bg-gray-700 px-2 py-1.5 text-center text-[10px] font-semibold text-gray-200 hover:bg-gray-600"
+          class="border-outline bg-surface-container-high text-on-surface hover:bg-surface-container-highest cursor-pointer rounded border px-2 py-1.5 text-center text-[10px] font-semibold"
         >
           50%
         </button>
@@ -185,8 +184,8 @@
     </div>
 
     <!-- Signal Level -->
-    <div class="flex flex-col gap-2 border-t border-gray-700 pt-3">
-      <div class="flex items-center justify-between text-gray-300">
+    <div class="border-outline-variant flex flex-col gap-2 border-t pt-3">
+      <div class="text-on-surface flex items-center justify-between">
         <span class="font-semibold">Signal Strength</span>
         <span class="font-mono text-emerald-400">{$signalLevel} Bars</span>
       </div>
@@ -198,7 +197,7 @@
             class="cursor-pointer rounded border py-1.5 text-[11px] font-semibold transition-all {$signalLevel ===
             level
               ? 'border-emerald-500 bg-emerald-600 text-white'
-              : 'border-gray-700 bg-gray-900 text-gray-400 hover:bg-gray-700'}"
+              : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'}"
           >
             {level} Bar{level === 1 ? '' : 's'}
           </button>
@@ -207,16 +206,16 @@
     </div>
 
     <!-- System Volume & Sound -->
-    <div class="flex flex-col gap-2 border-t border-gray-700 pt-3">
-      <div class="flex items-center justify-between text-gray-300">
+    <div class="border-outline-variant flex flex-col gap-2 border-t pt-3">
+      <div class="text-on-surface flex items-center justify-between">
         <span class="font-semibold">System Volume</span>
         <div class="flex items-center gap-2">
           <button
             type="button"
             onclick={toggleMute}
             class="cursor-pointer rounded border px-2 py-0.5 font-mono text-[10px] {$soundMuted
-              ? 'border-red-800 bg-red-950 text-red-400'
-              : 'border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-700'}"
+              ? 'text-error border-red-800 bg-red-950'
+              : 'border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high'}"
           >
             {$soundMuted ? 'MUTED' : 'UNMUTED'}
           </button>
@@ -230,25 +229,25 @@
         step="0.05"
         value={$soundVolume}
         oninput={(e) => setVolume(Number((e.currentTarget as HTMLInputElement).value))}
-        class="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-gray-900 accent-emerald-500"
+        class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-emerald-500"
       />
     </div>
 
     <!-- Incoming Call Simulation -->
-    <div class="flex flex-col gap-2 border-t border-gray-700 pt-3">
-      <span class="font-semibold text-gray-300">Incoming Call Test</span>
+    <div class="border-outline-variant flex flex-col gap-2 border-t pt-3">
+      <span class="text-on-surface font-semibold">Incoming Call Test</span>
       <div class="flex gap-2">
         <input
           type="text"
           bind:value={callName}
           placeholder="Caller Name"
-          class="w-1/2 rounded border border-gray-700 bg-gray-900 px-2.5 py-1.5 text-gray-200 placeholder-gray-500 focus:border-emerald-500 focus:outline-none"
+          class="border-outline-variant bg-surface text-on-surface placeholder-on-surface-variant w-1/2 rounded border px-2.5 py-1.5 focus:border-emerald-500 focus:outline-none"
         />
         <input
           type="text"
           bind:value={callNumber}
           placeholder="Phone Number"
-          class="w-1/2 rounded border border-gray-700 bg-gray-900 px-2.5 py-1.5 text-gray-200 placeholder-gray-500 focus:border-emerald-500 focus:outline-none"
+          class="border-outline-variant bg-surface text-on-surface placeholder-on-surface-variant w-1/2 rounded border px-2.5 py-1.5 focus:border-emerald-500 focus:outline-none"
         />
       </div>
       <button
@@ -261,27 +260,27 @@
     </div>
 
     <!-- Notification & Message Triggers -->
-    <div class="flex flex-col gap-2 border-t border-gray-700 pt-3">
-      <span class="font-semibold text-gray-300">Push Notifications & SMS</span>
+    <div class="border-outline-variant flex flex-col gap-2 border-t pt-3">
+      <span class="text-on-surface font-semibold">Push Notifications & SMS</span>
       <div class="grid grid-cols-3 gap-1.5">
         <button
           type="button"
           onclick={triggerNotification}
-          class="cursor-pointer rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-center text-[11px] font-medium text-gray-200 hover:bg-gray-700"
+          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high cursor-pointer rounded border px-2 py-1.5 text-center text-[11px] font-medium"
         >
           Toast
         </button>
         <button
           type="button"
           onclick={triggerMessage}
-          class="cursor-pointer rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-center text-[11px] font-medium text-gray-200 hover:bg-gray-700"
+          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high cursor-pointer rounded border px-2 py-1.5 text-center text-[11px] font-medium"
         >
           SMS
         </button>
         <button
           type="button"
           onclick={triggerMail}
-          class="cursor-pointer rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-center text-[11px] font-medium text-gray-200 hover:bg-gray-700"
+          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high cursor-pointer rounded border px-2 py-1.5 text-center text-[11px] font-medium"
         >
           Email
         </button>

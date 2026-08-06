@@ -21,7 +21,7 @@
   }>();
 </script>
 
-<div class="bg-surface relative flex h-full flex-col text-white {className}">
+<div class="bg-surface text-on-surface relative flex h-full flex-col {className}">
   <!-- Header -->
   <ScreenHeader {title} {onback} {ontitleclick} {actions} />
 

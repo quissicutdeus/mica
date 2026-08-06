@@ -33,16 +33,16 @@
 </script>
 
 <div
-  class="animate-in fade-in bg-surface-overlay absolute inset-0 z-30 flex flex-col backdrop-blur-md duration-200"
+  class="animate-in fade-in bg-surface-container-high absolute inset-0 z-30 flex flex-col backdrop-blur-md duration-200"
 >
   <!-- Header -->
-  <div class="flex items-center justify-between border-b border-gray-800 p-4">
-    <h3 class="flex items-center gap-2 text-base font-semibold text-white">
-      <PhotoIcon class="h-5 w-5 text-blue-400" />
+  <div class="border-outline-variant flex items-center justify-between border-b p-4">
+    <h3 class="text-on-surface flex items-center gap-2 text-base font-semibold">
+      <PhotoIcon class="text-primary h-5 w-5" />
       {title}
     </h3>
     <button
-      class="rounded-full p-1 text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
+      class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface rounded-full p-1 transition-colors"
       onclick={onclose}
       aria-label="Close photo picker"
     >
@@ -57,9 +57,9 @@
         {@const selected = isSelected(photo.id)}
         <button
           type="button"
-          class="group relative aspect-square overflow-hidden rounded-xl border bg-gray-800 transition-all {selected
-            ? 'ring-accent-ring border-blue-500 ring-2'
-            : 'border-hairline hover:border-gray-500'}"
+          class="group bg-surface-container relative aspect-square overflow-hidden rounded-xl border transition-all {selected
+            ? 'ring-primary border-primary ring-2'
+            : 'border-outline-variant hover:border-outline'}"
           onclick={() => onmultichange?.(photo.id, photo.image)}
         >
           <img
@@ -68,15 +68,15 @@
             alt=""
           />
           {#if selected}
-            <div class="absolute top-1.5 right-1.5 rounded-full bg-blue-600 p-0.5 shadow-md">
-              <CheckCircleIcon class="h-4 w-4 text-white" />
+            <div class="bg-primary absolute top-1.5 right-1.5 rounded-full p-0.5 shadow-md">
+              <CheckCircleIcon class="text-on-primary h-4 w-4" />
             </div>
           {/if}
         </button>
       {:else}
         <button
           type="button"
-          class="group border-hairline relative aspect-square overflow-hidden rounded-xl border bg-gray-800 transition-all hover:border-blue-500"
+          class="group border-outline-variant bg-surface-container hover:border-primary relative aspect-square overflow-hidden rounded-xl border transition-all"
           onclick={() => onselect?.(photo.image)}
         >
           <img
@@ -89,15 +89,17 @@
     {/each}
 
     {#if $photos.length === 0}
-      <div class="col-span-3 flex flex-col items-center py-12 text-center text-sm text-gray-400">
-        <PhotoIcon class="mb-2 h-10 w-10 text-gray-600" />
+      <div
+        class="text-on-surface-variant col-span-3 flex flex-col items-center py-12 text-center text-sm"
+      >
+        <PhotoIcon class="text-outline mb-2 h-10 w-10" />
         No photos in gallery.
       </div>
     {/if}
   </div>
 
   <!-- Footer -->
-  <div class="flex gap-2 border-t border-gray-800 bg-gray-900 p-3">
+  <div class="border-outline-variant bg-surface flex gap-2 border-t p-3">
     {#if multiSelect}
       {#if selectedCount > 0}
         <Button

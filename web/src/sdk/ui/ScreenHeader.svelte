@@ -16,11 +16,11 @@
 </script>
 
 <div
-  class="bg-surface-raised pt-safe-top flex items-center border-b border-gray-700 px-4 pb-3 backdrop-blur-md"
+  class="bg-surface-container pt-safe-top border-outline-variant flex items-center border-b px-4 pb-3 backdrop-blur-md"
 >
   {#if onback}
     <button
-      class="-ml-2 rounded-full p-2 transition-colors hover:bg-gray-700"
+      class="hover:bg-surface-container-hover active:bg-surface-container-pressed -ml-2 rounded-full p-2 transition-colors"
       onclick={onback}
       aria-label="Go back"
     >
@@ -31,7 +31,7 @@
     <h1 class="ml-2 min-w-0 truncate">
       <button
         type="button"
-        class="group cursor-pointer truncate text-left text-xl font-semibold transition-colors hover:text-blue-400"
+        class="group hover:text-primary cursor-pointer truncate text-left text-xl font-semibold transition-colors"
         onclick={ontitleclick}
       >
         <span class="truncate">{title}</span>

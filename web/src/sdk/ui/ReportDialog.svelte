@@ -55,9 +55,11 @@
   class="bg-scrim absolute inset-0 z-50 flex items-end backdrop-blur-sm"
   transition:fade={{ duration: 150 }}
 >
-  <div class="max-h-full w-full overflow-y-auto rounded-t-3xl bg-gray-900 p-5">
-    <h3 class="mb-1 text-lg font-bold text-white">Report content</h3>
-    <p class="mb-4 text-sm text-gray-400">A moderator reviews this. The author is not told.</p>
+  <div class="bg-surface max-h-full w-full overflow-y-auto rounded-t-3xl p-5">
+    <h3 class="text-on-surface mb-1 text-lg font-bold">Report content</h3>
+    <p class="text-on-surface-variant mb-4 text-sm">
+      A moderator reviews this. The author is not told.
+    </p>
 
     <div class="mb-4 space-y-1.5">
       {#each CATEGORIES as option (option.id)}
@@ -67,12 +69,12 @@
           aria-pressed={category === option.id}
           class="flex w-full cursor-pointer items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition-colors {category ===
           option.id
-            ? 'border-danger bg-danger-surface text-white'
-            : 'border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700'}"
+            ? 'border-error bg-error-container text-on-error-container'
+            : 'border-outline-variant bg-surface-container text-on-surface hover:bg-surface-container-high'}"
         >
           {option.label}
           {#if category === option.id}
-            <span class="text-rose-400">●</span>
+            <span class="text-error">●</span>
           {/if}
         </button>
       {/each}
@@ -83,7 +85,7 @@
       maxlength={MAX_NOTE}
       rows="3"
       placeholder="Anything else the moderator should know (optional)"
-      class="mb-4 w-full resize-none rounded-xl border border-gray-700 bg-gray-800 p-3 text-sm text-white placeholder-gray-500 focus:border-rose-500 focus:outline-none"
+      class="border-outline-variant bg-surface-container text-on-surface placeholder-on-surface-variant focus:border-error mb-4 w-full resize-none rounded-xl border p-3 text-sm focus:outline-none"
     ></textarea>
 
     <div class="flex gap-3">
