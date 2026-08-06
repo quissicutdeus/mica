@@ -26,7 +26,7 @@
     "test:e2e": "pnpm --filter web test:e2e",
     "test:e2e:headed": "pnpm --filter web test:e2e:headed",
     "test:e2e:report": "pnpm --filter web test:e2e:report",
-    "format": "node scripts/clean-imports.js && prettier --write .",
+    "format": "prettier --write .",
     "format:check": "prettier --check .",
     "deadcode": "pnpm dlx knip",
     "new:app": "node scripts/new-app.js",

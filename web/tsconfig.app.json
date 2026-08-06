@@ -11,6 +11,17 @@
     "noEmit": true,
     "allowJs": true,
     "checkJs": true,
+    // Unused imports and locals are errors, in `.ts` and in `.svelte` alike —
+    // `svelte-check` surfaces them through the same compiler pass. This is what replaced
+    // `scripts/clean-imports.js`, which tried to answer the same question with a regex
+    // over the file text and could only ever approximate it. Turning this on found 45
+    // dead declarations the script had been walking past, two of which were live bugs
+    // rather than litter.
+    //
+    // `noUnusedParameters` is deliberately *not* set: Svelte event handlers and store
+    // callbacks routinely take an argument they do not read, and prefixing every one with
+    // `_` to satisfy the compiler is noise rather than cleanliness.
+    "noUnusedLocals": true,
     "moduleDetection": "force",
     "paths": {
       "@shared/*": ["../shared/*"],
