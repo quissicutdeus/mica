@@ -6,6 +6,7 @@
 export { default as AddIcon } from './ui/icons/AddIcon.svelte';
 export { default as ArchiveIcon } from './ui/icons/ArchiveIcon.svelte';
 export { default as BackspaceIcon } from './ui/icons/BackspaceIcon.svelte';
+export { default as BellIcon } from './ui/icons/BellIcon.svelte';
 export { default as BluetoothIcon } from './ui/icons/BluetoothIcon.svelte';
 export { default as CheckCircleIcon } from './ui/icons/CheckCircleIcon.svelte';
 export { default as CheckIcon } from './ui/icons/CheckIcon.svelte';
@@ -20,6 +21,7 @@ export { default as EmptyMailIcon } from './ui/icons/EmptyMailIcon.svelte';
 export { default as EmptyPhotoIcon } from './ui/icons/EmptyPhotoIcon.svelte';
 export { default as FlagIcon } from './ui/icons/FlagIcon.svelte';
 export { default as FlipCameraIcon } from './ui/icons/FlipCameraIcon.svelte';
+export { default as HomeIcon } from './ui/icons/HomeIcon.svelte';
 export { default as KeypadIcon } from './ui/icons/KeypadIcon.svelte';
 export { default as LightningWarningIcon } from './ui/icons/LightningWarningIcon.svelte';
 export { default as ListBulletIcon } from './ui/icons/ListBulletIcon.svelte';
