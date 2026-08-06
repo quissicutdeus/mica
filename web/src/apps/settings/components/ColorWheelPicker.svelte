@@ -94,6 +94,29 @@
   };
 
   /**
+   * The last value we sent upward, as a hex seed.
+   *
+   * The parent turns our `rgba(...)` into `#rrggbb` and hands it straight back, so
+   * without this the echo of our own emission is indistinguishable from somebody picking
+   * a preset — and adopting it mid-drag would re-derive the state the drag is setting.
+   * Comparing against what we emitted separates the two.
+   */
+  let lastEmitted = $state('');
+
+  const toHex = (h: number, s: number, l: number): string => {
+    const m = getRgbaString(h, s, l, 100).match(/\d+/g)!;
+    return `#${m
+      .slice(0, 3)
+      .map((n) => Number(n).toString(16).padStart(2, '0'))
+      .join('')}`;
+  };
+
+  const emit = (h: number, s: number, l: number, a: number) => {
+    lastEmitted = toHex(h, s, l);
+    onchange(getRgbaString(h, s, l, a));
+  };
+
+  /**
    * Adopt the color we were handed, so the wheel opens on the one in use.
    *
    * `color` was declared in `Props`, destructured, and then never read — the sliders
@@ -102,9 +125,9 @@
    * broken contract rather than an unused variable, which is why this reads it instead
    * of deleting it.
    *
-   * Once only, at mount. Tracking `color` reactively would fight the user: every drag
-   * emits through `onchange`, the parent stores it and passes it straight back, and the
-   * incoming value would then re-derive the very state the drag is setting.
+   * Runs at mount *and* whenever the value changes from outside — clicking a preset has
+   * to move the marker, or the wheel claims a color that is not the one in use. The
+   * `lastEmitted` guard is what makes that safe to do reactively.
    */
   const adoptIncomingColor = () => {
     // Both forms, because the seed is `#rrggbb` and a color dragged off the wheel is
@@ -146,6 +169,25 @@
     drawWheel();
   });
 
+  $effect(() => {
+    // Depend on `color` explicitly; everything else in here is untracked reads.
+    const incoming = color;
+    if (incoming && incoming !== lastEmitted) adoptIncomingColor();
+  });
+
+  /**
+   * Where the marker sits, in percent of the wheel box.
+   *
+   * The same polar mapping `updateColorFromPointer` reads back out — angle is hue,
+   * distance from the centre is saturation — so the dot lands under the pointer that set
+   * it, and lands in the right place for a color that arrived from a preset instead.
+   */
+  const marker = $derived.by(() => {
+    const radians = (hue * Math.PI) / 180;
+    const r = (saturation / 100) * 50;
+    return { left: 50 + Math.cos(radians) * r, top: 50 + Math.sin(radians) * r };
+  });
+
   const updateColorFromPointer = (e: MouseEvent | TouchEvent) => {
     if (!canvasRef) return;
     const rect = canvasRef.getBoundingClientRect();
@@ -165,8 +207,7 @@
     hue = Math.round(angle);
     saturation = Math.min(100, Math.round((dist / maxRadius) * 100));
 
-    const newRgba = getRgbaString(hue, saturation, lightness, alpha);
-    onchange(newRgba);
+    emit(hue, saturation, lightness, alpha);
   };
 
   const handlePointerDown = (e: PointerEvent | MouseEvent | TouchEvent) => {
@@ -213,6 +254,12 @@
       onpointerdown={handlePointerDown}
       class="border-outline-variant cursor-crosshair touch-none rounded-full border shadow-md"
     ></canvas>
+
+    <!-- Pointer-events off so it never intercepts a drag it is only reporting on. -->
+    <div
+      class="pointer-events-none absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.6)]"
+      style={`left: ${marker.left}%; top: ${marker.top}%; background: ${getRgbaString(hue, saturation, lightness, 100)};`}
+    ></div>
   </div>
 
   <!-- Lightness & Transparency Sliders -->
@@ -227,7 +274,7 @@
         min="10"
         max="90"
         bind:value={lightness}
-        oninput={() => onchange(getRgbaString(hue, saturation, lightness, alpha))}
+        oninput={() => emit(hue, saturation, lightness, alpha)}
         class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-blue-500"
       />
     </div>
@@ -242,7 +289,7 @@
         min="10"
         max="100"
         bind:value={alpha}
-        oninput={() => onchange(getRgbaString(hue, saturation, lightness, alpha))}
+        oninput={() => emit(hue, saturation, lightness, alpha)}
         class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-blue-500"
       />
     </div>
