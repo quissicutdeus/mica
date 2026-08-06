@@ -89,6 +89,24 @@ describe('PhoneFrame transparency', () => {
     expect(painted, 'phone-screen has no wallpaper fill').toBe(true);
   });
 
+  it('keeps a digit-free accessible name on the status bar', () => {
+    // Load-bearing for the e2e suite, which is not obvious from here.
+    //
+    // The status bar is a `<button>` displaying the clock and the battery percentage,
+    // and it precedes every app in the DOM. Several e2e specs click keypad digits, and
+    // when they addressed them by *text* the status bar won — so `phone.spec.ts` failed
+    // for any time containing a 5 or a 9, and `keybinds.spec.ts` for a 7 or an 8. Those
+    // specs now use `getByRole(name:)`, which reads the accessible name, and this label
+    // is the only reason that distinguishes the two.
+    //
+    // Delete or templatise this label and the flake comes back, in specs that do not
+    // mention this file. Hence the assertion here rather than a comment there.
+    const bar = renderFrame(false).getByRole('button', { name: /notification shade/i });
+    const label = bar.getAttribute('aria-label') ?? '';
+    expect(label).not.toMatch(/\d/);
+    expect(bar.textContent ?? '').toMatch(/\d/); // the digits are still on screen
+  });
+
   it('writes the theme onto the screen', () => {
     // The screen is the theme root: these custom properties inherit from here into every
     // app, so an app writing `bg-surface-container` resolves against whatever the player

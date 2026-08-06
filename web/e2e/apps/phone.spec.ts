@@ -7,8 +7,25 @@ test.describe('Phone Dialer App E2E', () => {
     await expect(page.locator('h1', { hasText: 'Phone' })).toBeVisible();
   });
 
+  /**
+   * Keypad digits are addressed by **accessible name**, not by text content.
+   *
+   * `page.locator('button', { hasText: '5' }).first()` looks right and is a trap. The
+   * status bar in `PhoneFrame` is itself a `<button>`, it contains the clock and the
+   * battery percentage, and it comes first in the DOM — so `.first()` resolved to it
+   * for any time containing the digit under test, opened the notification shade, and
+   * the shade's scrim then blocked every later click. It failed at 9:59 PM and passed
+   * at 10:00, which reads like a real defect and is not one.
+   *
+   * `getByRole(name:)` computes the accessible name, and the status bar has an explicit
+   * `aria-label="Open notification shade"` — no digits in it. The keypad buttons have no
+   * label, so their accessible name is their text. That is what makes the two
+   * distinguishable, and it is also what the test actually means: the button *called* 5.
+   *
+   * Do not "simplify" these back to `hasText`.
+   */
   test('dials numbers using numeric keypad and clears with backspace', async ({ page }) => {
-    const btn5 = page.locator('button', { hasText: '5' }).first();
+    const btn5 = page.getByRole('button', { name: '5', exact: true });
 
     // Click 5 5 5
     await btn5.click();
@@ -28,7 +45,7 @@ test.describe('Phone Dialer App E2E', () => {
   });
 
   test('initiates call and transitions to calling view controls', async ({ page }) => {
-    const btn9 = page.locator('button', { hasText: '9' }).first();
+    const btn9 = page.getByRole('button', { name: '9', exact: true });
     await btn9.click();
 
     const callBtn = page.locator('button[aria-label="Call"]');

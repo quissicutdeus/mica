@@ -12,8 +12,11 @@ test.describe('Keyboard Shortcuts E2E', () => {
     await page.locator('button', { hasText: 'Calculator' }).first().click();
     await expect(page.locator('h1', { hasText: 'Calculator' })).toBeVisible();
 
-    await page.locator('button', { hasText: '7' }).first().click();
-    await page.locator('button', { hasText: '8' }).first().click();
+    // `getByRole(name:)`, not `locator('button', { hasText })` — see the note in
+    // `apps/phone.spec.ts`. `hasText` matched the status bar clock and made this test
+    // fail for whichever hour or minute happened to contain a 7 or an 8.
+    await page.getByRole('button', { name: '7', exact: true }).click();
+    await page.getByRole('button', { name: '8', exact: true }).click();
     const display = page.locator('.text-6xl');
     await expect(display).toHaveText('78');
 
