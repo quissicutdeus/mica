@@ -110,8 +110,6 @@ export const ROLE_NAMES = [
   'surface-tint'
 ] as const;
 
-export type RoleName = (typeof ROLE_NAMES)[number];
-
 /** `surface-container-high` -> `surfaceContainerHigh`, the getter on `DynamicScheme`. */
 const camel = (kebab: string): string =>
   kebab.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());

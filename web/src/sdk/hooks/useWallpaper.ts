@@ -35,4 +35,5 @@ export function useWallpaper() {
   };
 }
 
+/** @public — SDK surface for add-ons; no in-repo app needs to name these. */
 export type { WallpaperState, WallpaperPreset };

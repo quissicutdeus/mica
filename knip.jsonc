@@ -5,6 +5,17 @@
   // all false positives, and a report you have to mentally filter is a report nobody
   // reads. The point of the config is that a hit means something.
   "$schema": "https://unpkg.com/knip@5/schema.json",
+  // A type exported for a consumer to name, but referenced within its own file, is not
+  // dead — `PushOptions` types `push()`'s parameter and `KeybindContext` types a field on
+  // `KeybindAction`. Reporting those trains people to ignore the report, which is the one
+  // thing this config exists to prevent.
+  "ignoreExportsUsedInFile": true,
+  // `@public` marks an export as SDK surface for add-ons rather than something this repo
+  // is expected to consume. It is a narrow exemption on purpose: `src/sdk/index.ts` is
+  // still not an entry point, so an exported *component* nobody renders is reported as
+  // before. Only what someone has deliberately labelled public is exempt, and the label
+  // sits next to the code rather than in this file.
+  "tags": ["-public"],
   // Tailwind and its two plugins are pulled in by `@import` / `@plugin` in
   // `src/app.css`, and knip does not follow CSS. They are load-bearing — see AGENTS §6
   // on what happens in game when the Tailwind setup is "tidied up".

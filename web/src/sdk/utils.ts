@@ -36,4 +36,5 @@ export { useScrollDetect } from '../lib/useScrollDetect';
 export { tokenizeRichText } from '@shared/richText';
 
 /** Blabber's total unread badge (mentions, DMs, persistent notifications), for its manifest. */
+/** @public — `blabberTotalUnread` feeds the manifest badge; `unreadMentions` is for add-ons. */
 export { unreadMentions, blabberTotalUnread } from '../services/blabber';
