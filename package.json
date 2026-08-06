@@ -36,9 +36,9 @@
   "author": "quissicutdeus",
   "license": "AGPL-3.0-or-later",
   "devDependencies": {
-    "@citizenfx/client": "2.0.33230-1",
-    "@citizenfx/server": "2.0.32561-1",
-    "@types/node": "^26.1.1",
+    "@citizenfx/client": "2.0.34410-1",
+    "@citizenfx/server": "2.0.34410-1",
+    "@types/node": "^26.1.2",
     "concurrently": "^10.0.4",
     "cross-env": "^10.1.0",
     "esbuild": "^0.28.1",
