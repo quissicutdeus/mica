@@ -15,7 +15,7 @@
   import VolumeHud from './VolumeHud.svelte';
   import NotificationShade from './NotificationShade.svelte';
   import { openShade, isShadeOpen, closeShade } from './state/shade';
-  import { wallpaperBackground } from './state/wallpaper';
+  import { wallpaperBackground, wallpaperNeedsContrast } from './state/wallpaper';
   import { themeStyleStore } from './state/theme';
 
   let { transparent = false, onClose, children } = $props();
@@ -145,6 +145,7 @@
       <button
         type="button"
         class="text-on-surface absolute top-0 z-60 flex w-full cursor-pointer items-center justify-between px-8 pt-3 text-sm font-medium transition-opacity hover:opacity-90 active:opacity-75"
+        class:text-shadow-label={$wallpaperNeedsContrast}
         onclick={() => ($isShadeOpen ? closeShade() : openShade())}
         aria-label={$isShadeOpen ? 'Close notification shade' : 'Open notification shade'}
       >

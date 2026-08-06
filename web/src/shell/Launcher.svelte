@@ -1,6 +1,7 @@
 <script lang="ts">
   import { isAdmin } from '../services/admin';
   import AppIcon from '../sdk/ui/AppIcon.svelte';
+  import { wallpaperNeedsContrast } from './state/wallpaper';
   import { appRegistryStore } from './state/registry';
 
   let { openApp } = $props<{ openApp: (id: string) => void }>();
@@ -20,6 +21,7 @@
   role="region"
   aria-label="Home Screen"
   class="pt-safe-top text-on-surface flex h-full flex-col items-center bg-transparent px-4 pb-4 select-none"
+  class:text-shadow-label={$wallpaperNeedsContrast}
 >
   <h1 class="mb-8 text-4xl font-bold tracking-tight">gPhone</h1>
 

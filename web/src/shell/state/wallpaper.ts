@@ -121,5 +121,17 @@ export const resetWallpaper = () => setWallpaperSeed(PRESETS[0].seed);
 export const backgroundForSeed = (seed: string): string =>
   backgroundForScheme(buildSchemes(sanitizeSeed(seed)).dark);
 
+/**
+ * Whether anything drawn straight onto the wallpaper needs help being readable.
+ *
+ * True only for a photo. A generated gradient is built from the same scheme as the text
+ * on top of it, so the contrast is already guaranteed; an arbitrary photograph guarantees
+ * nothing.
+ */
+export const wallpaperNeedsContrast = derived(
+  wallpaperStore,
+  ($wallpaper) => $wallpaper.type === 'image'
+);
+
 /** The seed in use, for a picker that wants to open on the current color. */
 export const activeSeed = derived(themeStore, ($theme) => $theme.seed);

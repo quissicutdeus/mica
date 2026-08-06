@@ -131,6 +131,24 @@
   /* --- end generated --- */
 
   /**
+   * Legibility for text sitting directly on a photo wallpaper.
+   *
+   * Two layers: a tight drop for edge definition and a wider halo for the hard case,
+   * light text over bright sky. Applied to a container rather than each label, because
+   * `text-shadow` inherits.
+   *
+   * A shadow rather than measuring the photo and switching the text between light and
+   * dark. Brightness varies *within* one screen — a launcher can have a label over open
+   * sky and another over dark hair at the same time — so a single per-image decision is
+   * wrong for half the labels whichever way it goes. A dark shadow under light text is
+   * legible over both, which is why every phone OS does this and none of them samples.
+   *
+   * Pre-resolved rgba, no `color-mix()`, and not a themed role: it has to stay dark
+   * whatever the seed, since it exists to separate text from an arbitrary photograph.
+   */
+  --text-shadow-label: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.65);
+
+  /**
    * The frame's own insets. `PhoneFrame` expressed these as bare `pt-8`/`pb-4` with
    * nothing exported, so an app had no way to ask how much of the screen it actually
    * owns. Same numbers, now with a name.
