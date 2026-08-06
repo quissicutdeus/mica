@@ -11,6 +11,7 @@ import './Conversations';
 import './Mail';
 import './Messages';
 import './Notes';
+import './Notifications';
 import './Phone';
 import './Photos';
 import './Reports';

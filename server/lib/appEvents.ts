@@ -5,33 +5,28 @@ import {
   type AppEventEnvelope,
   type AppEventNotification
 } from '@shared/appEvents';
-
-/**
- * Pushing an event to one app in one player's phone.
- *
- * Bound to an app rather than taking one per call, so a mistyped id is a **startup** condition
- * instead of a silent runtime miss — the same move `ServiceProxy` makes by throwing when a
- * response event cannot be derived.
- */
+import { getNotificationsRepository } from '../services/Notifications';
 
 type PushOutcome =
   | { delivered: true; source: number }
-  /**
-   * A discriminated union rather than a boolean, and that is the point: a caller must not be
-   * able to read "the recipient was offline" as "the recipient was told". The type enforces it
-   * at every call site, which a comment above one of them does not.
-   */
   | { delivered: false; reason: 'offline' | 'oversize' | 'unserializable' };
 
 /** ~16 KB. A push is not a transport for a base64 photo. */
 const MAX_PAYLOAD_BYTES = 16_384;
 
-interface PushOptions {
+export interface PushOptions {
   /**
-   * Ask the shell to raise a toast. Honoured only if the target app declared `notifications` —
-   * checked in the NUI, where the manifest lives.
+   * Ask the shell to raise a toast. Honoured only if the target app declared `notifications`.
    */
   notify?: AppEventNotification;
+  /** Kind of notification for persistent storage. Defaults to event name. */
+  kind?: string;
+  /** Title for persistent storage. Defaults to notification title or app name. */
+  title?: string;
+  /** Deep link route for persistent storage. */
+  deepLink?: string;
+  /** Whether to persist the notification row. Defaults to true if notify is provided. */
+  persist?: boolean;
 }
 
 export interface AppEventChannel {
@@ -64,14 +59,6 @@ const envelopeFor = (
   notify: options?.notify
 });
 
-/**
- * Serialise once, and refuse rather than hitch.
- *
- * The payload crosses msgpack on `emitNet` and then JSON in `sendNuiMessage`, so `Date`, `Map`
- * and `undefined` do not survive intact — the type says JSON-shaped values for that reason.
- * Finding out that a 4 MB payload does not fit as a server stall is much worse than finding out
- * as a refusal.
- */
 const measure = (payload: Record<string, unknown>): 'ok' | 'oversize' | 'unserializable' => {
   let json: string;
   try {
@@ -81,6 +68,40 @@ const measure = (payload: Record<string, unknown>): 'ok' | 'oversize' | 'unseria
   }
   return json.length > MAX_PAYLOAD_BYTES ? 'oversize' : 'ok';
 };
+
+function persistNotificationsAsync(
+  app: string,
+  event: string,
+  citizenids: string[],
+  payload: Record<string, unknown>,
+  options?: PushOptions
+) {
+  if (options?.persist === false) return;
+  if (!options?.notify && !options?.persist) return;
+
+  const repo = getNotificationsRepository();
+  if (!repo) return;
+
+  const notifyObj = options.notify;
+  const title = options.title ?? notifyObj?.title ?? app;
+  const body =
+    notifyObj?.message ?? (typeof payload.message === 'string' ? payload.message : event);
+  const avatar = notifyObj?.avatar;
+  const kind = options.kind ?? event;
+  const deepLink = options.deepLink;
+
+  const items = citizenids.map((citizenid) => ({
+    citizenid,
+    app,
+    kind,
+    title,
+    body,
+    avatar,
+    deep_link: deepLink
+  }));
+
+  repo.createNotificationBatch(items).catch(() => {});
+}
 
 export function appEventChannel(appId: string): AppEventChannel {
   const app = appId.toLowerCase();
@@ -117,15 +138,11 @@ export function appEventChannel(appId: string): AppEventChannel {
       if (!APP_EVENT_NAME_PATTERN.test(event)) {
         throw new Error(`appEventChannel('${app}'): event '${event}' must be lower_snake_case.`);
       }
+
+      // Persist notification asynchronously regardless of online state
+      persistNotificationsAsync(app, event, [citizenid], payload, options);
+
       const source = FrameworkBridge.getSourceByCitizenId(citizenid);
-      /**
-       * Offline is a named outcome, not a throw and not a silent drop.
-       *
-       * Nothing is queued: the row that occasioned this push is already written, so the player
-       * gets it from the ordinary fetch when they next open the app. `AGENTS.md` §11.6 says as
-       * much — "a push channel does not exempt one, because a push only covers what arrives
-       * while you are looking" — and `deliverToParticipants` already works this way.
-       */
       if (source === null) return { delivered: false, reason: 'offline' };
       return send(citizenid, source, event, payload, options);
     },
@@ -134,18 +151,21 @@ export function appEventChannel(appId: string): AppEventChannel {
       if (!APP_EVENT_NAME_PATTERN.test(event)) {
         throw new Error(`appEventChannel('${app}'): event '${event}' must be lower_snake_case.`);
       }
+
+      const uniqueCitizenids = [...new Set(citizenids)];
+      // Persist notification batch asynchronously regardless of online state
+      persistNotificationsAsync(app, event, uniqueCitizenids, payload, options);
+
       const sources = FrameworkBridge.getSourcesByCitizenId(citizenids);
       const delivered: string[] = [];
       const offline: string[] = [];
 
-      for (const citizenid of new Set(citizenids)) {
+      for (const citizenid of uniqueCitizenids) {
         const source = sources.get(citizenid);
         if (source === undefined) {
           offline.push(citizenid);
           continue;
         }
-        // No per-recipient log line: a forty-follower fan-out with thirty-five offline must not
-        // print thirty-five warnings.
         if (send(citizenid, source, event, payload, options).delivered) delivered.push(citizenid);
       }
       return { delivered, offline };
