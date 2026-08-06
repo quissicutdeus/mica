@@ -89,8 +89,35 @@ function cleanFile(filePath) {
     }
   }
 
-  // Clean up double blank lines left behind by deleted import blocks
-  content = content.replace(/\n\s*\n\s*\n/g, '\n\n');
+  // Collapse the blank lines a deleted import block left behind — but only within the
+  // import region at the top of the file.
+  //
+  // This used to run over the whole file, which quietly rewrote content that had nothing
+  // to do with imports. A template literal containing two consecutive blank lines came
+  // back with one, in any file that happened to also have an unused import, and the two
+  // changes arrived in the same diff looking like one edit. Prettier does not reformat
+  // inside a template literal precisely because that whitespace can be significant, and
+  // neither should this.
+  //
+  // The region runs to the last line belonging to an import statement — `import …`, or the
+  // `} from '…'` tail of a multi-line one. Computed by line rather than by regex over the
+  // whole file, so a blank line left by a deletion cannot extend the boundary past itself.
+  const lines = content.split('\n');
+  let lastImportLine = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*import\b/.test(lines[i]) || /^\s*\}\s*from\s+['"]/.test(lines[i])) {
+      lastImportLine = i;
+    }
+  }
+
+  if (lastImportLine >= 0) {
+    const head = lines.slice(0, lastImportLine + 1).join('\n');
+    const tail = lines.slice(lastImportLine + 1);
+    // `tail.length`, not `tail.join('\n')` — a file that is nothing but imports splits to a
+    // final empty element, and testing the joined string for truthiness ate the trailing
+    // newline off every generated barrel.
+    content = head.replace(/\n\s*\n\s*\n/g, '\n\n') + (tail.length ? '\n' + tail.join('\n') : '');
+  }
 
   if (content !== original) {
     fs.writeFileSync(filePath, content, 'utf-8');
