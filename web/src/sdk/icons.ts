@@ -6,10 +6,13 @@
 export { default as AddIcon } from './ui/icons/AddIcon.svelte';
 export { default as ArchiveIcon } from './ui/icons/ArchiveIcon.svelte';
 export { default as BackspaceIcon } from './ui/icons/BackspaceIcon.svelte';
+export { default as BluetoothIcon } from './ui/icons/BluetoothIcon.svelte';
 export { default as CheckCircleIcon } from './ui/icons/CheckCircleIcon.svelte';
 export { default as CheckIcon } from './ui/icons/CheckIcon.svelte';
+export { default as ChevronDownIcon } from './ui/icons/ChevronDownIcon.svelte';
 export { default as ChevronLeftIcon } from './ui/icons/ChevronLeftIcon.svelte';
 export { default as ChevronRightIcon } from './ui/icons/ChevronRightIcon.svelte';
+export { default as ClockIcon } from './ui/icons/ClockIcon.svelte';
 export { default as CloseIcon } from './ui/icons/CloseIcon.svelte';
 export { default as DocumentIcon } from './ui/icons/DocumentIcon.svelte';
 export { default as EditIcon } from './ui/icons/EditIcon.svelte';

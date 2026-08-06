@@ -16,6 +16,7 @@ import type {
   Mail,
   Message,
   Note,
+  NotificationItem,
   Photo,
   Transaction
 } from '@shared/types';
@@ -42,6 +43,93 @@ const mockReports: any[] = [
     status: 'active',
     created_at: '2026-07-30T10:00:00Z',
     updated_at: '2026-07-30T10:00:00Z'
+  }
+];
+
+const mockNotifications: NotificationItem[] = [
+  {
+    id: 1,
+    citizenid: 'mock_citizenid',
+    app: 'settings',
+    kind: 'info',
+    title: 'Developer Tools',
+    body: 'Developer Tools unlocked successfully.',
+    avatar: null,
+    deep_link: 'gphone://settings',
+    read_at: null,
+    cleared_at: null,
+    created_at: new Date(Date.now() - 60000).toISOString(),
+    updated_at: new Date(Date.now() - 60000).toISOString()
+  },
+  {
+    id: 2,
+    citizenid: 'mock_citizenid',
+    app: 'messages',
+    kind: 'info',
+    title: 'Sarah Connor',
+    body: 'Hey! Check out the new notification shade.',
+    avatar: null,
+    deep_link: 'gphone://messages?threadId=1',
+    read_at: null,
+    cleared_at: null,
+    created_at: new Date(Date.now() - 120000).toISOString(),
+    updated_at: new Date(Date.now() - 120000).toISOString()
+  },
+  {
+    id: 3,
+    citizenid: 'mock_citizenid',
+    app: 'messages',
+    kind: 'info',
+    title: 'Mike Ross',
+    body: 'Are you free for a call later today?',
+    avatar: null,
+    deep_link: 'gphone://messages?threadId=2',
+    read_at: null,
+    cleared_at: null,
+    created_at: new Date(Date.now() - 300000).toISOString(),
+    updated_at: new Date(Date.now() - 300000).toISOString()
+  },
+  {
+    id: 4,
+    citizenid: 'mock_citizenid',
+    app: 'messages',
+    kind: 'info',
+    title: 'Boss',
+    body: "Don't forget the team meeting at 5pm.",
+    avatar: null,
+    deep_link: 'gphone://messages?threadId=3',
+    read_at: null,
+    cleared_at: null,
+    created_at: new Date(Date.now() - 600000).toISOString(),
+    updated_at: new Date(Date.now() - 600000).toISOString()
+  },
+  {
+    id: 5,
+    citizenid: 'mock_citizenid',
+    app: 'mail',
+    kind: 'info',
+    title: 'Security Alert',
+    body: 'New login detected from Santos Central.',
+    avatar: null,
+    deep_link: 'gphone://mail?id=5',
+    read_at: null,
+    cleared_at: null,
+    created_at: new Date(Date.now() - 900000).toISOString(),
+    updated_at: new Date(Date.now() - 900000).toISOString()
+  },
+  {
+    id: 6,
+    citizenid: 'mock_citizenid',
+    app: 'mail',
+    kind: 'info',
+    title: 'Weekly Digest',
+    body: 'You have 4 new messages in your inbox.',
+    avatar: null,
+    deep_link: 'gphone://mail?id=6',
+    read_at: null,
+    cleared_at: null,
+    created_at: new Date(Date.now() - 1200000).toISOString(),
+    updated_at: new Date(Date.now() - 1200000).toISOString()
   }
 ];
 
@@ -817,6 +905,52 @@ const mockRegistry: Record<string, MockHandler> = {
     const report = mockReports.find((r) => r.id === data?.id);
     if (report) report.resolution = 'pending';
     return { ok: true, resolution: 'pending' };
+  },
+
+  // Persistent Notifications
+  getShadeNotifications: async () => mockNotifications.filter((n) => !n.cleared_at),
+  getNotificationHistory: async () => mockNotifications.filter((n) => n.cleared_at !== null),
+  getUnreadCounts: async () => {
+    const counts: Record<string, number> = {};
+    for (const n of mockNotifications) {
+      if (!n.cleared_at && !n.read_at) {
+        counts[n.app] = (counts[n.app] || 0) + 1;
+      }
+    }
+    return counts;
+  },
+  markNotificationRead: async (data: any) => {
+    const ids = data?.ids || [];
+    const now = new Date().toISOString();
+    mockNotifications.forEach((n) => {
+      if (ids.includes(n.id)) n.read_at = now;
+    });
+    return true;
+  },
+  clearNotifications: async (data: any) => {
+    const ids = data?.ids || [];
+    const now = new Date().toISOString();
+    mockNotifications.forEach((n) => {
+      if (ids.includes(n.id)) n.cleared_at = now;
+    });
+    return true;
+  },
+  clearAllNotifications: async (data: any) => {
+    const now = new Date().toISOString();
+    mockNotifications.forEach((n) => {
+      if (!data?.appId || n.app === data.appId) n.cleared_at = now;
+    });
+    return true;
+  },
+  restoreNotifications: async (data: any) => {
+    const ids = data?.ids || [];
+    mockNotifications.forEach((n) => {
+      if (ids.includes(n.id)) {
+        n.cleared_at = null;
+        n.read_at = null;
+      }
+    });
+    return true;
   },
 
   // Navigation & Client Controls

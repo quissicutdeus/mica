@@ -20,6 +20,8 @@ export * from './useMail';
 export * from './useMessages';
 export * from './useNavigation';
 export * from './useNotes';
+export * from './useNotificationSettings';
+export * from './useNotifications';
 export * from './useNuiBridge';
 export * from './usePagedList.svelte';
 export * from './usePersisted';

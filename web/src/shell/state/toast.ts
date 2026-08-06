@@ -1,6 +1,7 @@
 import { get, writable } from 'svelte/store';
 import { audio } from './audio';
 import { isBatteryDead } from './charge';
+import { addNotificationItem } from '../../services/notifications';
 
 type ToastType = 'info' | 'success' | 'warning' | 'error' | 'message' | 'call' | 'contact';
 
@@ -12,12 +13,15 @@ export interface ToastAction {
 
 export interface ToastMessage {
   id: string;
+  app?: string;
   title?: string;
   message: string;
   type: ToastType;
   duration?: number;
   avatar?: string;
   sender?: string;
+  deepLink?: string;
+  persist?: boolean;
   actions?: ToastAction[];
   hasReplyInput?: boolean;
   replyPlaceholder?: string;
@@ -63,8 +67,10 @@ function createToastStore() {
     }
   };
 
+  const MAX_VISIBLE_TOASTS = 2;
+
   const show = (options: Partial<ToastMessage> & { message: string }) => {
-    const id = `toast_${Date.now()}_${++toastCounter}`;
+    const id = options.id || `toast_${Date.now()}_${++toastCounter}`;
     const newToast: ToastMessage = {
       id,
       title: options.title,
@@ -81,7 +87,51 @@ function createToastStore() {
       onExpire: options.onExpire
     };
 
-    update((toasts) => [newToast, ...toasts]);
+    update((toasts) => {
+      // If there is an active toast from the same title or sender, replace it to prevent spam
+      const matchIndex = toasts.findIndex(
+        (t) =>
+          (options.title && t.title === options.title) ||
+          (options.sender && t.sender === options.sender)
+      );
+
+      let next = [...toasts];
+      if (matchIndex !== -1) {
+        clearToastTimer(next[matchIndex].id);
+        next[matchIndex] = newToast;
+      } else {
+        next = [newToast, ...next];
+      }
+
+      // Cap visible toasts to MAX_VISIBLE_TOASTS by dismissing the oldest non-interactive toast
+      while (next.length > MAX_VISIBLE_TOASTS) {
+        let oldestIndex = -1;
+        for (let i = next.length - 1; i >= 0; i--) {
+          if (!next[i].actions && !next[i].hasReplyInput) {
+            oldestIndex = i;
+            break;
+          }
+        }
+        if (oldestIndex !== -1) {
+          clearToastTimer(next[oldestIndex].id);
+          next.splice(oldestIndex, 1);
+        } else {
+          break;
+        }
+      }
+
+      return next;
+    });
+
+    if (options.persist !== false) {
+      addNotificationItem({
+        app: options.app || (options.type === 'message' ? 'messages' : 'system'),
+        title: options.title || options.sender || 'System Notification',
+        body: options.message,
+        avatar: options.avatar,
+        deepLink: options.deepLink
+      });
+    }
 
     if (newToast.duration !== undefined && newToast.duration > 0) {
       scheduleToastTimer(id, newToast.duration);

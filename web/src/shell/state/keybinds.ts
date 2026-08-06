@@ -108,7 +108,7 @@ export function registerHandler(actionId: string, handler: Handler, appId?: stri
  * some *other* app is skipped rather than falling through to nothing, so a backgrounded
  * app can never answer for the foreground one.
  */
-const activeHandler = (actionId: string, currentApp: string): Handler | undefined => {
+export const activeHandlerFor = (actionId: string, currentApp = 'home'): Handler | undefined => {
   const stack = handlers.get(actionId);
   if (!stack) return undefined;
 
@@ -188,7 +188,7 @@ export function dispatchKey(event: KeyboardEvent, env: KeybindEnvironment): bool
   const action = resolveAction(event.key, env, get(bindings));
   if (!action) return false;
 
-  const handler = activeHandler(action.id, env.currentApp);
+  const handler = activeHandlerFor(action.id, env.currentApp);
   if (!handler) return false;
 
   event.preventDefault();
