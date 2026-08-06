@@ -5,7 +5,6 @@ import {
   soundVolume,
   soundVolumePercent,
   adjustVolume,
-  setVolume,
   setVolumeStep,
   stepVolume,
   toggleMute,

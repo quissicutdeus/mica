@@ -4,7 +4,6 @@ import {
   defineApp,
   usePhoneNotification,
   useContacts,
-  useCamera,
   usePhotos,
   useNuiBridge,
   useNavigation,

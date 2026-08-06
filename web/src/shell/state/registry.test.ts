@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { AppComponent } from '@gphone/sdk';
 import { get } from 'svelte/store';
-import { appRegistryStore, registeredApps, getFirstBootTime, type AppManifest } from './registry';
+import { appRegistryStore, getFirstBootTime, type AppManifest } from './registry';
 
 describe('App Registry Store', () => {
   it('does not warn when installing a bundled add-on, but warns when replacing an already installed app', () => {

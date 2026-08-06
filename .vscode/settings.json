@@ -26,5 +26,9 @@
   },
 
   "search.exclude": { "dist": true, "playwright-report": true, "test-results": true },
-  "typescript.tsdk": "node_modules/typescript/lib"
+  "typescript.tsdk": "node_modules/typescript/lib",
+
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": "explicit"
+  }
 }

@@ -1,10 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
-import {
-  KEYBIND_ACTIONS,
-  PHONE_SCOPE_ACTIONS,
-  type KeybindAction,
-  type KeybindContext
-} from '@shared/keybinds';
+import { KEYBIND_ACTIONS, PHONE_SCOPE_ACTIONS, type KeybindAction } from '@shared/keybinds';
 import { useStorage } from '../../sdk/hooks/useStorage';
 
 /**
