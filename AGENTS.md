@@ -219,6 +219,25 @@ allowlist, then answered as many requests of any size as arrived.
     commit must match that statement. Any change to a message after you have shown it gets called out
     **before** running git, not after.
 
+11. **One planning document, `docs/roadmap.md`, and do not create a second.**
+
+    It records what exists, what is proposed and explicitly unbuilt, and the app ideas after that.
+    Every statement in it describes today's code; a proposal lives only under a heading that says so.
+    That split is the structure of the file rather than a style note — description and intent were
+    merged once and the document undid itself as you read down, because a reader could not tell which
+    half they were in.
+
+    A second planning file goes stale in a way one file cannot. `docs/roadmap2.md` proposed four
+    things, three shipped, and it went on describing all four as intentions; the roadmap meanwhile
+    described the same features as built. Two documents disagreeing about the same code is worse than
+    either alone. It was folded back in and deleted.
+
+    An **untracked** plan is worse still: no history, one reader, and the tracked document ends up
+    deferring to a file nobody else has. Blabber's phase plan lived in a local TODO before it moved
+    into the roadmap. If a plan is worth writing down it is worth committing, which is also why this
+    rule is here rather than only in a gitignored assistant file — a rule no other contributor can
+    read is not a rule.
+
 ---
 
 ## 3. TypeScript is split by package — on purpose
