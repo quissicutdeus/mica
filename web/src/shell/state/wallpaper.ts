@@ -1,89 +1,71 @@
+import { derived } from 'svelte/store';
 import { usePersisted } from '../../sdk/hooks/usePersisted';
-import { setThemeSeed } from './theme';
-
-export interface WallpaperState {
-  type: 'preset' | 'color' | 'image';
-  /**
-   * A Tailwind class for a `preset`, a CSS colour for a `color`, or a `url(...)`
-   * background shorthand for an `image`.
-   */
-  value: string;
-}
+import { backgroundForScheme, buildSchemes, sanitizeSeed } from '../../lib/m3';
+import { schemeStore, setThemeSeed, themeStore } from './theme';
 
 /**
- * The wallpapers offered in Settings.
+ * The home screen background.
  *
- * These live here rather than in the pane that renders them because each one now
- * carries a **seed**, and the seed is theme state — the pane is one consumer of that,
- * not its owner.
+ * There are exactly two kinds, because there are exactly two things a background can be:
+ * a color, or a picture.
  *
- * The seed is declared, never inferred. Inferring it from the class string is exactly
- * what the `themeStyleStore` this replaced did (`value.includes('blue')`), and it got
- * two of these four wrong: `ocean_blue` contains `indigo-950` and matched the `blue`
- * branch by accident, and `sunset_purple` is three hues and matched `purple`, silently
- * discarding the pink and the rose. A gradient has no single colour to read out of it,
- * so somebody has to say which one the theme follows.
+ * A color needs no `value` of its own — it *is* the theme seed, and the gradient is
+ * generated from the scheme that seed produces. That is what makes a preset and a color
+ * dragged off the wheel the same thing: a preset is a picked color with a name.
+ *
+ * This used to be three kinds — `preset` holding a Tailwind class string, `color` holding
+ * a CSS color, `image` holding a `url(...)` shorthand — with the seed carried alongside
+ * as a second, independent field. Three formats in one `value`, discriminated by `type`,
+ * which forced `PhoneFrame` to decide between a `class` and a `style` for every render.
+ * And because the picture and the seed were chosen separately, they could disagree: the
+ * shipped "Dark Midnight" was a gray gradient with a blue seed.
  */
+export type WallpaperState = { type: 'color' } | { type: 'image'; image: string };
+
 export interface WallpaperPreset {
   id: string;
   label: string;
-  /** The class or CSS value applied to the screen. */
-  value: string;
-  /** The colour the M3 theme is generated from while this wallpaper is active. */
+  /** The color the whole phone — wallpaper included — is generated from. */
   seed: string;
 }
 
+/**
+ * The offered colors, chosen for **distinct hue**.
+ *
+ * M3 builds a scheme from a seed's hue, normalizing its chroma and discarding its
+ * lightness, so two seeds of the same hue produce byte-identical themes however different
+ * they look side by side. The previous list had four blues and near-neutral grays among
+ * six entries, and clicking between them changed nothing at all. `wallpaper.test.ts`
+ * asserts the generated schemes are visibly apart rather than merely unequal.
+ *
+ * A near-neutral gray cannot be one of these: it has no stable hue to generate from, so it
+ * lands on whatever the maths rounds to — which is why "Charcoal" and "Navy Blue" came out
+ * as the same blue as the default and had to go rather than be re-seeded.
+ */
 export const PRESETS: readonly WallpaperPreset[] = [
-  {
-    id: 'dark_gradient',
-    label: 'Dark Midnight',
-    value: 'bg-gradient-to-br from-gray-800 to-gray-900',
-    seed: '#155dfc'
-  },
-  {
-    id: 'ocean_blue',
-    label: 'Ocean Blue',
-    value: 'bg-gradient-to-br from-blue-900 to-indigo-950',
-    seed: '#1c398e'
-  },
-  {
-    id: 'sunset_purple',
-    label: 'Sunset Neon',
-    value: 'bg-gradient-to-br from-purple-900 via-pink-900 to-rose-950',
-    seed: '#8e0b52'
-  },
-  {
-    id: 'emerald_forest',
-    label: 'Emerald Dark',
-    value: 'bg-gradient-to-br from-emerald-950 to-teal-900',
-    seed: '#005f5a'
-  },
-  { id: 'solid_charcoal', label: 'Charcoal', value: 'rgb(24, 24, 27)', seed: '#52525b' },
-  { id: 'solid_navy', label: 'Navy Blue', value: 'rgb(15, 23, 42)', seed: '#334155' }
+  { id: 'midnight', label: 'Midnight', seed: '#155dfc' },
+  { id: 'ocean', label: 'Ocean', seed: '#0891b2' },
+  { id: 'forest', label: 'Forest', seed: '#16a34a' },
+  { id: 'sunset', label: 'Sunset', seed: '#db2777' },
+  { id: 'ember', label: 'Ember', seed: '#ea580c' },
+  { id: 'violet', label: 'Violet', seed: '#7c3aed' }
 ];
 
-export const DEFAULT_WALLPAPER: WallpaperState = {
-  type: 'preset',
-  value: PRESETS[0].value
-};
+export const DEFAULT_WALLPAPER: WallpaperState = { type: 'color' };
 
 /**
- * A stored preset value is applied to the screen as a **class name**, and Tailwind only
- * generates classes it saw in the source. So a value left over from an older `PRESETS`
- * list is one that was never compiled: no error, no background, an invisible wallpaper.
- * Checking it against the list is what keeps that from outliving a rename.
+ * A stored wallpaper outlives the code that wrote it, and an image is a `url(...)` that
+ * goes straight into a `background` property — so a stored value that is not one is
+ * refused rather than rendered.
  */
 const sanitizeWallpaper = (stored: unknown): WallpaperState => {
   if (!stored || typeof stored !== 'object') return DEFAULT_WALLPAPER;
 
-  const { type, value } = stored as Record<string, unknown>;
-  if (typeof value !== 'string' || value.length === 0) return DEFAULT_WALLPAPER;
-
-  if (type === 'preset') {
-    return PRESETS.some((p) => p.value === value) ? { type, value } : DEFAULT_WALLPAPER;
+  const { type, image } = stored as Record<string, unknown>;
+  if (type === 'image' && typeof image === 'string' && image.startsWith('url(')) {
+    return { type, image };
   }
-
-  return type === 'color' || type === 'image' ? { type, value } : DEFAULT_WALLPAPER;
+  return DEFAULT_WALLPAPER;
 };
 
 export const wallpaperStore = usePersisted<WallpaperState>(
@@ -94,18 +76,50 @@ export const wallpaperStore = usePersisted<WallpaperState>(
 );
 
 /**
- * Set the wallpaper, and move the theme with it when the caller knows a seed.
+ * The CSS `background` for whatever is currently set.
  *
- * The seed is a separate argument rather than something read back out of `wallpaper`,
- * so the two can also be set independently — a player may want a photo background and a
- * hand-picked accent, and nothing here forces them together.
+ * One value, one format, whichever kind of wallpaper it is — so `PhoneFrame` writes it to
+ * one property and never chooses between a class and a style.
  */
-export const setWallpaper = (wallpaper: WallpaperState, seed?: string) => {
-  wallpaperStore.set(wallpaper);
-  if (seed) setThemeSeed(seed);
+export const wallpaperBackground = derived(
+  [wallpaperStore, schemeStore],
+  ([$wallpaper, $scheme]) =>
+    $wallpaper.type === 'image'
+      ? `${$wallpaper.image} center/cover no-repeat`
+      : backgroundForScheme($scheme)
+);
+
+/** Pick a color: the wallpaper and every role in the phone follow it together. */
+export const setWallpaperSeed = (seed: string) => {
+  wallpaperStore.set({ type: 'color' });
+  setThemeSeed(seed);
 };
 
-export const setPresetWallpaper = (preset: WallpaperPreset) =>
-  setWallpaper({ type: 'preset', value: preset.value }, preset.seed);
+export const setPresetWallpaper = (preset: WallpaperPreset) => setWallpaperSeed(preset.seed);
 
-export const resetWallpaper = () => setWallpaper(DEFAULT_WALLPAPER, PRESETS[0].seed);
+/**
+ * Use a photo, optionally re-seeding the theme from its dominant color.
+ *
+ * The seed is separate because a photo does not have to dictate the accent — and
+ * `seedFromImage` returns `null` when it cannot read one, in which case the picture
+ * changes and the colors stay put.
+ */
+export const setWallpaperImage = (image: string, seed?: string) => {
+  wallpaperStore.set({ type: 'image', image });
+  if (seed) setThemeSeed(sanitizeSeed(seed));
+};
+
+export const resetWallpaper = () => setWallpaperSeed(PRESETS[0].seed);
+
+/**
+ * What a given seed would look like, without applying it.
+ *
+ * The swatch a preset button renders is the wallpaper that preset produces, generated the
+ * same way — so the button cannot advertise one thing and set another, which is exactly
+ * what a hand-written gradient beside a hand-written seed allowed.
+ */
+export const backgroundForSeed = (seed: string): string =>
+  backgroundForScheme(buildSchemes(sanitizeSeed(seed)).dark);
+
+/** The seed in use, for a picker that wants to open on the current color. */
+export const activeSeed = derived(themeStore, ($theme) => $theme.seed);

@@ -15,11 +15,11 @@ import {
 } from './m3';
 
 /**
- * The colour engine, and the closest thing the suite has to an in-game check.
+ * The color engine, and the closest thing the suite has to an in-game check.
  *
  * Nothing here proves anything renders in CEF 103 — AGENTS.md §6 is explicit that only
  * `nui_devTools` can say that, and Playwright drives a modern Chromium. What these
- * tests do is close off the way a modern colour function would *get* into the output:
+ * tests do is close off the way a modern color function would *get* into the output:
  * every emitted value is asserted to be plain `rgb()`/`rgba()`, so a future change that
  * reaches for `oklch()` or `color-mix()` fails here rather than in somebody's game.
  */
@@ -33,7 +33,7 @@ const OPAQUE_RGB = /^rgb\(\d{1,3}, \d{1,3}, \d{1,3}\)$/;
 /** A spread wide enough that a hue-dependent failure cannot hide in one of them. */
 const SEEDS = ['#155dfc', '#ff0090', '#00ff00', '#ffffff', '#000000', '#7f7f7f', '#ffcc00'];
 
-describe('M3 colour engine', () => {
+describe('M3 color engine', () => {
   describe('token set', () => {
     it('declares 34 roles and 13 derived tokens', () => {
       expect(ROLE_NAMES).toHaveLength(34);
@@ -90,14 +90,14 @@ describe('M3 colour engine', () => {
       }
     });
 
-    it('never emits a colour function CEF 103 cannot parse', () => {
+    it('never emits a color function CEF 103 cannot parse', () => {
       const block = SEEDS.map((s) => cssVarBlock(buildSchemes(s).dark)).join(' ');
       for (const banned of ['oklch', 'oklab', 'color-mix', 'lab(', 'lch(', 'hwb(', 'var(']) {
         expect(block).not.toContain(banned);
       }
     });
 
-    it('composites state layers to a flat opaque colour', () => {
+    it('composites state layers to a flat opaque color', () => {
       // The whole reason `sdk/` can stay at zero opacity modifiers. A state layer that
       // still carried alpha would have to be expressed as `bg-surface/8` at the call
       // site, which is exactly what CEF cannot resolve for a runtime-themed token.
@@ -110,7 +110,7 @@ describe('M3 colour engine', () => {
       }
     });
 
-    it('moves each state layer off its base colour', () => {
+    it('moves each state layer off its base color', () => {
       // A composite that silently returned the base would be invisible rather than
       // wrong, and no visual review would catch it.
       const { dark } = buildSchemes(DEFAULT_SEED);
@@ -180,10 +180,10 @@ describe('M3 colour engine', () => {
       expect(seedFromRgbString('rgba(59, 130, 246, 1)')).toBe('#3b82f6');
       expect(seedFromRgbString('rgba(59, 130, 246, 0.4)')).toBe('#3b82f6');
       expect(seedFromRgbString('rgb(0, 0, 0)')).toBe('#000000');
-      expect(seedFromRgbString('not a colour')).toBeNull();
+      expect(seedFromRgbString('not a color')).toBeNull();
     });
 
-    it('round-trips a picked colour back through sanitizeSeed', () => {
+    it('round-trips a picked color back through sanitizeSeed', () => {
       const seed = seedFromRgbString('rgba(21, 93, 252, 1)');
       expect(seed).not.toBeNull();
       expect(sanitizeSeed(seed)).toBe(seed);
@@ -201,9 +201,9 @@ describe('M3 colour engine', () => {
       );
     });
 
-    it('does not seed the error palette from the source colour', () => {
+    it('does not seed the error palette from the source color', () => {
       // Error is red in every M3 scheme regardless of seed, which is why the battery
-      // and bank signal colours can safely map onto it while yellow and green cannot.
+      // and bank signal colors can safely map onto it while yellow and green cannot.
       const red = buildSchemes('#00ff00').dark['error'];
       expect(red).toBe(buildSchemes('#155dfc').dark['error']);
     });
@@ -212,13 +212,13 @@ describe('M3 colour engine', () => {
   describe('golden values', () => {
     it('pins the default seed', () => {
       // Catches an MCU version bump silently changing the spec. If this fails after an
-      // upgrade, check the release notes before updating the numbers — every colour in
+      // upgrade, check the release notes before updating the numbers — every color in
       // the phone moved.
       const { dark } = buildSchemes(DEFAULT_SEED);
-      expect(dark['surface']).toBe('rgb(18, 19, 24)');
+      expect(dark['surface']).toBe('rgb(17, 19, 28)');
       expect(dark['primary']).toBe('rgb(182, 196, 255)');
-      expect(dark['on-surface']).toBe('rgb(227, 225, 233)');
-      expect(dark['outline-variant']).toBe('rgb(69, 70, 79)');
+      expect(dark['on-surface']).toBe('rgb(225, 225, 239)');
+      expect(dark['outline-variant']).toBe('rgb(67, 70, 84)');
     });
   });
 

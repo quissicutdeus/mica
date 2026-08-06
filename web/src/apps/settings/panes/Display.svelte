@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { ToggleSwitch, useClock, useDisplay } from '@gphone/sdk';
+  import { ChevronRightIcon, ToggleSwitch, useClock, useDisplay } from '@gphone/sdk';
+
+  // The wallpaper pane is reached from here rather than from the Settings root: it is an
+  // appearance setting, and Display is where appearance lives. It stays a separate pane
+  // rather than being inlined, because the picker, the swatches, the presets and the photo
+  // grid together are longer than everything else on this screen put together.
+  let { onwallpaper }: { onwallpaper: () => void } = $props();
 
   const { is24Hour } = useClock();
   const { displaySize, setDisplaySize, displaySizeDefault, phoneBox, isSizeLimited } = useDisplay();
@@ -73,4 +79,18 @@
       />
     </div>
   </div>
+
+  <button
+    type="button"
+    onclick={onwallpaper}
+    class="hover:bg-surface-container-hover active:bg-surface-container-pressed bg-surface-container flex w-full cursor-pointer items-center justify-between rounded-xl p-4 text-left transition-colors"
+  >
+    <div class="flex flex-col">
+      <span class="text-on-surface font-medium">Wallpaper &amp; Theme</span>
+      <span class="text-on-surface-variant text-xs">
+        The color the whole phone is generated from
+      </span>
+    </div>
+    <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
+  </button>
 </div>

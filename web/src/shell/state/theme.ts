@@ -3,15 +3,15 @@ import { usePersisted } from '../../sdk/hooks/usePersisted';
 import { DEFAULT_SEED, buildSchemes, cssVarBlock, sanitizeSeed, type M3Tokens } from '../../lib/m3';
 
 /**
- * The phone's active colour theme.
+ * The phone's active color theme.
  *
  * State the phone itself owns, so it lives here rather than in `services/` — there is no
- * server behind it and no table. Modelled on `display.ts`: exported constants, a
+ * server behind it and no table. Modeled on `display.ts`: exported constants, a
  * `usePersisted` store, derived views, and no DOM access.
  *
  * ## What replaced what
  *
- * `wallpaper.ts` used to derive theme colours by substring-matching Tailwind class
+ * `wallpaper.ts` used to derive theme colors by substring-matching Tailwind class
  * names — `if (value.includes('emerald'))`, and so on for three more. That could only
  * ever answer for the four presets somebody had written a branch for, and it answered
  * *wrongly* for two of them: the ocean preset contains `indigo-950` and matched the
@@ -20,12 +20,12 @@ import { DEFAULT_SEED, buildSchemes, cssVarBlock, sanitizeSeed, type M3Tokens } 
  * the pink and the rose. Anything unmatched returned an empty string, so the tokens fell
  * back to the shipped dark values — over a light wallpaper, unreadable text.
  *
- * The fix is not a longer list of branches. A theme is now generated from a seed colour
+ * The fix is not a longer list of branches. A theme is now generated from a seed color
  * by arithmetic (`lib/m3.ts`), so every seed works and none of them is a special case.
  */
 
 export interface ThemeState {
-  /** The colour every role is generated from. `#rrggbb`. */
+  /** The color every role is generated from. `#rrggbb`. */
   seed: string;
   /**
    * Which of the two generated schemes is applied.

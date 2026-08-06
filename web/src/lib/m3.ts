@@ -4,11 +4,11 @@ import {
   greenFromArgb,
   Hct,
   redFromArgb,
-  SchemeTonalSpot
+  SchemeVibrant
 } from '@material/material-color-utilities';
 
 /**
- * The phone's colour system: Material 3 roles, generated from one seed colour.
+ * The phone's color system: Material 3 roles, generated from one seed color.
  *
  * This replaces sixteen hand-picked tokens that had no `on-` roles at all — nothing
  * stated what text goes *on* a surface, so 1190 raw palette utilities across the tree
@@ -23,9 +23,9 @@ import {
  *
  * So every value this module emits is a fully resolved `rgb()` / `rgba()` string, and
  * the state layers are composited numerically in {@link composite} rather than deferred
- * to the browser. Nothing downstream needs a colour function newer than CSS 2. That is
+ * to the browser. Nothing downstream needs a color function newer than CSS 2. That is
  * also what lets `sdk/` stay at zero opacity modifiers under `cef.test.ts`: a state
- * layer is a flat opaque colour here, not `bg-surface/8`.
+ * layer is a flat opaque color here, not `bg-surface/8`.
  *
  * ## Why not MCU's own helpers
  *
@@ -36,7 +36,7 @@ import {
  * 0.4.0 as well. `DynamicScheme`'s role getters are the current path.
  *
  * The dependency is pinned exactly, no caret. The role set changed between 0.2.x and
- * 0.4 and deprecated the statics on the way; a caret range means every colour in the
+ * 0.4 and deprecated the statics on the way; a caret range means every color in the
  * phone can move on an unrelated `pnpm install`.
  */
 
@@ -47,25 +47,25 @@ import {
 export const DEFAULT_SEED = '#155dfc';
 
 /**
- * The 34 M3 colour roles, kebab-case, in declaration order.
+ * The 34 M3 color roles, kebab-case, in declaration order.
  *
  * Three groups are deliberately absent, each on M3's own authority rather than ours:
  *
- * - `background` / `on-background` — deprecated in favour of `surface` / `on-surface`,
+ * - `background` / `on-background` — deprecated in favor of `surface` / `on-surface`,
  *   which they duplicate exactly. Two names for one value is the forking problem this
  *   file exists to end.
  * - `surface-variant` — deprecated as a container role, superseded by
  *   `surface-container-highest`. `on-surface-variant` survives without it, and that is
  *   what keeps the text roles at two.
  * - The twelve `*-fixed` / `*-fixed-dim` / `on-*-fixed` / `on-*-fixed-variant` roles.
- *   They exist so an Android home-screen widget can hold one colour across the host
+ *   They exist so an Android home-screen widget can hold one color across the host
  *   app's light/dark switch. The phone has no such surface.
  *
  * Two on-surface text roles, `on-surface` and `on-surface-variant`, and no third. The
- * temptation is real — the tree currently uses four grey tiers (200/300/400/500) and
+ * temptation is real — the tree currently uses four gray tiers (200/300/400/500) and
  * collapsing them makes some screens read flatter. M3's answer to that is type scale
- * and spacing, not another colour, and inventing a third tier here would mean every
- * component picking between three greys again with nothing to say which is right.
+ * and spacing, not another color, and inventing a third tier here would mean every
+ * component picking between three grays again with nothing to say which is right.
  */
 export const ROLE_NAMES = [
   'primary',
@@ -142,7 +142,7 @@ const STATE_LAYER_BASES = [
 ] as const;
 
 /**
- * The one token here with no M3 role behind it: the FAB's coloured bloom, primary at
+ * The one token here with no M3 role behind it: the FAB's colored bloom, primary at
  * 30% for a `box-shadow`. It is an elevation effect rather than a semantic role, and it
  * is named so that stays obvious. The purist alternative is M3's `shadow` role, which
  * is pure black and loses the glow entirely.
@@ -154,7 +154,7 @@ const GLOW_ALPHA = 0.3;
  * where it is used. That split cannot survive here: an opacity modifier on a themed
  * token is the one thing `cef.test.ts` now forbids outright, because Tailwind computes
  * its unguarded fallback from the build-time literal and would render the default
- * seed's colour under any other seed.
+ * seed's color under any other seed.
  *
  * A scrim is also the one role that genuinely cannot be composited in advance, since it
  * lies over whatever screen happens to be behind the dialog. So the usage alpha is
@@ -203,7 +203,7 @@ const rgba = (argb: number, alpha: number): string =>
   `rgba(${redFromArgb(argb)}, ${greenFromArgb(argb)}, ${blueFromArgb(argb)}, ${alpha})`;
 
 const schemeFor = (seedHex: string, isDark: boolean) =>
-  new SchemeTonalSpot(Hct.fromInt(argbFromHex(seedHex)), isDark, 0);
+  new SchemeVibrant(Hct.fromInt(argbFromHex(seedHex)), isDark, 0);
 
 /**
  * Both schemes for one seed.
@@ -213,11 +213,20 @@ const schemeFor = (seedHex: string, isDark: boolean) =>
  * would leave the shape of the module implying a choice that has not been made. Turning
  * light on later is a change to which record `shell/state/theme.ts` reads.
  *
- * `SchemeTonalSpot` is the Material You default from Android 12/13 and is documented as
- * "low to medium colorfulness": a seed is interpreted rather than reproduced, so a very
- * saturated pick comes back muted. That restraint is the point at phone scale, but it
- * is the one thing here a player might read as a bug — `Variant.VIBRANT` is the knob if
- * that judgement changes.
+ * `SchemeVibrant` rather than `SchemeTonalSpot`, which is M3's own default.
+ *
+ * TonalSpot is documented as "low to medium colorfulness" and interprets a seed rather
+ * than reproducing it, so a saturated pick came back noticeably muted — a player who
+ * chose hot pink got mauve, which reads as the setting not working. Measured across
+ * eleven seeds in both schemes, Vibrant carries about half again as much chroma on
+ * `primary` (53.6 against 35.3) for **identical** worst-case contrast: 6.43 either way,
+ * against the 4.5 the tests require.
+ *
+ * That last part is why this is Vibrant and not `SchemeFidelity`, which is the obvious
+ * candidate for "respect what they picked". Fidelity preserves the source's own chroma and
+ * so barely beats TonalSpot (36.8), while dropping worst-case contrast to 4.53 — passing,
+ * but with no margin left for a seed nobody has tried yet. Vibrant is more colorful and
+ * safer at the same time, which is not the trade-off it looks like.
  */
 export function buildSchemes(seedHex: string): { light: M3Tokens; dark: M3Tokens } {
   const build = (isDark: boolean): M3Tokens => {
@@ -252,7 +261,33 @@ export function cssVarBlock(tokens: M3Tokens): string {
 }
 
 /**
- * A seed is a six-digit hex colour and nothing else.
+ * The home screen background for a scheme, as a CSS `background` value.
+ *
+ * Generated from the same tokens as everything else, which is the point. A wallpaper used
+ * to be a hand-written Tailwind class sitting next to a hand-written seed — two
+ * independent choices that were free to disagree, and did: a gray gradient carried a blue
+ * seed, so the picture and the colors it supposedly produced had nothing to do with one
+ * another. Deriving it means a preset and a color picked off the wheel go through exactly
+ * the same path, because a preset *is* a picked color.
+ *
+ * `primary-container` rather than a surface tone, because the surfaces are deliberately
+ * near-neutral in a dark scheme — a gradient between two of them is nearly black whatever
+ * the seed, which is precisely the "I clicked it and nothing happened" complaint. The
+ * container roles carry the hue at a tone you can actually see, and they are still scheme
+ * colors rather than the raw seed, so the wallpaper stays part of the theme instead of
+ * shouting over it.
+ *
+ * Emitted as plain `rgb()` because it goes into an inline style and never passes through
+ * PostCSS. Tailwind's own `from-cyan-900` compiles to `oklch()` inside a gradient with no
+ * hex fallback — unlike the flat color utilities, which do get one — so the class-based
+ * wallpapers this replaced would not have rendered in CEF 103 at all (AGENTS.md §6).
+ */
+export function backgroundForScheme(tokens: M3Tokens): string {
+  return `linear-gradient(140deg, ${tokens['primary-container']} 0%, ${tokens['surface-dim']} 55%, ${tokens['surface-container-lowest']} 100%)`;
+}
+
+/**
+ * A seed is a six-digit hex color and nothing else.
  *
  * Narrow on purpose: this runs on a value read back from storage, which a player can
  * edit, and it is the only thing standing between that and `argbFromHex`. Three-digit
@@ -268,7 +303,7 @@ export function sanitizeSeed(value: unknown): string {
 /**
  * A seed from the `rgba(r, g, b, a)` string `ColorWheelPicker` emits.
  *
- * The alpha is dropped rather than honoured: a seed names a hue for the generator to
+ * The alpha is dropped rather than honored: a seed names a hue for the generator to
  * build tones from, and a translucent one has no meaning there. The wallpaper keeps the
  * alpha; the theme does not.
  */

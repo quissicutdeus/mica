@@ -15,12 +15,12 @@
   import VolumeHud from './VolumeHud.svelte';
   import NotificationShade from './NotificationShade.svelte';
   import { openShade, isShadeOpen, closeShade } from './state/shade';
-  import { wallpaperStore } from './state/wallpaper';
+  import { wallpaperBackground } from './state/wallpaper';
   import { themeStyleStore } from './state/theme';
 
   let { transparent = false, onClose, children } = $props();
   let screenElement = $state<HTMLElement | null>(null);
-  const activeWallpaper = $derived($wallpaperStore);
+  const wallpaper = $derived($wallpaperBackground);
   const themeStyle = $derived($themeStyleStore);
 
   onMount(() => {
@@ -83,19 +83,22 @@
        would leak across jsdom test files and need teardown.
 
        There is no `bg-*` fallback class. One used to sit here as
-       `class:bg-gray-900={… && !activeWallpaper}`, which never applied: `activeWallpaper`
-       is a `$derived` object and is never falsy. The opaque fill in normal mode comes
-       from the wallpaper, and a `bg-surface` here would be worse than dead — it would
-       occlude the game world behind the camera viewfinder in transparent mode. -->
+       `class:bg-gray-900={… && !activeWallpaper}`, which never applied: it tested a
+       `$derived` object for falsiness. The opaque fill in normal mode comes from the
+       wallpaper, and a `bg-surface` here would be worse than dead — it would occlude the
+       game world behind the camera viewfinder in transparent mode.
+
+       The wallpaper is one CSS value on one property. It used to be a Tailwind class for a
+       preset and an inline `background` for anything else, chosen by a ternary on the
+       wallpaper's `type` — which meant the class had to survive Tailwind's scanner (a
+       renamed preset silently rendered nothing) and, worse, `from-cyan-900` compiles to
+       `oklch()` inside a gradient with no hex fallback, so those presets would not have
+       rendered in game at all. -->
   <div
     bind:this={screenElement}
     data-testid="phone-screen"
-    class={`relative h-full w-full overflow-hidden rounded-[3rem] transition-colors duration-200 ${
-      !transparent && !$isBatteryDead && activeWallpaper.type === 'preset'
-        ? activeWallpaper.value
-        : ''
-    }`}
-    style={`${!transparent && !$isBatteryDead && activeWallpaper.type !== 'preset' ? `background: ${activeWallpaper.value};` : ''} ${themeStyle}`}
+    class="relative h-full w-full overflow-hidden rounded-[3rem] transition-colors duration-200"
+    style={`${!transparent && !$isBatteryDead ? `background: ${wallpaper};` : ''} ${themeStyle}`}
     class:bg-black={$isBatteryDead}
     class:bg-transparent={transparent && !$isBatteryDead}
   >
@@ -159,7 +162,7 @@
                generated from the seed — it is red under every theme. Yellow has no role
                to map to and stays a raw palette class deliberately: `tertiary` *is*
                seeded, so using it here would render "battery getting low" in whatever
-               hue the player picked, which is not what a warning colour is for. -->
+               hue the player picked, which is not what a warning color is for. -->
           <div class="flex items-center gap-1.5">
             <span class="text-xs" class:text-error={$displayCharge <= 20}>{$displayCharge}%</span>
             <div

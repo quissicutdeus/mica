@@ -94,7 +94,7 @@
   };
 
   /**
-   * Adopt the colour we were handed, so the wheel opens on the one in use.
+   * Adopt the color we were handed, so the wheel opens on the one in use.
    *
    * `color` was declared in `Props`, destructured, and then never read — the sliders
    * always started at hue 210, full saturation, so the picker opened blue no matter what
@@ -107,12 +107,20 @@
    * incoming value would then re-derive the very state the drag is setting.
    */
   const adoptIncomingColor = () => {
-    const match = color.match(/(\d+(?:\.\d+)?)/g);
-    if (!match || match.length < 3) return;
+    // Both forms, because the seed is `#rrggbb` and a color dragged off the wheel is
+    // `rgba(...)` — and this component is on both ends of that round trip.
+    let r: number, g: number, b: number;
 
-    const [r, g, b] = match.slice(0, 3).map(Number);
+    const hex = color.trim().match(/^#([0-9a-f]{6})$/i);
+    if (hex) {
+      [r, g, b] = [0, 2, 4].map((i) => parseInt(hex[1].slice(i, i + 2), 16));
+    } else {
+      const match = color.match(/(\d+(?:\.\d+)?)/g);
+      if (!match || match.length < 3) return;
+      [r, g, b] = match.slice(0, 3).map(Number);
+      if (match.length >= 4) alpha = Math.round(Math.min(1, Number(match[3])) * 100);
+    }
     if ([r, g, b].some((n) => !Number.isFinite(n) || n < 0 || n > 255)) return;
-    if (match.length >= 4) alpha = Math.round(Math.min(1, Number(match[3])) * 100);
 
     const [rf, gf, bf] = [r / 255, g / 255, b / 255];
     const max = Math.max(rf, gf, bf);

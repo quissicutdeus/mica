@@ -180,7 +180,7 @@
   {:else if pane === 'wallpaper'}
     <WallpaperPane />
   {:else if pane === 'display'}
-    <Display />
+    <Display onwallpaper={() => (pane = 'wallpaper')} />
   {:else if pane === 'sound'}
     <Sound />
   {:else if pane === 'shortcuts'}
@@ -233,25 +233,14 @@
         </button>
         <button
           type="button"
-          onclick={() => (pane = 'wallpaper')}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
-        >
-          <div class="flex flex-col">
-            <span class="text-on-surface font-medium">Wallpaper & Theme</span>
-            <span class="text-on-surface-variant text-xs"
-              >Background, and the colour the phone is built from</span
-            >
-          </div>
-          <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
-        </button>
-        <button
-          type="button"
           onclick={() => (pane = 'display')}
           class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
             <span class="text-on-surface font-medium">Display</span>
-            <span class="text-on-surface-variant text-xs">Phone size, clock, and time format</span>
+            <span class="text-on-surface-variant text-xs"
+              >Phone size, clock, time format, wallpaper and theme</span
+            >
           </div>
           <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
         </button>

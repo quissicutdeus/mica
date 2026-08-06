@@ -1,8 +1,12 @@
 import {
   wallpaperStore,
-  setWallpaper,
+  wallpaperBackground,
+  setWallpaperSeed,
   setPresetWallpaper,
+  setWallpaperImage,
   resetWallpaper,
+  activeSeed,
+  backgroundForSeed,
   DEFAULT_WALLPAPER,
   PRESETS,
   type WallpaperState,
@@ -13,21 +17,24 @@ import { seedFromImage } from '../../shell/state/seedFromImage';
 /**
  * The phone's home screen background.
  *
- * A wallpaper carries a **seed** as well as a picture, because the two are not
- * independent: the M3 theme is generated from a colour, and a screen whose chrome
- * ignores its own background is the thing this replaced. `setPresetWallpaper` moves
- * both; `setWallpaper` takes the seed as an optional second argument so a player can
- * also keep one and change the other.
+ * A background is a color or a picture, and a color *is* the theme seed — the gradient
+ * is generated from the scheme that seed produces, so a preset and a color dragged off a
+ * wheel travel the identical path. There is nothing to keep in sync because there is only
+ * one input.
  *
- * `seedFromImage` is how a photo becomes a theme — it quantizes the image and returns
- * its dominant colour, or `null` if it cannot (a non-`data:` source, a failed decode).
- * `null` means keep the current seed, not "use black".
+ * `seedFromImage` is how a photo becomes a theme: it quantizes the image and returns its
+ * dominant color, or `null` if it cannot (a non-`data:` source, a failed decode). `null`
+ * means keep the current seed, not "use black".
  */
 export function useWallpaper() {
   return {
     wallpaperStore,
-    setWallpaper,
+    wallpaperBackground,
+    activeSeed,
+    backgroundForSeed,
+    setWallpaperSeed,
     setPresetWallpaper,
+    setWallpaperImage,
     resetWallpaper,
     seedFromImage,
     presets: PRESETS,

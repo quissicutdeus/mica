@@ -57,26 +57,26 @@
  * `tertiary` *is* seeded, so a blue seed would produce a blue warning.
  */
 @theme {
-  /* --- generated: dark scheme, seed #155dfc. See src/lib/m3.ts --- */
+  /* --- generated: dark scheme, seed #155dfc, SchemeVibrant. See src/lib/m3.ts --- */
 
   /* Primary */
   --color-primary: rgb(182, 196, 255);
-  --color-on-primary: rgb(28, 45, 97);
-  --color-primary-container: rgb(52, 68, 121);
+  --color-on-primary: rgb(0, 40, 125);
+  --color-primary-container: rgb(0, 59, 175);
   --color-on-primary-container: rgb(220, 225, 255);
-  --color-inverse-primary: rgb(76, 92, 146);
+  --color-inverse-primary: rgb(0, 79, 228);
 
   /* Secondary */
-  --color-secondary: rgb(194, 197, 221);
-  --color-on-secondary: rgb(43, 48, 66);
-  --color-secondary-container: rgb(65, 70, 89);
-  --color-on-secondary-container: rgb(222, 225, 249);
+  --color-secondary: rgb(198, 194, 234);
+  --color-on-secondary: rgb(47, 45, 77);
+  --color-secondary-container: rgb(69, 67, 100);
+  --color-on-secondary-container: rgb(227, 223, 255);
 
   /* Tertiary */
-  --color-tertiary: rgb(227, 186, 218);
-  --color-on-tertiary: rgb(67, 39, 64);
-  --color-tertiary-container: rgb(91, 61, 87);
-  --color-on-tertiary-container: rgb(255, 215, 246);
+  --color-tertiary: rgb(211, 189, 245);
+  --color-on-tertiary: rgb(56, 39, 85);
+  --color-tertiary-container: rgb(80, 62, 109);
+  --color-on-tertiary-container: rgb(236, 220, 255);
 
   /* Error */
   --color-error: rgb(255, 180, 171);
@@ -85,22 +85,22 @@
   --color-on-error-container: rgb(255, 218, 214);
 
   /* Surfaces, lowest to highest */
-  --color-surface: rgb(18, 19, 24);
-  --color-surface-dim: rgb(18, 19, 24);
-  --color-surface-bright: rgb(56, 57, 63);
-  --color-surface-container-lowest: rgb(13, 14, 19);
-  --color-surface-container-low: rgb(26, 27, 33);
-  --color-surface-container: rgb(30, 31, 37);
-  --color-surface-container-high: rgb(41, 42, 47);
-  --color-surface-container-highest: rgb(52, 52, 58);
-  --color-on-surface: rgb(227, 225, 233);
-  --color-on-surface-variant: rgb(198, 198, 208);
-  --color-inverse-surface: rgb(227, 225, 233);
-  --color-inverse-on-surface: rgb(47, 48, 54);
+  --color-surface: rgb(17, 19, 28);
+  --color-surface-dim: rgb(17, 19, 28);
+  --color-surface-bright: rgb(55, 57, 67);
+  --color-surface-container-lowest: rgb(11, 14, 23);
+  --color-surface-container-low: rgb(25, 27, 37);
+  --color-surface-container: rgb(29, 31, 41);
+  --color-surface-container-high: rgb(39, 42, 52);
+  --color-surface-container-highest: rgb(50, 52, 63);
+  --color-on-surface: rgb(225, 225, 239);
+  --color-on-surface-variant: rgb(196, 197, 214);
+  --color-inverse-surface: rgb(225, 225, 239);
+  --color-inverse-on-surface: rgb(46, 48, 58);
 
   /* Lines */
-  --color-outline: rgb(143, 144, 154);
-  --color-outline-variant: rgb(69, 70, 79);
+  --color-outline: rgb(142, 144, 159);
+  --color-outline-variant: rgb(67, 70, 84);
 
   /* Depth. `scrim` carries M3's 32% usage alpha baked in — it is the one role that
      cannot be composited ahead of time, since it lies over whatever is behind the
@@ -111,16 +111,16 @@
 
   /* State layers: `on-X` composited over `X` at M3's 8% hover / 10% pressed, flattened
      to an opaque value so no call site needs an opacity modifier. */
-  --color-surface-hover: rgb(35, 35, 41);
-  --color-surface-pressed: rgb(39, 40, 45);
-  --color-surface-container-hover: rgb(46, 47, 53);
-  --color-surface-container-pressed: rgb(50, 50, 57);
-  --color-surface-container-high-hover: rgb(56, 57, 62);
-  --color-surface-container-high-pressed: rgb(60, 60, 66);
-  --color-primary-hover: rgb(170, 184, 242);
-  --color-primary-pressed: rgb(167, 181, 239);
-  --color-secondary-container-hover: rgb(78, 82, 102);
-  --color-secondary-container-pressed: rgb(81, 86, 105);
+  --color-surface-hover: rgb(34, 35, 45);
+  --color-surface-pressed: rgb(38, 40, 49);
+  --color-surface-container-hover: rgb(45, 47, 57);
+  --color-surface-container-pressed: rgb(49, 50, 61);
+  --color-surface-container-high-hover: rgb(54, 57, 67);
+  --color-surface-container-high-pressed: rgb(58, 60, 71);
+  --color-primary-hover: rgb(167, 184, 245);
+  --color-primary-pressed: rgb(164, 180, 242);
+  --color-secondary-container-hover: rgb(82, 79, 112);
+  --color-secondary-container-pressed: rgb(85, 83, 116);
   --color-error-hover: rgb(243, 166, 158);
   --color-error-pressed: rgb(240, 162, 154);
 

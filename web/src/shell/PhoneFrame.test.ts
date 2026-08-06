@@ -23,8 +23,8 @@ import { charge } from './state/charge';
  *
  * `surface*` is in the list because of how nearly this test stopped working. The
  * original pattern named only raw palette families, so when the phone moved to M3
- * colour roles a `bg-surface` on the screen — the obvious thing to reach for, and an
- * opaque colour — matched nothing here. The suite would have stayed green while the
+ * color roles a `bg-surface` on the screen — the obvious thing to reach for, and an
+ * opaque color — matched nothing here. The suite would have stayed green while the
  * viewfinder went black in game, which is the precise failure this file exists to
  * catch. A role token is opaque like any other fill; the naming scheme changed, the
  * hazard did not.
@@ -75,18 +75,14 @@ describe('PhoneFrame transparency', () => {
     const { getByTestId } = renderFrame(false);
     expect(getByTestId('phone-frame').className).toMatch(/bg-gray-950/);
 
-    // The screen's fill is the wallpaper, which is a class for a preset and an inline
-    // `background:` for a picked colour or a photo — so assert the *intent* rather than
-    // one of the two shapes. The previous assertion looked for `bg-gray-900|gradient`
-    // and was passing on the `gradient` half by coincidence: the `bg-gray-900` branch
-    // beside it could never apply, and the default wallpaper simply happens to be a
-    // gradient. Change the default to a solid colour and it would have failed for a
-    // reason that had nothing to do with anything being wrong.
-    const screen = getByTestId('phone-screen');
-    const painted =
-      /(^|\s)bg-gradient|(^|\s)bg-\w/.test(screen.className) ||
-      /background:/.test(screen.getAttribute('style') ?? '');
-    expect(painted, 'phone-screen has no wallpaper fill').toBe(true);
+    // The screen's fill is the wallpaper, and it is always one inline `background` — a
+    // generated gradient for a color, a `url()` for a photo. It used to be a Tailwind
+    // class for a preset and a style for everything else, and the assertion here matched
+    // `bg-gray-900|gradient`, passing on the `gradient` half purely by coincidence: the
+    // `bg-gray-900` branch beside it could never apply, and the default wallpaper simply
+    // happened to be a gradient.
+    const style = getByTestId('phone-screen').getAttribute('style') ?? '';
+    expect(style, 'phone-screen has no wallpaper fill').toContain('background:');
   });
 
   it('keeps a digit-free accessible name on the status bar', () => {
