@@ -42,3 +42,49 @@ export const encodeCrop = (canvas: HTMLCanvasElement): string => {
   if (webp.startsWith('data:image/webp')) return webp;
   return canvas.toDataURL('image/jpeg', CAPTURE_QUALITY);
 };
+
+export interface CropRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Crop a raw full-screen image using natural dimensions and unscaled rect coordinates.
+ */
+export const cropViewportToCanvas = (
+  img: HTMLImageElement,
+  rect: CropRect,
+  viewportWidth: number,
+  viewportHeight: number
+): string | null => {
+  if (!rect || rect.width <= 0 || rect.height <= 0 || viewportWidth <= 0 || viewportHeight <= 0) {
+    return null;
+  }
+
+  const scaleX = img.naturalWidth / viewportWidth;
+  const scaleY = img.naturalHeight / viewportHeight;
+
+  const physX = Math.round(rect.left * scaleX);
+  const physY = Math.round(rect.top * scaleY);
+  const physWidth = Math.round(rect.width * scaleX);
+  const physHeight = Math.round(rect.height * scaleY);
+
+  if (physWidth <= 10 || physHeight <= 10) {
+    return null;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = physWidth;
+  canvas.height = physHeight;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, physX, physY, physWidth, physHeight, 0, 0, physWidth, physHeight);
+
+  const cropped = encodeCrop(canvas);
+  return cropped && cropped.length > 30 && cropped !== 'data:,' ? cropped : null;
+};

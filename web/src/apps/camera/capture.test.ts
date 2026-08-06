@@ -54,3 +54,13 @@ describe('encodeCrop', () => {
     expect(CAPTURE_QUALITY).toBeGreaterThanOrEqual(0.92);
   });
 });
+
+describe('cropViewportToCanvas', () => {
+  it('returns null on invalid rect or viewport bounds', async () => {
+    const { cropViewportToCanvas } = await import('./capture');
+    const dummyImg = {} as HTMLImageElement;
+    expect(
+      cropViewportToCanvas(dummyImg, { left: 0, top: 0, width: 0, height: 100 }, 1000, 800)
+    ).toBeNull();
+  });
+});
