@@ -193,7 +193,13 @@
       </div>
     {/if}
 
-    <!-- Home Indicator Gesture Bar -->
+    <!-- Home Indicator Gesture Bar.
+
+         The label names the one action the press will actually perform, rather than
+         listing both. It briefly read "Return to home screen or collapse notifications",
+         which is worse on both counts: a screen reader hears a disjunction it has to
+         resolve itself, and four e2e specs match this attribute exactly and silently
+         stopped finding the button. Same shape as the status bar above. -->
     <button
       class="absolute bottom-0 left-0 z-50 flex h-6 w-full cursor-pointer items-end justify-center pb-1.5"
       onclick={() => {
@@ -203,7 +209,7 @@
           goHome();
         }
       }}
-      aria-label="Return to home screen or collapse notifications"
+      aria-label={$isShadeOpen ? 'Collapse notifications' : 'Return to home screen'}
     >
       <div
         class="h-1 w-1/3 rounded-full bg-white/80 transition-colors duration-200 hover:bg-white"

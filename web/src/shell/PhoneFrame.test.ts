@@ -136,7 +136,7 @@ describe('PhoneFrame transparency', () => {
   });
 
   it('closes notification shade when open on clicking home gesture bar', async () => {
-    const { getByRole } = renderFrame(false);
+    const { getByRole, findByRole } = renderFrame(false);
     const { openShade, isShadeOpen } = await import('./state/shade');
     const { get } = await import('svelte/store');
     const { fireEvent } = await import('@testing-library/svelte');
@@ -144,11 +144,17 @@ describe('PhoneFrame transparency', () => {
     openShade();
     expect(get(isShadeOpen)).toBe(true);
 
-    const homeBar = getByRole('button', {
-      name: /Return to home screen or collapse notifications/i
-    });
+    // The label names the action the press will perform, so with the shade open the bar
+    // announces itself as "Collapse notifications" rather than as home. Looking it up by
+    // that name is also what asserts the label actually tracks the state — a static
+    // label would fail here rather than quietly describing the wrong thing.
+    // `findByRole`, not `getByRole`: `openShade()` is a direct store write from outside
+    // the component, so Svelte has not flushed the re-render yet and the synchronous
+    // query would read the pre-open label.
+    const homeBar = await findByRole('button', { name: /Collapse notifications/i });
     await fireEvent.click(homeBar);
 
     expect(get(isShadeOpen)).toBe(false);
+    expect(getByRole('button', { name: /Return to home screen/i })).toBeTruthy();
   });
 });
