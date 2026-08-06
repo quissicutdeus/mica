@@ -14,7 +14,7 @@
   import BluetoothIcon from '../sdk/ui/icons/BluetoothIcon.svelte';
   import VolumeHud from './VolumeHud.svelte';
   import NotificationShade from './NotificationShade.svelte';
-  import { openShade } from './state/shade';
+  import { openShade, isShadeOpen, closeShade } from './state/shade';
 
   let { transparent = false, onClose, children } = $props();
   let screenElement = $state<HTMLElement | null>(null);
@@ -161,16 +161,22 @@
 
     <!-- Content Area -->
     {#if !$isBatteryDead}
-      <div class="h-full" class:pt-safe-top={!transparent} class:pb-safe-bottom={!transparent}>
+      <div class="h-full">
         {@render children()}
       </div>
     {/if}
 
     <!-- Home Indicator Gesture Bar -->
     <button
-      class="absolute bottom-0 left-0 z-50 flex h-8 w-full cursor-pointer items-end justify-center pb-2"
-      onclick={goHome}
-      aria-label="Return to home screen"
+      class="absolute bottom-0 left-0 z-50 flex h-6 w-full cursor-pointer items-end justify-center pb-1.5"
+      onclick={() => {
+        if ($isShadeOpen) {
+          closeShade();
+        } else {
+          goHome();
+        }
+      }}
+      aria-label="Return to home screen or collapse notifications"
     >
       <div
         class="h-1 w-1/3 rounded-full bg-white/80 transition-colors duration-200 hover:bg-white"

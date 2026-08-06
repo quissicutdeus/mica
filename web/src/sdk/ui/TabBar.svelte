@@ -56,7 +56,7 @@
 
 <nav
   aria-label={ariaLabel}
-  class="border-hairline bg-surface-overlay absolute bottom-0 left-0 z-20 flex w-full border-t backdrop-blur-md"
+  class="border-hairline bg-surface-overlay pb-safe-bottom absolute bottom-0 left-0 z-20 flex w-full border-t backdrop-blur-md"
 >
   {#each options as opt (opt.id)}
     {@const Icon = opt.icon}

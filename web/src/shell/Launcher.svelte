@@ -19,7 +19,7 @@
 <div
   role="region"
   aria-label="Home Screen"
-  class="flex h-full flex-col items-center bg-gradient-to-br from-gray-800 to-gray-900 p-4 text-white select-none"
+  class="pt-safe-top flex h-full flex-col items-center bg-gradient-to-br from-gray-800 to-gray-900 px-4 pb-4 text-white select-none"
 >
   <h1 class="mb-8 text-4xl font-bold tracking-tight">gPhone</h1>
 

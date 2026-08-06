@@ -16,7 +16,7 @@
 </script>
 
 <div
-  class="bg-surface-raised flex items-center border-b border-gray-700 px-4 py-4 backdrop-blur-md"
+  class="bg-surface-raised pt-safe-top flex items-center border-b border-gray-700 px-4 pb-3 backdrop-blur-md"
 >
   {#if onback}
     <button

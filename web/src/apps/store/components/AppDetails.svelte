@@ -33,7 +33,7 @@
 <div class="flex h-full w-full flex-col bg-gray-900 text-white">
   <!-- Top Navigation Header -->
   <div
-    class="flex shrink-0 items-center justify-between border-b border-gray-800 bg-gray-900/90 px-4 py-3 backdrop-blur"
+    class="pt-safe-top flex shrink-0 items-center justify-between border-b border-gray-800 bg-gray-900/90 px-4 pb-3 backdrop-blur"
   >
     <button
       onclick={() => onback()}

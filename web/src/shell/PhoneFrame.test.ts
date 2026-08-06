@@ -75,4 +75,21 @@ describe('PhoneFrame transparency', () => {
     expect(getByTestId('phone-frame').className).toMatch(/bg-gray-950/);
     expect(getByTestId('phone-screen').className).toMatch(/bg-black/);
   });
+
+  it('closes notification shade when open on clicking home gesture bar', async () => {
+    const { getByRole } = renderFrame(false);
+    const { openShade, isShadeOpen } = await import('./state/shade');
+    const { get } = await import('svelte/store');
+    const { fireEvent } = await import('@testing-library/svelte');
+
+    openShade();
+    expect(get(isShadeOpen)).toBe(true);
+
+    const homeBar = getByRole('button', {
+      name: /Return to home screen or collapse notifications/i
+    });
+    await fireEvent.click(homeBar);
+
+    expect(get(isShadeOpen)).toBe(false);
+  });
 });

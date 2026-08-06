@@ -218,7 +218,7 @@
   <!-- Notification Shade Drawer -->
   <div
     transition:fly={{ y: -850, duration: 300 }}
-    class="bg-surface-overlay absolute inset-x-0 top-0 z-50 flex h-[780px] w-full flex-col rounded-b-[2.5rem] border-b border-gray-800 pt-10 pb-2 text-white shadow-2xl backdrop-blur-3xl"
+    class="bg-surface-overlay absolute inset-0 z-50 flex h-full w-full flex-col pt-10 pb-2 text-white shadow-2xl backdrop-blur-3xl"
     role="dialog"
     aria-label="Notification Shade"
   >
@@ -684,23 +684,5 @@
         {/if}
       {/if}
     </div>
-
-    <!-- Bottom Pull Handle Bar -->
-    <button
-      type="button"
-      class="group flex w-full cursor-grab items-center justify-center py-2.5 select-none active:cursor-grabbing"
-      onpointerdown={handlePointerDown}
-      onpointermove={handlePointerMove}
-      onpointerup={handlePointerUp}
-      onpointercancel={handlePointerUp}
-      onclick={() => {
-        if (Math.abs(dragOffsetY) < 5) closeShade();
-      }}
-      aria-label="Close notification shade drawer"
-    >
-      <div
-        class="h-1.5 w-12 rounded-full bg-gray-400 transition-colors group-hover:bg-gray-200 group-active:bg-blue-400"
-      ></div>
-    </button>
   </div>
 {/if}
