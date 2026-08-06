@@ -130,7 +130,16 @@ export const ROUTES: readonly Route[] = [
   // does not register the endpoint.
   route('getPhotos', 'photos', 'get'),
   route('createPhoto', 'photos', 'create'),
-  route('deletePhoto', 'photos', 'delete')
+  route('deletePhoto', 'photos', 'delete'),
+
+  // Notifications — persistent OS notification service
+  route('getShadeNotifications', 'notifications', 'getShadeNotifications'),
+  route('getNotificationHistory', 'notifications', 'getNotificationHistory'),
+  route('getUnreadCounts', 'notifications', 'getUnreadCounts'),
+  route('markNotificationRead', 'notifications', 'markAsRead'),
+  route('clearNotifications', 'notifications', 'clearNotifications'),
+  route('clearAllNotifications', 'notifications', 'clearAllNotifications'),
+  route('restoreNotifications', 'notifications', 'restoreNotifications')
 ] as const;
 
 /** The `gphone:server:<app>:<action>` event a route forwards to. */

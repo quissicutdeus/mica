@@ -399,6 +399,14 @@ export const unreadDms = derived(dmThreads, (threads) =>
   threads.reduce((total, thread) => total + thread.unread, 0)
 );
 
+import { unreadCounts } from './notifications';
+
+/** Total unread badge count for Blabber combining mentions, unread DMs, and persistent notifications. */
+export const blabberTotalUnread = derived(
+  [unreadMentions, unreadDms, unreadCounts],
+  ([mentions, dms, counts]) => mentions + dms + (counts['blabber'] ?? 0)
+);
+
 export const loadDmThreads = async (): Promise<void> => {
   dmThreads.set(await fetchNui<BlabberDmThread[]>('getDmThreads', {}, { defaultValue: [] }));
 };

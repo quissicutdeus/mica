@@ -268,3 +268,19 @@ export interface Mail {
   created_at: Date | string;
   updated_at: Date | string;
 }
+
+export interface NotificationItem {
+  id: number;
+  citizenid: string;
+  app: string;
+  kind: string;
+  title: string;
+  body: string;
+  avatar?: string | null;
+  deep_link?: string | null;
+  read_at?: Date | string | null;
+  cleared_at?: Date | string | null;
+  status?: 'active' | 'deleted' | 'moderated';
+  created_at: Date | string;
+  updated_at: Date | string;
+}

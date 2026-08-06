@@ -17,6 +17,8 @@
   import AppInfo from './panes/AppInfo.svelte';
   import Apps from './panes/Apps.svelte';
   import Display from './panes/Display.svelte';
+  import Network from './panes/Network.svelte';
+  import Notifications from './panes/Notifications.svelte';
   import DeveloperTools from './panes/DeveloperTools.svelte';
   import Shortcuts from './panes/Shortcuts.svelte';
   import Sound from './panes/Sound.svelte';
@@ -36,11 +38,22 @@
    * own screens, and because `App.svelte` re-keys on `currentApp.name` — routing through
    * the registry would destroy and rebuild the whole module on every drill-in.
    */
-  type Pane = 'root' | 'apps' | 'display' | 'sound' | 'shortcuts' | 'devtools' | 'about';
+  type Pane =
+    | 'root'
+    | 'network'
+    | 'notifications'
+    | 'apps'
+    | 'display'
+    | 'sound'
+    | 'shortcuts'
+    | 'devtools'
+    | 'about';
   let pane = $state<Pane>('root');
 
   const PANE_TITLES: Record<Pane, string> = {
     root: 'Settings',
+    network: 'Network',
+    notifications: 'Notifications',
     apps: 'Apps',
     display: 'Display',
     sound: 'Sound',
@@ -123,14 +136,15 @@
     cancelTapReset = after(2000, () => (devToolsTaps = 0));
 
     const remaining = TAPS_TO_UNLOCK - devToolsTaps;
+    const title = 'Developer Tools';
 
     if (remaining <= 0) {
       devToolsUnlocked.set(true);
       devToolsTaps = 0;
       cancelTapReset?.();
-      toast.show({ type: 'success', message: 'Developer Tools unlocked' });
+      toast.show({ type: 'success', title, message: 'Developer Tools unlocked' });
     } else if (remaining <= 3) {
-      toast.show({ type: 'info', message: `${remaining} more to unlock Developer Tools` });
+      toast.show({ type: 'info', title, message: `${remaining} more to unlock Developer Tools` });
     }
   };
 
@@ -152,7 +166,11 @@
 </script>
 
 <Screen title={app.title} onback={app.back}>
-  {#if pane === 'apps'}
+  {#if pane === 'network'}
+    <Network />
+  {:else if pane === 'notifications'}
+    <Notifications />
+  {:else if pane === 'apps'}
     {#if selectedApp}
       <AppInfo app={selectedApp} onremoved={() => (selectedAppId = null)} />
     {:else}
@@ -169,88 +187,98 @@
   {:else if pane === 'about'}
     <About ontapbuild={tapBuildRow} />
   {:else}
-    <div class="space-y-6 p-4">
-      <!-- Every setting lives in a group; the root is nothing but the way in. -->
-      <div>
-        <h2 class="mb-2 px-2 text-sm font-medium tracking-wider text-gray-400 uppercase">Apps</h2>
-        <div class="divide-y divide-gray-700 overflow-hidden rounded-xl bg-gray-800 text-sm">
-          <!-- Its own group rather than a row under System: this is management of what is
-               installed, not a preference of the phone's. -->
+    <div class="p-4">
+      <div class="divide-y divide-gray-700 overflow-hidden rounded-xl bg-gray-800 text-sm">
+        <button
+          type="button"
+          onclick={() => (pane = 'network')}
+          class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+        >
+          <div class="flex flex-col">
+            <span class="font-medium text-gray-200">Network</span>
+            <span class="text-xs text-gray-400">Cellular service and Bluetooth proximity</span>
+          </div>
+          <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+        </button>
+        <button
+          type="button"
+          onclick={() => (pane = 'notifications')}
+          class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+        >
+          <div class="flex flex-col">
+            <span class="font-medium text-gray-200">Notifications</span>
+            <span class="text-xs text-gray-400">Banners, alerts, sounds, and icon badges</span>
+          </div>
+          <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+        </button>
+        <button
+          type="button"
+          onclick={() => (pane = 'apps')}
+          class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+        >
+          <div class="flex flex-col">
+            <span class="font-medium text-gray-200">Apps</span>
+            <span class="text-xs text-gray-400">Storage and uninstall, per app</span>
+          </div>
+          <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+        </button>
+        <button
+          type="button"
+          onclick={() => (pane = 'display')}
+          class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+        >
+          <div class="flex flex-col">
+            <span class="font-medium text-gray-200">Display</span>
+            <span class="text-xs text-gray-400">Phone size, clock, and time format</span>
+          </div>
+          <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+        </button>
+        <button
+          type="button"
+          onclick={() => (pane = 'sound')}
+          class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+        >
+          <div class="flex flex-col">
+            <span class="font-medium text-gray-200">Sound</span>
+            <span class="text-xs text-gray-400">Volume, mute, and button step size</span>
+          </div>
+          <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+        </button>
+        <button
+          type="button"
+          onclick={() => (pane = 'shortcuts')}
+          class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+        >
+          <div class="flex flex-col">
+            <span class="font-medium text-gray-200">Shortcuts</span>
+            <span class="text-xs text-gray-400">Keyboard shortcuts inside the phone</span>
+          </div>
+          <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+        </button>
+        <button
+          type="button"
+          onclick={() => (pane = 'about')}
+          class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+        >
+          <div class="flex flex-col">
+            <span class="font-medium text-gray-200">About</span>
+            <span class="text-xs text-gray-400">Number, build, and first boot</span>
+          </div>
+          <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+        </button>
+        {#if showDevTools}
           <button
             type="button"
-            onclick={() => (pane = 'apps')}
+            onclick={() => (pane = 'devtools')}
             class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
           >
             <div class="flex flex-col">
-              <span class="font-medium text-gray-200">Apps</span>
-              <span class="text-xs text-gray-400">Storage and uninstall, per app</span>
+              <span class="font-medium text-gray-200">Developer Tools</span>
+              <span class="text-xs text-gray-400">Battery, signal, and event simulation</span>
             </div>
             <ChevronRightIcon class="h-4 w-4 text-gray-500" />
           </button>
-        </div>
-      </div>
-
-      <div>
-        <h2 class="mb-2 px-2 text-sm font-medium tracking-wider text-gray-400 uppercase">System</h2>
-        <div class="divide-y divide-gray-700 overflow-hidden rounded-xl bg-gray-800 text-sm">
-          <button
-            type="button"
-            onclick={() => (pane = 'display')}
-            class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
-          >
-            <div class="flex flex-col">
-              <span class="font-medium text-gray-200">Display</span>
-              <span class="text-xs text-gray-400">Phone size, clock, and time format</span>
-            </div>
-            <ChevronRightIcon class="h-4 w-4 text-gray-500" />
-          </button>
-          <button
-            type="button"
-            onclick={() => (pane = 'sound')}
-            class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
-          >
-            <div class="flex flex-col">
-              <span class="font-medium text-gray-200">Sound</span>
-              <span class="text-xs text-gray-400">Volume, mute, and button step size</span>
-            </div>
-            <ChevronRightIcon class="h-4 w-4 text-gray-500" />
-          </button>
-          <button
-            type="button"
-            onclick={() => (pane = 'shortcuts')}
-            class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
-          >
-            <div class="flex flex-col">
-              <span class="font-medium text-gray-200">Shortcuts</span>
-              <span class="text-xs text-gray-400">Keyboard shortcuts inside the phone</span>
-            </div>
-            <ChevronRightIcon class="h-4 w-4 text-gray-500" />
-          </button>
-          <button
-            type="button"
-            onclick={() => (pane = 'about')}
-            class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
-          >
-            <div class="flex flex-col">
-              <span class="font-medium text-gray-200">About</span>
-              <span class="text-xs text-gray-400">Number, build, and first boot</span>
-            </div>
-            <ChevronRightIcon class="h-4 w-4 text-gray-500" />
-          </button>
-          {#if showDevTools}
-            <button
-              type="button"
-              onclick={() => (pane = 'devtools')}
-              class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
-            >
-              <div class="flex flex-col">
-                <span class="font-medium text-gray-200">Developer Tools</span>
-                <span class="text-xs text-gray-400">Battery, signal, and event simulation</span>
-              </div>
-              <ChevronRightIcon class="h-4 w-4 text-gray-500" />
-            </button>
-          {/if}
-        </div>
+        {/if}
       </div>
     </div>
   {/if}
