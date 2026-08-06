@@ -8,6 +8,7 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 import { resolveAppSchema } from '../lib/defineService';
 import { expectedShape } from '../lib/schemaSql';
 import { planAppMigration, planChildMigration, isNoop, type LiveTable } from '../lib/migrate';
+import '../services/index';
 
 /**
  * The planner is the whole point of the exercise, and it is pure — no database, no
@@ -181,6 +182,8 @@ describe('planAppMigration', () => {
   });
 });
 
+import { SchemaMigrator } from '../lib/SchemaMigrator';
+
 describe('planChildMigration', () => {
   const child = {
     name: 'gphone_widget_parts',
@@ -224,5 +227,89 @@ describe('planChildMigration', () => {
     live.columns = live.columns.filter((c) => c.name !== 'id');
 
     expect(planChildMigration(noId, live).drift).toEqual([]);
+  });
+});
+
+describe('SchemaMigrator', () => {
+  it('skips auto migration when gphone_auto_migrate convar is false', async () => {
+    (globalThis as any).GetConvar = vi.fn().mockReturnValue('false');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await SchemaMigrator.run();
+
+    expect(logSpy).toHaveBeenCalledWith(
+      '[gphone] gphone_auto_migrate is false — skipping schema migration.'
+    );
+  });
+
+  it('plans migration by querying information_schema', async () => {
+    (globalThis as any).GetConvar = vi.fn().mockReturnValue('true');
+    dbMock.scalar.mockResolvedValueOnce('gphone_db');
+    // Return empty columns for readLiveTable query to simulate missing tables
+    dbMock.query.mockResolvedValue([]);
+
+    const plans = await SchemaMigrator.plan();
+
+    expect(dbMock.scalar).toHaveBeenCalledWith('SELECT DATABASE()', []);
+    expect(plans.length).toBeGreaterThan(0);
+    expect(plans[0].missingTable).toBe(true);
+  });
+
+  it('reports schema status when in sync', async () => {
+    vi.spyOn(SchemaMigrator, 'plan').mockResolvedValueOnce([]);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await SchemaMigrator.report();
+
+    expect(logSpy).toHaveBeenCalledWith('[gphone] schema is up to date.');
+  });
+
+  it('reports schema differences when missing tables or drift exist', async () => {
+    vi.spyOn(SchemaMigrator, 'plan').mockResolvedValueOnce([
+      {
+        table: 'gphone_widgets',
+        missingTable: true,
+        additive: [],
+        drift: ['gphone_widgets.foo exists but is not declared']
+      }
+    ]);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await SchemaMigrator.report();
+
+    expect(logSpy).toHaveBeenCalledWith('[gphone] schema differences:');
+    expect(logSpy).toHaveBeenCalledWith(
+      '  gphone_widgets: table does not exist — run the file in sql/apps/'
+    );
+    expect(logSpy).toHaveBeenCalledWith(
+      '  needs a human: gphone_widgets.foo exists but is not declared'
+    );
+  });
+
+  it('applies additive schema changes on run() when enabled', async () => {
+    (globalThis as any).GetConvar = vi.fn().mockReturnValue('true');
+    vi.spyOn(SchemaMigrator, 'plan').mockResolvedValueOnce([
+      {
+        table: 'gphone_widgets',
+        missingTable: false,
+        additive: [
+          {
+            description: 'add column body to gphone_widgets',
+            sql: 'ALTER TABLE `gphone_widgets` ADD COLUMN `body` text DEFAULT NULL'
+          }
+        ],
+        drift: []
+      }
+    ]);
+    dbMock.query.mockResolvedValueOnce(undefined);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await SchemaMigrator.run();
+
+    expect(dbMock.query).toHaveBeenCalledWith(
+      'ALTER TABLE `gphone_widgets` ADD COLUMN `body` text DEFAULT NULL',
+      []
+    );
+    expect(logSpy).toHaveBeenCalledWith('[gphone] applied 1 schema change(s).');
   });
 });
