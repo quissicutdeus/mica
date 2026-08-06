@@ -131,30 +131,6 @@
   /* --- end generated --- */
 
   /**
-   * Legacy tokens, being retired.
-   *
-   * Every one of these maps onto a role above — `surface-raised` is `surface-container`,
-   * `hairline` is `outline-variant`, `accent` is `primary`, `danger` is `error`. They stay
-   * only so the migration can move one directory at a time instead of in a single
-   * 1190-line diff, and they are deleted once nothing imports them. Do not reach for one
-   * in new code.
-   */
-  --color-surface-raised: rgb(30 41 57 / 0.5); /* gray-800/50 */
-  --color-surface-sunken: rgb(30 41 57 / 0.7); /* gray-800/70 */
-  --color-surface-overlay: rgb(3 7 18 / 0.95); /* gray-950/95 */
-  --color-row-hover: rgb(54 65 83 / 0.4); /* gray-700/40 */
-  --color-row-press: rgb(54 65 83 / 0.6); /* gray-700/60 */
-  --color-hairline: rgb(54 65 83 / 0.5); /* gray-700/50 */
-  --color-muted: #99a1af; /* gray-400 */
-  --color-accent: #155dfc; /* blue-600 */
-  --color-accent-ring: rgb(50 128 255 / 0.5); /* blue-500/50 */
-  --color-accent-hairline: rgb(86 162 255 / 0.2); /* blue-400/20 */
-  --color-accent-glow: rgb(21 93 252 / 0.3); /* blue-600/30 */
-  --color-danger: #e40016; /* red-600 */
-  --color-danger-hover: #fb2c36; /* red-500 */
-  --color-danger-surface: rgb(77 2 24 / 0.5); /* rose-950/50 */
-
-  /**
    * The frame's own insets. `PhoneFrame` expressed these as bare `pt-8`/`pb-4` with
    * nothing exported, so an app had no way to ask how much of the screen it actually
    * owns. Same numbers, now with a name.
