@@ -93,7 +93,48 @@
     }
   };
 
+  /**
+   * Adopt the colour we were handed, so the wheel opens on the one in use.
+   *
+   * `color` was declared in `Props`, destructured, and then never read — the sliders
+   * always started at hue 210, full saturation, so the picker opened blue no matter what
+   * the wallpaper actually was. A prop the parent passes and the child ignores is a
+   * broken contract rather than an unused variable, which is why this reads it instead
+   * of deleting it.
+   *
+   * Once only, at mount. Tracking `color` reactively would fight the user: every drag
+   * emits through `onchange`, the parent stores it and passes it straight back, and the
+   * incoming value would then re-derive the very state the drag is setting.
+   */
+  const adoptIncomingColor = () => {
+    const match = color.match(/(\d+(?:\.\d+)?)/g);
+    if (!match || match.length < 3) return;
+
+    const [r, g, b] = match.slice(0, 3).map(Number);
+    if ([r, g, b].some((n) => !Number.isFinite(n) || n < 0 || n > 255)) return;
+    if (match.length >= 4) alpha = Math.round(Math.min(1, Number(match[3])) * 100);
+
+    const [rf, gf, bf] = [r / 255, g / 255, b / 255];
+    const max = Math.max(rf, gf, bf);
+    const min = Math.min(rf, gf, bf);
+    const delta = max - min;
+
+    lightness = Math.round(((max + min) / 2) * 100);
+    saturation = delta === 0 ? 0 : Math.round((delta / (1 - Math.abs(max + min - 1))) * 100);
+
+    if (delta === 0) {
+      hue = 0;
+    } else if (max === rf) {
+      hue = Math.round(60 * (((gf - bf) / delta + 6) % 6));
+    } else if (max === gf) {
+      hue = Math.round(60 * ((bf - rf) / delta + 2));
+    } else {
+      hue = Math.round(60 * ((rf - gf) / delta + 4));
+    }
+  };
+
   onMount(() => {
+    adoptIncomingColor();
     drawWheel();
   });
 
