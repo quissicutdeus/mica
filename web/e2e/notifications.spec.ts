@@ -237,29 +237,73 @@ test.describe('Interactive Toast Notifications E2E', () => {
     ).toBeVisible();
   });
 
+  /**
+   * This test used to dispatch `{ action: 'pushNotification' }`, which is not a route
+   * the phone has ever had — the name appears nowhere in `web/src`, `shared/`, `client/`
+   * or `server/`. `nuiMessages.ts` ignores an unknown action, so the test asserted on a
+   * toast that could not arrive, and it had never passed since the day it was written.
+   *
+   * That is precisely the failure AGENTS.md §8 describes: a NUI action with no layer
+   * behind it does nothing and says nothing. The mock registry answers by action name and
+   * hides it in the browser; here there was not even a mock, only a name.
+   *
+   * The real contract is one generic envelope, `appEvent` from `shared/appEvents.ts`,
+   * carrying the target app and an optional `notify` block. So this now drives the route
+   * that actually exists, and covers both halves of what the name claims: the shade opens
+   * from the status bar, and a pushed event raises a toast.
+   */
   test('notification shade opens via gesture and displays persistent notifications', async ({
     page
   }) => {
-    // Open Notification Shade by clicking/dragging status bar or dispatching open event
-    await page.evaluate(() => {
-      window.dispatchEvent(
-        new MessageEvent('message', {
-          data: {
-            action: 'pushNotification',
-            data: {
-              id: 99,
-              app: 'blabber',
-              kind: 'mention',
-              title: '@michael mentioned you',
-              body: 'Check out this post',
-              created_at: new Date().toISOString()
-            }
-          }
-        })
-      );
-    });
+    await page.getByRole('button', { name: 'Open notification shade' }).click();
 
-    const toast = page.locator('text=@michael mentioned you').first();
-    await expect(toast).toBeVisible();
+    const shade = page.getByRole('dialog', { name: 'Notification Shade' });
+    await expect(shade).toBeVisible();
+    await expect(shade.getByText('Sarah Connor')).toBeVisible();
+
+    // The home indicator collapses the shade rather than going home while it is open.
+    await page.getByRole('button', { name: 'Collapse notifications' }).click();
+    await expect(shade).toBeHidden();
+  });
+
+  /** Push an `AppEventEnvelope` down the one generic route the shell registers. */
+  const pushAppEvent = (page: import('@playwright/test').Page, app: string, title: string) =>
+    page.evaluate(
+      ({ app, title }) => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            data: {
+              action: 'appEvent',
+              data: {
+                app,
+                event: 'mention',
+                payload: { id: 99 },
+                at: Date.now(),
+                notify: { type: 'info', title, message: 'Check out this post' }
+              }
+            }
+          })
+        );
+      },
+      { app, title }
+    );
+
+  test('an app event with a notify block raises a toast', async ({ page }) => {
+    // `mail` is core and declares `notifications`, so it is installed and permitted.
+    await pushAppEvent(page, 'mail', 'You have new mail');
+    await expect(page.getByText('You have new mail')).toBeVisible();
+  });
+
+  test('an app that is not installed does not get to interrupt the player', async ({ page }) => {
+    // The toast is gated on `getManifest(app)` finding a manifest that declares
+    // `notifications`. Blabber declares it but is `core: false`, so in a fresh session it
+    // is not installed and there is no manifest to consult.
+    //
+    // Worth asserting rather than assuming: the gate is the only thing keeping an add-on
+    // the player removed — or never installed — from raising toasts at them, and nothing
+    // else in the suite covers the negative case. The data half still flows either way,
+    // deliberately; §7 says permissions are a disclosure, not a sandbox.
+    await pushAppEvent(page, 'blabber', '@michael mentioned you');
+    await expect(page.getByText('@michael mentioned you')).toHaveCount(0);
   });
 });
