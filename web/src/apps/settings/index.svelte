@@ -22,6 +22,7 @@
   import DeveloperTools from './panes/DeveloperTools.svelte';
   import Shortcuts from './panes/Shortcuts.svelte';
   import Sound from './panes/Sound.svelte';
+  import WallpaperPane from './panes/WallpaperPane.svelte';
 
   let { onback }: AppProps = $props();
 
@@ -43,6 +44,7 @@
     | 'network'
     | 'notifications'
     | 'apps'
+    | 'wallpaper'
     | 'display'
     | 'sound'
     | 'shortcuts'
@@ -55,6 +57,7 @@
     network: 'Network',
     notifications: 'Notifications',
     apps: 'Apps',
+    wallpaper: 'Wallpaper & Theme',
     display: 'Display',
     sound: 'Sound',
     shortcuts: 'Shortcuts',
@@ -176,107 +179,130 @@
     {:else}
       <Apps onselect={(id) => (selectedAppId = id)} />
     {/if}
+  {:else if pane === 'wallpaper'}
+    <WallpaperPane />
+  {:else if pane === 'display'}
+    <Display />
   {:else if pane === 'sound'}
     <Sound />
   {:else if pane === 'shortcuts'}
     <Shortcuts />
   {:else if pane === 'devtools'}
     <DeveloperTools onhide={hideDevTools} />
-  {:else if pane === 'display'}
-    <Display />
   {:else if pane === 'about'}
     <About ontapbuild={tapBuildRow} />
   {:else}
     <div class="p-4">
-      <div class="divide-y divide-gray-700 overflow-hidden rounded-xl bg-gray-800 text-sm">
+      <div
+        class="divide-outline-variant bg-surface-container divide-y overflow-hidden rounded-xl text-sm"
+      >
         <button
           type="button"
           onclick={() => (pane = 'network')}
-          class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
-            <span class="font-medium text-gray-200">Network</span>
-            <span class="text-xs text-gray-400">Cellular service and Bluetooth proximity</span>
+            <span class="text-on-surface font-medium">Network</span>
+            <span class="text-on-surface-variant text-xs"
+              >Cellular service and Bluetooth proximity</span
+            >
           </div>
-          <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+          <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
         </button>
         <button
           type="button"
           onclick={() => (pane = 'notifications')}
-          class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
-            <span class="font-medium text-gray-200">Notifications</span>
-            <span class="text-xs text-gray-400">Banners, alerts, sounds, and icon badges</span>
+            <span class="text-on-surface font-medium">Notifications</span>
+            <span class="text-on-surface-variant text-xs"
+              >Banners, alerts, sounds, and icon badges</span
+            >
           </div>
-          <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+          <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
         </button>
         <button
           type="button"
           onclick={() => (pane = 'apps')}
-          class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
-            <span class="font-medium text-gray-200">Apps</span>
-            <span class="text-xs text-gray-400">Storage and uninstall, per app</span>
+            <span class="text-on-surface font-medium">Apps</span>
+            <span class="text-on-surface-variant text-xs">Storage and uninstall, per app</span>
           </div>
-          <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+          <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onclick={() => (pane = 'wallpaper')}
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+        >
+          <div class="flex flex-col">
+            <span class="text-on-surface font-medium">Wallpaper & Theme</span>
+            <span class="text-on-surface-variant text-xs"
+              >Background, and the colour the phone is built from</span
+            >
+          </div>
+          <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
         </button>
         <button
           type="button"
           onclick={() => (pane = 'display')}
-          class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
-            <span class="font-medium text-gray-200">Display</span>
-            <span class="text-xs text-gray-400">Phone size, clock, and time format</span>
+            <span class="text-on-surface font-medium">Display</span>
+            <span class="text-on-surface-variant text-xs">Phone size, clock, and time format</span>
           </div>
-          <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+          <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
         </button>
         <button
           type="button"
           onclick={() => (pane = 'sound')}
-          class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
-            <span class="font-medium text-gray-200">Sound</span>
-            <span class="text-xs text-gray-400">Volume, mute, and button step size</span>
+            <span class="text-on-surface font-medium">Sound</span>
+            <span class="text-on-surface-variant text-xs">Volume, mute, and button step size</span>
           </div>
-          <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+          <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
         </button>
         <button
           type="button"
           onclick={() => (pane = 'shortcuts')}
-          class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
-            <span class="font-medium text-gray-200">Shortcuts</span>
-            <span class="text-xs text-gray-400">Keyboard shortcuts inside the phone</span>
+            <span class="text-on-surface font-medium">Shortcuts</span>
+            <span class="text-on-surface-variant text-xs">Keyboard shortcuts inside the phone</span>
           </div>
-          <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+          <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
         </button>
         <button
           type="button"
           onclick={() => (pane = 'about')}
-          class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
-            <span class="font-medium text-gray-200">About</span>
-            <span class="text-xs text-gray-400">Number, build, and first boot</span>
+            <span class="text-on-surface font-medium">About</span>
+            <span class="text-on-surface-variant text-xs">Number, build, and first boot</span>
           </div>
-          <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+          <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
         </button>
         {#if showDevTools}
           <button
             type="button"
             onclick={() => (pane = 'devtools')}
-            class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+            class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
           >
             <div class="flex flex-col">
-              <span class="font-medium text-gray-200">Developer Tools</span>
-              <span class="text-xs text-gray-400">Battery, signal, and event simulation</span>
+              <span class="text-on-surface font-medium">Developer Tools</span>
+              <span class="text-on-surface-variant text-xs"
+                >Battery, signal, and event simulation</span
+              >
             </div>
-            <ChevronRightIcon class="h-4 w-4 text-gray-500" />
+            <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
           </button>
         {/if}
       </div>
