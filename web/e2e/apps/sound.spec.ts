@@ -32,7 +32,7 @@ test.describe('Volume Buttons E2E', () => {
     page
   }) => {
     await page.locator('button', { hasText: 'Settings' }).first().click();
-    await page.locator('button', { hasText: 'Sound' }).first().click();
+    await page.getByRole('button', { name: new RegExp('^Sound\\b') }).click();
     await expect(page.locator('h1', { hasText: 'Sound' })).toBeVisible();
 
     await page.locator('button[aria-pressed]', { hasText: '20%' }).click();
@@ -44,12 +44,12 @@ test.describe('Volume Buttons E2E', () => {
 
   test('the step size survives a reload', async ({ page }) => {
     await page.locator('button', { hasText: 'Settings' }).first().click();
-    await page.locator('button', { hasText: 'Sound' }).first().click();
+    await page.getByRole('button', { name: new RegExp('^Sound\\b') }).click();
     await page.locator('button[aria-pressed]', { hasText: '10%' }).click();
 
     await page.reload();
     await page.locator('button', { hasText: 'Settings' }).first().click();
-    await page.locator('button', { hasText: 'Sound' }).first().click();
+    await page.getByRole('button', { name: new RegExp('^Sound\\b') }).click();
     await expect(page.locator("button[aria-pressed='true']", { hasText: '10%' })).toBeVisible();
 
     await page.locator("button[aria-label='Volume Up']").click();

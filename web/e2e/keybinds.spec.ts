@@ -107,7 +107,7 @@ test.describe('Keyboard Shortcuts E2E', () => {
 
   test('a rebind set in Settings survives a UI reload', async ({ page }) => {
     await page.locator('button', { hasText: 'Settings' }).first().click();
-    await page.locator('button', { hasText: 'Shortcuts' }).first().click();
+    await page.getByRole('button', { name: new RegExp('^Shortcuts\\b') }).click();
     await expect(page.locator('h1', { hasText: 'Shortcuts' })).toBeVisible();
 
     // By id, not by text: a bare 'Back' also matches "End / Reject Call **Back**space",
@@ -123,7 +123,7 @@ test.describe('Keyboard Shortcuts E2E', () => {
 
     await page.reload();
     await page.locator('button', { hasText: 'Settings' }).first().click();
-    await page.locator('button', { hasText: 'Shortcuts' }).first().click();
+    await page.getByRole('button', { name: new RegExp('^Shortcuts\\b') }).click();
     await expect(page.getByTestId('shortcut-back')).toContainText('Q');
 
     // And the new key actually drives navigation, not just the label. Settings claims

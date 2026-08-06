@@ -11,7 +11,7 @@ test.describe('Settings App E2E', () => {
     // Nothing is settable from the root itself.
     await expect(page.getByRole('switch')).toHaveCount(0);
 
-    await page.locator('button', { hasText: 'Display' }).first().click();
+    await page.getByRole('button', { name: new RegExp('^Display\\b') }).click();
     await expect(page.locator('h1', { hasText: 'Display' })).toBeVisible();
 
     // A switch, announced as one: `ToggleSwitch` carries `role="switch"` and its visible
@@ -45,7 +45,7 @@ test.describe('Settings App E2E', () => {
   test('back from a sub-page returns to the Settings hub, not the home screen', async ({
     page
   }) => {
-    await page.locator('button', { hasText: 'Shortcuts' }).first().click();
+    await page.getByRole('button', { name: new RegExp('^Shortcuts\\b') }).click();
     await expect(page.locator('h1', { hasText: 'Shortcuts' })).toBeVisible();
 
     await page.locator("button[aria-label='Go back']").click();
@@ -57,7 +57,7 @@ test.describe('Settings App E2E', () => {
   });
 
   test('Backspace steps up one pane before leaving the app', async ({ page }) => {
-    await page.locator('button', { hasText: 'Shortcuts' }).first().click();
+    await page.getByRole('button', { name: new RegExp('^Shortcuts\\b') }).click();
     await expect(page.locator('h1', { hasText: 'Shortcuts' })).toBeVisible();
 
     await page.keyboard.press('Backspace');
@@ -174,7 +174,7 @@ test.describe('Settings App E2E', () => {
        * at construction, in module scope, on a page CEF never unloads — so a sweep alone left
        * the old value on screen and the next write put the key straight back.
        */
-      await page.locator('button', { hasText: 'Sound' }).first().click();
+      await page.getByRole('button', { name: new RegExp('^Sound\\b') }).click();
       // Choices are 1/2/5/10/20 and the shipped default is 5, so 20 is unambiguously a change.
       await page.getByRole('button', { name: '20%', exact: true }).click();
       await expect(page.getByRole('button', { name: '20%', exact: true })).toHaveAttribute(
@@ -197,7 +197,7 @@ test.describe('Settings App E2E', () => {
       // And the setting is back to its shipped default, not merely absent from storage.
       await page.keyboard.press('Backspace');
       await page.keyboard.press('Backspace');
-      await page.locator('button', { hasText: 'Sound' }).first().click();
+      await page.getByRole('button', { name: new RegExp('^Sound\\b') }).click();
       await expect(page.getByRole('button', { name: '5%', exact: true })).toHaveAttribute(
         'aria-pressed',
         'true'
