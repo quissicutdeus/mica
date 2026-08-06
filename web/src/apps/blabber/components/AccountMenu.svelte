@@ -55,9 +55,11 @@
 <!-- `top-20` clears the header rather than guessing at it: the header is one row of padding plus a
      40px icon button, so 5rem lands just below with a hairline of gap. -->
 <div
-  class="animate-in fade-in border-hairline absolute top-20 right-2 z-40 w-56 overflow-hidden rounded-2xl border bg-gray-900 shadow-xl duration-150"
+  class="animate-in fade-in border-outline-variant bg-surface absolute top-20 right-2 z-40 w-56 overflow-hidden rounded-2xl border shadow-xl duration-150"
 >
-  <p class="px-3 pt-3 pb-1 text-[11px] font-semibold tracking-wide text-gray-500 uppercase">
+  <p
+    class="text-on-surface-variant px-3 pt-3 pb-1 text-[11px] font-semibold tracking-wide uppercase"
+  >
     Posting as · {accounts.length} of {limit}
   </p>
 
@@ -67,8 +69,8 @@
       type="button"
       aria-pressed={active}
       class="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left transition-colors {active
-        ? 'bg-gray-800 text-white'
-        : 'text-gray-300 hover:bg-gray-800'}"
+        ? 'bg-surface-container text-on-surface'
+        : 'text-on-surface hover:bg-surface-container'}"
       onclick={() => onswitch(account.id)}
     >
       <Avatar
@@ -82,18 +84,18 @@
         <span class="block truncate text-xs font-semibold"
           >{account.display_name || account.handle}</span
         >
-        <span class="block truncate text-[11px] text-gray-500">@{account.handle}</span>
+        <span class="text-on-surface-variant block truncate text-[11px]">@{account.handle}</span>
       </span>
       {#if active}
-        <CheckIcon class="h-4 w-4 shrink-0 text-sky-400" />
+        <CheckIcon class="text-primary h-4 w-4 shrink-0" />
       {/if}
     </button>
   {/each}
 
-  <div class="border-t border-gray-800">
+  <div class="border-outline-variant border-t">
     <button
       type="button"
-      class="w-full cursor-pointer px-3 py-2.5 text-left text-xs text-gray-300 transition-colors hover:bg-gray-800"
+      class="text-on-surface hover:bg-surface-container w-full cursor-pointer px-3 py-2.5 text-left text-xs transition-colors"
       onclick={onedit}
     >
       Edit profile
@@ -101,7 +103,7 @@
     {#if canClaim}
       <button
         type="button"
-        class="w-full cursor-pointer px-3 py-2.5 text-left text-xs text-gray-300 transition-colors hover:bg-gray-800"
+        class="text-on-surface hover:bg-surface-container w-full cursor-pointer px-3 py-2.5 text-left text-xs transition-colors"
         onclick={onclaim}
       >
         Claim another handle

@@ -130,7 +130,7 @@
 {#snippet headerActions()}
   {#if !selectedPhoto}
     <button
-      class="ml-auto rounded-full p-2 font-semibold text-blue-400 transition-colors hover:bg-gray-700"
+      class="text-primary hover:bg-surface-container-high ml-auto rounded-full p-2 font-semibold transition-colors"
       onclick={toggleSelectionMode}
     >
       {isSelectionMode ? 'Cancel' : 'Select'}
@@ -150,9 +150,11 @@
         />
       </div>
 
-      <div class="flex justify-between border-t border-gray-800 bg-black/80 p-4 pb-8 backdrop-blur">
+      <div
+        class="border-outline-variant flex justify-between border-t bg-black/80 p-4 pb-8 backdrop-blur"
+      >
         <button
-          class="p-2 text-blue-400 transition-colors hover:text-blue-300"
+          class="text-primary hover:text-primary p-2 transition-colors"
           aria-label="Share photo"
           onclick={() =>
             toast.show({ type: 'info', message: 'Sharing photos is not implemented yet' })}
@@ -160,14 +162,14 @@
           <ShareSquareIcon class="h-6 w-6" />
         </button>
         <button
-          class="p-2 text-gray-400 transition-colors hover:text-rose-400"
+          class="text-on-surface-variant hover:text-error p-2 transition-colors"
           aria-label="Report photo"
           onclick={() => (reporting = true)}
         >
           <FlagIcon class="h-6 w-6" />
         </button>
         <button
-          class="p-2 text-red-500 transition-colors hover:text-red-400"
+          class="text-error hover:text-error p-2 transition-colors"
           aria-label="Delete photo"
           onclick={() => (showDeleteConfirm = true)}
         >
@@ -188,7 +190,7 @@
     </div>
   {:else}
     <!-- Grid View -->
-    <div class="no-scrollbar relative h-full overflow-y-auto bg-gray-900 p-1">
+    <div class="no-scrollbar bg-surface relative h-full overflow-y-auto p-1">
       {#if !$photosLoaded}
         <Skeleton count={4} height="h-24" rounded="rounded-none" />
       {:else if $photos.length === 0}
@@ -204,7 +206,7 @@
                  div, so the gallery could not be opened from the keyboard at all. -->
             <button
               type="button"
-              class="group relative aspect-square cursor-pointer bg-gray-800"
+              class="group bg-surface-container relative aspect-square cursor-pointer"
               onclick={() => handlePhotoClick(photo)}
               aria-pressed={isSelectionMode ? selectedIds.has(photo.id) : undefined}
               aria-label={isSelectionMode ? `Select photo ${photo.id}` : `Open photo ${photo.id}`}
@@ -222,11 +224,11 @@
                   class="absolute right-2 bottom-2 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white {selectedIds.has(
                     photo.id
                   )
-                    ? 'bg-blue-500'
+                    ? 'bg-primary'
                     : 'bg-black/20 backdrop-blur-sm'}"
                 >
                   {#if selectedIds.has(photo.id)}
-                    <CheckIcon class="h-4 w-4 text-white" />
+                    <CheckIcon class="text-on-surface h-4 w-4" />
                   {/if}
                 </div>
               {/if}
@@ -237,20 +239,20 @@
 
       {#if isSelectionMode && selectedIds.size > 0}
         <div
-          class="absolute right-4 bottom-4 left-4 flex items-center justify-between rounded-2xl border border-gray-700 bg-gray-800/90 p-4 shadow-2xl backdrop-blur-md"
+          class="border-outline-variant bg-surface-container absolute right-4 bottom-4 left-4 flex items-center justify-between rounded-2xl border p-4 shadow-2xl backdrop-blur-md"
           transition:fade
         >
-          <span class="font-medium text-white">{selectedIds.size} Selected</span>
+          <span class="text-on-surface font-medium">{selectedIds.size} Selected</span>
           <div class="flex gap-4">
             <button
-              class="text-blue-400 hover:text-blue-300"
+              class="text-primary hover:text-primary"
               aria-label="Share selected"
               onclick={shareSelected}
             >
               <ShareSquareIcon class="h-5 w-5" />
             </button>
             <button
-              class="text-red-500 hover:text-red-400"
+              class="text-error hover:text-error"
               aria-label="Delete selected"
               onclick={() => (showDeleteConfirm = true)}
             >

@@ -401,7 +401,7 @@
     <div class="ml-auto flex items-center gap-1">
       <button
         type="button"
-        class="relative rounded-full p-2 text-gray-300 transition-colors hover:bg-gray-700"
+        class="text-on-surface hover:bg-surface-container-high relative rounded-full p-2 transition-colors"
         onclick={() => openDms(null)}
         title="Messages"
         aria-label="Messages"
@@ -409,7 +409,7 @@
         <MessageIcon class="h-5 w-5" />
         {#if $unreadDms > 0}
           <span
-            class="absolute top-0.5 right-0.5 min-w-4 rounded-full bg-sky-500 px-1 text-[10px] leading-4 font-bold text-white"
+            class="bg-primary text-on-primary absolute top-0.5 right-0.5 min-w-4 rounded-full px-1 text-[10px] leading-4 font-bold"
           >
             {$unreadDms > 99 ? '99+' : $unreadDms}
           </span>
@@ -496,7 +496,7 @@
     <!-- `raised` so it clears the nav they share this snippet with. -->
     <FloatingActionButton label="Blab" collapsed raised onclick={() => (composing = true)}>
       {#snippet icon()}
-        <AddIcon class="h-4 w-4 shrink-0 text-white" />
+        <AddIcon class="text-on-surface h-4 w-4 shrink-0" />
       {/snippet}
     </FloatingActionButton>
 

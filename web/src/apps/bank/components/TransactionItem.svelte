@@ -5,12 +5,12 @@
   let { transaction }: { transaction: Transaction } = $props();
 </script>
 
-<div class="flex items-center justify-between rounded-xl bg-gray-800 p-4">
+<div class="bg-surface-container flex items-center justify-between rounded-xl p-4">
   <div class="flex items-center">
-    <div class="flex h-10 w-10 items-center justify-center rounded-full bg-gray-700">
+    <div class="bg-surface-container-high flex h-10 w-10 items-center justify-center rounded-full">
       <svg
         xmlns="http://www.w3.org/2000/svg"
-        class="h-5 w-5 text-gray-400"
+        class="text-on-surface-variant h-5 w-5"
         fill="none"
         viewBox="0 0 24 24"
         stroke="currentColor"
@@ -27,7 +27,7 @@
       <div class="font-medium">
         {transaction.message || transaction.title || 'Transaction'}
       </div>
-      <div class="text-xs text-gray-400">
+      <div class="text-on-surface-variant text-xs">
         {formatTimestamp(transaction.time)}
       </div>
     </div>
@@ -35,9 +35,7 @@
   <!-- Direction comes from `direction`, never from the sign of `amount`. Banking
        resources store positive magnitudes, so a sign check shows every withdrawal
        as a credit. -->
-  <span
-    class={`font-medium ${transaction.direction === 'out' ? 'text-red-400' : 'text-green-400'}`}
-  >
+  <span class={`font-medium ${transaction.direction === 'out' ? 'text-error' : 'text-green-400'}`}>
     {transaction.direction === 'out' ? '-' : '+'}${formatCurrency(transaction.amount)}
   </span>
 </div>

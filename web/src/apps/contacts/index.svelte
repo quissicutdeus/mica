@@ -269,9 +269,9 @@
 {#snippet headerActions()}
   {#if !selectedContact && !isAdding}
     <button
-      class="ml-auto rounded-full p-2 transition-colors hover:bg-gray-700 {showSearch
-        ? 'bg-gray-800 text-blue-400'
-        : 'text-gray-300'}"
+      class="hover:bg-surface-container-high ml-auto rounded-full p-2 transition-colors {showSearch
+        ? 'bg-surface-container text-primary'
+        : 'text-on-surface'}"
       onclick={() => {
         showSearch = !showSearch;
         if (!showSearch) searchQuery = '';
@@ -292,7 +292,7 @@
       onclick={() => (isAdding = true)}
     >
       {#snippet icon()}
-        <AddIcon class="h-4 w-4 shrink-0 text-white" />
+        <AddIcon class="text-on-surface h-4 w-4 shrink-0" />
       {/snippet}
     </FloatingActionButton>
   {/if}
@@ -312,7 +312,7 @@
 
     {#if showSearch}
       <div
-        class="animate-in slide-in-from-top sticky top-0 z-20 border-b border-gray-800 bg-gray-900/95 p-3 backdrop-blur-md duration-200"
+        class="animate-in slide-in-from-top border-outline-variant bg-surface sticky top-0 z-20 border-b p-3 backdrop-blur-md duration-200"
       >
         <SearchBar bind:value={searchQuery} placeholder="Search contacts..." />
       </div>

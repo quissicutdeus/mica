@@ -186,14 +186,14 @@
         <button
           class="flex aspect-square items-center justify-center rounded-full text-2xl font-medium transition-all active:scale-95
           {btn === '='
-            ? 'bg-orange-500 hover:bg-orange-400'
+            ? 'bg-primary hover:brightness-110'
             : ['C', '±', '%', '÷', '×', '-', '+'].includes(btn)
-              ? 'bg-gray-600 hover:bg-gray-500'
-              : 'bg-gray-800 hover:bg-gray-700'}"
+              ? 'bg-surface-container-low hover:bg-surface'
+              : 'bg-surface-container hover:bg-surface-container-low'}"
           onclick={() => handleInput(btn)}
         >
           {#if btn === '⌫'}
-            <BackspaceIcon class="h-6 w-6 text-white" />
+            <BackspaceIcon class="text-on-surface h-6 w-6" />
           {:else}
             {btn}
           {/if}

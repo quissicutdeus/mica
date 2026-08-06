@@ -55,24 +55,28 @@
 </script>
 
 <div class="p-4">
-  <h2 class="mb-2 px-2 text-sm font-medium tracking-wider text-gray-400 uppercase">About</h2>
-  <div class="divide-y divide-gray-700 overflow-hidden rounded-xl bg-gray-800 text-sm">
+  <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
+    About
+  </h2>
+  <div
+    class="divide-outline-variant bg-surface-container divide-y overflow-hidden rounded-xl text-sm"
+  >
     <button
       type="button"
       onclick={copyPhoneNumber}
-      class="flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors hover:bg-gray-700/40 active:bg-gray-700/60"
+      class="hover:bg-surface-container-high active:bg-surface-container-high flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
       aria-label="Copy phone number to clipboard"
     >
-      <span class="font-medium text-gray-300">Phone Number</span>
-      <span class="font-mono text-gray-200">{$myPhoneNumber}</span>
+      <span class="text-on-surface font-medium">Phone Number</span>
+      <span class="text-on-surface font-mono">{$myPhoneNumber}</span>
     </button>
     <div class="flex items-center justify-between p-4">
-      <span class="font-medium text-gray-300">First Boot</span>
-      <span class="font-mono text-xs text-gray-300">{formatDate(getFirstBootTime())}</span>
+      <span class="text-on-surface font-medium">First Boot</span>
+      <span class="text-on-surface font-mono text-xs">{formatDate(getFirstBootTime())}</span>
     </div>
     <div class="flex items-center justify-between p-4">
-      <span class="font-medium text-gray-300">Software</span>
-      <span class="font-semibold text-white">gPhone</span>
+      <span class="text-on-surface font-medium">Software</span>
+      <span class="text-on-surface font-semibold">gPhone</span>
     </div>
     <!-- OS Version carries the build info: `v1.0.0 (branch@commit)`. Was a separate
          "Build / Commit" row saying almost the same thing. Ten taps here reveal
@@ -80,10 +84,10 @@
     <button
       type="button"
       onclick={ontapbuild}
-      class="flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors hover:bg-gray-700/40 active:bg-gray-700/60"
+      class="hover:bg-surface-container-high active:bg-surface-container-high flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
     >
-      <span class="font-medium text-gray-300">OS Version</span>
-      <span class="font-mono text-indigo-400">{MICA_BUILD_INFO}</span>
+      <span class="text-on-surface font-medium">OS Version</span>
+      <span class="text-secondary font-mono">{MICA_BUILD_INFO}</span>
     </button>
   </div>
 </div>

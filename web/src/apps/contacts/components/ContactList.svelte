@@ -39,7 +39,7 @@
       <Avatar
         src={contact.avatar}
         initials={(contact.firstname[0] || '') + (contact.lastname?.[0] || '')}
-        bgClass="bg-gray-800 border border-gray-700/60"
+        bgClass="bg-surface-container border border-outline-variant"
       />
     </div>
     <div class="flex min-w-0 flex-1 flex-col">
@@ -52,7 +52,7 @@
           <StarIcon class="ml-1.5 h-4 w-4 shrink-0 text-yellow-400" />
         {/if}
       </div>
-      <span class="text-xs text-gray-400">{contact.phone}</span>
+      <span class="text-on-surface-variant text-xs">{contact.phone}</span>
     </div>
   </ListItem>
 {/snippet}
@@ -61,11 +61,11 @@
   {#if favorites.length > 0}
     <div>
       <div
-        class="sticky top-0 z-10 border-b border-gray-800 bg-gray-900/95 px-4 py-1 text-xs font-bold tracking-wider text-gray-400 uppercase backdrop-blur"
+        class="bg-surface-container border-outline-variant text-on-surface-variant sticky top-0 z-10 border-b px-4 py-1 text-xs font-bold tracking-wider uppercase backdrop-blur"
       >
         Favorites
       </div>
-      <div class="divide-y divide-gray-800">
+      <div class="divide-outline-variant divide-y">
         {#each favorites as contact}
           {@render contactItem(contact)}
         {/each}
@@ -76,11 +76,11 @@
   {#if others.length > 0}
     <div>
       <div
-        class="sticky top-0 z-10 border-b border-gray-800 bg-gray-900/95 px-4 py-1 text-xs font-bold tracking-wider text-gray-400 uppercase backdrop-blur"
+        class="bg-surface-container border-outline-variant text-on-surface-variant sticky top-0 z-10 border-b px-4 py-1 text-xs font-bold tracking-wider uppercase backdrop-blur"
       >
         Contacts
       </div>
-      <div class="divide-y divide-gray-800">
+      <div class="divide-outline-variant divide-y">
         {#each others as contact}
           {@render contactItem(contact)}
         {/each}
@@ -93,7 +93,7 @@
       <Skeleton count={6} height="h-14" />
     </div>
   {:else if total === 0}
-    <div class="py-16 text-center text-sm text-gray-400">
+    <div class="text-on-surface-variant py-16 text-center text-sm">
       {query.trim() ? 'No matching contacts found.' : 'No contacts yet.'}
     </div>
   {/if}

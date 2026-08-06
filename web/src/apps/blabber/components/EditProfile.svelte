@@ -48,12 +48,15 @@
 </script>
 
 <div class="animate-in fade-in bg-surface absolute inset-0 z-30 flex flex-col p-5 duration-200">
-  <h3 class="mb-1 text-lg font-bold text-white">Edit profile</h3>
-  <p class="mb-4 text-xs text-gray-400">
+  <h3 class="text-on-surface mb-1 text-lg font-bold">Edit profile</h3>
+  <p class="text-on-surface-variant mb-4 text-xs">
     @{account.handle} — a handle is claimed once and cannot be changed.
   </p>
 
-  <label class="mb-1 block text-xs font-semibold text-gray-400" for="blabber-display-name">
+  <label
+    class="text-on-surface-variant mb-1 block text-xs font-semibold"
+    for="blabber-display-name"
+  >
     Display name
   </label>
   <input
@@ -61,19 +64,21 @@
     bind:value={displayName}
     maxlength="50"
     placeholder={account.handle}
-    class="mb-4 w-full rounded-lg bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none"
+    class="bg-surface-container text-on-surface placeholder-on-surface-variant mb-4 w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none"
   />
 
-  <label class="mb-1 block text-xs font-semibold text-gray-400" for="blabber-bio">Bio</label>
+  <label class="text-on-surface-variant mb-1 block text-xs font-semibold" for="blabber-bio"
+    >Bio</label
+  >
   <textarea
     id="blabber-bio"
     bind:value={bio}
     maxlength="160"
     rows="3"
     placeholder="Something about you"
-    class="w-full resize-none rounded-lg bg-gray-800 p-2.5 text-sm text-white placeholder-gray-600 focus:outline-none"
+    class="bg-surface-container text-on-surface placeholder-on-surface-variant w-full resize-none rounded-lg p-2.5 text-sm focus:outline-none"
   ></textarea>
-  <span class="mt-1 mb-4 text-right text-xs text-gray-500">{160 - bio.length}</span>
+  <span class="text-on-surface-variant mt-1 mb-4 text-right text-xs">{160 - bio.length}</span>
 
   <div class="flex gap-2">
     <Button class="flex-1" variant="secondary" onclick={oncancel} disabled={busy}>Cancel</Button>

@@ -37,27 +37,29 @@
 {#if showSearch}
   <!-- Search Dropdown Overlay -->
   <div
-    class="animate-in slide-in-from-top sticky top-0 z-20 border-b border-gray-800 bg-gray-900/95 p-3 backdrop-blur-md duration-200"
+    class="animate-in slide-in-from-top border-outline-variant bg-surface sticky top-0 z-20 border-b p-3 backdrop-blur-md duration-200"
   >
     <SearchBar bind:value={query} placeholder="Search chats, names, or messages..." />
   </div>
 {/if}
 
 <!-- Conversation List -->
-<div class="divide-y divide-gray-800">
+<div class="divide-outline-variant divide-y">
   {#each conversations as conv}
-    <ListItem class="items-start hover:bg-gray-800/40" onclick={() => onselect(conv.id)}>
+    <ListItem class="hover:bg-surface-container items-start" onclick={() => onselect(conv.id)}>
       <div class="relative mr-4 shrink-0">
         <Avatar
           src={conv.targetAvatar}
           initials={conv.targetName ? conv.targetName[0] : conv.target[0] || '?'}
           size="w-12 h-12"
           textClass="text-lg"
-          bgClass={conv.is_group ? 'bg-indigo-700' : 'bg-gray-800 border border-gray-700/60'}
+          bgClass={conv.is_group
+            ? 'bg-indigo-700'
+            : 'bg-surface-container border border-outline-variant'}
         />
         {#if conv.unreadCount > 0}
           <div
-            class="absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full border-2 border-gray-900 bg-blue-500 px-1 text-[10px] font-bold shadow-md"
+            class="border-surface bg-primary absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full border-2 px-1 text-[10px] font-bold shadow-md"
           >
             {conv.unreadCount}
           </div>
@@ -68,15 +70,15 @@
         <div class="mb-1 flex items-baseline justify-between">
           <span
             class="truncate text-[15px] font-semibold {conv.unreadCount > 0
-              ? 'font-bold text-white'
-              : 'text-gray-200'}"
+              ? 'text-on-surface font-bold'
+              : 'text-on-surface'}"
           >
             {conv.targetName || conv.target}
           </span>
           <span
             class="text-xs {conv.unreadCount > 0
-              ? 'font-semibold text-blue-400'
-              : 'text-gray-500'} ml-2 whitespace-nowrap"
+              ? 'text-primary font-semibold'
+              : 'text-on-surface-variant'} ml-2 whitespace-nowrap"
           >
             {formatRelativeTime(conv.lastMessageAt)}
           </span>
@@ -90,13 +92,13 @@
           {/if}
           <p
             class="flex-1 truncate text-sm {conv.unreadCount > 0
-              ? 'font-medium text-gray-100'
-              : 'text-gray-400'}"
+              ? 'text-on-surface font-medium'
+              : 'text-on-surface-variant'}"
           >
             {conv.lastMessage || 'No messages'}
           </p>
           <ChevronRightIcon
-            class="ml-2 h-4 w-4 text-gray-600 opacity-0 transition-opacity group-hover:opacity-100"
+            class="text-outline ml-2 h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100"
           />
         </div>
       </div>

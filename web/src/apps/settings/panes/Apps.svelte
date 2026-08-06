@@ -38,15 +38,17 @@
 {#snippet group(heading: string, apps: AppManifest[], note: string)}
   {#if apps.length > 0}
     <div>
-      <h2 class="mb-2 px-2 text-sm font-medium tracking-wider text-gray-400 uppercase">
+      <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
         {heading}
       </h2>
-      <div class="divide-y divide-gray-700 overflow-hidden rounded-xl bg-gray-800 text-sm">
+      <div
+        class="divide-outline-variant bg-surface-container divide-y overflow-hidden rounded-xl text-sm"
+      >
         {#each apps as app (app.id)}
           <button
             type="button"
             onclick={() => onselect(app.id)}
-            class="hover:bg-row-hover active:bg-row-press flex w-full cursor-pointer items-center gap-3 p-3 text-left transition-colors"
+            class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center gap-3 p-3 text-left transition-colors"
           >
             <div
               class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg {app.color} shadow-sm"
@@ -57,18 +59,18 @@
                 {@const IconComp = app.icon}
                 <IconComp />
               {:else}
-                <span class="text-sm font-bold text-white">{app.name.charAt(0)}</span>
+                <span class="text-on-surface text-sm font-bold">{app.name.charAt(0)}</span>
               {/if}
             </div>
             <div class="min-w-0 flex-1">
-              <span class="block truncate font-medium text-gray-200">{app.name}</span>
-              <span class="block truncate text-xs text-gray-400">{sizeOf(app)}</span>
+              <span class="text-on-surface block truncate font-medium">{app.name}</span>
+              <span class="text-on-surface-variant block truncate text-xs">{sizeOf(app)}</span>
             </div>
-            <ChevronRightIcon class="h-4 w-4 shrink-0 text-gray-500" />
+            <ChevronRightIcon class="text-on-surface-variant h-4 w-4 shrink-0" />
           </button>
         {/each}
       </div>
-      <p class="mt-1.5 px-2 text-xs text-gray-500">{note}</p>
+      <p class="text-on-surface-variant mt-1.5 px-2 text-xs">{note}</p>
     </div>
   {/if}
 {/snippet}

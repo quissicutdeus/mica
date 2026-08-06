@@ -62,7 +62,7 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <div class="border-b border-gray-800">
+  <div class="border-outline-variant border-b">
     <BlabRow
       blab={root}
       stats={$engagement[root.id]}

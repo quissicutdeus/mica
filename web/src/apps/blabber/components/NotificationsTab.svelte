@@ -64,13 +64,13 @@
       description="When people mention you, follow your profile, or reply to your Blabs, you will see it here."
     />
   {:else}
-    <div class="divide-y divide-gray-800">
+    <div class="divide-outline-variant divide-y">
       {#each notifications as item (item.id)}
         {@const kind = getNotificationKind(item)}
         <button
           type="button"
-          class="flex w-full cursor-pointer items-start gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-gray-800 {!item.read_at
-            ? 'bg-gray-900'
+          class="hover:bg-surface-container flex w-full cursor-pointer items-start gap-3.5 px-4 py-3.5 text-left transition-colors {!item.read_at
+            ? 'bg-surface'
             : ''}"
           onclick={() => handleItemClick(item)}
         >
@@ -80,33 +80,33 @@
               <Avatar src={item.avatar} size="md" />
             {:else}
               <div
-                class="flex h-10 w-10 items-center justify-center rounded-full font-bold text-white shadow-sm {kind ===
+                class="text-on-surface flex h-10 w-10 items-center justify-center rounded-full font-bold shadow-sm {kind ===
                 'follow'
-                  ? 'bg-indigo-600'
+                  ? 'bg-secondary'
                   : kind === 'mention'
-                    ? 'bg-blue-600'
-                    : 'bg-gray-700'}"
+                    ? 'bg-primary'
+                    : 'bg-surface-container-high'}"
               >
                 {#if kind === 'follow'}
-                  <UsersIcon class="h-5 w-5 text-white" />
+                  <UsersIcon class="text-on-surface h-5 w-5" />
                 {:else if kind === 'mention'}
                   <span class="text-sm">@</span>
                 {:else if kind === 'dm'}
-                  <MessageIcon class="h-5 w-5 text-white" />
+                  <MessageIcon class="text-on-surface h-5 w-5" />
                 {:else}
-                  <BellIcon class="h-5 w-5 text-white" />
+                  <BellIcon class="text-on-surface h-5 w-5" />
                 {/if}
               </div>
             {/if}
 
             <!-- Kind Badge Overlay -->
             <div
-              class="absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-gray-900 text-[10px] font-bold text-white {kind ===
+              class="border-surface text-on-surface absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full border-2 text-[10px] font-bold {kind ===
               'follow'
-                ? 'bg-indigo-500'
+                ? 'bg-secondary'
                 : kind === 'mention'
-                  ? 'bg-blue-500'
-                  : 'bg-gray-600'}"
+                  ? 'bg-primary'
+                  : 'bg-surface-container-highest'}"
             >
               {#if kind === 'follow'}
                 +
@@ -121,8 +121,8 @@
           <!-- Main Notification Body -->
           <div class="min-w-0 flex-1">
             <div class="flex items-baseline justify-between gap-2">
-              <span class="truncate text-sm font-semibold text-white">{item.title}</span>
-              <span class="shrink-0 text-[11px] font-medium text-gray-400">
+              <span class="text-on-surface truncate text-sm font-semibold">{item.title}</span>
+              <span class="text-on-surface-variant shrink-0 text-[11px] font-medium">
                 {new Date(item.created_at).toLocaleTimeString([], {
                   hour: '2-digit',
                   minute: '2-digit'
@@ -130,13 +130,13 @@
               </span>
             </div>
 
-            <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-gray-300">
+            <p class="text-on-surface mt-1 line-clamp-2 text-xs leading-relaxed">
               {item.body}
             </p>
           </div>
 
           {#if !item.read_at}
-            <span class="mt-2 h-2 w-2 shrink-0 rounded-full bg-blue-500"></span>
+            <span class="bg-primary mt-2 h-2 w-2 shrink-0 rounded-full"></span>
           {/if}
         </button>
       {/each}

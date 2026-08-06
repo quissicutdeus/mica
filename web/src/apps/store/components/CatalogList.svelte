@@ -24,12 +24,14 @@
 
 <!-- Catalog Overview Section -->
 <div class="space-y-3">
-  <h2 class="text-xs font-bold tracking-wider text-gray-400 uppercase">Featured Add-on Apps</h2>
+  <h2 class="text-on-surface-variant text-xs font-bold tracking-wider uppercase">
+    Featured Add-on Apps
+  </h2>
   <div class="grid w-full gap-3">
     {#each apps as app (app.id)}
       {@const installed = isInstalled(app.id)}
       <div
-        class="flex w-full min-w-0 items-center justify-between gap-3 rounded-xl border border-gray-800 bg-gray-800/60 p-3 transition hover:border-gray-700"
+        class="bg-surface-container border-outline-variant hover:bg-surface flex w-full min-w-0 items-center justify-between gap-3 rounded-xl border p-3 transition"
       >
         <button
           onclick={() => onselect(app)}
@@ -41,18 +43,18 @@
             {#if typeof app.icon === 'string' && app.icon.startsWith('http')}
               <img src={app.icon} alt={app.name} class="h-6 w-6 object-contain invert filter" />
             {:else}
-              <span class="text-lg font-bold text-white">{app.name.charAt(0)}</span>
+              <span class="text-on-surface text-lg font-bold">{app.name.charAt(0)}</span>
             {/if}
           </div>
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
-              <span class="truncate text-sm font-semibold text-white">{app.name}</span>
+              <span class="text-on-surface truncate text-sm font-semibold">{app.name}</span>
               <span
-                class="shrink-0 rounded bg-gray-700 px-1.5 py-0.5 font-mono text-[10px] text-gray-300"
+                class="bg-surface-container-high text-on-surface shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px]"
                 >v{app.version || '1.0'}</span
               >
             </div>
-            <p class="line-clamp-1 text-xs text-gray-400">
+            <p class="text-on-surface-variant line-clamp-1 text-xs">
               {app.description}
             </p>
           </div>
@@ -64,14 +66,14 @@
                  Tapping the row itself still opens the details view. -->
           <button
             onclick={() => onuninstall(app)}
-            class="shrink-0 rounded-lg bg-red-600/90 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-500 active:scale-95"
+            class="bg-error text-on-error hover:bg-error shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition active:scale-95"
           >
             Uninstall
           </button>
         {:else}
           <button
             onclick={() => oninstall(app)}
-            class="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500 active:scale-95"
+            class="bg-secondary text-on-secondary hover:bg-secondary shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition active:scale-95"
           >
             Install
           </button>

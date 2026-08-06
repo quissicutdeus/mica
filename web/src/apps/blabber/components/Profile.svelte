@@ -141,7 +141,7 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <div class="flex items-center gap-3 border-b border-gray-800 p-4">
+  <div class="border-outline-variant flex items-center gap-3 border-b p-4">
     <Avatar
       src={account?.avatar ?? undefined}
       initials={handle.slice(0, 2).toUpperCase()}
@@ -149,32 +149,32 @@
       showSilhouette={false}
     />
     <div class="min-w-0">
-      <p class="truncate text-base font-bold text-white">
+      <p class="text-on-surface truncate text-base font-bold">
         {account?.display_name || handle}
       </p>
-      <p class="truncate text-xs text-gray-500">@{handle}{mine ? ' · you' : ''}</p>
+      <p class="text-on-surface-variant truncate text-xs">@{handle}{mine ? ' · you' : ''}</p>
       {#if account?.bio}
-        <p class="mt-1 text-xs text-gray-300">{account.bio}</p>
+        <p class="text-on-surface mt-1 text-xs">{account.bio}</p>
       {/if}
       {#if stats}
         <!-- Buttons now that there is somewhere to go. `onfollows` is optional, so a caller that
              has no list screen still gets the numbers rather than a dead control — and the markup
              says which it is, because a count that looks tappable and is not is the same broken
              promise the other way round. -->
-        <p class="mt-1 flex gap-3 text-xs text-gray-400">
+        <p class="text-on-surface-variant mt-1 flex gap-3 text-xs">
           {#each counts as entry (entry.kind)}
             {#if onfollows && account}
               <button
                 type="button"
-                class="hover:text-gray-200"
+                class="hover:text-on-surface"
                 onclick={() => account && onfollows(account, entry.kind)}
               >
-                <span class="font-semibold text-gray-200">{entry.count}</span>
+                <span class="text-on-surface font-semibold">{entry.count}</span>
                 {entry.label}
               </button>
             {:else}
               <span>
-                <span class="font-semibold text-gray-200">{entry.count}</span>
+                <span class="text-on-surface font-semibold">{entry.count}</span>
                 {entry.label}
               </span>
             {/if}
@@ -199,7 +199,7 @@
         {#if onmessage}
           <button
             type="button"
-            class="rounded-full bg-sky-600 p-2 text-white transition-colors hover:bg-sky-500"
+            class="bg-primary text-on-primary hover:bg-primary rounded-full p-2 transition-colors"
             onclick={() => account && onmessage(account)}
             title="Message @{handle}"
             aria-label="Message @{handle}"
@@ -214,7 +214,7 @@
   {#if !account && !loading}
     <EmptyState title="No such handle" description="Nobody here goes by @{handle}." />
   {:else}
-    <div class="border-b border-gray-800 p-2">
+    <div class="border-outline-variant border-b p-2">
       <SegmentedControl
         aria-label="Profile sections"
         selected={tab}

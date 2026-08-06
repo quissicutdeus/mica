@@ -41,10 +41,10 @@
   const canPost = $derived(text.trim().length > 0 && remaining >= 0 && !busy);
 </script>
 
-<div class="border-b border-gray-800 p-3">
+<div class="border-outline-variant border-b p-3">
   {#if handle}
-    <p class="mb-1.5 text-xs text-gray-500">
-      Posting as <span class="text-sky-400">@{handle}</span>
+    <p class="text-on-surface-variant mb-1.5 text-xs">
+      Posting as <span class="text-primary">@{handle}</span>
     </p>
   {/if}
 
@@ -55,13 +55,13 @@
     {placeholder}
     maxlength={LIMIT}
     rows="3"
-    class="w-full resize-none rounded-lg bg-gray-800 p-2.5 text-sm text-white placeholder-gray-500 focus:outline-none"
+    class="bg-surface-container text-on-surface placeholder-on-surface-variant w-full resize-none rounded-lg p-2.5 text-sm focus:outline-none"
   ></textarea>
 
   <div class="mt-2 flex items-center justify-between">
     <span
       class="text-xs"
-      class:text-gray-500={remaining > 20}
+      class:text-on-surface-variant={remaining > 20}
       class:text-amber-400={remaining <= 20}
     >
       {remaining}

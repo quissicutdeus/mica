@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { asDataUri, encodeCrop } from './capture';
+  import { asDataUri, cropViewportToCanvas } from './capture';
   import {
     useCamera,
     usePhotos,
@@ -197,40 +197,19 @@
                 setTimeout(() => reject(new Error('Image load timeout')), 3000);
               });
 
-              const scaleX = img.naturalWidth / window.innerWidth;
-              const scaleY = img.naturalHeight / window.innerHeight;
-
-              const physX = Math.round(rect.left * scaleX);
-              const physY = Math.round(rect.top * scaleY);
-              const physWidth = Math.round(rect.width * scaleX);
-              const physHeight = Math.round(rect.height * scaleY);
-
-              if (physWidth > 10 && physHeight > 10) {
-                const canvas = document.createElement('canvas');
-                canvas.width = physWidth;
-                canvas.height = physHeight;
-
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                  // The crop is 1:1 with the source, so no resampling happens and
-                  // smoothing would only soften it.
-                  ctx.imageSmoothingEnabled = false;
-                  ctx.drawImage(
-                    img,
-                    physX,
-                    physY,
-                    physWidth,
-                    physHeight,
-                    0,
-                    0,
-                    physWidth,
-                    physHeight
-                  );
-                  const cropped = encodeCrop(canvas);
-                  if (cropped && cropped.length > 30 && cropped !== 'data:,') {
-                    capturedImage = cropped;
-                  }
-                }
+              const cropped = cropViewportToCanvas(
+                img,
+                {
+                  left: rect.left,
+                  top: rect.top,
+                  width: rect.width,
+                  height: rect.height
+                },
+                window.innerWidth,
+                window.innerHeight
+              );
+              if (cropped) {
+                capturedImage = cropped;
               }
             } catch (err) {
               console.warn('Canvas crop fallback used:', err);
@@ -282,7 +261,7 @@
      one. -->
 <div
   bind:this={containerRef}
-  class="relative flex h-full flex-col overflow-hidden rounded-[3rem] text-white select-none"
+  class="text-on-surface relative flex h-full flex-col overflow-hidden rounded-[3rem] select-none"
   class:bg-black={isBrowser()}
 >
   <!-- Live Viewfinder / Camera View -->
@@ -316,12 +295,12 @@
          the on-screen controls cannot be clicked and these keys are the only way in. -->
     {#if !isBrowser()}
       <div
-        class="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center gap-2 text-[10px] text-white/70 transition-opacity duration-75"
+        class="text-on-surface pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center gap-2 text-[10px] transition-opacity duration-75"
         class:opacity-0={$isTakingPhoto}
       >
         {#each [['shutter', 'Shoot'], ['back', 'Close'], ['freelook', 'Cursor']] as [id, label] (id)}
           <span class="rounded bg-black/50 px-1.5 py-0.5 backdrop-blur-sm">
-            <span class="font-mono text-white">{keyLabel($bindings[id])}</span>
+            <span class="text-on-surface font-mono">{keyLabel($bindings[id])}</span>
             {label}
           </span>
         {/each}
@@ -335,7 +314,7 @@
     >
       <button
         onclick={onback}
-        class="cursor-pointer rounded-full border border-white/10 bg-black/40 p-2.5 text-white shadow-lg backdrop-blur-md transition-colors hover:bg-black/60"
+        class="text-on-surface cursor-pointer rounded-full border border-white/10 bg-black/40 p-2.5 shadow-lg backdrop-blur-md transition-colors hover:bg-black/60"
         aria-label="Go back"
       >
         <CloseIcon class="h-5 w-5" />
@@ -362,7 +341,7 @@
          in-game photo is a crop of this exact region, so anything still on screen ends
          up inside the picture. -->
     <div
-      class="relative z-10 mx-[-1rem] mb-[-1rem] flex transform-gpu flex-col items-center gap-4 overflow-hidden rounded-b-[3rem] bg-black/90 px-4 pt-4 pb-10 text-white shadow-2xl backdrop-blur-lg transition-opacity duration-75"
+      class="bg-surface-container border-outline-variant text-on-surface relative z-10 mx-[-1rem] mb-[-1rem] flex transform-gpu flex-col items-center gap-4 overflow-hidden rounded-b-[3rem] border-t px-4 pt-4 pb-10 shadow-2xl backdrop-blur-lg transition-opacity duration-75"
       class:opacity-0={$isTakingPhoto}
     >
       <!-- Mode Toggle Buttons -->
@@ -374,7 +353,7 @@
             class="cursor-pointer rounded-full px-3.5 py-1 text-xs font-semibold tracking-wider uppercase transition-all duration-200 {cameraMode ===
             mode
               ? 'scale-105 border border-yellow-400/40 bg-black/60 text-yellow-400 shadow-sm'
-              : 'text-gray-300 hover:text-white'}"
+              : 'text-on-surface hover:text-on-surface'}"
           >
             {mode}
           </button>
@@ -408,7 +387,7 @@
               class="h-full w-full object-cover transition-opacity group-hover:opacity-90"
             />
           {:else}
-            <PhotoIcon class="h-6 w-6 text-gray-400" />
+            <PhotoIcon class="text-on-surface-variant h-6 w-6" />
           {/if}
         </button>
 
@@ -420,7 +399,7 @@
         >
           <div
             class="h-full w-full rounded-full transition-all duration-200 {cameraMode === 'VIDEO'
-              ? 'scale-75 rounded-md bg-red-500'
+              ? 'bg-error scale-75 rounded-md'
               : 'bg-white'}"
           ></div>
         </button>
@@ -431,7 +410,7 @@
           <button
             type="button"
             onclick={toggleFlipCamera}
-            class="flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-white/20 bg-white/20 text-white shadow-lg backdrop-blur-md transition-transform hover:bg-white/30 active:rotate-180"
+            class="text-on-surface flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-white/20 bg-white/20 shadow-lg backdrop-blur-md transition-transform hover:bg-white/30 active:rotate-180"
             aria-label="Flip camera"
           >
             <FlipCameraIcon class="h-6 w-6" />

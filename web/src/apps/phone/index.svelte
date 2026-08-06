@@ -57,7 +57,7 @@
   });
 </script>
 
-<div class="relative flex h-full flex-col overflow-hidden bg-gray-900 text-white">
+<div class="bg-surface text-on-surface relative flex h-full flex-col overflow-hidden">
   {#if $callStore.status === 'idle'}
     <!-- Keypad View -->
     <Screen title="Phone" {onback}>
@@ -65,7 +65,9 @@
         <!-- Favorites Bar -->
         {#if $favoriteContacts.length > 0}
           <div class="mt-4 mb-auto w-full">
-            <div class="mb-2 ml-1 text-xs font-bold text-gray-400 uppercase">Favorites</div>
+            <div class="text-on-surface-variant mb-2 ml-1 text-xs font-bold uppercase">
+              Favorites
+            </div>
             <div class="no-scrollbar flex space-x-4 overflow-x-auto pb-2">
               {#each $favoriteContacts as fav}
                 <button
@@ -78,7 +80,7 @@
                     textClass="text-lg"
                     bgClass="bg-yellow-600 shadow-lg"
                   />
-                  <span class="w-full truncate text-center text-xs text-gray-300"
+                  <span class="text-on-surface w-full truncate text-center text-xs"
                     >{fav.firstname}</span
                   >
                 </button>
@@ -96,22 +98,22 @@
         <div class="grid w-full max-w-[280px] grid-cols-3 gap-6">
           {#each [1, 2, 3, 4, 5, 6, 7, 8, 9] as num}
             <button
-              class="flex h-16 w-16 items-center justify-center rounded-full bg-gray-800 text-2xl font-medium transition-colors hover:bg-gray-700"
+              class="bg-surface-container hover:bg-surface-container-low flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
               onclick={() => handleKeypad(num.toString())}
             >
               {num}
             </button>
           {/each}
           <button
-            class="flex h-16 w-16 items-center justify-center rounded-full bg-gray-800 text-2xl font-medium transition-colors hover:bg-gray-700"
+            class="bg-surface-container hover:bg-surface-container-low flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
             onclick={() => handleKeypad('*')}>*</button
           >
           <button
-            class="flex h-16 w-16 items-center justify-center rounded-full bg-gray-800 text-2xl font-medium transition-colors hover:bg-gray-700"
+            class="bg-surface-container hover:bg-surface-container-low flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
             onclick={() => handleKeypad('0')}>0</button
           >
           <button
-            class="flex h-16 w-16 items-center justify-center rounded-full bg-gray-800 text-2xl font-medium transition-colors hover:bg-gray-700"
+            class="bg-surface-container hover:bg-surface-container-low flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
             onclick={() => handleKeypad('#')}>#</button
           >
         </div>
@@ -126,14 +128,14 @@
             aria-label="Call"
             onclick={() => startCall(enteredNumber)}
           >
-            <PhoneIcon class="h-8 w-8 text-white" />
+            <PhoneIcon class="text-on-surface h-8 w-8" />
           </button>
 
           <!-- Backspace -->
           <div class="flex w-16 justify-center">
             {#if enteredNumber}
               <button
-                class="text-gray-400 transition-colors hover:text-white"
+                class="text-on-surface-variant hover:text-on-surface transition-colors"
                 onclick={handleBackspace}
                 aria-label="Backspace"
               >
@@ -153,14 +155,14 @@
       <Avatar
         initials={$callStore.name?.[0] || '#'}
         size="w-32 h-32"
-        textClass="text-4xl text-gray-400"
-        bgClass="bg-gray-700 shadow-2xl mb-8"
+        textClass="text-4xl text-on-surface-variant"
+        bgClass="bg-surface-container-high shadow-2xl mb-8"
       />
 
       <h2 class="mb-2 px-4 text-center text-3xl font-semibold">
         {$callStore.name || $callStore.number}
       </h2>
-      <p class="mb-12 text-lg text-gray-400">
+      <p class="text-on-surface-variant mb-12 text-lg">
         {#if $callStore.status === 'dialing'}
           Dialing...
         {:else if $callStore.status === 'connected'}
@@ -176,7 +178,7 @@
         <div class="mb-8 grid w-full max-w-[260px] grid-cols-3 gap-4">
           {#each ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'] as key (key)}
             <button
-              class="flex h-14 w-14 cursor-pointer items-center justify-center justify-self-center rounded-full bg-gray-800 text-xl transition-colors hover:bg-gray-700"
+              class="bg-surface-container hover:bg-surface-container-high flex h-14 w-14 cursor-pointer items-center justify-center justify-self-center rounded-full text-xl transition-colors"
               onclick={() => (dtmfEntered += key)}
             >
               {key}
@@ -184,7 +186,9 @@
           {/each}
         </div>
         {#if dtmfEntered}
-          <p class="mb-4 font-mono text-sm tracking-widest text-gray-400">{dtmfEntered}</p>
+          <p class="text-on-surface-variant mb-4 font-mono text-sm tracking-widest">
+            {dtmfEntered}
+          </p>
         {/if}
       {/if}
 
@@ -195,12 +199,14 @@
           onclick={() => callStore.toggleMute()}
           aria-pressed={$callStore.muted}
           class="flex flex-col items-center space-y-2 transition-colors {$callStore.muted
-            ? 'text-white'
-            : 'text-gray-400 hover:text-white'}"
+            ? 'text-on-surface'
+            : 'text-on-surface-variant hover:text-on-surface'}"
           aria-label="Mute"
         >
           <div
-            class="rounded-full p-4 {$callStore.muted ? 'bg-white text-gray-900' : 'bg-gray-800'}"
+            class="rounded-full p-4 {$callStore.muted
+              ? 'bg-white text-gray-900'
+              : 'bg-surface-container'}"
           >
             <MicrophoneIcon />
           </div>
@@ -212,12 +218,14 @@
           onclick={() => (showInCallKeypad = !showInCallKeypad)}
           aria-pressed={showInCallKeypad}
           class="flex flex-col items-center space-y-2 transition-colors {showInCallKeypad
-            ? 'text-white'
-            : 'text-gray-400 hover:text-white'}"
+            ? 'text-on-surface'
+            : 'text-on-surface-variant hover:text-on-surface'}"
           aria-label="Keypad"
         >
           <div
-            class="rounded-full p-4 {showInCallKeypad ? 'bg-white text-gray-900' : 'bg-gray-800'}"
+            class="rounded-full p-4 {showInCallKeypad
+              ? 'bg-white text-gray-900'
+              : 'bg-surface-container'}"
           >
             <KeypadIcon />
           </div>
@@ -227,13 +235,13 @@
         <!-- Speaker -->
         <button
           class="flex flex-col items-center space-y-2 transition-colors {$callStore.speaker
-            ? 'text-white'
-            : 'text-gray-400'}"
+            ? 'text-on-surface'
+            : 'text-on-surface-variant'}"
           onclick={callStore.toggleSpeaker}
           aria-label="Speaker"
         >
           <div
-            class="rounded-full bg-gray-800 p-4 {$callStore.speaker
+            class="bg-surface-container rounded-full p-4 {$callStore.speaker
               ? 'bg-white text-gray-900'
               : ''}"
           >
@@ -251,16 +259,16 @@
             onclick={() => callStore.answerCall()}
             aria-label="Answer Call"
           >
-            <PhoneIcon class="h-8 w-8 text-white" />
+            <PhoneIcon class="text-on-surface h-8 w-8" />
           </button>
         {/if}
 
         <button
-          class="flex h-16 w-16 items-center justify-center rounded-full bg-red-500 shadow-lg shadow-red-500/30 transition-colors hover:bg-red-400"
+          class="bg-error flex h-16 w-16 items-center justify-center rounded-full shadow-lg shadow-red-500/30 transition-colors hover:bg-red-400"
           onclick={() => callStore.endCall()}
           aria-label="End Call"
         >
-          <PhoneIcon class="h-8 w-8 rotate-135 transform text-white" />
+          <PhoneIcon class="text-on-surface h-8 w-8 rotate-135 transform" />
         </button>
       </div>
     </div>

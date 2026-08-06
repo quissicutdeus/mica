@@ -35,16 +35,16 @@
 </script>
 
 <!-- Input Area -->
-<div class="border-t border-gray-700 bg-gray-800/50 p-3 backdrop-blur-md">
+<div class="border-outline-variant bg-surface-container border-t p-3 backdrop-blur-md">
   {#if attachments.length > 0}
     <div class="no-scrollbar mb-2 flex gap-2 overflow-x-auto p-1">
       {#each attachments as att}
         <div
-          class="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-gray-600 shadow-md"
+          class="border-outline relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border shadow-md"
         >
           <img src={att.image} alt="Attachment" class="h-full w-full object-cover" />
           <button
-            class="absolute top-0 right-0 cursor-pointer rounded-bl-lg bg-black/60 p-0.5 text-white hover:bg-black"
+            class="text-on-surface absolute top-0 right-0 cursor-pointer rounded-bl-lg bg-black/60 p-0.5 hover:bg-black"
             onclick={() => (attachments = attachments.filter((a) => a.photo_id !== att.photo_id))}
             aria-label="Remove attachment"
           >
@@ -58,7 +58,7 @@
   <div class="flex w-full items-center gap-2.5">
     <button
       type="button"
-      class="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-700/50 hover:text-blue-400"
+      class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors"
       onclick={() => (showAttachMenu = !showAttachMenu)}
       aria-label="Attachments"
     >
@@ -66,10 +66,10 @@
     </button>
 
     <div
-      class="flex flex-1 items-center rounded-2xl border border-transparent bg-gray-700/50 px-3.5 py-1.5 text-white focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500"
+      class="bg-surface-container-high text-on-surface focus-within:border-primary focus-within:ring-primary flex flex-1 items-center rounded-2xl border border-transparent px-3.5 py-1.5 focus-within:ring-1"
     >
       <textarea
-        class="no-scrollbar h-[22px] max-h-32 min-h-[22px] w-full resize-none bg-transparent p-0 text-sm leading-normal text-white placeholder-gray-400 focus:outline-none"
+        class="no-scrollbar text-on-surface placeholder-on-surface-variant h-[22px] max-h-32 min-h-[22px] w-full resize-none bg-transparent p-0 text-sm leading-normal focus:outline-none"
         placeholder="Message"
         rows="1"
         bind:value={text}
@@ -83,33 +83,33 @@
 
     <button
       type="button"
-      class="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-blue-600 text-white shadow-md transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+      class="bg-primary text-on-primary hover:bg-primary flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-40"
       onclick={onsend}
       disabled={busy || (!text.trim() && attachments.length === 0)}
       aria-label="Send"
     >
-      <SendIcon class="h-4 w-4 text-white" />
+      <SendIcon class="text-on-surface h-4 w-4" />
     </button>
   </div>
 
   {#if showAttachMenu}
     <div
-      class="absolute bottom-16 left-4 grid w-48 grid-cols-2 gap-2 rounded-xl border border-gray-700 bg-gray-800 p-2 shadow-xl"
+      class="border-outline-variant bg-surface-container absolute bottom-16 left-4 grid w-48 grid-cols-2 gap-2 rounded-xl border p-2 shadow-xl"
       transition:fly={{ y: 20, duration: 200 }}
     >
       <button
-        class="flex flex-col items-center justify-center rounded-lg p-3 transition-colors hover:bg-gray-700/50"
+        class="hover:bg-surface-container-high flex flex-col items-center justify-center rounded-lg p-3 transition-colors"
         onclick={onopenphotos}
       >
         <div
-          class="mb-1 flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/20 text-blue-400"
+          class="bg-primary text-primary mb-1 flex h-8 w-8 items-center justify-center rounded-full"
         >
           <PhotoIcon class="h-5 w-5" />
         </div>
         <span class="text-xs">Photo</span>
       </button>
       <button
-        class="flex flex-col items-center justify-center rounded-lg p-3 transition-colors hover:bg-gray-700/50"
+        class="hover:bg-surface-container-high flex flex-col items-center justify-center rounded-lg p-3 transition-colors"
       >
         <div
           class="mb-1 flex h-8 w-8 items-center justify-center rounded-full bg-green-500/20 text-green-400"

@@ -332,9 +332,9 @@
   {#if !selectedConversationId && !isComposing}
     <div class="ml-auto flex items-center gap-1">
       <button
-        class="rounded-full p-2 transition-colors hover:bg-gray-700 {viewingArchive
-          ? 'bg-gray-800 text-blue-400'
-          : 'text-gray-300'}"
+        class="hover:bg-surface rounded-full p-2 transition-colors {viewingArchive
+          ? 'bg-surface-container-low text-primary'
+          : 'text-on-surface'}"
         onclick={() => (viewingArchive = !viewingArchive)}
         title={viewingArchive ? 'View Inbox' : 'View Archive'}
         aria-label="Toggle Archive"
@@ -342,9 +342,9 @@
         <ArchiveIcon class="h-5 w-5" />
       </button>
       <button
-        class="rounded-full p-2 transition-colors hover:bg-gray-700 {showSearch
-          ? 'bg-gray-800 text-blue-400'
-          : 'text-gray-300'}"
+        class="hover:bg-surface-container-high rounded-full p-2 transition-colors {showSearch
+          ? 'bg-surface-container text-primary'
+          : 'text-on-surface'}"
         onclick={() => {
           showSearch = !showSearch;
           if (!showSearch) searchQuery = '';
@@ -358,7 +358,7 @@
   {:else if selectedConversationId && currentConv}
     <div class="ml-auto flex items-center gap-1">
       <button
-        class="cursor-pointer rounded-full p-1.5 text-gray-300 transition-colors hover:bg-gray-700/60 hover:text-red-400"
+        class="text-on-surface hover:bg-surface-container-high hover:text-error cursor-pointer rounded-full p-1.5 transition-colors"
         onclick={async () => {
           if (currentConv) {
             await conversationsStore.deleteConversation(currentConv.id);
@@ -371,7 +371,7 @@
         <TrashIcon class="h-5 w-5" />
       </button>
       <button
-        class="cursor-pointer rounded-full p-1.5 text-gray-300 transition-colors hover:bg-gray-700/60 hover:text-blue-400"
+        class="text-on-surface hover:bg-surface-container-high hover:text-primary cursor-pointer rounded-full p-1.5 transition-colors"
         onclick={async () => {
           if (currentConv) {
             const isArchived = currentConv.status === 'archived';
@@ -385,9 +385,9 @@
         <ArchiveIcon class="h-5 w-5" />
       </button>
       <button
-        class="cursor-pointer rounded-full p-1.5 transition-colors hover:bg-gray-700/60 {showInChatSearch
-          ? 'bg-gray-800 text-blue-400'
-          : 'text-gray-300 hover:text-white'}"
+        class="hover:bg-surface-container-high cursor-pointer rounded-full p-1.5 transition-colors {showInChatSearch
+          ? 'bg-surface-container text-primary'
+          : 'text-on-surface hover:text-on-surface'}"
         onclick={() => {
           showInChatSearch = !showInChatSearch;
           if (!showInChatSearch) inChatSearchQuery = '';
@@ -405,7 +405,7 @@
   {#if !selectedConversationId && !isComposing}
     <FloatingActionButton label="Start Chat" collapsed={isScrolled} onclick={startNewMessage}>
       {#snippet icon()}
-        <MessageIcon class="h-4 w-4 shrink-0 text-white" />
+        <MessageIcon class="text-on-surface h-4 w-4 shrink-0" />
       {/snippet}
     </FloatingActionButton>
   {/if}
@@ -422,13 +422,13 @@
     {#if isComposing}
       <!-- New Message Composition Panel (Sticky overlay directly below header) -->
       <div
-        class="animate-in slide-in-from-top sticky top-0 z-20 space-y-3 border-b border-gray-800 bg-gray-900/95 p-4 shadow-2xl backdrop-blur-md duration-200"
+        class="animate-in slide-in-from-top border-outline-variant bg-surface sticky top-0 z-20 space-y-3 border-b p-4 shadow-2xl backdrop-blur-md duration-200"
       >
-        <div class="flex items-center justify-between border-b border-gray-800 pb-1">
-          <h3 class="text-base font-semibold text-white">New Conversation</h3>
+        <div class="border-outline-variant flex items-center justify-between border-b pb-1">
+          <h3 class="text-on-surface text-base font-semibold">New Conversation</h3>
           <button
             type="button"
-            class="rounded-full p-1 text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
+            class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface rounded-full p-1 transition-colors"
             onclick={() => (isComposing = false)}
             aria-label="Close form"
           >
@@ -439,29 +439,31 @@
         <SearchBar bind:value={recipientQuery} placeholder="To: Name or Phone Number" />
 
         <div
-          class="max-h-56 divide-y divide-gray-800/60 overflow-y-auto rounded-xl bg-gray-800/40 p-1"
+          class="divide-outline-variant bg-surface-container max-h-56 divide-y overflow-y-auto rounded-xl p-1"
         >
           {#each filteredContacts as contact}
             <ListItem
-              class="rounded-lg py-2 hover:bg-gray-800/80"
+              class="hover:bg-surface-container rounded-lg py-2"
               onclick={() => handleSelectContactRaw(contact)}
             >
               <div class="mr-3 shrink-0">
                 <Avatar src={contact.avatar} initials={contact.firstname[0]} size="w-9 h-9" />
               </div>
               <div class="min-w-0 flex-1">
-                <div class="truncate text-sm font-medium text-white">
+                <div class="text-on-surface truncate text-sm font-medium">
                   {contact.firstname}
                   {contact.lastname || ''}
                 </div>
-                <div class="text-xs text-gray-400">
+                <div class="text-on-surface-variant text-xs">
                   {contact.phone}
                 </div>
               </div>
             </ListItem>
           {/each}
           {#if filteredContacts.length === 0}
-            <div class="py-6 text-center text-xs text-gray-400">No matching contacts found.</div>
+            <div class="text-on-surface-variant py-6 text-center text-xs">
+              No matching contacts found.
+            </div>
           {/if}
         </div>
 
@@ -474,10 +476,10 @@
 
   {#if selectedConversationId}
     <!-- Chat View -->
-    <div class="flex h-full flex-col bg-gray-900">
+    <div class="bg-surface flex h-full flex-col">
       {#if showInChatSearch}
         <!-- In-Chat Search Bar -->
-        <div class="border-b border-gray-800 bg-gray-900/95 p-2 backdrop-blur-md">
+        <div class="border-outline-variant bg-surface border-b p-2 backdrop-blur-md">
           <SearchBar bind:value={inChatSearchQuery} placeholder="Search in conversation..." />
         </div>
       {/if}

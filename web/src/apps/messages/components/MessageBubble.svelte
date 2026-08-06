@@ -68,9 +68,9 @@
         initials={senderInfo.name[0] || '?'}
         size="w-4 h-4"
         textClass="text-[9px]"
-        bgClass="bg-gray-800 border border-gray-700/60"
+        bgClass="bg-surface-container border border-outline-variant"
       />
-      <span class="text-xs font-semibold text-blue-400 group-hover/sender:underline">
+      <span class="text-primary text-xs font-semibold group-hover/sender:underline">
         {senderInfo.name}
       </span>
     </button>
@@ -78,8 +78,8 @@
 
   <div
     class="max-w-[80%] rounded-2xl px-4 py-2.5 shadow-sm {msg.sender === 'me'
-      ? 'rounded-tr-xs bg-blue-600 text-white'
-      : 'rounded-tl-xs bg-gray-800 text-gray-100'}"
+      ? 'bg-primary text-on-primary rounded-tr-xs'
+      : 'bg-surface-container text-on-surface rounded-tl-xs'}"
   >
     {#if msg.attachments && msg.attachments.length > 0}
       <div class="mb-2 space-y-2">
@@ -98,13 +98,13 @@
       <button
         type="button"
         onclick={() => (reporting = true)}
-        class="cursor-pointer text-[10px] text-gray-500 transition-colors hover:text-rose-400"
+        class="text-on-surface-variant hover:text-error cursor-pointer text-[10px] transition-colors"
         aria-label="Report message"
       >
         Report
       </button>
     {/if}
-    <span class="text-[10px] text-gray-400">
+    <span class="text-on-surface-variant text-[10px]">
       {formatTime(msg.created_at)}
     </span>
     {#if msg.sender === 'me' && currentConv}

@@ -63,11 +63,11 @@
       initials={(contact.firstname[0] || '') + (contact.lastname?.[0] || '')}
       size="w-24 h-24"
       textClass="text-4xl"
-      bgClass="bg-gray-800 border border-gray-700/60"
+      bgClass="bg-surface-container border border-outline-variant"
     />
     <button
       type="button"
-      class="absolute right-0 bottom-0 flex items-center justify-center rounded-full border-2 border-gray-900 bg-blue-600 p-2 text-white shadow-lg transition-transform hover:bg-blue-500 active:scale-95"
+      class="border-surface bg-primary text-on-primary hover:bg-primary absolute right-0 bottom-0 flex items-center justify-center rounded-full border-2 p-2 shadow-lg transition-transform active:scale-95"
       onclick={() => onpickphoto()}
       aria-label="Select photo from gallery"
       title="Select photo from gallery"
@@ -93,7 +93,7 @@
         filled={contact.favorite}
         class={contact.favorite
           ? 'h-6 w-6 text-yellow-400'
-          : 'h-6 w-6 text-gray-500 hover:text-yellow-400'}
+          : 'text-on-surface-variant h-6 w-6 hover:text-yellow-400'}
       />
     </button>
   </div>
@@ -111,7 +111,7 @@
     </Button>
     <Button
       variant="icon"
-      class="bg-blue-600 text-white hover:bg-blue-500 hover:text-white"
+      class="bg-primary text-on-primary hover:bg-primary hover:text-on-primary"
       onclick={onmessage}
       aria-label="Message"
     >
@@ -121,7 +121,7 @@
 
     <Button
       variant="icon"
-      class="bg-gray-700 text-white hover:bg-gray-600 hover:text-white"
+      class="bg-surface-container-high text-on-surface hover:bg-surface-container-highest hover:text-on-surface"
       onclick={onshare}
       disabled={busy || !contact?.firstname?.trim() || !contact?.phone?.trim()}
       aria-label="Share"
@@ -131,7 +131,7 @@
     </Button>
     <Button
       variant="icon"
-      class="bg-gray-700 text-white hover:bg-gray-600 hover:text-white"
+      class="bg-surface-container-high text-on-surface hover:bg-surface-container-highest hover:text-on-surface"
       onclick={() => onedit()}
       aria-label="Edit"
     >
@@ -140,7 +140,7 @@
     </Button>
     <Button
       variant="icon"
-      class="bg-red-900/50 text-red-400 hover:bg-red-900/80 hover:text-red-300"
+      class="text-error hover:text-error bg-red-900/50 hover:bg-red-900/80"
       onclick={ondelete}
       disabled={busy}
       aria-label="Delete"
@@ -151,23 +151,23 @@
   </div>
 
   <!-- Details List / Edit Form -->
-  <div class="w-full space-y-4 rounded-xl bg-gray-800 p-4 shadow-lg">
+  <div class="bg-surface-container w-full space-y-4 rounded-xl p-4 shadow-lg">
     {#if isEditing}
       <div class="space-y-3">
         <input
-          class="w-full rounded bg-gray-700 p-2"
+          class="bg-surface-container-high w-full rounded p-2"
           maxlength="50"
           bind:value={contact.firstname}
           placeholder="First Name *"
         />
         <input
-          class="w-full rounded bg-gray-700 p-2"
+          class="bg-surface-container-high w-full rounded p-2"
           maxlength="50"
           bind:value={contact.lastname}
           placeholder="Last Name"
         />
         <input
-          class="w-full rounded bg-gray-700 p-2"
+          class="bg-surface-container-high w-full rounded p-2"
           bind:value={contact.phone}
           placeholder="Phone *"
         />
@@ -185,27 +185,29 @@
       </div>
     {:else}
       <div class="flex flex-col">
-        <span class="text-xs tracking-wider text-gray-400 uppercase">Phone</span>
+        <span class="text-on-surface-variant text-xs tracking-wider uppercase">Phone</span>
         <span class="text-lg">{contact.phone}</span>
       </div>
     {/if}
   </div>
 
   <!-- Recent Text Messages Card -->
-  <div class="w-full overflow-hidden rounded-xl border border-gray-700/60 bg-gray-800 shadow-lg">
+  <div
+    class="border-outline-variant bg-surface-container w-full overflow-hidden rounded-xl border shadow-lg"
+  >
     <div
-      class="flex items-center justify-between border-b border-gray-700/60 bg-gray-800/80 px-4 py-3"
+      class="border-outline-variant bg-surface-container flex items-center justify-between border-b px-4 py-3"
     >
       <div class="flex items-center gap-2">
-        <MessageIcon class="h-4 w-4 text-blue-400" />
-        <h4 class="text-xs font-bold tracking-wider text-gray-300 uppercase">
+        <MessageIcon class="text-primary h-4 w-4" />
+        <h4 class="text-on-surface text-xs font-bold tracking-wider uppercase">
           Recent Text Messages
         </h4>
       </div>
       {#if messageCount > 0}
         <button
           type="button"
-          class="cursor-pointer text-xs font-semibold text-blue-400 transition-colors hover:text-blue-300"
+          class="text-primary hover:text-primary cursor-pointer text-xs font-semibold transition-colors"
           onclick={onmessage}
         >
           View All ({messageCount})
@@ -214,44 +216,44 @@
     </div>
 
     {#if recentMessages.length > 0}
-      <div class="divide-y divide-gray-700/40">
+      <div class="divide-outline-variant divide-y">
         {#each recentMessages as msg}
           <button
             type="button"
-            class="group flex w-full cursor-pointer items-center justify-between gap-3 p-3.5 text-left transition-colors hover:bg-gray-700/40"
+            class="group hover:bg-surface-container-high flex w-full cursor-pointer items-center justify-between gap-3 p-3.5 text-left transition-colors"
             onclick={onmessage}
           >
             <div class="min-w-0 flex-1">
               <div class="mb-1 flex items-center gap-2">
                 <span
                   class="text-xs font-bold {msg.sender === 'me'
-                    ? 'text-blue-400'
-                    : 'text-gray-200'}"
+                    ? 'text-primary'
+                    : 'text-on-surface'}"
                 >
                   {msg.sender === 'me' ? 'You' : contact.firstname}
                 </span>
-                <span class="text-[10px] text-gray-500">•</span>
-                <span class="text-[10px] text-gray-400">
+                <span class="text-on-surface-variant text-[10px]">•</span>
+                <span class="text-on-surface-variant text-[10px]">
                   {formatRelativeTime(msg.created_at)}
                 </span>
               </div>
-              <p class="truncate text-xs leading-relaxed text-gray-300">
+              <p class="text-on-surface truncate text-xs leading-relaxed">
                 {msg.message}
               </p>
             </div>
             <ChevronRightIcon
-              class="h-4 w-4 shrink-0 text-gray-600 transition-colors group-hover:text-gray-400"
+              class="text-outline group-hover:text-on-surface-variant h-4 w-4 shrink-0 transition-colors"
             />
           </button>
         {/each}
       </div>
     {:else}
-      <div class="flex flex-col items-center gap-2 p-6 text-center text-xs text-gray-400">
-        <MessageIcon class="mb-1 h-8 w-8 text-gray-600" />
+      <div class="text-on-surface-variant flex flex-col items-center gap-2 p-6 text-center text-xs">
+        <MessageIcon class="text-outline mb-1 h-8 w-8" />
         <span>No recent messages with {contact.firstname}.</span>
         <button
           type="button"
-          class="mt-1 cursor-pointer rounded-full border border-blue-500/30 bg-blue-600/30 px-3 py-1 text-xs font-medium text-blue-300 transition-all hover:bg-blue-600/50"
+          class="border-primary bg-primary text-primary hover:bg-primary mt-1 cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-all"
           onclick={onmessage}
         >
           Send Text Message

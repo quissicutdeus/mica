@@ -16,12 +16,12 @@
   const tokens = $derived(tokenizeRichText(body));
 </script>
 
-<p class="text-sm leading-relaxed break-words whitespace-pre-wrap text-gray-100">
+<p class="text-on-surface text-sm leading-relaxed break-words whitespace-pre-wrap">
   {#each tokens as token, i (i)}
     {#if token.kind === 'mention'}
       <button
         type="button"
-        class="font-semibold text-sky-400 hover:underline"
+        class="text-primary font-semibold hover:underline"
         onclick={() => onhandle?.(token.value)}>@{token.value}</button
       >
     {:else if token.kind === 'tag'}

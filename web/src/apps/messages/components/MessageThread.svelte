@@ -46,7 +46,7 @@
     <div class="my-2 flex justify-center">
       <button
         type="button"
-        class="flex cursor-pointer items-center gap-2 rounded-full border border-blue-500/20 bg-gray-800/80 px-3.5 py-1.5 text-xs font-medium text-blue-400 shadow-sm transition-colors hover:bg-gray-800"
+        class="border-primary bg-surface-container text-primary hover:bg-surface-container flex cursor-pointer items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium shadow-sm transition-colors"
         onclick={onloadmore}
       >
         {#if loadingMore}
@@ -54,7 +54,7 @@
             <span
               class="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75"
             ></span>
-            <span class="relative inline-flex h-2 w-2 rounded-full bg-blue-500"></span>
+            <span class="bg-primary relative inline-flex h-2 w-2 rounded-full"></span>
           </span>
           <span>Loading older messages...</span>
         {:else}
@@ -67,13 +67,13 @@
   {#each messages as msg, index (msg.id)}
     {#if unreadDividerIndex >= 0 && index + offset === unreadDividerIndex}
       <div id="unread-divider" class="my-4 flex items-center gap-3 py-1">
-        <div class="h-px flex-1 bg-blue-500/40"></div>
+        <div class="bg-primary h-px flex-1"></div>
         <span
-          class="rounded-full border border-blue-500/30 bg-blue-950/90 px-3 py-1 text-[10px] font-bold tracking-wider text-blue-400 uppercase shadow-md"
+          class="border-primary text-primary rounded-full border bg-blue-950/90 px-3 py-1 text-[10px] font-bold tracking-wider uppercase shadow-md"
         >
           Unread Messages ({unreadCount})
         </span>
-        <div class="h-px flex-1 bg-blue-500/40"></div>
+        <div class="bg-primary h-px flex-1"></div>
       </div>
     {/if}
     {#if currentConv}

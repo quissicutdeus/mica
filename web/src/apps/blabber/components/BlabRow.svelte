@@ -52,7 +52,7 @@
   />
 {/snippet}
 
-<article class="flex gap-3 border-b border-gray-800 px-4 py-3">
+<article class="border-outline-variant flex gap-3 border-b px-4 py-3">
   <!-- The avatar goes to the profile, like the name beside it. A picture of somebody that does
        nothing when tapped is the one part of a row that looks like a link and is not. Named for
        where it goes rather than what it shows, so a screen reader hears a destination — and so it
@@ -74,16 +74,16 @@
     <div class="flex items-baseline gap-1.5 text-xs">
       <button
         type="button"
-        class="truncate font-semibold text-white hover:underline"
+        class="text-on-surface truncate font-semibold hover:underline"
         onclick={() => blab.handle && onhandle?.(blab.handle)}
       >
         {blab.display_name || blab.handle}
       </button>
-      <span class="truncate text-gray-500">@{blab.handle}</span>
-      <span class="text-gray-600">·</span>
-      <span class="shrink-0 text-gray-500">{formatDate(blab.created_at)}</span>
+      <span class="text-on-surface-variant truncate">@{blab.handle}</span>
+      <span class="text-outline">·</span>
+      <span class="text-on-surface-variant shrink-0">{formatDate(blab.created_at)}</span>
       {#if edited}
-        <span class="shrink-0 text-gray-600 italic">edited</span>
+        <span class="text-outline shrink-0 italic">edited</span>
       {/if}
     </div>
 
@@ -102,10 +102,10 @@
     <!-- The Blab being repeated, quoted inline. Not interactive: nesting the action bar inside a
          row's action bar is where a button ends up inside a button. -->
     {#if blab.mouthed}
-      <div class="mt-2 rounded-lg border border-gray-700 p-2">
-        <p class="text-[11px] text-gray-500">
+      <div class="border-outline-variant mt-2 rounded-lg border p-2">
+        <p class="text-on-surface-variant text-[11px]">
           {blab.mouthed.display_name || blab.mouthed.handle}
-          <span class="text-gray-600">@{blab.mouthed.handle}</span>
+          <span class="text-outline">@{blab.mouthed.handle}</span>
         </p>
         <BlabBody body={blab.mouthed.body ?? ''} {onhandle} />
       </div>
@@ -124,7 +124,7 @@
     {#if onopen && (stats?.replies ?? 0) > 0}
       <button
         type="button"
-        class="mt-1 text-xs text-sky-400 hover:underline"
+        class="text-primary mt-1 text-xs hover:underline"
         onclick={() => onopen?.(blab)}
       >
         View thread
@@ -133,10 +133,10 @@
 
     {#if editable}
       <div class="mt-2 flex gap-3 text-xs">
-        <button type="button" class="text-sky-400 hover:underline" onclick={() => onedit?.(blab)}>
+        <button type="button" class="text-primary hover:underline" onclick={() => onedit?.(blab)}>
           Edit
         </button>
-        <button type="button" class="text-red-400 hover:underline" onclick={() => ondelete?.(blab)}>
+        <button type="button" class="text-error hover:underline" onclick={() => ondelete?.(blab)}>
           Delete
         </button>
       </div>

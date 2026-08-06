@@ -95,7 +95,7 @@
 </script>
 
 <div
-  class="relative flex h-full w-full flex-col overflow-hidden bg-gray-900 text-white selection:bg-indigo-500 selection:text-white"
+  class="bg-surface text-on-secondary selection:bg-secondary selection:text-on-secondary relative flex h-full w-full flex-col overflow-hidden"
 >
   {#if selectedApp}
     <AppDetails
@@ -108,14 +108,12 @@
     />
   {:else}
     <!-- Top Navigation Header -->
-    <div
-      class="pt-safe-top flex shrink-0 items-center justify-between border-b border-gray-800 bg-gray-900/90 px-4 pb-3 backdrop-blur"
-    >
-      <div class="flex items-center gap-2">
+    <div class="pt-safe-top border-border bg-surface-container shrink-0 border-b px-4 pb-3">
+      <div class="flex items-center gap-3">
         {#if onback}
           <button
             onclick={onback}
-            class="rounded-full p-1 text-gray-400 transition hover:bg-gray-800 hover:text-white active:scale-95"
+            class="hover:bg-surface text-on-surface-variant hover:text-on-surface rounded-full p-1 transition active:scale-95"
             aria-label="Back to Home"
           >
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -133,7 +131,7 @@
     </div>
 
     <!-- Tab Switcher Bar -->
-    <div class="shrink-0 border-b border-gray-800 bg-gray-950/60 p-1">
+    <div class="border-border bg-surface-container-low shrink-0 border-b p-1">
       <SegmentedControl
         aria-label="Store sections"
         selected={activeTab}

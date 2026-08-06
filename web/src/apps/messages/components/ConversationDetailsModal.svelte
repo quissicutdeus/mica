@@ -41,14 +41,14 @@
 </script>
 
 <div
-  class="animate-in fade-in absolute inset-0 z-40 flex flex-col bg-gray-950/95 backdrop-blur-md duration-200"
+  class="animate-in fade-in bg-surface-container-lowest absolute inset-0 z-40 flex flex-col backdrop-blur-md duration-200"
 >
   <!-- Modal Header -->
-  <div class="flex items-center justify-between border-b border-gray-800 p-4">
-    <h3 class="text-base font-semibold text-white">Conversation Details</h3>
+  <div class="border-outline-variant flex items-center justify-between border-b p-4">
+    <h3 class="text-on-surface text-base font-semibold">Conversation Details</h3>
     <button
       type="button"
-      class="cursor-pointer rounded-full p-1 text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
+      class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface cursor-pointer rounded-full p-1 transition-colors"
       onclick={onclose}
       aria-label="Close details"
     >
@@ -64,11 +64,13 @@
         initials={currentConv.targetName ? currentConv.targetName[0] : '?'}
         size="w-20 h-20"
         textClass="text-2xl font-bold"
-        bgClass={currentConv.is_group ? 'bg-indigo-700' : 'bg-gray-800 border border-gray-700'}
+        bgClass={currentConv.is_group
+          ? 'bg-indigo-700'
+          : 'bg-surface-container border border-outline-variant'}
       />
       <div>
         <div class="flex items-center justify-center gap-1.5">
-          <h2 class="text-lg font-bold text-white">
+          <h2 class="text-on-surface text-lg font-bold">
             {currentConv.targetName}
           </h2>
           {#if !currentConv.is_group}
@@ -80,7 +82,7 @@
             {/if}
           {/if}
         </div>
-        <p class="text-xs text-gray-400">
+        <p class="text-on-surface-variant text-xs">
           {currentConv.is_group ? 'Group Conversation' : currentConv.target}
         </p>
       </div>
@@ -88,15 +90,17 @@
 
     <!-- Group Rename & Participants Section -->
     {#if currentConv.is_group}
-      <div class="space-y-2 rounded-xl border border-gray-800 bg-gray-900/80 p-3">
-        <label for="group-name-input" class="text-xs font-semibold text-gray-300">Group Name</label>
+      <div class="border-outline-variant bg-surface space-y-2 rounded-xl border p-3">
+        <label for="group-name-input" class="text-on-surface text-xs font-semibold"
+          >Group Name</label
+        >
         <div class="flex gap-2">
           <input
             id="group-name-input"
             type="text"
             maxlength="50"
             bind:value={editNameValue}
-            class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none"
+            class="border-outline-variant bg-surface-container text-on-surface focus:border-primary flex-1 rounded-lg border px-3 py-1.5 text-xs focus:outline-none"
             placeholder="Enter group name"
           />
           <Button class="shrink-0 px-3 py-1.5 text-xs" onclick={handleSaveGroupName}>Save</Button>
@@ -105,18 +109,18 @@
 
       <!-- Group Participants Section -->
       <div class="space-y-2">
-        <h4 class="px-1 text-xs font-bold tracking-wider text-gray-400 uppercase">
+        <h4 class="text-on-surface-variant px-1 text-xs font-bold tracking-wider uppercase">
           Group Members ({currentConv.participants?.length || 0})
         </h4>
         <div
-          class="divide-y divide-gray-700/50 overflow-hidden rounded-xl border border-gray-700/60 bg-gray-800/80 shadow-lg"
+          class="divide-outline-variant border-outline-variant bg-surface-container divide-y overflow-hidden rounded-xl border shadow-lg"
         >
           {#each currentConv.participants || [] as member}
             {@const pContact =
               member.contact || $contacts.find((c) => c.citizenid === member.citizenid)}
             <button
               type="button"
-              class="group flex w-full cursor-pointer items-center justify-between p-3 text-left transition-colors hover:bg-gray-700/50"
+              class="group hover:bg-surface-container-high flex w-full cursor-pointer items-center justify-between p-3 text-left transition-colors"
               onclick={() => {
                 onclose();
                 if (pContact) {
@@ -132,30 +136,32 @@
                   initials={pContact ? pContact.firstname[0] : 'M'}
                   size="w-8 h-8"
                   textClass="text-xs"
-                  bgClass="bg-gray-800 border border-gray-700/60"
+                  bgClass="bg-surface-container border border-outline-variant"
                 />
                 <div>
                   <p
-                    class="text-xs font-semibold text-gray-200 transition-colors group-hover:text-white"
+                    class="text-on-surface group-hover:text-on-surface text-xs font-semibold transition-colors"
                   >
                     {pContact
                       ? `${pContact.firstname} ${pContact.lastname || ''}`.trim()
                       : member.citizenid}
                   </p>
                   {#if pContact?.phone}
-                    <p class="text-[10px] text-gray-400">
+                    <p class="text-on-surface-variant text-[10px]">
                       {pContact.phone}
                     </p>
                   {/if}
                 </div>
               </div>
               <ChevronRightIcon
-                class="h-4 w-4 text-gray-500 transition-colors group-hover:text-gray-300"
+                class="text-on-surface-variant group-hover:text-on-surface h-4 w-4 transition-colors"
               />
             </button>
           {/each}
           {#if !currentConv.participants || currentConv.participants.length === 0}
-            <div class="p-3 text-center text-xs text-gray-500">No member details available.</div>
+            <div class="text-on-surface-variant p-3 text-center text-xs">
+              No member details available.
+            </div>
           {/if}
         </div>
       </div>

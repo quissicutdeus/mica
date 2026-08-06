@@ -81,18 +81,18 @@
       {:else}
         <div class="space-y-4">
           {#each $pendingReports as report (report.id)}
-            <div class="overflow-hidden rounded-xl bg-gray-800 text-sm">
+            <div class="bg-surface-container overflow-hidden rounded-xl text-sm">
               <div class="flex items-start justify-between gap-3 p-4">
                 <div class="min-w-0">
-                  <p class="font-medium text-rose-400">
+                  <p class="text-error font-medium">
                     {CATEGORY_LABELS[report.category] ?? report.category}
                   </p>
-                  <p class="mt-0.5 text-xs text-gray-400">
+                  <p class="text-on-surface-variant mt-0.5 text-xs">
                     reported {formatRelativeTime(report.created_at)}
                   </p>
                 </div>
                 <span
-                  class="shrink-0 rounded bg-gray-900 px-2 py-0.5 font-mono text-[10px] text-gray-400"
+                  class="bg-surface text-on-surface-variant shrink-0 rounded px-2 py-0.5 font-mono text-[10px]"
                 >
                   #{report.id}
                 </span>
@@ -100,7 +100,7 @@
 
               <!-- Captured when the report was filed, so it still says what was reported
                    after the content is gone. Another player's text: rendered as text. -->
-              <div class="border-t border-gray-700 px-4 py-3">
+              <div class="border-outline-variant border-t px-4 py-3">
                 {#if isImage(report.target_preview)}
                   <img
                     src={report.target_preview}
@@ -108,23 +108,23 @@
                     class="max-h-40 rounded-lg object-contain"
                   />
                 {:else}
-                  <p class="break-words whitespace-pre-wrap text-gray-200">
+                  <p class="text-on-surface break-words whitespace-pre-wrap">
                     {report.target_preview || '(content unavailable)'}
                   </p>
                 {/if}
                 {#if report.note}
-                  <p class="mt-2 border-l-2 border-gray-600 pl-2 text-xs text-gray-400">
+                  <p class="border-outline text-on-surface-variant mt-2 border-l-2 pl-2 text-xs">
                     {report.note}
                   </p>
                 {/if}
               </div>
 
-              <div class="grid grid-cols-2 gap-px bg-gray-700">
+              <div class="bg-surface-container-high grid grid-cols-2 gap-px">
                 <button
                   type="button"
                   disabled={$busy}
                   onclick={() => (confirming = { report, action: 'dismiss' })}
-                  class="cursor-pointer bg-gray-800 py-3 font-medium text-gray-300 transition-colors hover:bg-gray-700 disabled:opacity-50"
+                  class="bg-surface-container text-on-surface hover:bg-surface-container-high cursor-pointer py-3 font-medium transition-colors disabled:opacity-50"
                 >
                   Allow — no action
                 </button>
@@ -132,7 +132,7 @@
                   type="button"
                   disabled={$busy}
                   onclick={() => (confirming = { report, action: 'moderate' })}
-                  class="cursor-pointer bg-gray-800 py-3 font-medium text-rose-400 transition-colors hover:bg-gray-700 disabled:opacity-50"
+                  class="bg-surface-container text-error hover:bg-surface-container-high cursor-pointer py-3 font-medium transition-colors disabled:opacity-50"
                 >
                   Remove for everyone
                 </button>
@@ -146,16 +146,16 @@
     {:else}
       <div class="space-y-3">
         {#each $resolvedReports as report (report.id)}
-          <div class="overflow-hidden rounded-xl bg-gray-800 text-sm">
+          <div class="bg-surface-container overflow-hidden rounded-xl text-sm">
             <div class="flex items-start justify-between gap-3 p-4">
               <div class="min-w-0">
-                <p class="font-medium text-gray-200">
+                <p class="text-on-surface font-medium">
                   {CATEGORY_LABELS[report.category] ?? report.category}
                 </p>
                 <p
                   class="mt-0.5 text-xs {report.resolution === 'actioned'
-                    ? 'text-rose-400'
-                    : 'text-gray-400'}"
+                    ? 'text-error'
+                    : 'text-on-surface-variant'}"
                 >
                   {RESOLUTION_LABELS[report.resolution] ?? report.resolution} ·
                   {formatRelativeTime(report.updated_at)}
@@ -168,12 +168,14 @@
                   run(() => reopenReport(report.id), {
                     success: 'Reopened — content restored if it was removed'
                   })}
-                class="shrink-0 cursor-pointer rounded-lg border border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-200 transition-colors hover:bg-gray-700 disabled:opacity-50"
+                class="border-outline text-on-surface hover:bg-surface-container-high shrink-0 cursor-pointer rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
               >
                 Undo
               </button>
             </div>
-            <p class="truncate border-t border-gray-700 px-4 py-2 text-xs text-gray-400">
+            <p
+              class="border-outline-variant text-on-surface-variant truncate border-t px-4 py-2 text-xs"
+            >
               {isImage(report.target_preview) ? '(photo)' : report.target_preview || '—'}
             </p>
           </div>

@@ -6,14 +6,14 @@
 </script>
 
 <div
-  class="mb-8 rounded-2xl p-6 text-white shadow-lg"
+  class="text-on-surface mb-8 rounded-2xl p-6 shadow-lg"
   style="background-image: linear-gradient(to bottom right, var(--color-purple-600), var(--color-blue-600));"
 >
   <div class="mb-8 flex items-start justify-between">
-    <span class="font-medium text-white/80">Total Balance</span>
+    <span class="text-on-surface font-medium">Total Balance</span>
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      class="h-8 w-8 text-white/50"
+      class="text-on-surface h-8 w-8"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -29,7 +29,7 @@
   <div class="mb-2 text-3xl font-bold">
     ${formatCurrency(balance)}
   </div>
-  <div class="font-mono text-sm tracking-wider text-white/80">
+  <div class="text-on-surface font-mono text-sm tracking-wider">
     {hashStringToCardNumber(citizenid)}
   </div>
 </div>

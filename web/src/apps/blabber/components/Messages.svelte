@@ -73,7 +73,7 @@
       {#each $dmThreads as thread (thread.peer_account_id)}
         <button
           type="button"
-          class="flex w-full items-center gap-3 border-b border-gray-800 px-4 py-3 text-left"
+          class="border-outline-variant flex w-full items-center gap-3 border-b px-4 py-3 text-left"
           onclick={() =>
             onopen?.(thread.peer_account_id, {
               handle: thread.handle ?? '',
@@ -87,16 +87,16 @@
           />
           <div class="min-w-0 flex-1">
             <p class="flex items-center gap-1.5 text-xs">
-              <span class="truncate font-semibold text-white"
+              <span class="text-on-surface truncate font-semibold"
                 >{thread.display_name || thread.handle}</span
               >
-              <span class="truncate text-gray-500">@{thread.handle}</span>
+              <span class="text-on-surface-variant truncate">@{thread.handle}</span>
             </p>
-            <p class="truncate text-xs text-gray-400">{thread.last?.body ?? ''}</p>
+            <p class="text-on-surface-variant truncate text-xs">{thread.last?.body ?? ''}</p>
           </div>
           {#if thread.unread > 0}
             <span
-              class="shrink-0 rounded-full bg-sky-500 px-2 py-0.5 text-[10px] font-bold text-white"
+              class="bg-primary text-on-primary shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold"
             >
               {thread.unread}
             </span>
@@ -107,7 +107,7 @@
   </div>
 {:else}
   <div class="flex h-full flex-col">
-    <div class="flex items-center gap-2 border-b border-gray-800 px-4 py-2.5">
+    <div class="border-outline-variant flex items-center gap-2 border-b px-4 py-2.5">
       <Avatar
         initials={(active?.handle || '?').slice(0, 2).toUpperCase()}
         src={peerAccount?.avatar ?? ''}
@@ -119,11 +119,11 @@
         class="min-w-0 text-left hover:underline"
         onclick={() => active?.handle && onhandle?.(active.handle)}
       >
-        <span class="block truncate text-sm font-semibold text-white">
+        <span class="text-on-surface block truncate text-sm font-semibold">
           {active?.display_name || (active?.handle ? `@${active.handle}` : 'Message')}
         </span>
         {#if active?.display_name && active.handle}
-          <span class="block truncate text-xs text-gray-500">@{active.handle}</span>
+          <span class="text-on-surface-variant block truncate text-xs">@{active.handle}</span>
         {/if}
       </button>
     </div>
@@ -140,11 +140,13 @@
           <div class="flex px-4 py-1.5" class:justify-end={mine}>
             <div
               class="max-w-[80%] rounded-2xl px-3 py-2"
-              class:bg-sky-600={mine}
-              class:bg-gray-800={!mine}
+              class:bg-primary={mine}
+              class:bg-surface-container={!mine}
             >
               <BlabBody body={message.body} {onhandle} />
-              <p class="mt-0.5 text-[10px] text-gray-400">{formatDate(message.created_at)}</p>
+              <p class="text-on-surface-variant mt-0.5 text-[10px]">
+                {formatDate(message.created_at)}
+              </p>
             </div>
           </div>
         {/each}

@@ -27,14 +27,16 @@
 <!-- Installed Apps Filter & Sort Bar -->
 <div class="space-y-2">
   <div class="flex items-center justify-between gap-2">
-    <span class="text-xs font-bold tracking-wider text-gray-400 uppercase">Applications</span>
+    <span class="text-on-surface-variant text-xs font-bold tracking-wider uppercase"
+      >Applications</span
+    >
     <div class="flex gap-1 text-[11px]">
       <button
         onclick={() => (filter = 'all')}
         aria-pressed={filter === 'all'}
         class="rounded px-2 py-0.5 transition {filter === 'all'
-          ? 'bg-indigo-600 text-white'
-          : 'bg-gray-800 text-gray-400'}"
+          ? 'bg-primary text-on-primary'
+          : 'bg-surface-container text-on-surface-variant'}"
       >
         All
       </button>
@@ -42,8 +44,8 @@
         onclick={() => (filter = 'system')}
         aria-pressed={filter === 'system'}
         class="rounded px-2 py-0.5 transition {filter === 'system'
-          ? 'bg-indigo-600 text-white'
-          : 'bg-gray-800 text-gray-400'}"
+          ? 'bg-primary text-on-primary'
+          : 'bg-surface-container text-on-surface-variant'}"
       >
         System
       </button>
@@ -51,8 +53,8 @@
         onclick={() => (filter = 'addon')}
         aria-pressed={filter === 'addon'}
         class="rounded px-2 py-0.5 transition {filter === 'addon'
-          ? 'bg-indigo-600 text-white'
-          : 'bg-gray-800 text-gray-400'}"
+          ? 'bg-primary text-on-primary'
+          : 'bg-surface-container text-on-surface-variant'}"
       >
         Add-ons
       </button>
@@ -60,12 +62,12 @@
   </div>
 
   <div
-    class="flex items-center justify-between gap-2 rounded-lg border border-gray-800 bg-gray-800/50 px-2.5 py-1.5 text-xs"
+    class="bg-surface-container border-outline-variant flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-xs"
   >
-    <span class="text-[11px] font-medium text-gray-400">Sort Order</span>
+    <span class="text-on-surface-variant text-[11px] font-medium">Sort Order</span>
     <select
       bind:value={sortOrder}
-      class="cursor-pointer rounded border border-gray-700 bg-gray-900 px-2 py-0.5 text-[11px] text-gray-200 focus:outline-none"
+      class="bg-surface-container-low border-outline-variant text-on-surface cursor-pointer rounded border px-2 py-0.5 text-[11px] focus:outline-none"
       aria-label="Sort Installed Apps"
     >
       <option value="newest">Newest Installed</option>
@@ -80,7 +82,7 @@
 <div class="grid w-full gap-2">
   {#each apps as app (app.id)}
     <div
-      class="flex w-full min-w-0 items-center justify-between gap-3 rounded-xl border border-gray-800 bg-gray-800/40 p-3 transition hover:border-gray-700"
+      class="bg-surface-container border-outline-variant hover:bg-surface flex w-full min-w-0 items-center justify-between gap-3 rounded-xl border p-3 transition"
     >
       <button
         onclick={() => onselect(app)}
@@ -95,12 +97,12 @@
             {@const IconComp = app.icon}
             <IconComp />
           {:else}
-            <span class="text-sm font-bold text-white">{app.name.charAt(0)}</span>
+            <span class="text-on-surface text-sm font-bold">{app.name.charAt(0)}</span>
           {/if}
         </div>
         <div class="min-w-0 flex-1">
-          <span class="block truncate text-sm font-semibold text-white">{app.name}</span>
-          <div class="flex items-center gap-1.5 truncate text-[11px] text-gray-400">
+          <span class="text-on-surface block truncate text-sm font-semibold">{app.name}</span>
+          <div class="text-on-surface-variant flex items-center gap-1.5 truncate text-[11px]">
             <span>{app.author || 'gPhone'}</span>
             <span>•</span>
             <span>{getAppStorageSize(app)}</span>

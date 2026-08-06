@@ -30,14 +30,14 @@
 </script>
 
 <!-- FULL APP DETAILS VIEW PAGE -->
-<div class="flex h-full w-full flex-col bg-gray-900 text-white">
+<div class="bg-surface text-on-surface flex h-full w-full flex-col">
   <!-- Top Navigation Header -->
   <div
-    class="pt-safe-top flex shrink-0 items-center justify-between border-b border-gray-800 bg-gray-900/90 px-4 pb-3 backdrop-blur"
+    class="pt-safe-top border-outline-variant bg-surface flex shrink-0 items-center justify-between border-b px-4 pb-3 backdrop-blur"
   >
     <button
       onclick={() => onback()}
-      class="flex items-center gap-1 text-xs font-semibold text-indigo-400 transition hover:text-indigo-300"
+      class="text-secondary hover:text-secondary flex items-center gap-1 text-xs font-semibold transition"
       aria-label="Back to Store"
     >
       <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -45,7 +45,9 @@
       </svg>
       Back
     </button>
-    <span class="text-xs font-bold tracking-wider text-gray-400 uppercase"> App Details </span>
+    <span class="text-on-surface-variant text-xs font-bold tracking-wider uppercase">
+      App Details
+    </span>
     <div class="w-10"></div>
   </div>
 
@@ -60,13 +62,13 @@
           {@const IconComp = app.icon}
           <IconComp />
         {:else}
-          <span class="text-3xl font-bold text-white">{app.name.charAt(0)}</span>
+          <span class="text-on-surface text-3xl font-bold">{app.name.charAt(0)}</span>
         {/if}
       </div>
 
       <div>
-        <h3 class="text-xl font-bold text-white">{app.name}</h3>
-        <div class="mt-0.5 flex items-center justify-center gap-2 text-xs text-gray-400">
+        <h3 class="text-on-surface text-xl font-bold">{app.name}</h3>
+        <div class="text-on-surface-variant mt-0.5 flex items-center justify-center gap-2 text-xs">
           <span>{app.author}</span>
           <span>•</span>
           <span>v{app.version || '1.0.0'}</span>
@@ -86,7 +88,7 @@
               Open Application
             </button>
             <div
-              class="flex items-center justify-center gap-1.5 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-3 py-1 text-[11px] font-medium text-indigo-300"
+              class="bg-secondary text-secondary flex items-center justify-center gap-1.5 rounded-lg border border-indigo-500/20 px-3 py-1 text-[11px] font-medium"
             >
               <span>🔒</span> Core System App — protected from removal
             </div>
@@ -105,7 +107,7 @@
               onclick={() => {
                 if (app) onuninstall(app);
               }}
-              class="flex-1 rounded-xl bg-red-600/90 py-2.5 text-xs font-semibold text-white shadow-md transition hover:bg-red-500 active:scale-95"
+              class="bg-error text-on-error hover:bg-error flex-1 rounded-xl py-2.5 text-xs font-semibold shadow-md transition active:scale-95"
             >
               Uninstall
             </button>
@@ -115,7 +117,7 @@
             onclick={() => {
               if (app) oninstall(app);
             }}
-            class="w-full rounded-xl bg-indigo-600 py-2.5 text-xs font-semibold text-white shadow-md transition hover:bg-indigo-500 active:scale-95"
+            class="bg-secondary text-on-secondary hover:bg-secondary w-full rounded-xl py-2.5 text-xs font-semibold shadow-md transition active:scale-95"
           >
             Install Application
           </button>
@@ -125,9 +127,9 @@
 
     <!-- Description Card -->
     <div class="space-y-1.5">
-      <h4 class="text-xs font-bold tracking-wider text-gray-400 uppercase">About</h4>
+      <h4 class="text-on-surface-variant text-xs font-bold tracking-wider uppercase">About</h4>
       <p
-        class="rounded-xl border border-gray-800 bg-gray-800/60 p-3 text-xs leading-relaxed text-gray-300"
+        class="border-outline-variant bg-surface-container text-on-surface rounded-xl border p-3 text-xs leading-relaxed"
       >
         {app.description || 'No description provided for this application.'}
       </p>
@@ -135,29 +137,36 @@
 
     <!-- Technical Metadata Grid -->
     <div class="space-y-1.5">
-      <h4 class="text-xs font-bold tracking-wider text-gray-400 uppercase">Information</h4>
+      <h4 class="text-on-surface-variant text-xs font-bold tracking-wider uppercase">
+        Information
+      </h4>
       <div class="grid grid-cols-2 gap-2 text-xs">
-        <div class="rounded-xl border border-gray-800 bg-gray-800/40 p-3">
-          <span class="block text-[10px] font-medium text-gray-400 uppercase">Type</span>
-          <span class="font-semibold text-white">{system ? 'System Application' : 'Add-on'}</span>
+        <div class="border-outline-variant bg-surface-container rounded-xl border p-3">
+          <span class="text-on-surface-variant block text-[10px] font-medium uppercase">Type</span>
+          <span class="text-on-surface font-semibold"
+            >{system ? 'System Application' : 'Add-on'}</span
+          >
         </div>
-        <div class="rounded-xl border border-gray-800 bg-gray-800/40 p-3">
-          <span class="block text-[10px] font-medium text-gray-400 uppercase"
+        <div class="border-outline-variant bg-surface-container rounded-xl border p-3">
+          <span class="text-on-surface-variant block text-[10px] font-medium uppercase"
             >Storage Footprint</span
           >
-          <span class="font-semibold text-white">{getAppStorageSize(app)}</span>
+          <span class="text-on-surface font-semibold">{getAppStorageSize(app)}</span>
         </div>
         {#if app.installedAt}
-          <div class="rounded-xl border border-gray-800 bg-gray-800/40 p-3">
-            <span class="block text-[10px] font-medium text-gray-400 uppercase">Installed Date</span
+          <div class="border-outline-variant bg-surface-container rounded-xl border p-3">
+            <span class="text-on-surface-variant block text-[10px] font-medium uppercase"
+              >Installed Date</span
             >
-            <span class="font-semibold text-white">{formatDate(app.installedAt)}</span>
+            <span class="text-on-surface font-semibold">{formatDate(app.installedAt)}</span>
           </div>
         {/if}
         {#if app.updatedAt}
-          <div class="rounded-xl border border-gray-800 bg-gray-800/40 p-3">
-            <span class="block text-[10px] font-medium text-gray-400 uppercase">Last Updated</span>
-            <span class="font-semibold text-white">{formatDate(app.updatedAt)}</span>
+          <div class="border-outline-variant bg-surface-container rounded-xl border p-3">
+            <span class="text-on-surface-variant block text-[10px] font-medium uppercase"
+              >Last Updated</span
+            >
+            <span class="text-on-surface font-semibold">{formatDate(app.updatedAt)}</span>
           </div>
         {/if}
       </div>
@@ -165,7 +174,7 @@
 
     <!-- Permissions Breakdown -->
     <div class="space-y-1.5 pb-4">
-      <h4 class="text-xs font-bold tracking-wider text-gray-400 uppercase">
+      <h4 class="text-on-surface-variant text-xs font-bold tracking-wider uppercase">
         Permissions Requested
       </h4>
       {#if app.permissions && app.permissions.length > 0}
@@ -173,7 +182,7 @@
           {#each app.permissions as perm}
             {@const formatted = formatPermission(perm)}
             <div
-              class="flex items-center gap-2 rounded-xl border border-gray-800 bg-gray-800/40 px-3 py-2 text-xs text-gray-200"
+              class="border-outline-variant bg-surface-container text-on-surface flex items-center gap-2 rounded-xl border px-3 py-2 text-xs"
             >
               <span>{formatted.icon}</span>
               <span>{formatted.label}</span>
@@ -182,7 +191,7 @@
         </div>
       {:else}
         <p
-          class="rounded-xl border border-gray-800 bg-gray-800/40 p-3 text-xs text-gray-400 italic"
+          class="border-outline-variant bg-surface-container text-on-surface-variant rounded-xl border p-3 text-xs italic"
         >
           No special permissions requested.
         </p>

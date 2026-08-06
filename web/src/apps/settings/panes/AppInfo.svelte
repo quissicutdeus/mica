@@ -82,52 +82,58 @@
         {@const IconComp = app.icon}
         <IconComp />
       {:else}
-        <span class="text-lg font-bold text-white">{app.name.charAt(0)}</span>
+        <span class="text-on-surface text-lg font-bold">{app.name.charAt(0)}</span>
       {/if}
     </div>
     <div class="min-w-0">
-      <p class="truncate text-base font-semibold text-white">{app.name}</p>
-      <p class="truncate text-xs text-gray-400">
+      <p class="text-on-surface truncate text-base font-semibold">{app.name}</p>
+      <p class="text-on-surface-variant truncate text-xs">
         {app.core ? 'System app' : 'Store add-on'}{app.isRemote ? ' · remote' : ''}
       </p>
       {#if app.description}
-        <p class="mt-1 text-xs text-gray-300">{app.description}</p>
+        <p class="text-on-surface mt-1 text-xs">{app.description}</p>
       {/if}
     </div>
   </div>
 
   <div>
-    <h2 class="mb-2 px-2 text-sm font-medium tracking-wider text-gray-400 uppercase">Details</h2>
-    <div class="divide-y divide-gray-700 overflow-hidden rounded-xl bg-gray-800 text-sm">
+    <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
+      Details
+    </h2>
+    <div
+      class="divide-outline-variant bg-surface-container divide-y overflow-hidden rounded-xl text-sm"
+    >
       <div class="flex items-center justify-between p-4">
-        <span class="text-gray-400">Identifier</span>
-        <span class="font-mono text-xs text-gray-200">{app.id}</span>
+        <span class="text-on-surface-variant">Identifier</span>
+        <span class="text-on-surface font-mono text-xs">{app.id}</span>
       </div>
       <div class="flex items-center justify-between p-4">
-        <span class="text-gray-400">Author</span>
-        <span class="text-gray-200">{app.author || 'gPhone'}</span>
+        <span class="text-on-surface-variant">Author</span>
+        <span class="text-on-surface">{app.author || 'gPhone'}</span>
       </div>
       {#if app.version}
         <div class="flex items-center justify-between p-4">
-          <span class="text-gray-400">Version</span>
-          <span class="text-gray-200">{app.version}</span>
+          <span class="text-on-surface-variant">Version</span>
+          <span class="text-on-surface">{app.version}</span>
         </div>
       {/if}
       {#if app.installedAt}
         <div class="flex items-center justify-between p-4">
-          <span class="text-gray-400">Installed</span>
-          <span class="text-gray-200">{formatDate(app.installedAt)}</span>
+          <span class="text-on-surface-variant">Installed</span>
+          <span class="text-on-surface">{formatDate(app.installedAt)}</span>
         </div>
       {/if}
       <div class="flex items-center justify-between p-4">
-        <span class="text-gray-400">Storage used</span>
-        <span class="text-gray-200">{storageLabel}</span>
+        <span class="text-on-surface-variant">Storage used</span>
+        <span class="text-on-surface">{storageLabel}</span>
       </div>
     </div>
   </div>
 
   <div>
-    <h2 class="mb-2 px-2 text-sm font-medium tracking-wider text-gray-400 uppercase">Manage</h2>
+    <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
+      Manage
+    </h2>
     <div class="space-y-2">
       <Button
         variant="secondary"
@@ -137,14 +143,14 @@
       >
         Clear storage
       </Button>
-      <p class="px-2 text-xs text-gray-500">
+      <p class="text-on-surface-variant px-2 text-xs">
         {bytes === 0
           ? 'Nothing to clear — this app has stored nothing yet.'
           : 'Returns the app to a freshly installed state. The app stays installed.'}
       </p>
 
       {#if app.core}
-        <p class="px-2 pt-2 text-xs text-gray-500">
+        <p class="text-on-surface-variant px-2 pt-2 text-xs">
           System apps ship with the phone and cannot be uninstalled.
         </p>
       {:else}
@@ -156,7 +162,7 @@
         >
           Uninstall
         </Button>
-        <p class="px-2 text-xs text-gray-500">
+        <p class="text-on-surface-variant px-2 text-xs">
           Removes the app and everything it stored. It can be installed again from the Store.
         </p>
       {/if}

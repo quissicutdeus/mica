@@ -82,7 +82,7 @@
     {@const isArchived = selectedMail.status === 'archived'}
     <div class="ml-auto flex items-center space-x-1">
       <button
-        class="rounded-full p-2 text-red-400 transition-colors hover:bg-red-600/20"
+        class="text-error hover:bg-error rounded-full p-2 transition-colors"
         onclick={() => handleDelete(selectedMail!.id)}
         aria-label="Delete message"
         title="Delete message"
@@ -92,8 +92,8 @@
       <button
         class={`rounded-full p-2 transition-colors ${
           isArchived
-            ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30'
-            : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+            ? 'bg-primary text-primary hover:bg-primary'
+            : 'text-on-surface hover:bg-surface-container-high hover:text-on-surface'
         }`}
         onclick={() => handleArchive(selectedMail!)}
         aria-label={isArchived ? 'Move to Inbox' : 'Archive message'}
@@ -106,8 +106,8 @@
     <button
       class={`ml-auto rounded-full p-2 transition-colors ${
         activeTab === 'archive'
-          ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30'
-          : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+          ? 'bg-surface-container-low text-primary'
+          : 'hover:bg-surface text-on-surface hover:text-on-surface'
       }`}
       onclick={() => (activeTab = activeTab === 'inbox' ? 'archive' : 'inbox')}
       aria-label={activeTab === 'inbox' ? 'View Archive' : 'View Inbox'}
@@ -122,26 +122,30 @@
   {#if selectedMail}
     <!-- Detail View -->
     <div class="flex h-full flex-col p-4">
-      <div class="mb-4 border-b border-gray-800 pb-3">
+      <div class="border-outline-variant mb-4 border-b pb-3">
         <div class="mb-2 flex items-start justify-between">
           <div>
-            <h2 class="text-lg font-bold text-white">{selectedMail.sender}</h2>
+            <h2 class="text-on-surface text-lg font-bold">{selectedMail.sender}</h2>
             {#if selectedMail.sender_address}
-              <p class="text-xs text-gray-400">{selectedMail.sender_address}</p>
+              <p class="text-on-surface-variant text-xs">{selectedMail.sender_address}</p>
             {/if}
           </div>
-          <span class="text-xs text-gray-500">{formatRelativeTime(selectedMail.created_at)}</span>
+          <span class="text-on-surface-variant text-xs"
+            >{formatRelativeTime(selectedMail.created_at)}</span
+          >
         </div>
-        <h3 class="text-md mt-2 font-semibold text-blue-400">{selectedMail.subject}</h3>
+        <h3 class="text-md text-primary mt-2 font-semibold">{selectedMail.subject}</h3>
       </div>
 
-      <div class="flex-1 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap text-gray-200">
+      <div
+        class="text-on-surface flex-1 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap"
+      >
         {selectedMail.content}
       </div>
     </div>
   {:else}
     <!-- Email List -->
-    <div class="divide-y divide-gray-800">
+    <div class="divide-outline-variant divide-y">
       {#if !$mailLoaded}
         <Skeleton count={4} height="h-16" />
       {:else if displayedEmails.length === 0}
@@ -160,7 +164,7 @@
           <ListItem onclick={() => openMail(email)} class="flex items-start space-x-3">
             <div class="pt-1">
               {#if !email.read && activeTab === 'inbox'}
-                <span class="block h-2.5 w-2.5 rounded-full bg-blue-500"></span>
+                <span class="bg-primary block h-2.5 w-2.5 rounded-full"></span>
               {:else}
                 <span class="block h-2.5 w-2.5 rounded-full bg-transparent"></span>
               {/if}
@@ -169,20 +173,20 @@
             <div class="min-w-0 flex-1">
               <div class="mb-0.5 flex items-baseline justify-between">
                 <h3
-                  class={`truncate text-sm font-medium ${!email.read ? 'font-bold text-white' : 'text-gray-300'}`}
+                  class={`truncate text-sm font-medium ${!email.read ? 'text-on-surface font-bold' : 'text-on-surface'}`}
                 >
                   {email.sender}
                 </h3>
-                <span class="ml-2 text-xs whitespace-nowrap text-gray-500">
+                <span class="text-on-surface-variant ml-2 text-xs whitespace-nowrap">
                   {formatRelativeTime(email.created_at)}
                 </span>
               </div>
               <h4
-                class={`mb-1 truncate text-xs ${!email.read ? 'font-semibold text-blue-400' : 'text-gray-400'}`}
+                class={`mb-1 truncate text-xs ${!email.read ? 'text-primary font-semibold' : 'text-on-surface-variant'}`}
               >
                 {email.subject}
               </h4>
-              <p class="line-clamp-2 text-xs leading-relaxed text-gray-500">
+              <p class="text-on-surface-variant line-clamp-2 text-xs leading-relaxed">
                 {email.content}
               </p>
             </div>

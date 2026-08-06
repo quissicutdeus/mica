@@ -23,10 +23,10 @@
   const count = (n?: number) => (n && n > 0 ? String(n) : '');
 </script>
 
-<div class="mt-2 flex items-center gap-5 text-xs text-gray-500">
+<div class="text-on-surface-variant mt-2 flex items-center gap-5 text-xs">
   <button
     type="button"
-    class="flex items-center gap-1.5 transition-colors hover:text-sky-400"
+    class="hover:text-primary flex items-center gap-1.5 transition-colors"
     aria-label="Reply"
     onclick={onreply}
   >
@@ -60,8 +60,8 @@
 
   <button
     type="button"
-    class="flex items-center gap-1.5 transition-colors hover:text-rose-400"
-    class:text-rose-400={stats?.likedByMe}
+    class="hover:text-error flex items-center gap-1.5 transition-colors"
+    class:text-error={stats?.likedByMe}
     aria-label={stats?.likedByMe ? 'Unlike' : 'Like'}
     aria-pressed={stats?.likedByMe ?? false}
     onclick={onlike}
