@@ -15,6 +15,7 @@ import {
   useMail,
   useNotes,
   useMessages,
+  useNotifications,
   onAppMount,
   onAppUnmount,
   type AppManifest
@@ -229,6 +230,17 @@ describe('gPhone SDK (@gphone/sdk)', () => {
         phone: '555-9999'
       });
       expect(get(msgStore).length).toBeGreaterThan(0);
+    });
+
+    it('useNotifications provides notification stores and management methods', () => {
+      const { notificationsStore, unreadCount, markRead, clear, clearAll } =
+        useNotifications('blabber');
+
+      expect(notificationsStore).toBeDefined();
+      expect(unreadCount).toBeDefined();
+      expect(typeof markRead).toBe('function');
+      expect(typeof clear).toBe('function');
+      expect(typeof clearAll).toBe('function');
     });
   });
 
