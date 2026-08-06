@@ -23,10 +23,6 @@ import {
 import { toast } from '../shell/state/toast';
 import { contacts } from '../services/contacts';
 import { photos } from '../services/photos';
-import { mailStore } from '../services/mail';
-import { notes } from '../services/notes';
-import { conversationsStore } from '../services/conversations';
-import { callStore } from '../services/call';
 import { get } from 'svelte/store';
 
 describe('gPhone SDK (@gphone/sdk)', () => {

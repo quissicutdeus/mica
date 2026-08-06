@@ -4,7 +4,6 @@
   import { isShadeOpen, closeShade } from './state/shade';
   import {
     shadeNotifications,
-    totalUnreadNotifications,
     loadShadeNotifications,
     loadNotificationHistory,
     loadUnreadCounts,
@@ -19,12 +18,10 @@
   import CloseIcon from '../sdk/ui/icons/CloseIcon.svelte';
   import TrashIcon from '../sdk/ui/icons/TrashIcon.svelte';
   import CheckIcon from '../sdk/ui/icons/CheckIcon.svelte';
-  import ChevronLeftIcon from '../sdk/ui/icons/ChevronLeftIcon.svelte';
   import ArchiveIcon from '../sdk/ui/icons/ArchiveIcon.svelte';
   import ChevronDownIcon from '../sdk/ui/icons/ChevronDownIcon.svelte';
 
   let notifications = $derived($shadeNotifications);
-  let totalUnread = $derived($totalUnreadNotifications);
 
   interface NotificationGroup {
     app: string;
@@ -171,40 +168,22 @@
   const handleClearAll = async () => {
     await clearAllNotifications();
   };
-  let isDragging = $state(false);
-  let startY = $state(0);
-  let dragOffsetY = $state(0);
-
-  const handlePointerDown = (e: PointerEvent) => {
-    isDragging = true;
-    startY = e.clientY;
-    dragOffsetY = 0;
-    try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    } catch {
-      // Ignore
-    }
-  };
-
-  const handlePointerMove = (e: PointerEvent) => {
-    if (!isDragging) return;
-    dragOffsetY = e.clientY - startY;
-  };
-
-  const handlePointerUp = (e: PointerEvent) => {
-    if (!isDragging) return;
-    isDragging = false;
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {
-      // Ignore
-    }
-    if (dragOffsetY < -100) {
-      closeShade();
-    }
-    dragOffsetY = 0;
-  };
 </script>
+
+<!-- The drag-to-dismiss gesture is deliberately absent rather than pending.
+
+     Three pointer handlers and their `isDragging` / `startY` / `dragOffsetY` state used to
+     sit here, and nothing in the markup ever referenced them — no `onpointerdown`
+     anywhere in the file. So the "gestural pull drawer" was never reachable, and
+     `dragOffsetY` was computed for a transform that was never applied either.
+
+     Removed rather than wired up, because wiring it as written would have broken
+     scrolling: the drawer is `inset-0` around a scrolling list, and `setPointerCapture`
+     on the drawer's own `pointerdown` takes every touch that starts on a notification
+     row. Doing it properly needs a grab handle to attach to and a transform to follow
+     the finger, neither of which exists — that is a feature to build, not a line to
+     reconnect. The shade opens from the status bar and closes from the home indicator
+     and the backdrop, all of which work. -->
 
 {#if $isShadeOpen}
   <!-- Background Backdrop -->

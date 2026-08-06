@@ -17,7 +17,7 @@
 
   let { onopenblab, onopenhandle }: Props = $props();
 
-  const { notificationsStore, unreadCount, load, markRead } = useNotifications('blabber');
+  const { notificationsStore, load, markRead } = useNotifications('blabber');
 
   let notifications = $derived($notificationsStore);
   let loading = $state(true);

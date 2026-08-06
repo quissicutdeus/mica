@@ -4,32 +4,18 @@
     useContacts,
     usePhotos,
     usePhoneNotification,
-    useNuiBridge,
     useNavigation,
     useCall,
     useMessages,
     onAppForeground,
     type Contact,
-    Avatar,
-    Button,
     FloatingActionButton,
-    ListItem,
     PhotoPickerModal,
     Screen,
     SearchBar,
-    Skeleton,
     AddIcon,
-    ChevronRightIcon,
-    CloseIcon,
-    EditIcon,
-    MessageIcon,
-    PhoneIcon,
     SearchIcon,
-    ShareIcon,
-    StarIcon,
-    TrashIcon,
     filterByQuery,
-    formatRelativeTime,
     useScrollDetect,
     useAppLevels,
     type AppProps
@@ -44,17 +30,14 @@
 
   let { onback }: AppProps = $props();
 
-  const { contactsStore, favoriteContacts } = useContacts();
+  const { contactsStore } = useContacts();
   const { photos } = usePhotos();
-  const { sendNotification, toast } = usePhoneNotification();
-  const { fetchNui } = useNuiBridge();
+  const { toast } = usePhoneNotification();
   const { busy, run } = useAppAction();
 
   const contacts = contactsStore;
   const contactsLoaded = contactsStore.loaded;
 
-  // Derive other contacts from the main store
-  let otherContacts = $derived($contacts.filter((c: Contact) => !c.favorite));
   let isAdding = $state(false);
 
   // New Contact Form State

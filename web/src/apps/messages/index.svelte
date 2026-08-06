@@ -14,31 +14,20 @@
     type UIConversation,
     Avatar,
     Button,
-    EmptyState,
     FloatingActionButton,
     ListItem,
-    PhotoPickerModal,
     Screen,
     SearchBar,
-    Skeleton,
     ArchiveIcon,
-    ChevronRightIcon,
     CloseIcon,
-    LocationIcon,
     MessageIcon,
-    MessageStatusIcon,
-    PaperclipIcon,
-    PhotoIcon,
     SearchIcon,
-    SendIcon,
     TrashIcon,
     filterByQuery,
-    formatRelativeTime,
     useScrollDetect,
     type AppProps
   } from '@gphone/sdk';
-  import { fly } from 'svelte/transition';
-  import type { Contact, Photo } from '@shared/types';
+  import type { Contact } from '@shared/types';
 
   const { conversationsStore } = useMessages();
   const conversationsLoaded = conversationsStore.loaded;
@@ -324,8 +313,6 @@
   });
 
   useScrollDetect((v) => (isScrolled = v));
-
-  const focus = (el: HTMLInputElement) => el.focus();
 </script>
 
 {#snippet headerActions()}

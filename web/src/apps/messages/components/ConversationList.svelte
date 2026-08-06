@@ -4,7 +4,6 @@
     ChevronRightIcon,
     EmptyState,
     ListItem,
-    MessageIcon,
     MessageStatusIcon,
     SearchBar,
     Skeleton,

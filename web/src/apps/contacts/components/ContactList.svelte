@@ -1,12 +1,5 @@
 <script lang="ts">
-  import {
-    Avatar,
-    ChevronRightIcon,
-    ListItem,
-    Skeleton,
-    StarIcon,
-    type Contact
-  } from '@gphone/sdk';
+  import { Avatar, ListItem, Skeleton, StarIcon, type Contact } from '@gphone/sdk';
 
   /**
    * The contact list: favourites first, then everyone else.

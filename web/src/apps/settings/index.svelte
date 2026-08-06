@@ -5,7 +5,6 @@
     onAppForeground,
     useAppLevels,
     useAppRegistry,
-    useNuiBridge,
     usePhoneNotification,
     Screen,
     ChevronRightIcon,
@@ -28,7 +27,6 @@
 
   const { fetchPhoneNumber } = useAccount();
   const { toast } = usePhoneNotification();
-  const { fetchNui } = useNuiBridge();
   const { devToolsUnlocked } = useDevTools();
   const { refreshAdmin } = useAdmin();
 

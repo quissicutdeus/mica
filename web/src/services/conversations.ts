@@ -139,7 +139,6 @@ function createMessagesStore() {
       message: string,
       attachments: { photo_id: number; attachment?: string }[] = []
     ) => {
-      let myId = get(citizenid);
       const payload = { conversation_id: conversationId, message, attachments };
 
       try {
