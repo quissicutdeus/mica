@@ -853,7 +853,7 @@ childTables: [
         notNull: true,
         references: { table: 'gphone_messages', column: 'id' }
       },
-      photo_id: { type: 'int', notNull: true, references: { table: 'gphone_photos', column: 'id' } }
+      photo_id: { type: 'int', notNull: true, references: { table: 'gphone_media', column: 'id' } }
     },
     indexes: [['message_id']]
   }
@@ -919,7 +919,7 @@ table, so a schema change would be a no-op with no error — the same silent-fai
 NUI layer (§8). Regenerate and review the diff.
 
 **The numeric prefix is apply order, and alphabetical would be wrong.** Foreign keys cross app
-boundaries — `gphone_messages_attachments` references `gphone_photos`, and `messages` sorts before
+boundaries — `gphone_messages_attachments` references `gphone_media`, and `messages` sorts before
 `photos`; `gphone_blabber` references `gphone_accounts`. `orderAppsByDependency` in
 `scripts/generate-sql.js` topologically sorts the declared services and numbers the files, so
 globbing the directory or importing it in name order is correct by default rather than correct if

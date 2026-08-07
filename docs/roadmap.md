@@ -330,6 +330,83 @@ the _default_ seed's color for anyone who changed theirs.
 colorfulness" and returned a picked color noticeably muted. Measured across eleven seeds, Vibrant
 carries about half again the chroma at identical worst-case contrast.
 
+### A resource-facing export API
+
+Another resource can now make the phone do things. Before this the entire public surface was one
+`exports('SendSystemEmail', ...)` at the bottom of `services/Mail.ts`; everything else in the tree
+named `exports` is gPhone _consuming_ somebody else.
+
+`server/lib/exports.ts` holds the scaffolding and `publicApi.ts` the catalogue, registered from
+`server.ts` after `./services` so everything has loaded before it can be called. Eight exports:
+`GetApiVersion`, `SendSystemEmail`, `SendNotification`, `BuildDeepLink`, `GetBatteryLevel`,
+`SetBatteryLevel`, `AddBatteryCharge` and `SetCharging`. Documented in `README.md`, because server
+owners are the audience.
+
+Every one returns `{ ok: true, value }` or `{ ok: false, reason, message }` — a bare `false` that
+cannot separate "player offline" from "gPhone has not started" is unusable from the calling script —
+and none can throw into the caller's resource. Identity is explicit per export: citizenid where it
+must work offline, source where it is inherently live, and never an implicit `source` global, because
+`TriggerEvent` from another resource makes that the wrong player.
+`server/__tests__/exports.test.ts` pins every name and arity, since a rename breaks somebody else's
+script and the person who finds out is a server owner reading a runtime error.
+
+`SendNotification` is the first thing in the stack to validate `app` at all — the field was mandatory
+and its value was whatever arrived. External callers group under `ext_<resource>` with a required
+label, and `defineApp` refuses an `ext_` id, so the reservation is enforced rather than conventional.
+
+`SetCharging` is a state rather than a top-up: the drain loop is client-side, so charging reverses it
+instead of racing it with repeated writes.
+
+### Settings that follow the character
+
+Every preference lived in `localStorage`, which is per-PC and shared between characters — a theme did
+not follow a player to another machine, and a second character on the same PC inherited the first
+one's phone.
+
+`gphone_settings` is key-value, `(citizenid, app, setting_key)` unique, written with
+`ON DUPLICATE KEY UPDATE`. Key-value rather than one JSON document per player because it maps 1:1
+onto `useStorage(app).setItem(key, value)` — so the SDK gained no new concepts and **no call site
+changed** — and because per-key writes cannot clobber each other the way a read-modify-write on one
+document does.
+
+`localStorage` stayed on as a cache, which is what let the API remain synchronous: `getItem` is
+called once per store at module scope, so making it a promise would have meant rewriting every call
+site. Reads hit the cache, writes go local-first then to the server debounced per key, and hydration
+re-reads the live stores. It runs at page load rather than from `bootstrapStores` — that is gated on
+the phone being _opened_, which would paint the shipped theme and flip to the player's in front of
+them — and again on character load, since the CEF page never unloads.
+
+A wallpaper **image** is the one exception, via `sync: false`: it is a base64 data URL of unbounded
+size. The seed and mode still sync, and they are what generate the scheme.
+
+### `gphone_photos` → `gphone_media`
+
+The photos table held one payload column, `image mediumtext` holding base64, which can only ever be a
+photo. It is now `gphone_media` with `kind` — an
+`enum('photo','video','audio','gif','sticker','file','link')`, deliberately over-provisioned because
+widening one later is another hand-written migration — plus `data` (the renamed `image`, nullable
+now), `url` for hotlinks, `thumbnail`, `mime_type`, `width`, `height`, `duration_ms`, `byte_size` and
+`alt_text`.
+
+**The service and app id are still `photos`.** Those are keys — the directory, the storage namespace,
+the event segment, the `?app=photos` deep link — so renaming one is a data migration; a table name is
+a key to nothing outside SQL, so the `table:` override moved it for free.
+
+`kind` and `data` are the only client-writable columns. The other nine are `clientWritable: false`
+until a feature writes them, because a column a client can set before any caller needs it is
+unconstrained surface (§2.9).
+
+Existing installs need `sql/migrations/001-photos-to-media.sql`, the first hand-written migration in
+the repo — `SchemaMigrator` is additive-only, so a rename is printed for a human and never applied. It
+also rewrites `gphone_reports.target_table` and the audit ledger, which store the table name as a
+literal string and would otherwise leave every historical photo report pointing at a table that no
+longer exists.
+
+Nothing renders the new columns yet. That is the next step, not an oversight: the migration landed
+alone so a regression in it could not be confused with a regression in a media feature.
+
+---
+
 ## Proposed, not built
 
 Nothing in this section exists in the code. The reasoning sits beside each item rather than in a
@@ -343,7 +420,7 @@ Two constraints shape every schema item below:
   change, _including widening an enum_, is printed for a human and never applied, so it needs a
   hand-written migration and an existing install that skips one loses data. Anything enum-shaped has
   to be over-provisioned now, because every value added later costs another migration.
-- **Base64 will not carry video.** `gphone_photos.image` is `mediumtext` holding base64; a video or
+- **Base64 will not carry video.** `gphone_media.data` is `mediumtext` holding base64; a video or
   voice clip at that size will not survive crossing NUI.
 
 ### Camera capture resolution is tied to display scale
@@ -406,144 +483,31 @@ capturing the pointer on its own `pointerdown` takes every touch that starts on 
 Doing it properly needs a grab handle to attach to and a transform that follows the finger, and
 swipe-to-clear needs per-row pointer handling that does not fight vertical scrolling.
 
-### A resource-facing export API
+### Signal and phone-state exports
 
-gPhone exposes **one** export to the rest of the server: `exports('SendSystemEmail', ...)` in
-`server/services/Mail.ts`. Everything else in the tree named `exports` is gPhone _consuming_ somebody
-else — `pma-voice`, `screencapture`, `oxmysql`. There is no surface for another resource to make the
-phone do anything.
+The export API below under _Shipped_ deliberately left two groups out, and they are the ones with a
+mechanism still to build rather than a wrapper still to write.
 
-That is the gap, and the worked example is signal. `signalLevel` is a `writable(4)` living in
-`web/src/shell/state/signal.ts`, set from the NUI. There is no entry in `shared/routes.ts`, no client
-handler and no server state, so the only way to change a player's bars today is Developer Tools on
-their own phone. A dispatch script cannot black out a district, and an EMP cannot exist, because there
-is nothing to call.
+**Signal and reception** — the original ask, and the interface half of _Cellular dead zones and
+outages_ above. `SetGlobalSignal(level)` / `ClearGlobalSignal()` for a city-wide outage,
+`AddDeadZone({ coords, radius, level })` returning an id with `RemoveDeadZone(id)`, and
+`SetSignal(source, level)` / `GetSignal(source)` for one player overriding the zones — a tinfoil hat.
+Global and per-zone are deliberately one primitive with a precedence order rather than two
+mechanisms, because two drift the first time they disagree. None of it can ship before the zones
+themselves do: there is no server state to expose.
 
-**This is the interface half of _Cellular dead zones and outages_ above.** That entry describes the
-mechanism — server-held zones, client polling, pushed signal. This one describes how anything outside
-gPhone reaches it. Neither is much use alone.
+**Phone state and identity** — `GetPhoneNumber(citizenid)` and its inverse `GetCitizenId(phone)`
+(`PlayerDirectory` already resolves both directions), `IsPhoneOpen(source)`,
+`SetPhoneEnabled(source, enabled)` for confiscated or jailed, `OpenApp(source, appId, props)` and
+`AddContact(citizenid, contact)` for a job handing out its dispatch number. Each needs a client
+round trip that does not exist yet, which is why they waited.
 
-#### What makes this different from adding functions
-
-An export is a **public contract**. Once a server owner's dispatch script calls `SetSignalOutage`, the
-name, the argument order and the return shape cannot drift the way an internal function can, because
-breaking them breaks somebody else's resource silently and at runtime. So the surface needs the same
-treatment `shared/routes.ts` gets: one place that declares it, and a test that pins it. A rename that
-compiles is exactly the failure mode `routes.test.ts` exists to catch one layer down.
-
-Five rules the surface should be built to, each earned by something already in the tree:
-
-- **Return a discriminated outcome, never a bare boolean.** `PushOutcome` already does this —
-  `{ delivered: false, reason: 'offline' }` cannot be mistaken for success. An export returning
-  `false` for "player offline", "bad coordinates" and "gPhone has not started yet" is unusable from
-  the calling script.
-- **Never throw across the boundary.** An exception in an export propagates into the caller's
-  resource. `SendSystemEmail` already catches and returns `null`; that discipline has to be uniform
-  rather than incidental.
-- **Say which identity each export takes, and mean it.** Anything that must work for an offline
-  player — a notification, an email — takes a `citizenid`, because that is what the row is keyed on.
-  Anything inherently live — opening an app, reading whether the phone is on screen — takes a
-  `source`. Mixing them is how an export ends up silently no-opping for exactly the players it was
-  written for.
-- **Explicit parameters, not an implicit `source`.** The existing
-  `onNet('gphone:server:battery:useItem')` reads the net-event `source` global. `onNet` also
-  registers a local handler, so another _server_ resource can fire it with `TriggerEvent` — and gets
-  whatever `source` happens to hold, which for a locally-triggered event is not the player it meant.
-  An export taking the player explicitly cannot go wrong that way.
-- **A version, and a contract test.** `GetApiVersion()` so a caller can degrade rather than crash,
-  and a test that pins every exported name and arity so a rename has to be a deliberate act.
-
-Where it lives: one `server/lib/exports.ts` collecting the server surface and one `client/lib/exports.ts`
-for the client half, rather than an `exports(...)` call scattered through each service. The point is
-that the whole public surface can be read in one file — the same reason `shared/routes.ts` is one
-table. Both need the existing `typeof exports === 'function'` guard, since these modules are imported
-by the SQL codegen and by tests where `exports` is not callable.
-
-Server owners are the audience, so it is documented in `README.md`, not here — `web/README.md` is for
-frontend work and this file is not linked from anywhere.
-
-#### The proposed surface
-
-**Notifications and mail** — the two that need no new mechanism, because the services already exist
-and already persist for offline players.
-
-| Export                                      | Notes                                                       |
-| ------------------------------------------- | ----------------------------------------------------------- |
-| `SendSystemEmail(citizenid, mail)`          | Built.                                                      |
-| `SendNotification(citizenid, notification)` | Through `appEventChannel`, so it toasts and persists a row. |
-| `GetUnreadCount(citizenid, appId?)`         |                                                             |
-
-`SendNotification` has one design question worth settling before it ships: a notification names an
-`app`, and the shade groups by it. An external resource pushing under an app id it does not own would
-put its rows in another app's group. Either it always writes under a reserved `system` id, or the app
-id is validated against the registry and refused otherwise.
-
-**Battery** — the fun one, and the cheapest, because `server/services/Battery.ts` already owns saved
-charge and already pushes `gphone:client:battery:recharge`. These are thin wrappers over machinery
-that exists.
-
-| Export                            | Use                                                                                                  |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `SetBatteryLevel(source, level)`  | Set outright.                                                                                        |
-| `AddBatteryCharge(source, delta)` | Negative to drain — an EMP, a taser, a solar flare.                                                  |
-| `SetCharging(source, isCharging)` | A state, not an event: stand in your house or a vehicle and the drain loop reverses until you leave. |
-| `GetBatteryLevel(source)`         |                                                                                                      |
-
-`SetCharging` is the one that is not a one-liner. The drain loop lives client-side and reports every
-15 seconds; a charging state has to reverse its sign and survive the phone being closed, so it belongs
-in the same place the drain rate does rather than as a repeated `AddBatteryCharge` from outside.
-
-**Signal and reception** — the original ask.
-
-| Export                                   | Use                                                     |
-| ---------------------------------------- | ------------------------------------------------------- |
-| `SetGlobalSignal(level)`                 | City-wide outage. `0` is a blackout.                    |
-| `ClearGlobalSignal()`                    |                                                         |
-| `AddDeadZone({ coords, radius, level })` | Returns an id. An AOE — a jammer, a tunnel, a basement. |
-| `RemoveDeadZone(id)`                     |                                                         |
-| `SetSignal(source, level)`               | One player, overriding zones. A tinfoil hat.            |
-| `GetSignal(source)`                      |                                                         |
-
-Global and per-zone are deliberately the same primitive with a precedence order rather than two
-mechanisms, because two would drift the first time they disagreed. The client polling is the expensive
-part and wants a coarse interval with a cheap early-out, not a per-tick distance check per zone.
-
-**Phone state and identity.**
-
-| Export                             | Use                                                                          |
-| ---------------------------------- | ---------------------------------------------------------------------------- |
-| `GetPhoneNumber(citizenid)`        |                                                                              |
-| `GetCitizenId(phoneNumber)`        | The inverse; `PlayerDirectory` already resolves both directions.             |
-| `IsPhoneOpen(source)`              | Whether the player is currently looking at it.                               |
-| `SetPhoneEnabled(source, enabled)` | Confiscated, jailed, hospitalised — the phone will not open.                 |
-| `OpenApp(source, appId, props)`    | Deep-link from outside; `openFromNotification` already does this internally. |
-| `AddContact(citizenid, contact)`   | A job handing out its dispatch number.                                       |
-
-#### What this unblocks, beyond the ask
-
-Both decorative permissions in the capabilities list get a partial answer from the other direction. An
-export API means a resource that **already** has outbound HTTP can push prices into a gPhone app, and
-one that already tracks position can push location-derived state in — without gPhone growing
-`PerformHttpRequest` or a location capability of its own. That is a smaller, safer surface than either
-capability built natively, and it fits the pattern AGENTS.md §10 already sets for bank data: gPhone
-does not reach into another resource's domain, it accepts what that resource chooses to hand over.
-
-Crypto Tracker and Downtown Taxi are both listed below as blocked on exactly those two capabilities.
-Neither is unblocked outright by this — an app still needs somewhere to put the data — but it changes
-the question from "gPhone must grow HTTP" to "a companion resource pushes and gPhone stores".
-
-#### Deliberately out of scope
-
-Listed so nothing above reads as covering it: **client-side exports for other resources' client
-scripts** beyond what signal polling needs; anything that lets an external resource _read_ a player's
-messages, photos or notes, which is a privacy surface rather than an integration one and should stay
-closed; and a general "run any service action" export, which would hand out the whole `ServiceEndpoint`
-surface without the payload validation and rate limiting that §2.9 puts in front of it.
-
-New server logic here gets a server test (§9). The ones worth naming: an export returning its outcome
-rather than throwing when gPhone has not finished starting, a dead zone applying to a player inside it
-and not one outside, a notification refused under an app id that is not registered, and the contract
-test that pins the exported names.
+**Deliberately out of scope**, listed so nothing above reads as covering it: client-side exports for
+other resources' client scripts beyond what signal polling needs; anything letting an external
+resource _read_ a player's messages, photos or notes, which is a privacy surface rather than an
+integration one and stays closed; and a general "run any service action" export, which would hand out
+the whole `ServiceEndpoint` surface without the payload validation and rate limiting §2.9 puts in
+front of it.
 
 ### Blabber, next iteration
 
@@ -669,39 +633,6 @@ same input, a GIF URL off the host allowlist being refused, and a blocked accoun
 or appear in a feed. `routes.test.ts` and `appEventContract.test.ts` are what catch a missing NUI or
 push layer — the failure mode that silently does nothing in game.
 
-### `gphone_photos` → `gphone_media`
-
-The photos table is `gphone_photos` today and holds one base64 `image` column. The proposal is to
-rename it to `gphone_media` via the `table:` override on the `photos` service — **the service and app
-id would stay `photos`**, so event names, `?app=photos` deep links, the `gphone:photos:` storage
-namespace, `usePhotos` and the launcher label are all untouched — and to replace the single column
-with a shape that can hold more than one kind of thing:
-
-| Column        | Type                                                          | For                                              |
-| ------------- | ------------------------------------------------------------- | ------------------------------------------------ |
-| `kind`        | `enum('photo','video','audio','gif','sticker','file','link')` | default `photo`                                  |
-| `data`        | `mediumtext` NULL                                             | base64 for locally captured photos — was `image` |
-| `url`         | `varchar(512)` NULL                                           | hotlinks: GIFs, remote video                     |
-| `thumbnail`   | `mediumtext` NULL                                             | poster frame for video and GIF                   |
-| `mime_type`   | `varchar(64)` NULL                                            |                                                  |
-| `width`       | `int` NULL                                                    | reserve layout space so a feed does not reflow   |
-| `height`      | `int` NULL                                                    | as media loads                                   |
-| `duration_ms` | `int` NULL                                                    | video and audio                                  |
-| `byte_size`   | `int` NULL                                                    |                                                  |
-| `alt_text`    | `varchar(255)` NULL                                           | accessibility, and what RCS carries              |
-
-`audio` covers voice clips, `file` covers RCS-style transfer, `link` covers rich URL previews and
-`sticker` covers tapback-adjacent stickers. The enum is **deliberately over-provisioned**, because
-widening one later is another hand-written migration.
-
-The migration is hand-written and lives in `sql/`: rename the table, rename `image` → `data`, add the
-new columns. An existing install must run it or lose its gallery, and the file has to say so. It
-touches `server/lib/moderation.ts` (`REPORTABLE.gphone_photos`), `ReportDialog.svelte`'s `targetTable`
-union, the FK in `Messages.ts`, `MessageRepository.ts`'s join, and the audit and report tests.
-
-The rename is a **consequence** of needing more than one storage shape, not a tidying exercise — the
-base64 constraint above is the actual motivation.
-
 ---
 
 ## Ideas, not yet started
@@ -779,10 +710,10 @@ Referenced by number from the ideas above.
    success. Best-effort, not ACID: there is no transaction spanning another resource's money system.
    Offline recipients are refused rather than dropped.
 
-6. **A resource-facing export API** — **not built.** One export exists, `SendSystemEmail`. There is
-   no way for another resource to raise a notification, change a player's signal or battery, or open
-   an app. _A resource-facing export API_ above is the proposal, and it is the interface half of
-   _Cellular dead zones and outages_.
+6. **A resource-facing export API** — built. `server/lib/exports.ts` and `publicApi.ts`, eight
+   exports, discriminated outcomes, `GetApiVersion`, and a contract test pinning every name. Signal
+   and phone-state exports are deliberately still out — see _Signal and phone-state exports_ above —
+   because both need a mechanism that does not exist rather than a wrapper that does not exist.
 
 **`location` and `network` are permissions with no capability behind them.** An app can declare
 either and nothing changes, because there is no hook, endpoint or client surface to grant. The
