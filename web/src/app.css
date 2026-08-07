@@ -130,6 +130,14 @@
   --color-primary-container-pressed: rgb(22, 76, 183);
   --color-primary-glow: rgba(182, 196, 255, 0.3);
 
+  /* Badges drawn over media — a GIF tag, a duration, the video play affordance. Not
+     `--color-scrim` (0.32), which is tuned for dimming a whole surface behind a dialog
+     and is far too light to keep 10px white text legible over an arbitrary photo. It sits
+     on someone else's picture rather than on a themed surface, so it is one fixed value
+     rather than a light/dark pair, and pre-resolved per §6 so nothing depends on
+     `color-mix()` that CEF 103 does not have. */
+  --color-media-overlay: rgba(0, 0, 0, 0.6);
+
   /* --- end generated --- */
 
   /**

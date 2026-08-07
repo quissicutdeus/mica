@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MediaThumb from './MediaThumb.svelte';
   import { photos } from '../../services/photos';
   import PhotoIcon from './icons/PhotoIcon.svelte';
   import CloseIcon from './icons/CloseIcon.svelte';
@@ -62,11 +63,7 @@
             : 'border-outline-variant hover:border-outline'}"
           onclick={() => onmultichange?.(photo.id, photo.data)}
         >
-          <img
-            src={photo.data}
-            class="h-full w-full object-cover transition-transform group-hover:scale-105"
-            alt=""
-          />
+          <MediaThumb item={photo} />
           {#if selected}
             <div class="bg-primary absolute top-1.5 right-1.5 rounded-full p-0.5 shadow-md">
               <CheckCircleIcon class="text-on-primary h-4 w-4" />
@@ -79,11 +76,7 @@
           class="group border-outline-variant bg-surface-container hover:border-primary relative aspect-square overflow-hidden rounded-xl border transition-all"
           onclick={() => onselect?.(photo.data)}
         >
-          <img
-            src={photo.data}
-            class="h-full w-full object-cover transition-transform group-hover:scale-105"
-            alt=""
-          />
+          <MediaThumb item={photo} />
         </button>
       {/if}
     {/each}

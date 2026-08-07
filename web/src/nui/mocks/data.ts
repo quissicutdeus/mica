@@ -50,7 +50,7 @@ export const sampleAvatars = [
  * this file enormous. Moving them to `url` would need every consumer to prefer one column
  * over the other, which is media work rather than migration work.
  */
-export const mockPhotos: MediaItem[] = sampleAvatars.map((url, index) => ({
+const mockCaptures: MediaItem[] = sampleAvatars.map((url, index) => ({
   id: index + 1,
   citizenid: 'mock-id',
   kind: 'photo' as const,
@@ -58,6 +58,57 @@ export const mockPhotos: MediaItem[] = sampleAvatars.map((url, index) => ({
   status: 'active',
   ...ts()
 }));
+
+/**
+ * One row of each non-photo kind the table understands.
+ *
+ * Fixtures for kinds nothing can capture, because the camera only ever produces a `photo`
+ * — these arrive through the `AddMedia` export in game. Without them the six other kinds
+ * are unreachable in `pnpm dev` and in Playwright, so a renderer for them would be code
+ * nobody could look at, which is the failure the Store's invented add-ons already taught
+ * this repo once.
+ *
+ * They also cover the two branches that are easy to get wrong: a video has no `data` at
+ * all and must render from its `thumbnail`, and an audio clip has neither and must fall
+ * back to a labelled placeholder rather than a broken image.
+ */
+const mockOtherMedia: MediaItem[] = [
+  {
+    id: 900,
+    citizenid: 'mock-id',
+    kind: 'video',
+    thumbnail: sampleAvatars[0],
+    url: 'https://example.invalid/clip.mp4',
+    mime_type: 'video/mp4',
+    duration_ms: 42_000,
+    alt_text: 'Dashcam clip',
+    status: 'active',
+    ...ts()
+  },
+  {
+    id: 901,
+    citizenid: 'mock-id',
+    kind: 'gif',
+    url: sampleAvatars[1],
+    mime_type: 'image/gif',
+    alt_text: 'Reaction',
+    status: 'active',
+    ...ts()
+  },
+  {
+    id: 902,
+    citizenid: 'mock-id',
+    kind: 'audio',
+    url: 'https://example.invalid/voice.ogg',
+    mime_type: 'audio/ogg',
+    duration_ms: 7_000,
+    alt_text: 'Voice note',
+    status: 'active',
+    ...ts()
+  }
+];
+
+export const mockPhotos: MediaItem[] = [...mockOtherMedia, ...mockCaptures];
 
 export const mockNotes: Note[] = [
   {

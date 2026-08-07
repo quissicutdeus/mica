@@ -13,6 +13,7 @@
     onAppForeground,
     useAppAction,
     useAppLevels,
+    MediaThumb,
     useDeepLink,
     usePhotos,
     usePhoneNotification,
@@ -143,11 +144,7 @@
     <!-- Full Screen Image View -->
     <div class="relative flex h-full flex-col bg-black" transition:fade>
       <div class="flex flex-1 items-center justify-center p-2">
-        <img
-          src={selectedPhoto.data}
-          alt="Photo {selectedPhoto.id}"
-          class="h-full w-full object-contain"
-        />
+        <MediaThumb item={selectedPhoto} fit="contain" alt="Photo {selectedPhoto.id}" />
       </div>
 
       <div
@@ -211,11 +208,10 @@
               aria-pressed={isSelectionMode ? selectedIds.has(photo.id) : undefined}
               aria-label={isSelectionMode ? `Select photo ${photo.id}` : `Open photo ${photo.id}`}
             >
-              <img
-                src={photo.data}
+              <MediaThumb
+                item={photo}
                 alt="Capture {photo.id}"
-                class="h-full w-full object-cover transition-opacity {isSelectionMode &&
-                selectedIds.has(photo.id)
+                class="transition-opacity {isSelectionMode && selectedIds.has(photo.id)
                   ? 'opacity-50'
                   : 'group-hover:opacity-80'}"
               />
