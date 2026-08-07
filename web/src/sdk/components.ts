@@ -27,6 +27,7 @@ export { default as FloatingActionButton } from './ui/FloatingActionButton.svelt
 export { default as ListItem } from './ui/ListItem.svelte';
 export { default as MediaThumb } from './ui/MediaThumb.svelte';
 export { default as PhotoPickerModal } from './ui/PhotoPickerModal.svelte';
+export { default as ReportButton } from './ui/ReportButton.svelte';
 export { default as ReportDialog } from './ui/ReportDialog.svelte';
 export { default as Screen } from './ui/Screen.svelte';
 export { default as SearchBar } from './ui/SearchBar.svelte';

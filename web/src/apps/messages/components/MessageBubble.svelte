@@ -8,6 +8,7 @@
     MessageStatusIcon,
     formatTime,
     Avatar,
+    ReportButton,
     ReportDialog
   } from '@gphone/sdk';
   import type { Contact } from '@shared/types';
@@ -100,14 +101,7 @@
 
   <div class="mt-1 flex items-center gap-1.5 px-1 select-none">
     {#if msg.sender === 'other'}
-      <button
-        type="button"
-        onclick={() => (reporting = true)}
-        class="text-on-surface-variant hover:text-error cursor-pointer text-[10px] transition-colors"
-        aria-label="Report message"
-      >
-        Report
-      </button>
+      <ReportButton subject="message" onclick={() => (reporting = true)} />
     {/if}
     <span class="text-on-surface-variant text-[10px]">
       {formatTime(msg.created_at)}

@@ -4,7 +4,7 @@
     ConfirmDialog,
     EmptyPhotoIcon,
     EmptyState,
-    FlagIcon,
+    ReportButton,
     ReportDialog,
     Screen,
     Skeleton,
@@ -158,13 +158,7 @@
         >
           <ShareSquareIcon class="h-6 w-6" />
         </button>
-        <button
-          class="text-on-surface-variant hover:text-error p-2 transition-colors"
-          aria-label="Report photo"
-          onclick={() => (reporting = true)}
-        >
-          <FlagIcon class="h-6 w-6" />
-        </button>
+        <ReportButton subject="photo" size="header" onclick={() => (reporting = true)} />
         <button
           class="text-error hover:text-error p-2 transition-colors"
           aria-label="Delete photo"
