@@ -34,5 +34,5 @@ CREATE TABLE IF NOT EXISTS `gphone_messages_attachments` (
     CONSTRAINT `fk_gphone_messages_attachments_citizenid` FOREIGN KEY (`citizenid`)
         REFERENCES `players` (`citizenid`) ON DELETE CASCADE,
     CONSTRAINT `fk_gphone_messages_attachments_photo_id` FOREIGN KEY (`photo_id`)
-        REFERENCES `gphone_photos` (`id`) ON DELETE CASCADE
+        REFERENCES `gphone_media` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;

@@ -49,7 +49,10 @@ describe('shipped repositories — declared client write policy', () => {
     ['contacts', ['firstname', 'lastname', 'phone', 'email', 'avatar', 'favorite']],
     ['conversations', ['name']],
     ['notes', ['title', 'content']],
-    ['photos', ['image']],
+    // `kind` and `data` only. The media table carries nine more columns, and every one is
+    // `clientWritable: false` until a feature writes it — a column a client can set before
+    // any caller needs it is unconstrained surface (§2.9).
+    ['photos', ['kind', 'data']],
     // Every mutation on these goes through a named, authorizing method.
     ['mail', []],
     ['messages', []],

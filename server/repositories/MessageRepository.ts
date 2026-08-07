@@ -48,9 +48,9 @@ export class MessageRepository extends SchemaRepository<Message> {
     if (messages.length === 0) return [];
 
     // Fetch attachments for these messages
-    // Join to gphone_photos to retrieve the image data
+    // Join to gphone_media to retrieve the attachment bytes
     const attachments = await Database.query<any[]>(
-      'SELECT a.id, a.message_id, p.image as attachment FROM gphone_messages_attachments a JOIN gphone_messages m ON a.message_id = m.id JOIN gphone_photos p ON a.photo_id = p.id WHERE m.conversation_id = ?',
+      'SELECT a.id, a.message_id, p.data as attachment FROM gphone_messages_attachments a JOIN gphone_messages m ON a.message_id = m.id JOIN gphone_media p ON a.photo_id = p.id WHERE m.conversation_id = ?',
       [conversationId]
     );
 

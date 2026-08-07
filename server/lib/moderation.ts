@@ -24,7 +24,7 @@ import type { ReportCategory } from '@shared/types';
  */
 export const REPORTABLE = {
   gphone_messages: { label: 'Message', previewColumn: 'message' },
-  gphone_photos: { label: 'Photo', previewColumn: 'image' }
+  gphone_media: { label: 'Photo', previewColumn: 'data' }
 } as const;
 
 export type ReportableTable = keyof typeof REPORTABLE;

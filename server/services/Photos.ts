@@ -1,44 +1,105 @@
 import { defineService, SchemaRepository } from '../lib/defineService';
-import { Photo } from '@shared/types';
+import { MediaItem } from '@shared/types';
 
 /**
- * Photos: owner-scoped, create/read/delete only.
+ * The media table: owner-scoped, create/read/delete only.
  *
- * `update` stays closed — a stored photo has no mutable fields, so an update
- * endpoint would be dead surface. `get` and `delete` come from the generic path:
- * get filters to status = 'active' by default, and delete is an ownership-scoped
- * soft delete that writes the audit entry.
+ * **The table is `gphone_media`; the service and app id stay `photos`.** That split is
+ * deliberate. An id is a key — it is the directory name, the per-app storage namespace,
+ * the `<app>` segment of every event, the `?app=photos` deep link and the launcher label —
+ * so renaming one is a data migration (§11.1). A table name is not a key to anything
+ * outside SQL, so the `table:` override moves it for free.
  *
- * The repositoryFactory preserves the one piece of custom behavior the
- * hand-written PhotoRepository had: depending on driver and column type, `image`
- * can come back as a Buffer, which would cross NUI as `{type:'Buffer',data:[...]}`
- * and render as nothing. Coerced to a string on the way out.
+ * (That namespace is spelled out in words rather than as a literal on purpose:
+ * `eventNames.test.ts` scans source for event-shaped string literals and cannot tell prose
+ * from a real name, so writing one here reads as a malformed event.)
+ *
+ * The rename is a **consequence** of needing more than one storage shape, not a tidying
+ * exercise. The old table had exactly one payload column, `image mediumtext` holding
+ * base64, which can only ever be a photo — and that is what blocked voice clips, video
+ * with a poster frame, GIFs by URL, RCS-style file transfer and link previews.
+ *
+ * `data` rather than `image` for the same reason: the column will hold base64 audio and
+ * video, and the old name becomes a lie the moment the table earns its own. It is also
+ * **nullable** now, where `image` was `notNull` — a `link` or a hotlinked `gif` row has a
+ * `url` and no bytes at all.
+ *
+ * `update` stays closed. Stored media has no mutable fields, so an update endpoint would
+ * be dead surface. `get` and `delete` come from the generic path: get filters to
+ * status = 'active', and delete is an ownership-scoped soft delete that writes the audit
+ * entry.
  */
-export const photos = defineService<Photo>({
+export const photos = defineService<MediaItem>({
   id: 'photos',
+  table: 'gphone_media',
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
   schema: {
-    image: { type: 'mediumtext', notNull: true }
+    /**
+     * Deliberately over-provisioned, and this is the one decision here that cannot be
+     * deferred. `SchemaMigrator` is additive-only: widening an enum is a type change, so
+     * it is printed for a human and never applied (§8). Every value left out now costs a
+     * second hand-written migration against a bigger table, so they all go in at once
+     * even though this pass writes only `photo`.
+     */
+    kind: {
+      type: 'enum',
+      values: ['photo', 'video', 'audio', 'gif', 'sticker', 'file', 'link'],
+      notNull: true,
+      default: 'photo'
+    },
+    /**
+     * Base64 for locally captured media. Was `image`.
+     *
+     * `kind` and `data` are the only two columns a client may write, and every other one
+     * is `clientWritable: false` — not because they are dangerous today but because
+     * nothing writes them today. A column the client can set before any feature needs it
+     * is surface with no caller to constrain it (§2.9). Flip one when the feature that
+     * fills it arrives, which is a one-line, reviewable change.
+     */
+    data: { type: 'mediumtext' },
+    /** Hotlinks — a remote GIF or video that is not ours to store. */
+    url: { type: 'string', length: 512, clientWritable: false },
+    /** Poster frame for video and GIF, so a feed has something before the media loads. */
+    thumbnail: { type: 'mediumtext', clientWritable: false },
+    mime_type: { type: 'string', length: 64, clientWritable: false },
+    /** Reserve layout space, so a feed does not reflow as media arrives. */
+    width: { type: 'int', clientWritable: false },
+    height: { type: 'int', clientWritable: false },
+    duration_ms: { type: 'int', clientWritable: false },
+    byte_size: { type: 'int', clientWritable: false },
+    /** Accessibility, and what RCS carries alongside an attachment. */
+    alt_text: { type: 'string', length: 255, clientWritable: false }
   },
   indexes: [{ name: 'citizenid_status_created', columns: ['citizenid', 'status', 'created_at'] }],
   options: { disableUpdate: true },
+  /**
+   * Depending on driver and column type, a `mediumtext` can come back as a Buffer — which
+   * would cross NUI as `{type:'Buffer',data:[...]}` and render as nothing. Coerced to a
+   * string on the way out.
+   *
+   * `thumbnail` is coerced alongside `data` because it is the same column type and would
+   * fail the same way; it is empty today, so this is the cheapest moment to get it right.
+   */
   repositoryFactory: (resolved) =>
-    new (class extends SchemaRepository<Photo> {
-      async findAll(where: Partial<Photo> = {}): Promise<Photo[]> {
-        return (await super.findAll(where)).map(coerceImage);
+    new (class extends SchemaRepository<MediaItem> {
+      async findAll(where: Partial<MediaItem> = {}): Promise<MediaItem[]> {
+        return (await super.findAll(where)).map(coerceBinaryText);
       }
 
-      async findById(id: number | string, citizenid?: string): Promise<Photo | null> {
+      async findById(id: number | string, citizenid?: string): Promise<MediaItem | null> {
         const row = await super.findById(id, citizenid);
-        return row ? coerceImage(row) : null;
+        return row ? coerceBinaryText(row) : null;
       }
     })(resolved)
 });
 
-const coerceImage = (photo: Photo): Photo => {
-  if (photo.image && typeof photo.image !== 'string') {
-    photo.image = (photo.image as any).toString('utf8');
+const coerceBinaryText = (item: MediaItem): MediaItem => {
+  if (item.data && typeof item.data !== 'string') {
+    item.data = (item.data as any).toString('utf8');
   }
-  return photo;
+  if (item.thumbnail && typeof item.thumbnail !== 'string') {
+    item.thumbnail = (item.thumbnail as any).toString('utf8');
+  }
+  return item;
 };

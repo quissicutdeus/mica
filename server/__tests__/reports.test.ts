@@ -72,7 +72,13 @@ describe('reportable allowlist', () => {
     // MySQL cannot parameterise an identifier. The allowlist is the only thing making
     // that safe.
     expect(isReportableTable('gphone_messages')).toBe(true);
-    expect(isReportableTable('gphone_photos')).toBe(true);
+    expect(isReportableTable('gphone_media')).toBe(true);
+
+    // And the old name is gone rather than kept "for compatibility". The allowlist is a
+    // security boundary — `target_table` is interpolated into SQL because MySQL cannot
+    // parameterise an identifier (§2.9) — so a stale entry is a second accepted name for
+    // one table, and the migration rewrites existing rows to the new one.
+    expect(isReportableTable('gphone_photos')).toBe(false);
     for (const bad of ['players', 'gphone_notes', 'gphone_messages; DROP TABLE x', '', null, 7]) {
       expect(isReportableTable(bad), String(bad)).toBe(false);
     }
@@ -126,7 +132,7 @@ describe('filing a report', () => {
 
   it('refuses content that no longer exists', async () => {
     dbMock.single.mockResolvedValue(null);
-    const reply = await call('create', { targetTable: 'gphone_photos', targetId: 3 });
+    const reply = await call('create', { targetTable: 'gphone_media', targetId: 3 });
     expect(reply).toMatchObject({ error: expect.stringMatching(/no longer exists/i) });
     expect(dbMock.insert).not.toHaveBeenCalled();
   });

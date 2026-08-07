@@ -69,7 +69,7 @@ export const messages = defineService<Message>({
         photo_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gphone_photos', column: 'id' }
+          references: { table: 'gphone_media', column: 'id' }
         }
       },
       indexes: [

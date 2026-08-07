@@ -31,7 +31,7 @@ describe('AuditLogger', () => {
       service: 'reports',
       method: 'resolve',
       targetId: 42,
-      targetTable: 'gphone_photos'
+      targetTable: 'gphone_media'
     });
 
     const sql = String(dbMock.insert.mock.calls[0][0]).replace(/\s+/g, ' ');
@@ -42,7 +42,7 @@ describe('AuditLogger', () => {
       'reports',
       'resolve',
       42,
-      'gphone_photos',
+      'gphone_media',
       null
     ]);
   });
