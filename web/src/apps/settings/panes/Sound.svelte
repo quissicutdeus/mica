@@ -64,7 +64,7 @@
             aria-pressed={$volumeStep === choice}
             class="cursor-pointer rounded border py-1.5 text-xs font-semibold transition-all {$volumeStep ===
             choice
-              ? 'border-primary bg-primary text-on-primary'
+              ? 'border-primary bg-primary-container text-on-primary-container'
               : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'}"
           >
             {choice}%

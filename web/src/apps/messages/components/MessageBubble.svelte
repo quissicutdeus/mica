@@ -78,7 +78,7 @@
 
   <div
     class="max-w-[80%] rounded-2xl px-4 py-2.5 shadow-sm {msg.sender === 'me'
-      ? 'bg-primary text-on-primary rounded-tr-xs'
+      ? 'bg-primary-container text-on-primary-container rounded-tr-xs'
       : 'bg-surface-container text-on-surface rounded-tl-xs'}"
   >
     {#if msg.attachments && msg.attachments.length > 0}

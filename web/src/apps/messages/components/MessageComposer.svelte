@@ -83,7 +83,7 @@
 
     <button
       type="button"
-      class="bg-primary text-on-primary hover:bg-primary flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+      class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-40"
       onclick={onsend}
       disabled={busy || (!text.trim() && attachments.length === 0)}
       aria-label="Send"
@@ -102,7 +102,7 @@
         onclick={onopenphotos}
       >
         <div
-          class="bg-primary text-primary mb-1 flex h-8 w-8 items-center justify-center rounded-full"
+          class="bg-primary-container text-on-primary-container mb-1 flex h-8 w-8 items-center justify-center rounded-full"
         >
           <PhotoIcon class="h-5 w-5" />
         </div>

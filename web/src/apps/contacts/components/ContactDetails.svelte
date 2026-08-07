@@ -67,7 +67,7 @@
     />
     <button
       type="button"
-      class="border-surface bg-primary text-on-primary hover:bg-primary absolute right-0 bottom-0 flex items-center justify-center rounded-full border-2 p-2 shadow-lg transition-transform active:scale-95"
+      class="border-surface bg-primary-container text-on-primary-container hover:bg-primary-container-hover absolute right-0 bottom-0 flex items-center justify-center rounded-full border-2 p-2 shadow-lg transition-transform active:scale-95"
       onclick={() => onpickphoto()}
       aria-label="Select photo from gallery"
       title="Select photo from gallery"
@@ -111,7 +111,7 @@
     </Button>
     <Button
       variant="icon"
-      class="bg-primary text-on-primary hover:bg-primary hover:text-on-primary"
+      class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover hover:text-on-primary"
       onclick={onmessage}
       aria-label="Message"
     >
@@ -253,7 +253,7 @@
         <span>No recent messages with {contact.firstname}.</span>
         <button
           type="button"
-          class="border-primary bg-primary text-primary hover:bg-primary mt-1 cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-all"
+          class="border-primary bg-primary-container text-on-primary-container hover:bg-primary-container-hover mt-1 cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-all"
           onclick={onmessage}
         >
           Send Text Message

@@ -92,7 +92,7 @@
       <button
         class={`rounded-full p-2 transition-colors ${
           isArchived
-            ? 'bg-primary text-primary hover:bg-primary'
+            ? 'bg-primary-container text-on-primary-container hover:bg-primary-container-hover'
             : 'text-on-surface hover:bg-surface-container-high hover:text-on-surface'
         }`}
         onclick={() => handleArchive(selectedMail!)}

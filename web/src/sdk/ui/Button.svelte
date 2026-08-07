@@ -21,14 +21,20 @@
    * button stays legible under any seed the player sets.
    *
    * Hover uses a pre-composited state-layer token rather than a second, lighter color
-   * chosen by hand. `primary`/`primary-hover` is M3's 8% `on-primary` overlay flattened
-   * to an opaque value in `lib/m3.ts` — see `app.css` for why it cannot be an opacity
-   * modifier.
+   * chosen by hand — M3's 8% overlay, flattened to an opaque value in `lib/m3.ts`. See
+   * `app.css` for why it cannot be an opacity modifier.
+   *
+   * The filled accent is `primary-container`, not `primary`, and that is M3's own
+   * filled-tonal button rather than a deviation. It matters because of where the chroma
+   * lives: in a dark scheme `primary` is tone 80, and sRGB cannot hold saturation at a
+   * light tone for a warm hue — a hot-pink seed arrives at chroma 35 there against 71 at
+   * the container's tone 30. Picking a vivid color and getting a pastel button was the
+   * complaint, and no palette variant fixes it, because the constraint is the tone.
    */
   let variantClass = $derived.by(() => {
     switch (variant) {
       case 'primary':
-        return 'bg-primary hover:bg-primary-hover text-on-primary';
+        return 'bg-primary-container hover:bg-primary-container-hover text-on-primary-container';
       case 'secondary':
         return 'bg-surface-container-high hover:bg-surface-container-high-hover text-on-surface';
       case 'danger':

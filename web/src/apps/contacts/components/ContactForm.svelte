@@ -56,7 +56,7 @@
       />
       <button
         type="button"
-        class="border-surface bg-primary text-on-primary absolute right-0 bottom-0 flex items-center justify-center rounded-full border-2 p-2 shadow-lg transition-transform hover:brightness-110 active:scale-95"
+        class="border-surface bg-primary-container text-on-primary-container absolute right-0 bottom-0 flex items-center justify-center rounded-full border-2 p-2 shadow-lg transition-transform hover:brightness-110 active:scale-95"
         onclick={() => onpickphoto()}
         aria-label="Select photo from gallery"
         title="Select photo from gallery"

@@ -35,10 +35,10 @@ const SEEDS = ['#155dfc', '#ff0090', '#00ff00', '#ffffff', '#000000', '#7f7f7f',
 
 describe('M3 color engine', () => {
   describe('token set', () => {
-    it('declares 34 roles and 13 derived tokens', () => {
+    it('declares 34 roles and 15 derived tokens', () => {
       expect(ROLE_NAMES).toHaveLength(34);
-      expect(STATE_TOKEN_NAMES).toHaveLength(13);
-      expect(TOKEN_NAMES).toHaveLength(47);
+      expect(STATE_TOKEN_NAMES).toHaveLength(15);
+      expect(TOKEN_NAMES).toHaveLength(49);
     });
 
     it('names no token twice', () => {

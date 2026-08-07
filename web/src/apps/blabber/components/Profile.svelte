@@ -199,7 +199,7 @@
         {#if onmessage}
           <button
             type="button"
-            class="bg-primary text-on-primary hover:bg-primary rounded-full p-2 transition-colors"
+            class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover rounded-full p-2 transition-colors"
             onclick={() => account && onmessage(account)}
             title="Message @{handle}"
             aria-label="Message @{handle}"

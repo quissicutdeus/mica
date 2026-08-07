@@ -52,7 +52,7 @@
       case 'danger':
         return 'bg-error hover:bg-error-hover text-on-error shadow-md';
       case 'primary':
-        return 'bg-primary hover:bg-primary-hover text-on-primary shadow-md';
+        return 'bg-primary-container hover:bg-primary-container-hover text-on-primary-container shadow-md';
       case 'secondary':
       default:
         return 'bg-surface-container-high hover:bg-surface-container-high-hover text-on-surface border border-outline-variant';
@@ -188,7 +188,7 @@
             />
             <button
               type="button"
-              class="bg-primary text-on-primary hover:bg-primary shrink-0 cursor-pointer rounded-xl p-1.5 shadow-md transition-colors disabled:opacity-50"
+              class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shrink-0 cursor-pointer rounded-xl p-1.5 shadow-md transition-colors disabled:opacity-50"
               disabled={!replyInputs[t.id]?.trim()}
               onclick={(e) => handleSendReply(t, e)}
               aria-label="Send reply"

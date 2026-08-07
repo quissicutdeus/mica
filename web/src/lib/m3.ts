@@ -129,14 +129,20 @@ const PRESSED_ALPHA = 0.1;
  *
  * Not every role needs one — only those something is actually pressed on. The set is
  * driven by what the components do: list rows and the header sit on surface and
- * surface-container, `Button` has a filled primary and a secondary on container-high,
- * chips sit on secondary-container, and destructive buttons on error.
+ * surface-container, chips sit on secondary-container, and destructive buttons on error.
+ *
+ * Both `primary` and `primary-container` are here because both are pressed. In a *light*
+ * scheme a filled accent is `primary`; in a dark one that role is tone 80 — light and, for
+ * a warm hue, unavoidably pastel, because sRGB cannot hold chroma at a light tone. So a
+ * filled accent in dark mode is `primary-container` at tone 30, which is where the color
+ * the player picked actually survives. See the note in `app.css`.
  */
 const STATE_LAYER_BASES = [
   ['surface', 'on-surface'],
   ['surface-container', 'on-surface'],
   ['surface-container-high', 'on-surface'],
   ['primary', 'on-primary'],
+  ['primary-container', 'on-primary-container'],
   ['secondary-container', 'on-secondary-container'],
   ['error', 'on-error']
 ] as const;
@@ -168,7 +174,7 @@ export const STATE_TOKEN_NAMES: readonly string[] = [
   'primary-glow'
 ];
 
-/** Every `--color-*` this module emits: the 34 roles plus the 13 derived values. */
+/** Every `--color-*` this module emits: the 34 roles plus the 15 derived values. */
 export const TOKEN_NAMES: readonly string[] = [...ROLE_NAMES, ...STATE_TOKEN_NAMES];
 
 export type M3Tokens = Record<string, string>;

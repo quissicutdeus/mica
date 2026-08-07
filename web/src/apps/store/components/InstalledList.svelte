@@ -35,7 +35,7 @@
         onclick={() => (filter = 'all')}
         aria-pressed={filter === 'all'}
         class="rounded px-2 py-0.5 transition {filter === 'all'
-          ? 'bg-primary text-on-primary'
+          ? 'bg-primary-container text-on-primary-container'
           : 'bg-surface-container text-on-surface-variant'}"
       >
         All
@@ -44,7 +44,7 @@
         onclick={() => (filter = 'system')}
         aria-pressed={filter === 'system'}
         class="rounded px-2 py-0.5 transition {filter === 'system'
-          ? 'bg-primary text-on-primary'
+          ? 'bg-primary-container text-on-primary-container'
           : 'bg-surface-container text-on-surface-variant'}"
       >
         System
@@ -53,7 +53,7 @@
         onclick={() => (filter = 'addon')}
         aria-pressed={filter === 'addon'}
         class="rounded px-2 py-0.5 transition {filter === 'addon'
-          ? 'bg-primary text-on-primary'
+          ? 'bg-primary-container text-on-primary-container'
           : 'bg-surface-container text-on-surface-variant'}"
       >
         Add-ons

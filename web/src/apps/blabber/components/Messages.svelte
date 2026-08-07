@@ -96,7 +96,7 @@
           </div>
           {#if thread.unread > 0}
             <span
-              class="bg-primary text-on-primary shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold"
+              class="bg-primary-container text-on-primary-container shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold"
             >
               {thread.unread}
             </span>

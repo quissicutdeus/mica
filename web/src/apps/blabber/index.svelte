@@ -409,7 +409,7 @@
         <MessageIcon class="h-5 w-5" />
         {#if $unreadDms > 0}
           <span
-            class="bg-primary text-on-primary absolute top-0.5 right-0.5 min-w-4 rounded-full px-1 text-[10px] leading-4 font-bold"
+            class="bg-primary-container text-on-primary-container absolute top-0.5 right-0.5 min-w-4 rounded-full px-1 text-[10px] leading-4 font-bold"
           >
             {$unreadDms > 99 ? '99+' : $unreadDms}
           </span>

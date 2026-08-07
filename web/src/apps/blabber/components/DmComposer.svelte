@@ -64,7 +64,7 @@
 
     <button
       type="button"
-      class="bg-primary text-on-primary hover:bg-primary flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+      class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40"
       onclick={send}
       disabled={!canSend}
       aria-label="Send"

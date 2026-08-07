@@ -62,7 +62,7 @@
         <button
           type="button"
           onclick={reset}
-          class="bg-primary text-on-primary hover:bg-primary w-full cursor-pointer rounded-xl px-4 py-2.5 font-medium transition-colors"
+          class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover w-full cursor-pointer rounded-xl px-4 py-2.5 font-medium transition-colors"
         >
           Restart App
         </button>
