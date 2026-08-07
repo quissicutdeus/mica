@@ -32,6 +32,7 @@ import { MediaItem } from '@shared/types';
 export const photos = defineService<MediaItem>({
   id: 'photos',
   table: 'gphone_media',
+  reportable: { label: 'Photo', previewColumn: 'data' },
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
   schema: {

@@ -26,6 +26,7 @@ const APP = 'blabber';
  */
 export const blabberDms = defineService<BlabberDm>({
   id: 'blabber_dms',
+  reportable: { label: 'Direct message', previewColumn: 'body' },
   table: 'gphone_blabber_dms',
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],

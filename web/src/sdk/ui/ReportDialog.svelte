@@ -8,7 +8,20 @@
 
   interface Props {
     /** The gPhone table the content lives in. Validated again server-side. */
-    targetTable: 'gphone_messages' | 'gphone_media';
+    /**
+     * The table the reported row lives in, as its service declared it reportable.
+     *
+     * A plain string, deliberately. It was briefly a union naming every table — which
+     * meant this file, in the SDK that add-ons build *against*, named `gphone_blabber`:
+     * core knowing about an app rather than the other way round, and the reason a
+     * third-party app could not have made its own content reportable at all.
+     *
+     * The check that matters is server-side and unchanged: `target_table` is interpolated
+     * into SQL because MySQL cannot parameterise an identifier, so `isReportableTable`
+     * refuses anything no service declared (§2.9). A union here would have been a
+     * convenience on top of that, bought at the price of a closed system.
+     */
+    targetTable: string;
     targetId: number;
     onclose: () => void;
   }

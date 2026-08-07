@@ -27,6 +27,7 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
  */
 export const messages = defineService<Message>({
   id: 'messages',
+  reportable: { label: 'Message', previewColumn: 'message' },
   table: 'gphone_messages',
   access: {
     read: 'members',

@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const { dbMock } = vi.hoisted(() => ({
   dbMock: { query: vi.fn(), insert: vi.fn(), update: vi.fn(), scalar: vi.fn(), single: vi.fn() }
@@ -120,7 +122,30 @@ describe('the media table rename', () => {
   describe('the moderation allowlist', () => {
     it('accepts the new table and previews the renamed column', () => {
       expect(isReportableTable('gphone_media')).toBe(true);
-      expect(REPORTABLE.gphone_media.previewColumn).toBe('data');
+      expect(REPORTABLE().gphone_media.previewColumn).toBe('data');
+    });
+
+    it('names no app table in core, which is the point of the registry', () => {
+      // `lib/moderation.ts` used to hardcode the list, so core named `gphone_blabber` —
+      // and Blabber is `core: false`, an add-on. That is the dependency pointing the wrong
+      // way, and it cost something concrete: a third-party app from the Store could not
+      // make its content reportable without editing core and the SDK. A service opts in
+      // through `defineService` now, so this file should contain no table name at all.
+      const source = readFileSync(join(__dirname, '..', 'lib', 'moderation.ts'), 'utf8');
+      const declarations = source
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('*') && !line.trim().startsWith('//'));
+      expect(declarations.join('\n')).not.toMatch(/gphone_[a-z_]+/);
+    });
+
+    it('previews every reportable table from a column that table has', () => {
+      // `summariseTarget` interpolates `previewColumn` and also selects `citizenid` and
+      // `status`. A table added to the allowlist without all three is a SQL error at
+      // review time — the one moment a moderator cannot afford one.
+      for (const [table, entry] of Object.entries(REPORTABLE())) {
+        expect(entry.previewColumn, table).toBeTruthy();
+        expect(entry.label, table).toBeTruthy();
+      }
     });
 
     it('no longer accepts the old name', () => {

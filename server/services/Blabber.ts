@@ -30,6 +30,7 @@ const APP = 'blabber';
  */
 export const blabber = defineService<Blab>({
   id: APP,
+  reportable: { label: 'Blab', previewColumn: 'body' },
   access: {
     read: 'public',
     write: 'owner',

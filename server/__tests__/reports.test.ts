@@ -34,6 +34,17 @@ vi.mock('../lib/FrameworkBridge', () => ({
 }));
 
 import '../services/Reports';
+/**
+ * Imported for their side effect: a service declares itself reportable through
+ * `defineService`, so nothing is on the allowlist until the service that owns the table
+ * has loaded. In the server that is guaranteed by `services/index.ts`; here it has to be
+ * explicit, which is the honest shape — the registry really is populated by import.
+ */
+import '../services/Messages';
+import '../services/Photos';
+import '../services/Accounts';
+import '../services/Blabber';
+import '../services/BlabberDms';
 import { isReportableTable, isReportCategory, REPORTABLE } from '../lib/moderation';
 
 const REPORTER = 'REPORTER1';
@@ -73,6 +84,14 @@ describe('reportable allowlist', () => {
     // that safe.
     expect(isReportableTable('gphone_messages')).toBe(true);
     expect(isReportableTable('gphone_media')).toBe(true);
+
+    // The social surfaces, which could not be reported at all before. Blabber is public,
+    // its DMs let a stranger reach you, and an account carries the handle and bio a player
+    // judges somebody by — and Blabber has honoured `moderated` defensively since it
+    // shipped, on rows that could never acquire the status.
+    expect(isReportableTable('gphone_blabber')).toBe(true);
+    expect(isReportableTable('gphone_blabber_dms')).toBe(true);
+    expect(isReportableTable('gphone_accounts')).toBe(true);
 
     // And the old name is gone rather than kept "for compatibility". The allowlist is a
     // security boundary — `target_table` is interpolated into SQL because MySQL cannot

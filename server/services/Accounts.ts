@@ -30,6 +30,11 @@ import { buildDeepLink } from '@shared/deepLink';
  */
 export const accounts = defineService<Account>({
   id: 'accounts',
+  /**
+   * Previewed by **handle**, not bio. The handle identifies the account and cannot be
+   * edited away between the report and the review; a bio can be blanked in seconds.
+   */
+  reportable: { label: 'Account', previewColumn: 'handle' },
   access: { read: 'public', write: 'owner' },
   // Required for a public read, and the ceiling a handle search answers within.
   paging: { pageSize: 30, maxPageSize: 60 },

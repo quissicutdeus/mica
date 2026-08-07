@@ -1,4 +1,5 @@
 import { Repository } from './Repository';
+import { registerReportable, type ReportableDefinition } from './moderation';
 import { ServiceEndpoint, ServiceOptions } from './ServiceEndpoint';
 
 /**
@@ -306,6 +307,15 @@ export interface ServiceDefinition {
   id: string;
   /** Defaults to `gphone_<id>`. */
   table?: string;
+  /**
+   * Make this service's rows reportable, and say how the review queue describes one.
+   *
+   * Declared here rather than listed in `lib/moderation.ts` so that core never has to
+   * name an app's tables — an add-on can opt in without editing anything it does not own.
+   * `previewColumn` has to exist on the table alongside `citizenid` and `status`, which
+   * `summariseTarget` also selects.
+   */
+  reportable?: ReportableDefinition;
   /** Defaults to `{ read: 'owner', write: 'owner' }`. */
   access?: AccessDefinition;
   /** Keyset paging on the generic read. **Required** when `access.read` is `public`. */
@@ -716,6 +726,25 @@ export function defineService<T>(definition: ServiceDefinition): ServerAppHandle
     );
   }
   declaredServices.push(resolved);
+
+  /**
+   * Opt in to moderation, if the declaration asked for it.
+   *
+   * Here rather than in `lib/moderation.ts`'s own list, so that core never names an app's
+   * table. Validated at declaration time because the alternative is a SQL error at review
+   * time — the one moment a moderator cannot afford one — and `summariseTarget` selects
+   * `citizenid` and `status` alongside the preview column.
+   */
+  if (definition.reportable) {
+    const { previewColumn } = definition.reportable;
+    if (!resolved.columns.includes(previewColumn)) {
+      throw new Error(
+        `defineService('${resolved.id}'): reportable previewColumn '${previewColumn}' is not ` +
+          `a column on '${resolved.table}'. The review queue reads it directly.`
+      );
+    }
+    registerReportable(resolved.table, definition.reportable);
+  }
 
   const accessLockdown: ServiceOptions = {
     ...(resolved.access.read === 'members' ? { disableGet: true } : {}),
