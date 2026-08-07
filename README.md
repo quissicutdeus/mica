@@ -81,11 +81,17 @@ Before installing, ensure your server environment meets the following requiremen
 2. **Database Setup**
    Import [`gphone.sql`](gphone.sql) — the framework schema, which is just the moderation audit ledger — and then every file in [`sql/apps/`](sql/apps), which holds one file per service (accounts, battery, blabber, blabber_dms, contacts, conversations, mail, notes, photos, messages, reports) including their join and attachment tables.
 
-   **Import them in filename order.** The numeric prefix is apply order, not decoration: foreign keys cross app boundaries, so `gphone_blabber` needs `gphone_accounts` to exist first and the messages app's attachment table references `gphone_photos`. Alphabetical order gets both wrong. The files are generated in dependency order, so importing the directory as it sorts is correct by default — and the prefixes shift when an app is added, which is expected.
+   **Import them in filename order.** The numeric prefix is apply order, not decoration: foreign keys cross app boundaries, so `gphone_blabber` needs `gphone_accounts` to exist first and the messages app's attachment table references `gphone_media`. Alphabetical order gets both wrong. The files are generated in dependency order, so importing the directory as it sorts is correct by default — and the prefixes shift when an app is added, which is expected.
 
    App tables are **generated** from each app's `defineService` declaration by `pnpm generate:sql`, so the declaration is the single source of truth for the schema. They are deliberately not duplicated into `gphone.sql`: two hand-maintained copies of the same DDL drift, and the column allowlist that protects against SQL injection is only safe while it matches the real table.
 
-   Every statement is `CREATE TABLE IF NOT EXISTS`, so re-importing is harmless.
+   Every statement is `CREATE TABLE IF NOT EXISTS`, so re-importing is harmless — on a **fresh** database. That is also its limitation: against a database that already has the table, it succeeds and changes nothing.
+
+   > **Upgrading an existing install?** Check [`sql/migrations/`](sql/migrations) first, and run anything there instead of the matching file in `sql/apps/`. Back up before you do.
+   >
+   > A migration exists because a rename or a type change cannot be applied automatically — gPhone's schema migrator is additive-only, so it adds missing columns and indexes at resource start but will never drop, rename or retype one, since none of those is safe to infer from a diff.
+   >
+   > **`001-photos-to-media.sql`** renames `gphone_photos` to `gphone_media` and `image` to `data`. Skipping it and running `sql/apps/10-photos.sql` instead creates an _empty_ `gphone_media` and leaves every player's gallery stranded in the old table — nothing is deleted, but the photos vanish from the phone. Run `gphoneschema` in the server console afterwards to confirm the database matches what the code expects; it reports without changing anything.
 
    <details>
    <summary>Resetting the schema during development</summary>
