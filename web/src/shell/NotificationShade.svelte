@@ -13,6 +13,7 @@
     restoreNotifications
   } from '../services/notifications';
   import { openApp } from './state/navigation';
+  import { parseDeepLink } from '@shared/deepLink';
   import type { NotificationItem } from '@shared/types';
   import Avatar from '../sdk/ui/Avatar.svelte';
   import CloseIcon from '../sdk/ui/icons/CloseIcon.svelte';
@@ -154,8 +155,12 @@
     if (!item.read_at) {
       await markNotificationsRead([item.id]);
     }
-    if (item.deep_link) {
-      openApp(item.deep_link);
+    // Parsed, never passed whole. `openApp` takes an app id, and handing it `mail/12`
+    // registered a resident app by that name — no component resolves it, so the phone
+    // went blank with no way back.
+    const link = item.deep_link ? parseDeepLink(item.deep_link) : null;
+    if (link) {
+      openApp(link.app, link.props);
       closeShade();
     }
   };

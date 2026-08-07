@@ -124,8 +124,10 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       expect(openApp).toBeTypeOf('function');
       expect(goHome).toBeTypeOf('function');
 
-      openApp('calc');
-      expect(get(currentApp).id).toBe('calc');
+      // A real id: `openApp` refuses one with no component, so `calc` (the app is
+      // `calculator`) would be a no-op and the assertion would be testing nothing.
+      openApp('calculator');
+      expect(get(currentApp).id).toBe('calculator');
 
       goHome();
       expect(get(currentApp).id).toBe('home');

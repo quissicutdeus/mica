@@ -9,6 +9,7 @@
     MessageIcon
   } from '@gphone/sdk';
   import type { NotificationItem } from '@shared/types';
+  import { parseDeepLink } from '@shared/deepLink';
 
   interface Props {
     onopenblab?: (blabId: number) => void;
@@ -33,17 +34,16 @@
       void markRead([item.id]);
     }
 
-    if (item.deep_link) {
-      const match = item.deep_link.match(/blab\/(\d+)/);
-      if (match && onopenblab) {
-        onopenblab(parseInt(match[1], 10));
-        return;
-      }
-      const handleMatch = item.deep_link.match(/profile\/([a-zA-Z0-9_]+)/);
-      if (handleMatch && onopenhandle) {
-        onopenhandle(handleMatch[1]);
-        return;
-      }
+    // The shared parser, not a private regex. This file used to own the only working
+    // deep-link reader in the phone, which is why a mention opened from here and from
+    // nowhere else — the shade handed the raw string to `openApp` and blanked the screen.
+    const link = item.deep_link ? parseDeepLink(item.deep_link) : null;
+    if (!link) return;
+
+    if (typeof link.props.blabId === 'number' && onopenblab) {
+      onopenblab(link.props.blabId);
+    } else if (typeof link.props.handle === 'string' && onopenhandle) {
+      onopenhandle(link.props.handle);
     }
   };
 

@@ -86,30 +86,41 @@ describe('residency', () => {
 });
 
 describe('residency cap', () => {
+  /**
+   * Real app ids, not `app0`/`app1`.
+   *
+   * `openApp` refuses an id with no component behind it, because an unresolvable one used
+   * to render a blank screen with no way back. Synthetic ids are exactly what that guard
+   * rejects, so the residency cap has to be exercised with apps that actually exist —
+   * which is also what it is really about.
+   */
+  const REAL = ['notes', 'photos', 'camera', 'calculator', 'bank', 'store', 'admin'];
+
   it('evicts the least recently used', () => {
-    for (let i = 0; i < MAX_RESIDENT_APPS + 2; i++) openApp(`app${i}`);
+    const opened = REAL.slice(0, MAX_RESIDENT_APPS + 2);
+    for (const id of opened) openApp(id);
 
     const resident = names();
     expect(resident).toHaveLength(MAX_RESIDENT_APPS);
-    expect(resident).not.toContain('app0');
-    expect(resident).not.toContain('app1');
-    expect(resident[resident.length - 1]).toBe(`app${MAX_RESIDENT_APPS + 1}`);
+    expect(resident).not.toContain(opened[0]);
+    expect(resident).not.toContain(opened[1]);
+    expect(resident[resident.length - 1]).toBe(opened[opened.length - 1]);
   });
 
   it('re-opening refreshes recency rather than duplicating', () => {
-    openApp('a');
-    openApp('b');
-    openApp('a');
-    expect(names()).toEqual(['b', 'a']);
+    openApp('notes');
+    openApp('photos');
+    openApp('notes');
+    expect(names()).toEqual(['photos', 'notes']);
   });
 
   it('never evicts an app that stays in use', () => {
-    openApp('keeper');
-    for (let i = 0; i < MAX_RESIDENT_APPS + 3; i++) {
-      openApp(`filler${i}`);
-      openApp('keeper');
+    openApp('notes');
+    for (const id of REAL.slice(1)) {
+      openApp(id);
+      openApp('notes');
     }
-    expect(names()).toContain('keeper');
+    expect(names()).toContain('notes');
   });
 });
 

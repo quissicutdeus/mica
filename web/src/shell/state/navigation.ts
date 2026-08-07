@@ -1,5 +1,6 @@
 import { get, writable } from 'svelte/store';
 import { fetchNui } from '../../nui/fetchNui';
+import { appRegistryStore } from './registry';
 
 /**
  * Which app is on screen, and which apps are still alive behind it.
@@ -48,6 +49,20 @@ export const openApp = (appName: string, props: Record<string, unknown> = {}) =>
 
   if (id === 'home') {
     goHome();
+    return;
+  }
+
+  /**
+   * An id nothing can render is refused here rather than downstream.
+   *
+   * `Shell.svelte` renders `{#if AppComponent}` and skips `<Home>` whenever `currentApp`
+   * is not home — so an unresolvable id produced a blank screen with no back affordance,
+   * and it stayed that way because CEF never reloads the page. A notification deep link
+   * did this on every tap for months. The guard belongs at the entry point: every caller
+   * would otherwise need its own check, and the one that forgot is the one that shipped.
+   */
+  if (!appRegistryStore.getComponent(id)) {
+    console.warn(`[navigation] Refusing to open '${id}': no app by that id is installed.`);
     return;
   }
 

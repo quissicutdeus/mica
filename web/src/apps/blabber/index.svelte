@@ -17,6 +17,7 @@
     useAppLevels,
     useBlabber,
     usePagedList,
+    useDeepLink,
     type AppProps
   } from '@gphone/sdk';
   import type { Account, Blab } from '@shared/types';
@@ -30,7 +31,16 @@
   import Thread from './components/Thread.svelte';
   import Messages from './components/Messages.svelte';
 
-  let { onback }: AppProps = $props();
+  let {
+    onback,
+    blabId,
+    handle,
+    dmHandle
+  }: AppProps & {
+    blabId?: number;
+    handle?: string;
+    dmHandle?: string;
+  } = $props();
 
   /**
    * Just enough about a correspondent to title a DM thread. Matches the shape `Messages.svelte`
@@ -61,6 +71,7 @@
     mouthBlab,
     clearUnreadMentions,
     loadDmThreads,
+    dmThreads,
     unreadDms
   } = useBlabber();
   const { run, busy } = useAppAction();
@@ -306,6 +317,38 @@
     follows = { account, kind };
     view = 'follows';
   };
+
+  /**
+   * Follow a notification into the app.
+   *
+   * Blabber had none of this. It parsed `blab/(\d+)` inside its own notifications tab —
+   * which only helps a player already in the app, on that tab — so a mention tapped from
+   * the shade or a toast opened the feed and nothing else. Three kinds of notification
+   * pointed here and none of them landed.
+   *
+   * `dmHandle` waits for the inbox rather than giving up: `false` re-asks, so a cold open
+   * follows the link once `loadDmThreads` returns instead of dropping it on the frame the
+   * list happened to be empty.
+   */
+  useDeepLink('blabber', () => {
+    if (blabId) {
+      openThread({ id: blabId } as Blab);
+      return true;
+    }
+    if (handle) {
+      openProfile(handle);
+      return true;
+    }
+    if (dmHandle) {
+      const peer = $dmThreads.find((row) => row.handle === dmHandle);
+      // `handle` is nullable on a thread row — an account can be deleted out from under
+      // one — and `DmPeer` is not, so this narrows rather than casting past it.
+      if (!peer || !peer.handle) return false;
+      openDms(peer.peer_account_id, { handle: peer.handle, display_name: peer.display_name });
+      return true;
+    }
+    return false;
+  });
 
   const openThread = (blab: Blab) => {
     threads = view === 'thread' ? [...threads, blab] : [blab];

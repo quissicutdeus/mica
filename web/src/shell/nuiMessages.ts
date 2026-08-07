@@ -9,6 +9,7 @@ import { toast, type ToastMessage } from './state/toast';
 import { messageOf } from '../lib/errors';
 import { APP_EVENT_NUI_ACTION, parseAppEventEnvelope } from '@shared/appEvents';
 import { deliverAppEvent } from './state/appEvents';
+import { parseDeepLink } from '@shared/deepLink';
 
 /**
  * A message that arrived from the client, as something with readable fields.
@@ -204,7 +205,14 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
       // One rule, no options: tapping opens the app with the payload as deep-link props.
       // `openApp` merges them and `consumeAppProps` makes them one-shot, so this composes with
       // `useDeepLink` for free.
-      onClick: () => bridge.openFromNotification(envelope.app, envelope.payload)
+      // The declared destination wins over the raw payload. A push payload is app data —
+      // `{ blab_id, handle }` — and is not a navigation contract; the deep link is. Falling
+      // back to the payload keeps a push that declared no link working as it did.
+      onClick: () => {
+        const link = envelope.deepLink ? parseDeepLink(envelope.deepLink) : null;
+        if (link) bridge.openFromNotification(link.app, link.props);
+        else bridge.openFromNotification(envelope.app, envelope.payload);
+      }
     });
   };
 
