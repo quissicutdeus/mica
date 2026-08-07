@@ -43,12 +43,13 @@
           <span class="font-mono">{rendered}</span>
           <span>Larger</span>
         </div>
-        <!-- Say so when the window is deciding instead of the slider. Without this, dragging
-             past the point where the phone already fills the screen looks like a dead
-             control — which is the normal case on a phone-sized browser window. -->
+        <!-- Why the largest setting is smaller here than it would be on a bigger window.
+             The slider itself is never dead now — it spans whatever this window can draw,
+             so every position moves the phone — but the top of that range is the window's
+             to decide, and saying so beats leaving it a mystery. -->
         {#if $isSizeLimited}
-          <p class="text-xs text-amber-400">
-            Limited by the size of this window. The phone is scaled down to fit.
+          <p class="text-on-surface-variant text-xs">
+            This window sets how large the phone can go. Make it taller for more range.
           </p>
         {/if}
       </div>

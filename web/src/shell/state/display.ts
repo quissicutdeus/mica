@@ -32,8 +32,27 @@ export const MARGIN_LARGE = 48;
 export const MARGIN_SMALL = 16;
 const SMALL_VIEWPORT = 640;
 
-export const marginFor = (width: number, height: number): number =>
-  Math.min(width, height) < SMALL_VIEWPORT ? MARGIN_SMALL : MARGIN_LARGE;
+/**
+ * Breathing room yields before the phone does.
+ *
+ * The large margin costs 96px of height, and the phone needs 850 of it — so on a maximised
+ * browser at 1080p, which has roughly 950 after OS and browser chrome, those 96px are the
+ * difference between reaching design size and not. Generous spacing is a nicety; drawing
+ * the phone at the size the player asked for is the point, so the margin gives way first.
+ */
+export const marginFor = (width: number, height: number): number => {
+  const base = Math.min(width, height) < SMALL_VIEWPORT ? MARGIN_SMALL : MARGIN_LARGE;
+
+  // The largest margin that still leaves the phone its design height, never below the
+  // small one — which has its own job: the hardware buttons sit 13px outside the frame and
+  // would be shaved off by the window edge.
+  //
+  // Continuous rather than a step down from large to small, and that matters: a two-step
+  // rule made a 900px window allow a *larger* phone than a 950px one, because the smaller
+  // window crossed the threshold and got 32px back while the larger one kept paying 96.
+  const spare = Math.floor((height - PHONE_HEIGHT) / 2);
+  return Math.min(base, Math.max(MARGIN_SMALL, spare));
+};
 
 /**
  * The Display setting: 0-100, in the middle by default.
@@ -59,17 +78,28 @@ export const displaySize = usePersisted<number>('settings', 'displaySize', DISPL
 export const setDisplaySize = (size: number) => displaySize.set(size);
 
 /**
- * Slider position to zoom factor. The midpoint is deliberately exactly 1 — the size the
- * phone has always been drawn at — so the shipped default changes nothing on a window
- * with room for it.
+ * Slider position to zoom factor, across the range the window can actually draw.
+ *
+ * `maxScale` is what makes this usable rather than a detail. It used to map onto a fixed
+ * `MIN_SCALE`–`MAX_SCALE` and then get clamped by the fit afterwards, which meant every
+ * position above the fit produced the same number: on a 950px-tall window the fit is
+ * almost exactly 1, so **50 through 100 all rendered identically** and half the control
+ * did nothing. Ending the range at what fits means every position moves the phone, on
+ * every window.
+ *
+ * The trade is that a stored value is a proportion of the available range rather than a
+ * fixed zoom, so the phone follows the window as it is resized. That is the honest
+ * reading of a size slider whose ceiling the window owns — and the old model was not
+ * actually stable either, since a stored 75 already rendered 0.95 on one window and 1.20
+ * on another. It only looked stable.
+ *
+ * `maxScale` is floored at `MIN_SCALE` so a viewport too small for even the smallest
+ * phone collapses to a point rather than inverting the range.
  */
-export const scaleForSize = (size: number): number =>
-  MIN_SCALE + (sanitizeSize(size) / 100) * (MAX_SCALE - MIN_SCALE);
-
-/** What the setting asks for, before the window has a say. Not exported: `phoneScale` is
- * the only honest answer to "how big is the phone", and two similarly-named stores where
- * one of them ignores the window is an invitation to read the wrong one. */
-const requestedScale = derived(displaySize, scaleForSize);
+export const scaleForSize = (size: number, maxScale: number = MAX_SCALE): number => {
+  const top = Math.max(MIN_SCALE, Math.min(MAX_SCALE, maxScale));
+  return MIN_SCALE + (sanitizeSize(size) / 100) * (top - MIN_SCALE);
+};
 
 export interface ViewportSize {
   width: number;
@@ -136,11 +166,14 @@ const fitScale = derived(viewportSize, fitScaleFor);
 export const frameMargin = derived(viewportSize, ({ width, height }) => marginFor(width, height));
 
 /**
- * What the phone is drawn at: what the player asked for, or what fits, whichever is
- * smaller. The setting is a preference; fitting is not.
+ * What the phone is drawn at.
+ *
+ * The fit is folded into the *range* rather than applied as a clamp afterwards, which is
+ * the whole fix — see `scaleForSize`. `Math.min` still guards the floor case, where the
+ * window cannot fit even `MIN_SCALE` and the range has nowhere left to go.
  */
-export const phoneScale = derived([requestedScale, fitScale], ([$requested, $fit]) =>
-  Math.min($requested, $fit)
+export const phoneScale = derived([displaySize, fitScale], ([$size, $fit]) =>
+  Math.min(scaleForSize($size, $fit), $fit)
 );
 
 /** The scaled box, which is what the flex layout has to reserve — a transform does not. */
@@ -149,8 +182,12 @@ export const phoneBox = derived(phoneScale, ($scale) => ({
   height: PHONE_HEIGHT * $scale
 }));
 
-/** True when the window, not the setting, is deciding the size. Settings says so. */
-export const isSizeLimited = derived(
-  [requestedScale, fitScale],
-  ([$requested, $fit]) => $fit < $requested
-);
+/**
+ * True when the window is what caps the top of the range.
+ *
+ * It used to mean "the fit is overriding your setting", which stopped being expressible
+ * once the fit became the top of the range — nothing is overridden any more. What is
+ * still worth telling the player is that the largest setting is smaller here than it
+ * would be on a bigger window, which is why the slider stops where it does.
+ */
+export const isSizeLimited = derived(fitScale, ($fit) => $fit < MAX_SCALE);

@@ -37,13 +37,40 @@ const openDisplayPane = async (page: Page) => {
   await expect(page.locator('h1', { hasText: 'Display' })).toBeVisible();
 };
 
-test('the shipped default draws the design size, so an existing player sees no change', async ({
+test('the shipped default draws the design size on a window with room for the whole range', async ({
   page
 }) => {
+  // Tall enough that the fit exceeds MAX_SCALE, which is what makes the midpoint exactly
+  // 1. The slider spans whatever the window can draw, so on a shorter window the default
+  // is the middle of a shorter range and lands below design size — deliberately, because
+  // the alternative was the top half of the slider doing nothing at all.
+  await page.setViewportSize({ width: 1280, height: 1500 });
   await page.goto('/');
   const box = await frameBox(page);
   expect(box.width).toBeCloseTo(DESIGN_WIDTH, 0);
   expect(box.height).toBeCloseTo(DESIGN_HEIGHT, 0);
+});
+
+test('every slider position changes the size, even when the window caps the range', async ({
+  page
+}) => {
+  // The reported defect, in the window it was reported in: a maximised browser at 1080p
+  // has roughly 950px of viewport, where the old fixed 0.6-1.4 range was clamped from
+  // about the midpoint up — so 50, 75 and 100 all drew the same phone.
+  await page.setViewportSize({ width: 1280, height: 950 });
+  await page.goto('/');
+  await openDisplayPane(page);
+
+  // By label: the Display pane has three range inputs and a bare selector matches all of them.
+  const slider = page.getByLabel('Phone size');
+  const heights: number[] = [];
+  for (const value of ['50', '75', '100']) {
+    await slider.fill(value);
+    heights.push((await frameBox(page)).height);
+  }
+
+  expect(heights[1]).toBeGreaterThan(heights[0]);
+  expect(heights[2]).toBeGreaterThan(heights[1]);
 });
 
 test('scales down to fit a phone-sized window instead of running off the bottom', async ({
@@ -92,6 +119,7 @@ test('the Display setting resizes the phone, keeps its shape, and survives a rel
 
   const slider = page.getByLabel('Phone size');
   await expect(slider).toHaveValue('50');
+  const atDefault = await frameBox(page);
 
   await slider.fill('0');
   const small = await frameBox(page);
@@ -104,8 +132,10 @@ test('the Display setting resizes the phone, keeps its shape, and survives a rel
   expect(large.width / large.height).toBeCloseTo(DESIGN_RATIO, 2);
 
   // 1280x960 cannot hold 1190px of phone, so the top of the range is the window's to
-  // decide — and Settings says so rather than looking like a dead control.
-  await expect(page.locator('text=Limited by the size of this window')).toBeVisible();
+  // decide, and Settings says so. The slider itself is not dead — the assertion above
+  // that 100 draws larger than 0 is what proves that, and it used to be the whole story:
+  // every position from the fit upward rendered identically.
+  await expect(page.locator('text=This window sets how large the phone can go')).toBeVisible();
 
   await slider.fill('20');
   const chosen = await frameBox(page);
@@ -113,10 +143,12 @@ test('the Display setting resizes the phone, keeps its shape, and survives a rel
   await page.reload();
   expect((await frameBox(page)).height).toBeCloseTo(chosen.height, 0);
 
-  // And Reset puts it back.
+  // And Reset puts it back — to the size the default draws on *this* window, which is not
+  // necessarily the design height. The slider spans what the window can draw, so on a
+  // window that cannot hold the whole range the midpoint is the middle of a shorter one.
   await openDisplayPane(page);
   await page.locator('button', { hasText: 'Reset to Default' }).click();
-  expect((await frameBox(page)).height).toBeCloseTo(DESIGN_HEIGHT, 0);
+  expect((await frameBox(page)).height).toBeCloseTo(atDefault.height, 0);
 });
 
 test('dragging a list tracks the cursor at a reduced size', async ({ page }) => {
