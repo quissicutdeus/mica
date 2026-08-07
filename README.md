@@ -178,6 +178,50 @@ pnpm --filter web test:e2e:report
 
 ---
 
+## Exports for other resources
+
+gPhone publishes a small API so other scripts can reach the phone. Every export returns a
+discriminated outcome rather than a bare boolean — a `false` that cannot tell you "the player is
+offline" from "gPhone has not started yet" leaves you guessing — and no export ever throws into your
+resource.
+
+```lua
+local result = exports['gphone']:SendNotification(citizenid, {
+    app         = 'ext_towing',      -- your own group, or a gPhone app id
+    sourceLabel = 'Tow Company',     -- required for ext_, shown in the shade
+    title       = 'Job available',
+    body        = 'Pickup at Sandy Shores',
+    deepLink    = nil                -- optional; see BuildDeepLink
+})
+
+if not result.ok then
+    print(('gphone refused: %s (%s)'):format(result.message, result.reason))
+end
+```
+
+`reason` is one of `unknown_player`, `offline`, `not_ready`, `invalid_args` or `internal_error`.
+
+| Export                              | Identifies a player by | Does                                                                                              |
+| ----------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------- |
+| `GetApiVersion()`                   | —                      | The API version. Bumped when an existing export changes shape, not when one is added              |
+| `SendSystemEmail(...)`              | citizenid              | Sends mail. Predates this API and keeps its original signature                                    |
+| `SendNotification(citizenid, opts)` | citizenid              | Raises a notification. Works offline — the row is written and shown next time they open the phone |
+| `BuildDeepLink(app, props)`         | —                      | Builds a `app?key=value` link without needing to know the format                                  |
+| `GetBatteryLevel(source)`           | source                 | The saved charge, 0-100                                                                           |
+| `SetBatteryLevel(source, level)`    | source                 | Sets the charge. Clamped rather than refused                                                      |
+| `AddBatteryCharge(source, delta)`   | source                 | Adds or, with a negative delta, drains — an EMP, a taser                                          |
+| `SetCharging(source, isCharging)`   | source                 | Puts the phone on or off charge. A state, not a top-up: it reverses the drain loop                |
+
+**citizenid or source, and it matters which.** Anything that must work while the player is offline
+takes a citizenid; anything inherently live takes a source. No export reads an implicit `source`
+global, because `TriggerEvent` from another resource would make that the wrong player.
+
+**`ext_<resource>` is reserved for you.** Notifications raised under it get their own group in the
+shade, labelled with your `sourceLabel`. gPhone apps are forbidden from taking an `ext_` id, so your
+group can never be silently merged with one shipped later.
+
+---
+
 ## Repository Structure
 
 ```
