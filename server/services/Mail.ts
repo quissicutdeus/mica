@@ -5,6 +5,7 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { fields, flagUnlessFalse, requirePositiveInt } from '../lib/payload';
+import { buildDeepLink } from '@shared/deepLink';
 
 /**
  * Mail: `read: 'owner'`, `write: 'server'`.
@@ -169,7 +170,7 @@ const SendSystemEmail = async (
         },
         kind: 'email',
         title: `Email from ${emailData.sender}`,
-        deepLink: `mail/${id}`
+        deepLink: buildDeepLink('mail', { mailId: id })
       }
     );
 

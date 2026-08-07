@@ -12,6 +12,8 @@
  * `@gphone/sdk` (`sdk/boundary.test.ts`).
  */
 
+import { parseDeepLink } from './deepLink';
+
 /**
  * The one net event every app push travels on.
  *
@@ -46,6 +48,15 @@ export interface AppEventEnvelope {
   /** Server clock, ms. Ordering, and ageing the replay buffer. */
   at: number;
   notify?: AppEventNotification;
+  /**
+   * Where tapping this should land, as a `shared/deepLink.ts` string.
+   *
+   * On the envelope rather than only on the stored row, so the **toast** and the
+   * notification in the shade navigate through one contract. They did not: a toast opened
+   * the app with the raw push payload (`{ blab_id, handle }`) while the shade followed
+   * `deep_link` (`blab/99`) — two shapes for one destination, and Blabber read neither.
+   */
+  deepLink?: string;
 }
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -85,6 +96,13 @@ export function parseAppEventEnvelope(raw: unknown): AppEventEnvelope | null {
             message: raw.notify.message,
             avatar: typeof raw.notify.avatar === 'string' ? raw.notify.avatar : undefined
           }
-        : undefined
+        : undefined,
+    // Validated here rather than at the tap, so an unparseable link is dropped once at the
+    // boundary instead of every consumer re-checking it. A field simply omitted from this
+    // object is not a small mistake: `deepLink` was, and the toast fell back to the payload
+    // every single time — which looks correct for a push whose payload happens to name the
+    // same app, and silently goes nowhere for one that does not.
+    deepLink:
+      typeof raw.deepLink === 'string' && parseDeepLink(raw.deepLink) ? raw.deepLink : undefined
   };
 }

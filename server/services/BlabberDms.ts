@@ -4,6 +4,7 @@ import { appEventChannel } from '../lib/appEvents';
 import { ownedAccount } from './Accounts';
 import { BlabberDm } from '@shared/types';
 import { fields, optionalString, requirePositiveInt } from '../lib/payload';
+import { buildDeepLink } from '@shared/deepLink';
 
 const APP = 'blabber';
 
@@ -228,7 +229,11 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
         type: 'message',
         title: `@${mine.handle}`,
         message: text.slice(0, 120)
-      } as never
+      } as never,
+      kind: 'dm',
+      // A DM notification had no destination at all, so tapping it did nothing whichever
+      // route it came through. The thread is keyed on the peer's handle.
+      deepLink: buildDeepLink('blabber', { dmHandle: mine.handle })
     }
   );
   if (!outcome.delivered && outcome.reason !== 'offline') {

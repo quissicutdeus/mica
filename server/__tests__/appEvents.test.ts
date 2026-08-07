@@ -138,4 +138,32 @@ describe('pushMany', () => {
     expect(result.delivered).toEqual(['CIT_A']);
     expect(emitted).toHaveLength(1);
   });
+
+  describe('parseAppEventEnvelope', () => {
+    it('carries a valid deep link through', () => {
+      // The field was simply absent from the parser's return, so every toast fell back to
+      // the push payload. That reads as working for a push whose payload happens to name
+      // the same app, and goes nowhere for one that does not — which was all of Blabber's.
+      const parsed = parseAppEventEnvelope({
+        app: 'mail',
+        event: 'received',
+        payload: {},
+        deepLink: 'mail?mailId=12'
+      });
+      expect(parsed?.deepLink).toBe('mail?mailId=12');
+    });
+
+    it('drops a link that does not parse rather than passing it on', () => {
+      // Validated once at the boundary. `mail/12` is the shape the server used to write,
+      // and handing it to `openApp` is what blanked the screen.
+      const parsed = parseAppEventEnvelope({
+        app: 'mail',
+        event: 'received',
+        payload: {},
+        deepLink: 'mail/12'
+      });
+      expect(parsed).not.toBeNull();
+      expect(parsed?.deepLink).toBeUndefined();
+    });
+  });
 });

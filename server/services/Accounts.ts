@@ -3,6 +3,7 @@ import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { Account } from '@shared/types';
 import { fields, optionalString, pageBounds, requirePositiveInt } from '../lib/payload';
+import { buildDeepLink } from '@shared/deepLink';
 
 /**
  * Social identities, shared by every social app.
@@ -298,7 +299,11 @@ app.registerEvent('follow', async (source, cbId, data, citizenid) => {
         },
         kind: 'follow',
         title: `@${follower.handle} followed you`,
-        deepLink: `profile/${follower.handle}`
+        // `appId`, never a literal. This service is the shared identity for every social
+        // app — the channel above was already keyed on it, and a hardcoded 'blabber' here
+        // would have sent an Instagram-alike's follow notification into Blabber. The
+        // convention a consuming app has to honor is the prop name, not its own id.
+        deepLink: buildDeepLink(appId, { handle: follower.handle })
       }
     );
   } catch (error) {

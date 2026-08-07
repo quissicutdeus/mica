@@ -56,7 +56,8 @@ const envelopeFor = (
   event,
   payload,
   at: Date.now(),
-  notify: options?.notify
+  notify: options?.notify,
+  deepLink: options?.deepLink
 });
 
 const measure = (payload: Record<string, unknown>): 'ok' | 'oversize' | 'unserializable' => {

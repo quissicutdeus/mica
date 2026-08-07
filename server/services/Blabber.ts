@@ -6,6 +6,7 @@ import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { mentionedHandles } from '@shared/richText';
 import { BlabberRepository } from '../repositories/BlabberRepository';
+import { buildDeepLink } from '@shared/deepLink';
 
 /** The app id, which is also the handle namespace accounts are claimed in. */
 const APP = 'blabber';
@@ -216,7 +217,7 @@ const notifyMentions = async (body: string, fromHandle: string, blabId: number):
       notify: { type: 'info', title: `@${fromHandle} mentioned you`, message: body.slice(0, 120) },
       kind: 'mention',
       title: `@${fromHandle} mentioned you`,
-      deepLink: `blab/${blabId}`
+      deepLink: buildDeepLink('blabber', { blabId })
     }
   );
 };
