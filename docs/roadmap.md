@@ -330,6 +330,33 @@ the _default_ seed's color for anyone who changed theirs.
 colorfulness" and returned a picked color noticeably muted. Measured across eleven seeds, Vibrant
 carries about half again the chroma at identical worst-case contrast.
 
+### Cellular dead zones and outages
+
+Reception is real state. `server/services/Signal.ts` holds a city-wide level, a set of dead zones and
+per-player overrides; `client/services/Signal.ts` checks the player's position against them every two
+seconds and pushes the result into the NUI. Before this, `signalLevel` was a `writable(4)` that only
+Developer Tools could change, on your own phone — so a dispatch script could not black out a district
+and an EMP could not exist, because there was nothing to call.
+
+Global and per-zone are deliberately the **same primitive** with a precedence order — lowest wins —
+because two mechanisms drift the first time they disagree. A per-player override beats both in either
+direction, which is what lets a script give somebody bars inside a blackout.
+
+Zones live in memory rather than a table. One is placed by another resource at runtime and belongs to
+that session; persisting them would mean a jammer outliving the heist that placed it, with nobody
+left knowing why a block has no bars.
+
+The client evaluates the final number because the server does not know where anybody is standing, and
+asking every player every tick is exactly the cost this avoids. A modified client can therefore lie
+about its own bars — fine, deliberately: signal gates presentation, never authority (§2.9).
+
+**What is still unbuilt is the half that matters to apps.** Nothing reads the level yet: every app
+behaves identically at four bars and at zero, and `network` remains a permission with no capability
+behind it. The remaining question is not mechanical but per-app — Messages, Phone, Blabber, Store,
+Bank and Mail need a live connection, while Notes, Camera, Photos, Calculator and Settings are local
+and should not care. Giving `network` meaning means every app in the first group grows a zero-bar
+path that degrades rather than throws.
+
 ### Day-zero schema
 
 gPhone is pre-release — nothing has been installed anywhere and there is no data to preserve — so
@@ -467,19 +494,6 @@ one — but it is still wrong on its own terms, and it is the reason a photo wal
 softer depending on a setting that has nothing to do with the camera. Capture belongs at a fixed
 resolution independent of the on-screen box.
 
-### Cellular dead zones and outages
-
-The Cellular Service toggle persists a preference and gates nothing. The proposal it came from went
-further: the server holding outage state and a set of spatial dead zones, the game client polling the
-player's coordinates against them, and signal level pushed down from that rather than set by hand.
-
-What has to be decided first is what "no signal" means to an app, and the honest answer is that it is
-a per-app question. Messages, Phone, Blabber, Store, Bank and Mail need a live connection; Notes,
-Camera, Photos, Calculator and Settings are local and should not care. `network` is already a
-declared permission with nothing behind it (see the capabilities list below), and this is the
-capability that would give it meaning — which also makes it the point at which every app needs a
-0-bar path that degrades rather than throws.
-
 ### Bluetooth proximity, and the anti-doxxing model it exists for
 
 Bluetooth Visibility is a persisted toggle and a status-bar icon. The feature underneath is
@@ -515,18 +529,10 @@ capturing the pointer on its own `pointerdown` takes every touch that starts on 
 Doing it properly needs a grab handle to attach to and a transform that follows the finger, and
 swipe-to-clear needs per-row pointer handling that does not fight vertical scrolling.
 
-### Signal and phone-state exports
+### Phone-state exports
 
-The export API below under _Shipped_ deliberately left two groups out, and they are the ones with a
-mechanism still to build rather than a wrapper still to write.
-
-**Signal and reception** — the original ask, and the interface half of _Cellular dead zones and
-outages_ above. `SetGlobalSignal(level)` / `ClearGlobalSignal()` for a city-wide outage,
-`AddDeadZone({ coords, radius, level })` returning an id with `RemoveDeadZone(id)`, and
-`SetSignal(source, level)` / `GetSignal(source)` for one player overriding the zones — a tinfoil hat.
-Global and per-zone are deliberately one primitive with a precedence order rather than two
-mechanisms, because two drift the first time they disagree. None of it can ship before the zones
-themselves do: there is no server state to expose.
+The export API under _Shipped_ left one group out — the one still needing a mechanism rather than a
+wrapper. (The signal exports it also deferred have since shipped alongside the zones themselves.)
 
 **Phone state and identity** — `GetPhoneNumber(citizenid)` and its inverse `GetCitizenId(phone)`
 (`PlayerDirectory` already resolves both directions), `IsPhoneOpen(source)`,
@@ -742,13 +748,13 @@ Referenced by number from the ideas above.
    success. Best-effort, not ACID: there is no transaction spanning another resource's money system.
    Offline recipients are refused rather than dropped.
 
-6. **A resource-facing export API** — built. `server/lib/exports.ts` and `publicApi.ts`, eight
-   exports, discriminated outcomes, `GetApiVersion`, and a contract test pinning every name. Signal
-   and phone-state exports are deliberately still out — see _Signal and phone-state exports_ above —
-   because both need a mechanism that does not exist rather than a wrapper that does not exist.
+6. **A resource-facing export API** — built. `server/lib/exports.ts` and `publicApi.ts`, fifteen
+   exports, discriminated outcomes, `GetApiVersion`, and a contract test pinning every name. Phone
+   state and identity are the one group still out — see _Phone-state exports_ above — because each
+   needs a client round trip that does not exist yet.
 
-**`location` and `network` are permissions with no capability behind them.** An app can declare
-either and nothing changes, because there is no hook, endpoint or client surface to grant. The
-Cellular Service toggle in Settings > Network does not change this: it persists a preference and
-nothing reads it. _Cellular dead zones and outages_ above is the proposal that would give `network`
-something to mean.
+**`location` and `network` are still permissions with no capability behind them**, but for different
+reasons now. `location` has nothing behind it at all. `network` has state — dead zones, a global
+level and per-player overrides all exist and reach the phone — and no _consumer_: every app behaves
+identically at four bars and at zero. Closing that is per-app work rather than platform work, and it
+is the open half of _Cellular dead zones and outages_ under Shipped.

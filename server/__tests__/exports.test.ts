@@ -48,14 +48,20 @@ describe('the public export surface', () => {
     // Adding one here is a deliberate act. Removing or renaming one breaks a caller.
     expect(publishedExports()).toEqual([
       'AddBatteryCharge',
+      'AddDeadZone',
       'AddMedia',
       'BuildDeepLink',
+      'ClearGlobalSignal',
       'GetApiVersion',
       'GetBatteryLevel',
+      'GetSignal',
+      'RemoveDeadZone',
       'SendNotification',
       'SendSystemEmail',
       'SetBatteryLevel',
-      'SetCharging'
+      'SetCharging',
+      'SetGlobalSignal',
+      'SetSignal'
     ]);
   });
 

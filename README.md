@@ -210,12 +210,22 @@ end
 | `SetBatteryLevel(source, level)`    | source                 | Sets the charge. Clamped rather than refused                                                      |
 | `AddBatteryCharge(source, delta)`   | source                 | Adds or, with a negative delta, drains — an EMP, a taser                                          |
 | `SetCharging(source, isCharging)`   | source                 | Puts the phone on or off charge. A state, not a top-up: it reverses the drain loop                |
+| `SetGlobalSignal(level)`            | —                      | City-wide reception, 0-4. `0` is a blackout                                                       |
+| `ClearGlobalSignal()`               | —                      | Back to full bars                                                                                 |
+| `AddDeadZone({x,y,z,radius,level})` | —                      | A jammer, a tunnel, a basement. Returns an id                                                     |
+| `RemoveDeadZone(id)`                | —                      | Removes one by the id `AddDeadZone` gave you                                                      |
+| `SetSignal(source, level)`          | source                 | One player, overriding the zones. `null` hands them back to the world                             |
+| `GetSignal(source)`                 | source                 | The rules they are subject to — not their bars, which depend on where they stand                  |
 
 **citizenid or source, and it matters which.** Anything that must work while the player is offline
 takes a citizenid; anything inherently live takes a source. No export reads an implicit `source`
 global, because `TriggerEvent` from another resource would make that the wrong player.
 
 **`AddMedia` is how anything but a photo gets in.** The camera only ever produces a `photo`, so the other six kinds — `video`, `audio`, `gif`, `sticker`, `file`, `link` — exist only through this export. Pass either `url` (http(s) only) or `data` (base64); a `video` also wants a `thumbnail`, since gPhone draws the poster frame rather than playing the clip.
+
+**Reception is one primitive with a precedence order**, not two. A blackout is a global level, a jammer is a zone, and the lowest applicable value wins — so they cannot disagree. A per-player `SetSignal` beats both, in either direction, which is what makes it possible to give somebody bars _inside_ a blackout.
+
+Bars are evaluated on each player's own client against the rules the server pushes, because the server does not know where anybody is standing and asking every player every tick is the cost this design avoids. A modified client can therefore lie about its own bars — deliberately fine, since signal gates presentation and never authority.
 
 **`ext_<resource>` is reserved for you.** Notifications raised under it get their own group in the
 shade, labelled with your `sourceLabel`. gPhone apps are forbidden from taking an `ext_` id, so your

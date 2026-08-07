@@ -26,6 +26,15 @@ import {
 import { SendSystemEmail } from '../services/Mail';
 import { getBatteryLevel, setBatteryLevel, setCharging } from '../services/Battery';
 import { photos } from '../services/Photos';
+import {
+  addDeadZone,
+  describeSignalFor,
+  isConnected,
+  removeDeadZone,
+  setGlobalSignal,
+  setPlayerSignal,
+  FULL_SIGNAL
+} from '../services/Signal';
 import type { MediaItem, MediaKind } from '@shared/types';
 
 /**
@@ -298,6 +307,96 @@ export function registerPublicApi(): void {
    * "charging" has to live where the drain rate lives. Repeatedly poking
    * `AddBatteryCharge` from a house script would fight that loop rather than join it.
    */
+  /**
+   * Reception, the original ask behind this whole API.
+   *
+   * Global and per-zone are the same primitive with a precedence order rather than two
+   * mechanisms: a city-wide blackout is `SetGlobalSignal(0)`, a jammer is a zone, and the
+   * lowest applicable value wins. Two mechanisms would drift the first time they
+   * disagreed.
+   */
+  publish(
+    'SetGlobalSignal',
+    guarded('SetGlobalSignal', (level: unknown) => {
+      if (typeof level !== 'number' || !Number.isFinite(level)) {
+        return fail<number>('invalid_args', `A level between 0 and ${FULL_SIGNAL} is required.`);
+      }
+      return ok(setGlobalSignal(level));
+    })
+  );
+
+  publish(
+    'ClearGlobalSignal',
+    guarded('ClearGlobalSignal', () => ok(setGlobalSignal(FULL_SIGNAL)))
+  );
+
+  publish(
+    'AddDeadZone',
+    guarded('AddDeadZone', (zone: unknown) => {
+      if (!zone || typeof zone !== 'object') {
+        return fail<number>('invalid_args', 'A zone object is required.');
+      }
+      const z = zone as Record<string, unknown>;
+      const nums = ['x', 'y', 'z', 'radius'].map((k) => Number(z[k]));
+      if (nums.some((n) => !Number.isFinite(n))) {
+        return fail<number>('invalid_args', 'x, y, z and radius must all be numbers.');
+      }
+      if (nums[3] <= 0) return fail<number>('invalid_args', 'radius must be greater than zero.');
+
+      const created = addDeadZone({
+        x: nums[0],
+        y: nums[1],
+        z: nums[2],
+        radius: nums[3],
+        level: Number.isFinite(Number(z.level)) ? Number(z.level) : 0
+      });
+      // The id, because removing it later is the only thing a caller can do with the zone.
+      return ok(created.id);
+    })
+  );
+
+  publish(
+    'RemoveDeadZone',
+    guarded('RemoveDeadZone', (id: unknown) => {
+      if (!Number.isInteger(id)) return fail('invalid_args', 'A zone id is required.');
+      return removeDeadZone(id as number)
+        ? ok()
+        : fail('invalid_args', `No dead zone with id ${id}.`);
+    })
+  );
+
+  /** One player, overriding the zones. A tinfoil hat. `null` hands them back to the world. */
+  publish(
+    'SetSignal',
+    guarded('SetSignal', (source: unknown, level: unknown) => {
+      if (typeof source !== 'number' || !isConnected(source)) {
+        return fail('unknown_player', 'That player is not connected.');
+      }
+      if (level !== null && (typeof level !== 'number' || !Number.isFinite(level))) {
+        return fail('invalid_args', `A level between 0 and ${FULL_SIGNAL}, or null to clear.`);
+      }
+      setPlayerSignal(source, level as number | null);
+      return ok();
+    })
+  );
+
+  /**
+   * The rules a player is subject to — **not** their current bars.
+   *
+   * Their actual level depends on where they are standing, and that is evaluated on their
+   * own client (see `services/Signal.ts` for why). Returning a number here would be a
+   * number the server cannot know, which is worse than not offering one.
+   */
+  publish(
+    'GetSignal',
+    guarded('GetSignal', (source: unknown) => {
+      if (typeof source !== 'number' || !isConnected(source)) {
+        return fail('unknown_player', 'That player is not connected.');
+      }
+      return ok(describeSignalFor(source));
+    })
+  );
+
   publish(
     'SetCharging',
     guarded('SetCharging', (source: unknown, isCharging: unknown) => {

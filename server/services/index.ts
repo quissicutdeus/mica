@@ -18,3 +18,4 @@ import './Reports';
 import './Schema';
 import './Seed';
 import './Settings';
+import './Signal';

@@ -10,3 +10,4 @@ import './Message';
 import './Relay';
 import './Settings';
 import './Shell';
+import './Signal';
