@@ -68,11 +68,22 @@ const sanitizeWallpaper = (stored: unknown): WallpaperState => {
   return DEFAULT_WALLPAPER;
 };
 
+/**
+ * The one preference that stays on this PC.
+ *
+ * Every other setting follows the player's citizenid to any machine. This one cannot
+ * affordably: a custom wallpaper is a base64 data URL of unbounded size, and syncing it
+ * would push megabytes across the NUI bridge and into MySQL every time the color changed.
+ *
+ * The part players actually notice does still follow them — the seed and light/dark mode
+ * live in `themeStore`, which syncs, and they are what generate the whole scheme. What
+ * stays behind is a photo you set from this machine's own gallery.
+ */
 export const wallpaperStore = usePersisted<WallpaperState>(
   'settings',
   'wallpaper',
   DEFAULT_WALLPAPER,
-  { sanitize: sanitizeWallpaper }
+  { sanitize: sanitizeWallpaper, sync: false }
 );
 
 /**

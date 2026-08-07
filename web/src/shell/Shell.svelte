@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { hydrateSettings } from '../sdk/hooks/useStorage';
   import { appRegistryStore } from './state/registry';
   import { createNuiMessageRouter } from './nuiMessages';
   import { installDevHarness, seedBrowserPhone } from './devHarness';
@@ -148,6 +149,21 @@
   registerHandler('freelook', () => {
     if (!visible) return;
     setFreelook(!isFreelook);
+  });
+
+  /**
+   * Settings are fetched here, at page load, and deliberately not in `bootstrapStores`.
+   *
+   * `bootstrapStores` runs from an effect gated on `visible` — when the phone is *opened*.
+   * Hydrating there means the phone paints with the shipped theme and flips to the
+   * player's a beat later, in front of them. The CEF page loads at resource start with the
+   * phone closed, so asking here gives the fetch the whole time before first open.
+   *
+   * Not awaited: the stores already hold the cached values, so the phone is usable either
+   * way and re-reads itself when the answer lands.
+   */
+  onMount(() => {
+    void hydrateSettings();
   });
 
   onMount(() => {

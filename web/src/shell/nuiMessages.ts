@@ -5,6 +5,7 @@ import { conversationsStore } from '../services/conversations';
 import { appRegistryStore } from './state/registry';
 import { setSignal } from './state/signal';
 import { time, type TimeState } from './state/time';
+import { hydrateSettings } from '../sdk/hooks/useStorage';
 import { toast, type ToastMessage } from './state/toast';
 import { messageOf } from '../lib/errors';
 import { APP_EVENT_NUI_ACTION, parseAppEventEnvelope } from '@shared/appEvents';
@@ -221,6 +222,16 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     setTime: (data) => time.set(data as TimeState),
     setCharge: (data) => {
       if (typeof data === 'number') charge.set(data);
+    },
+    /**
+     * The player loaded a character; re-read what that character had saved.
+     *
+     * The page never unloads in CEF, so without this a character switch leaves the
+     * previous character's theme, volume and toggles on screen for the rest of the
+     * session.
+     */
+    rehydrateSettings: () => {
+      void hydrateSettings();
     },
     setSignal: (data) => {
       if (typeof data === 'number') setSignal(data);
