@@ -17,7 +17,7 @@ import type {
   Message,
   Note,
   NotificationItem,
-  Photo,
+  MediaItem,
   Transaction
 } from '@shared/types';
 import { defineMockCrud } from './defineMockCrud';
@@ -889,7 +889,7 @@ const mockRegistry: Record<string, MockHandler> = {
   onCameraApp: async () => true,
   // Photos and mail are soft-deleted, as the server does it: a removed row is still
   // there to be moderated.
-  ...defineMockCrud<Photo>(
+  ...defineMockCrud<MediaItem>(
     mockPhotos,
     { list: 'getPhotos', create: 'createPhoto', remove: 'deletePhoto' },
     {

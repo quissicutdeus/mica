@@ -60,10 +60,10 @@
           class="group bg-surface-container relative aspect-square overflow-hidden rounded-xl border transition-all {selected
             ? 'ring-primary border-primary ring-2'
             : 'border-outline-variant hover:border-outline'}"
-          onclick={() => onmultichange?.(photo.id, photo.image)}
+          onclick={() => onmultichange?.(photo.id, photo.data)}
         >
           <img
-            src={photo.image}
+            src={photo.data}
             class="h-full w-full object-cover transition-transform group-hover:scale-105"
             alt=""
           />
@@ -77,10 +77,10 @@
         <button
           type="button"
           class="group border-outline-variant bg-surface-container hover:border-primary relative aspect-square overflow-hidden rounded-xl border transition-all"
-          onclick={() => onselect?.(photo.image)}
+          onclick={() => onselect?.(photo.data)}
         >
           <img
-            src={photo.image}
+            src={photo.data}
             class="h-full w-full object-cover transition-transform group-hover:scale-105"
             alt=""
           />
@@ -109,7 +109,7 @@
             // Clear all — parent handles resetting the array
             for (const id of [...selectedIds]) {
               const photo = $photos.find((p) => p.id === id);
-              if (photo) onmultichange?.(photo.id, photo.image);
+              if (photo) onmultichange?.(photo.id, photo.data);
             }
           }}
         >

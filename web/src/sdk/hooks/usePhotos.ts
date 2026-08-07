@@ -10,7 +10,10 @@ import { photos } from '../../services/photos';
 export function usePhotos() {
   return {
     photos,
-    capturePhoto: async (image: string) => photos.add({ image }),
+    // `kind` is stated rather than left to the column default: the table holds seven
+    // kinds now, and a writer that does not say which one it is means the row's meaning
+    // depends on a DDL default nobody reading this file can see.
+    capturePhoto: async (data: string) => photos.add({ kind: 'photo', data }),
     deletePhoto: async (id: number) => photos.delete(id)
   };
 }

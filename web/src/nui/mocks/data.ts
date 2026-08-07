@@ -1,4 +1,4 @@
-import type { Contact, Conversation, Mail, Message, Note, Photo } from '@shared/types';
+import type { Contact, Conversation, Mail, Message, Note, MediaItem } from '@shared/types';
 
 /** Inject created_at / updated_at timestamps into a mock object. Accepts an optional offset (ms before now). */
 const ts = (offsetMs: number = 0) => {
@@ -42,10 +42,19 @@ export const sampleAvatars = [
   'https://images.unsplash.com/photo-1561037404-61cd46aa615b?w=500&auto=format&fit=crop&q=80'
 ];
 
-export const mockPhotos: Photo[] = sampleAvatars.map((url, index) => ({
+/**
+ * The URL goes in `data`, not `url`, and that is deliberate.
+ *
+ * `data` is where a real capture puts its base64, and it is what every renderer reads.
+ * These fixtures stand in for that — a remote URL only because base64 fixtures would make
+ * this file enormous. Moving them to `url` would need every consumer to prefer one column
+ * over the other, which is media work rather than migration work.
+ */
+export const mockPhotos: MediaItem[] = sampleAvatars.map((url, index) => ({
   id: index + 1,
   citizenid: 'mock-id',
-  image: url,
+  kind: 'photo' as const,
+  data: url,
   status: 'active',
   ...ts()
 }));

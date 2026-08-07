@@ -18,21 +18,21 @@
     usePhoneNotification,
     type AppProps
   } from '@gphone/sdk';
-  import type { Photo } from '@shared/types';
+  import type { MediaItem } from '@shared/types';
   import { fade } from 'svelte/transition';
 
   let {
     onback,
     initialPhoto,
     initialPhotoId
-  }: AppProps & { initialPhoto?: Photo; initialPhotoId?: number } = $props();
+  }: AppProps & { initialPhoto?: MediaItem; initialPhotoId?: number } = $props();
 
   const { photos, deletePhoto } = usePhotos();
   const photosLoaded = photos.loaded;
   const { busy, run } = useAppAction();
   const { toast } = usePhoneNotification();
 
-  let selectedPhoto: Photo | null = $state(null);
+  let selectedPhoto: MediaItem | null = $state(null);
   let isSelectionMode = $state(false);
   let selectedIds = $state<Set<number>>(new Set());
   let showDeleteConfirm = $state(false);
@@ -65,7 +65,7 @@
     }
   };
 
-  const handlePhotoClick = (photo: Photo) => {
+  const handlePhotoClick = (photo: MediaItem) => {
     if (isSelectionMode) {
       if (selectedIds.has(photo.id)) {
         selectedIds.delete(photo.id);
@@ -144,7 +144,7 @@
     <div class="relative flex h-full flex-col bg-black" transition:fade>
       <div class="flex flex-1 items-center justify-center p-2">
         <img
-          src={selectedPhoto.image}
+          src={selectedPhoto.data}
           alt="Photo {selectedPhoto.id}"
           class="h-full w-full object-contain"
         />
@@ -212,7 +212,7 @@
               aria-label={isSelectionMode ? `Select photo ${photo.id}` : `Open photo ${photo.id}`}
             >
               <img
-                src={photo.image}
+                src={photo.data}
                 alt="Capture {photo.id}"
                 class="h-full w-full object-cover transition-opacity {isSelectionMode &&
                 selectedIds.has(photo.id)
@@ -278,7 +278,7 @@
 
 {#if reporting && selectedPhoto}
   <ReportDialog
-    targetTable="gphone_photos"
+    targetTable="gphone_media"
     targetId={selectedPhoto.id}
     onclose={() => (reporting = false)}
   />

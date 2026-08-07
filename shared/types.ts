@@ -273,10 +273,35 @@ export interface Note {
   updated_at: Date | string;
 }
 
-export interface Photo {
+/** What `gphone_media` can hold. Over-provisioned on purpose — see `services/Photos.ts`. */
+export type MediaKind = 'photo' | 'video' | 'audio' | 'gif' | 'sticker' | 'file' | 'link';
+
+/**
+ * A row in `gphone_media` — the table the Photos app is built on.
+ *
+ * Named for what it holds rather than for the app that owns it. The service and app id
+ * stay `photos`, because those are keys and renaming one is a data migration (§11.1); a
+ * type name is neither, so it can say the true thing for free.
+ *
+ * Everything past `kind` is optional. Locally captured media has `data` and nothing else;
+ * a hotlinked GIF has `url` and no bytes at all.
+ */
+export interface MediaItem {
   id: number;
   citizenid: string;
-  image: string; // Base64 string
+  kind: MediaKind;
+  /** Base64. Was `image`, and still the only field anything writes today. */
+  data?: string;
+  /** A remote GIF or video that is not ours to store. */
+  url?: string;
+  /** Poster frame, so a feed has something to draw before the media loads. */
+  thumbnail?: string;
+  mime_type?: string;
+  width?: number;
+  height?: number;
+  duration_ms?: number;
+  byte_size?: number;
+  alt_text?: string;
   status?: 'active' | 'deleted' | 'moderated';
   created_at: Date | string;
   updated_at: Date | string;

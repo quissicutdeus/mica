@@ -224,13 +224,16 @@
         />
       {:else}
         <div class="grid grid-cols-3 gap-2">
-          {#each $photos.slice(0, 6) as photo (photo.id)}
+          <!-- `data` is optional now: a hotlinked or link-preview row has a url and no
+               bytes. Nothing writes one yet, but a wallpaper needs actual bytes, so the
+               ones without are skipped rather than rendered as a broken tile. -->
+          {#each $photos.filter((p) => p.data).slice(0, 6) as photo (photo.id)}
             <button
               type="button"
-              onclick={() => applyPhoto(photo.image)}
+              onclick={() => applyPhoto(photo.data!)}
               class="border-outline-variant hover:border-primary relative aspect-square cursor-pointer overflow-hidden rounded-lg border"
             >
-              <img src={photo.image} alt="Use as wallpaper" class="h-full w-full object-cover" />
+              <img src={photo.data} alt="Use as wallpaper" class="h-full w-full object-cover" />
             </button>
           {/each}
         </div>

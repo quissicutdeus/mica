@@ -382,7 +382,7 @@
         >
           {#if $photos.length > 0}
             <img
-              src={$photos[0].image}
+              src={$photos[0].data}
               alt="Recent capture"
               class="h-full w-full object-cover transition-opacity group-hover:opacity-90"
             />

@@ -21,7 +21,7 @@ describe('photos store', () => {
     const newPhoto = { id: 2, image: 'data:image/png;base64,456', citizenid: 'CIT_1' };
     vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(newPhoto as any);
 
-    const result = await photos.add({ image: 'data:image/png;base64,456' });
+    const result = await photos.add({ kind: 'photo' as const, data: 'data:image/png;base64,456' });
     expect(result).toEqual(newPhoto);
     expect(get(photos)).toContainEqual(newPhoto);
   });

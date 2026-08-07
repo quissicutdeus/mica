@@ -8,7 +8,7 @@
 
   interface Props {
     /** The gPhone table the content lives in. Validated again server-side. */
-    targetTable: 'gphone_messages' | 'gphone_photos';
+    targetTable: 'gphone_messages' | 'gphone_media';
     targetId: number;
     onclose: () => void;
   }
