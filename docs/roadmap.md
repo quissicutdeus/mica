@@ -409,9 +409,12 @@ Chromium 103 and the bytes would have to arrive base64 across the NUI bridge, wh
 at the top of this section. `AddMedia` is the creation path, since the camera can only ever produce a
 `photo` — without it the other six kinds had no way to exist.
 
-**Message attachments are still photo-only.** They carry a bare base64 string over the wire
-(`p.data as attachment`), not a `MediaItem`, so rendering them by kind is a wire-shape change rather
-than a swap to `MediaThumb`. That is the next step here.
+Message attachments go through the same renderer. They used to carry a bare base64 string, which made
+every attachment a photo by construction — a voice note had nowhere to say what it was. They now carry
+a `MediaPreview`: enough of the row to draw it, and **not** the uploader's `citizenid`. That omission
+is the load-bearing part rather than tidiness, and it is `publicColumns`' reasoning one table over — a
+conversation is shared, so anything the join selects reaches every participant, and the citizenid is
+the field that ties a picture back to somebody who only meant to send it.
 
 ---
 

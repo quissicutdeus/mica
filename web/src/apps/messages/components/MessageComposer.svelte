@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { MediaThumb } from '@gphone/sdk';
+  import type { MediaPreview } from '@shared/types';
   import {
     CloseIcon,
     LocationIcon,
@@ -24,7 +26,7 @@
     onopenphotos
   }: {
     text: string;
-    attachments: { photo_id: number; image: string }[];
+    attachments: { photo_id: number; media: MediaPreview }[];
     busy: boolean;
     onsend: () => void;
     onopenphotos: () => void;
@@ -42,7 +44,7 @@
         <div
           class="border-outline relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border shadow-md"
         >
-          <img src={att.image} alt="Attachment" class="h-full w-full object-cover" />
+          <MediaThumb item={att.media} alt="Attachment" />
           <button
             class="text-on-surface absolute top-0 right-0 cursor-pointer rounded-bl-lg bg-black/60 p-0.5 hover:bg-black"
             onclick={() => (attachments = attachments.filter((a) => a.photo_id !== att.photo_id))}
@@ -127,12 +129,12 @@
     title="Select Photos"
     multiSelect={true}
     selectedIds={attachments.map((a) => a.photo_id)}
-    onmultichange={(photoId, image) => {
+    onmultichange={(photoId, media) => {
       const existing = attachments.find((a) => a.photo_id === photoId);
       if (existing) {
         attachments = attachments.filter((a) => a.photo_id !== photoId);
       } else {
-        attachments = [...attachments, { photo_id: photoId, image }];
+        attachments = [...attachments, { photo_id: photoId, media }];
       }
     }}
     onclose={() => (showPicker = false)}

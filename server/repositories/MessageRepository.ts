@@ -47,10 +47,28 @@ export class MessageRepository extends SchemaRepository<Message> {
 
     if (messages.length === 0) return [];
 
-    // Fetch attachments for these messages
-    // Join to gphone_media to retrieve the attachment bytes
+    /**
+     * Attachments, joined to `gphone_media`.
+     *
+     * **The column list is explicit and `p.citizenid` is deliberately not in it.** A
+     * conversation is shared, so anything selected here reaches every participant — and
+     * the uploader's citizenid is the one field that would tie a picture back to a person
+     * who only meant to send it. That is the same reasoning `publicColumns` encodes for a
+     * public read (§10); `SELECT p.*` would have quietly handed it over.
+     *
+     * Enough columns to *draw* the thing, which is what `MediaThumb` needs: a video has no
+     * `data` and renders from `thumbnail`, a GIF may be a `url`, and `duration_ms` is the
+     * badge. Selecting only `data`, as this did, made every attachment a photo by
+     * construction.
+     */
     const attachments = await Database.query<any[]>(
-      'SELECT a.id, a.message_id, p.data as attachment FROM gphone_messages_attachments a JOIN gphone_messages m ON a.message_id = m.id JOIN gphone_media p ON a.photo_id = p.id WHERE m.conversation_id = ?',
+      `SELECT a.id, a.message_id,
+              p.id AS media_id, p.kind, p.data, p.url, p.thumbnail,
+              p.mime_type, p.duration_ms, p.alt_text
+         FROM gphone_messages_attachments a
+         JOIN gphone_messages m ON a.message_id = m.id
+         JOIN gphone_media p ON a.photo_id = p.id
+        WHERE m.conversation_id = ?`,
       [conversationId]
     );
 
@@ -62,7 +80,22 @@ export class MessageRepository extends SchemaRepository<Message> {
         list = [];
         attachmentMap.set(att.message_id, list);
       }
-      list.push({ id: att.id, attachment: att.attachment.toString() });
+      // `toString()` on the text columns for the same reason `Photos.ts` coerces them:
+      // depending on driver and column type a `mediumtext` arrives as a Buffer, which
+      // would cross NUI as `{type:'Buffer',data:[...]}` and render as nothing.
+      list.push({
+        id: att.id,
+        media: {
+          id: att.media_id,
+          kind: att.kind ?? 'photo',
+          data: att.data ? String(att.data) : undefined,
+          url: att.url ?? undefined,
+          thumbnail: att.thumbnail ? String(att.thumbnail) : undefined,
+          mime_type: att.mime_type ?? undefined,
+          duration_ms: att.duration_ms ?? undefined,
+          alt_text: att.alt_text ?? undefined
+        }
+      });
     }
 
     for (const msg of messages) {

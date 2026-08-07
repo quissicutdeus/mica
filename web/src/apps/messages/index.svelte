@@ -27,7 +27,7 @@
     useScrollDetect,
     type AppProps
   } from '@gphone/sdk';
-  import type { Contact } from '@shared/types';
+  import type { Contact, MediaPreview } from '@shared/types';
 
   const { conversationsStore } = useMessages();
   const conversationsLoaded = conversationsStore.loaded;
@@ -54,7 +54,7 @@
   let recipientQuery = $state(''); // For searching contacts when composing
   let showAttachMenu = $state(false);
   let showPhotoPicker = $state(false);
-  let selectedAttachments = $state<{ photo_id: number; image: string }[]>([]);
+  let selectedAttachments = $state<{ photo_id: number; media: MediaPreview }[]>([]);
   let viewingArchive = $state(false);
   let showDetailsModal = $state(false);
   let showSearch = $state(false);
@@ -270,10 +270,10 @@
       conversationsStore.sendMessage(
         selectedConversationId!,
         newMessageText,
-        selectedAttachments.map((att) => ({
-          photo_id: att.photo_id,
-          attachment: att.image
-        }))
+        // `photo_id` only. The server resolves the row and projects what a reader is
+        // allowed to see; sending the preview back would be the client telling the server
+        // what its own table says.
+        selectedAttachments.map((att) => ({ photo_id: att.photo_id }))
       )
     );
     if (!sent) return;

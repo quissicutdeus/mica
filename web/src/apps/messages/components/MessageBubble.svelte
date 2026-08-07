@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { MediaThumb } from '@gphone/sdk';
   import {
     useNavigation,
     useContacts,
@@ -84,7 +85,11 @@
     {#if msg.attachments && msg.attachments.length > 0}
       <div class="mb-2 space-y-2">
         {#each msg.attachments as attach}
-          <img src={attach.attachment} alt="Attachment" class="max-w-full rounded-lg" />
+          {#if attach.media}
+            <div class="max-w-full overflow-hidden rounded-lg">
+              <MediaThumb item={attach.media} fit="contain" alt="Attachment" />
+            </div>
+          {/if}
         {/each}
       </div>
     {/if}

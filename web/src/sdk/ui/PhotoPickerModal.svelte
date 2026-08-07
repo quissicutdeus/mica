@@ -1,5 +1,6 @@
 <script lang="ts">
   import MediaThumb from './MediaThumb.svelte';
+  import type { MediaPreview } from '@shared/types';
   import { photos } from '../../services/photos';
   import PhotoIcon from './icons/PhotoIcon.svelte';
   import CloseIcon from './icons/CloseIcon.svelte';
@@ -24,8 +25,11 @@
     showRemove?: boolean;
     /** Single-select callback */
     onselect?: (image: string) => void;
-    /** Multi-select toggle callback */
-    onmultichange?: (photoId: number, image: string) => void;
+    /**
+     * Multi-select toggle. Hands over the row rather than its bytes: an attachment has to
+     * know whether it is a video or a GIF to draw itself, and a base64 string cannot say.
+     */
+    onmultichange?: (photoId: number, media: MediaPreview) => void;
     onclose: () => void;
   }>();
 
@@ -61,7 +65,7 @@
           class="group bg-surface-container relative aspect-square overflow-hidden rounded-xl border transition-all {selected
             ? 'ring-primary border-primary ring-2'
             : 'border-outline-variant hover:border-outline'}"
-          onclick={() => onmultichange?.(photo.id, photo.data)}
+          onclick={() => onmultichange?.(photo.id, photo)}
         >
           <MediaThumb item={photo} />
           {#if selected}
@@ -102,7 +106,7 @@
             // Clear all — parent handles resetting the array
             for (const id of [...selectedIds]) {
               const photo = $photos.find((p) => p.id === id);
-              if (photo) onmultichange?.(photo.id, photo.data);
+              if (photo) onmultichange?.(photo.id, photo);
             }
           }}
         >

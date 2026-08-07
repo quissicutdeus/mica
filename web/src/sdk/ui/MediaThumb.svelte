@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { MediaItem } from '@shared/types';
+  import type { MediaPreview } from '@shared/types';
   import DocumentIcon from './icons/DocumentIcon.svelte';
   import LinkIcon from './icons/LinkIcon.svelte';
   import MicrophoneIcon from './icons/MicrophoneIcon.svelte';
@@ -20,7 +20,7 @@
    * playback path arrives, this is the one file that changes.
    */
   interface Props {
-    item: MediaItem;
+    item: MediaPreview;
     /** `grid` fills its container; `full` fits inside it. */
     fit?: 'cover' | 'contain';
     class?: string;

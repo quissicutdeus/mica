@@ -1,4 +1,12 @@
-import type { Contact, Conversation, Mail, Message, Note, MediaItem } from '@shared/types';
+import type {
+  Contact,
+  Conversation,
+  Mail,
+  Message,
+  Note,
+  MediaItem,
+  MediaPreview
+} from '@shared/types';
 
 /** Inject created_at / updated_at timestamps into a mock object. Accepts an optional offset (ms before now). */
 const ts = (offsetMs: number = 0) => {
@@ -723,16 +731,46 @@ export const mockConversations: Conversation[] = conversationTitles.map((c, conv
       ? crazyExPrompts[mIndex - 175]
       : promptList[mIndex % promptList.length];
 
-    let attachments: { id?: number; attachment?: string }[] | undefined = undefined;
+    /**
+     * The shape the server projects, not a bare string.
+     *
+     * A mock that disagrees with the server is a bug you cannot see in the browser (§8),
+     * and this one would have been exactly that: attachments now carry a `MediaPreview` so
+     * a video or a GIF can say what it is, and a fixture still handing over base64 would
+     * have made `pnpm dev` look right while the game rendered nothing.
+     *
+     * Note the absence of `citizenid` — the server's projection withholds it, because a
+     * conversation is shared and the uploader's id would reach every participant.
+     */
+    const previewAt = (offset: number, id: number): { id: number; media: MediaPreview } => ({
+      id,
+      media: {
+        id: 500 + offset,
+        kind: 'photo',
+        data: sampleAvatars[offset % sampleAvatars.length]
+      }
+    });
+
+    let attachments: { id?: number; media?: MediaPreview }[] | undefined = undefined;
     if (multiAttachment) {
+      // The second one is a video, so the thread exercises the poster-frame branch rather
+      // than only the one every fixture already covered.
       attachments = [
-        { id: 1, attachment: sampleAvatars[(mIndex + convIndex) % sampleAvatars.length] },
-        { id: 2, attachment: sampleAvatars[(mIndex + convIndex + 5) % sampleAvatars.length] }
+        previewAt(mIndex + convIndex, 1),
+        {
+          id: 2,
+          media: {
+            id: 600 + mIndex,
+            kind: 'video',
+            thumbnail: sampleAvatars[(mIndex + convIndex + 5) % sampleAvatars.length],
+            url: 'https://example.invalid/clip.mp4',
+            duration_ms: 12_000,
+            alt_text: 'Clip'
+          }
+        }
       ];
     } else if (hasAttachment) {
-      attachments = [
-        { id: 1, attachment: sampleAvatars[(mIndex + convIndex) % sampleAvatars.length] }
-      ];
+      attachments = [previewAt(mIndex + convIndex, 1)];
     }
 
     const msgOffset = (199 - mIndex) * (isUnreadExMsg ? 2 : 36) * 60 * 1000;

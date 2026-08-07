@@ -46,7 +46,16 @@ export interface Message {
   message: string;
   created_at: Date | string;
   updated_at: Date | string;
-  attachments?: { id?: number; attachment?: string; photo_id?: number }[]; // attachment is base64 for read, photo_id for creation
+  /**
+   * `photo_id` on the way in, `media` on the way back.
+   *
+   * It used to be a bare base64 string, which made every attachment a photo by
+   * construction — a voice note or a GIF had nowhere to say what it was. `media` is a
+   * projection rather than the whole row for a reason that is not tidiness: a conversation
+   * is **shared**, so embedding the uploader's `citizenid` would hand it to every other
+   * participant. Same reasoning as `publicColumns` on a public read (§10).
+   */
+  attachments?: { id?: number; photo_id?: number; media?: MediaPreview }[];
 }
 
 /**
@@ -272,6 +281,18 @@ export interface Note {
   created_at: Date | string;
   updated_at: Date | string;
 }
+
+/**
+ * Enough of a media row to draw it, and nothing that identifies its owner.
+ *
+ * What crosses the wire wherever media appears somewhere its uploader does not own the
+ * whole surface — a message attachment being the first. `MediaItem` is assignable to it,
+ * so a gallery row can be passed anywhere this is accepted.
+ */
+export type MediaPreview = Pick<
+  MediaItem,
+  'id' | 'kind' | 'data' | 'url' | 'thumbnail' | 'mime_type' | 'duration_ms' | 'alt_text'
+>;
 
 /** What `gphone_media` can hold. Over-provisioned on purpose — see `services/Photos.ts`. */
 export type MediaKind = 'photo' | 'video' | 'audio' | 'gif' | 'sticker' | 'file' | 'link';

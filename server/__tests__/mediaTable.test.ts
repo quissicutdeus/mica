@@ -74,8 +74,46 @@ describe('the media table rename', () => {
       const joinSql = dbMock.query.mock.calls[1][0] as string;
       expect(joinSql).toContain('JOIN gphone_media');
       expect(joinSql).not.toContain('gphone_photos');
-      // The column moved too, and aliasing it keeps the wire shape identical.
-      expect(joinSql).toContain('p.data as attachment');
+      expect(joinSql).toContain('p.data');
+    });
+
+    it('never selects the uploader citizenid', async () => {
+      // A conversation is shared, so anything this query selects reaches every
+      // participant — and the uploader's citizenid is the one field that ties a picture
+      // back to a person who only meant to send it. `SELECT p.*` would hand it over
+      // silently, which is why the column list is explicit (§10, publicColumns).
+      dbMock.query.mockResolvedValueOnce([{ id: 1, conversation_id: 4 }]);
+      await (messages.repo as MessageRepository).findByConversation(4);
+
+      const joinSql = dbMock.query.mock.calls[1][0] as string;
+      expect(joinSql).not.toMatch(/p\.citizenid/);
+      expect(joinSql).not.toMatch(/p\.\*/);
+    });
+
+    it('carries enough of the row to draw a video', async () => {
+      // Selecting only `data`, as this did, made every attachment a photo by
+      // construction: a video has no `data` at all and renders from its thumbnail.
+      dbMock.query.mockResolvedValueOnce([{ id: 1, conversation_id: 4 }]);
+      dbMock.query.mockResolvedValueOnce([
+        {
+          id: 9,
+          message_id: 1,
+          media_id: 3,
+          kind: 'video',
+          data: null,
+          thumbnail: 'https://x.test/p.jpg',
+          duration_ms: 12000
+        }
+      ]);
+      const [message] = await (messages.repo as MessageRepository).findByConversation(4);
+
+      expect(message.attachments?.[0].media).toMatchObject({
+        id: 3,
+        kind: 'video',
+        thumbnail: 'https://x.test/p.jpg',
+        duration_ms: 12000
+      });
+      expect(message.attachments?.[0].media).not.toHaveProperty('citizenid');
     });
   });
 
