@@ -330,6 +330,29 @@ the _default_ seed's color for anyone who changed theirs.
 colorfulness" and returned a picked color noticeably muted. Measured across eleven seeds, Vibrant
 carries about half again the chroma at identical worst-case contrast.
 
+### Day-zero schema
+
+gPhone is pre-release — nothing has been installed anywhere and there is no data to preserve — so
+the upgrade machinery went away and installation became one step.
+
+`pnpm generate:sql` now writes the **whole** schema into `gphone.sql`: the audit ledger (which has no
+`defineService` behind it and lives in `scripts/framework-schema.sql`) followed by every app table, in
+the dependency order it already computed. Install is "import one file". That replaced `gphone.sql`
+plus a numbered file per service in `sql/apps/`, which worked but cost a filename-order rule every
+server owner had to be told, a prefix that renumbered existing files whenever an app was added, and
+two places to look for one schema.
+
+`SchemaMigrator` is **report-only**. It used to read `information_schema` at resource start and apply
+missing columns and indexes behind a `gphone_auto_migrate` convar; every column it could add is in
+the generated file already, so a database that disagrees with the code has not drifted — it has not
+been imported. Saying so beats patching it halfway and leaving the operator unsure which half they
+have. `gphoneschema` prints the same report on demand, and the hand-written migration written for
+`gphone_photos` → `gphone_media` was deleted with the rest.
+
+**This posture expires.** The day this ships to a server with players on it, a drop, a rename or a
+type change starts costing data and migrations come back. The absence of them is not "renames are
+free"; it is "there is nothing to migrate yet".
+
 ### A resource-facing export API
 
 Another resource can now make the phone do things. Before this the entire public surface was one
@@ -396,11 +419,9 @@ a key to nothing outside SQL, so the `table:` override moved it for free.
 until a feature writes them, because a column a client can set before any caller needs it is
 unconstrained surface (§2.9).
 
-Existing installs need `sql/migrations/001-photos-to-media.sql`, the first hand-written migration in
-the repo — `SchemaMigrator` is additive-only, so a rename is printed for a human and never applied. It
-also rewrites `gphone_reports.target_table` and the audit ledger, which store the table name as a
-literal string and would otherwise leave every historical photo report pointing at a table that no
-longer exists.
+There is no migration, and there does not need to be one: gPhone is pre-release, so the schema is
+imported whole from the generated `gphone.sql` against an empty database. A migration was written and
+then deleted along with the rest of the upgrade machinery — see _Day-zero schema_ below.
 
 `MediaThumb` in `sdk/ui/` draws a row by its `kind`, and the gallery, the full view and the picker
 all go through it — four copies of "what does this look like" is four places to forget `kind` exists.

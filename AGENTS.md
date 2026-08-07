@@ -52,13 +52,13 @@ the targets run _different TypeScript versions_ (§3), so a web-only check prove
 All admin-gated by `isAdmin` in `server/services/Admin.ts` — the `gphone_admin_aces` convar, defaulting
 to `gphone.admin` and `command`. The server console (`source` 0) is trusted.
 
-| Command                                 | Does                                                         |
-| --------------------------------------- | ------------------------------------------------------------ |
-| `gphoneschema`                          | Prints what a migration would change, without changing it    |
-| `gphonecharge [id] <0-100>`             | Sets a player's battery level; omit the id for yourself      |
-| `gphoneseed` / `gphoneseed add`         | Creates test characters, contacts and threads for the caller |
-| `gphoneseed text <firstname> <message>` | Has a seeded character text you — exercises inbound delivery |
-| `gphoneseed clear`                      | Removes everything `gphoneseed` created                      |
+| Command                                 | Does                                                              |
+| --------------------------------------- | ----------------------------------------------------------------- |
+| `gphoneschema`                          | Reports where the database differs from the code. Changes nothing |
+| `gphonecharge [id] <0-100>`             | Sets a player's battery level; omit the id for yourself           |
+| `gphoneseed` / `gphoneseed add`         | Creates test characters, contacts and threads for the caller      |
+| `gphoneseed text <firstname> <message>` | Has a seeded character text you — exercises inbound delivery      |
+| `gphoneseed clear`                      | Removes everything `gphoneseed` created                           |
 
 `gphoneseed` exists because a fresh database has one character and nobody to text:
 `conversations:create` resolves a phone number to a `citizenid` and gives up when
@@ -433,27 +433,27 @@ Four words carry the structure, and they mean exactly one thing each:
   so are `battery`, `reports`, `shell` and `phone`, none of which are apps.
 - **SDK** — the contract apps build against, and the only thing they may import.
 
-| Path                   | Runs in      | Notes                                                                        |
-| ---------------------- | ------------ | ---------------------------------------------------------------------------- |
-| `client/services/`     | FiveM client | The client half of each service — NUI callbacks, server pushes               |
-| `client/game/`         | FiveM client | GTA world: camera, freelook, phone prop and animations                       |
-| `client/lib/`          | FiveM client | `ServiceProxy` (NUI↔server relay), `FrameworkBridge`, `nui`                  |
-| `server/services/`     | FiveM server | One file per service, named for the service, auto-indexed                    |
-| `server/lib/`          | FiveM server | `ServiceEndpoint`, `defineService`, `Repository`, `Database`                 |
-| `server/repositories/` | FiveM server | `SchemaRepository` subclasses — the joins the generic path cannot express    |
-| `sql/apps/`            | generated    | Per-service DDL from `pnpm generate:sql`; applied by hand                    |
-| `gphone.sql`           | hand-written | Framework schema only — the moderation audit ledger                          |
-| `server/__tests__/`    | Vitest/node  | Excluded from `tsc`; see §1                                                  |
-| `shared/types.ts`      | both         | `@shared/types` path alias, not a workspace package (§3)                     |
-| `shared/richText.ts`   | both         | One tokenizer for `@handle` — the UI renders and the server notifies from it |
-| `web/src/shell/`       | CEF+browser  | The OS: `Shell.svelte`, `PhoneFrame`, `Launcher`, `ToastHost`                |
-| `web/src/shell/state/` | CEF+browser  | State the phone itself owns: navigation, keybinds, hardware, size            |
-| `web/src/services/`    | CEF+browser  | Client-side cache of each server service. Reached via the SDK                |
-| `web/src/sdk/`         | CEF+browser  | `@gphone/sdk` — the public surface for apps (§2.7)                           |
-| `web/src/sdk/ui/`      | CEF+browser  | UI primitives and icons apps may build with                                  |
-| `web/src/apps/`        | CEF+browser  | One dir per app: `manifest.ts` + `index.svelte` + `Icon.svelte`              |
-| `web/src/nui/`         | CEF+browser  | The bridge: transport, `fetchNui`, `useNuiEvent`, browser mocks              |
-| `web/src/lib/`         | CEF+browser  | Helpers with no gPhone state and no I/O — formatters, markdown               |
+| Path                           | Runs in      | Notes                                                                        |
+| ------------------------------ | ------------ | ---------------------------------------------------------------------------- |
+| `client/services/`             | FiveM client | The client half of each service — NUI callbacks, server pushes               |
+| `client/game/`                 | FiveM client | GTA world: camera, freelook, phone prop and animations                       |
+| `client/lib/`                  | FiveM client | `ServiceProxy` (NUI↔server relay), `FrameworkBridge`, `nui`                  |
+| `server/services/`             | FiveM server | One file per service, named for the service, auto-indexed                    |
+| `server/lib/`                  | FiveM server | `ServiceEndpoint`, `defineService`, `Repository`, `Database`                 |
+| `server/repositories/`         | FiveM server | `SchemaRepository` subclasses — the joins the generic path cannot express    |
+| `gphone.sql`                   | generated    | The whole schema from `pnpm generate:sql`; imported by hand                  |
+| `scripts/framework-schema.sql` | hand-written | The audit ledger, which has no `defineService` behind it                     |
+| `server/__tests__/`            | Vitest/node  | Excluded from `tsc`; see §1                                                  |
+| `shared/types.ts`              | both         | `@shared/types` path alias, not a workspace package (§3)                     |
+| `shared/richText.ts`           | both         | One tokenizer for `@handle` — the UI renders and the server notifies from it |
+| `web/src/shell/`               | CEF+browser  | The OS: `Shell.svelte`, `PhoneFrame`, `Launcher`, `ToastHost`                |
+| `web/src/shell/state/`         | CEF+browser  | State the phone itself owns: navigation, keybinds, hardware, size            |
+| `web/src/services/`            | CEF+browser  | Client-side cache of each server service. Reached via the SDK                |
+| `web/src/sdk/`                 | CEF+browser  | `@gphone/sdk` — the public surface for apps (§2.7)                           |
+| `web/src/sdk/ui/`              | CEF+browser  | UI primitives and icons apps may build with                                  |
+| `web/src/apps/`                | CEF+browser  | One dir per app: `manifest.ts` + `index.svelte` + `Icon.svelte`              |
+| `web/src/nui/`                 | CEF+browser  | The bridge: transport, `fetchNui`, `useNuiEvent`, browser mocks              |
+| `web/src/lib/`                 | CEF+browser  | Helpers with no gPhone state and no I/O — formatters, markdown               |
 
 `client/services/index.ts`, `client/game/index.ts`, `server/services/index.ts`, `web/src/sdk/hooks/index.ts` and
 `web/src/sdk/icons.ts` are **generated** by `scripts/generate-barrels.js`. Add a file to the
@@ -516,19 +516,24 @@ actions accept `conversation_id`, `id`, or a bare id via `conversationIdFrom` in
 
 #### Schema changes
 
-`sql/apps/*.sql` is `CREATE TABLE IF NOT EXISTS`, so it only ever builds a **fresh**
-database. Re-running it against a live one succeeds and changes nothing — which is how
-`archived_at` reached new installs and no existing one.
+**Nothing applies schema changes at runtime, and there is no migration path.** gPhone is
+pre-release: nobody has installed it, so there is no data anywhere to preserve. Change the
+`defineService` declaration, run `pnpm generate:sql`, and re-import `gphone.sql` against a
+wiped database. `pnpm generate:sql:reset` writes the file that wipes it.
 
-Adding a column or index therefore needs nothing extra: `SchemaMigrator` runs at resource
-start, reads `information_schema`, and applies the difference. Change the
-`defineService` declaration, run `pnpm generate:sql`, done.
+There **was** a `SchemaMigrator` that read `information_schema` at resource start and
+applied missing columns and indexes, behind a `gphone_auto_migrate` convar. It is now
+report-only. Every column it could add is in the generated file already, so a database
+that disagrees with the code has not drifted — it has not been imported, and saying so is
+more useful than patching it halfway and leaving the operator unsure which half they have.
 
-It is **additive only**, and that is a safety property rather than an unfinished feature.
-A drop, a rename and a type change can all lose data, and none is inferable from a diff —
-a renamed column looks exactly like one dropped and another added. Those are printed for
-a human and never applied. `gphoneschema` prints the same report without touching
-anything; `setr gphone_auto_migrate false` turns the automatic pass off.
+`gphoneschema` prints that report on demand, and the same report runs at resource start.
+Neither changes anything.
+
+**This is a pre-release posture and it expires.** The day this ships to a server with
+players on it, a change that drops, renames or retypes a column starts costing data, and
+migrations come back. Do not read the absence of them as "renames are free" — read it as
+"there is nothing to migrate yet".
 
 The expected shape of a table comes from `expectedShape()` in `server/lib/schemaSql.ts`,
 which both the `CREATE TABLE` generator and the migration planner read. Do not restate a
@@ -892,10 +897,17 @@ would cross NUI as `{type:'Buffer',data:[...]}` and render as nothing.
 
 ### Schema changes do not touch the database
 
-**`gphone.sql` must not contain app tables.** It holds only framework infrastructure — currently just
-`gphone_audit_logs`, which has no owning module and does not fit the app-table shape. Every app table
-lives in `sql/apps/`, generated. Duplicating DDL into `gphone.sql` reintroduces exactly the drift this
-phase removed, and a stale copy there silently breaks the `columns` allowlist's safety property (§2.9).
+**`gphone.sql` is generated in full and must not be hand-edited.** It holds the framework half — the
+audit ledger, which has no owning module and does not fit the app-table shape, and which lives in
+`scripts/framework-schema.sql` — followed by every app table in dependency order. Editing the output
+reintroduces exactly the drift the generator removes, and a stale copy silently breaks the `columns`
+allowlist's safety property (§2.9): that allowlist is only sound while it matches the real table.
+
+It used to be `gphone.sql` plus one numbered file per service in `sql/apps/`, imported in filename
+order because foreign keys cross app boundaries. That worked and cost three things: a rule every
+server owner had to be told, a numeric prefix that renumbered existing files whenever an app was
+added, and two places to look for one schema. One file in the order the generator already computed
+removes all three.
 
 #### The dev reset
 
@@ -913,10 +925,10 @@ whole schema. Development only.
 - Nothing in this repo connects to a database. Apply the file yourself in a DB client; it uses
   `PREPARE`/`EXECUTE`, so it will not run through oxmysql.
 
-`pnpm generate:sql` writes `sql/apps/<NN>-<id>.sql`, which is **committed and applied by hand**. There is
+`pnpm generate:sql` writes `gphone.sql`, which is **committed and imported by hand**. There is
 deliberately no runtime DDL: `CREATE TABLE IF NOT EXISTS` silently does nothing against an existing
-table, so a schema change would be a no-op with no error — the same silent-failure shape as a missing
-NUI layer (§8). Regenerate and review the diff.
+table, so a schema change applied that way would be a no-op with no error — the same silent-failure
+shape as a missing NUI layer (§8). Regenerate and review the diff.
 
 **The numeric prefix is apply order, and alphabetical would be wrong.** Foreign keys cross app
 boundaries — `gphone_messages_attachments` references `gphone_media`, and `messages` sorts before

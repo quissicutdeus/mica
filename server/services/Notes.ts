@@ -6,7 +6,7 @@ import { Note } from '@shared/types';
  *
  * Replaces the hand-written NoteRepository + ServiceEndpoint pair. The schema drives the
  * `columns` allowlist, the `clientWritable` set, and the generated DDL in
- * sql/apps/notes.sql — so they cannot diverge.
+ * the generated `gphone.sql` — so they cannot diverge.
  */
 export const notes = defineService<Note>({
   id: 'notes',

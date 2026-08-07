@@ -43,7 +43,7 @@
 - **Dynamic App Registry**: Reactive `appRegistryStore` supporting persistent `firstBoot` timestamps, app installation dates, runtime third-party app registration (`registerApp`, `unregisterApp`), and home screen grid updates.
 - **Framework Bridge**: Built-in support for **QBX Core** (`qbx_core`) and **QBCore** (`qb-core`) with automatic player lookup and money handlers.
 - **Banking Bridge**: Reads transaction history through the banking resource's own exports rather than its tables (**Renewed-Banking** supported), normalizing each script's record shape onto one contract. Degrades to an empty list when no supported resource is present.
-- **Declarative Server Schema**: Each app declares its server half once via `defineService` — the schema drives the SQL identifier allowlist, the client-writable field set, and the generated DDL in `sql/apps/`, so they cannot drift apart.
+- **Declarative Server Schema**: Each app declares its server half once via `defineService` — the schema drives the SQL identifier allowlist, the client-writable field set, and the generated DDL in `gphone.sql`, so they cannot drift apart.
 - **Inventory Integration**: Out-of-the-box support for `ox_inventory` item registration and removal.
 - **Central Audit Logging**: Comprehensive action auditing (`gphone_audit_logs`) tracking archive, deletion, moderation, and participant events.
 - **Animation & Control**: Client-side animation, camera capture, and freelook camera systems.
@@ -79,19 +79,11 @@ Before installing, ensure your server environment meets the following requiremen
    Clone or download `gphone` into your server's `resources` directory (e.g., `resources/[standalone]/gphone`).
 
 2. **Database Setup**
-   Import [`gphone.sql`](gphone.sql) — the framework schema, which is just the moderation audit ledger — and then every file in [`sql/apps/`](sql/apps), which holds one file per service (accounts, battery, blabber, blabber_dms, contacts, conversations, mail, notes, photos, messages, reports) including their join and attachment tables.
+   Import [`gphone.sql`](gphone.sql). That is the whole schema — the moderation audit ledger and every app table, in dependency order, so foreign keys resolve as it runs.
 
-   **Import them in filename order.** The numeric prefix is apply order, not decoration: foreign keys cross app boundaries, so `gphone_blabber` needs `gphone_accounts` to exist first and the messages app's attachment table references `gphone_media`. Alphabetical order gets both wrong. The files are generated in dependency order, so importing the directory as it sorts is correct by default — and the prefixes shift when an app is added, which is expected.
+   It is **generated** by `pnpm generate:sql` from each app's `defineService` declaration, which is the single source of truth: the same declaration drives the SQL identifier allowlist that guards against injection, so a second hand-maintained copy of the DDL would not just drift, it would quietly weaken that guard.
 
-   App tables are **generated** from each app's `defineService` declaration by `pnpm generate:sql`, so the declaration is the single source of truth for the schema. They are deliberately not duplicated into `gphone.sql`: two hand-maintained copies of the same DDL drift, and the column allowlist that protects against SQL injection is only safe while it matches the real table.
-
-   Every statement is `CREATE TABLE IF NOT EXISTS`, so re-importing is harmless — on a **fresh** database. That is also its limitation: against a database that already has the table, it succeeds and changes nothing.
-
-   > **Upgrading an existing install?** Check [`sql/migrations/`](sql/migrations) first, and run anything there instead of the matching file in `sql/apps/`. Back up before you do.
-   >
-   > A migration exists because a rename or a type change cannot be applied automatically — gPhone's schema migrator is additive-only, so it adds missing columns and indexes at resource start but will never drop, rename or retype one, since none of those is safe to infer from a diff.
-   >
-   > **`001-photos-to-media.sql`** renames `gphone_photos` to `gphone_media` and `image` to `data`. Skipping it and running `sql/apps/10-photos.sql` instead creates an _empty_ `gphone_media` and leaves every player's gallery stranded in the old table — nothing is deleted, but the photos vanish from the phone. Run `gphoneschema` in the server console afterwards to confirm the database matches what the code expects; it reports without changing anything.
+   Every statement is `CREATE TABLE IF NOT EXISTS`, so re-importing is harmless — and does nothing to a table that already exists. gPhone applies no schema changes at runtime: `gphoneschema` in the server console reports any difference between the database and what the code expects, without changing anything.
 
    <details>
    <summary>Resetting the schema during development</summary>
@@ -246,7 +238,7 @@ gphone/
 │       └── services/ # Stores backing the SDK hooks; apps reach these through the SDK, never by path
 ├── scripts/          # Manifest generation, SQL generation, and build automation
 ├── build/            # esbuild bundle configuration
-├── sql/apps/         # Generated per-app tables + join tables (pnpm generate:sql)
+├── gphone.sql        # Generated: the whole schema (pnpm generate:sql)
 ├── gphone.sql        # Framework schema (moderation audit ledger)
 └── fxmanifest.lua    # Resource manifest file
 ```

@@ -231,15 +231,12 @@ describe('planChildMigration', () => {
 });
 
 describe('SchemaMigrator', () => {
-  it('skips auto migration when gphone_auto_migrate convar is false', async () => {
-    (globalThis as any).GetConvar = vi.fn().mockReturnValue('false');
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
-    await SchemaMigrator.run();
-
-    expect(logSpy).toHaveBeenCalledWith(
-      '[gphone] gphone_auto_migrate is false — skipping schema migration.'
-    );
+  it('never touches the database', async () => {
+    // The migrator applies nothing now. `gphone.sql` is generated whole from the
+    // declarations, so a database that disagrees with the code has not drifted — it has
+    // not been imported, and saying so beats silently patching halfway there and leaving
+    // an operator unsure which half they have.
+    expect(SchemaMigrator).not.toHaveProperty('run');
   });
 
   it('plans migration by querying information_schema', async () => {
@@ -279,37 +276,10 @@ describe('SchemaMigrator', () => {
 
     expect(logSpy).toHaveBeenCalledWith('[gphone] schema differences:');
     expect(logSpy).toHaveBeenCalledWith(
-      '  gphone_widgets: table does not exist — run the file in sql/apps/'
+      '  gphone_widgets: table does not exist — import gphone.sql'
     );
     expect(logSpy).toHaveBeenCalledWith(
       '  needs a human: gphone_widgets.foo exists but is not declared'
     );
-  });
-
-  it('applies additive schema changes on run() when enabled', async () => {
-    (globalThis as any).GetConvar = vi.fn().mockReturnValue('true');
-    vi.spyOn(SchemaMigrator, 'plan').mockResolvedValueOnce([
-      {
-        table: 'gphone_widgets',
-        missingTable: false,
-        additive: [
-          {
-            description: 'add column body to gphone_widgets',
-            sql: 'ALTER TABLE `gphone_widgets` ADD COLUMN `body` text DEFAULT NULL'
-          }
-        ],
-        drift: []
-      }
-    ]);
-    dbMock.query.mockResolvedValueOnce(undefined);
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
-    await SchemaMigrator.run();
-
-    expect(dbMock.query).toHaveBeenCalledWith(
-      'ALTER TABLE `gphone_widgets` ADD COLUMN `body` text DEFAULT NULL',
-      []
-    );
-    expect(logSpy).toHaveBeenCalledWith('[gphone] applied 1 schema change(s).');
   });
 });

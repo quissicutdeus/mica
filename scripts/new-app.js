@@ -307,7 +307,7 @@ if (WITH_SERVICE) {
       `merge into one is worse than a missing line. \`pnpm verify\` fails until both are\n` +
       `there — routes.test.ts cross-references every layer.\x1b[0m`
   );
-  console.log(`\nThen: \x1b[1mpnpm generate:sql\x1b[0m and apply \`sql/apps/${id}.sql\`.`);
+  console.log(`\nThen: \x1b[1mpnpm generate:sql\x1b[0m and re-import \`gphone.sql\`.`);
 } else {
   console.log(
     `Then: \x1b[1mpnpm dev\x1b[0m and open \x1b[1mlocalhost:5173/?app=${id}\x1b[0m.\n` +

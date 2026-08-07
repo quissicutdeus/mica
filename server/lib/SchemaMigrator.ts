@@ -21,11 +21,6 @@ import {
  * type changes are excluded.
  */
 
-const CONVAR = 'gphone_auto_migrate';
-
-/** Off with `setr gphone_auto_migrate false`. */
-const autoMigrateEnabled = (): boolean => GetConvar(CONVAR, 'true').toLowerCase() !== 'false';
-
 const currentDatabase = async (): Promise<string | null> =>
   await Database.scalar<string>('SELECT DATABASE()', []);
 
@@ -86,7 +81,7 @@ const collectPlans = async (schema: string): Promise<MigrationPlan[]> => {
 const describe = (plan: MigrationPlan): string[] => {
   const lines: string[] = [];
   if (plan.missingTable) {
-    lines.push(`  ${plan.table}: table does not exist — run the file in sql/apps/`);
+    lines.push(`  ${plan.table}: table does not exist — import gphone.sql`);
   }
   for (const statement of plan.additive) lines.push(`  ${statement.description}`);
   for (const issue of plan.drift) lines.push(`  needs a human: ${issue}`);
@@ -121,52 +116,5 @@ export const SchemaMigrator = {
     for (const plan of interesting) {
       for (const line of describe(plan)) console.log(line);
     }
-  },
-
-  /**
-   * Apply the additive part of every plan.
-   *
-   * Statements run one at a time and a failure is logged rather than thrown: one column
-   * that cannot be added — a NOT NULL with no default on a populated table, say — must
-   * not stop the other twenty from landing, and must not take the resource down.
-   */
-  async run(): Promise<void> {
-    if (!autoMigrateEnabled()) {
-      console.log(`[gphone] ${CONVAR} is false — skipping schema migration.`);
-      return;
-    }
-
-    let plans: MigrationPlan[];
-    try {
-      plans = await SchemaMigrator.plan();
-    } catch (e) {
-      console.error('[gphone] schema migration skipped, could not read the schema:', e);
-      return;
-    }
-
-    let applied = 0;
-    for (const plan of plans) {
-      if (plan.missingTable) {
-        console.log(`[gphone] ${plan.table} does not exist — run the file in sql/apps/.`);
-        continue;
-      }
-
-      for (const statement of plan.additive) {
-        try {
-          await Database.query(statement.sql, []);
-          console.log(`[gphone] ${statement.description}`);
-          applied++;
-        } catch (e) {
-          console.error(`[gphone] failed to ${statement.description}:`, e);
-          console.error(`[gphone]   ${statement.sql}`);
-        }
-      }
-
-      for (const issue of plan.drift) {
-        console.warn(`[gphone] schema needs a human: ${issue}`);
-      }
-    }
-
-    if (applied > 0) console.log(`[gphone] applied ${applied} schema change(s).`);
   }
 };

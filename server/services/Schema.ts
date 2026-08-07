@@ -31,7 +31,13 @@ RegisterCommand(
 );
 
 /**
- * Reconcile on resource start.
+ * Report on resource start. Reports only — nothing here changes the database.
+ *
+ * There was an auto-apply behind a `gphone_auto_migrate` convar, adding missing columns
+ * and indexes at start. It is gone: `gphone.sql` is generated whole from the declarations
+ * and importing it *is* the schema, so a database that disagrees with the code has not
+ * drifted, it has not been imported. Saying so is more useful than silently patching
+ * halfway there and leaving an operator unsure which half they have.
  *
  * `onResourceStart` rather than a deferred timer for two reasons. It fires after the
  * whole controller graph has imported, so `declaredServices` is complete — reading it at
@@ -42,5 +48,5 @@ RegisterCommand(
  */
 on('onResourceStart', (resourceName: string) => {
   if (resourceName !== GetCurrentResourceName()) return;
-  void SchemaMigrator.run();
+  void SchemaMigrator.report();
 });
