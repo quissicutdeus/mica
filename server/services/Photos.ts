@@ -83,6 +83,20 @@ export const photos = defineService<MediaItem>({
    */
   repositoryFactory: (resolved) =>
     new (class extends SchemaRepository<MediaItem> {
+      /**
+       * Write a row on a player's behalf, from the server.
+       *
+       * A **named** method rather than a service-level bypass (§2.9): the columns it sets
+       * are `clientWritable: false` precisely so no payload can reach them, and the way
+       * to write one anyway is a method that says what it is for. The only caller is the
+       * `AddMedia` export, which is how an external resource gets a GIF, a video poster
+       * or a voice clip into a player's gallery — the camera can only ever produce a
+       * `photo`.
+       */
+      async addForPlayer(citizenid: string, item: Partial<MediaItem>): Promise<number> {
+        return await this.create({ ...item, citizenid } as Partial<MediaItem>);
+      }
+
       async findAll(where: Partial<MediaItem> = {}): Promise<MediaItem[]> {
         return (await super.findAll(where)).map(coerceBinaryText);
       }

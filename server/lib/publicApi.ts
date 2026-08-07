@@ -25,6 +25,8 @@ import {
 } from './exports';
 import { SendSystemEmail } from '../services/Mail';
 import { getBatteryLevel, setBatteryLevel, setCharging } from '../services/Battery';
+import { photos } from '../services/Photos';
+import type { MediaItem, MediaKind } from '@shared/types';
 
 /**
  * How an external resource names itself in the notification shade.
@@ -147,6 +149,84 @@ const citizenOf = (source: unknown): { citizenid: string } | ExportOutcome<never
 const isFailure = <T>(value: unknown): value is ExportOutcome<T> =>
   typeof value === 'object' && value !== null && 'ok' in value;
 
+const MEDIA_KINDS: readonly MediaKind[] = [
+  'photo',
+  'video',
+  'audio',
+  'gif',
+  'sticker',
+  'file',
+  'link'
+];
+
+/** Only schemes that cannot execute, matching what `MediaThumb` will render. */
+const SAFE_URL = /^(https?:|data:image\/)/i;
+
+/**
+ * Put media in a player's gallery.
+ *
+ * The camera can only ever produce a `photo`, so before this the six other kinds the
+ * table understands had no way to exist. This is how a resource hands over a GIF, a video
+ * poster frame, a voice clip or a link preview.
+ *
+ * By citizenid, so it works offline — the row is the point, and the player finds it next
+ * time they open Photos.
+ */
+const AddMedia = async (
+  citizenid: unknown,
+  media: unknown
+): Promise<ExportOutcome<{ id: number }>> => {
+  if (typeof citizenid !== 'string' || !citizenid.trim()) {
+    return fail('invalid_args', 'A citizenid is required.');
+  }
+  if (!media || typeof media !== 'object') {
+    return fail('invalid_args', 'A media object is required.');
+  }
+
+  const item = media as Partial<MediaItem>;
+  const kind = String(item.kind ?? 'photo') as MediaKind;
+  if (!MEDIA_KINDS.includes(kind)) {
+    return fail('invalid_args', `'${item.kind}' is not a media kind.`);
+  }
+
+  // One of the two, or there is nothing to show. A row with neither renders as a labelled
+  // placeholder forever, which is a worse outcome than refusing the call.
+  const url = item.url ? String(item.url) : undefined;
+  const data = item.data ? String(item.data) : undefined;
+  if (!url && !data) {
+    return fail('invalid_args', 'Either `url` or `data` is required.');
+  }
+
+  // Checked here as well as at render. `url` is `clientWritable: false`, so this export is
+  // the only way a value reaches the column — which makes it the right place to refuse a
+  // scheme, rather than relying on every future consumer to re-check.
+  if (url && !SAFE_URL.test(url.trim())) {
+    return fail('invalid_args', 'A url must be http(s) or a data:image.');
+  }
+  if (item.thumbnail && !SAFE_URL.test(String(item.thumbnail).trim())) {
+    return fail('invalid_args', 'A thumbnail must be http(s) or a data:image.');
+  }
+
+  const repo = photos.repo as unknown as {
+    addForPlayer(citizenid: string, item: Partial<MediaItem>): Promise<number>;
+  };
+
+  const id = await repo.addForPlayer(citizenid, {
+    kind,
+    data,
+    url,
+    thumbnail: item.thumbnail ? String(item.thumbnail) : undefined,
+    mime_type: item.mime_type ? String(item.mime_type) : undefined,
+    width: Number.isFinite(item.width) ? Number(item.width) : undefined,
+    height: Number.isFinite(item.height) ? Number(item.height) : undefined,
+    duration_ms: Number.isFinite(item.duration_ms) ? Number(item.duration_ms) : undefined,
+    byte_size: Number.isFinite(item.byte_size) ? Number(item.byte_size) : undefined,
+    alt_text: item.alt_text ? String(item.alt_text).slice(0, 255) : undefined
+  });
+
+  return ok({ id });
+};
+
 export function registerPublicApi(): void {
   publish(
     'GetApiVersion',
@@ -163,6 +243,8 @@ export function registerPublicApi(): void {
   publish('SendSystemEmail', SendSystemEmail);
 
   publish('SendNotification', guarded('SendNotification', SendNotification));
+
+  publish('AddMedia', guardedAsync('AddMedia', AddMedia));
 
   /** Build a deep link without needing to know the format. */
   publish(

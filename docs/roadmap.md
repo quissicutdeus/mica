@@ -402,8 +402,16 @@ also rewrites `gphone_reports.target_table` and the audit ledger, which store th
 literal string and would otherwise leave every historical photo report pointing at a table that no
 longer exists.
 
-Nothing renders the new columns yet. That is the next step, not an oversight: the migration landed
-alone so a regression in it could not be confused with a regression in a media feature.
+`MediaThumb` in `sdk/ui/` draws a row by its `kind`, and the gallery, the full view and the picker
+all go through it — four copies of "what does this look like" is four places to forget `kind` exists.
+Video renders as its poster frame with a play badge rather than a `<video>` element: the game is on
+Chromium 103 and the bytes would have to arrive base64 across the NUI bridge, which is the constraint
+at the top of this section. `AddMedia` is the creation path, since the camera can only ever produce a
+`photo` — without it the other six kinds had no way to exist.
+
+**Message attachments are still photo-only.** They carry a bare base64 string over the wire
+(`p.data as attachment`), not a `MediaItem`, so rendering them by kind is a wire-shape change rather
+than a swap to `MediaThumb`. That is the next step here.
 
 ---
 

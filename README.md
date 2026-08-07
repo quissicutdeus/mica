@@ -213,6 +213,7 @@ end
 | `SendSystemEmail(...)`              | citizenid              | Sends mail. Predates this API and keeps its original signature                                    |
 | `SendNotification(citizenid, opts)` | citizenid              | Raises a notification. Works offline — the row is written and shown next time they open the phone |
 | `BuildDeepLink(app, props)`         | —                      | Builds a `app?key=value` link without needing to know the format                                  |
+| `AddMedia(citizenid, media)`        | citizenid              | Puts a GIF, a video poster, a voice clip or a file in a player's gallery                          |
 | `GetBatteryLevel(source)`           | source                 | The saved charge, 0-100                                                                           |
 | `SetBatteryLevel(source, level)`    | source                 | Sets the charge. Clamped rather than refused                                                      |
 | `AddBatteryCharge(source, delta)`   | source                 | Adds or, with a negative delta, drains — an EMP, a taser                                          |
@@ -221,6 +222,8 @@ end
 **citizenid or source, and it matters which.** Anything that must work while the player is offline
 takes a citizenid; anything inherently live takes a source. No export reads an implicit `source`
 global, because `TriggerEvent` from another resource would make that the wrong player.
+
+**`AddMedia` is how anything but a photo gets in.** The camera only ever produces a `photo`, so the other six kinds — `video`, `audio`, `gif`, `sticker`, `file`, `link` — exist only through this export. Pass either `url` (http(s) only) or `data` (base64); a `video` also wants a `thumbnail`, since gPhone draws the poster frame rather than playing the clip.
 
 **`ext_<resource>` is reserved for you.** Notifications raised under it get their own group in the
 shade, labelled with your `sourceLabel`. gPhone apps are forbidden from taking an `ext_` id, so your
