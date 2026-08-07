@@ -126,27 +126,11 @@
 
   /* The one token with no M3 role behind it: the FAB's coloured bloom, for a
      `box-shadow`. An elevation effect rather than a semantic role. */
+  --color-primary-container-hover: rgb(18, 72, 181);
+  --color-primary-container-pressed: rgb(22, 76, 183);
   --color-primary-glow: rgba(182, 196, 255, 0.3);
 
   /* --- end generated --- */
-
-  /**
-   * Legibility for text sitting directly on a photo wallpaper.
-   *
-   * Two layers: a tight drop for edge definition and a wider halo for the hard case,
-   * light text over bright sky. Applied to a container rather than each label, because
-   * `text-shadow` inherits.
-   *
-   * A shadow rather than measuring the photo and switching the text between light and
-   * dark. Brightness varies *within* one screen — a launcher can have a label over open
-   * sky and another over dark hair at the same time — so a single per-image decision is
-   * wrong for half the labels whichever way it goes. A dark shadow under light text is
-   * legible over both, which is why every phone OS does this and none of them samples.
-   *
-   * Pre-resolved rgba, no `color-mix()`, and not a themed role: it has to stay dark
-   * whatever the seed, since it exists to separate text from an arbitrary photograph.
-   */
-  --text-shadow-label: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.65);
 
   /**
    * The frame's own insets. `PhoneFrame` expressed these as bare `pt-8`/`pb-4` with
@@ -187,4 +171,41 @@ a {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/**
+ * Text drawn straight onto a photo wallpaper — app labels, the clock, the battery figure.
+ *
+ * **On the text itself, never on a container.** All three properties inherit, so putting
+ * it on the launcher looked like it would cover every label for free — and it covered the
+ * unread badge too, where a 3px stroke on a 10px number closed the glyph up solid, and
+ * reached the SVG icons, since `paint-order` applies to them as well.
+ *
+ * Inheriting also does not work: `<button>` resets `text-shadow` in the UA stylesheet, so
+ * with the class on the launcher the shadow died at the app-icon button and only the
+ * stroke arrived. `-webkit-text-stroke` is not in that reset, which is exactly why the
+ * two halves behaved differently and why it was not obvious.
+ *
+ * **A drop shadow alone is not enough, and that was the first attempt.** A 2px blur plus a
+ * diffuse 8px halo separates the 4xl "gPhone" heading and does almost nothing for a 12px
+ * `text-xs` label over bright sky — small glyphs have too little area for a soft shadow to
+ * build contrast against. What works at that size is an outline.
+ *
+ * `paint-order: stroke fill` is the part that makes the stroke usable: without it the
+ * stroke is painted over the glyph and eats inward, so 12px text at 3px stroke turns to
+ * mush. With it the stroke sits behind and only the outer half shows, which thickens the
+ * letter's edge instead of thinning its middle.
+ *
+ * A class here rather than Tailwind utilities because `-webkit-text-stroke` and
+ * `paint-order` have none, and this file already carries `.no-scrollbar` for the same
+ * reason. CEF-wise both are comfortable: `-webkit-text-stroke` predates the baseline by
+ * years and `paint-order` on text is Chrome 79, against the Chromium 103 floor in §6.
+ *
+ * The alternative is a scrim pill behind every label, which is more certain and visibly
+ * changes the home screen. Worth reaching for only if this is still not enough in game.
+ */
+.text-on-wallpaper {
+  -webkit-text-stroke: 3px var(--color-surface);
+  paint-order: stroke fill;
+  text-shadow: 0 1px 2px var(--color-surface);
 }
