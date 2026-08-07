@@ -4,6 +4,8 @@
     Button,
     EmptyState,
     MessageIcon,
+    ReportButton,
+    ReportDialog,
     SegmentedControl,
     Skeleton,
     useAppAction,
@@ -138,6 +140,9 @@
       void loadPage(null);
     }
   });
+
+  /** Reporting the account itself, as opposed to any one of its Blabs. */
+  let reporting = $state(false);
 </script>
 
 <div class="flex h-full flex-col">
@@ -207,6 +212,12 @@
             <MessageIcon class="h-4 w-4" />
           </button>
         {/if}
+        <!-- Somebody else's profile only. An account is the surface a player judges a
+             stranger by — handle, display name, bio — so it is the one worth being able
+             to report even when they have posted nothing. -->
+        {#if !mine && account}
+          <ReportButton subject="account" onclick={() => (reporting = true)} />
+        {/if}
       </div>
     {/if}
   </div>
@@ -247,3 +258,11 @@
     </div>
   {/if}
 </div>
+
+{#if reporting && account}
+  <ReportDialog
+    targetTable="gphone_accounts"
+    targetId={account.id}
+    onclose={() => (reporting = false)}
+  />
+{/if}

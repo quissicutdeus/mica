@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { Avatar, EmptyState, Skeleton, formatDate, useBlabber } from '@gphone/sdk';
+  import {
+    Avatar,
+    EmptyState,
+    ReportButton,
+    ReportDialog,
+    Skeleton,
+    formatDate,
+    useBlabber
+  } from '@gphone/sdk';
   import type { Account } from '@shared/types';
   import DmComposer from './DmComposer.svelte';
   import BlabBody from './BlabBody.svelte';
@@ -61,6 +69,9 @@
   $effect(() => {
     onpeername?.(active ? active.display_name || `@${active.handle}` : null);
   });
+
+  /** Which DM is being reported, by id. Null when the dialog is closed. */
+  let reportingDm = $state<number | null>(null);
 </script>
 
 {#if peer === null}
@@ -144,9 +155,22 @@
               class:bg-surface-container={!mine}
             >
               <BlabBody body={message.body} {onhandle} />
-              <p class="text-on-surface-variant mt-0.5 text-[10px]">
-                {formatDate(message.created_at)}
-              </p>
+              <div class="mt-0.5 flex items-center gap-1">
+                <p class="text-on-surface-variant text-[10px]">
+                  {formatDate(message.created_at)}
+                </p>
+                <!-- Theirs only. Reporting your own message is not moderation, and the
+                     server refuses it — an affordance that always fails is worse than
+                     none. A DM is also the surface where reporting matters most, since
+                     it is the one a stranger can reach you on. -->
+                {#if !mine}
+                  <ReportButton
+                    subject="message"
+                    onclick={() => (reportingDm = message.id)}
+                    class="-my-1"
+                  />
+                {/if}
+              </div>
             </div>
           </div>
         {/each}
@@ -155,4 +179,12 @@
 
     <DmComposer {busy} onsubmit={(body) => sendDm(peer, body)} />
   </div>
+{/if}
+
+{#if reportingDm !== null}
+  <ReportDialog
+    targetTable="gphone_blabber_dms"
+    targetId={reportingDm}
+    onclose={() => (reportingDm = null)}
+  />
 {/if}

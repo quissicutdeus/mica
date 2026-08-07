@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ReportButton } from '@gphone/sdk';
   import type { BlabEngagement } from '@shared/types';
 
   /**
@@ -12,12 +13,15 @@
     stats,
     onreply,
     onmouth,
-    onlike
+    onlike,
+    onreport
   }: {
     stats?: BlabEngagement;
     onreply?: () => void;
     onmouth?: () => void;
     onlike?: () => void;
+    /** Absent on the player's own Blab — reporting yourself is not moderation. */
+    onreport?: () => void;
   } = $props();
 
   const count = (n?: number) => (n && n > 0 ? String(n) : '');
@@ -81,4 +85,10 @@
     </svg>
     {count(stats?.likes)}
   </button>
+
+  {#if onreport}
+    <!-- Pushed to the end rather than sitting among reply/mouth/ear: those are things you
+         do with a post, and this is a thing you do about one. -->
+    <ReportButton subject="post" onclick={onreport} class="-my-2 ml-auto" />
+  {/if}
 </div>

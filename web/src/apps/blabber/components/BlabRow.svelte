@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Avatar, formatDate } from '@gphone/sdk';
+  import { Avatar, formatDate, ReportDialog } from '@gphone/sdk';
   import type { Blab, BlabEngagement } from '@shared/types';
   import BlabBody from './BlabBody.svelte';
   import BlabActions from './BlabActions.svelte';
@@ -27,6 +27,16 @@
     onlike?: (blab: Blab) => void;
     onopen?: (blab: Blab) => void;
   } = $props();
+
+  /**
+   * The row owns its own report dialog rather than taking a callback.
+   *
+   * There are four `BlabRow` call sites — the feed, the Following feed, a thread and a
+   * profile — and threading a handler plus a dialog through each is four chances to wire
+   * it differently or forget one. `editable` already means "this is mine", so the row
+   * knows both whether to offer it and what to report.
+   */
+  let reporting = $state(false);
 
   /** A mouth with no body of its own is a plain repeat; with one it is a quote. */
   const isPlainMouth = $derived(blab.mouth_of != null && !blab.body);
@@ -116,6 +126,7 @@
       onreply={() => onreply?.(blab)}
       onmouth={() => onmouth?.(blab)}
       onlike={() => onlike?.(blab)}
+      onreport={editable ? undefined : () => (reporting = true)}
     />
 
     <!-- A separate affordance rather than wrapping the body: BlabBody renders mention buttons,
@@ -143,3 +154,11 @@
     {/if}
   </div>
 </article>
+
+{#if reporting}
+  <ReportDialog
+    targetTable="gphone_blabber"
+    targetId={blab.id}
+    onclose={() => (reporting = false)}
+  />
+{/if}
