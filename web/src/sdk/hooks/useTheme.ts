@@ -2,9 +2,12 @@ import {
   themeStore,
   schemeStore,
   setThemeSeed,
+  setThemeMode,
+  isLightMode,
   resetTheme,
   DEFAULT_THEME,
-  type ThemeState
+  type ThemeState,
+  type ThemeMode
 } from '../../shell/state/theme';
 import { seedFromRgbString, sanitizeSeed } from '../../lib/m3';
 
@@ -25,6 +28,8 @@ export function useTheme() {
     themeStore,
     schemeStore,
     setThemeSeed,
+    setThemeMode,
+    isLightMode,
     resetTheme,
     defaultTheme: DEFAULT_THEME,
     /** Convert an `rgb()`/`rgba()` string — what a color picker emits — into a seed. */
@@ -34,4 +39,4 @@ export function useTheme() {
 }
 
 /** @public — SDK surface for add-ons; no in-repo app needs to name it. */
-export type { ThemeState };
+export type { ThemeState, ThemeMode };

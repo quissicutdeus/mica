@@ -24,32 +24,34 @@ import { DEFAULT_SEED, buildSchemes, cssVarBlock, sanitizeSeed, type M3Tokens } 
  * by arithmetic (`lib/m3.ts`), so every seed works and none of them is a special case.
  */
 
+export type ThemeMode = 'light' | 'dark';
+
 export interface ThemeState {
   /** The color every role is generated from. `#rrggbb`. */
   seed: string;
   /**
    * Which of the two generated schemes is applied.
    *
-   * Only `'dark'` today, and typed as a union of one on purpose: `buildSchemes` already
-   * produces both tables, so turning light on is a change here and in a Settings toggle
-   * rather than a change to the engine. Widening the union is the whole migration.
+   * `buildSchemes` has always produced both tables — light was generated and asserted
+   * from the start precisely so switching it on would be this one union widening plus a
+   * Settings control, rather than a change to the engine.
    */
-  mode: 'dark';
+  mode: ThemeMode;
 }
 
 export const DEFAULT_THEME: ThemeState = { seed: DEFAULT_SEED, mode: 'dark' };
 
 /**
  * A stored theme is a value a player can edit, and `argbFromHex` is one call away from
- * it — so this is narrow by design and never throws. An unrecognised mode falls back to
- * dark rather than being preserved, because a mode nothing renders is worse than the
- * shipped one.
+ * it — so this is narrow by design and never throws. An unrecognized mode falls back to
+ * the shipped one rather than being preserved, because a mode nothing renders is worse
+ * than the default.
  */
 export const sanitizeTheme = (stored: unknown): ThemeState => {
   const s = (stored ?? {}) as Record<string, unknown>;
   return {
     seed: sanitizeSeed(s.seed),
-    mode: s.mode === 'dark' ? 'dark' : DEFAULT_THEME.mode
+    mode: s.mode === 'light' || s.mode === 'dark' ? s.mode : DEFAULT_THEME.mode
   };
 };
 
@@ -60,7 +62,13 @@ export const themeStore = usePersisted<ThemeState>('settings', 'theme', DEFAULT_
 export const setThemeSeed = (seed: string) =>
   themeStore.update((current) => ({ ...current, seed }));
 
+export const setThemeMode = (mode: ThemeMode) =>
+  themeStore.update((current) => ({ ...current, mode }));
+
 export const resetTheme = () => themeStore.set(DEFAULT_THEME);
+
+/** Whether the light scheme is showing, for a toggle to bind to. */
+export const isLightMode = derived(themeStore, ($theme) => $theme.mode === 'light');
 
 /** The 47 resolved token values for the active seed and mode. */
 export const schemeStore = derived(

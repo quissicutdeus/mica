@@ -1,4 +1,4 @@
-import { time, is24Hour } from '../../shell/state/time';
+import { time, is24Hour, formattedTime } from '../../shell/state/time';
 
 /**
  * The phone's clock, and how it is displayed.
@@ -13,6 +13,14 @@ export function useClock() {
     /** The current time, updated by the shell. */
     time,
     /** Whether to render it in 24-hour form. Writable: Settings toggles it. */
-    is24Hour
+    is24Hour,
+    /**
+     * The time already rendered in the player's chosen form.
+     *
+     * Exposed so nothing re-implements the 12/24 branch. The status bar and the Display
+     * preview both show a clock, and two formatters would be one preference with two
+     * answers.
+     */
+    formattedTime
   };
 }

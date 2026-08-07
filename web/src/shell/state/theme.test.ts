@@ -65,8 +65,18 @@ describe('theme store', () => {
       }
     });
 
+    it('keeps either mode that renders', () => {
+      // This asserted that `light` was dropped, which was right for exactly as long as
+      // nothing rendered it. Both schemes have always been generated; the Settings
+      // toggle is what made light reachable.
+      expect(sanitizeTheme({ seed: '#155dfc', mode: 'light' }).mode).toBe('light');
+      expect(sanitizeTheme({ seed: '#155dfc', mode: 'dark' }).mode).toBe('dark');
+    });
+
     it('drops a mode nothing renders', () => {
-      expect(sanitizeTheme({ seed: '#155dfc', mode: 'light' }).mode).toBe('dark');
+      for (const bad of ['sepia', '', 0, null, {}]) {
+        expect(sanitizeTheme({ seed: '#155dfc', mode: bad }).mode).toBe('dark');
+      }
     });
 
     it('keeps a valid seed', () => {
