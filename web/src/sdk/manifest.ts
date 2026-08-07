@@ -193,6 +193,25 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
    */
   const id = manifest.id.toLowerCase();
 
+  /**
+   * `ext_` belongs to resources outside gPhone.
+   *
+   * An external script raises a notification under `ext_<resource>` so it gets its own
+   * group in the shade rather than borrowing an app's. That only holds if no gPhone app
+   * can ever take one of those ids — otherwise the day somebody ships an app called
+   * `ext_tracker` it silently merges with a server owner's notifications, and neither
+   * side can tell.
+   *
+   * A throw rather than a warning, because the collision is invisible once it exists and
+   * the fix afterwards is a data migration (§11.1: the id is a key, not a label).
+   */
+  if (id.startsWith('ext_')) {
+    throw new Error(
+      `gPhone App Manifest error: id '${id}' uses the reserved 'ext_' prefix, which is ` +
+        `for notifications raised by resources outside gPhone. Choose another id.`
+    );
+  }
+
   if (import.meta.env.DEV) {
     if (id !== manifest.id) {
       console.warn(

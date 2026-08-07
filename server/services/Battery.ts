@@ -253,3 +253,57 @@ FrameworkBridge.registerUsableItem('battery_bank', (source: number) => {
     emitNet('gphone:client:battery:recharge', source);
   }
 });
+
+/**
+ * Read a player's saved charge, for the public API.
+ *
+ * From the table rather than from the client's in-memory value: an export must answer the
+ * same number a reconnect would restore, and the drain loop only reports every 15 seconds.
+ */
+export const getBatteryLevel = async (citizenid: string): Promise<number> => {
+  try {
+    const [row] = await batteryApp.repo.findAll({ citizenid } as Partial<PhoneBattery>);
+    return row ? Number(row.level) : 100;
+  } catch (e) {
+    console.error('[gphone] failed to read battery', e);
+    return 100;
+  }
+};
+
+/**
+ * Set a player's charge, from the server to the phone and to the table.
+ *
+ * Both halves, deliberately. Writing only the row leaves the running phone showing the old
+ * charge until the next reconnect; pushing only to the client loses it on a crash — which
+ * is the exact failure that moved saved charge out of framework metadata in the first
+ * place. Returns the clamped level so a caller sees what actually happened rather than
+ * what it asked for.
+ */
+export const setBatteryLevel = async (src: number, level: number): Promise<number> => {
+  const clamped = Math.max(0, Math.min(100, Math.round(level)));
+
+  // Ahead of the save, because `savePlayerBattery` skips a write when the whole percent is
+  // unchanged — and an export that sets 50 twice must still resynchronise a phone whose
+  // local value has drifted below it.
+  emitNet('gphone:client:battery:set', src, clamped);
+  await savePlayerBattery(src, clamped);
+  return clamped;
+};
+
+/**
+ * Charging, pushed to the client and held there.
+ *
+ * State rather than an event: the drain loop lives on the client and moves the charge
+ * 0.25% every 15 seconds, so charging has to reverse *that* rather than race it with
+ * repeated top-ups from outside.
+ *
+ * Deliberately no server-side copy. The first version kept a `Set<source>` and cleared it
+ * on `playerDropped`, reasoning that FiveM reuses server ids — but that reasoning belongs
+ * to the rate limiter, not here. The flag lives in the client bundle, which is per player
+ * and gone when they disconnect, so a set here would have been write-only state guarding
+ * against a problem that cannot happen. Add one back only alongside a `GetCharging` that
+ * needs to read it.
+ */
+export const setCharging = (src: number, isCharging: boolean): void => {
+  if (typeof emitNet === 'function') emitNet('gphone:client:battery:charging', src, isCharging);
+};

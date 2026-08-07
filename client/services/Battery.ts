@@ -3,6 +3,9 @@
 let phoneCharge = 100;
 // Battery deterioration rate in percent per minute (e.g. 1.0 = 1% per minute). Easily updated for real-world scenarios.
 const DRAIN_RATE_PER_MINUTE = 1.0;
+// Faster than the drain: a charger that took as long as a full day of use to fill the
+// phone would read as broken.
+const CHARGE_RATE_PER_MINUTE = 10.0;
 let saveCounter = 0;
 
 export const sendChargeToNui = () => {
@@ -56,6 +59,18 @@ onNet('gphone:client:battery:set', (amount: number) => {
 });
 
 /**
+ * Charging reverses the drain loop rather than topping the battery up from outside.
+ *
+ * A house or a car charger that repeatedly called `AddBatteryCharge` would be fighting the
+ * loop below — every second it adds, the loop subtracts, and the visible charge is
+ * whichever landed last. One flag read by the loop is the only way the two agree.
+ */
+let isCharging = false;
+onNet('gphone:client:battery:charging', (state: boolean) => {
+  isCharging = state === true;
+});
+
+/**
  * Set the charge from the phone's Developer Tools.
  *
  * The DevTools slider used to write only to the web store, so the value snapped back
@@ -86,6 +101,23 @@ setTimeout(() => {
 
 // Deteriorate battery by DRAIN_RATE_PER_MINUTE every minute (sub-percent updates every second)
 setInterval(() => {
+  // Charging runs the loop backwards, and at the same rate, so a phone left on a charger
+  // fills in the time it would have taken to empty. The `> 0` guard below is deliberately
+  // not extended to charging: a dead phone must still be able to come back.
+  if (isCharging) {
+    if (phoneCharge < 100) {
+      phoneCharge = Math.min(100, phoneCharge + CHARGE_RATE_PER_MINUTE / 60);
+      sendChargeToNui();
+
+      saveCounter++;
+      if (saveCounter >= 15) {
+        saveCounter = 0;
+        TriggerServerEvent('gphone:server:battery:save', phoneCharge);
+      }
+    }
+    return;
+  }
+
   if (phoneCharge > 0) {
     const prevLevel = Math.ceil(phoneCharge);
     phoneCharge = Math.max(0, phoneCharge - DRAIN_RATE_PER_MINUTE / 60);

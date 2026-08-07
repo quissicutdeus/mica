@@ -1,5 +1,13 @@
 import './services';
 import { BankingBridge } from './lib/BankingBridge';
+import { registerPublicApi } from './lib/publicApi';
+
+/**
+ * After `./services`, so every service has loaded before anything it exposes can be
+ * called. Publishing from inside each service would put the surface back where it was —
+ * spread across the files that implement it, where nothing can check it.
+ */
+registerPublicApi();
 
 on('onResourceStart', (resName: string) => {
   if (resName === GetCurrentResourceName()) {

@@ -120,7 +120,7 @@ app.registerEvent('deleteMail', async (source, cbId, data, citizenid) => {
  * mailbox. This is the only write path into the table, which is what
  * `write: 'server'` is asserting.
  */
-const SendSystemEmail = async (
+export const SendSystemEmail = async (
   targetCitizenId: string,
   emailData: {
     sender: string;
@@ -181,10 +181,6 @@ const SendSystemEmail = async (
   }
 };
 
-// `exports` is callable only under the FiveM runtime. This module is now also
-// imported by the SQL codegen and by server tests, where the host supplies a
-// non-callable `exports` binding that shadows any global stub — so guard the call
-// rather than throwing on import.
-if (typeof exports === 'function') {
-  exports('SendSystemEmail', SendSystemEmail);
-}
+// Registration moved to `lib/publicApi.ts`, which is the one place the public surface is
+// declared and the only place a contract test can read it. The function stays here,
+// because it belongs to Mail.
