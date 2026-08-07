@@ -46,6 +46,23 @@ const mockReports: any[] = [
   }
 ];
 
+/**
+ * Every row here names a fixture that exists and points at its real id.
+ *
+ * They did not. The titles were invented in isolation — "Sarah Connor", "Mike Ross",
+ * "Boss" — while the links read `conversationId=1..3`, which are Ursula, the Union
+ * Depository crew and Trevor Philips. So tapping Sarah Connor opened a conversation with
+ * a stranger, and `mailId=5`/`6` named mail that does not exist at all, leaving Mail on
+ * the inbox forever because `useDeepLink` returns false and is retried.
+ *
+ * That is not a cosmetic fixture problem. §8's whole point about mocks is that they make
+ * a missing layer invisible; a mock whose ids do not resolve does the opposite and makes
+ * a *working* layer look broken. Either way you cannot trust `pnpm dev`. When adding a
+ * notification here, take the title and the id from the fixture it points at.
+ *
+ * The shapes match what the server pushes — `Email from <sender>` with the subject as the
+ * body is exactly `server/services/Mail.ts`.
+ */
 const mockNotifications: NotificationItem[] = [
   {
     id: 1,
@@ -55,7 +72,7 @@ const mockNotifications: NotificationItem[] = [
     title: 'Developer Tools',
     body: 'Developer Tools unlocked successfully.',
     avatar: null,
-    deep_link: 'gphone://settings',
+    deep_link: 'settings',
     read_at: null,
     cleared_at: null,
     created_at: new Date(Date.now() - 60000).toISOString(),
@@ -66,10 +83,10 @@ const mockNotifications: NotificationItem[] = [
     citizenid: 'mock_citizenid',
     app: 'messages',
     kind: 'info',
-    title: 'Sarah Connor',
-    body: 'Hey! Check out the new notification shade.',
+    title: 'Ursula (Crazy Ex)',
+    body: 'i drove past your place again. dont make it weird',
     avatar: null,
-    deep_link: 'gphone://messages?threadId=1',
+    deep_link: 'messages?conversationId=1',
     read_at: null,
     cleared_at: null,
     created_at: new Date(Date.now() - 120000).toISOString(),
@@ -80,10 +97,10 @@ const mockNotifications: NotificationItem[] = [
     citizenid: 'mock_citizenid',
     app: 'messages',
     kind: 'info',
-    title: 'Mike Ross',
-    body: 'Are you free for a call later today?',
+    title: 'Trevor Philips',
+    body: 'GET DOWN HERE. NOW.',
     avatar: null,
-    deep_link: 'gphone://messages?threadId=2',
+    deep_link: 'messages?conversationId=3',
     read_at: null,
     cleared_at: null,
     created_at: new Date(Date.now() - 300000).toISOString(),
@@ -94,10 +111,10 @@ const mockNotifications: NotificationItem[] = [
     citizenid: 'mock_citizenid',
     app: 'messages',
     kind: 'info',
-    title: 'Boss',
-    body: "Don't forget the team meeting at 5pm.",
+    title: 'LSPD Central Dispatch',
+    body: 'Units respond: 10-90 in progress, Vinewood Blvd.',
     avatar: null,
-    deep_link: 'gphone://messages?threadId=3',
+    deep_link: 'messages?conversationId=4',
     read_at: null,
     cleared_at: null,
     created_at: new Date(Date.now() - 600000).toISOString(),
@@ -107,11 +124,11 @@ const mockNotifications: NotificationItem[] = [
     id: 5,
     citizenid: 'mock_citizenid',
     app: 'mail',
-    kind: 'info',
-    title: 'Security Alert',
-    body: 'New login detected from Santos Central.',
+    kind: 'email',
+    title: 'Email from Fleeca Bank',
+    body: 'Account Statement Available',
     avatar: null,
-    deep_link: 'gphone://mail?id=5',
+    deep_link: 'mail?mailId=1',
     read_at: null,
     cleared_at: null,
     created_at: new Date(Date.now() - 900000).toISOString(),
@@ -121,11 +138,11 @@ const mockNotifications: NotificationItem[] = [
     id: 6,
     citizenid: 'mock_citizenid',
     app: 'mail',
-    kind: 'info',
-    title: 'Weekly Digest',
-    body: 'You have 4 new messages in your inbox.',
+    kind: 'email',
+    title: 'Email from Los Santos Police Dept',
+    body: 'Traffic Citation Notice',
     avatar: null,
-    deep_link: 'gphone://mail?id=6',
+    deep_link: 'mail?mailId=2',
     read_at: null,
     cleared_at: null,
     created_at: new Date(Date.now() - 1200000).toISOString(),

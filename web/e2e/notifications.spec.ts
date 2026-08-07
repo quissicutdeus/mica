@@ -259,7 +259,10 @@ test.describe('Interactive Toast Notifications E2E', () => {
 
     const shade = page.getByRole('dialog', { name: 'Notification Shade' });
     await expect(shade).toBeVisible();
-    await expect(shade.getByText('Sarah Connor')).toBeVisible();
+    // A name that belongs to a real conversation fixture. It used to be "Sarah Connor",
+    // who existed nowhere else in the mocks — so this passed while the row's own
+    // `deep_link` pointed at somebody entirely different.
+    await expect(shade.getByText('Ursula (Crazy Ex)')).toBeVisible();
 
     // The home indicator collapses the shade rather than going home while it is open.
     await page.getByRole('button', { name: 'Collapse notifications' }).click();
