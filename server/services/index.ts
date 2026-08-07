@@ -17,3 +17,4 @@ import './Photos';
 import './Reports';
 import './Schema';
 import './Seed';
+import './Settings';

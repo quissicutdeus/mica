@@ -63,6 +63,16 @@ const mockReports: any[] = [
  * The shapes match what the server pushes — `Email from <sender>` with the subject as the
  * body is exactly `server/services/Mail.ts`.
  */
+/**
+ * The mock settings table, keyed `<app>:<key>` exactly as the real unique index is.
+ *
+ * Module scope, so it survives between `fetchNui` calls within a page but not across a
+ * reload — which is the same lifetime the real table has relative to a character session,
+ * and enough for an e2e to prove a write reached "the server" rather than only
+ * localStorage.
+ */
+const mockSettings = new Map<string, string>();
+
 const mockNotifications: NotificationItem[] = [
   {
     id: 1,
@@ -922,6 +932,54 @@ const mockRegistry: Record<string, MockHandler> = {
     const report = mockReports.find((r) => r.id === data?.id);
     if (report) report.resolution = 'pending';
     return { ok: true, resolution: 'pending' };
+  },
+
+  /**
+   * Settings — the server-backed store, standing in for a real table.
+   *
+   * Backed by a plain Map rather than a fixture list, and it **mutates**: a mock that
+   * answers a read without recording the write makes a broken sync look perfect in
+   * `pnpm dev` and in Playwright, which is the exact failure `defineMockCrud` exists to
+   * stop for the CRUD path.
+   *
+   * It is deliberately empty at start. A fresh character has written no preferences, so
+   * hydration must return nothing and leave the shipped defaults standing — seeding it
+   * would hide the case where hydration wrongly blanks a store.
+   */
+  getSettings: async () =>
+    [...mockSettings.entries()].map(([composite, setting_value], index) => {
+      const [app, ...rest] = composite.split(':');
+      return {
+        id: index + 1,
+        citizenid: 'mock_citizenid',
+        app,
+        setting_key: rest.join(':'),
+        setting_value,
+        status: 'active' as const,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+    }),
+
+  saveSetting: async (data?: { app?: string; key?: string; value?: string }) => {
+    if (!data?.app || !data?.key) return false;
+    mockSettings.set(`${data.app}:${data.key}`, String(data.value ?? ''));
+    return true;
+  },
+
+  removeSetting: async (data?: { app?: string; key?: string }) => {
+    if (!data?.app || !data?.key) return false;
+    mockSettings.delete(`${data.app}:${data.key}`);
+    return true;
+  },
+
+  clearAppSettings: async (data?: { app?: string }) => {
+    if (!data?.app) return false;
+    const prefix = `${data.app}:`;
+    for (const composite of [...mockSettings.keys()]) {
+      if (composite.startsWith(prefix)) mockSettings.delete(composite);
+    }
+    return true;
   },
 
   // Persistent Notifications

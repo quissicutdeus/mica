@@ -90,6 +90,32 @@ export interface PhoneBattery {
 }
 
 /**
+ * One stored preference, owned by a citizenid rather than by a browser profile.
+ *
+ * `useStorage` is `localStorage`, which is per-PC and shared between characters — so a
+ * player's theme did not follow them to another machine, and a second character on the
+ * same PC inherited the first one's phone. This is the same key-value shape the SDK hook
+ * already exposes (`useStorage(app).setItem(key, value)`), which is what lets every
+ * existing call site keep working unchanged.
+ *
+ * `setting_key` / `setting_value` rather than `key` / `value`: `KEY` is reserved in MySQL.
+ * The generated DDL backticks every identifier so the plain names would build, but any
+ * hand-written query later would be a syntax error at runtime.
+ */
+export interface PhoneSetting {
+  id: number;
+  citizenid: string;
+  /** Storage namespace — `settings`, `blabber`, or an add-on's id. */
+  app: string;
+  setting_key: string;
+  /** JSON, exactly as `useStorage` already encodes it. */
+  setting_value: string;
+  status?: 'active' | 'deleted';
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+/**
  * Why a player flagged something. Fixed set rather than free text: an admin queue
  * filtered by category is useful, a queue of prose is not.
  */

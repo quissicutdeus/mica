@@ -139,7 +139,15 @@ export const ROUTES: readonly Route[] = [
   route('markNotificationRead', 'notifications', 'markAsRead'),
   route('clearNotifications', 'notifications', 'clearNotifications'),
   route('clearAllNotifications', 'notifications', 'clearAllNotifications'),
-  route('restoreNotifications', 'notifications', 'restoreNotifications')
+  route('restoreNotifications', 'notifications', 'restoreNotifications'),
+
+  // Settings — every stored preference, owned by a citizenid rather than a browser
+  // profile. Not an app: `settings` is a service the shell reads on behalf of every
+  // `useStorage` namespace, the Settings app included.
+  route('getSettings', 'settings', 'getAll'),
+  route('saveSetting', 'settings', 'set'),
+  route('removeSetting', 'settings', 'remove'),
+  route('clearAppSettings', 'settings', 'clearApp')
 ] as const;
 
 /** The `gphone:server:<app>:<action>` event a route forwards to. */
