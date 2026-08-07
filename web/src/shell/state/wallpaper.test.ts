@@ -29,7 +29,7 @@ describe('Wallpaper Store', () => {
     expect(get(themeStore).seed).toBe('#ff0090');
     expect(get(wallpaperStore)).toEqual({ type: 'color' });
     // Generated, not stored: one input produced both the theme and the picture.
-    expect(get(wallpaperBackground)).toBe(backgroundForSeed('#ff0090'));
+    expect(get(wallpaperBackground)).toBe(backgroundForSeed('#ff0090', 'dark'));
   });
 
   it('resets back to default', () => {
@@ -98,7 +98,7 @@ describe('Wallpaper Store', () => {
       for (const preset of PRESETS) {
         setPresetWallpaper(preset);
         expect(get(themeStore).seed, preset.id).toBe(preset.seed);
-        expect(get(wallpaperBackground), preset.id).toBe(backgroundForSeed(preset.seed));
+        expect(get(wallpaperBackground), preset.id).toBe(backgroundForSeed(preset.seed, 'dark'));
       }
     });
 

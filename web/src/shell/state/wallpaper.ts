@@ -1,7 +1,7 @@
 import { derived } from 'svelte/store';
 import { usePersisted } from '../../sdk/hooks/usePersisted';
 import { backgroundForScheme, buildSchemes, sanitizeSeed } from '../../lib/m3';
-import { schemeStore, setThemeSeed, themeStore } from './theme';
+import { schemeStore, setThemeSeed, themeStore, type ThemeMode } from './theme';
 
 /**
  * The home screen background.
@@ -118,8 +118,8 @@ export const resetWallpaper = () => setWallpaperSeed(PRESETS[0].seed);
  * same way — so the button cannot advertise one thing and set another, which is exactly
  * what a hand-written gradient beside a hand-written seed allowed.
  */
-export const backgroundForSeed = (seed: string): string =>
-  backgroundForScheme(buildSchemes(sanitizeSeed(seed)).dark);
+export const backgroundForSeed = (seed: string, mode: ThemeMode): string =>
+  backgroundForScheme(buildSchemes(sanitizeSeed(seed))[mode]);
 
 /**
  * Whether anything drawn straight onto the wallpaper needs help being readable.

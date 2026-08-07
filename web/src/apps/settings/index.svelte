@@ -21,7 +21,6 @@
   import DeveloperTools from './panes/DeveloperTools.svelte';
   import Shortcuts from './panes/Shortcuts.svelte';
   import Sound from './panes/Sound.svelte';
-  import WallpaperPane from './panes/WallpaperPane.svelte';
 
   let { onback }: AppProps = $props();
 
@@ -42,7 +41,6 @@
     | 'network'
     | 'notifications'
     | 'apps'
-    | 'wallpaper'
     | 'display'
     | 'sound'
     | 'shortcuts'
@@ -55,7 +53,6 @@
     network: 'Network',
     notifications: 'Notifications',
     apps: 'Apps',
-    wallpaper: 'Wallpaper & Theme',
     display: 'Display',
     sound: 'Sound',
     shortcuts: 'Shortcuts',
@@ -177,10 +174,8 @@
     {:else}
       <Apps onselect={(id) => (selectedAppId = id)} />
     {/if}
-  {:else if pane === 'wallpaper'}
-    <WallpaperPane />
   {:else if pane === 'display'}
-    <Display onwallpaper={() => (pane = 'wallpaper')} />
+    <Display />
   {:else if pane === 'sound'}
     <Sound />
   {:else if pane === 'shortcuts'}
@@ -239,7 +234,7 @@
           <div class="flex flex-col">
             <span class="text-on-surface font-medium">Display</span>
             <span class="text-on-surface-variant text-xs"
-              >Phone size, clock, time format, wallpaper and theme</span
+              >Theme, wallpaper, phone size and clock</span
             >
           </div>
           <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
