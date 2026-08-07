@@ -1,5 +1,6 @@
 import { writable, type Writable } from 'svelte/store';
-import { registerPersistedReset, useStorage } from './useStorage';
+import { registerPersistedRehydrate, registerPersistedReset, useStorage } from './useStorage';
+import { markUnsynced } from './settingsSync';
 
 export interface PersistedOptions<T> {
   /**
@@ -11,6 +12,18 @@ export interface PersistedOptions<T> {
    * hand, comes back as whatever it was. `volumeStep` has needed this from the start.
    */
   sanitize?: (value: unknown) => T;
+  /**
+   * Keep this key on the phone instead of syncing it to the player's character.
+   *
+   * The exception, not the rule — the point of server-backed storage is that a
+   * preference follows the player. `wallpaperStore` is the one that needs it: a custom
+   * wallpaper is a base64 data URL of unbounded size, and syncing it would put megabytes
+   * across the NUI bridge and into MySQL every time a color changed.
+   *
+   * Declared at the store rather than in a list inside the sync layer, because a
+   * hardcoded list somewhere else is one nobody thinks to update when they add a store.
+   */
+  sync?: boolean;
 }
 
 /**
@@ -37,8 +50,10 @@ export function usePersisted<T>(
   const storage = useStorage(appId);
   const sanitize = options.sanitize ?? ((value: unknown) => value as T);
 
-  const stored = storage.getItem<T>(key, initial);
-  const { subscribe, set, update } = writable<T>(sanitize(stored ?? initial));
+  if (options.sync === false) markUnsynced(appId, key);
+
+  const readStored = () => sanitize(storage.getItem<T>(key, initial) ?? initial);
+  const { subscribe, set, update } = writable<T>(readStored());
 
   /**
    * Back to the shipped default when the app's storage is cleared.
@@ -50,6 +65,19 @@ export function usePersisted<T>(
    * next write.
    */
   registerPersistedReset(appId, () => set(sanitize(initial)));
+
+  /**
+   * Re-read when the server's copy arrives, or when the player loads a character.
+   *
+   * The value above is read **once**, at construction, which for every store in the phone
+   * is module scope on a page CEF never unloads. Without this the hydrate would put the
+   * right value in storage and leave the wrong one on screen for the rest of the session
+   * — and switching character would show the previous character's phone.
+   *
+   * Through the inner `set`, like the reset above: the outer one persists, so rehydrating
+   * through it would write the server's own value straight back at it.
+   */
+  registerPersistedRehydrate(() => set(readStored()));
 
   // Deliberately no write here. Constructing the store must not create the key: an app
   // that only ever reads a preference should leave no trace in storage, and writing the

@@ -1,3 +1,6 @@
+import { fetchSettings } from '../../services/settings';
+import { isUnsynced, queueClearApp, queueRemove, queueWrite } from './settingsSync';
+
 const memoryStore = new Map<string, string>();
 
 function getStorageBackend() {
@@ -42,6 +45,21 @@ export function registerPersistedReset(appId: string, reset: () => void): void {
 }
 
 /**
+ * Live stores that can re-read their key, for hydration.
+ *
+ * Deliberately **not** `persistedResets`, which sets a store back to its shipped default.
+ * That is the right answer for "this app's storage was cleared" and the wrong one for
+ * "the server just told us what this character had": reusing it would reset every
+ * preference to the default at the exact moment the real values arrived.
+ */
+const persistedRehydrators = new Set<() => void>();
+
+/** Internal, for `usePersisted`. Stores live for the life of the page, so nothing unregisters. */
+export function registerPersistedRehydrate(rehydrate: () => void): void {
+  persistedRehydrators.add(rehydrate);
+}
+
+/**
  * Delete everything an app has stored.
  *
  * Uninstalling used to drop the component and the saved bundle URL and leave the app's
@@ -70,9 +88,46 @@ export function clearAppStorage(appId: string): void {
     console.error(`Failed to clear storage for ${appId}`, e);
   }
 
+  // The server copy too, or the rows outlive the uninstall and come back on the next
+  // hydrate — the same resurrection this function's comment above exists to prevent, one
+  // layer down.
+  queueClearApp(appId);
+
   // Outside the try, and after the sweep: a storage backend that threw must not leave the
   // stores holding values whose keys may already be gone.
   for (const reset of persistedResets.get(appId) ?? []) reset();
+}
+
+/**
+ * Copy this character's saved settings into the cache and re-read every live store.
+ *
+ * Runs at page load and again on every character load. The CEF page never unloads, so
+ * switching character without a resource restart would otherwise leave the previous
+ * character's phone on screen — which is the bug this whole change exists to fix, not a
+ * corner case.
+ *
+ * Live stores are reset through the same `persistedResets` registry `clearAppStorage`
+ * uses. They read their key once, at construction, so writing the cache alone would put
+ * the right value in storage and leave the wrong one on screen.
+ *
+ * A failed fetch leaves the cache untouched. Keeping whatever the phone was already
+ * showing beats resetting a working phone to defaults because one request timed out.
+ */
+export async function hydrateSettings(): Promise<void> {
+  try {
+    const rows = await fetchSettings();
+    const backend = getStorageBackend();
+
+    for (const row of rows) {
+      if (!row?.app || !row?.setting_key) continue;
+      if (isUnsynced(row.app, row.setting_key)) continue;
+      backend.setItem(`${namespaceOf(row.app)}${row.setting_key}`, row.setting_value ?? 'null');
+    }
+
+    for (const rehydrate of persistedRehydrators) rehydrate();
+  } catch (error) {
+    console.error('[settings] Hydration failed; keeping the values already on the phone.', error);
+  }
 }
 
 /**
@@ -122,12 +177,17 @@ export function useStorage(appId: string) {
       }
     },
     setItem: <T = unknown>(key: string, value: T): void => {
+      const encoded = JSON.stringify(value);
       try {
         const storage = getStorageBackend();
-        storage.setItem(getStorageKey(key), JSON.stringify(value));
+        storage.setItem(getStorageKey(key), encoded);
       } catch (e) {
         console.error(`Failed to set storage item for ${appId}:${key}`, e);
       }
+      // After the local write and outside its try: the cache is what the phone reads, so
+      // it must land even if the server never hears about it. Debounced per key, so
+      // dragging a slider is one request rather than one per frame.
+      queueWrite(appId, key, encoded);
     },
     removeItem: (key: string): void => {
       try {
@@ -136,6 +196,7 @@ export function useStorage(appId: string) {
       } catch (e) {
         console.error(`Failed to remove storage item for ${appId}:${key}`, e);
       }
+      queueRemove(appId, key);
     }
   };
 }
