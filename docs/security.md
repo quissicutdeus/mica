@@ -104,8 +104,8 @@ rather than read from an implicit `source` global — `onNet` also registers a l
 
 ## Client-authoritative values
 
-**One is legitimate. One is unfinished. One has since been fixed** — and this section used to call
-all three "by design".
+**One is legitimate. Two have since been fixed** — and this section used to call all three "by
+design", which is exactly what let two "has not moved yet" cases read as "cannot move".
 That framing was wrong and worth correcting: the default is server-authoritative, and anything the
 client owns needs a reason it _cannot_ move rather than a reason it has not.
 
@@ -127,17 +127,26 @@ redundant writes a minute. Keyed by source, so it only ticks while connected —
 knows and the client merely stopped doing. A push and a write happen when the **whole percent**
 moves, roughly once a minute rather than every tick.
 
-### Signal bars — should move before they gate anything
+### Signal bars — moved
 
-Zone evaluation happens on the client, so a modified one draws four bars in a tunnel.
+Zone evaluation happened on the client: the server pushed the zone list and each client decided its
+own bars. That was defensible only while nothing read the level, and it stopped being defensible the
+moment an app was going to degrade at zero bars — a client that decides its own bars is a client that
+decides whether it is in a dead zone.
 
-Today that buys a wrong icon and nothing else: **no app reads the level.** The moment one does —
-which is exactly what "every app grows a zero-bar path" would introduce — faking it becomes bypassing
-dead zones, which is a real advantage. Server authority belongs **before** that feature, not after,
-or the first version of it ships exploitable.
+The server polls now and the client is told a number. It no longer receives the zone list at all,
+which is the load-bearing half: **a client that cannot see the zones cannot decide it is outside
+one.**
 
-The cost is real and is why it went client-side: the server must poll player coordinates rather than
-each client checking its own position. That is a reason to schedule it, not a reason it cannot happen.
+The cost that originally pushed this to the client is real and is bounded twice. An early-out means
+the ordinary case — no zones, full global signal — reads no coordinates at all, and a push happens
+only when a player's whole-bar value changes rather than every poll.
+
+`gphone:server:signal:rules` went with it, so the service has no raw `onNet` handler left — one fewer
+entry point rather than one better guarded.
+
+Done **before** any app reads the level, which was the point: the alternative was shipping the first
+version of dead-zone degradation exploitable and fixing it afterwards.
 
 ## Accepted risks
 
