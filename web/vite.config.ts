@@ -42,6 +42,10 @@ export default defineConfig({
       // in order, and the shorter key matches this specifier as a prefix — resolving it
       // to `src/sdk/index.ts/testing`, which is not a path.
       '@gphone/sdk/testing': path.resolve(import.meta.dirname, './src/sdk/testing.ts'),
+      // The leaf a manifest imports. Same ordering rule as above, and the reason it exists
+      // is in `src/sdk/app.ts`: a manifest that imports the full barrel closes a cycle,
+      // because the barrel reaches the registry and the registry globs every manifest.
+      '@gphone/sdk/app': path.resolve(import.meta.dirname, './src/sdk/app.ts'),
       '@gphone/sdk': path.resolve(import.meta.dirname, './src/sdk/index.ts')
     },
     conditions: ['browser']

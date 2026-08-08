@@ -1,6 +1,6 @@
 import { derived } from 'svelte/store';
 import Icon from './Icon.svelte';
-import { defineApp, lazyBadge, useBlabber, useNotifications } from '@gphone/sdk';
+import { defineApp, lazyBadge } from '@gphone/sdk/app';
 
 export default defineApp({
   id: 'blabber',
@@ -27,7 +27,8 @@ export default defineApp({
    * `lazyBadge` because a manifest is evaluated while the SDK barrel is still initializing
    * — calling a hook out here directly throws `useBlabber is not a function`.
    */
-  badgeStore: lazyBadge(() => {
+  badgeStore: lazyBadge(async () => {
+    const { useBlabber, useNotifications } = await import('@gphone/sdk');
     const { unreadMentions, unreadDms } = useBlabber();
     const { unreadCount } = useNotifications('blabber');
     return derived(
@@ -37,5 +38,8 @@ export default defineApp({
   }),
   // Required alongside a badgeStore (`sdk/appContract.test.ts`): the count has to be correct
   // *before* the launcher paints, and `onAppForeground` is too late by definition.
-  preload: () => useBlabber().loadMyAccounts()
+  preload: async () => {
+    const { useBlabber } = await import('@gphone/sdk');
+    return useBlabber().loadMyAccounts();
+  }
 });

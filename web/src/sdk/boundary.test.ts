@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 /**
@@ -135,4 +135,37 @@ describe('app boundary', () => {
       expect(sdk, `@gphone/sdk should not expose ${shellOnly}`).not.toHaveProperty(shellOnly);
     }
   }, 30_000);
+});
+
+describe('manifests import the leaf, never the barrel', () => {
+  /**
+   * The rule that keeps the SDK importable from a module that runs early.
+   *
+   * `shell/state/registry.ts` globs every manifest **eagerly**, and the barrel re-exports
+   * `useAppRegistry`, which imports that registry. So a manifest importing `@gphone/sdk`
+   * closes a cycle: the barrel loads every app, and every app loads the barrel back while
+   * it is still evaluating. Every binding arrives `undefined`.
+   *
+   * `@gphone/sdk/app` has no edges to close it with — `defineApp` and `lazyBadge` between
+   * them import types and `./version`. Anything else a manifest wants comes from
+   * `await import('@gphone/sdk')` inside a deferred callback, which is a promise about a
+   * module rather than about a call.
+   *
+   * Source-read rather than behavioural, deliberately: the runtime symptom depends on
+   * module resolution order and does not reproduce under Vitest, so a test that imported
+   * things and hoped would pass against the bug it exists to catch.
+   */
+  it('no manifest imports the full SDK barrel', () => {
+    const offenders = readdirSync(APPS)
+      .filter((id) => statSync(join(APPS, id)).isDirectory())
+      .map((id) => ({ id, path: join(APPS, id, 'manifest.ts') }))
+      .filter(({ path }) => existsSync(path))
+      .filter(({ path }) => /from\s+['"]@gphone\/sdk['"]/.test(readFileSync(path, 'utf8')))
+      .map(({ id }) => id);
+
+    expect(
+      offenders,
+      "import from '@gphone/sdk/app'; reach the rest with await import('@gphone/sdk') inside a deferred callback"
+    ).toEqual([]);
+  });
 });

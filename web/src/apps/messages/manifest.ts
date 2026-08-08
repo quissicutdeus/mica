@@ -1,12 +1,18 @@
 import Icon from './Icon.svelte';
-import { defineApp, useMessages, unreadMessagesCount } from '@gphone/sdk';
+import { defineApp, lazyBadge } from '@gphone/sdk/app';
 
 export default defineApp({
   id: 'messages',
   color: 'bg-green-400',
   icon: Icon,
-  badgeStore: unreadMessagesCount,
-  preload: () => useMessages().conversationsStore.loadConversations(),
+  badgeStore: lazyBadge(async () => {
+    const { unreadMessagesCount } = await import('@gphone/sdk');
+    return unreadMessagesCount;
+  }),
+  preload: async () => {
+    const { useMessages } = await import('@gphone/sdk');
+    return useMessages().conversationsStore.loadConversations();
+  },
   description: 'Send text messages and share content with contacts',
   permissions: ['contacts', 'media', 'notifications'],
   core: true

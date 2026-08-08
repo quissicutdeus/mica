@@ -1,5 +1,5 @@
 import Icon from './Icon.svelte';
-import { defineApp, useReports, pendingReportCount } from '@gphone/sdk';
+import { defineApp, lazyBadge } from '@gphone/sdk/app';
 
 export default defineApp({
   id: 'admin',
@@ -8,8 +8,14 @@ export default defineApp({
   // Counts outstanding reports, and only falls when one is decided. Opening the app
   // does not clear it — unlike an unread count, a report stays outstanding until
   // somebody acts on it.
-  badgeStore: pendingReportCount,
-  preload: () => useReports().loadPendingReports(),
+  badgeStore: lazyBadge(async () => {
+    const { pendingReportCount } = await import('@gphone/sdk');
+    return pendingReportCount;
+  }),
+  preload: async () => {
+    const { useReports } = await import('@gphone/sdk');
+    return useReports().loadPendingReports();
+  },
   description: 'Review player reports and moderate content',
   author: 'gPhone',
   // Installed like any other core app, but the home screen hides it from players

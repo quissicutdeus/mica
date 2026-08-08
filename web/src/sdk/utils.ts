@@ -10,7 +10,6 @@
  * lives there.
  */
 export { isBrowser } from '../lib/isBrowser';
-export { lazyBadge } from './lazyBadge';
 export { filterByQuery } from '../lib/filterByQuery';
 export {
   formatCurrency,
