@@ -1,3 +1,4 @@
+import { GENERIC_SERVICE_ACTION } from '@shared/rpc';
 import {
   mockContacts,
   mockConversations,
@@ -1038,7 +1039,37 @@ const mockRegistry: Record<string, MockHandler> = {
   checkAdmin: () => ({ isAdmin: true })
 };
 
+/**
+ * The generic service call, unwrapped so the mocks see the action they already know.
+ *
+ * `useService('journal').call('get')` arrives here as one `svc` action carrying
+ * `{ service, action, data }`. Dispatching it to a `journal:get` key means an app using
+ * the generic path is mockable exactly like every other one — and without this it would
+ * be dead in `pnpm dev` and in Playwright, which is the failure §8 says a missing mock
+ * always is.
+ *
+ * Falls back to the bare action name, so a service whose actions are also named routes
+ * needs no second fixture.
+ */
+function resolveGeneric(data?: any): { key: string; payload: unknown } | null {
+  if (!data || typeof data !== 'object') return null;
+  const { service, action, data: inner } = data as Record<string, unknown>;
+  if (typeof service !== 'string' || typeof action !== 'string') return null;
+
+  const scoped = `${service}:${action}`;
+  return { key: mockRegistry[scoped] ? scoped : action, payload: inner };
+}
+
 async function getMockData(eventName: string, data?: any): Promise<any> {
+  if (eventName === GENERIC_SERVICE_ACTION) {
+    const resolved = resolveGeneric(data);
+    if (!resolved) {
+      console.warn('[MockRegistry] Malformed generic service request', data);
+      return null;
+    }
+    return getMockData(resolved.key, resolved.payload);
+  }
+
   const handler = mockRegistry[eventName];
   if (handler) {
     return handler(data);
@@ -1048,6 +1079,7 @@ async function getMockData(eventName: string, data?: any): Promise<any> {
 }
 
 export const MockRegistry = {
-  has: (eventName: string) => Boolean(mockRegistry[eventName]),
+  has: (eventName: string) =>
+    eventName === GENERIC_SERVICE_ACTION || Boolean(mockRegistry[eventName]),
   handle: (eventName: string, data?: any) => getMockData(eventName, data)
 };
