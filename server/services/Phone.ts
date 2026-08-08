@@ -1,6 +1,7 @@
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { notifyPlayer } from '../lib/shell';
 import { registerService } from '../lib/services';
+import { allow } from '../lib/rateLimit';
 
 // Dictionary to track active calls: CallID -> { caller: source, target: source }
 interface ActiveCall {
@@ -25,6 +26,11 @@ const PHONE_SERVICE = registerService('phone');
 void PHONE_SERVICE;
 
 onNet('gphone:server:phone:start', (targetPhone: string) => {
+  // Outside `ServiceEndpoint`, so this handler never met the limiter every other
+  // server action passes through. Same `allow()`, same `gphone_rate_limit` budget.
+  // Refused silently: a fire-and-forget event has no callback id to answer on.
+  if (!allow(source, 'phone', 'start')) return;
+
   const src = source;
   const callerPhone = FrameworkBridge.getPlayerPhone(src);
 
@@ -75,6 +81,11 @@ onNet('gphone:server:phone:start', (targetPhone: string) => {
 });
 
 onNet('gphone:server:phone:answer', () => {
+  // Outside `ServiceEndpoint`, so this handler never met the limiter every other
+  // server action passes through. Same `allow()`, same `gphone_rate_limit` budget.
+  // Refused silently: a fire-and-forget event has no callback id to answer on.
+  if (!allow(source, 'phone', 'answer')) return;
+
   const src = source;
   const callId = playerCalls[src];
   const call = activeCalls[callId];
@@ -86,6 +97,11 @@ onNet('gphone:server:phone:answer', () => {
 });
 
 onNet('gphone:server:phone:end', () => {
+  // Outside `ServiceEndpoint`, so this handler never met the limiter every other
+  // server action passes through. Same `allow()`, same `gphone_rate_limit` budget.
+  // Refused silently: a fire-and-forget event has no callback id to answer on.
+  if (!allow(source, 'phone', 'end')) return;
+
   const src = source;
   const callId = playerCalls[src];
   const call = activeCalls[callId];

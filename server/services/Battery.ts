@@ -4,6 +4,7 @@ import { defineService } from '../lib/defineService';
 import { PhoneBattery } from '@shared/types';
 import { isAdmin } from './Admin';
 import { notifyPlayer } from '../lib/shell';
+import { allow } from '../lib/rateLimit';
 
 /**
  * gPhone owns the saved charge, in its own table.
@@ -85,6 +86,11 @@ export const savePlayerBattery = async (src: number, level: number): Promise<voi
 
 // Event handler for battery_bank item or custom server trigger to recharge phone
 onNet('gphone:server:battery:useItem', () => {
+  // Outside `ServiceEndpoint`, so this handler never met the limiter every other
+  // server action passes through. Same `allow()`, same `gphone_rate_limit` budget.
+  // Refused silently: a fire-and-forget event has no callback id to answer on.
+  if (!allow(source, 'battery', 'useItem')) return;
+
   const src = source;
   const removed = removeBatteryBankItem(src);
   if (removed) {
@@ -95,6 +101,11 @@ onNet('gphone:server:battery:useItem', () => {
 
 // Event to save battery charge from client
 onNet('gphone:server:battery:save', (chargeAmount: number) => {
+  // Outside `ServiceEndpoint`, so this handler never met the limiter every other
+  // server action passes through. Same `allow()`, same `gphone_rate_limit` budget.
+  // Refused silently: a fire-and-forget event has no callback id to answer on.
+  if (!allow(source, 'battery', 'save')) return;
+
   void savePlayerBattery(source, Number(chargeAmount));
 });
 
@@ -111,6 +122,11 @@ onNet('gphone:server:battery:save', (chargeAmount: number) => {
  * larger change: persistence (below) is not the same thing as authority.
  */
 onNet('gphone:server:admin:setBattery', (chargeAmount: number) => {
+  // Outside `ServiceEndpoint`, so this handler never met the limiter every other
+  // server action passes through. Same `allow()`, same `gphone_rate_limit` budget.
+  // Refused silently: a fire-and-forget event has no callback id to answer on.
+  if (!allow(source, 'admin', 'setBattery')) return;
+
   const src = source;
   if (!isAdmin(src)) {
     notifyPlayer(src, {
@@ -169,6 +185,11 @@ export const sendLoadedBatteryToClient = async (src: number): Promise<void> => {
 
 // Event for client to request saved battery level on spawn / join
 onNet('gphone:server:battery:load', () => {
+  // Outside `ServiceEndpoint`, so this handler never met the limiter every other
+  // server action passes through. Same `allow()`, same `gphone_rate_limit` budget.
+  // Refused silently: a fire-and-forget event has no callback id to answer on.
+  if (!allow(source, 'battery', 'load')) return;
+
   void sendLoadedBatteryToClient(source);
 });
 
