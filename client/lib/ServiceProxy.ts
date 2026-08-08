@@ -70,27 +70,51 @@ export class ServiceProxy {
 
     RegisterNuiCallbackType(nuiEvent);
     on(`__cfx_nui:${nuiEvent}`, (data: any, cb: Function) => {
-      const cbId = this.generateId();
-      this.pendingCallbacks.set(cbId, cb);
-
-      // 15-second safety timeout so NUI never hangs indefinitely
-      const timer = setTimeout(() => {
-        if (this.pendingCallbacks.has(cbId)) {
-          console.warn(
-            `[ServiceProxy:${this.serviceName}] Callback ${action} (${cbId}) timed out waiting for server response.`
-          );
-          const pendingCb = this.pendingCallbacks.get(cbId);
-          this.pendingCallbacks.delete(cbId);
-          this.pendingTimers.delete(cbId);
-          if (pendingCb) {
-            pendingCb({ error: 'Request timed out' });
-          }
-        }
-      }, 15000);
-
-      this.pendingTimers.set(cbId, timer);
-
-      emitNet(serverEvent, cbId, data);
+      this.relay(action, serverEvent, data, cb);
     });
+  }
+
+  /**
+   * Subscribe a service action's reply without registering a NUI callback for it.
+   *
+   * For the generic relay, which has one NUI callback for every service and therefore
+   * cannot know at startup which replies it will need. Idempotent — `subscribeResponse`
+   * dedupes — so calling it per request costs nothing after the first.
+   */
+  public ensureSubscribed(action: string) {
+    this.subscribeResponse(responseEventFor(this.serviceName, action));
+  }
+
+  /**
+   * Send one request and hold the NUI callback until the server answers.
+   *
+   * Split out of `registerCallback` so the generic relay can reuse it verbatim: the
+   * timeout, the pending-callback bookkeeping and the reply correlation are the parts
+   * that must not be reimplemented, because getting any of them subtly wrong produces a
+   * request that hangs for 15 seconds and then returns a default value with no error
+   * anywhere — the failure mode this whole layer exists to have exactly one copy of.
+   */
+  public relay(action: string, serverEvent: string, data: unknown, cb: Function) {
+    const cbId = this.generateId();
+    this.pendingCallbacks.set(cbId, cb);
+
+    // 15-second safety timeout so NUI never hangs indefinitely
+    const timer = setTimeout(() => {
+      if (this.pendingCallbacks.has(cbId)) {
+        console.warn(
+          `[ServiceProxy:${this.serviceName}] Callback ${action} (${cbId}) timed out waiting for server response.`
+        );
+        const pendingCb = this.pendingCallbacks.get(cbId);
+        this.pendingCallbacks.delete(cbId);
+        this.pendingTimers.delete(cbId);
+        if (pendingCb) {
+          pendingCb({ error: 'Request timed out' });
+        }
+      }
+    }, 15000);
+
+    this.pendingTimers.set(cbId, timer);
+
+    emitNet(serverEvent, cbId, data);
   }
 }
