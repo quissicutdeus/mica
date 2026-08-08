@@ -104,7 +104,8 @@ rather than read from an implicit `source` global — `onNet` also registers a l
 
 ## Client-authoritative values
 
-**One is legitimate. Two are unfinished, and this section used to call all three "by design".**
+**One is legitimate. One is unfinished. One has since been fixed** — and this section used to call
+all three "by design".
 That framing was wrong and worth correcting: the default is server-authoritative, and anything the
 client owns needs a reason it _cannot_ move rather than a reason it has not.
 
@@ -114,17 +115,17 @@ The server cannot see DOM focus. There is no server-side version of "this player
 focused", so the web pushes it over on `focusin`/`focusout`. It suppresses keybinds; asserting it
 wrongly costs you your own hotkeys and nothing else.
 
-### Battery charge — should move, and can
+### Battery charge — moved
 
-The client runs the drain timer and reports every 15 seconds over `gphone:server:battery:save`,
-which means a modified client asserts whatever charge it likes. Validating that event does not change
-what it is.
+The client ran the drain timer and reported over `gphone:server:battery:save` every fifteen
+seconds, so a modified client asserted whatever charge it liked. Validating that payload never
+changed what it was, so the event is **gone** and the server ticks the number itself.
 
-Nothing prevents the server owning it. It already has `getAllPlayers()`, `savePlayerBattery` and a
-push to the client; the drain is 1% per minute, so a server interval is one map update per online
-player per tick. Doing it deletes `battery:save` outright rather than guarding it, and removes the
-report-and-clamp path and the write-skip cache along with it — the authoritative version is smaller
-than the one it replaces.
+The authoritative version is smaller than the one it replaced: one interval and a map, against a
+client timer plus a report path plus a clamp plus a write-skip cache that existed to absorb four
+redundant writes a minute. Keyed by source, so it only ticks while connected — which the server
+knows and the client merely stopped doing. A push and a write happen when the **whole percent**
+moves, roughly once a minute rather than every tick.
 
 ### Signal bars — should move before they gate anything
 
