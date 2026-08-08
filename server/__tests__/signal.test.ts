@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../lib/FrameworkBridge', () => ({
-  FrameworkBridge: { getPlayer: vi.fn(() => ({ citizenid: 'CID' })), registerUsableItem: vi.fn() }
+  FrameworkBridge: {
+    getPlayer: vi.fn(() => ({ citizenid: 'CID' })),
+    // The server evaluates every connected player now, so changing the rules walks the
+    // player list rather than broadcasting to it.
+    getAllPlayers: vi.fn(() => ({})),
+    registerUsableItem: vi.fn()
+  }
 }));
 
 import {
@@ -12,9 +18,9 @@ import {
   setGlobalSignal,
   setPlayerSignal,
   __resetSignal,
+  evaluateSignal,
   FULL_SIGNAL
 } from '../services/Signal';
-import { evaluateSignal } from '../../client/services/Signal';
 
 beforeEach(() => {
   __resetSignal();
@@ -38,15 +44,15 @@ describe('signal rules', () => {
     expect(setGlobalSignal(-5)).toBe(0);
   });
 
-  it('pushes the rules on every change, not on a poll', () => {
-    // The rules change rarely; polling would put a request per player per interval on the
-    // wire for an answer that is almost always the same one.
+  it('never sends the zone list to a client', () => {
+    // The client evaluated its own position once, which meant it held the zones. It does
+    // not now, and must not: a client that cannot see the zones cannot decide it is
+    // outside one.
     setGlobalSignal(1);
-    expect(globalThis.emitNet).toHaveBeenCalledWith(
-      'gphone:client:signal:rules',
-      -1,
-      expect.objectContaining({ global: 1 })
-    );
+    addDeadZone({ x: 0, y: 0, z: 0, radius: 50, level: 0 });
+
+    const events = (globalThis.emitNet as any).mock.calls.map((c: unknown[]) => c[0]);
+    expect(events).not.toContain('gphone:client:signal:rules');
   });
 
   it('hands back an id, which is the only thing a caller can do with a zone', () => {

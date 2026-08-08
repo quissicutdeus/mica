@@ -1,7 +1,6 @@
 // The server half of the signal service.
 import { registerService } from '../lib/services';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
-import { guardNetEvent } from '../lib/netGuard';
 
 /**
  * Cellular reception: a city-wide level, a set of dead zones, and per-player overrides.
@@ -21,17 +20,22 @@ import { guardNetEvent } from '../lib/netGuard';
  * is the correct behavior rather than a limitation, and it is also why there is no
  * `defineService` here and no generated DDL.
  *
- * ## Why the client computes the final number
+ * ## Why the server computes the final number
  *
- * The server does not know where anybody is without asking, and asking every player every
- * tick is exactly the cost this is trying to avoid. So the server owns the *rules* — the
- * global level and the zone list, both small — pushes them on change, and each client
- * evaluates its own position against them.
+ * It did not, at first. The server pushed the *rules* and each client evaluated its own
+ * position, on the reasoning that polling every player's coordinates was the cost worth
+ * avoiding — and that a faked signal only draws four bars in a tunnel.
  *
- * That means a modified client can lie about its own bars. It is worth being explicit that
- * this is **fine**: signal gates presentation, not authority. §2.9 still stands — the
- * server authorises every privileged action regardless of what the phone believes, so the
- * worst a faked signal buys is a UI that draws four bars in a tunnel.
+ * The second half of that is true **only while nothing reads the level**. The moment an
+ * app degrades at zero bars — which is the whole point of dead zones — a client that
+ * decides its own bars is a client that decides whether it is in a dead zone. That is not
+ * presentation any more, and it would have shipped exploitable in the first version of the
+ * feature that used it.
+ *
+ * So the server polls. The cost is real and was not imagined: one `GetEntityCoords` per
+ * connected player per interval. It is bounded by an early-out — with no zones and full
+ * global signal there is nothing a position could change, so the common case reads no
+ * coordinates at all — and by pushing only when a player's whole-bar value moves.
  */
 registerService('signal');
 
@@ -47,6 +51,42 @@ export interface DeadZone {
 
 /** Full bars. What a player has when nothing says otherwise. */
 export const FULL_SIGNAL = 4;
+
+/**
+ * Squared distance, deliberately — comparing against `radius * radius` avoids a square
+ * root per zone per player per poll, and the comparison is identical.
+ */
+const within = (x: number, y: number, z: number, zone: DeadZone): boolean => {
+  const dx = x - zone.x;
+  const dy = y - zone.y;
+  const dz = z - zone.z;
+  return dx * dx + dy * dy + dz * dz <= zone.radius * zone.radius;
+};
+
+/**
+ * The precedence order, in one place.
+ *
+ * A per-player override wins outright — it is set *at* a player rather than at the world,
+ * so it is not part of the comparison; otherwise there would be no way to give somebody
+ * bars inside a blackout, which is most of why an override exists. Everything else is the
+ * **same primitive**: the global level and every overlapping zone, lowest wins. Two
+ * mechanisms would drift the first time they disagreed.
+ */
+export const evaluateSignal = (
+  x: number,
+  y: number,
+  z: number,
+  rules: { global: number; zones: DeadZone[] },
+  playerOverride: number | null
+): number => {
+  if (playerOverride !== null) return playerOverride;
+
+  let level = rules.global;
+  for (const zone of rules.zones) {
+    if (zone.level < level && within(x, y, z, zone)) level = zone.level;
+  }
+  return level;
+};
 
 let globalLevel = FULL_SIGNAL;
 let nextZoneId = 1;
@@ -67,6 +107,9 @@ export const __resetSignal = (): void => {
   nextZoneId = 1;
   zones.clear();
   overrides.clear();
+  // The push cache too, or a level pushed in one case suppresses the identical push in the
+  // next and the assertion reads as "the server said nothing".
+  lastPushed.clear();
 };
 
 const clampLevel = (level: number): number => Math.max(0, Math.min(FULL_SIGNAL, Math.round(level)));
@@ -83,20 +126,71 @@ export const currentRules = (): SignalRules => ({
 });
 
 /**
- * Push the rules to everyone, or to one source.
+ * Last whole-bar value pushed per source, so a poll that changes nothing says nothing.
  *
- * Broadcast on change rather than polled, because the rules change rarely and a poll would
- * put a request per player per interval on the wire for an answer that is usually the same
- * one. A joining client asks once (`gphone:server:signal:rules`).
+ * Without it the server would put a message per player on the wire every interval,
+ * forever, to report a number that moves when somebody walks into a tunnel.
  */
-const broadcastRules = (target?: number): void => {
-  if (typeof emitNet !== 'function') return;
-  emitNet('gphone:client:signal:rules', target ?? -1, currentRules());
+const lastPushed = new Map<number, number>();
+
+const POLL_MS = 2000;
+
+/** Test seam: a deterministic poll, rather than waiting on the interval. */
+export const pollSignal = (): void => {
+  const rules = currentRules();
+
+  /**
+   * The early-out, and it is what makes polling affordable.
+   *
+   * With no zones and full global signal there is nothing a position could change, so the
+   * ordinary case never asks the game where anybody is. Overrides still have to be
+   * delivered, so they are handled before this returns.
+   */
+  const worldIsQuiet = rules.zones.length === 0 && rules.global >= FULL_SIGNAL;
+
+  const players = FrameworkBridge.getAllPlayers();
+  for (const key of Object.keys(players)) {
+    const src = Number(key);
+    if (!Number.isFinite(src)) continue;
+
+    const override = overrides.get(src) ?? null;
+
+    let level: number;
+    if (override !== null) {
+      level = override;
+    } else if (worldIsQuiet) {
+      level = FULL_SIGNAL;
+    } else {
+      const coords = playerCoords(src);
+      // No ped yet — spawning, or between characters. Full bars beats a spurious blackout.
+      level = coords ? evaluateSignal(coords[0], coords[1], coords[2], rules, null) : FULL_SIGNAL;
+    }
+
+    if (lastPushed.get(src) === level) continue;
+    lastPushed.set(src, level);
+    if (typeof emitNet === 'function') emitNet('gphone:client:signal:set', src, level);
+  }
 };
+
+/**
+ * Where the player is, or null.
+ *
+ * Guarded because these natives do not exist outside the FiveM server runtime, and this
+ * module is imported by the SQL codegen and by tests.
+ */
+const playerCoords = (src: number): [number, number, number] | null => {
+  if (typeof GetPlayerPed !== 'function' || typeof GetEntityCoords !== 'function') return null;
+  const ped = GetPlayerPed(String(src));
+  if (!ped) return null;
+  const coords = GetEntityCoords(ped) as unknown as number[];
+  return coords && coords.length >= 3 ? [coords[0], coords[1], coords[2]] : null;
+};
+
+if (typeof setInterval === 'function') setInterval(pollSignal, POLL_MS);
 
 export const setGlobalSignal = (level: number): number => {
   globalLevel = clampLevel(level);
-  broadcastRules();
+  pollSignal();
   return globalLevel;
 };
 
@@ -110,13 +204,13 @@ export const addDeadZone = (zone: Omit<DeadZone, 'id'>): DeadZone => {
     level: clampLevel(zone.level)
   };
   zones.set(created.id, created);
-  broadcastRules();
+  pollSignal();
   return created;
 };
 
 export const removeDeadZone = (id: number): boolean => {
   const existed = zones.delete(id);
-  if (existed) broadcastRules();
+  if (existed) pollSignal();
   return existed;
 };
 
@@ -124,38 +218,26 @@ export const setPlayerSignal = (src: number, level: number | null): void => {
   if (level === null) overrides.delete(src);
   else overrides.set(src, clampLevel(level));
 
-  if (typeof emitNet === 'function') {
-    emitNet('gphone:client:signal:override', src, level === null ? null : clampLevel(level));
-  }
+  // Re-evaluate now rather than waiting out the interval: an override that takes two
+  // seconds to show reads as the script having failed.
+  pollSignal();
 };
 
 export const playerOverride = (src: number): number | null => overrides.get(src) ?? null;
 
 /**
- * A joining client asks for the rules once; it has no way to know them otherwise.
+ * `gphone:server:signal:rules` is deliberately absent.
  *
- * A literal, not a template. `eventNames.test.ts` scans for string **literals**, so
- * `gphone:server:${SERVICE}:rules` would be an *unchecked* name — it would pass by being
- * invisible rather than by being right (§8).
+ * A client used to ask for the zone list so it could evaluate its own position. It has no
+ * reason to know the zones now — the server pushes a level, not the rules that produce one
+ * — and a client that cannot see the zones cannot decide it is outside one.
  */
-onNet('gphone:server:signal:rules', () => {
-  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
-  // handlers got neither until this; see `lib/netGuard.ts`.
-  const player = guardNetEvent('signal', 'rules');
-  if (!player) return;
-
-  const src = source;
-  broadcastRules(src);
-  const override = overrides.get(src);
-  if (override !== undefined && typeof emitNet === 'function') {
-    emitNet('gphone:client:signal:override', src, override);
-  }
-});
 
 on('playerDropped', () => {
   // FiveM reuses server ids, so an override left behind is one the next player inherits —
   // they would join with no bars and nothing on screen explaining why.
   overrides.delete(source);
+  lastPushed.delete(source);
 });
 
 /** For the `GetSignal` export: the rules a player is subject to, without their position. */

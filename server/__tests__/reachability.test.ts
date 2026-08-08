@@ -67,6 +67,7 @@ describe('nothing registers an action the app does not use', () => {
   it.each([
     ['gphone:server:accounts:delete', 'deleting an account orphans its Blabs and follows'],
     ['gphone:server:battery:save', 'the client no longer owns its own charge'],
+    ['gphone:server:signal:rules', 'the client no longer holds the zone list'],
     ['gphone:server:notifications:get', 'the shade reads through getShadeNotifications'],
     ['gphone:server:notifications:delete', 'clearing is a soft delete onto cleared_at'],
     ['gphone:server:blabber_dms:delete', 'a sent DM is not deletable']
@@ -100,22 +101,28 @@ describe('raw onNet handlers are rate limited', () => {
     for (let i = 0; i < times; i++) handler(arg);
   };
 
-  it.each([
-    ['gphone:server:phone:start', '555-0100'],
-    ['gphone:server:signal:rules', undefined]
-  ])('%s stops answering once the window is spent', (event, arg) => {
-    // The default budget is 60 per minute; 200 calls is well past it. What matters is that
-    // the handler stops doing work, not the exact number.
-    (globalThis as any).emitNet = vi.fn();
-    drive(event, 200, arg);
+  it.each([['gphone:server:phone:start', '555-0100']])(
+    '%s stops answering once the window is spent',
+    (event, arg) => {
+      // The default budget is 60 per minute; 200 calls is well past it. What matters is that
+      // the handler stops doing work, not the exact number.
+      (globalThis as any).emitNet = vi.fn();
+      drive(event, 200, arg);
 
-    const calls = (globalThis.emitNet as any).mock.calls.length + dbMock.query.mock.calls.length;
-    expect(calls).toBeLessThan(200);
-  });
+      const calls = (globalThis.emitNet as any).mock.calls.length + dbMock.query.mock.calls.length;
+      expect(calls).toBeLessThan(200);
+    }
+  );
 
-  it('lets an ordinary number of calls through', () => {
+  it('lets an ordinary number of calls through', async () => {
     (globalThis as any).emitNet = vi.fn();
-    drive('gphone:server:signal:rules', 3);
+    drive('gphone:server:battery:load', 3);
+
+    // `battery:load` reads the saved charge before it pushes, so the emit lands a
+    // microtask later. Asserting synchronously would pass against a limiter that refused
+    // everything, which is the opposite of what this checks.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     expect((globalThis.emitNet as any).mock.calls.length).toBeGreaterThan(0);
   });
 });
@@ -138,7 +145,6 @@ describe('raw onNet handlers authenticate', () => {
 
   it.each([
     ['gphone:server:battery:load', undefined],
-    ['gphone:server:signal:rules', undefined],
     ['gphone:server:phone:answer', undefined]
   ])('%s does nothing for a source with no character', (event, arg) => {
     bridge.loaded = false;
