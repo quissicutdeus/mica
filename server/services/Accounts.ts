@@ -138,7 +138,23 @@ export const accounts = defineService<Account>({
   ],
   // Custom: validates the handle, caps how many a player may hold, and translates a
   // duplicate-key collision into something a player can read.
-  options: { disableCreate: true }
+  options: {
+    disableCreate: true,
+    /**
+     * Nothing offers "delete your account", so nothing should register the endpoint.
+     *
+     * A registered action is reachable, full stop — a modified client can emit
+     * `gphone:server:accounts:delete` directly, with or without a NUI route in front of
+     * it. The route table never bounded that; it only ever bounded CEF XSS, which is
+     * confined to registered NUI callbacks. So "the UI does not call it" is not a control,
+     * and the only real one is not registering it.
+     *
+     * Deleting an account would also orphan every Blab and follow row pointing at it, and
+     * the handle can never be reclaimed. If that becomes a feature it wants a named action
+     * that decides what happens to the content, not the generic row delete.
+     */
+    disableDelete: true
+  }
 });
 
 const app = accounts.app;

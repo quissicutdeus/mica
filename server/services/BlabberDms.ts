@@ -59,7 +59,10 @@ export const blabberDms = defineService<BlabberDm>({
   options: {
     disableGet: true, // Custom: a thread is the union of both directions.
     disableCreate: true, // Custom: verifies the sending account and notifies the recipient.
-    disableUpdate: true // A sent message is not editable. There is nothing to update.
+    disableUpdate: true, // A sent message is not editable. There is nothing to update.
+    // Nor is it deletable: nothing in the app offers it, and a registered action is
+    // reachable whether or not a route points at it.
+    disableDelete: true
   }
 });
 

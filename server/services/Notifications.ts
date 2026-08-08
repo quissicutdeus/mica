@@ -150,6 +150,19 @@ export const notifications = defineService<NotificationItem>({
     { name: 'citizenid_app_id', columns: ['citizenid', 'app', 'id'] },
     { name: 'citizenid_read', columns: ['citizenid', 'read_at'] }
   ],
+  /**
+   * Every read and write goes through a named action, so no generic one is registered.
+   *
+   * `write: 'server'` already keeps create and update off. `get` and `delete` were still
+   * registered and nothing called them — the shade reads through `getShadeNotifications`
+   * and clears through `clearNotifications`, both of which apply the `cleared_at` and
+   * `read_at` semantics the generic path knows nothing about. A generic `delete` would
+   * hard-drop a row the moderation flow expects to still be there.
+   *
+   * Registered means reachable: a modified client emits the net event directly, so the
+   * absence of a route in front of it is not a control.
+   */
+  options: { disableGet: true, disableDelete: true },
   repositoryFactory: (resolved) => {
     notificationsRepo = new NotificationsRepository(resolved);
     return notificationsRepo;
