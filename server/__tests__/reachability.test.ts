@@ -66,6 +66,7 @@ describe('nothing registers an action the app does not use', () => {
    */
   it.each([
     ['gphone:server:accounts:delete', 'deleting an account orphans its Blabs and follows'],
+    ['gphone:server:battery:save', 'the client no longer owns its own charge'],
     ['gphone:server:notifications:get', 'the shade reads through getShadeNotifications'],
     ['gphone:server:notifications:delete', 'clearing is a soft delete onto cleared_at'],
     ['gphone:server:blabber_dms:delete', 'a sent DM is not deletable']
@@ -100,7 +101,6 @@ describe('raw onNet handlers are rate limited', () => {
   };
 
   it.each([
-    ['gphone:server:battery:save', 55],
     ['gphone:server:phone:start', '555-0100'],
     ['gphone:server:signal:rules', undefined]
   ])('%s stops answering once the window is spent', (event, arg) => {
@@ -137,7 +137,6 @@ describe('raw onNet handlers authenticate', () => {
   };
 
   it.each([
-    ['gphone:server:battery:save', 55],
     ['gphone:server:battery:load', undefined],
     ['gphone:server:signal:rules', undefined],
     ['gphone:server:phone:answer', undefined]
@@ -158,14 +157,6 @@ describe('raw onNet handlers validate their payload', () => {
     handlers.get(event)!(arg);
   };
 
-  it('refuses a battery level that is not a number', () => {
-    // `Number(undefined)` is NaN, and NaN used to reach the clamp and the write — a level
-    // the client never sent becoming a level.
-    (globalThis as any).emitNet = vi.fn();
-    for (const bad of [undefined, null, 'full', {}, NaN]) call('gphone:server:battery:save', bad);
-    expect(dbMock.query).not.toHaveBeenCalled();
-  });
-
   it('refuses a target number that is not a bounded string', () => {
     // It reaches `FrameworkBridge.getPlayerByPhone`, which belongs to the framework. Not
     // injection — an unbounded or wrongly-typed value reaching somebody else's lookup.
@@ -174,5 +165,47 @@ describe('raw onNet handlers validate their payload', () => {
       call('gphone:server:phone:start', bad);
     }
     expect((globalThis.emitNet as any).mock.calls).toHaveLength(0);
+  });
+});
+
+describe('the server owns the battery', () => {
+  /**
+   * The charge used to be the client's: it ran the drain timer and reported over
+   * `gphone:server:battery:save`, so a modified client asserted whatever number it liked.
+   * Validating that payload never changed what it was — the event is gone, and these
+   * assertions are what say so.
+   */
+  it('ticks the charge down without the client saying anything', async () => {
+    const battery = await import('../services/Battery');
+    battery.__resetBatteryState();
+    battery.applyCharge(7, 50);
+
+    // A whole minute of ticks at the module's own cadence. Nothing from any client.
+    for (let i = 0; i < 12; i++) battery.__tickBattery();
+
+    expect(battery.currentCharge(7)).toBeLessThan(50);
+  });
+
+  it('pushes only when the whole percent moves', async () => {
+    const battery = await import('../services/Battery');
+    battery.__resetBatteryState();
+    battery.applyCharge(8, 80);
+    (globalThis as any).emitNet = vi.fn();
+
+    // One tick is a twelfth of a percent, so the phone has nothing new to draw. Pushing
+    // every tick would put a message on the wire every five seconds, per player, forever.
+    battery.__tickBattery();
+    expect((globalThis.emitNet as any).mock.calls).toHaveLength(0);
+  });
+
+  it('charges upward, and faster than it drains', async () => {
+    const battery = await import('../services/Battery');
+    battery.__resetBatteryState();
+    battery.applyCharge(9, 50);
+    battery.setCharging(9, true);
+
+    for (let i = 0; i < 12; i++) battery.__tickBattery();
+
+    expect(battery.currentCharge(9)).toBeGreaterThan(50);
   });
 });

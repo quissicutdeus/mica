@@ -49,6 +49,76 @@ const lastWritten = new Map<string, number>();
 /** Test seam: the write-skip cache is module state that would leak between cases. */
 export const __resetBatteryCache = () => lastWritten.clear();
 
+/**
+ * Charge per connected source, ticked by the server.
+ *
+ * This lived on the client: it ran the drain timer and reported over
+ * `gphone:server:battery:save` every 15 seconds, so a modified client asserted whatever
+ * charge it liked. The fix is not a better check on that event — it is that the event is
+ * gone and the number is ours.
+ *
+ * The authoritative version is **smaller** than what it replaced: one interval and a map,
+ * against a client timer plus a report path plus a clamp plus a write-skip cache that
+ * existed to absorb four redundant writes a minute.
+ *
+ * Keyed by source rather than citizenid because it only ticks while connected — which the
+ * server knows, where the client merely stopped running.
+ */
+const charge = new Map<number, number>();
+const charging = new Set<number>();
+
+/** Percent per minute. Draining is slow; a charger should visibly beat it. */
+const DRAIN_PER_MINUTE = 1;
+const CHARGE_PER_MINUTE = 10;
+const TICK_MS = 5000;
+
+const pushCharge = (src: number, level: number): void => {
+  if (typeof emitNet === 'function') emitNet('gphone:client:battery:set', src, level);
+};
+
+/**
+ * One tick for every connected player.
+ *
+ * Whole percents are what the phone shows, so a push and a write happen only when the
+ * rounded value moves — once a minute while draining, not every five seconds. That is the
+ * saving the client's `saveCounter` was reaching for, expressed where the number lives.
+ */
+const tickBattery = (): void => {
+  for (const [src, level] of charge) {
+    const rate = charging.has(src) ? CHARGE_PER_MINUTE : -DRAIN_PER_MINUTE;
+    const next = Math.max(0, Math.min(100, level + (rate * TICK_MS) / 60_000));
+    if (next === level) continue;
+
+    charge.set(src, next);
+    if (Math.round(next) !== Math.round(level)) {
+      pushCharge(src, Math.round(next));
+      void savePlayerBattery(src, Math.round(next));
+    }
+  }
+};
+
+if (typeof setInterval === 'function') setInterval(tickBattery, TICK_MS);
+
+/** Test seams: module state and a deterministic tick, rather than waiting on wall clock. */
+export const __tickBattery = tickBattery;
+export const __resetBatteryState = (): void => {
+  charge.clear();
+  charging.clear();
+  lastWritten.clear();
+};
+
+/** What the server believes this player's charge is. */
+export const currentCharge = (src: number): number => Math.round(charge.get(src) ?? 100);
+
+/** Set the live value, tell the phone, and persist. The one way charge changes outright. */
+export const applyCharge = (src: number, level: number): number => {
+  const clamped = Math.max(0, Math.min(100, Math.round(level)));
+  charge.set(src, clamped);
+  pushCharge(src, clamped);
+  void savePlayerBattery(src, clamped);
+  return clamped;
+};
+
 // Helper to remove item from inventory
 const removeBatteryBankItem = (src: number): boolean => {
   const player = FrameworkBridge.getPlayer(src);
@@ -99,20 +169,13 @@ onNet('gphone:server:battery:useItem', () => {
   }
 });
 
-// Event to save battery charge from client
-onNet('gphone:server:battery:save', (rawCharge: unknown) => {
-  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
-  // handlers got neither until this; see `lib/netGuard.ts`.
-  const player = guardNetEvent('battery', 'save');
-  if (!player) return;
-
-  // `Number(undefined)` is NaN, and NaN reached the clamp and the write. A level the
-  // client never sent should not become a level at all.
-  const level = levelFrom(rawCharge);
-  if (level === null) return;
-
-  void savePlayerBattery(source, level);
-});
+/**
+ * `gphone:server:battery:save` is deliberately absent.
+ *
+ * It let the client tell the server what its charge was, which is the whole of the
+ * tampering surface — no amount of validating that payload makes it something else. The
+ * server owns the number now, so there is nothing for the client to report.
+ */
 
 /**
  * The Developer Tools battery slider, gated on `gphone.admin`.
@@ -162,6 +225,7 @@ export const sendLoadedBatteryToClient = async (src: number): Promise<void> => {
   // No loaded character yet — a multichar player still at the selection screen. Nothing
   // to look up, and `src_<id>` would key a row to a source number that gets reused.
   if (!citizenid) {
+    charge.set(src, 100);
     emitNet('gphone:client:battery:set', src, 100);
     return;
   }
@@ -185,6 +249,10 @@ export const sendLoadedBatteryToClient = async (src: number): Promise<void> => {
   }
 
   if (!Number.isFinite(savedCharge)) savedCharge = 100;
+  // Seed the live value, not just the phone. The loop ticks from this map, so a load that
+  // only told the client would leave the server ticking down from 100 for somebody whose
+  // saved charge is 12.
+  charge.set(src, savedCharge);
   emitNet('gphone:client:battery:set', src, savedCharge);
 };
 
@@ -199,6 +267,12 @@ onNet('gphone:server:battery:load', () => {
 });
 
 // Listen for QBX / QBCore character load events
+/**
+ * Seed the live value from the table when a character loads.
+ *
+ * Without this the loop has nothing to tick, and `currentCharge` would answer 100 for a
+ * player whose saved charge is 12.
+ */
 on('QBCore:Server:OnPlayerLoaded', (player: any) => {
   const src = typeof player === 'number' ? player : player?.PlayerData?.source;
   if (src) {
@@ -306,14 +380,9 @@ export const getBatteryLevel = async (citizenid: string): Promise<number> => {
  * what it asked for.
  */
 export const setBatteryLevel = async (src: number, level: number): Promise<number> => {
-  const clamped = Math.max(0, Math.min(100, Math.round(level)));
-
-  // Ahead of the save, because `savePlayerBattery` skips a write when the whole percent is
-  // unchanged — and an export that sets 50 twice must still resynchronise a phone whose
-  // local value has drifted below it.
-  emitNet('gphone:client:battery:set', src, clamped);
-  await savePlayerBattery(src, clamped);
-  return clamped;
+  // Straight to the authoritative value. Nothing to reconcile with a client timer any
+  // more, which is what the old comment about resynchronising a drifted phone was for.
+  return applyCharge(src, level);
 };
 
 /**
@@ -331,5 +400,9 @@ export const setBatteryLevel = async (src: number, level: number): Promise<numbe
  * needs to read it.
  */
 export const setCharging = (src: number, isCharging: boolean): void => {
+  // The loop is server-side now, so this flips a flag the loop reads rather than pushing a
+  // state the client's own timer had to honour.
+  if (isCharging) charging.add(src);
+  else charging.delete(src);
   if (typeof emitNet === 'function') emitNet('gphone:client:battery:charging', src, isCharging);
 };
