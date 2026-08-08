@@ -70,11 +70,15 @@ order:
 
 ### 2. Raw `onNet` handlers
 
-Eight handlers in `Phone.ts`, `Battery.ts` and `Signal.ts` sit **outside** `ServiceEndpoint` — they
-answer fire-and-forget events with no callback id, so they cannot go through it. They had no rate
-limit, no authentication and no payload validation.
+**Six**, in `Phone.ts` and `Battery.ts`. They sit outside `ServiceEndpoint` because they answer
+fire-and-forget events with no callback id, so they cannot go through it, and they had no rate limit,
+no authentication and no payload validation.
 
-`guardNetEvent` in `server/lib/netGuard.ts` is now the preamble for all eight, applying the same two
+There were eight. `battery:save` and `signal:rules` are gone rather than guarded — both existed so
+the client could tell the server something the server now decides for itself, and deleting an entry
+point beats hardening one. `Signal.ts` has none left at all.
+
+`guardNetEvent` in `server/lib/netGuard.ts` is the preamble for the remaining six, applying the same two
 checks in the same order the endpoint uses: rate limit first, then the authenticated player lookup —
 `getPlayer` walks the framework's player table and a flood should not make the server pay for that.
 Refused **silently**, because there is nobody waiting on a reply to be told; `ServiceEndpoint` answers
