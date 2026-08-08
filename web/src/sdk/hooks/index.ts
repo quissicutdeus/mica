@@ -29,6 +29,7 @@ export * from './usePersisted';
 export * from './usePhoneNotification';
 export * from './usePhotos';
 export * from './useReports';
+export * from './useService';
 export * from './useSound';
 export * from './useStorage';
 export * from './useSystemHardware';
