@@ -529,6 +529,42 @@ capturing the pointer on its own `pointerdown` takes every touch that starts on 
 Doing it properly needs a grab handle to attach to and a transform that follows the finger, and
 swipe-to-clear needs per-row pointer handling that does not fight vertical scrolling.
 
+### The add-on path is half true
+
+`boundary.test.ts` has long enforced that apps may not reach past the SDK. The opposite
+direction went unchecked, and drifted three times before anyone noticed — `sdk/utils.ts`
+exporting `blabberTotalUnread`, `Accounts.ts` hardcoding `buildDeepLink('blabber')`, and
+`moderation.ts` listing `gphone_blabber` in the reportable allowlist. Each was caught by a
+person reading a diff, which is not a mechanism.
+
+`sdk/coreBoundary.test.ts` is the mechanism. It scans `sdk/`, `shell/`, `services/`,
+`lib/`, `shared/` and `server/lib/` for the id of any app declaring `core: false`, and
+fails on a new one. **Not every app**: `contacts`, `photos` and `notes` are also ordinary
+English words, and a blanket rule flagged 55 files on its first run. An add-on is
+different in kind — it is not in this repository when a server installs it, so core naming
+it cannot mean anything.
+
+Running it measured something worth having in writing. **Two apps declare `core: false`,
+`notes` and `blabber`, and both are first-party apps wearing the label:**
+
+| Where                     | Count | Why an add-on cannot do this       |
+| ------------------------- | ----- | ---------------------------------- |
+| `sdk/hooks/useBlabber.ts` | 1     | an add-on cannot add an SDK hook   |
+| `sdk/hooks/useNotes.ts`   | 6     | likewise                           |
+| `services/blabber.ts`     | 10    | nor a store in core's services dir |
+| `services/notes.ts`       | 1     | likewise                           |
+| `shared/routes.ts`        | 13    | nor a row in the core route table  |
+
+The route table is the wall: it enumerates every NUI action, and `routes.test.ts`
+cross-references it, so **an add-on cannot have a server half at all**. What the Store
+path supports today is UI-only apps. Blabber reads as proof the add-on story works and is
+better read as proof of its limits.
+
+Making it true needs a way for an app to declare its own service and reach it through a
+generic route, without core naming it — the same inversion `registerReportable` just did
+for moderation, applied to routes and to the client data layer. The counts above are the
+backlog, and the test only lets them go down.
+
 ### Phone-state exports
 
 The export API under _Shipped_ left one group out — the one still needing a mechanism rather than a
