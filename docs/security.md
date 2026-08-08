@@ -70,10 +70,19 @@ order:
 
 ### 2. Raw `onNet` handlers
 
-Eight handlers in `Phone.ts`, `Battery.ts` and `Signal.ts` sit **outside** `ServiceEndpoint`. They
-had no rate limit and no payload validation until this pass; they now carry the same `allow()` the
-endpoint uses, so the budget is shared. Refused silently, because a fire-and-forget event has no
-callback id to answer on.
+Eight handlers in `Phone.ts`, `Battery.ts` and `Signal.ts` sit **outside** `ServiceEndpoint` — they
+answer fire-and-forget events with no callback id, so they cannot go through it. They had no rate
+limit, no authentication and no payload validation.
+
+`guardNetEvent` in `server/lib/netGuard.ts` is now the preamble for all eight, applying the same two
+checks in the same order the endpoint uses: rate limit first, then the authenticated player lookup —
+`getPlayer` walks the framework's player table and a flood should not make the server pay for that.
+Refused **silently**, because there is nobody waiting on a reply to be told; `ServiceEndpoint` answers
+its refusals only because `fetchNui` would otherwise hang for fifteen seconds.
+
+Payloads are narrowed by `phoneNumberFrom` and `levelFrom` in the same module. The second is worth
+naming: `Number(null)` is `0` and `Number('')` is `0`, so a client sending nothing at all used to
+produce a valid "0% battery" rather than a refusal.
 
 `gphone:server:admin:setBattery` is gated on `isAdmin(source)`, as are the moderation actions in
 `Reports.ts`. Privilege is checked against the ace list, never against which route was used.
@@ -93,22 +102,41 @@ rather than read from an implicit `source` global — `onNet` also registers a l
 
 ---
 
-## Deliberately client-authoritative
+## Client-authoritative values
 
-Three values the client owns. Each gates **presentation**, never authority — and each is written
-down here so the next person does not "fix" one by moving it server-side and breaking what it was
-for.
+**One is legitimate. Two are unfinished, and this section used to call all three "by design".**
+That framing was wrong and worth correcting: the default is server-authoritative, and anything the
+client owns needs a reason it _cannot_ move rather than a reason it has not.
 
-| Value                 | Owned by | Why that is safe                                                                                                                                                                                                                            |
-| --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Battery charge        | client   | The drain loop lives there and reports every 15s. A faked charge means a phone that stays on. Clamped and rate limited server-side.                                                                                                         |
-| Signal bars           | client   | The server owns the _rules_ — global level, zones, overrides — and the client evaluates its own position, because the server does not know where anybody is standing without asking every tick. A faked signal draws four bars in a tunnel. |
-| `PhoneState.isTyping` | client   | The client cannot see DOM focus, so the web pushes it over. It suppresses keybinds; asserting it wrongly costs you your own hotkeys.                                                                                                        |
+### `PhoneState.isTyping` — legitimately client-owned
 
-The test: **could a player gain something another player has to earn?** For all three the answer is
-no, which is what makes client authority acceptable here and not elsewhere.
+The server cannot see DOM focus. There is no server-side version of "this player has a text field
+focused", so the web pushes it over on `focusin`/`focusout`. It suppresses keybinds; asserting it
+wrongly costs you your own hotkeys and nothing else.
 
----
+### Battery charge — should move, and can
+
+The client runs the drain timer and reports every 15 seconds over `gphone:server:battery:save`,
+which means a modified client asserts whatever charge it likes. Validating that event does not change
+what it is.
+
+Nothing prevents the server owning it. It already has `getAllPlayers()`, `savePlayerBattery` and a
+push to the client; the drain is 1% per minute, so a server interval is one map update per online
+player per tick. Doing it deletes `battery:save` outright rather than guarding it, and removes the
+report-and-clamp path and the write-skip cache along with it — the authoritative version is smaller
+than the one it replaces.
+
+### Signal bars — should move before they gate anything
+
+Zone evaluation happens on the client, so a modified one draws four bars in a tunnel.
+
+Today that buys a wrong icon and nothing else: **no app reads the level.** The moment one does —
+which is exactly what "every app grows a zero-bar path" would introduce — faking it becomes bypassing
+dead zones, which is a real advantage. Server authority belongs **before** that feature, not after,
+or the first version of it ships exploitable.
+
+The cost is real and is why it went client-side: the server must poll player coordinates rather than
+each client checking its own position. That is a reason to schedule it, not a reason it cannot happen.
 
 ## Accepted risks
 
