@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
+import { GENERIC_SERVICE_ACTION } from '@shared/rpc';
 
 export interface CrudEvents {
   list: string;
@@ -27,6 +28,19 @@ export interface CrudOptions<T, TDraft> {
    * what the previous `any` was standing in for.
    */
   validate?: (draft: TDraft | T) => void;
+  /**
+   * Reach the server through the generic service route instead of named NUI actions.
+   *
+   * Set it and `events` become **server** action names — `get`, `create`, `update`,
+   * `delete` — rather than rows in `shared/routes.ts`. That is the only path open to an
+   * app installed from the Store, which cannot add a route to a table shipping inside
+   * gPhone.
+   *
+   * Core services leave it unset and keep their named routes, which `routes.test.ts`
+   * cross-references against the server and the mock — a check worth keeping for the apps
+   * that ship in-tree.
+   */
+  service?: string;
 }
 
 const timeOf = (value: unknown): number => {
@@ -67,6 +81,29 @@ export function createCrudStore<T extends { id: number }, TDraft = Omit<T, 'id'>
   const { subscribe, set, update: mutate } = writable<T[]>([]);
 
   /**
+   * One transport, two routes to the same server.
+   *
+   * Without `service`, `events` are NUI action names from `shared/routes.ts` — the path
+   * every core service uses, and the one `routes.test.ts` cross-references. With it, they
+   * are **server action names** (`get`, `create`) sent through the one generic callback,
+   * which is the only path available to an app the Store installed: it cannot add a row
+   * to a route table that ships inside gPhone.
+   *
+   * Here rather than in a second store factory, because everything below this line — the
+   * ordering, the `loaded` flag, the validation, refusing to optimistically assert a write
+   * the server has not taken — is the part that took several rewrites to get right and is
+   * exactly what an add-on should not have to reproduce to have a list.
+   */
+  const request = <R>(action: string, payload?: unknown, opts?: { defaultValue: R }) =>
+    options.service
+      ? fetchNui<R>(
+          GENERIC_SERVICE_ACTION,
+          { service: options.service, action, data: payload },
+          opts
+        )
+      : fetchNui<R>(action, payload, opts);
+
+  /**
    * False until the first load has come back, whatever it came back with.
    *
    * An empty list means two different things — still fetching, and nothing to show — and
@@ -89,7 +126,7 @@ export function createCrudStore<T extends { id: number }, TDraft = Omit<T, 'id'>
 
     load: async (): Promise<void> => {
       try {
-        const data = await fetchNui<T[]>(events.list, null, { defaultValue: [] as T[] });
+        const data = await request<T[]>(events.list, null, { defaultValue: [] as T[] });
         if (!Array.isArray(data)) {
           console.error(`${name} store received invalid data:`, data);
           set([]);
@@ -103,19 +140,19 @@ export function createCrudStore<T extends { id: number }, TDraft = Omit<T, 'id'>
 
     add: async (draft: TDraft): Promise<T> => {
       options.validate?.(draft);
-      const created = await fetchNui<T>(required(events.create, 'create'), draft);
+      const created = await request<T>(required(events.create, 'create'), draft);
       mutate((rows) => ordered([...rows, created]));
       return created;
     },
 
     update: async (row: T): Promise<void> => {
       options.validate?.(row);
-      await fetchNui(required(events.update, 'update'), row);
+      await request(required(events.update, 'update'), row);
       mutate((rows) => ordered(rows.map((r) => (r.id === row.id ? row : r))));
     },
 
     delete: async (id: number): Promise<void> => {
-      await fetchNui(required(events.remove, 'delete'), { id });
+      await request(required(events.remove, 'delete'), { id });
       mutate((rows) => rows.filter((r) => r.id !== id));
     },
 

@@ -1,6 +1,5 @@
 <script lang="ts">
   import {
-    useNotes,
     type Note,
     Button,
     ConfirmDialog,
@@ -22,6 +21,7 @@
     useTimer,
     type AppProps
   } from '@gphone/sdk';
+  import { useNotes } from './store';
 
   const { notesStore: notes } = useNotes();
   const notesLoaded = notes.loaded;

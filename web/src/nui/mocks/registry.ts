@@ -712,10 +712,12 @@ const mockRegistry: Record<string, MockHandler> = {
 
   // Notes
   ...defineMockCrud<Note>(mockNotes, {
-    list: 'getNotes',
-    create: 'createNote',
-    update: 'updateNote',
-    remove: 'deleteNote'
+    // Scoped keys, because Notes goes through the generic service route: the request
+    // arrives as `{ service: 'notes', action: 'get' }` rather than as `getNotes`.
+    list: 'notes:get',
+    create: 'notes:create',
+    update: 'notes:update',
+    remove: 'notes:delete'
   }),
 
   // Messages

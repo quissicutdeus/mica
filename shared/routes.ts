@@ -113,10 +113,9 @@ export const ROUTES: readonly Route[] = [
   route('sendMessage', 'messages', 'send'),
 
   // Notes
-  route('getNotes', 'notes', 'get'),
-  route('createNote', 'notes', 'create'),
-  route('updateNote', 'notes', 'update'),
-  route('deleteNote', 'notes', 'delete'),
+  // Notes is `core: false` and reaches its service through the generic route instead, so
+  // it needs no row here. That is the whole point of the generic route: this table ships
+  // inside gPhone, and an app installed from the Store cannot add to it.
 
   // Reports. `queue` and `resolve` are admin-only, enforced server-side rather than by
   // hiding the Administration app — hiding the app hides the button, not the capability.

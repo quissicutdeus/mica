@@ -4,7 +4,7 @@ import { contacts } from '../../services/contacts';
 import { conversationsStore } from '../../services/conversations';
 import { photos } from '../../services/photos';
 import { mailStore } from '../../services/mail';
-import { notes } from '../../services/notes';
+import { notes } from '../../apps/notes/store';
 import * as accountModule from '../../services/account';
 
 vi.mock('../../nui/fetchNui', () => ({

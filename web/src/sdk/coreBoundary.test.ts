@@ -112,18 +112,16 @@ const stripComments = (text: string): string =>
  * backlog for making the add-on path real.
  */
 const GRANDFATHERED: Record<string, number> = {
-  // The SDK ships each add-on's hook. An add-on installed from the Store cannot add one,
-  // so `notes` and `blabber` have a private channel no third-party app can use.
+  // Blabber still ships a hook inside the SDK and a store inside core's services
+  // directory, neither of which an app installed from the Store can add.
+  //
+  // Notes used to, and no longer does: it owns both, and reaches its service through the
+  // generic route. That is the whole of what changed, and these numbers are how you tell.
   'web/src/sdk/hooks/useBlabber.ts': 1,
-  'web/src/sdk/hooks/useNotes.ts': 6,
-
-  // Core's services directory holds each add-on's client store, for the same reason.
   'web/src/services/blabber.ts': 10,
-  'web/src/services/notes.ts': 1,
 
-  // And the route table enumerates every NUI action including theirs — which is the wall
-  // that stops an add-on having a server half at all.
-  'shared/routes.ts': 13
+  // Down from 13 — Notes' four rows are gone. What is left is Blabber's.
+  'shared/routes.ts': 9
 };
 
 const countFor = (text: string, ids: string[]): number => {

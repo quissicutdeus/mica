@@ -13,7 +13,6 @@ import {
   useAccount,
   useCall,
   useMail,
-  useNotes,
   useMessages,
   useNotifications,
   onAppMount,
@@ -197,17 +196,6 @@ describe('gPhone SDK (@gphone/sdk)', () => {
         updated_at: now
       });
       expect(get(mStore).some((m) => m.id === 99)).toBe(true);
-    });
-
-    it('useNotes allows managing notes via notesStore', async () => {
-      const { notesStore, addNote, deleteNote } = useNotes();
-      expect(notesStore).toBeDefined();
-
-      const created = await addNote('Test Title', 'Test Content');
-      if (created) {
-        expect(get(notesStore).some((n) => n.id === created.id)).toBe(true);
-        await deleteNote(created.id);
-      }
     });
 
     it('useMessages exposes conversationsStore and messaging utilities', () => {
