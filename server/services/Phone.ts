@@ -1,7 +1,7 @@
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { notifyPlayer } from '../lib/shell';
 import { registerService } from '../lib/services';
-import { allow } from '../lib/rateLimit';
+import { guardNetEvent, phoneNumberFrom } from '../lib/netGuard';
 
 // Dictionary to track active calls: CallID -> { caller: source, target: source }
 interface ActiveCall {
@@ -25,11 +25,17 @@ const generateCallId = () => Math.floor(Math.random() * 900000) + 100000;
 const PHONE_SERVICE = registerService('phone');
 void PHONE_SERVICE;
 
-onNet('gphone:server:phone:start', (targetPhone: string) => {
-  // Outside `ServiceEndpoint`, so this handler never met the limiter every other
-  // server action passes through. Same `allow()`, same `gphone_rate_limit` budget.
-  // Refused silently: a fire-and-forget event has no callback id to answer on.
-  if (!allow(source, 'phone', 'start')) return;
+onNet('gphone:server:phone:start', (rawTarget: unknown) => {
+  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
+  // handlers got neither until this; see `lib/netGuard.ts`.
+  const player = guardNetEvent('phone', 'start');
+  if (!player) return;
+
+  // Typed and bounded before it reaches `getPlayerByPhone`, which belongs to the
+  // framework rather than to us. Not injection — an unbounded or non-string value
+  // reaching somebody else's lookup.
+  const targetPhone = phoneNumberFrom(rawTarget);
+  if (!targetPhone) return;
 
   const src = source;
   const callerPhone = FrameworkBridge.getPlayerPhone(src);
@@ -81,10 +87,10 @@ onNet('gphone:server:phone:start', (targetPhone: string) => {
 });
 
 onNet('gphone:server:phone:answer', () => {
-  // Outside `ServiceEndpoint`, so this handler never met the limiter every other
-  // server action passes through. Same `allow()`, same `gphone_rate_limit` budget.
-  // Refused silently: a fire-and-forget event has no callback id to answer on.
-  if (!allow(source, 'phone', 'answer')) return;
+  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
+  // handlers got neither until this; see `lib/netGuard.ts`.
+  const player = guardNetEvent('phone', 'answer');
+  if (!player) return;
 
   const src = source;
   const callId = playerCalls[src];
@@ -97,10 +103,10 @@ onNet('gphone:server:phone:answer', () => {
 });
 
 onNet('gphone:server:phone:end', () => {
-  // Outside `ServiceEndpoint`, so this handler never met the limiter every other
-  // server action passes through. Same `allow()`, same `gphone_rate_limit` budget.
-  // Refused silently: a fire-and-forget event has no callback id to answer on.
-  if (!allow(source, 'phone', 'end')) return;
+  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
+  // handlers got neither until this; see `lib/netGuard.ts`.
+  const player = guardNetEvent('phone', 'end');
+  if (!player) return;
 
   const src = source;
   const callId = playerCalls[src];

@@ -4,7 +4,7 @@ import { defineService } from '../lib/defineService';
 import { PhoneBattery } from '@shared/types';
 import { isAdmin } from './Admin';
 import { notifyPlayer } from '../lib/shell';
-import { allow } from '../lib/rateLimit';
+import { guardNetEvent, levelFrom } from '../lib/netGuard';
 
 /**
  * gPhone owns the saved charge, in its own table.
@@ -86,10 +86,10 @@ export const savePlayerBattery = async (src: number, level: number): Promise<voi
 
 // Event handler for battery_bank item or custom server trigger to recharge phone
 onNet('gphone:server:battery:useItem', () => {
-  // Outside `ServiceEndpoint`, so this handler never met the limiter every other
-  // server action passes through. Same `allow()`, same `gphone_rate_limit` budget.
-  // Refused silently: a fire-and-forget event has no callback id to answer on.
-  if (!allow(source, 'battery', 'useItem')) return;
+  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
+  // handlers got neither until this; see `lib/netGuard.ts`.
+  const player = guardNetEvent('battery', 'useItem');
+  if (!player) return;
 
   const src = source;
   const removed = removeBatteryBankItem(src);
@@ -100,13 +100,18 @@ onNet('gphone:server:battery:useItem', () => {
 });
 
 // Event to save battery charge from client
-onNet('gphone:server:battery:save', (chargeAmount: number) => {
-  // Outside `ServiceEndpoint`, so this handler never met the limiter every other
-  // server action passes through. Same `allow()`, same `gphone_rate_limit` budget.
-  // Refused silently: a fire-and-forget event has no callback id to answer on.
-  if (!allow(source, 'battery', 'save')) return;
+onNet('gphone:server:battery:save', (rawCharge: unknown) => {
+  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
+  // handlers got neither until this; see `lib/netGuard.ts`.
+  const player = guardNetEvent('battery', 'save');
+  if (!player) return;
 
-  void savePlayerBattery(source, Number(chargeAmount));
+  // `Number(undefined)` is NaN, and NaN reached the clamp and the write. A level the
+  // client never sent should not become a level at all.
+  const level = levelFrom(rawCharge);
+  if (level === null) return;
+
+  void savePlayerBattery(source, level);
 });
 
 /**
@@ -121,11 +126,11 @@ onNet('gphone:server:battery:save', (chargeAmount: number) => {
  * convenient UI, not the capability. Server-authoritative battery is a separate,
  * larger change: persistence (below) is not the same thing as authority.
  */
-onNet('gphone:server:admin:setBattery', (chargeAmount: number) => {
-  // Outside `ServiceEndpoint`, so this handler never met the limiter every other
-  // server action passes through. Same `allow()`, same `gphone_rate_limit` budget.
-  // Refused silently: a fire-and-forget event has no callback id to answer on.
-  if (!allow(source, 'admin', 'setBattery')) return;
+onNet('gphone:server:admin:setBattery', (rawCharge: unknown) => {
+  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
+  // handlers got neither until this; see `lib/netGuard.ts`.
+  const player = guardNetEvent('admin', 'setBattery');
+  if (!player) return;
 
   const src = source;
   if (!isAdmin(src)) {
@@ -136,8 +141,8 @@ onNet('gphone:server:admin:setBattery', (chargeAmount: number) => {
     return;
   }
 
-  const level = Math.max(0, Math.min(100, Number(chargeAmount)));
-  if (!Number.isFinite(level)) return;
+  const level = levelFrom(rawCharge);
+  if (level === null) return;
 
   void savePlayerBattery(src, level);
   emitNet('gphone:client:battery:set', src, level);
@@ -185,10 +190,10 @@ export const sendLoadedBatteryToClient = async (src: number): Promise<void> => {
 
 // Event for client to request saved battery level on spawn / join
 onNet('gphone:server:battery:load', () => {
-  // Outside `ServiceEndpoint`, so this handler never met the limiter every other
-  // server action passes through. Same `allow()`, same `gphone_rate_limit` budget.
-  // Refused silently: a fire-and-forget event has no callback id to answer on.
-  if (!allow(source, 'battery', 'load')) return;
+  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
+  // handlers got neither until this; see `lib/netGuard.ts`.
+  const player = guardNetEvent('battery', 'load');
+  if (!player) return;
 
   void sendLoadedBatteryToClient(source);
 });

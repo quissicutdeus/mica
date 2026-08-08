@@ -13,9 +13,11 @@ const { dbMock, handlers } = vi.hoisted(() => {
   };
 });
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
+const bridge = vi.hoisted(() => ({ loaded: true }));
 vi.mock('../lib/FrameworkBridge', () => ({
   FrameworkBridge: {
-    getPlayer: () => ({ citizenid: 'CID', source: 5, setMeta: () => {} }),
+    getPlayer: () =>
+      bridge.loaded ? { citizenid: 'CID', source: 5, setMeta: () => {} } : undefined,
     getAllPlayers: () => ({}),
     getSourceByCitizenId: () => undefined,
     // `phone:start` resolves the caller's own number before it does anything else, so a
@@ -54,6 +56,7 @@ beforeEach(() => {
   (globalThis as any).emitNet = vi.fn();
   (globalThis as any).GetConvar = (_n: string, f: string) => f;
   (globalThis as any).GetConvarInt = (_n: string, f: number) => f;
+  bridge.loaded = true;
 });
 
 describe('nothing registers an action the app does not use', () => {
@@ -114,5 +117,62 @@ describe('raw onNet handlers are rate limited', () => {
     (globalThis as any).emitNet = vi.fn();
     drive('gphone:server:signal:rules', 3);
     expect((globalThis.emitNet as any).mock.calls.length).toBeGreaterThan(0);
+  });
+});
+
+describe('raw onNet handlers authenticate', () => {
+  /**
+   * Rate limiting was only half of it.
+   *
+   * `ServiceEndpoint` refuses a source with no loaded character; these handlers did not
+   * check at all. A source that has connected but not picked a character can still emit
+   * events, and some of these would have acted on it — `battery:save` writing against a
+   * citizenid that does not exist yet.
+   */
+  const call = (event: string, arg?: unknown) => {
+    const handler = handlers.get(event);
+    if (!handler) throw new Error(`no handler for ${event}`);
+    (globalThis as any).source = 11;
+    handler(arg);
+  };
+
+  it.each([
+    ['gphone:server:battery:save', 55],
+    ['gphone:server:battery:load', undefined],
+    ['gphone:server:signal:rules', undefined],
+    ['gphone:server:phone:answer', undefined]
+  ])('%s does nothing for a source with no character', (event, arg) => {
+    bridge.loaded = false;
+    (globalThis as any).emitNet = vi.fn();
+
+    call(event, arg);
+
+    expect((globalThis.emitNet as any).mock.calls).toHaveLength(0);
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+});
+
+describe('raw onNet handlers validate their payload', () => {
+  const call = (event: string, arg: unknown) => {
+    (globalThis as any).source = 12;
+    handlers.get(event)!(arg);
+  };
+
+  it('refuses a battery level that is not a number', () => {
+    // `Number(undefined)` is NaN, and NaN used to reach the clamp and the write — a level
+    // the client never sent becoming a level.
+    (globalThis as any).emitNet = vi.fn();
+    for (const bad of [undefined, null, 'full', {}, NaN]) call('gphone:server:battery:save', bad);
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('refuses a target number that is not a bounded string', () => {
+    // It reaches `FrameworkBridge.getPlayerByPhone`, which belongs to the framework. Not
+    // injection — an unbounded or wrongly-typed value reaching somebody else's lookup.
+    (globalThis as any).emitNet = vi.fn();
+    for (const bad of [undefined, 42, {}, '   ', 'x'.repeat(200)]) {
+      call('gphone:server:phone:start', bad);
+    }
+    expect((globalThis.emitNet as any).mock.calls).toHaveLength(0);
   });
 });

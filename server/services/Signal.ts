@@ -1,7 +1,7 @@
 // The server half of the signal service.
 import { registerService } from '../lib/services';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
-import { allow } from '../lib/rateLimit';
+import { guardNetEvent } from '../lib/netGuard';
 
 /**
  * Cellular reception: a city-wide level, a set of dead zones, and per-player overrides.
@@ -139,10 +139,10 @@ export const playerOverride = (src: number): number | null => overrides.get(src)
  * invisible rather than by being right (§8).
  */
 onNet('gphone:server:signal:rules', () => {
-  // Outside `ServiceEndpoint`, so this handler never met the limiter every other
-  // server action passes through. Same `allow()`, same `gphone_rate_limit` budget.
-  // Refused silently: a fire-and-forget event has no callback id to answer on.
-  if (!allow(source, 'signal', 'rules')) return;
+  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
+  // handlers got neither until this; see `lib/netGuard.ts`.
+  const player = guardNetEvent('signal', 'rules');
+  if (!player) return;
 
   const src = source;
   broadcastRules(src);
