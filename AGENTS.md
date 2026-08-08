@@ -151,7 +151,16 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
    pushes over on `focusin`/`focusout` because the client cannot see DOM focus.
 
 8. **Never report work complete without running the §9 checklist.**
-9. **Trust no NUI payload on the server.** Every field, and every row id, in a
+9. **Trust no NUI payload on the server.** The full model — every entry point, what is
+   deliberately client-authoritative and why, and the accepted risks — is
+   [`docs/security.md`](docs/security.md). The rules below are the enforceable half.
+
+   **A registered net event is reachable.** Not "reachable if a NUI route points at it": a modified
+   client emits `gphone:server:<service>:<action>` directly and never touches NUI, so the route table
+   bounds CEF XSS and nothing else. Do not register a generic action the app does not use —
+   `server/__tests__/reachability.test.ts` keeps that honest.
+
+   Every field, and every row id, in a
    `gphone:server:*` payload is attacker-controlled — CEF XSS can `fetch` any registered callback
    (§7), so a NUI request is not proof of intent. Two rules follow, both enforced in
    `server/lib/Repository.ts`:
