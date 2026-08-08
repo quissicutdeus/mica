@@ -68,8 +68,12 @@
 
   function handleInstall(app: AppManifest) {
     void run(
-      () => {
-        const component = registryStore.getComponent(app.id) || placeholderComponent();
+      async () => {
+        // Awaited, because components load on demand: `getComponent` answers from a cache
+        // that is empty until an app has been opened once, so installing a bundled add-on
+        // straight from a fresh boot would have registered the "Not part of this build"
+        // placeholder for an app whose code is right there.
+        const component = (await registryStore.loadComponent(app.id)) ?? placeholderComponent();
         registerApp(app, component);
       },
       { title: 'Store', success: `${app.name} installed successfully!` }

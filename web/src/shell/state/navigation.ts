@@ -61,7 +61,14 @@ export const openApp = (appName: string, props: Record<string, unknown> = {}) =>
    * did this on every tap for months. The guard belongs at the entry point: every caller
    * would otherwise need its own check, and the one that forgot is the one that shipped.
    */
-  if (!appRegistryStore.getComponent(id)) {
+  /**
+   * Does the app exist — not "has its code arrived".
+   *
+   * Those were the same question while every component loaded at boot. Components are
+   * lazy now, so asking whether one is loaded would refuse an app the first time it is
+   * ever opened and let it through the second.
+   */
+  if (!appRegistryStore.isKnownApp(id)) {
     console.warn(`[navigation] Refusing to open '${id}': no app by that id is installed.`);
     return;
   }
@@ -80,6 +87,16 @@ export const openApp = (appName: string, props: Record<string, unknown> = {}) =>
   });
 
   currentApp.set(resolved);
+
+  /**
+   * Pull the chunk in, and nudge the list when it lands.
+   *
+   * `runningApps` is what `Shell` renders from, and `getComponent` is a plain call rather
+   * than a store — so without re-setting the array the app would sit on its loading
+   * placeholder until some other state happened to change. Idempotent: `loadComponent`
+   * caches both the module and the in-flight promise.
+   */
+  void appRegistryStore.loadComponent(id).then(() => runningApps.update((apps) => [...apps]));
 };
 
 /**

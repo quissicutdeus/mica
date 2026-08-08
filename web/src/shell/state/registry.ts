@@ -4,9 +4,22 @@ import { messageOf } from '../../lib/errors';
 
 export type { AppManifest } from '@gphone/sdk';
 
-// Glob every app's manifest and component out of `apps/`.
+/**
+ * Manifests eagerly, components lazily, and the split is the point.
+ *
+ * A manifest is small and the launcher cannot paint without one — name, icon, colour,
+ * badge, whether the app is core. They are also safe to load early now: every manifest
+ * imports `@gphone/sdk/app`, a leaf, rather than the barrel this module is part of.
+ *
+ * A component is the whole app. Loading all thirteen at boot means parsing every screen of
+ * every app before the phone draws anything, and it does not scale — thirty apps would
+ * cost thirty apps of startup for the one a player opens. Lazy makes that on-demand, which
+ * is also what puts a bundled app on the **same** loading path as one installed from the
+ * Store: both arrive as a promise resolved when the app is opened, rather than one being
+ * baked in and the other fetched.
+ */
 const manifestFiles = import.meta.glob('../../apps/*/manifest.ts', { eager: true });
-const appComponents = import.meta.glob('../../apps/*/index.svelte', { eager: true });
+const appComponents = import.meta.glob('../../apps/*/index.svelte');
 
 const FIRST_BOOT_KEY = 'gphone_first_boot_time';
 
@@ -47,14 +60,68 @@ const addOns: AppManifest[] = [];
  * is what has been installed since boot. A remote app's component belongs only to the second,
  * because its code came from a URL and really is gone once uninstalled.
  */
-const bundledComponents: Record<string, AppComponent> = {};
+const bundledComponents: Record<string, () => Promise<unknown>> = {};
+
+/**
+ * Components that have finished loading, bundled or remote.
+ *
+ * `getComponent` has to answer synchronously — Svelte renders `{#if AppComponent}` and
+ * cannot await — so the loader's result is cached here and the render reads the cache.
+ * Nothing evicts it: a component is code, the CEF page never unloads, and re-parsing an
+ * app the player has already opened once is exactly the cost this change removes.
+ */
+const loadedComponents: Record<string, AppComponent> = {};
+
+/** Loads in flight, so opening an app twice in quick succession imports it once. */
+const loading: Record<string, Promise<AppComponent | undefined>> = {};
 
 /** Registered since boot: a reinstall, or a remote bundle. Cleared by `unregisterApp`. */
 const componentRegistry: Record<string, AppComponent> = {};
 
 /** Runtime registration wins, so a remote app may shadow a bundled id; the bundle is fallback. */
 const resolveComponent = (appId: string): AppComponent | undefined =>
-  componentRegistry[appId] ?? bundledComponents[appId];
+  componentRegistry[appId] ?? loadedComponents[appId];
+
+/**
+ * Whether an app exists at all, as opposed to whether its code has arrived yet.
+ *
+ * The two were the same question while every component was loaded at boot, and they are
+ * not any more. `openApp` needs this one: refusing an app because its chunk is still in
+ * flight would make opening it a race.
+ */
+const isKnownApp = (appId: string): boolean =>
+  Boolean(componentRegistry[appId] || bundledComponents[appId] || loadedComponents[appId]);
+
+/**
+ * Fetch an app's component, once.
+ *
+ * Resolves to `undefined` for an id nothing declares, which is what `openApp`'s guard
+ * turns into a refusal. A failed import is logged and cached as a miss rather than
+ * retried on every render — a chunk that will not load is not going to start.
+ */
+const loadComponent = async (appId: string): Promise<AppComponent | undefined> => {
+  const already = resolveComponent(appId);
+  if (already) return already;
+
+  const loader = bundledComponents[appId];
+  if (!loader) return undefined;
+
+  loading[appId] ??= loader()
+    .then((module) => {
+      const component = (module as { default: AppComponent }).default;
+      loadedComponents[appId] = component;
+      return component;
+    })
+    .catch((error) => {
+      console.error(
+        `gPhone App Registry: failed to load '${appId}'`,
+        messageOf(error, 'unknown error')
+      );
+      return undefined;
+    });
+
+  return loading[appId];
+};
 
 for (const path in manifestFiles) {
   const rawManifest = (manifestFiles[path] as any).default as AppManifest;
@@ -76,7 +143,8 @@ for (const path in manifestFiles) {
       );
     }
     if (appComponents[componentPath]) {
-      bundledComponents[manifest.id] = (appComponents[componentPath] as any).default;
+      // The loader, not the component. Called when the app is first opened.
+      bundledComponents[manifest.id] = appComponents[componentPath] as () => Promise<unknown>;
     }
 
     // Core apps start installed on OS startup.
@@ -219,6 +287,10 @@ function createAppRegistry() {
       update((apps) => apps.filter((a) => a.id !== appId));
     },
     getComponent: (appId: string): AppComponent | undefined => resolveComponent(appId),
+    /** Whether the app exists, regardless of whether its chunk has arrived. */
+    isKnownApp,
+    /** Fetch an app's component. Idempotent, and the only thing that imports app code. */
+    loadComponent,
     /**
      * The manifest for an installed app.
      *

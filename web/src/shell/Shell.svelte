@@ -376,16 +376,28 @@
 
             {#each $runningApps as instance (instance.id)}
               {@const AppComponent = appRegistryStore.getComponent(instance.id)}
-              {#if AppComponent}
-                {@const isActive = $currentApp.id === instance.id}
-                <div class="absolute inset-0" class:hidden={!isActive} inert={!isActive}>
+              {@const isActive = $currentApp.id === instance.id}
+              <div class="absolute inset-0" class:hidden={!isActive} inert={!isActive}>
+                {#if AppComponent}
                   <ErrorBoundary
                     appName={appRegistryStore.getManifest(instance.id)?.name ?? instance.id}
                   >
                     <AppComponent onback={goHome} {...instance.props} />
                   </ErrorBoundary>
-                </div>
-              {/if}
+                {:else}
+                  <!-- The app's chunk is still arriving. Components load on demand now, so
+                       there is a moment between opening an app and having its code — and
+                       without something here the phone would be blank, with `<Home>` also
+                       skipped because the current app is not home. That is the exact
+                       failure the `openApp` guard exists to prevent, arriving by a
+                       different door. -->
+                  <div class="bg-surface flex h-full w-full items-center justify-center">
+                    <div
+                      class="border-outline-variant border-t-primary h-8 w-8 animate-spin rounded-full border-2"
+                    ></div>
+                  </div>
+                {/if}
+              </div>
             {/each}
           </div>
         </PhoneFrame>

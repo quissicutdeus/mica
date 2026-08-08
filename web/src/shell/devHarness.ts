@@ -90,7 +90,10 @@ function openDeepLinkedApp(): void {
   // resolve. An id with capitals in it opens nothing — see §4.2 — and the warning here
   // is the only thing that would tell you why.
   const id = requested.toLowerCase();
-  if (!appRegistryStore.getComponent(id)) {
+  // `isKnownApp`, not `getComponent`. Components load on demand, so nothing is resolved at
+  // boot and asking whether one is loaded would refuse every app here — `openApp` fetches
+  // the chunk itself.
+  if (!appRegistryStore.isKnownApp(id)) {
     console.warn(`[gPhone] ?app=${requested}: no app is registered under '${id}'.`);
     return;
   }

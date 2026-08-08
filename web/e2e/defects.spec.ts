@@ -12,6 +12,16 @@ const openApp = async (page: import('@playwright/test').Page, name: string | Reg
     .getByRole('button', { name: typeof name === 'string' ? new RegExp(name, 'i') : name })
     .first()
     .click();
+
+  /**
+   * Wait for the app to actually be on screen.
+   *
+   * Components load on demand, so there is a moment between the tap and the code arriving
+   * where the phone shows a spinner. A test that counted rows in that moment counted zero
+   * — which is how this surfaced: `expect(0).toBeLessThan(0)`, from an assertion that had
+   * been passing for the wrong reason.
+   */
+  await expect(page.locator('[data-testid="phone-screen"] h1').first()).toBeVisible();
 };
 
 const goHome = async (page: import('@playwright/test').Page) => {

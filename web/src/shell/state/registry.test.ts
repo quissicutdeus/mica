@@ -95,13 +95,19 @@ describe('App Registry Store', () => {
    * of this build" screen on reinstall — for an app whose code had never left. In CEF the page
    * never unloads, so it stayed broken for the rest of the session.
    */
-  it('keeps a bundled add-on mountable across uninstall and reinstall', () => {
+  it('keeps a bundled add-on mountable across uninstall and reinstall', async () => {
     const blabber = get(appRegistryStore).find((a) => a.id === 'blabber');
     // Blabber ships `core: false`, so it starts uninstalled and the glob is the only thing that
     // has ever supplied its component.
     expect(blabber).toBeUndefined();
 
-    const bundled = appRegistryStore.getComponent('blabber');
+    // Components load on demand now, so the glob supplies a *loader* and nothing resolves
+    // until an app is first opened. `getComponent` answers from the cache, which is empty
+    // here; `loadComponent` is what fills it.
+    expect(appRegistryStore.getComponent('blabber')).toBeUndefined();
+    expect(appRegistryStore.isKnownApp('blabber')).toBe(true);
+
+    const bundled = await appRegistryStore.loadComponent('blabber');
     expect(bundled).toBeDefined();
 
     // Install, exactly as the Store does.
