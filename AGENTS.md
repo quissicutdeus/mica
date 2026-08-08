@@ -1044,15 +1044,48 @@ rather than in game.
 
 ### 4. The store
 
-A list the server owns is one `createCrudStore` declaration in `web/src/services/<name>.ts`:
+A list the server owns is one `createCrudStore` declaration. **Where it goes depends on whether the
+app is `core: true`.**
+
+A core app puts it in `web/src/services/<name>.ts` and names its NUI routes:
 
 ```ts
-export const notes = createCrudStore<Note, Omit<Note, 'id' | 'citizenid'>>(
-  'Notes',
-  { list: 'getNotes', create: 'createNote', update: 'updateNote', remove: 'deleteNote' },
-  { sort: byNewest<Note>('updated_at') }
+export const contacts = createCrudStore<Contact, Omit<Contact, 'id' | 'citizenid'>>(
+  'Contacts',
+  {
+    list: 'getContacts',
+    create: 'createContact',
+    update: 'updateContact',
+    remove: 'deleteContact'
+  },
+  { sort: byNewest<Contact>('updated_at') }
 );
 ```
+
+An **add-on** puts it in its own directory and passes `service`, so `events` become _server_ action
+names and no row in `shared/routes.ts` is needed — see `web/src/apps/notes/store.ts`:
+
+```ts
+const build = () =>
+  createCrudStore<Note, Omit<Note, 'id' | 'citizenid'>>(
+    'Notes',
+    { list: 'get', create: 'create', update: 'update', remove: 'delete' },
+    { service: 'notes', sort: byNewest<Note>('updated_at') }
+  );
+```
+
+That split is not stylistic. `shared/routes.ts` and `web/src/services/` both ship inside gPhone, so
+an app installed from the Store cannot add to either — the generic route is the only path open to
+it, and `sdk/coreBoundary.test.ts` measures how much of each `core: false` app still depends on
+being first-party.
+
+**Build the store on first use, not at module scope.** The `build()` indirection above is the point
+of the example. `createCrudStore(...)` at the top level runs whenever anything imports the file, and
+if that happens while the `@gphone/sdk` barrel is still initialising, the imports come back
+`undefined` — the symptom is `byNewest is not a function`, from a line that plainly imports it.
+`lazyBadge` exists for the same reason, and a manifest is the usual trigger, since the registry globs
+every manifest eagerly. A manifest that needs the store should `import('./store')` inside `preload`
+rather than at the top.
 
 `sort` is what keeps one order however the list changed — the hand-written stores disagreed about
 append vs prepend and sorted on load but not after a write. `validate` refuses a write before it

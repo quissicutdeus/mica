@@ -119,6 +119,43 @@ whatever was true when it was first opened. If a badge has to be right _before_ 
 launcher draws, declare `preload` in the manifest — `onAppForeground` is too late by
 definition.
 
+## If your app has a server half
+
+The hooks above — `useNotes`, `useContacts` — are core code, and so are the rows in
+`shared/routes.ts` behind them. You cannot add to either: they ship inside gPhone, and your
+app does not. `useService` is the door that does not require it.
+
+```ts
+const journal = useService('journal');
+const entries = await journal.call<Entry[]>('get', {}, []);
+await journal.call('create', { title, body });
+```
+
+For a list, `createCrudStore` with `service` set gives you ordering, a `loaded` flag and the
+rule that the list follows the server rather than guessing ahead of it:
+
+```ts
+// apps/journal/store.ts — built on first use, see the warning below
+const build = () =>
+  createCrudStore<Entry, Omit<Entry, 'id' | 'citizenid'>>(
+    'Journal',
+    { list: 'get', create: 'create', update: 'update', remove: 'delete' },
+    { service: 'journal', sort: byNewest<Entry>('updated_at') }
+  );
+```
+
+**Do not call the factory at module scope.** It runs whenever anything imports the file, and if
+that happens while the `@gphone/sdk` barrel is still initialising you get `undefined` back — the
+symptom is `byNewest is not a function` on a line that plainly imports it. Build it on first use.
+A manifest is the usual trigger, because the registry loads every manifest eagerly, so use
+`preload: () => import('./store').then((m) => m.entries.load())` rather than importing at the top.
+
+`web/src/apps/notes/store.ts` is the worked example.
+
+Two things this does not give you. The browser mock registry is core too, so `pnpm dev` cannot
+stand in for your server — run against a real one. And there is no state helper beyond the store
+factory: your app holds its own state in its own module.
+
 ## Testing it
 
 ```ts
