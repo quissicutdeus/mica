@@ -90,13 +90,23 @@ const collectFetchNuiCalls = (): { action: string; file: string }[] => {
  */
 const collectCrudStoreEvents = (): { action: string; file: string }[] => {
   const found: { action: string; file: string }[] = [];
-  for (const file of walk(join(ROOT, 'web', 'src', 'services'), ['.ts'])) {
+  /**
+   * All of `web/src`, not just `services/`.
+   *
+   * An add-on owns its store inside its own directory — `apps/notes/store.ts`,
+   * `apps/blabber/store.ts` — because core's services directory is not somewhere an app
+   * installed from the Store can add to. Scanning only `services/` made those stores
+   * invisible, and the dead-weight check then reported live routes as unused.
+   */
+  for (const file of walk(join(ROOT, 'web', 'src'), ['.ts'])) {
     if (file.endsWith('.test.ts')) continue;
     const text = readFileSync(file, 'utf8');
     for (const call of text.matchAll(/createCrudStore\s*(?:<[\s\S]*?>)?\s*\(/g)) {
       // The config object is the last argument; a window is enough and keeps this a
       // scanner rather than a parser.
       const window = text.slice(call.index!, call.index! + 600);
+      // Same reason as the paged case above: `service:` means the generic route.
+      if (/\bservice\s*:/.test(window)) continue;
       for (const m of window.matchAll(/\b(?:list|create|update|remove)\s*:\s*['"](\w+)['"]/g)) {
         found.push({ action: m[1], file: relative(ROOT, file) });
       }
@@ -113,6 +123,10 @@ const collectCrudStoreEvents = (): { action: string; file: string }[] => {
      * are not actions, and a false pass here is worse than a false failure.
      */
     for (const m of text.matchAll(/createPagedStore\s*(?:<[\s\S]*?>)?\s*\(\s*['"](\w+)['"]/g)) {
+      // A store with `service:` set reaches the server through the generic route, so its
+      // first argument is a *server* action name rather than a row in this table.
+      // Counting it here reports `get` and `following` as NUI routes nobody declared.
+      if (/\bservice\s*:/.test(text.slice(m.index!, m.index! + 400))) continue;
       found.push({ action: m[1], file: relative(ROOT, file) });
     }
   }

@@ -59,30 +59,6 @@ export const ROUTES: readonly Route[] = [
   route('getFollowers', 'accounts', 'followers'),
   route('getFollowing', 'accounts', 'following'),
 
-  // Blabber. `getBlabs` is a public paged read: `{ cursor, limit }` in,
-  // `{ rows, nextCursor }` out.
-  route('getBlabs', 'blabber', 'get'),
-  route('createBlab', 'blabber', 'create'),
-  route('updateBlab', 'blabber', 'update'),
-  route('deleteBlab', 'blabber', 'delete'),
-  // One account's public profile, split into Blabs and Replies.
-  route('getProfileBlabs', 'blabber', 'profile'),
-  // The feed of accounts the active account follows. A custom action because the generic filter
-  // compares a column to a value, and this needs a set the database looks up.
-  route('getFollowingBlabs', 'blabber', 'following'),
-  // Reply, mouth and like counts for a page of Blabs, batched — one read rather than three
-  // per row.
-  route('getBlabEngagement', 'blabber', 'engagement'),
-  route('likeBlab', 'blabber', 'like'),
-  route('unlikeBlab', 'blabber', 'unlike'),
-
-  // Blabber DMs. Strictly 1:1, so a thread is identified by the peer account rather than by a
-  // conversation row.
-  route('getDmThreads', 'blabber_dms', 'threads'),
-  route('getDmMessages', 'blabber_dms', 'get'),
-  route('sendDm', 'blabber_dms', 'send'),
-  route('markDmRead', 'blabber_dms', 'read'),
-
   // Contacts
   route('getContacts', 'contacts', 'get'),
   route('createContact', 'contacts', 'create'),
