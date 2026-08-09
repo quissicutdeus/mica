@@ -1,5 +1,6 @@
 import { writable, type Readable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
+import { GENERIC_SERVICE_ACTION } from '@shared/rpc';
 
 /**
  * A store over a server-paged list.
@@ -37,7 +38,20 @@ interface PagedReply<T> {
 
 export function createPagedStore<T extends { id: number }>(
   action: string,
-  options: { pageSize?: number } = {}
+  options: {
+    pageSize?: number;
+    /**
+     * Reach the server through the generic service route rather than a named NUI action.
+     *
+     * Set it and `action` becomes a **server** action name — `get`, `following` — instead
+     * of a row in `shared/routes.ts`. That table and `web/src/services/` both ship inside
+     * gPhone, so an app installed from the Store can add to neither; this is the only path
+     * open to it. Mirrors `CrudOptions.service`, deliberately: an app should not have to
+     * learn two different ways to say the same thing depending on whether its list is
+     * paged.
+     */
+    service?: string;
+  } = {}
 ): PagedStore<T> {
   const rows = writable<T[]>([]);
   const loaded = writable(false);
@@ -54,9 +68,10 @@ export function createPagedStore<T extends { id: number }>(
    * `fetchNui`'s contract hinges on exactly this distinction.
    */
   const fetchPage = async (from: number | null): Promise<PagedReply<T>> => {
+    const payload = { ...filter, cursor: from ?? undefined, limit: options.pageSize };
     const reply = await fetchNui<PagedReply<T>>(
-      action,
-      { ...filter, cursor: from ?? undefined, limit: options.pageSize },
+      options.service ? GENERIC_SERVICE_ACTION : action,
+      options.service ? { service: options.service, action, data: payload } : payload,
       { defaultValue: { rows: [], nextCursor: null } }
     );
     // A mock or an older server could answer with a bare array; treat it as one full page

@@ -13,5 +13,6 @@ export * from './hooks/index';
  * reaches its own server without a route table entry.
  */
 export { createCrudStore, byNewest } from '../services/createCrudStore';
+export { createPagedStore } from '../services/createPagedStore';
 export * from './types';
 export * from './version';
