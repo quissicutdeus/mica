@@ -554,27 +554,53 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
 const pageOf = (body: Record<string, unknown>) => pageBounds(body, paging);
 
 /**
- * One Blab by id, under the public projection.
+ * The one way to open a Blab. Every entry point — a feed tap, a search result, a tag tap, a
+ * deep link — calls this and gets the same flattened screen: the root, then every reply at any
+ * depth, `id DESC`, keyset-paged.
  *
- * A deep link carries an id and nothing else, so every path that follows one — a mention tapped
- * in the notification shade, its toast, or Blabber's own notifications tab — opened a thread whose
- * root was a stub `{ id }` and rendered blank. The replies loaded; the post they were replies to
- * did not exist.
- *
- * The generic `get` cannot answer it. `id` is framework-supplied and so is never
- * `clientFilterable` (§10), and a public read is paged rather than addressed — asking for one row
- * by id is a different question from asking for a page.
- *
- * Hydrated through the same repository the feed and the profile use, so a deep-linked Blab and the
- * same Blab in a feed cannot disagree about its author. `findPublicById` already filters to
- * `status = 'active'`, which is what keeps a moderated or deleted post from being readable by
- * anyone still holding a link to it — a notification outlives the row it names.
+ * Supersedes the earlier single-row `blab` action: that one answered "what is this row," which
+ * left `Thread.svelte` making a second call for its direct replies and had no way to reach a
+ * reply's own top-level ancestor at all.
  */
-app.registerEvent('blab', async (source, cbId, data) => {
-  const id = requirePositiveInt(fields(data).id, 'blab id');
-  // `null` rather than a throw: a link to a post since deleted is an ordinary thing for a player
-  // to tap, and the app renders "not found" from it.
-  return await repo.findPublicById(id);
+app.registerEvent('view', async (source, cbId, data) => {
+  const body = fields(data);
+  const id = requirePositiveInt(body.id, 'blab id');
+  const { limit, cursor } = pageBounds(body, paging);
+
+  const requested = await repo.findById(id);
+  if (!requested || requested.status !== 'active') {
+    return { root: null, replies: [], nextCursor: null };
+  }
+
+  const rootId = requested.root_id ?? requested.id;
+  const root = rootId === requested.id ? requested : await repo.findPublicById(rootId);
+  if (!root) return { root: null, replies: [], nextCursor: null };
+
+  /**
+   * `anchorId` only means anything as an initial open (no cursor) and only when it genuinely
+   * belongs to this subtree — a payload value naming an unrelated Blab is not proof it applies
+   * here (§2.9). `findById` rather than a second `findFlattenedPage` call: this only needs to
+   * know the row exists and shares this root, not its hydrated shape.
+   */
+  const rawAnchor = body.anchorId;
+  let anchorId: number | null = null;
+  if (cursor === null && rawAnchor !== undefined && rawAnchor !== null) {
+    const candidate = requirePositiveInt(rawAnchor, 'anchor id');
+    const owns = await repo.findById(candidate);
+    if (owns && (owns.id === rootId || owns.root_id === rootId)) anchorId = candidate;
+  }
+
+  const page = await repo.findFlattenedPage(rootId, { limit, cursor, anchorId });
+
+  // `findFlattenedPage` returns `{ rows, nextCursor }` — the generic paging shape every other
+  // reader in this file uses. Renamed to `replies` here rather than spread, since `rows` next to
+  // `root` reads as "which rows," and this reply is the one place in the app that answers "the
+  // root, and everything under it" as two distinctly-named things.
+  return {
+    root: await repo.hydrate([root]).then((rows) => rows[0]),
+    replies: page.rows,
+    nextCursor: page.nextCursor
+  };
 });
 
 app.registerEvent('profile', async (source, cbId, data) => {

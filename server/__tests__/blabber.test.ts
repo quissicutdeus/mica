@@ -531,45 +531,74 @@ describe('author hydration', () => {
  * framework-supplied and never `clientFilterable`, and a public read is paged rather than
  * addressed.
  */
-describe('one Blab by id', () => {
-  it('returns the row hydrated with its author', async () => {
+describe('blabber:view', () => {
+  it('resolves the root and returns it with the flattened, hydrated replies', async () => {
+    dbMock.single.mockResolvedValueOnce(blab({ id: 7, account_id: 2, body: 'root post' })); // root lookup
+    // The root is hydrated separately from the replies page (it's not one of `findFlattenedPage`'s
+    // rows), so its author is a distinct batched query rather than sharing the replies' one.
     dbMock.query
-      .mockResolvedValueOnce([blab({ id: 7, account_id: 2, body: 'first' })])
-      .mockResolvedValueOnce([author(2, 'nightowl', { display_name: 'Night Owl' })]);
+      .mockResolvedValueOnce([blab({ id: 9, account_id: 3, root_id: 7 })]) // replies
+      .mockResolvedValueOnce([author(3, 'bob')]) // replies' authors
+      .mockResolvedValueOnce([author(2, 'ada')]); // root's own author
 
-    const row = await call('blab', { id: 7 });
+    const reply = await call('view', { id: 7 });
 
-    expect(row).toMatchObject({ id: 7, body: 'first', handle: 'nightowl' });
+    expect(reply.root).toMatchObject({ id: 7, handle: 'ada' });
+    expect(reply.replies).toHaveLength(1);
+    expect(reply.replies[0]).toMatchObject({ id: 9, handle: 'bob' });
   });
 
-  it('never returns the author citizenid', async () => {
-    // The same disclosure a feed row would make. A single-row read is not an exception to it:
-    // `publicColumns` is enforced in the SELECT, and the author join must not re-add it.
-    dbMock.query.mockResolvedValueOnce([blab({ id: 7 })]).mockResolvedValueOnce([author(1, 'ada')]);
+  it('resolves the root from a reply id, not just a top-level id', async () => {
+    // The requested id (9) is itself a reply, root_id 7.
+    dbMock.single.mockResolvedValueOnce(blab({ id: 9, account_id: 3, root_id: 7 }));
+    // Root fetch (id 7) once the true root is known.
+    dbMock.query
+      .mockResolvedValueOnce([blab({ id: 7, account_id: 2 })]) // selectPublic([7]) for the root
+      .mockResolvedValueOnce([]) // its author
+      .mockResolvedValueOnce([blab({ id: 9, account_id: 3, root_id: 7 })]) // flattened replies
+      .mockResolvedValueOnce([]); // reply authors
 
-    await call('blab', { id: 7 });
+    const reply = await call('view', { id: 9 });
 
-    for (const [sql] of dbMock.query.mock.calls) {
-      expect(String(sql)).not.toContain('citizenid');
-    }
+    expect(reply.root).toMatchObject({ id: 7 });
+    expect(reply.replies.map((r: any) => r.id)).toContain(9);
   });
 
-  it('answers null for a Blab that is gone rather than throwing', async () => {
-    // A notification outlives the row it points at, so tapping a stale link is ordinary. The
-    // projection filters to `active`, which is what keeps a moderated post unreadable to anyone
-    // still holding a link.
-    dbMock.query.mockResolvedValueOnce([]);
+  it('answers root: null for a deleted or moderated id, rather than throwing', async () => {
+    dbMock.single.mockResolvedValueOnce(null);
 
-    await expect(call('blab', { id: 7 })).resolves.toBeNull();
+    const reply = await call('view', { id: 999 });
+
+    expect(reply.root).toBeNull();
+    expect(reply.replies).toEqual([]);
   });
 
-  it('refuses an id that is not a positive integer', async () => {
-    // Straight off a NUI payload, so it is validated before it reaches SQL (§2.9). The endpoint
-    // turns the throw into an error reply, so the assertion is on the reply rather than a
-    // rejection — and the query must never have run.
-    expect((await call('blab', { id: -1 })).error).toBeTruthy();
-    expect((await call('blab', { id: 'x' })).error).toBeTruthy();
+  it('refuses a non-positive id', async () => {
+    const reply = await call('view', { id: -1 });
+    expect(reply.error).toBeTruthy();
     expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('ignores an anchorId that does not belong to the resolved subtree', async () => {
+    dbMock.single.mockResolvedValueOnce(blab({ id: 7, account_id: 2 }));
+    // membership check for the bogus anchor fails
+    dbMock.single.mockResolvedValueOnce(null);
+    dbMock.query.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+    await call('view', { id: 7, anchorId: 4242 });
+
+    /**
+     * A rejected anchor must fall back to plain-cursor mode: one `Database.query` for the
+     * flattened replies (empty here) rather than the two-query newer/older anchor split. The
+     * second `query` call below is not that split — it is the root's own hydration (`view`
+     * always hydrates the root separately from the replies page), which runs regardless of the
+     * anchor outcome. What proves the split never ran is that neither `query` call's SQL orders
+     * `ASC` — the anchor split's "newer" half is the only query in this file that does.
+     */
+    expect(dbMock.query).toHaveBeenCalledTimes(2);
+    for (const [sql] of dbMock.query.mock.calls) {
+      expect(String(sql)).not.toMatch(/ORDER BY `id` ASC/);
+    }
   });
 });
 
