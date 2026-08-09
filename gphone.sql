@@ -153,6 +153,17 @@ CREATE TABLE IF NOT EXISTS `gphone_blabber_likes` (
         REFERENCES `gphone_accounts` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `gphone_blabber_tags` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `blab_id` int(11) NOT NULL,
+    `tag` varchar(32) NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `tag` (`tag`),
+    KEY `blab_id` (`blab_id`),
+    CONSTRAINT `fk_gphone_blabber_tags_blab_id` FOREIGN KEY (`blab_id`)
+        REFERENCES `gphone_blabber` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 -- Generated from the 'blabber_dms' defineService declaration.
 -- Do not edit by hand; change the declaration and regenerate.
 

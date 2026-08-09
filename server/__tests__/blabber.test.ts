@@ -228,6 +228,48 @@ describe('root_id inheritance', () => {
   });
 });
 
+describe('hashtag indexing', () => {
+  it('writes one row per distinct tag on create', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.insert.mockResolvedValueOnce(50); // the Blab row itself
+    dbMock.insert.mockResolvedValue(1); // every subsequent insert (the tag rows)
+
+    await call('create', { account_id: 1, body: 'loving #LosAngeles and #losangeles today' });
+
+    const tagInserts = dbMock.insert.mock.calls.filter(([sql]) =>
+      String(sql).includes('gphone_blabber_tags')
+    );
+    expect(tagInserts).toHaveLength(1); // deduplicated by taggedTopics
+    expect(tagInserts[0][1]).toEqual([50, 'losangeles']);
+  });
+
+  it('writes nothing when the body has no tags', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.insert.mockResolvedValueOnce(50);
+
+    await call('create', { account_id: 1, body: 'no tags in this one' });
+
+    const tagInserts = dbMock.insert.mock.calls.filter(([sql]) =>
+      String(sql).includes('gphone_blabber_tags')
+    );
+    expect(tagInserts).toHaveLength(0);
+  });
+
+  it('caps the number of tags stored per Blab at 20', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.insert.mockResolvedValueOnce(50);
+    dbMock.insert.mockResolvedValue(1);
+
+    const body = Array.from({ length: 25 }, (_, i) => `#tag${i}`).join(' ');
+    await call('create', { account_id: 1, body });
+
+    const tagInserts = dbMock.insert.mock.calls.filter(([sql]) =>
+      String(sql).includes('gphone_blabber_tags')
+    );
+    expect(tagInserts).toHaveLength(20);
+  });
+});
+
 describe('a profile feed', () => {
   it('splits Blabs from replies with a null check, not an equality filter', async () => {
     await call('profile', { account_id: 1, tab: 'blabs' });

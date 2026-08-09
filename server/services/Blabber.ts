@@ -4,7 +4,7 @@ import { Blab } from '@shared/types';
 import { fields, optionalString, pageBounds, requirePositiveInt } from '../lib/payload';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
-import { mentionedHandles } from '@shared/richText';
+import { mentionedHandles, taggedTopics } from '@shared/richText';
 import { BlabberRepository } from '../repositories/BlabberRepository';
 import { buildDeepLink } from '@shared/deepLink';
 
@@ -155,6 +155,25 @@ export const blabber = defineService<Blab>({
         { name: 'blab_account', columns: ['blab_id', 'account_id'], unique: true },
         { name: 'account_id', columns: ['account_id'] }
       ]
+    },
+    /**
+     * Hashtags. A child table for the same reason likes is one: it belongs to Blabber alone and
+     * only ever needs insert and a keyword lookup, never the generic CRUD path.
+     */
+    {
+      name: 'gphone_blabber_tags',
+      columns: {
+        blab_id: {
+          type: 'int',
+          notNull: true,
+          references: { table: 'gphone_blabber', column: 'id' }
+        },
+        tag: { type: 'string', length: 32, notNull: true }
+      },
+      indexes: [
+        { name: 'tag', columns: ['tag'] },
+        { name: 'blab_id', columns: ['blab_id'] }
+      ]
     }
   ],
   // Custom: has to verify the account is the caller's before accepting a post.
@@ -301,6 +320,26 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
       mouth_of: mouthOf,
       root_id: rootId
     } as Partial<Blab>);
+
+    /**
+     * Fixed at creation, never re-extracted on edit — the 15-minute edit window (§10) is framed
+     * as a typo fix, not a rewrite, and re-indexing on every edit would be work for a case this
+     * app doesn't have.
+     *
+     * Never allowed to fail the post, same discipline as the mention notification just below:
+     * the Blab is committed either way.
+     */
+    const tags = taggedTopics(text).slice(0, 20);
+    if (tags.length > 0) {
+      void Promise.all(
+        tags.map((tag) =>
+          Database.insert('INSERT INTO `gphone_blabber_tags` (`blab_id`, `tag`) VALUES (?, ?)', [
+            id,
+            tag
+          ])
+        )
+      ).catch((error) => console.error('[blabber] Tag indexing failed for', id, error));
+    }
 
     /**
      * Tell whoever was mentioned.
