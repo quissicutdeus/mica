@@ -217,6 +217,46 @@ exists to avoid; a row opens the profile, which already owns the button.
 were its third and fourth call sites, and it now reads the numbers from the service's own `paging`
 declaration rather than from two retyped constants.
 
+#### The notifications tab, and the tab nobody could open
+
+Blabber's third nav destination reads the OS notification shade filtered to `blabber`, through the
+generic `useNotifications(appId)` — no per-app table, which is why an add-on can have this at all.
+Mentions, follows and DMs already wrote rows through the push channel, so the tab is a reader of
+something that was being persisted correctly the whole time.
+
+**It shipped unreachable, and that is the part worth keeping.** `selectTab` narrowed with a ternary
+— `next === 'following' ? 'following' : 'feed'` — so every id that was not `following` selected the
+feed. The tab was rendered, routed, server-backed and impossible to open: tapping it read as a dead
+button. Nothing caught it because no spec had ever tapped the third tab, and the two that existed
+both passed. A destination present in the markup is not a destination a player can reach, and the
+only thing that distinguishes them is a test that clicks it.
+
+Three smaller things went with it. The back rung's title was hardcoded to `'Following'`, so the
+Notifications tab announced itself as the other one. The tab fetched from an `$effect`, which §11.6
+rules out — the parent loads on tab select, exactly as it does for Following. And the browser mock
+held no `blabber` notification at all, so the tab could only ever have rendered its empty state in
+`pnpm dev`; the row and its deep link went unexercised. That is the mirror of the author-hydration
+lesson above — a mock that **under**-provides leaves a path untested just as effectively as one that
+over-provides leaves it wrong.
+
+**A deep link opened a blank post**, which the tab made visible rather than caused. A link names an
+id and nothing else, so `index.svelte` opened a thread around a `{ id } as Blab` stub and `Thread`
+rendered it directly: replies loaded above a post with no body, no author and no timestamp. Every
+path that follows a mention hit it — the shade, the toast, and now this tab. The generic `get`
+cannot answer "one row by id": `id` is framework-supplied and so never `clientFilterable`, and a
+public read is paged rather than addressed. A `blabber:blab` action returns one row through the same
+`findPublicById` the quote cards already use, so a deep-linked Blab and the same Blab in a feed
+cannot disagree about its author, and `status = 'active'` keeps a link from outliving a moderated
+post. A row that is genuinely gone answers `null` and the thread says so, because tapping a stale
+notification is an ordinary thing to do.
+
+**Unread counts were never loaded at boot.** `loadUnreadCounts` ran only when the shade or an
+in-app notifications screen was opened, so a launcher badge fed from it counted only what arrived
+over the push channel while the phone happened to be running — the persisted rows the notifications
+table exists for reached the badge nowhere. It is in `bootstrapStores` now, beside the account and
+the admin check: one query answering for every app, rather than something each `preload` repeats.
+A badge has to be right before the launcher paints (§11.1).
+
 #### Two things that made first-run unreachable
 
 **Uninstalling a bundled add-on deleted a component that was still in the build.**
@@ -662,58 +702,41 @@ front of it.
 
 ### Blabber, next iteration
 
-Blabber today is **one screen**: a permanently-expanded composer pinned above the global public feed,
-a "Posting as @x" strip, a prominent account switcher, and a text link to DMs. No tabs, no follow
-graph, no search, no notifications list.
+Most of what this section originally proposed has since shipped and moved up: the tabbed shell, the
+composer as a FAB, identity as a small avatar, the follow graph, and the notifications tab. **What
+is left is search**, plus the media and moderation work in step 3.
 
-The intent is a signed-up-only tabbed shell — public feed as the default, the feed of people you
-follow one tap away, search and notifications in a bottom nav — with the composer demoted to a FAB and
-identity demoted to a small avatar in the top-right.
+The end state is a signed-up-only tabbed shell — public feed as the default, the feed of people you
+follow one tap away, search and notifications in a bottom nav. Three of those four exist.
 
 Decisions already settled, recorded so they are not re-litigated:
 
 | Decision                | Choice                                                                              |
 | ----------------------- | ----------------------------------------------------------------------------------- |
-| Tabs                    | Public feed (default), Following, Search, Notifications — bottom nav                |
+| Tabs                    | Public feed (default), Following, Search, Notifications — bottom nav; Search left   |
 | Identity                | Small avatar top-right, opening a sheet for switch / claim / edit profile — done    |
 | Composer                | FAB, matching Messages' "Start Chat" and Contacts' "Add Contact" — done             |
-| Notifications           | A real table, which also raises native phone notifications                          |
+| Notifications           | The shared `gphone_notifications` OS service, not a per-app table — done            |
 | Follow graph            | `gphone_account_follows`, declared on the shared `accounts` service — done          |
 | Public-feed affordance  | **Ear** — pairs with Mouth, one speaks and one listens. No reaction bar in a feed   |
 | Reactions / emoji / GIF | Private surfaces only; Blabber DMs first, Messages adopts the same primitives later |
 | Media                   | Generic `gphone_media` table via the `table:` override; app id stays `photos`       |
 
-#### 1. Search and Notifications as tabs
+#### 1. Search as the fourth tab
 
-The nav exists — see "The follow graph, and a nav with somewhere to go" under Shipped — with Feed and
-Following in it. The two remaining destinations are waiting on the servers below them, in steps 2 and
-3, and a tab that apologises for itself is the Store's invented add-ons one layer down.
+The nav exists — see "The follow graph, and a nav with somewhere to go" under Shipped — and carries
+Feed, Following and Notifications. **Search is the one destination left**, waiting on the server in
+step 2, and a tab that apologises for itself is the Store's invented add-ons one layer down.
 
-#### 2. Notifications
+Notifications was the other one, and it shipped — see "The notifications tab, and the tab nobody
+could open" under Shipped. It did **not** ship in the shape proposed here, which is worth recording
+rather than quietly deleting: this section specified a `gphone_blabber_notifications` table private
+to the app, and what was built instead is the generic `gphone_notifications` OS service, keyed on an
+app id. The per-app table would have been the third copy of one idea — Mail and Messages want the
+same rows — and an add-on the SDK has never heard of could not have declared it. Read the proposal
+below as superseded, not as pending.
 
-`gphone_blabber_notifications`, `access: { read: 'owner', write: 'server' }` — rows arrive from the
-server and never the phone, so nothing becomes client-writable and create/update are not registered
-(§10). `account_id` and `actor_account_id` onto `gphone_accounts.id`, a
-`kind enum('mention','follow','reply','ear','dm')`, a nullable `blab_id`, a nullable `read_at`, and a
-key on `(account_id, read_at)`.
-
-This replaces `unreadMentions` in `web/src/apps/blabber/store.ts`, an in-memory counter that resets on
-resource restart and can only ever count what arrived while subscribed. A stored count is also the
-only way to build a notifications **list**, which a counter can never become.
-
-**One write path, two outputs.** `notifyMentions` already fans out through
-`appEventChannel('blabber').pushMany(...)` with a `notify` option, which is what raises the phone-level
-toast. Generalize it to write the row _and_ push, for every kind, so the in-app tab and the native
-notification read from one source and cannot disagree. Keep the existing discipline: fired after the
-row is written, never allowed to fail the originating action, and `PushOutcome` distinguishing
-`offline` from delivered (AGENTS.md §8). A `mark read` action clears the badge; the manifest's
-`badgeStore` switches to the unread count and its subscription stays at **module scope**, which is the
-reason the current one keeps counting while the app is closed.
-
-DMs appear here as a notification kind _and_ keep their own unread badge on the header DM icon. Those
-are two different questions — "anything new?" versus "unread in this thread".
-
-#### 3. Search and hashtags
+#### 2. Search and hashtags
 
 Hashtags are render-only today: `tokenizeRichText` emits a `tag` token and `BlabBody` renders it as a
 non-interactive `<span>`. There is no tag storage, so "popular recent hashtags" has nothing to
@@ -735,7 +758,7 @@ aggregate.
   action needs `paging`; `defineService` throws for a public read without it (§10). While here, fix
   `SearchBar`'s `use:focus` action, whose body is an empty stub, so the field actually autofocuses.
 
-#### 4. Media, private-surface richness, and moderation
+#### 3. Media, private-surface richness, and moderation
 
 - **The `gphone_media` rename**, below — the prerequisite for everything else in this step. Bundle the
   `gphone_blabber_likes` → `gphone_blabber_ears` rename into the same migration file: doing it while

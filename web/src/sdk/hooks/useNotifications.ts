@@ -3,6 +3,7 @@ import {
   shadeNotifications,
   unreadCounts,
   totalUnreadNotifications,
+  notificationsLoaded,
   loadShadeNotifications,
   loadUnreadCounts,
   markNotificationsRead,
@@ -26,6 +27,8 @@ export function useNotifications(appId?: string) {
     notificationsStore,
     unreadCount,
     totalUnread: totalUnreadNotifications,
+    /** Shared across every caller: the shade is one list, so the first fetch is one fetch. */
+    loaded: notificationsLoaded,
     load: async (): Promise<void> => {
       await loadShadeNotifications();
       await loadUnreadCounts();

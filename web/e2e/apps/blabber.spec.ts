@@ -503,4 +503,56 @@ test.describe('Blabber', () => {
 
     await expect(page.locator('text=@nightowl mentioned you')).toBeVisible();
   });
+
+  /**
+   * The Notifications tab, which shipped rendered, routed and unreachable.
+   *
+   * `selectTab` folded every id that was not `following` into `feed`, so tapping Notifications
+   * selected the feed and read as a dead button — a whole destination with a server behind it,
+   * lost to a ternary. Nothing caught it because no spec had ever tapped the third tab, which is
+   * the lesson worth keeping: a tab that exists in the markup is not a tab a player can open.
+   */
+  test.describe('Notifications tab', () => {
+    const openTab = (page: import('@playwright/test').Page) =>
+      page.getByRole('button', { name: 'Notifications', exact: true }).click();
+
+    test('opens the tab and lists only this app notifications', async ({ page }) => {
+      await openTab(page);
+
+      // The mock shade holds settings, messages and mail rows too; the tab is filtered to the
+      // app it belongs to, so none of them may appear here.
+      await expect(page.locator('text=thinking about what @ada said')).toBeVisible();
+      await expect(page.locator('text=Developer Tools unlocked')).toHaveCount(0);
+      await expect(page.locator('text=GET DOWN HERE')).toHaveCount(0);
+    });
+
+    test('a notification opens the Blab it names, root included', async ({ page }) => {
+      await openTab(page);
+      await page.locator('text=thinking about what @ada said').click();
+
+      // `deep_link` resolved through the shared parser, not a private regex — the row names
+      // `blabId=1`, so this is that Blab's thread and its reply proves it.
+      await expect(page.locator('text=congratulations on being first')).toBeVisible();
+
+      /**
+       * And the root is rendered, which is the half that was broken. A deep link carries an id
+       * and nothing else, so the thread opened around a `{ id }` stub and painted its replies
+       * above an empty row — no body, no author, no timestamp. The root is @ada's and the reply
+       * is @nightowl's, so this locator can only match the post at the top.
+       */
+      await expect(page.getByRole('button', { name: "Ada's profile" })).toBeVisible();
+    });
+
+    test('Back leaves Notifications for the feed before leaving the app', async ({ page }) => {
+      // The same rung Following gets. Its title used to be hardcoded to "Following", so this
+      // tab announced itself as the other one.
+      await openTab(page);
+      await expect(page.locator('h1', { hasText: 'Notifications' })).toBeVisible();
+
+      await page.keyboard.press('Backspace');
+
+      await expect(page.locator('text=traffic on the interstate')).toBeVisible();
+      await expect(page.locator('h1', { hasText: 'Blabber' })).toBeVisible();
+    });
+  });
 });

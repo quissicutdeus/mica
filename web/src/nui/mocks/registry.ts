@@ -89,6 +89,23 @@ const mockNotifications: NotificationItem[] = [
     created_at: new Date(Date.now() - 60000).toISOString(),
     updated_at: new Date(Date.now() - 60000).toISOString()
   },
+  // An add-on's notification, so the browser exercises the per-app filter and the deep link an
+  // in-app notifications tab reads. Without one, Blabber's tab could only ever render its empty
+  // state here, leaving the row — and the tap that resolves `blabId` — unexercised.
+  {
+    id: 7,
+    citizenid: 'mock_citizenid',
+    app: 'blabber',
+    kind: 'mention',
+    title: '@nightowl mentioned you',
+    body: 'thinking about what @ada said re: the tunnel. she was right',
+    avatar: null,
+    deep_link: 'blabber?blabId=1',
+    read_at: null,
+    cleared_at: null,
+    created_at: new Date(Date.now() - 90000).toISOString(),
+    updated_at: new Date(Date.now() - 90000).toISOString()
+  },
   {
     id: 2,
     citizenid: 'mock_citizenid',
@@ -673,6 +690,10 @@ const mockRegistry: Record<string, MockHandler> = {
     if (at >= 0) mockLikes.splice(at, 1);
     return true;
   },
+  // One Blab by id, for a deep link that names one and nothing else. `null` for a row that is
+  // gone, matching the server: a notification outlives the post it points at.
+  'blabber:blab': ({ id }: { id: number }) =>
+    mockBlabs.find((b) => b.id === id && b.status === 'active') ?? null,
   'blabber:profile': ({
     account_id,
     tab,

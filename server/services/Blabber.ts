@@ -493,6 +493,30 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
  */
 const pageOf = (body: Record<string, unknown>) => pageBounds(body, paging);
 
+/**
+ * One Blab by id, under the public projection.
+ *
+ * A deep link carries an id and nothing else, so every path that follows one — a mention tapped
+ * in the notification shade, its toast, or Blabber's own notifications tab — opened a thread whose
+ * root was a stub `{ id }` and rendered blank. The replies loaded; the post they were replies to
+ * did not exist.
+ *
+ * The generic `get` cannot answer it. `id` is framework-supplied and so is never
+ * `clientFilterable` (§10), and a public read is paged rather than addressed — asking for one row
+ * by id is a different question from asking for a page.
+ *
+ * Hydrated through the same repository the feed and the profile use, so a deep-linked Blab and the
+ * same Blab in a feed cannot disagree about its author. `findPublicById` already filters to
+ * `status = 'active'`, which is what keeps a moderated or deleted post from being readable by
+ * anyone still holding a link to it — a notification outlives the row it names.
+ */
+app.registerEvent('blab', async (source, cbId, data) => {
+  const id = requirePositiveInt(fields(data).id, 'blab id');
+  // `null` rather than a throw: a link to a post since deleted is an ordinary thing for a player
+  // to tap, and the app renders "not found" from it.
+  return await repo.findPublicById(id);
+});
+
 app.registerEvent('profile', async (source, cbId, data) => {
   const body = fields(data);
   const accountId = requirePositiveInt(body.account_id, 'account id');

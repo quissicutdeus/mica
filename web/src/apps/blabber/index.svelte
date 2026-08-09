@@ -15,6 +15,7 @@
     useAppAction,
     useAppEvents,
     useAppLevels,
+    useNotifications,
     usePagedList,
     useDeepLink,
     type AppProps
@@ -30,6 +31,7 @@
   import Profile from './components/Profile.svelte';
   import Thread from './components/Thread.svelte';
   import Messages from './components/Messages.svelte';
+  import NotificationsTab from './components/NotificationsTab.svelte';
 
   let {
     onback,
@@ -69,12 +71,16 @@
     loadEngagement,
     toggleLike,
     mouthBlab,
-    clearUnreadMentions,
     loadDmThreads,
     dmThreads,
     unreadDms
   } = useBlabber();
   const { run, busy } = useAppAction();
+  /**
+   * The Notifications tab reads the OS shade filtered to this app, so the fetch is the shell's
+   * rather than Blabber's — the app id only narrows the view.
+   */
+  const { load: loadNotifications } = useNotifications('blabber');
 
   /**
    * False until the first page has come back. An empty feed and a feed that has not answered yet
@@ -87,12 +93,10 @@
    * Which top-level destination the bottom nav is on.
    *
    * Separate from `view`, which is the overlay stack above it — a thread opened from Following
-   * comes back to Following. Two tabs, not the four the end state wants: Search and Notifications
-   * have no server behind them yet, and a tab that apologises for itself is the Store's invented
+   * comes back to Following. Three tabs, not the four the end state wants: Search is the one still
+   * without a server behind it, and a tab that apologises for itself is the Store's invented
    * add-ons one layer down.
    */
-  import NotificationsTab from './components/NotificationsTab.svelte';
-
   let tab = $state<'feed' | 'following' | 'notifications'>('feed');
   /** Which correspondent's thread is open, or null for the inbox. */
   let dmPeer = $state<number | null>(null);
@@ -148,9 +152,10 @@
      * makes it right on arrival.
      */
     void loadDmThreads();
-    // Only the tab actually on screen. The other is fetched when it is switched to — two feeds
-    // loaded on every visit is one round trip nobody asked for.
+    // Only the tab actually on screen. The others are fetched when switched to — every feed
+    // loaded on every visit is round trips nobody asked for.
     if (tab === 'following') void loadFollowing();
+    if (tab === 'notifications') void loadNotifications();
   });
 
   /**
@@ -188,10 +193,20 @@
 
   const followingLoaded = followingFeed.loaded;
 
-  /** Switching tabs is what fetches the one being switched to. */
+  /**
+   * Switching tabs is what fetches the one being switched to.
+   *
+   * The id is checked against the tabs that exist rather than folded into a ternary. The ternary
+   * form sent every id that was not `following` to the feed, so the Notifications tab — rendered,
+   * routed and with a server behind it — could not be opened at all: tapping it selected the feed
+   * and looked like a dead button. `TabBar` hands back a bare `string`, so this is the only place
+   * that narrowing can happen.
+   */
   const selectTab = (next: string) => {
-    tab = next === 'following' ? 'following' : 'feed';
+    if (next !== 'feed' && next !== 'following' && next !== 'notifications') return;
+    tab = next;
     if (tab === 'following') void loadFollowing();
+    if (tab === 'notifications') void loadNotifications();
   };
 
   const openDms = (peer: number | null = null, account: DmPeer | null = null) => {
@@ -203,16 +218,17 @@
   /**
    * A mention arriving while the app is on screen.
    *
-   * Component-scoped on purpose: this is the *live* half. The badge is fed by a module-scope
-   * subscription in the store, which is what keeps it correct while the app is closed — here the
-   * player is already looking, so the useful response is to pull the new Blab in and drop the
-   * badge rather than raise a count they can see the cause of.
+   * Component-scoped on purpose: this is the *live* half — the player is already looking, so the
+   * useful response is to pull the new Blab into the feed in front of them.
+   *
+   * It no longer clears a badge. The badge counts unread notification rows now, and those are
+   * marked read by reading them in the Notifications tab, the way every other app in the phone
+   * behaves — arriving at the feed is not the same act as reading the mention.
    *
    * `replayed` distinguishes a catch-up from something that just happened: on mount the buffer
    * flushes whatever arrived while the app was unmounted, and that should not scroll the feed.
    */
   useAppEvents('blabber').on('mention', (event) => {
-    clearUnreadMentions();
     if (!event.replayed) void feed.load({ reply_to: null });
   });
 
@@ -294,8 +310,13 @@
       },
       { open: () => view === 'dms', close: () => (view = 'feed'), title: () => 'Messages' },
       // A non-default tab is the last rung before leaving: Back returns to the public feed rather
-      // than sending the player home from Following.
-      { open: () => tab !== 'feed', close: () => (tab = 'feed'), title: () => 'Following' }
+      // than sending the player home from Following. The title names the tab you are actually on —
+      // hardcoding one of them titled the Notifications tab "Following".
+      {
+        open: () => tab !== 'feed',
+        close: () => (tab = 'feed'),
+        title: () => (tab === 'notifications' ? 'Notifications' : 'Following')
+      }
     ]
   });
 

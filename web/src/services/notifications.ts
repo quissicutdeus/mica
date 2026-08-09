@@ -6,6 +6,15 @@ import { subscribeAppEvent } from '../shell/state/appEvents';
 export const shadeNotifications = writable<NotificationItem[]>([]);
 export const unreadCounts = writable<Record<string, number>>({});
 
+/**
+ * Whether the first shade fetch has come back.
+ *
+ * An empty list and a list that has not arrived yet are two different statements, and every list
+ * in the phone owes the reader the right one (§11.6). Without this a notifications tab renders
+ * "No Activity Yet" over a request still in flight.
+ */
+export const notificationsLoaded = writable(false);
+
 export const totalUnreadNotifications = derived(unreadCounts, ($counts) =>
   Object.values($counts).reduce((total, count) => total + count, 0)
 );
@@ -17,6 +26,7 @@ export async function loadShadeNotifications(): Promise<void> {
     { defaultValue: [] }
   );
   shadeNotifications.set(items);
+  notificationsLoaded.set(true);
 }
 
 export async function loadNotificationHistory(): Promise<NotificationItem[]> {

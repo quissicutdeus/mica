@@ -396,6 +396,16 @@ export const mouthBlab = async (blabId: number, body?: string): Promise<Blab> =>
   return created;
 };
 
+/**
+ * One Blab by id.
+ *
+ * What a deep link needs: it names an id and nothing else, so the app has a stub to open a thread
+ * around and no post to render until this answers. `null` when the row is gone — a notification
+ * outlives the Blab it points at.
+ */
+export const loadBlab = async (blabId: number): Promise<Blab | null> =>
+  await blabberService().call<Blab | null>('blab', { id: blabId }, null);
+
 /** One Blab and its direct replies. Replies nest, so a reply's own thread is the same call. */
 export const loadThread = async (
   blabId: number
@@ -407,22 +417,16 @@ export const loadThread = async (
   );
 
 /**
- * Unread mentions, for the launcher badge.
+ * There is deliberately no local mention counter here any more.
  *
- * Subscribed at **module scope**, which is the load-bearing part. The registry imports this file
- * before anything mounts and the CEF page never unloads, so this subscription outlives every
- * open/close of the phone — a badge fed from inside a component would only count mentions that
- * arrived while the app happened to be on screen, which is precisely when a badge stops
- * mattering.
+ * There was one — a module-scope `writable(0)` incremented from the mention push — and it was
+ * right for as long as nothing persisted a mention. Once the server began writing a
+ * `gphone_notifications` row for the same event, the launcher badge summed both and one mention
+ * counted twice. The persisted count is the better of the two anyway: it survives a resource
+ * restart, where an in-memory counter can only ever know what arrived while it was subscribed.
+ *
+ * The badge reads `useNotifications('blabber').unreadCount` alone. See `manifest.ts`.
  */
-export const unreadMentions = writable(0);
-
-onBlabberKind('mention', () => {
-  unreadMentions.update((n) => n + 1);
-});
-
-/** Called when the feed is read, since the mentions are in it. */
-export const clearUnreadMentions = (): void => unreadMentions.set(0);
 
 /**
  * Direct messages. Strictly 1:1, so a thread is identified by the peer account rather than by a
@@ -509,8 +513,6 @@ export function useBlabber() {
     activeAccountId,
     editWindow,
     engagement,
-    unreadMentions,
-    clearUnreadMentions: () => clearUnreadMentions(),
     dmThreads,
     dmMessages,
     unreadDms,
@@ -519,6 +521,7 @@ export function useBlabber() {
     sendDm: (peerAccountId: number, body: string) => sendDm(peerAccountId, body),
     loadEngagement: (ids: number[]) => loadEngagement(ids),
     loadThread: (blabId: number) => loadThread(blabId),
+    loadBlab: (blabId: number) => loadBlab(blabId),
     toggleLike: (blabId: number) => toggleLike(blabId),
     mouthBlab: (blabId: number, body?: string) => mouthBlab(blabId, body),
     loadMyAccounts: () => loadMyAccounts(),

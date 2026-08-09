@@ -1,4 +1,3 @@
-import { derived } from 'svelte/store';
 import Icon from './Icon.svelte';
 import { defineApp, lazyBadge } from '@gphone/sdk/app';
 
@@ -13,7 +12,7 @@ export default defineApp({
   core: false,
   permissions: ['notifications', 'media', 'storage'],
   /**
-   * Mentions, unread DMs, and this app's persistent notifications.
+   * This app's unread persistent notifications, and nothing added to them.
    *
    * Composed here rather than handed over finished by the SDK. It used to be a
    * `blabberTotalUnread` store exported from `@gphone/sdk`, which meant the contract every
@@ -21,24 +20,22 @@ export default defineApp({
    * SDK has never heard of could not produce a badge at all. What a badge counts is the
    * app's business; the platform only says when it may be computed.
    *
-   * All three inputs are generic: `useNotifications(id)` counts unread rows for any app id,
-   * and the other two come from this app's own hook.
+   * **One source, because every mention and DM is already a row.** This summed three stores —
+   * an in-memory mention counter, the unread total derived from DM threads, and the OS count —
+   * and the first two are the same events the third is counting: a mention incremented the
+   * local counter *and* persisted a notification, so one mention put 2 on the launcher and one
+   * DM put 2 more. The persisted count is also the only one that survives a resource restart,
+   * which is what the notifications table exists for.
+   *
+   * `unreadDms` stays, on the header DM icon rather than here — "unread in this thread" is a
+   * different question from "anything new?", and only the second belongs on a launcher badge.
    *
    * `lazyBadge` because a manifest is evaluated while the SDK barrel is still initializing
    * — calling a hook out here directly throws `useBlabber is not a function`.
    */
   badgeStore: lazyBadge(async () => {
-    // Two sources, and the split says which is whose: `useNotifications` is the OS
-    // counting rows for any app id, `useBlabber` is this app's own store — which lives in
-    // the app now rather than in the SDK, because an add-on cannot put a hook there.
     const { useNotifications } = await import('@gphone/sdk');
-    const { useBlabber } = await import('./store');
-    const { unreadMentions, unreadDms } = useBlabber();
-    const { unreadCount } = useNotifications('blabber');
-    return derived(
-      [unreadMentions, unreadDms, unreadCount],
-      ([mentions, dms, notifications]) => mentions + dms + notifications
-    );
+    return useNotifications('blabber').unreadCount;
   }),
   // Required alongside a badgeStore (`sdk/appContract.test.ts`): the count has to be correct
   // *before* the launcher paints, and `onAppForeground` is too late by definition.

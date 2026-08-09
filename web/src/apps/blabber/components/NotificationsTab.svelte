@@ -18,16 +18,13 @@
 
   let { onopenblab, onopenhandle }: Props = $props();
 
-  const { notificationsStore, load, markRead } = useNotifications('blabber');
+  const { notificationsStore, loaded, markRead } = useNotifications('blabber');
 
   let notifications = $derived($notificationsStore);
-  let loading = $state(true);
 
-  $effect(() => {
-    void load().then(() => {
-      loading = false;
-    });
-  });
+  // The fetch belongs to whoever switched to this tab, not to this component: an `$effect` that
+  // fetches is what §11.6 rules out, and it would re-run against a resident app. `index.svelte`
+  // loads on tab select exactly as it does for Following.
 
   const handleItemClick = (item: NotificationItem) => {
     if (!item.read_at) {
@@ -56,7 +53,7 @@
 </script>
 
 <div class="flex-1 overflow-y-auto pb-20">
-  {#if loading}
+  {#if !$loaded}
     <div class="p-4"><Skeleton count={4} height="h-16" /></div>
   {:else if notifications.length === 0}
     <EmptyState

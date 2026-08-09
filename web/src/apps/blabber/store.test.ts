@@ -21,8 +21,6 @@ import {
   followStats,
   loadFollowStats,
   toggleFollow,
-  unreadMentions,
-  clearUnreadMentions,
   dmThreads,
   dmMessages,
   unreadDms,
@@ -64,7 +62,6 @@ describe('blabber service', () => {
     editWindow.set(900);
     engagement.set({});
     followStats.set({});
-    clearUnreadMentions();
     dmThreads.set([]);
     dmMessages.set([]);
   });
@@ -432,12 +429,6 @@ describe('blabber service', () => {
       await sendDm(2, 'Hello Bob');
 
       expect(get(dmMessages)).toContainEqual(mockDm);
-    });
-
-    it('unreadMentions can be cleared', () => {
-      unreadMentions.set(5);
-      clearUnreadMentions();
-      expect(get(unreadMentions)).toBe(0);
     });
   });
 });

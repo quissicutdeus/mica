@@ -434,6 +434,56 @@ describe('author hydration', () => {
   });
 });
 
+/**
+ * One Blab by id — what a deep link resolves through.
+ *
+ * A notification names an id and nothing else, so without this the app opened a thread around a
+ * stub and rendered a blank post above its replies. The generic `get` cannot answer it: `id` is
+ * framework-supplied and never `clientFilterable`, and a public read is paged rather than
+ * addressed.
+ */
+describe('one Blab by id', () => {
+  it('returns the row hydrated with its author', async () => {
+    dbMock.query
+      .mockResolvedValueOnce([blab({ id: 7, account_id: 2, body: 'first' })])
+      .mockResolvedValueOnce([author(2, 'nightowl', { display_name: 'Night Owl' })]);
+
+    const row = await call('blab', { id: 7 });
+
+    expect(row).toMatchObject({ id: 7, body: 'first', handle: 'nightowl' });
+  });
+
+  it('never returns the author citizenid', async () => {
+    // The same disclosure a feed row would make. A single-row read is not an exception to it:
+    // `publicColumns` is enforced in the SELECT, and the author join must not re-add it.
+    dbMock.query.mockResolvedValueOnce([blab({ id: 7 })]).mockResolvedValueOnce([author(1, 'ada')]);
+
+    await call('blab', { id: 7 });
+
+    for (const [sql] of dbMock.query.mock.calls) {
+      expect(String(sql)).not.toContain('citizenid');
+    }
+  });
+
+  it('answers null for a Blab that is gone rather than throwing', async () => {
+    // A notification outlives the row it points at, so tapping a stale link is ordinary. The
+    // projection filters to `active`, which is what keeps a moderated post unreadable to anyone
+    // still holding a link.
+    dbMock.query.mockResolvedValueOnce([]);
+
+    await expect(call('blab', { id: 7 })).resolves.toBeNull();
+  });
+
+  it('refuses an id that is not a positive integer', async () => {
+    // Straight off a NUI payload, so it is validated before it reaches SQL (§2.9). The endpoint
+    // turns the throw into an error reply, so the assertion is on the reply rather than a
+    // rejection — and the query must never have run.
+    expect((await call('blab', { id: -1 })).error).toBeTruthy();
+    expect((await call('blab', { id: 'x' })).error).toBeTruthy();
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+});
+
 describe('engagement', () => {
   it('answers nothing for an empty id list without querying', async () => {
     await expect(call('engagement', { ids: [] })).resolves.toEqual({});
