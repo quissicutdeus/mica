@@ -9,9 +9,10 @@
     SegmentedControl,
     Skeleton,
     useAppAction,
-    useBlabber,
-    useNuiBridge
+    useNuiBridge,
+    useService
   } from '@gphone/sdk';
+  import { useBlabber } from '../store';
   import type { Account, Blab } from '@shared/types';
   import BlabRow from './BlabRow.svelte';
 
@@ -104,10 +105,12 @@
     if (!account) return;
     loading = true;
     try {
-      const reply = await fetchNui<{ rows: Blab[]; nextCursor: number | null }>(
-        'getProfileBlabs',
+      // Through the app's own service, like everything else Blabber owns — so this needs
+      // no row in the core route table.
+      const reply = await useService('blabber').call<{ rows: Blab[]; nextCursor: number | null }>(
+        'profile',
         { account_id: account.id, tab, cursor: from ?? undefined },
-        { defaultValue: { rows: [], nextCursor: null } }
+        { rows: [], nextCursor: null }
       );
       rows = from === null ? reply.rows : [...rows, ...reply.rows];
       cursor = reply.nextCursor;

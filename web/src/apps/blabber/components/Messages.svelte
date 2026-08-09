@@ -5,9 +5,9 @@
     ReportButton,
     ReportDialog,
     Skeleton,
-    formatDate,
-    useBlabber
+    formatDate
   } from '@gphone/sdk';
+  import { useBlabber } from '../store';
   import type { Account } from '@shared/types';
   import DmComposer from './DmComposer.svelte';
   import BlabBody from './BlabBody.svelte';

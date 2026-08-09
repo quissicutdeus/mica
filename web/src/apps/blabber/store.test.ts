@@ -29,8 +29,8 @@ import {
   loadDmThreads,
   loadDmMessages,
   sendDm
-} from './blabber';
-import * as fetchNuiModule from '../nui/fetchNui';
+} from './store';
+import * as fetchNuiModule from '../../nui/fetchNui';
 import type {
   Account,
   Blab,
@@ -39,6 +39,19 @@ import type {
   BlabberDmThread,
   BlabberDm
 } from '@shared/types';
+
+/**
+ * Which action a call is for, whichever route it took.
+ *
+ * Blabber's own service goes through the one generic NUI callback now, so the action name
+ * arrives inside the payload as `{ service, action }` rather than as the first argument.
+ * The `accounts` calls are still named routes, because `gphone_accounts` is core.
+ */
+const actionOf = (name: unknown, payload: unknown): string => {
+  if (name !== 'svc') return String(name);
+  const p = payload as { service?: string; action?: string };
+  return `${p?.service}:${p?.action}`;
+};
 
 describe('blabber service', () => {
   beforeEach(() => {
@@ -115,11 +128,15 @@ describe('blabber service', () => {
 
       await updateAccount(1, { display_name: 'Alice Cooper', bio: 'Hello world' });
 
-      expect(spy).toHaveBeenCalledWith('updateAccount', {
-        id: 1,
-        display_name: 'Alice Cooper',
-        bio: 'Hello world'
-      });
+      expect(spy).toHaveBeenCalledWith(
+        'updateAccount',
+        {
+          id: 1,
+          display_name: 'Alice Cooper',
+          bio: 'Hello world'
+        },
+        undefined
+      );
       expect(get(myAccounts)[0].display_name).toBe('Alice Cooper');
       expect(get(myAccounts)[0].bio).toBe('Hello world');
     });
@@ -203,7 +220,11 @@ describe('blabber service', () => {
 
       await editBlab(200, 'Updated text');
 
-      expect(spy).toHaveBeenCalledWith('updateBlab', { id: 200, body: 'Updated text' });
+      expect(spy).toHaveBeenCalledWith(
+        'svc',
+        { service: 'blabber', action: 'update', data: { id: 200, body: 'Updated text' } },
+        undefined
+      );
       expect(get(feed).find((b) => b.id === 200)?.body).toBe('Updated text');
     });
 
@@ -231,7 +252,11 @@ describe('blabber service', () => {
 
       await deleteBlab(1);
 
-      expect(spy).toHaveBeenCalledWith('deleteBlab', { id: 1 });
+      expect(spy).toHaveBeenCalledWith(
+        'svc',
+        { service: 'blabber', action: 'delete', data: { id: 1 } },
+        undefined
+      );
       expect(get(feed).find((b) => b.id === 1)).toBeUndefined();
     });
   });
@@ -261,7 +286,11 @@ describe('blabber service', () => {
 
       expect(get(engagement)[101].likedByMe).toBe(true);
       expect(get(engagement)[101].likes).toBe(1);
-      expect(spy).toHaveBeenCalledWith('likeBlab', { blab_id: 101, account_id: 1 });
+      expect(spy).toHaveBeenCalledWith(
+        'svc',
+        { service: 'blabber', action: 'like', data: { blab_id: 101, account_id: 1 } },
+        undefined
+      );
     });
 
     it('toggleLike reverts optimistic update if NUI call fails', async () => {
@@ -271,9 +300,10 @@ describe('blabber service', () => {
         101: { replies: 0, mouths: 0, likes: 0, likedByMe: false, mouthedByMe: false }
       });
 
-      vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation((action) => {
-        if (action === 'likeBlab') return Promise.reject(new Error('Server error'));
-        if (action === 'getBlabEngagement')
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation((name, payload) => {
+        const action = actionOf(name, payload);
+        if (action === 'blabber:like') return Promise.reject(new Error('Server error'));
+        if (action === 'blabber:engagement')
           return Promise.resolve({
             101: { replies: 0, mouths: 0, likes: 0, likedByMe: false, mouthedByMe: false }
           } as any);
@@ -316,11 +346,15 @@ describe('blabber service', () => {
 
       expect(get(followStats)[42].followedByMe).toBe(true);
       expect(get(followStats)[42].followers).toBe(11);
-      expect(spy).toHaveBeenCalledWith('followAccount', {
-        app: 'blabber',
-        follower_account_id: 1,
-        followee_account_id: 42
-      });
+      expect(spy).toHaveBeenCalledWith(
+        'followAccount',
+        {
+          app: 'blabber',
+          follower_account_id: 1,
+          followee_account_id: 42
+        },
+        undefined
+      );
     });
   });
 
@@ -353,16 +387,21 @@ describe('blabber service', () => {
         }
       ];
 
-      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation((action) => {
-        if (action === 'getDmMessages') return Promise.resolve({ rows: mockDms } as any);
-        if (action === 'getDmThreads') return Promise.resolve([] as any);
+      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation((name, payload) => {
+        const action = actionOf(name, payload);
+        if (action === 'blabber_dms:get') return Promise.resolve({ rows: mockDms } as any);
+        if (action === 'blabber_dms:threads') return Promise.resolve([] as any);
         return Promise.resolve(undefined as any);
       });
 
       await loadDmMessages(2);
 
       expect(get(dmMessages)).toEqual(mockDms);
-      expect(spy).toHaveBeenCalledWith('markDmRead', { account_id: 1, peer_account_id: 2 });
+      expect(spy).toHaveBeenCalledWith(
+        'svc',
+        { service: 'blabber_dms', action: 'read', data: { account_id: 1, peer_account_id: 2 } },
+        undefined
+      );
     });
 
     it('sendDm throws if no active account', async () => {
@@ -383,9 +422,10 @@ describe('blabber service', () => {
         updated_at: '2026-01-01T00:00:00Z'
       };
 
-      vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation((action) => {
-        if (action === 'sendDm') return Promise.resolve(mockDm as any);
-        if (action === 'getDmThreads') return Promise.resolve([] as any);
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation((name, payload) => {
+        const action = actionOf(name, payload);
+        if (action === 'blabber_dms:send') return Promise.resolve(mockDm as any);
+        if (action === 'blabber_dms:threads') return Promise.resolve([] as any);
         return Promise.resolve(undefined as any);
       });
 

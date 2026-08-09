@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { EmptyState, Skeleton, useBlabber } from '@gphone/sdk';
+  import { EmptyState, Skeleton } from '@gphone/sdk';
+  import { useBlabber } from '../store';
   import type { Blab } from '@shared/types';
   import BlabRow from './BlabRow.svelte';
   import Composer from './Composer.svelte';

@@ -15,11 +15,11 @@
     useAppAction,
     useAppEvents,
     useAppLevels,
-    useBlabber,
     usePagedList,
     useDeepLink,
     type AppProps
   } from '@gphone/sdk';
+  import { useBlabber } from './store';
   import type { Account, Blab } from '@shared/types';
   import AccountMenu from './components/AccountMenu.svelte';
   import BlabRow from './components/BlabRow.svelte';

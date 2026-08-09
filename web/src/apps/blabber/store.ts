@@ -7,10 +7,45 @@ import type {
   BlabberDmThread,
   FollowStats
 } from '@shared/types';
-import { fetchNui } from '../nui/fetchNui';
-import { createPagedStore } from './createPagedStore';
-import { subscribeAppEvent } from '../shell/state/appEvents';
-import { usePersisted } from '../sdk/hooks/usePersisted';
+import {
+  createPagedStore,
+  useAppEvents,
+  useNuiBridge,
+  usePersisted,
+  useService
+} from '@gphone/sdk';
+
+/**
+ * Blabber's own data layer, inside the app.
+ *
+ * It used to be `web/src/services/blabber.ts` plus `sdk/hooks/useBlabber.ts` — a store in
+ * core and a hook in the SDK, for an app declaring `core: false`. Neither is something an
+ * app installed from the Store can add, which made the label aspirational;
+ * `sdk/coreBoundary.test.ts` counted the references saying so.
+ *
+ * Blabber's own service goes through `useService`, so `shared/routes.ts` needs no rows for
+ * it. **The `accounts` calls stay named**, and that is not an oversight: `gphone_accounts`
+ * is the shared identity service every social app posts under, so it is core, and its
+ * routes are core's to declare.
+ */
+// Resolved per call for the same reason as `fetchNui` below: a handle captured at module
+// scope closes over the transport as it was at import time.
+const blabberService = () => useService('blabber');
+const dmService = () => useService('blabber_dms');
+/**
+ * Resolved per call, not destructured once.
+ *
+ * Holding the function from module scope captures whatever `useNuiBridge` returned at
+ * import time — which is the real transport, before any test has installed a spy on it.
+ * The store then talks to the live mock registry while the test asserts against its own
+ * stubs, and the failure reads as wrong fixture data rather than as a stale binding.
+ */
+const fetchNui = <T = unknown>(
+  action: string,
+  data?: unknown,
+  options?: { defaultValue: T }
+): Promise<T> => useNuiBridge().fetchNui<T>(action, data, options);
+const { on: onBlabberKind } = useAppEvents('blabber');
 
 /**
  * Blabber's data: a paged public feed, plus the accounts the player can post from.
@@ -20,7 +55,7 @@ import { usePersisted } from '../sdk/hooks/usePersisted';
  * rather than shown an empty feed.
  */
 
-export const feed = createPagedStore<Blab>('getBlabs', { pageSize: 30 });
+export const feed = createPagedStore<Blab>('get', { pageSize: 30, service: 'blabber' });
 
 /**
  * The Following feed, a second paged store rather than a filter on the first.
@@ -30,7 +65,10 @@ export const feed = createPagedStore<Blab>('getBlabs', { pageSize: 30 });
  * other feed's position — and re-filtering a loaded page client-side is exactly what keyset
  * paging exists to avoid.
  */
-export const followingFeed = createPagedStore<Blab>('getFollowingBlabs', { pageSize: 30 });
+export const followingFeed = createPagedStore<Blab>('following', {
+  pageSize: 30,
+  service: 'blabber'
+});
 
 /** Every account this player holds in Blabber. Not anyone else's — the server scopes it. */
 export const myAccounts = writable<Account[]>([]);
@@ -134,7 +172,7 @@ export const postBlab = async (body: string, replyTo?: number | null): Promise<B
   const accountId = getActiveAccountId();
   if (accountId === null) throw new Error('Claim a handle before posting.');
 
-  const created = await fetchNui<Blab & { editWindow?: number }>('createBlab', {
+  const created = await blabberService().call<Blab & { editWindow?: number }>('create', {
     account_id: accountId,
     body,
     reply_to: replyTo ?? undefined
@@ -145,12 +183,12 @@ export const postBlab = async (body: string, replyTo?: number | null): Promise<B
 };
 
 export const editBlab = async (id: number, body: string): Promise<void> => {
-  await fetchNui('updateBlab', { id, body });
+  await blabberService().call('update', { id, body });
   feed.replace({ ...findInFeed(id), id, body } as Blab);
 };
 
 export const deleteBlab = async (id: number): Promise<void> => {
-  await fetchNui('deleteBlab', { id });
+  await blabberService().call('delete', { id });
   feed.remove(id);
 };
 
@@ -187,10 +225,10 @@ const EMPTY: BlabEngagement = {
 
 export const loadEngagement = async (ids: number[]): Promise<void> => {
   if (ids.length === 0) return;
-  const reply = await fetchNui<Record<number, BlabEngagement>>(
-    'getBlabEngagement',
+  const reply = await blabberService().call<Record<number, BlabEngagement>>(
+    'engagement',
     { ids },
-    { defaultValue: {} }
+    {}
   );
   engagement.update((current) => ({ ...current, ...reply }));
 };
@@ -219,9 +257,9 @@ export const toggleLike = async (blabId: number): Promise<void> => {
     // invisible to `routes.test.ts`, which cross-references every layer by scanning for
     // literals — and a route it cannot see is reported as dead weight.
     if (liked) {
-      await fetchNui('unlikeBlab', { blab_id: blabId, account_id: accountId });
+      await blabberService().call('unlike', { blab_id: blabId, account_id: accountId });
     } else {
-      await fetchNui('likeBlab', { blab_id: blabId, account_id: accountId });
+      await blabberService().call('like', { blab_id: blabId, account_id: accountId });
     }
   } catch (error) {
     // Put it back. An optimistic update that survives a failed write is a lie the UI tells.
@@ -345,7 +383,7 @@ export const mouthBlab = async (blabId: number, body?: string): Promise<Blab> =>
   const accountId = getActiveAccountId();
   if (accountId === null) throw new Error('Claim a handle first.');
 
-  const created = await fetchNui<Blab>('createBlab', {
+  const created = await blabberService().call<Blab>('create', {
     account_id: accountId,
     mouth_of: blabId,
     body: body?.trim() || undefined
@@ -362,10 +400,10 @@ export const mouthBlab = async (blabId: number, body?: string): Promise<Blab> =>
 export const loadThread = async (
   blabId: number
 ): Promise<{ rows: Blab[]; nextCursor: number | null }> =>
-  await fetchNui<{ rows: Blab[]; nextCursor: number | null }>(
-    'getBlabs',
+  await blabberService().call<{ rows: Blab[]; nextCursor: number | null }>(
+    'get',
     { reply_to: blabId },
-    { defaultValue: { rows: [], nextCursor: null } }
+    { rows: [], nextCursor: null }
   );
 
 /**
@@ -379,7 +417,7 @@ export const loadThread = async (
  */
 export const unreadMentions = writable(0);
 
-subscribeAppEvent('blabber', 'mention', () => {
+onBlabberKind('mention', () => {
   unreadMentions.update((n) => n + 1);
 });
 
@@ -400,22 +438,22 @@ export const unreadDms = derived(dmThreads, (threads) =>
 );
 
 export const loadDmThreads = async (): Promise<void> => {
-  dmThreads.set(await fetchNui<BlabberDmThread[]>('getDmThreads', {}, { defaultValue: [] }));
+  dmThreads.set(await dmService().call<BlabberDmThread[]>('threads', {}, []));
 };
 
 export const loadDmMessages = async (peerAccountId: number): Promise<void> => {
   const accountId = getActiveAccountId();
   if (accountId === null) return;
-  const reply = await fetchNui<{ rows: BlabberDm[] }>(
-    'getDmMessages',
+  const reply = await dmService().call<{ rows: BlabberDm[] }>(
+    'get',
     { account_id: accountId, peer_account_id: peerAccountId },
-    { defaultValue: { rows: [] } }
+    { rows: [] }
   );
   dmMessages.set(reply.rows ?? []);
 
   // Opening the thread is what marks it read, so the badge falls for the same reason the player
   // would expect it to.
-  await fetchNui('markDmRead', { account_id: accountId, peer_account_id: peerAccountId });
+  await dmService().call('read', { account_id: accountId, peer_account_id: peerAccountId });
   await loadDmThreads();
 };
 
@@ -423,7 +461,7 @@ export const sendDm = async (peerAccountId: number, body: string): Promise<void>
   const accountId = getActiveAccountId();
   if (accountId === null) throw new Error('Claim a handle first.');
 
-  const created = await fetchNui<BlabberDm>('sendDm', {
+  const created = await dmService().call<BlabberDm>('send', {
     account_id: accountId,
     peer_account_id: peerAccountId,
     body
@@ -439,6 +477,56 @@ export const sendDm = async (peerAccountId: number, body: string): Promise<void>
  * the CEF page never unloads, so this survives the phone closing. A subscription inside the app
  * would only see DMs that arrived while Blabber happened to be on screen.
  */
-subscribeAppEvent('blabber', 'dm', () => {
+onBlabberKind('dm', () => {
   void loadDmThreads();
 });
+
+/**
+ * What the app's components call. Was `sdk/hooks/useBlabber.ts`; an add-on cannot put a
+ * hook in the SDK, which is the whole reason this moved.
+ */
+export function useBlabber() {
+  return {
+    feed,
+    followingFeed,
+    /**
+     * The two lists behind a profile's counts. Read-only from an app's side: they are filled by
+     * the loaders below, which name whose list is wanted.
+     */
+    followers,
+    following,
+    loadFollowers: (accountId: number) => loadFollowers(accountId),
+    loadFollowingList: (accountId: number) => loadFollowingList(accountId),
+    followStats,
+    loadFollowing: () => loadFollowing(),
+    loadFollowStats: (accountId: number) => loadFollowStats(accountId),
+    toggleFollow: (accountId: number) => toggleFollow(accountId),
+    myAccounts,
+    accountsLoaded,
+    accountLimit,
+    canClaimAnother,
+    activeAccount,
+    activeAccountId,
+    editWindow,
+    engagement,
+    unreadMentions,
+    clearUnreadMentions: () => clearUnreadMentions(),
+    dmThreads,
+    dmMessages,
+    unreadDms,
+    loadDmThreads: () => loadDmThreads(),
+    loadDmMessages: (peerAccountId: number) => loadDmMessages(peerAccountId),
+    sendDm: (peerAccountId: number, body: string) => sendDm(peerAccountId, body),
+    loadEngagement: (ids: number[]) => loadEngagement(ids),
+    loadThread: (blabId: number) => loadThread(blabId),
+    toggleLike: (blabId: number) => toggleLike(blabId),
+    mouthBlab: (blabId: number, body?: string) => mouthBlab(blabId, body),
+    loadMyAccounts: () => loadMyAccounts(),
+    claimAccount: (handle: string, displayName?: string) => claimAccount(handle, displayName),
+    updateAccount: (id: number, patch: Parameters<typeof updateAccount>[1]) =>
+      updateAccount(id, patch),
+    postBlab: (body: string, replyTo?: number | null) => postBlab(body, replyTo),
+    editBlab: (id: number, body: string) => editBlab(id, body),
+    deleteBlab: (id: number) => deleteBlab(id)
+  };
+}

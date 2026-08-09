@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Avatar, EmptyState, ListItem, Skeleton, useBlabber, usePagedList } from '@gphone/sdk';
+  import { Avatar, EmptyState, ListItem, Skeleton, usePagedList } from '@gphone/sdk';
+  import { useBlabber } from '../store';
   import type { Account } from '@shared/types';
 
   /**

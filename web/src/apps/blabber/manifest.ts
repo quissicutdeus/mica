@@ -28,7 +28,11 @@ export default defineApp({
    * — calling a hook out here directly throws `useBlabber is not a function`.
    */
   badgeStore: lazyBadge(async () => {
-    const { useBlabber, useNotifications } = await import('@gphone/sdk');
+    // Two sources, and the split says which is whose: `useNotifications` is the OS
+    // counting rows for any app id, `useBlabber` is this app's own store — which lives in
+    // the app now rather than in the SDK, because an add-on cannot put a hook there.
+    const { useNotifications } = await import('@gphone/sdk');
+    const { useBlabber } = await import('./store');
     const { unreadMentions, unreadDms } = useBlabber();
     const { unreadCount } = useNotifications('blabber');
     return derived(
@@ -38,8 +42,5 @@ export default defineApp({
   }),
   // Required alongside a badgeStore (`sdk/appContract.test.ts`): the count has to be correct
   // *before* the launcher paints, and `onAppForeground` is too late by definition.
-  preload: async () => {
-    const { useBlabber } = await import('@gphone/sdk');
-    return useBlabber().loadMyAccounts();
-  }
+  preload: () => import('./store').then((m) => m.loadMyAccounts())
 });
