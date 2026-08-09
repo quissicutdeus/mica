@@ -115,6 +115,71 @@ export class BlabberRepository extends SchemaRepository<Blab> {
   }
 
   /**
+   * The flattened subtree under one root: every reply at any depth, `id DESC`, keyset-paged.
+   *
+   * Not a per-depth read — `root_id` already names the top-level ancestor regardless of how many
+   * replies deep a row sits, so one `WHERE root_id = ?` covers the whole thread in a single
+   * indexed query. See `root_id`'s declaration in `Blabber.ts` for why that column exists at all.
+   *
+   * `anchorId`, only honored when `cursor` is null (an initial open, never a "load older"
+   * continuation): instead of the newest `limit` rows, the window is centered on the anchor row
+   * so a reply search result — which can be arbitrarily old — is guaranteed present on the first
+   * page rather than requiring the caller to page backward until they find it by hand.
+   */
+  async findFlattenedPage(
+    rootId: number,
+    opts: { limit: number; cursor: number | null; anchorId: number | null }
+  ): Promise<{ rows: Blab[]; nextCursor: number | null }> {
+    const { limit, cursor, anchorId } = opts;
+    const projection = this.publicColumns.map((column) => `\`${column}\``).join(', ');
+    const subtree = "(`id` = ? OR `root_id` = ?) AND `id` != ? AND `status` = 'active'";
+
+    let merged: Blab[];
+
+    if (cursor !== null || anchorId === null) {
+      const cursorClause = cursor === null ? '' : ' AND `id` < ?';
+      const params: unknown[] = [rootId, rootId, rootId];
+      if (cursor !== null) params.push(cursor);
+      params.push(limit + 1);
+
+      merged = await Database.query<Blab[]>(
+        `SELECT ${projection} FROM \`${this.tableName}\`
+         WHERE ${subtree}${cursorClause}
+         ORDER BY \`id\` DESC
+         LIMIT ?`,
+        params
+      );
+    } else {
+      const half = Math.ceil(limit / 2);
+
+      const newer = await Database.query<Blab[]>(
+        `SELECT ${projection} FROM \`${this.tableName}\`
+         WHERE ${subtree} AND \`id\` > ?
+         ORDER BY \`id\` ASC
+         LIMIT ?`,
+        [rootId, rootId, rootId, anchorId, half]
+      );
+
+      const older = await Database.query<Blab[]>(
+        `SELECT ${projection} FROM \`${this.tableName}\`
+         WHERE ${subtree} AND \`id\` <= ?
+         ORDER BY \`id\` DESC
+         LIMIT ?`,
+        [rootId, rootId, rootId, anchorId, limit - newer.length + 1]
+      );
+
+      merged = [...newer.slice().reverse(), ...older];
+    }
+
+    const hasMore = merged.length > limit;
+    const page = hasMore ? merged.slice(0, limit) : merged;
+    return {
+      rows: await this.hydrate(page),
+      nextCursor: hasMore ? page[page.length - 1].id : null
+    };
+  }
+
+  /**
    * Rows from this table under the public projection.
    *
    * A plain query rather than `this.findAll`, so hydration cannot recurse into itself one
