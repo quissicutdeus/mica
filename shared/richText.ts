@@ -90,3 +90,19 @@ export function mentionedHandles(input: string): string[] {
   }
   return [...seen];
 }
+
+/**
+ * Every hashtag in a message, lowercased, deduplicated, first-appearance order.
+ *
+ * A sibling of `mentionedHandles` for the same reason that one lives here: what `BlabBody`
+ * highlights and what gets indexed for search must come from the same tokenizer, or a tag that
+ * lights up in the UI and a tag that search can never find are two different definitions of one
+ * word.
+ */
+export function taggedTopics(input: string): string[] {
+  const seen = new Set<string>();
+  for (const token of tokenizeRichText(input)) {
+    if (token.kind === 'tag') seen.add(token.value);
+  }
+  return [...seen];
+}

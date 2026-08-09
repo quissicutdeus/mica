@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mentionedHandles, tokenizeRichText } from '@shared/richText';
+import { mentionedHandles, taggedTopics, tokenizeRichText } from '@shared/richText';
 
 /**
  * The tokenizer every app that renders player text shares.
@@ -115,5 +115,33 @@ describe('mentionedHandles', () => {
   it('returns nothing when there is nothing to notify', () => {
     expect(mentionedHandles('just talking')).toEqual([]);
     expect(mentionedHandles('')).toEqual([]);
+  });
+});
+
+describe('taggedTopics', () => {
+  it('extracts hashtags, lowercased and deduplicated', () => {
+    expect(taggedTopics('Loving #LosAngeles today, #losangeles never disappoints')).toEqual([
+      'losangeles'
+    ]);
+  });
+
+  it('ignores mentions and plain text', () => {
+    expect(taggedTopics('@ada said hi, no tags here')).toEqual([]);
+  });
+
+  it('returns tags in first-appearance order', () => {
+    expect(taggedTopics('#one #two #three')).toEqual(['one', 'two', 'three']);
+  });
+
+  it('returns an empty array for empty input', () => {
+    expect(taggedTopics('')).toEqual([]);
+  });
+
+  it('agrees with tokenizeRichText about what counts as a tag', () => {
+    const body = 'traffic on the interstate #losangeles is unreal #traffic';
+    const fromTokens = tokenizeRichText(body)
+      .filter((t) => t.kind === 'tag')
+      .map((t) => t.value);
+    expect(taggedTopics(body)).toEqual([...new Set(fromTokens)]);
   });
 });
