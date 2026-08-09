@@ -270,6 +270,113 @@ is a real button precisely so clicking away works.
 
 ---
 
+### The add-on path, and the test that measures it
+
+`boundary.test.ts` has long enforced that apps may not reach past the SDK. The opposite
+direction went unchecked, and drifted three times before anyone noticed — `sdk/utils.ts`
+exporting `blabberTotalUnread`, `Accounts.ts` hardcoding `buildDeepLink('blabber')`, and
+`moderation.ts` listing `gphone_blabber` in the reportable allowlist. Each was caught by a
+person reading a diff, which is not a mechanism.
+
+`sdk/coreBoundary.test.ts` is the mechanism. It scans `sdk/`, `shell/`, `services/`,
+`lib/`, `shared/` and `server/lib/` for the id of any app declaring `core: false`, and
+fails on a new one. **Not every app**: `contacts`, `photos` and `notes` are also ordinary
+English words, and a blanket rule flagged 55 files on its first run. An add-on is
+different in kind — it is not in this repository when a server installs it, so core naming
+it cannot mean anything.
+
+Running it measured something worth having in writing. Two apps declare `core: false`,
+`notes` and `blabber`, and on the first run both were first-party apps wearing the label:
+
+| Where                     | Then | Now | Why an add-on could not do it      |
+| ------------------------- | ---- | --- | ---------------------------------- |
+| `sdk/hooks/useBlabber.ts` | 1    | —   | an add-on cannot add an SDK hook   |
+| `sdk/hooks/useNotes.ts`   | 6    | —   | likewise                           |
+| `services/blabber.ts`     | 10   | —   | nor a store in core's services dir |
+| `services/notes.ts`       | 1    | —   | likewise                           |
+| `shared/routes.ts`        | 13   | 0   | nor a row in the core route table  |
+
+The route table was the wall: it enumerates every NUI action, and `routes.test.ts`
+cross-references it, so an add-on could not have a server half at all. What the Store path
+supported was UI-only apps, and Blabber read as proof the add-on story worked when it was
+better read as proof of its limits.
+
+The grandfather list is empty now, and that is the finish line rather than an oversight.
+Three pieces made it so, the same inversion `registerReportable` did for moderation applied
+to routes and to the client data layer:
+
+- **One generic NUI route.** `GENERIC_SERVICE_ACTION` in `shared/rpc.ts` — a single `svc`
+  callback carrying `{ service, action, data }`, relayed to `gphone:server:<service>:<action>`.
+  Reached from an app through `useService(id).call(...)`. This widened what NUI can reach and
+  `docs/security.md` records the correction; `reachability.test.ts` is what keeps the reachable
+  set deliberate now that "the UI does not call it" has been shown not to be a control.
+- **`service:` on both store factories.** `createCrudStore` and `createPagedStore` take it, and
+  the argument that was a NUI action name becomes a **server** action name. Both are exported
+  from `@gphone/sdk`, so an app builds its own data layer inside its own directory.
+- **Stores moved into the apps.** `apps/notes/store.ts` and `apps/blabber/store.ts`, each
+  exporting its own `useNotes` / `useBlabber` rather than core carrying a hook for it.
+
+Leave the list empty. An entry added back is a claim that some app needs to be special, and
+the reason belongs in the comment beside it.
+
+### The SDK barrel, split so a manifest can import it
+
+`byNewest is not a function`, thrown from a line that plainly imported it. The cause was a cycle
+rather than a missing export: `@gphone/sdk` re-exports `useAppRegistry`, which reaches
+`shell/state/registry.ts`, which globbed every app manifest **eagerly** — so a manifest importing the
+barrel got a half-initialised module and its bindings came back `undefined`.
+
+Two changes, and the first is the one that matters:
+
+- **`@gphone/sdk/app` is a leaf entry.** `defineApp` and `lazyBadge`, importing nothing that reaches
+  the registry. A manifest imports that; only the app's `index.svelte` imports the full barrel.
+  `sdk/barrelCycle.test.ts` reads the source and fails a manifest that reaches for the wrong one —
+  the first version of that test asserted nothing and would have passed against the bug, which is
+  worth remembering as the general case: a test written to prove your own change gets written to
+  pass.
+- **The component glob is lazy, the manifest glob stays eager.** The launcher needs every manifest
+  before it paints and needs no app's code until one is opened, so the split is forced rather than
+  chosen. It also gives each app its own chunk — Blabber is 41 kB of a build that no longer pays for
+  it at startup.
+
+`lazyBadge` exists for the same reason and emits `0` until its store resolves. A manifest that needs
+its store `import('./store')` inside `preload` rather than at module scope.
+
+### The security pass, and two things that moved server-side
+
+`docs/security.md` is the threat model: what is trusted, from whom, and why. It exists because the
+assumptions were the undocumented part — a checklist records what was done, and what breaks under a
+well-meaning change is what was assumed.
+
+The pass found one property lost and one never held.
+
+**A registered net event is reachable**, full stop. Not "reachable if a NUI route points at it": a
+modified client emits `gphone:server:<service>:<action>` directly and never touches NUI, so
+`shared/routes.ts` only ever bounded CEF XSS. That was easy to miss while every reachable action
+happened to have a route in front of it, and the generic route made it visible by decoupling the two.
+Six actions were registered, routed by nothing and called by nothing; they are no longer registered,
+and `server/__tests__/reachability.test.ts` keeps that deliberate.
+
+**Eight raw `onNet` handlers sat outside `ServiceEndpoint`** with no rate limit, no authentication
+and no payload validation. Six now share `guardNetEvent` in `server/lib/netGuard.ts` — the same two
+checks in the same order the endpoint uses, refused silently because nothing is waiting on a reply.
+The other two are gone rather than guarded, which is the better outcome and the reason the count
+moved:
+
+- **Battery charge.** The client ran the drain timer and reported its own number every fifteen
+  seconds. Validating that payload would never have changed what it was, so the event is deleted and
+  the server ticks the charge itself. The authoritative version is _smaller_ than the one it
+  replaced: one interval and a map, against a client timer plus a report path plus a clamp plus a
+  write-skip cache that existed to absorb four redundant writes a minute.
+- **Signal zones.** Covered under _Cellular dead zones_ above. The client no longer receives the zone
+  list, so `signal:rules` went with it and that service has no raw handler left at all.
+
+The correction worth carrying forward: `docs/security.md` first called all three client-authoritative
+values "by design", which let two "has not moved yet" cases read as "cannot move". Only
+`PhoneState.isTyping` is genuinely client-owned — the server cannot see DOM focus. The default is
+server-authoritative, and anything the client owns needs a reason it _cannot_ move rather than a
+reason it has not.
+
 ### Notifications as an OS service
 
 `gphone_notifications` is declared in `server/services/Notifications.ts` with
@@ -333,10 +440,10 @@ carries about half again the chroma at identical worst-case contrast.
 ### Cellular dead zones and outages
 
 Reception is real state. `server/services/Signal.ts` holds a city-wide level, a set of dead zones and
-per-player overrides; `client/services/Signal.ts` checks the player's position against them every two
-seconds and pushes the result into the NUI. Before this, `signalLevel` was a `writable(4)` that only
-Developer Tools could change, on your own phone — so a dispatch script could not black out a district
-and an EMP could not exist, because there was nothing to call.
+per-player overrides, evaluates each player's bars on a two-second poll, and pushes the number.
+Before this, `signalLevel` was a `writable(4)` that only Developer Tools could change, on your own
+phone — so a dispatch script could not black out a district and an EMP could not exist, because
+there was nothing to call.
 
 Global and per-zone are deliberately the **same primitive** with a precedence order — lowest wins —
 because two mechanisms drift the first time they disagree. A per-player override beats both in either
@@ -346,9 +453,15 @@ Zones live in memory rather than a table. One is placed by another resource at r
 that session; persisting them would mean a jammer outliving the heist that placed it, with nobody
 left knowing why a block has no bars.
 
-The client evaluates the final number because the server does not know where anybody is standing, and
-asking every player every tick is exactly the cost this avoids. A modified client can therefore lie
-about its own bars — fine, deliberately: signal gates presentation, never authority (§2.9).
+**The server evaluates, and that was a correction rather than the original design.** The client used
+to: it received the zone list and decided its own bars, on the reasoning that the server does not
+know where anybody is standing and polling every player is exactly the cost that avoids. That held
+only while nothing read the level, and it stopped holding the moment an app was going to degrade at
+zero bars — a client that decides its own bars is a client that decides whether it is in a dead
+zone. It no longer receives the zone list at all, which is the load-bearing half: a client that
+cannot see the zones cannot decide it is outside one. The cost is bounded twice, by an early-out
+that reads no coordinates in the ordinary case and by pushing only when the whole-bar value moves.
+`docs/security.md` carries the full reasoning.
 
 **What is still unbuilt is the half that matters to apps.** Nothing reads the level yet: every app
 behaves identically at four bars and at zero, and `network` remains a permission with no capability
@@ -529,42 +642,6 @@ capturing the pointer on its own `pointerdown` takes every touch that starts on 
 Doing it properly needs a grab handle to attach to and a transform that follows the finger, and
 swipe-to-clear needs per-row pointer handling that does not fight vertical scrolling.
 
-### The add-on path is half true
-
-`boundary.test.ts` has long enforced that apps may not reach past the SDK. The opposite
-direction went unchecked, and drifted three times before anyone noticed — `sdk/utils.ts`
-exporting `blabberTotalUnread`, `Accounts.ts` hardcoding `buildDeepLink('blabber')`, and
-`moderation.ts` listing `gphone_blabber` in the reportable allowlist. Each was caught by a
-person reading a diff, which is not a mechanism.
-
-`sdk/coreBoundary.test.ts` is the mechanism. It scans `sdk/`, `shell/`, `services/`,
-`lib/`, `shared/` and `server/lib/` for the id of any app declaring `core: false`, and
-fails on a new one. **Not every app**: `contacts`, `photos` and `notes` are also ordinary
-English words, and a blanket rule flagged 55 files on its first run. An add-on is
-different in kind — it is not in this repository when a server installs it, so core naming
-it cannot mean anything.
-
-Running it measured something worth having in writing. **Two apps declare `core: false`,
-`notes` and `blabber`, and both are first-party apps wearing the label:**
-
-| Where                     | Count | Why an add-on cannot do this       |
-| ------------------------- | ----- | ---------------------------------- |
-| `sdk/hooks/useBlabber.ts` | 1     | an add-on cannot add an SDK hook   |
-| `sdk/hooks/useNotes.ts`   | 6     | likewise                           |
-| `services/blabber.ts`     | 10    | nor a store in core's services dir |
-| `services/notes.ts`       | 1     | likewise                           |
-| `shared/routes.ts`        | 13    | nor a row in the core route table  |
-
-The route table is the wall: it enumerates every NUI action, and `routes.test.ts`
-cross-references it, so **an add-on cannot have a server half at all**. What the Store
-path supports today is UI-only apps. Blabber reads as proof the add-on story works and is
-better read as proof of its limits.
-
-Making it true needs a way for an app to declare its own service and reach it through a
-generic route, without core naming it — the same inversion `registerReportable` just did
-for moderation, applied to routes and to the client data layer. The counts above are the
-backlog, and the test only lets them go down.
-
 ### Phone-state exports
 
 The export API under _Shipped_ left one group out — the one still needing a mechanism rather than a
@@ -620,7 +697,7 @@ server and never the phone, so nothing becomes client-writable and create/update
 `kind enum('mention','follow','reply','ear','dm')`, a nullable `blab_id`, a nullable `read_at`, and a
 key on `(account_id, read_at)`.
 
-This replaces `unreadMentions` in `web/src/services/blabber.ts`, an in-memory counter that resets on
+This replaces `unreadMentions` in `web/src/apps/blabber/store.ts`, an in-memory counter that resets on
 resource restart and can only ever count what arrived while subscribed. A stored count is also the
 only way to build a notifications **list**, which a counter can never become.
 
@@ -778,7 +855,10 @@ Referenced by number from the ideas above.
    `Conversations.ts` had been carrying. Handles and avatars live in the shared `gphone_accounts`
    table, so anything social can claim a handle without new schema.
 4. **Abuse controls at the `ServiceEndpoint` chokepoint** — built. Rate limit at the transport
-   boundary, and per-column validation derived from the schema.
+   boundary, and per-column validation derived from the schema. The chokepoint is no longer the only
+   guarded path: `guardNetEvent` applies the same two checks to the raw `onNet` handlers that cannot
+   go through the endpoint, and `reachability.test.ts` keeps the registered set down to what the app
+   uses. `docs/security.md` is the model.
 5. **An economy primitive** — built. `addMoney` on both framework paths, failing closed, and
    `transfer` with a compensating refund and a `PaymentOutcome` union that cannot be mistaken for
    success. Best-effort, not ACID: there is no transaction spanning another resource's money system.

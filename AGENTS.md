@@ -108,7 +108,7 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
 5. **No new dependencies** without asking.
 6. **Do not change** TypeScript versions in either package, Vite `build.outDir`, or
    `scripts/generate-barrels.js` output paths without asking.
-7. **SDK First.** Everything in `web/src/apps/`, and every external add-on, consumes the OS strictly through `@gphone/sdk` hooks — data (`useContacts`, `usePhotos`, `useNotes`, `useMail`, `useMessages`, `useBlabber`, `useAccount`, `useCall`, `useReports`), OS services (`useNavigation`, `usePhoneNotification`, `useKeybinds`, `useClock`, `useDisplay`, `useSystemHardware`, `useAppRegistry`, `useNuiBridge`, `useAppEvents`, `useStorage`, `useCamera`, `useAdmin`, `useDevTools`), and the four an app is built out of: `useAppLevels` for its internal levels, `useAppAction` for a write, `useDeepLink` for the props it was opened with, and `onAppForeground` for loading. Relative imports out of an app — into `shell/`, `services/`, `nui/`, `lib/`, or `sdk/` by path — are prohibited and enforced by `web/src/sdk/boundary.test.ts`. An add-on installed from the Store resolves `@gphone/sdk` and nothing else, so a relative import is a thing a third-party app cannot do. UI primitives (`Screen`, `ListItem`, `Button`, `Avatar`, `SearchBar`, `EmptyState`, `ConfirmDialog`, `FloatingActionButton`, `PhotoPickerModal`, `ReportDialog`, `SegmentedControl`, `ToggleSwitch`, `Skeleton`) live in `web/src/sdk/ui/` and are re-exported from `web/src/sdk/components.ts`. The shell's own pieces — `PhoneFrame`, `Launcher`, `ToastHost`, `VolumeHud`, `ErrorBoundary` — are deliberately **not** exported, because an app rendering its own phone frame or toast host is a bug.
+7. **SDK First.** Everything in `web/src/apps/`, and every external add-on, consumes the OS strictly through `@gphone/sdk` hooks — data (`useContacts`, `usePhotos`, `useMail`, `useMessages`, `useAccount`, `useCall`, `useReports`), OS services (`useNavigation`, `usePhoneNotification`, `useKeybinds`, `useClock`, `useDisplay`, `useSystemHardware`, `useAppRegistry`, `useNuiBridge`, `useService`, `useAppEvents`, `useStorage`, `useCamera`, `useAdmin`, `useDevTools`), and the four an app is built out of: `useAppLevels` for its internal levels, `useAppAction` for a write, `useDeepLink` for the props it was opened with, and `onAppForeground` for loading. Relative imports out of an app — into `shell/`, `services/`, `nui/`, `lib/`, or `sdk/` by path — are prohibited and enforced by `web/src/sdk/boundary.test.ts`. An add-on installed from the Store resolves `@gphone/sdk` and nothing else, so a relative import is a thing a third-party app cannot do. UI primitives (`Screen`, `ListItem`, `Button`, `Avatar`, `SearchBar`, `EmptyState`, `ConfirmDialog`, `FloatingActionButton`, `PhotoPickerModal`, `ReportDialog`, `SegmentedControl`, `ToggleSwitch`, `Skeleton`) live in `web/src/sdk/ui/` and are re-exported from `web/src/sdk/components.ts`. The shell's own pieces — `PhoneFrame`, `Launcher`, `ToastHost`, `VolumeHud`, `ErrorBoundary` — are deliberately **not** exported, because an app rendering its own phone frame or toast host is a bug.
 
    **Keyboard shortcuts specifically.** Never add a raw `keydown` listener or a
    `<svelte:window on:keydown>` for a phone-level action; declare the action in
@@ -1042,8 +1042,14 @@ has a service with `null` for its repository because the data belongs to another
 
 ### 3. The route
 
-Every NUI action needs a `route()` entry in `shared/routes.ts`. `client/services/Relay.ts` registers
-all of them, so there is no per-app client file to write.
+Every **named** NUI action needs a `route()` entry in `shared/routes.ts`. `client/services/Relay.ts`
+registers all of them, so there is no per-app client file to write.
+
+**An add-on needs no row here, and cannot add one.** `shared/routes.ts` ships inside gPhone, so a
+`core: false` app reaches its service through the one generic route instead —
+`useService(id).call(action, data)`, relayed by the single `svc` callback to
+`gphone:server:<id>:<action>`. Notes and Blabber are the two worked examples and neither appears in
+the table. Reach for a named route only when the app is `core: true`.
 
 This is the layer that goes missing. `readConversation`, `renameConversation`,
 `archiveConversation`, `rejectCall`, `flipCamera` and all four mail actions have each shipped as a
@@ -1107,7 +1113,16 @@ it with `usePagedList`'s `loadOlder` in the app. Do not page a `createCrudStore`
 fetches a whole list and re-sorts it, which is the opposite of a cursor walking backwards through
 one, and §10's whole reason for keyset paging is that a feed takes inserts at the head.
 
-Then expose it through a hook in `web/src/sdk/hooks/`. Stores are never reached by path from an app.
+It takes the same `service` option, so an add-on's paged feed goes through the generic route too —
+Blabber's `feed` and `followingFeed` are the worked examples. Deliberately the same word in both
+factories: an app should not have to learn two ways to say the same thing depending on whether its
+list is paged.
+
+Then expose it through a hook. **A core app's goes in `web/src/sdk/hooks/`; an add-on exports its
+own from its own directory**, beside the store, because `sdk/hooks/` ships inside gPhone and an app
+installed from the Store cannot add to it — `apps/notes/store.ts` exports `useNotes` and
+`apps/blabber/store.ts` exports `useBlabber`. Either way the store itself is never reached by path
+from another app; the hook is the only handle.
 
 ### 5. The browser mock
 
