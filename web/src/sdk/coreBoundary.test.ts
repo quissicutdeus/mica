@@ -111,18 +111,19 @@ const stripComments = (text: string): string =>
  * Every line here is a thing a third-party app cannot do, so the list doubles as the
  * backlog for making the add-on path real.
  */
-const GRANDFATHERED: Record<string, number> = {
-  // Blabber still ships a hook inside the SDK and a store inside core's services
-  // directory, neither of which an app installed from the Store can add.
-  //
-  // Notes used to, and no longer does: it owns both, and reaches its service through the
-  // generic route. That is the whole of what changed, and these numbers are how you tell.
-  'web/src/sdk/hooks/useBlabber.ts': 1,
-  'web/src/services/blabber.ts': 10,
-
-  // Down from 13 — Notes' four rows are gone. What is left is Blabber's.
-  'shared/routes.ts': 9
-};
+/**
+ * Empty, and that is the finish line rather than an oversight.
+ *
+ * It held seven entries: an SDK hook and a core store for each of `notes` and `blabber`,
+ * and thirteen rows in `shared/routes.ts`. Every one was a thing an app installed from the
+ * Store could not do, so the list was the honest size of "Blabber is an add-on" — which it
+ * was in name only.
+ *
+ * Both apps own their data layer now and reach their services through the generic route.
+ * Core names neither. Leave this empty: an entry added back is a claim that some app needs
+ * to be special, and the reason belongs in the comment beside it.
+ */
+const GRANDFATHERED: Record<string, number> = {};
 
 const countFor = (text: string, ids: string[]): number => {
   const stripped = stripComments(text);
