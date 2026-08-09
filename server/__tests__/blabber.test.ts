@@ -181,6 +181,53 @@ describe('posting', () => {
   });
 });
 
+describe('root_id inheritance', () => {
+  it('is null for a top-level post', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.insert.mockResolvedValueOnce(50);
+
+    await call('create', { account_id: 1, body: 'top level' });
+
+    const [, values] = dbMock.insert.mock.calls[0];
+    const columns = String(dbMock.insert.mock.calls[0][0]);
+    // root_id must be present in the INSERT and bound as null.
+    expect(columns).toContain('root_id');
+    expect(values).toContain(null);
+  });
+
+  it('is the parent id for a reply to a top-level post', async () => {
+    dbMock.single
+      .mockResolvedValueOnce(MY_ACCOUNT) // ownedAccount
+      .mockResolvedValueOnce(blab({ id: 9, root_id: null })); // visibleTarget(reply_to)
+    dbMock.insert.mockResolvedValueOnce(51);
+
+    await call('create', { account_id: 1, body: 'a reply', reply_to: 9 });
+
+    const values = dbMock.insert.mock.calls[0][1] as unknown[];
+    expect(values).toContain(9);
+  });
+
+  it('inherits the grandparent for a reply to a reply', async () => {
+    dbMock.single
+      .mockResolvedValueOnce(MY_ACCOUNT)
+      .mockResolvedValueOnce(blab({ id: 12, root_id: 9 })); // the parent is itself a reply
+    dbMock.insert.mockResolvedValueOnce(52);
+
+    await call('create', { account_id: 1, body: 'a reply to a reply', reply_to: 12 });
+
+    const [columns, values] = dbMock.insert.mock.calls[0];
+    // Skip the table name — it is backtick-quoted too, and precedes the column list.
+    const columnNames = String(columns)
+      .match(/`([a-z_]+)`/g)!
+      .slice(1)
+      .map((c) => c.replace(/`/g, ''));
+    // reply_to still correctly names the immediate parent (12); root_id is the true top-level
+    // ancestor (9), inherited rather than re-walked from reply_to.
+    expect((values as unknown[])[columnNames.indexOf('root_id')]).toBe(9);
+    expect((values as unknown[])[columnNames.indexOf('reply_to')]).toBe(12);
+  });
+});
+
 describe('a profile feed', () => {
   it('splits Blabs from replies with a null check, not an equality filter', async () => {
     await call('profile', { account_id: 1, tab: 'blabs' });

@@ -206,6 +206,8 @@ export interface Blab {
   reply_to?: number | null;
   /** The Blab this one repeats. With a body it is a quote; without one, a plain repeat. */
   mouth_of?: number | null;
+  /** The top-level ancestor of this Blab's reply chain, or null if this Blab *is* top-level. */
+  root_id?: number | null;
   status?: 'active' | 'deleted' | 'moderated';
   created_at: Date | string;
   updated_at: Date | string;

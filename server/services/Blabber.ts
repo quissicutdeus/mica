@@ -91,6 +91,20 @@ export const blabber = defineService<Blab>({
       clientWritable: false,
       clientFilterable: true,
       references: { table: 'gphone_blabber', column: 'id' }
+    },
+    /**
+     * The top-level ancestor of this Blab's reply chain, or null if this Blab is itself
+     * top-level. Set once at create (below) from the parent's own `root_id` — never from a
+     * walk up `reply_to`, and never mutated afterward. Same discipline as `reply_to` and
+     * `mouth_of`: a self-reference fixed at creation, so "flatten this thread" and "find a
+     * reply's top-level ancestor" are both a single indexed lookup rather than a recursive
+     * query. See docs/superpowers/specs/2026-08-08-blabber-search-and-hashtags-design.md.
+     */
+    root_id: {
+      type: 'int',
+      clientWritable: false,
+      clientFilterable: true,
+      references: { table: 'gphone_blabber', column: 'id' }
     }
   },
   /**
@@ -106,6 +120,7 @@ export const blabber = defineService<Blab>({
   indexes: [
     { name: 'account_id', columns: ['account_id'] },
     { name: 'reply_to', columns: ['reply_to'] },
+    { name: 'root_id', columns: ['root_id'] },
     /**
      * One mouth per account per Blab, enforced by the database.
      *
@@ -251,10 +266,15 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   const account = await ownedAccount(body.account_id, citizenid, APP);
   if (!account) throw new Error('That account is not yours to post from.');
 
-  const replyTo =
+  const replyParent =
     body.reply_to === undefined || body.reply_to === null
       ? null
-      : (await visibleTarget(body.reply_to, 'reply target')).id;
+      : await visibleTarget(body.reply_to, 'reply target');
+  const replyTo = replyParent?.id ?? null;
+  // Inherited, never walked: the parent is either top-level (root_id null, so it becomes the
+  // root) or itself a reply (root_id already the true top-level ancestor, so it passes through
+  // unchanged). Either way this is one lookup already in hand, not a second query.
+  const rootId = replyParent === null ? null : (replyParent.root_id ?? replyParent.id);
 
   const mouthOf =
     body.mouth_of === undefined || body.mouth_of === null
@@ -278,7 +298,8 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
       account_id: account.id,
       body: text || null,
       reply_to: replyTo,
-      mouth_of: mouthOf
+      mouth_of: mouthOf,
+      root_id: rootId
     } as Partial<Blab>);
 
     /**
