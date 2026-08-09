@@ -498,7 +498,12 @@ const mockRegistry: Record<string, MockHandler> = {
   }),
 
   // Blabber DMs. 1:1, so a thread is the union of both directions between two accounts.
-  getDmThreads: () => {
+  //
+  // Scoped keys throughout Blabber, for the same reason Notes' are: it is `core: false` and
+  // reaches its service through the generic route, so a request arrives as
+  // `{ service: 'blabber_dms', action: 'threads' }` rather than as `getDmThreads`. The key is the
+  // server's own action name, which is what makes a mock that disagrees with the server visible.
+  'blabber_dms:threads': () => {
     const peers = new Map<number, (typeof mockDms)[number]>();
     for (const dm of [...mockDms].sort((a, b) => b.id - a.id)) {
       const peer = dm.from_account === 1 ? dm.to_account : dm.from_account;
@@ -517,7 +522,7 @@ const mockRegistry: Record<string, MockHandler> = {
       };
     });
   },
-  getDmMessages: ({ peer_account_id }: { peer_account_id: number }) => {
+  'blabber_dms:get': ({ peer_account_id }: { peer_account_id: number }) => {
     const rows = mockDms
       .filter(
         (d) =>
@@ -527,7 +532,7 @@ const mockRegistry: Record<string, MockHandler> = {
       .sort((a, b) => b.id - a.id);
     return { rows, nextCursor: null };
   },
-  sendDm: ({ peer_account_id, body }: { peer_account_id: number; body: string }) => {
+  'blabber_dms:send': ({ peer_account_id, body }: { peer_account_id: number; body: string }) => {
     const created = {
       id: nextDmId++,
       from_account: 1,
@@ -541,7 +546,7 @@ const mockRegistry: Record<string, MockHandler> = {
     mockDms.push(created);
     return created;
   },
-  markDmRead: ({ peer_account_id }: { peer_account_id: number }) => {
+  'blabber_dms:read': ({ peer_account_id }: { peer_account_id: number }) => {
     for (const dm of mockDms) {
       if (dm.to_account === 1 && dm.from_account === peer_account_id) {
         dm.read_at = new Date().toISOString();
@@ -552,7 +557,7 @@ const mockRegistry: Record<string, MockHandler> = {
 
   // Blabber. Keyset paging on `id DESC`, matching the server: a cursor names the last row
   // already delivered, and `nextCursor: null` means the end.
-  getBlabs: ({
+  'blabber:get': ({
     cursor,
     limit = 30,
     reply_to
@@ -581,7 +586,7 @@ const mockRegistry: Record<string, MockHandler> = {
    * `nextCursor: null` is the end. A mock that answered a bare array would let the app look right
    * in `pnpm dev` while being wrong against the real server.
    */
-  getFollowingBlabs: ({
+  'blabber:following': ({
     account_id,
     cursor,
     limit = 30
@@ -607,7 +612,7 @@ const mockRegistry: Record<string, MockHandler> = {
     const hasMore = visible.length > page.length;
     return { rows: page, nextCursor: hasMore ? page[page.length - 1].id : null };
   },
-  createBlab: ({ account_id, body, reply_to, mouth_of }: Partial<Blab>) => {
+  'blabber:create': ({ account_id, body, reply_to, mouth_of }: Partial<Blab>) => {
     // Ownership, not mere existence — this is `ownedAccount` on the server, and the message was
     // already claiming it while the check only asked whether the row existed at all.
     const account = mockAccounts.find((a) => a.id === account_id && mockOwnedAccountIds.has(a.id));
@@ -637,12 +642,12 @@ const mockRegistry: Record<string, MockHandler> = {
     mockBlabs.unshift(created);
     return { ...created, editWindow: 900 };
   },
-  updateBlab: ({ id, body }: { id: number; body: string }) => {
+  'blabber:update': ({ id, body }: { id: number; body: string }) => {
     const blab = mockBlabs.find((b) => b.id === id);
     if (blab) blab.body = body;
     return true;
   },
-  getBlabEngagement: ({ ids = [] }: { ids?: number[] } = {}) => {
+  'blabber:engagement': ({ ids = [] }: { ids?: number[] } = {}) => {
     const out: Record<number, unknown> = {};
     for (const id of ids) {
       out[id] = {
@@ -657,18 +662,18 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     return out;
   },
-  likeBlab: ({ blab_id }: { blab_id: number }) => {
+  'blabber:like': ({ blab_id }: { blab_id: number }) => {
     if (!mockLikes.some((l) => l.blab_id === blab_id && l.account_id === 1)) {
       mockLikes.push({ blab_id, account_id: 1 });
     }
     return true;
   },
-  unlikeBlab: ({ blab_id }: { blab_id: number }) => {
+  'blabber:unlike': ({ blab_id }: { blab_id: number }) => {
     const at = mockLikes.findIndex((l) => l.blab_id === blab_id && l.account_id === 1);
     if (at >= 0) mockLikes.splice(at, 1);
     return true;
   },
-  getProfileBlabs: ({
+  'blabber:profile': ({
     account_id,
     tab,
     cursor,
@@ -693,7 +698,7 @@ const mockRegistry: Record<string, MockHandler> = {
     const hasMore = visible.length > page.length;
     return { rows: page, nextCursor: hasMore ? page[page.length - 1].id : null };
   },
-  deleteBlab: ({ id }: { id: number }) => {
+  'blabber:delete': ({ id }: { id: number }) => {
     const blab = mockBlabs.find((b) => b.id === id);
     if (blab) blab.status = 'deleted';
     return true;
