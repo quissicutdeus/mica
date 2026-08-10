@@ -397,24 +397,28 @@ export const mouthBlab = async (blabId: number, body?: string): Promise<Blab> =>
 };
 
 /**
- * One Blab by id.
- *
- * What a deep link needs: it names an id and nothing else, so the app has a stub to open a thread
- * around and no post to render until this answers. `null` when the row is gone — a notification
- * outlives the Blab it points at.
+ * One flattened screen for any Blab. The server resolves the root from whatever id is given —
+ * a top-level post or any of its replies — so this is the single call every "open a Blab" site
+ * makes, never a top-level-only read plus a separate replies fetch.
  */
-export const loadBlab = async (blabId: number): Promise<Blab | null> =>
-  await blabberService().call<Blab | null>('blab', { id: blabId }, null);
-
-/** One Blab and its direct replies. Replies nest, so a reply's own thread is the same call. */
-export const loadThread = async (
-  blabId: number
-): Promise<{ rows: Blab[]; nextCursor: number | null }> =>
-  await blabberService().call<{ rows: Blab[]; nextCursor: number | null }>(
-    'get',
-    { reply_to: blabId },
-    { rows: [], nextCursor: null }
+export const viewBlab = async (
+  id: number,
+  opts: { anchorId?: number } = {}
+): Promise<{ root: Blab | null; replies: Blab[]; nextCursor: number | null }> =>
+  await blabberService().call(
+    'view',
+    { id, ...opts },
+    { root: null, replies: [], nextCursor: null }
   );
+
+/** A plain continuation page — "load older" from an already-open flattened view, no anchor. */
+export const loadMoreReplies = async (
+  rootId: number,
+  cursor: number
+): Promise<{ rows: Blab[]; nextCursor: number | null }> =>
+  await blabberService()
+    .call('view', { id: rootId, cursor }, { root: null, replies: [], nextCursor: null })
+    .then((reply) => ({ rows: reply.replies, nextCursor: reply.nextCursor }));
 
 /**
  * There is deliberately no local mention counter here any more.
@@ -485,6 +489,37 @@ onBlabberKind('dm', () => {
   void loadDmThreads();
 });
 
+/** The People segment: accounts whose handle or display name matches the query, this app only. */
+export const accountResults = createPagedStore<Account>('search', { service: 'accounts' });
+export const searchAccounts = (q: string): Promise<void> =>
+  accountResults.load({ app: 'blabber', q });
+
+/** The Blabs segment: body search, replies included. */
+export const blabResults = createPagedStore<Blab>('search', { service: 'blabber' });
+export const searchBlabs = (q: string): Promise<void> => blabResults.load({ q });
+
+/** The Tags segment: matching tag names with a usage count, not a body search. */
+export const tagResults = writable<{ tag: string; uses: number }[]>([]);
+export const searchTags = async (q: string): Promise<void> => {
+  const reply = await blabberService().call<{ rows: { tag: string; uses: number }[] }>(
+    'searchTags',
+    { q },
+    { rows: [] }
+  );
+  tagResults.set(reply.rows);
+};
+
+/** A bounded snapshot loaded once when the Search tab opens, not paged. */
+export const trendingTags = writable<{ tag: string; uses: number }[]>([]);
+export const loadTrendingTags = async (): Promise<void> => {
+  const rows = await blabberService().call<{ tag: string; uses: number }[]>('trendingTags', {}, []);
+  trendingTags.set(rows);
+};
+
+/** Blabs carrying one exact tag — the shared landing spot for a Tags result, an inline tap, or a trending chip. */
+export const taggedBlabs = createPagedStore<Blab>('byTag', { service: 'blabber' });
+export const loadTaggedBlabs = (tag: string): Promise<void> => taggedBlabs.load({ tag });
+
 /**
  * What the app's components call. Was `sdk/hooks/useBlabber.ts`; an add-on cannot put a
  * hook in the SDK, which is the whole reason this moved.
@@ -520,8 +555,6 @@ export function useBlabber() {
     loadDmMessages: (peerAccountId: number) => loadDmMessages(peerAccountId),
     sendDm: (peerAccountId: number, body: string) => sendDm(peerAccountId, body),
     loadEngagement: (ids: number[]) => loadEngagement(ids),
-    loadThread: (blabId: number) => loadThread(blabId),
-    loadBlab: (blabId: number) => loadBlab(blabId),
     toggleLike: (blabId: number) => toggleLike(blabId),
     mouthBlab: (blabId: number, body?: string) => mouthBlab(blabId, body),
     loadMyAccounts: () => loadMyAccounts(),
@@ -530,6 +563,18 @@ export function useBlabber() {
       updateAccount(id, patch),
     postBlab: (body: string, replyTo?: number | null) => postBlab(body, replyTo),
     editBlab: (id: number, body: string) => editBlab(id, body),
-    deleteBlab: (id: number) => deleteBlab(id)
+    deleteBlab: (id: number) => deleteBlab(id),
+    viewBlab: (id: number, opts?: { anchorId?: number }) => viewBlab(id, opts),
+    loadMoreReplies: (rootId: number, cursor: number) => loadMoreReplies(rootId, cursor),
+    accountResults,
+    searchAccounts: (q: string) => searchAccounts(q),
+    blabResults,
+    searchBlabs: (q: string) => searchBlabs(q),
+    tagResults,
+    searchTags: (q: string) => searchTags(q),
+    trendingTags,
+    loadTrendingTags: () => loadTrendingTags(),
+    taggedBlabs,
+    loadTaggedBlabs: (tag: string) => loadTaggedBlabs(tag)
   };
 }

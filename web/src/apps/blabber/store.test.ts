@@ -26,7 +26,19 @@ import {
   unreadDms,
   loadDmThreads,
   loadDmMessages,
-  sendDm
+  sendDm,
+  viewBlab,
+  loadMoreReplies,
+  accountResults,
+  searchAccounts,
+  blabResults,
+  searchBlabs,
+  tagResults,
+  searchTags,
+  trendingTags,
+  loadTrendingTags,
+  taggedBlabs,
+  loadTaggedBlabs
 } from './store';
 import * as fetchNuiModule from '../../nui/fetchNui';
 import type {
@@ -429,6 +441,136 @@ describe('blabber service', () => {
       await sendDm(2, 'Hello Bob');
 
       expect(get(dmMessages)).toContainEqual(mockDm);
+    });
+  });
+
+  describe('viewing a Blab', () => {
+    it('viewBlab calls the view action with the id', async () => {
+      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({
+        root: { id: 7, account_id: 1, body: 'root', created_at: '', updated_at: '' },
+        replies: [],
+        nextCursor: null
+      } as any);
+
+      const result = await viewBlab(7);
+
+      // A third-argument `defaultValue` is what makes this degrade to an empty view rather
+      // than throwing when the transport fails — `useService.call` forwards it wrapped as
+      // `{ defaultValue }`, the same shape every other read in this file relies on.
+      expect(spy).toHaveBeenCalledWith(
+        'svc',
+        { service: 'blabber', action: 'view', data: { id: 7 } },
+        { defaultValue: { root: null, replies: [], nextCursor: null } }
+      );
+      expect(result.root?.id).toBe(7);
+    });
+
+    it('loadMoreReplies is a plain continuation call, with no anchor', async () => {
+      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({
+        root: null,
+        replies: [{ id: 12, account_id: 1, body: 'older', created_at: '', updated_at: '' }],
+        nextCursor: 12
+      } as any);
+
+      const result = await loadMoreReplies(7, 20);
+
+      expect(spy).toHaveBeenCalledWith(
+        'svc',
+        { service: 'blabber', action: 'view', data: { id: 7, cursor: 20 } },
+        { defaultValue: { root: null, replies: [], nextCursor: null } }
+      );
+      expect(result.rows).toHaveLength(1);
+      expect(result.nextCursor).toBe(12);
+    });
+
+    it('viewBlab passes anchorId through when given', async () => {
+      const spy = vi
+        .spyOn(fetchNuiModule, 'fetchNui')
+        .mockResolvedValue({ root: null, replies: [], nextCursor: null } as any);
+
+      await viewBlab(9, { anchorId: 9 });
+
+      expect(spy).toHaveBeenCalledWith(
+        'svc',
+        { service: 'blabber', action: 'view', data: { id: 9, anchorId: 9 } },
+        { defaultValue: { root: null, replies: [], nextCursor: null } }
+      );
+    });
+  });
+
+  describe('search', () => {
+    it('searchAccounts loads the accountResults store scoped to blabber', async () => {
+      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({
+        rows: [{ id: 1, app: 'blabber', handle: 'ada' }],
+        nextCursor: null
+      } as any);
+
+      await searchAccounts('ad');
+
+      // `cursor`/`limit` and the wrapped `defaultValue` are `createPagedStore`'s own
+      // `fetchPage`, not something this call adds — every paged read carries them.
+      expect(spy).toHaveBeenCalledWith(
+        'svc',
+        {
+          service: 'accounts',
+          action: 'search',
+          data: { app: 'blabber', q: 'ad', cursor: undefined, limit: undefined }
+        },
+        { defaultValue: { rows: [], nextCursor: null } }
+      );
+      expect(get(accountResults)).toHaveLength(1);
+    });
+
+    it('searchBlabs loads the blabResults store', async () => {
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({
+        rows: [{ id: 8, account_id: 1, created_at: '', updated_at: '' }],
+        nextCursor: null
+      } as any);
+
+      await searchBlabs('traffic');
+
+      expect(get(blabResults)).toHaveLength(1);
+    });
+
+    it('searchTags populates tagResults', async () => {
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({
+        rows: [{ tag: 'losangeles', uses: 5 }],
+        nextCursor: null
+      } as any);
+
+      await searchTags('los');
+
+      expect(get(tagResults)).toEqual([{ tag: 'losangeles', uses: 5 }]);
+    });
+
+    it('loadTrendingTags populates trendingTags', async () => {
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue([
+        { tag: 'losangeles', uses: 40 }
+      ] as any);
+
+      await loadTrendingTags();
+
+      expect(get(trendingTags)).toEqual([{ tag: 'losangeles', uses: 40 }]);
+    });
+
+    it('loadTaggedBlabs loads the taggedBlabs store for one tag', async () => {
+      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({
+        rows: [{ id: 8, account_id: 1, created_at: '', updated_at: '' }],
+        nextCursor: null
+      } as any);
+
+      await loadTaggedBlabs('losangeles');
+
+      expect(spy).toHaveBeenCalledWith(
+        'svc',
+        {
+          service: 'blabber',
+          action: 'byTag',
+          data: { tag: 'losangeles', cursor: undefined, limit: undefined }
+        },
+        { defaultValue: { rows: [], nextCursor: null } }
+      );
+      expect(get(taggedBlabs)).toHaveLength(1);
     });
   });
 });
