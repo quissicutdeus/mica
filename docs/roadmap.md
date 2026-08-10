@@ -308,6 +308,45 @@ is nothing behind it to go back to and a Cancel would dismiss the only thing on 
 three were already covered — the composer's Cancel, Edit profile's Cancel, and the menu's scrim, which
 is a real button precisely so clicking away works.
 
+#### Search, hashtags, and the flattened view a search result needed
+
+The fourth tab now exists: `TabBar` carries Feed, Following, Notifications and Search, and every one
+of those four opens. `Search.svelte` is a `SearchBar` over three segments — People, Blabs, Tags — plus
+trending tags shown before anything is typed, each backed by a real server-side search rather than
+`filterByQuery` over a partial in-memory list: `accounts:search`, `blabber:search` (body, including
+replies) and `blabber:searchTags`/`byTag`/`trendingTags`. All of it paginated with the same keyset
+cursor as every other public read (§10) — a search is a public read like any other, and `defineService`
+throws for one without `paging`.
+
+Hashtags moved from render-only to indexed. `taggedTopics`, a sibling of `mentionedHandles` in
+`shared/richText.ts`, is what a Blab is scanned with at create time, so what `BlabBody` highlights and
+what the server indexes read the same tokens off the same input. `gphone_blabber_tags` (`blab_id`,
+`tag`) is the child table that scan writes to, and it is what makes a tag feed, a trending aggregate
+and a tappable tag possible at all — a body scan alone can render a tag, but it cannot answer "what
+else has this tag" without walking every row. A tag is now a `<button>` in both Blabs and DMs, since
+`BlabBody` renders both, with the same token discipline as a mention: text through `{text}`, never
+`{@html}` (§7).
+
+Three things here were not in the original sketch below, worth naming because a proposal read
+afterward should say what changed rather than pretend it was foreseen:
+
+- **The `root_id` and flattened-view rework.** The proposal imagined search landing you in the
+  existing nested `Thread` — push a screen per reply, same as opening a Blab from the feed always
+  had. That falls over the moment a search result is a reply three levels deep: `Thread` had no way
+  to open at that reply without first pushing every ancestor screen on top of it, one tap at a time.
+  `root_id` (`server/services/Blabber.ts`) is set once at create from the parent's own `root_id` — so
+  it names the true top-level ancestor at any depth, not just the immediate parent — and
+  `BlabberRepository.findFlattenedPage` walks one Blab and every reply under it, at any depth, as one
+  page. `BlabDetail.svelte` replaces `Thread.svelte` outright: one screen, the root then its replies in
+  order, with an `anchorId` so a search result opens already scrolled to the reply that matched rather
+  than to the top of the thread.
+- **`accounts:search` lives on the shared `accounts` service, not Blabber's own.** Same reasoning as
+  `followers`/`following`: a handle or display-name search is a property of the identity table every
+  social app posts through, not something specific to Blabber's own tables, so another app gets the
+  same search for free rather than reimplementing it.
+- **The four-tab `TabBar` is complete.** Search was the one destination left after Notifications
+  shipped (see above); it is not anymore.
+
 ---
 
 ### The add-on path, and the test that measures it
@@ -703,17 +742,17 @@ front of it.
 ### Blabber, next iteration
 
 Most of what this section originally proposed has since shipped and moved up: the tabbed shell, the
-composer as a FAB, identity as a small avatar, the follow graph, and the notifications tab. **What
-is left is search**, plus the media and moderation work in step 3.
+composer as a FAB, identity as a small avatar, the follow graph, the notifications tab, and now search
+and hashtags. **What is left is the media and moderation work below.**
 
 The end state is a signed-up-only tabbed shell — public feed as the default, the feed of people you
-follow one tap away, search and notifications in a bottom nav. Three of those four exist.
+follow one tap away, search and notifications in a bottom nav. All four exist.
 
 Decisions already settled, recorded so they are not re-litigated:
 
 | Decision                | Choice                                                                              |
 | ----------------------- | ----------------------------------------------------------------------------------- |
-| Tabs                    | Public feed (default), Following, Search, Notifications — bottom nav; Search left   |
+| Tabs                    | Public feed (default), Following, Search, Notifications — bottom nav — done         |
 | Identity                | Small avatar top-right, opening a sheet for switch / claim / edit profile — done    |
 | Composer                | FAB, matching Messages' "Start Chat" and Contacts' "Add Contact" — done             |
 | Notifications           | The shared `gphone_notifications` OS service, not a per-app table — done            |
@@ -722,43 +761,14 @@ Decisions already settled, recorded so they are not re-litigated:
 | Reactions / emoji / GIF | Private surfaces only; Blabber DMs first, Messages adopts the same primitives later |
 | Media                   | Generic `gphone_media` table via the `table:` override; app id stays `photos`       |
 
-#### 1. Search as the fourth tab
+Search as the fourth tab, and search and hashtags underneath it, both shipped — see "Search,
+hashtags, and the flattened view a search result needed" under Shipped, alongside "The notifications
+tab, and the tab nobody could open" for the destination search completed the nav with. Read this
+section's earlier proposal for either as superseded, not as pending: the flattened `root_id` view a
+search result needed was not foreseen here at all, and `accounts:search` landed on the shared
+`accounts` service rather than a Blabber-owned one, matching how `followers`/`following` already work.
 
-The nav exists — see "The follow graph, and a nav with somewhere to go" under Shipped — and carries
-Feed, Following and Notifications. **Search is the one destination left**, waiting on the server in
-step 2, and a tab that apologises for itself is the Store's invented add-ons one layer down.
-
-Notifications was the other one, and it shipped — see "The notifications tab, and the tab nobody
-could open" under Shipped. It did **not** ship in the shape proposed here, which is worth recording
-rather than quietly deleting: this section specified a `gphone_blabber_notifications` table private
-to the app, and what was built instead is the generic `gphone_notifications` OS service, keyed on an
-app id. The per-app table would have been the third copy of one idea — Mail and Messages want the
-same rows — and an add-on the SDK has never heard of could not have declared it. Read the proposal
-below as superseded, not as pending.
-
-#### 2. Search and hashtags
-
-Hashtags are render-only today: `tokenizeRichText` emits a `tag` token and `BlabBody` renders it as a
-non-interactive `<span>`. There is no tag storage, so "popular recent hashtags" has nothing to
-aggregate.
-
-- **`taggedTopics(input)`** as a sibling of `mentionedHandles` in `shared/richText.ts`, so what the UI
-  highlights and what the server indexes cannot disagree — the same reasoning that file's header
-  already gives for living in `shared/`.
-- **`gphone_blabber_tags`** child table (`blab_id`, `tag`), written at create time. That buys three
-  things a body scan cannot: an indexed tag feed, a real trending aggregate, and tappable tags.
-- **Tags become tappable in Blabs and DMs at once.** A mention is already a `<button>`; give the tag
-  the same treatment with an `ontag` callback that switches to the Search tab with that tag loaded.
-  One change covers both surfaces, because the DM thread renders bodies through `BlabBody` too. Keep
-  the token discipline exactly as it is — tokens through `{text}`, never an HTML string through
-  `{@html}` (§7). Turning a `<span>` into a `<button>` changes nothing about that.
-- **Search tab**: a `SearchBar` over three server-side searches — accounts by handle or display name,
-  Blabs by body, tags — plus trending shown before anything is typed. Server-side, not
-  `filterByQuery`, which filters an in-memory list that a public feed never fully loads. Every search
-  action needs `paging`; `defineService` throws for a public read without it (§10). While here, fix
-  `SearchBar`'s `use:focus` action, whose body is an empty stub, so the field actually autofocuses.
-
-#### 3. Media, private-surface richness, and moderation
+#### Media, private-surface richness, and moderation
 
 - **The `gphone_media` rename**, below — the prerequisite for everything else in this step. Bundle the
   `gphone_blabber_likes` → `gphone_blabber_ears` rename into the same migration file: doing it while
