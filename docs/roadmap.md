@@ -244,10 +244,12 @@ id and nothing else, so `index.svelte` opened a thread around a `{ id } as Blab`
 rendered it directly: replies loaded above a post with no body, no author and no timestamp. Every
 path that follows a mention hit it — the shade, the toast, and now this tab. The generic `get`
 cannot answer "one row by id": `id` is framework-supplied and so never `clientFilterable`, and a
-public read is paged rather than addressed. A `blabber:blab` action returns one row through the same
+public read is paged rather than addressed. A `blabber:blab` action returned one row through the same
 `findPublicById` the quote cards already use, so a deep-linked Blab and the same Blab in a feed
-cannot disagree about its author, and `status = 'active'` keeps a link from outliving a moderated
-post. A row that is genuinely gone answers `null` and the thread says so, because tapping a stale
+could not disagree about its author, and `status = 'active'` kept a link from outliving a moderated
+post — `blabber:blab` is superseded now by `blabber:view`, which answers the same question plus the
+flattened reply tree in one call, so a reply's own top-level ancestor no longer needs a second
+request. A row that is genuinely gone answers `null` and the thread says so, because tapping a stale
 notification is an ordinary thing to do.
 
 **Unread counts were never loaded at boot.** `loadUnreadCounts` ran only when the shade or an
