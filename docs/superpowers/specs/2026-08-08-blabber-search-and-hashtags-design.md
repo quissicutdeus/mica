@@ -50,12 +50,19 @@ childTables: [
   {
     name: 'gphone_blabber_tags',
     columns: {
-      blab_id: { type: 'int', notNull: true, references: { table: 'gphone_blabber', column: 'id' } },
+      blab_id: {
+        type: 'int',
+        notNull: true,
+        references: { table: 'gphone_blabber', column: 'id' }
+      },
       tag: { type: 'string', length: 32, notNull: true }
     },
-    indexes: [{ name: 'tag', columns: ['tag'] }, { name: 'blab_id', columns: ['blab_id'] }]
+    indexes: [
+      { name: 'tag', columns: ['tag'] },
+      { name: 'blab_id', columns: ['blab_id'] }
+    ]
   }
-]
+];
 ```
 
 Written once at create, from `taggedTopics(body)` — **fixed at creation**. An edit inside the
@@ -197,7 +204,7 @@ existing overlay pattern `follows`/`profile` already use rather than inventing a
   / Tags) + a trending-chip row shown only while the query is empty. No request fires below 2
   characters.
 - **`SearchBar.svelte`** (`sdk/ui/`): `use:focus` is currently an empty stub (`// Optional autofocus
-  could be added here if needed`). Fixed to call `node.focus()` while this feature is in the file.
+could be added here if needed`). Fixed to call `node.focus()` while this feature is in the file.
 - **`BlabDetail.svelte`** (new, replaces `Thread.svelte`'s job — that file is deleted, not kept
   alongside): root Blab, then the flattened paged reply list via `usePagedList`, same `olderAt: 'end'`
   shape a feed uses. Replies render through `BlabRow` with `onopen` omitted.
@@ -241,7 +248,7 @@ E2e (`blabber.spec.ts`):
 Not an afterthought — `docs/roadmap.md`'s own rule (§2.11, "fix the doc in the same change") applies
 here same as it did for the notifications-tab fix:
 
-- **`docs/roadmap.md`**: move Search and hashtags from *Proposed* to *Shipped*, following the same
+- **`docs/roadmap.md`**: move Search and hashtags from _Proposed_ to _Shipped_, following the same
   pattern the notifications-tab entry used — what shipped, and where it differs from what this spec
   or the original proposal said (the `root_id`/flattened-view rework in particular, since that
   wasn't in the roadmap's original sketch at all). Update the "Blabber, next iteration" decisions

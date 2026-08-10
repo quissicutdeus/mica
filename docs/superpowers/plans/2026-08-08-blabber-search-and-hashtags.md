@@ -29,7 +29,7 @@ Playwright, MySQL/MariaDB via oxmysql.
   connection.
 - Definition of done (§9): `pnpm typecheck`, `pnpm test:unit`, `pnpm test:e2e` (this touches
   `web/`), `pnpm format:check`, all passing, before any task is reported complete.
-- Comments explain *why*, never *what* — match the existing file's voice; do not restate the
+- Comments explain _why_, never _what_ — match the existing file's voice; do not restate the
   obvious.
 - The design spec is `docs/superpowers/specs/2026-08-08-blabber-search-and-hashtags-design.md`.
   Where this plan and that spec ever disagree, the spec is the source of intent — flag it rather
@@ -39,42 +39,44 @@ Playwright, MySQL/MariaDB via oxmysql.
 
 ## File Map
 
-| File | Change |
-| --- | --- |
-| `shared/types.ts` | `Blab.root_id?: number \| null` |
-| `shared/richText.ts` | new `taggedTopics()` |
-| `shared/richText.test.ts` | new tests for `taggedTopics` |
-| `server/services/Blabber.ts` | `root_id` schema field + `childTables` tags table; `create` sets `root_id` and inserts tags; new actions `view` (replaces `blab`), `search`, `searchTags`, `byTag`, `trendingTags` |
-| `server/repositories/BlabberRepository.ts` | `findFlattenedPage()` |
-| `server/services/Accounts.ts` | new `search` action |
-| `server/__tests__/blabber.test.ts` | tests for all of the above |
-| `server/__tests__/accountsSearch.test.ts` | new — tests for `accounts:search` |
-| `sql/` | `pnpm generate:sql` regenerates `gphone.sql` (no hand file to write) |
-| `web/src/apps/blabber/store.ts` | `viewBlab`, four search stores, `trendingTags`, `loadTaggedBlabs`; removes `loadBlab`/`loadThread` |
-| `web/src/apps/blabber/store.test.ts` | tests for the above |
-| `web/src/apps/blabber/components/BlabDetail.svelte` | new — replaces `Thread.svelte` |
-| `web/src/apps/blabber/components/Thread.svelte` | deleted |
-| `web/src/apps/blabber/components/BlabBody.svelte` | tag `<span>` → `<button>`, `ontag` prop |
-| `web/src/apps/blabber/components/BlabRow.svelte` | thread `ontag` through to `BlabBody` |
-| `web/src/apps/blabber/components/Messages.svelte` | thread `ontag` through to `BlabBody` |
-| `web/src/apps/blabber/components/TaggedFeed.svelte` | new — the screen a tag tap lands on |
-| `web/src/apps/blabber/components/Search.svelte` | new — the Search tab |
-| `web/src/apps/blabber/index.svelte` | drop `threads` stack for `activeBlabId`; wire `BlabDetail`, `TaggedFeed`, `Search`; fourth `TabBar` entry; `useAppLevels` rung simplification |
-| `web/src/sdk/ui/SearchBar.svelte` | fix `use:focus` stub |
-| `web/src/nui/mocks/registry.ts` | mocks for every new/changed action |
-| `web/e2e/apps/blabber.spec.ts` | new e2e cases |
-| `docs/roadmap.md` | Search/hashtags moves *Proposed* → *Shipped* |
-| `web/README.md`, `README.md` | checked per spec's "Docs to update" section, edited if stale |
+| File                                                | Change                                                                                                                                                                             |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shared/types.ts`                                   | `Blab.root_id?: number \| null`                                                                                                                                                    |
+| `shared/richText.ts`                                | new `taggedTopics()`                                                                                                                                                               |
+| `shared/richText.test.ts`                           | new tests for `taggedTopics`                                                                                                                                                       |
+| `server/services/Blabber.ts`                        | `root_id` schema field + `childTables` tags table; `create` sets `root_id` and inserts tags; new actions `view` (replaces `blab`), `search`, `searchTags`, `byTag`, `trendingTags` |
+| `server/repositories/BlabberRepository.ts`          | `findFlattenedPage()`                                                                                                                                                              |
+| `server/services/Accounts.ts`                       | new `search` action                                                                                                                                                                |
+| `server/__tests__/blabber.test.ts`                  | tests for all of the above                                                                                                                                                         |
+| `server/__tests__/accountsSearch.test.ts`           | new — tests for `accounts:search`                                                                                                                                                  |
+| `sql/`                                              | `pnpm generate:sql` regenerates `gphone.sql` (no hand file to write)                                                                                                               |
+| `web/src/apps/blabber/store.ts`                     | `viewBlab`, four search stores, `trendingTags`, `loadTaggedBlabs`; removes `loadBlab`/`loadThread`                                                                                 |
+| `web/src/apps/blabber/store.test.ts`                | tests for the above                                                                                                                                                                |
+| `web/src/apps/blabber/components/BlabDetail.svelte` | new — replaces `Thread.svelte`                                                                                                                                                     |
+| `web/src/apps/blabber/components/Thread.svelte`     | deleted                                                                                                                                                                            |
+| `web/src/apps/blabber/components/BlabBody.svelte`   | tag `<span>` → `<button>`, `ontag` prop                                                                                                                                            |
+| `web/src/apps/blabber/components/BlabRow.svelte`    | thread `ontag` through to `BlabBody`                                                                                                                                               |
+| `web/src/apps/blabber/components/Messages.svelte`   | thread `ontag` through to `BlabBody`                                                                                                                                               |
+| `web/src/apps/blabber/components/TaggedFeed.svelte` | new — the screen a tag tap lands on                                                                                                                                                |
+| `web/src/apps/blabber/components/Search.svelte`     | new — the Search tab                                                                                                                                                               |
+| `web/src/apps/blabber/index.svelte`                 | drop `threads` stack for `activeBlabId`; wire `BlabDetail`, `TaggedFeed`, `Search`; fourth `TabBar` entry; `useAppLevels` rung simplification                                      |
+| `web/src/sdk/ui/SearchBar.svelte`                   | fix `use:focus` stub                                                                                                                                                               |
+| `web/src/nui/mocks/registry.ts`                     | mocks for every new/changed action                                                                                                                                                 |
+| `web/e2e/apps/blabber.spec.ts`                      | new e2e cases                                                                                                                                                                      |
+| `docs/roadmap.md`                                   | Search/hashtags moves _Proposed_ → _Shipped_                                                                                                                                       |
+| `web/README.md`, `README.md`                        | checked per spec's "Docs to update" section, edited if stale                                                                                                                       |
 
 ---
 
 ## Task 1: `taggedTopics()` in `shared/richText.ts`
 
 **Files:**
+
 - Modify: `shared/richText.ts`
 - Test: `shared/richText.test.ts` (new file — none exists yet for this module)
 
 **Interfaces:**
+
 - Produces: `taggedTopics(input: string): string[]` — lowercased, deduplicated tag values (no `#`),
   in first-appearance order. Consumed by Task 3 (`create`'s tag-insert) and by nothing else.
 
@@ -162,11 +164,13 @@ git commit -m "feat(blabber): add taggedTopics, a sibling of mentionedHandles"
 ## Task 2: `root_id` on `gphone_blabber` — schema, type, and `create`
 
 **Files:**
+
 - Modify: `shared/types.ts` (`Blab` interface)
 - Modify: `server/services/Blabber.ts` (schema + `create` handler)
 - Test: `server/__tests__/blabber.test.ts`
 
 **Interfaces:**
+
 - Produces: `Blab.root_id: number | null | undefined` (optional, like every other hydrated/derived
   field on this type). Consumed by Task 4 (`findFlattenedPage`) and Task 5 (`blabber:view`).
 - Consumes: nothing new — `visibleTarget` (existing, `server/services/Blabber.ts:233`) already
@@ -272,37 +276,37 @@ In `server/services/Blabber.ts`'s `create` handler (currently lines 242–274), 
 resolution reads:
 
 ```ts
-  const replyTo =
-    body.reply_to === undefined || body.reply_to === null
-      ? null
-      : (await visibleTarget(body.reply_to, 'reply target')).id;
+const replyTo =
+  body.reply_to === undefined || body.reply_to === null
+    ? null
+    : (await visibleTarget(body.reply_to, 'reply target')).id;
 ```
 
 Change this so the parent row is held (not just its `.id`), and derive `rootId` from it:
 
 ```ts
-  const replyParent =
-    body.reply_to === undefined || body.reply_to === null
-      ? null
-      : await visibleTarget(body.reply_to, 'reply target');
-  const replyTo = replyParent?.id ?? null;
-  // Inherited, never walked: the parent is either top-level (root_id null, so it becomes the
-  // root) or itself a reply (root_id already the true top-level ancestor, so it passes through
-  // unchanged). Either way this is one lookup already in hand, not a second query.
-  const rootId = replyParent === null ? null : (replyParent.root_id ?? replyParent.id);
+const replyParent =
+  body.reply_to === undefined || body.reply_to === null
+    ? null
+    : await visibleTarget(body.reply_to, 'reply target');
+const replyTo = replyParent?.id ?? null;
+// Inherited, never walked: the parent is either top-level (root_id null, so it becomes the
+// root) or itself a reply (root_id already the true top-level ancestor, so it passes through
+// unchanged). Either way this is one lookup already in hand, not a second query.
+const rootId = replyParent === null ? null : (replyParent.root_id ?? replyParent.id);
 ```
 
 And in the `repo.create({...})` call a few lines down, add `root_id: rootId`:
 
 ```ts
-    const id = await repo.create({
-      citizenid,
-      account_id: account.id,
-      body: text || null,
-      reply_to: replyTo,
-      mouth_of: mouthOf,
-      root_id: rootId
-    } as Partial<Blab>);
+const id = await repo.create({
+  citizenid,
+  account_id: account.id,
+  body: text || null,
+  reply_to: replyTo,
+  mouth_of: mouthOf,
+  root_id: rootId
+} as Partial<Blab>);
 ```
 
 - [ ] **Step 6: Run test to verify it passes**
@@ -334,10 +338,12 @@ git commit -m "feat(blabber): add root_id, inherited at create, for O(1) thread 
 ## Task 3: `gphone_blabber_tags` child table, written at create
 
 **Files:**
+
 - Modify: `server/services/Blabber.ts` (childTables + tag insert in `create`)
 - Test: `server/__tests__/blabber.test.ts`
 
 **Interfaces:**
+
 - Consumes: `taggedTopics` from Task 1.
 - Produces: the `gphone_blabber_tags` table (`blab_id`, `tag`), populated at create. Consumed by
   Task 6 (`blabber:searchTags`), Task 7 (`blabber:byTag`), Task 8 (`blabber:trendingTags`).
@@ -430,25 +436,25 @@ In the `create` handler, after `const id = await repo.create({...})` succeeds an
 `notifyMentions` call, insert:
 
 ```ts
-    /**
-     * Fixed at creation, never re-extracted on edit — the 15-minute edit window (§10) is framed
-     * as a typo fix, not a rewrite, and re-indexing on every edit would be work for a case this
-     * app doesn't have.
-     *
-     * Never allowed to fail the post, same discipline as the mention notification just below:
-     * the Blab is committed either way.
-     */
-    const tags = taggedTopics(text).slice(0, 20);
-    if (tags.length > 0) {
-      void Promise.all(
-        tags.map((tag) =>
-          Database.insert('INSERT INTO `gphone_blabber_tags` (`blab_id`, `tag`) VALUES (?, ?)', [
-            id,
-            tag
-          ])
-        )
-      ).catch((error) => console.error('[blabber] Tag indexing failed for', id, error));
-    }
+/**
+ * Fixed at creation, never re-extracted on edit — the 15-minute edit window (§10) is framed
+ * as a typo fix, not a rewrite, and re-indexing on every edit would be work for a case this
+ * app doesn't have.
+ *
+ * Never allowed to fail the post, same discipline as the mention notification just below:
+ * the Blab is committed either way.
+ */
+const tags = taggedTopics(text).slice(0, 20);
+if (tags.length > 0) {
+  void Promise.all(
+    tags.map((tag) =>
+      Database.insert('INSERT INTO `gphone_blabber_tags` (`blab_id`, `tag`) VALUES (?, ?)', [
+        id,
+        tag
+      ])
+    )
+  ).catch((error) => console.error('[blabber] Tag indexing failed for', id, error));
+}
 ```
 
 - [ ] **Step 5: Run test to verify it passes**
@@ -475,12 +481,14 @@ git commit -m "feat(blabber): index hashtags into gphone_blabber_tags at create"
 ## Task 4: `BlabberRepository.findFlattenedPage`
 
 **Files:**
+
 - Modify: `server/repositories/BlabberRepository.ts`
 - Test: new file `server/__tests__/blabberRepository.test.ts`
 
 **Interfaces:**
+
 - Produces: `findFlattenedPage(rootId: number, opts: { limit: number; cursor: number | null;
-  anchorId: number | null }): Promise<{ rows: Blab[]; nextCursor: number | null }>`. Consumed by
+anchorId: number | null }): Promise<{ rows: Blab[]; nextCursor: number | null }>`. Consumed by
   Task 5 (`blabber:view`).
 
 This is the query engine behind "flatten a subtree" and the anchor-centered window from the spec.
@@ -578,7 +586,7 @@ describe('findFlattenedPage', () => {
 ```
 
 **Note on the anchor test:** the exact row ids in the fixtures are illustrative — what the test
-must pin down is the *shape*: two queries (newer-ascending, anchor-and-older-descending), merged
+must pin down is the _shape_: two queries (newer-ascending, anchor-and-older-descending), merged
 back into one `id DESC` list with the anchor row present. Adjust the mocked return values if the
 implementation's exact `LIMIT` split (Step 3 below) produces a different split point than assumed
 here; the assertion that matters is `page.rows` ending up in descending order with `100` present.
@@ -677,10 +685,12 @@ git commit -m "feat(blabber): BlabberRepository.findFlattenedPage, with anchor w
 ## Task 5: `blabber:view` — replaces `blab` and the ad-hoc `get{reply_to}` call
 
 **Files:**
+
 - Modify: `server/services/Blabber.ts`
 - Test: `server/__tests__/blabber.test.ts`
 
 **Interfaces:**
+
 - Consumes: `repo.findFlattenedPage` (Task 4), `requirePositiveInt`, `pageBounds`.
 - Produces: server action `blabber:view`, payload `{ id, cursor?, limit?, anchorId? }`, reply
   `{ root: Blab | null, replies: Blab[], nextCursor: number | null }`.
@@ -835,10 +845,12 @@ git commit -m "feat(blabber): blabber:view — one flattened screen for any Blab
 ## Task 6: `accounts:search`
 
 **Files:**
+
 - Modify: `server/services/Accounts.ts`
 - Test: new file `server/__tests__/accountsSearch.test.ts`
 
 **Interfaces:**
+
 - Produces: server action `accounts:search`, payload `{ app, q, cursor?, limit? }`, reply
   `{ rows: Account[], nextCursor: number | null }`, `citizenid` never in a row (per `publicColumns`).
 
@@ -991,10 +1003,12 @@ git commit -m "feat(accounts): add search — the People segment of Blabber's Se
 ## Task 7: `blabber:search` (body search, includes replies)
 
 **Files:**
+
 - Modify: `server/services/Blabber.ts`
 - Test: `server/__tests__/blabber.test.ts`
 
 **Interfaces:**
+
 - Produces: server action `blabber:search`, payload `{ q, cursor?, limit? }`, reply
   `{ rows: Blab[], nextCursor: number | null }`. Unlike the feed/profile, no `reply_to` filter.
 
@@ -1094,13 +1108,15 @@ git commit -m "feat(blabber): add blabber:search — body search including repli
 ## Task 8: `blabber:searchTags`, `blabber:byTag`, `blabber:trendingTags`
 
 **Files:**
+
 - Modify: `server/services/Blabber.ts`
 - Test: `server/__tests__/blabber.test.ts`
 
 **Interfaces:**
+
 - Produces:
   - `blabber:searchTags` — `{ q, cursor?, limit? }` → `{ rows: { tag: string; uses: number }[],
-    nextCursor: null }` (small, prefix-matched, not paged beyond one page — see implementation).
+nextCursor: null }` (small, prefix-matched, not paged beyond one page — see implementation).
   - `blabber:byTag` — `{ tag, cursor?, limit? }` → `{ rows: Blab[], nextCursor: number | null }`.
   - `blabber:trendingTags` — no input → `{ tag: string; uses: number }[]`, top 10, 48h window.
 
@@ -1199,9 +1215,7 @@ app.registerEvent('byTag', async (source, cbId, data) => {
   if (!tag) throw new Error('A tag is required.');
 
   const { limit, cursor } = pageBounds(body, paging);
-  const projection = blabber.resolved.publicColumns
-    .map((column) => `b.\`${column}\``)
-    .join(', ');
+  const projection = blabber.resolved.publicColumns.map((column) => `b.\`${column}\``).join(', ');
   const cursorClause = cursor === null ? '' : ' AND b.`id` < ?';
 
   const params: unknown[] = [tag.toLowerCase()];
@@ -1286,16 +1300,18 @@ an earlier task's regeneration was stale; commit the corrected file with a note 
 ## Task 10: Client store — `viewBlab`, search stores, `trendingTags`, `loadTaggedBlabs`
 
 **Files:**
+
 - Modify: `web/src/apps/blabber/store.ts`
 - Test: `web/src/apps/blabber/store.test.ts`
 
 **Interfaces:**
+
 - Removes: `loadBlab`, `loadThread` (both now folded into `viewBlab`).
 - Produces (all exported from `useBlabber()`):
   - `viewBlab(id: number, opts?: { anchorId?: number }): Promise<{ root: Blab | null; replies:
-    Blab[]; nextCursor: number | null }>`
+Blab[]; nextCursor: number | null }>`
   - `loadMoreReplies(rootId: number, cursor: number): Promise<{ rows: Blab[]; nextCursor: number |
-    null }>` — a plain continuation call for "load older," separate from `viewBlab` because it
+null }>` — a plain continuation call for "load older," separate from `viewBlab` because it
     never carries an anchor.
   - `accountResults: PagedStore<Account>`, `searchAccounts(q: string): Promise<void>`
   - `blabResults: PagedStore<Blab>`, `searchBlabs(q: string): Promise<void>`
@@ -1450,14 +1466,19 @@ export const viewBlab = async (
   id: number,
   opts: { anchorId?: number } = {}
 ): Promise<{ root: Blab | null; replies: Blab[]; nextCursor: number | null }> =>
-  await blabberService().call('view', { id, ...opts }, { root: null, replies: [], nextCursor: null });
+  await blabberService().call(
+    'view',
+    { id, ...opts },
+    { root: null, replies: [], nextCursor: null }
+  );
 
 /** A plain continuation page — "load older" from an already-open flattened view, no anchor. */
 export const loadMoreReplies = async (
   rootId: number,
   cursor: number
 ): Promise<{ rows: Blab[]; nextCursor: number | null }> =>
-  await blabberService().call('view', { id: rootId, cursor }, { root: null, replies: [], nextCursor: null })
+  await blabberService()
+    .call('view', { id: rootId, cursor }, { root: null, replies: [], nextCursor: null })
     .then((reply) => ({ rows: reply.replies, nextCursor: reply.nextCursor }));
 ```
 
@@ -1487,11 +1508,7 @@ export const searchTags = async (q: string): Promise<void> => {
 /** A bounded snapshot loaded once when the Search tab opens, not paged. */
 export const trendingTags = writable<{ tag: string; uses: number }[]>([]);
 export const loadTrendingTags = async (): Promise<void> => {
-  const rows = await blabberService().call<{ tag: string; uses: number }[]>(
-    'trendingTags',
-    {},
-    []
-  );
+  const rows = await blabberService().call<{ tag: string; uses: number }[]>('trendingTags', {}, []);
   trendingTags.set(rows);
 };
 
@@ -1549,6 +1566,7 @@ git commit -m "feat(blabber): store support for viewBlab and the four search kin
 ## Task 11: `BlabDetail.svelte` — replaces `Thread.svelte`
 
 **Files:**
+
 - Create: `web/src/apps/blabber/components/BlabDetail.svelte`
 - Delete: `web/src/apps/blabber/components/Thread.svelte`
 - Test: covered by Task 15's e2e cases (this component has no store logic of its own worth a unit
@@ -1556,9 +1574,10 @@ git commit -m "feat(blabber): store support for viewBlab and the four search kin
   exercises end to end; matches how `Thread.svelte` itself had no dedicated unit test file).
 
 **Interfaces:**
+
 - Consumes: `viewBlab`, `loadMoreReplies` (Task 10), `usePagedList` (existing SDK hook).
 - Produces: a component with props `{ blabId: number; anchorId?: number; handle?: string; busy?:
-  boolean; onhandle?, ontag?, onmouth?, onlike? }`. No `onopen` prop — there is nowhere further to
+boolean; onhandle?, ontag?, onmouth?, onlike? }`. No `onopen` prop — there is nowhere further to
   navigate to.
 
 - [ ] **Step 1: Delete `Thread.svelte`**
@@ -1750,9 +1769,11 @@ git commit -m "feat(blabber): BlabDetail — one flattened screen, replacing Thr
 ## Task 12: `index.svelte` — collapse the thread stack to `activeBlabId`
 
 **Files:**
+
 - Modify: `web/src/apps/blabber/index.svelte`
 
 **Interfaces:**
+
 - Consumes: `BlabDetail` (Task 11, minus `ontag` for now — added in Task 13).
 - Removes: `threads: Blab[]` state, the two thread-related `useAppLevels` rungs (collapsed to one),
   `Thread` import.
@@ -1762,28 +1783,28 @@ git commit -m "feat(blabber): BlabDetail — one flattened screen, replacing Thr
 Replace (currently lines 129–136):
 
 ```ts
-  /**
-   * The thread stack, not a single value.
-   *
-   * Opening a reply's own thread pushes onto it, so Back walks out one level at a time instead
-   * of jumping to the feed. Replies nest through one column, so the depth is whatever the
-   * conversation is.
-   */
-  let threads = $state<Blab[]>([]);
+/**
+ * The thread stack, not a single value.
+ *
+ * Opening a reply's own thread pushes onto it, so Back walks out one level at a time instead
+ * of jumping to the feed. Replies nest through one column, so the depth is whatever the
+ * conversation is.
+ */
+let threads = $state<Blab[]>([]);
 ```
 
 with:
 
 ```ts
-  /**
-   * Which Blab is open, or null. One value rather than a stack: `BlabDetail` flattens the whole
-   * reply tree into one screen (Task 11), so there is no second level to push onto — opening a
-   * reply from inside an already-open Blab is not a thing that happens any more (§ design spec,
-   * "Navigation: one screen, not a stack").
-   */
-  let activeBlabId = $state<number | null>(null);
-  /** Set only for a reply reached via search — scrolls that row into view once it renders. */
-  let activeAnchorId = $state<number | undefined>(undefined);
+/**
+ * Which Blab is open, or null. One value rather than a stack: `BlabDetail` flattens the whole
+ * reply tree into one screen (Task 11), so there is no second level to push onto — opening a
+ * reply from inside an already-open Blab is not a thing that happens any more (§ design spec,
+ * "Navigation: one screen, not a stack").
+ */
+let activeBlabId = $state<number | null>(null);
+/** Set only for a reply reached via search — scrolls that row into view once it renders. */
+let activeAnchorId = $state<number | undefined>(undefined);
 ```
 
 - [ ] **Step 2: Replace `openThread`**
@@ -1791,20 +1812,20 @@ with:
 Replace (currently):
 
 ```ts
-  const openThread = (blab: Blab) => {
-    threads = view === 'thread' ? [...threads, blab] : [blab];
-    view = 'thread';
-  };
+const openThread = (blab: Blab) => {
+  threads = view === 'thread' ? [...threads, blab] : [blab];
+  view = 'thread';
+};
 ```
 
 with:
 
 ```ts
-  const openBlab = (id: number, anchorId?: number) => {
-    activeBlabId = id;
-    activeAnchorId = anchorId;
-    view = 'thread';
-  };
+const openBlab = (id: number, anchorId?: number) => {
+  activeBlabId = id;
+  activeAnchorId = anchorId;
+  view = 'thread';
+};
 ```
 
 Every call site that referenced `openThread` now calls `openBlab(blab.id)` instead of
@@ -1921,6 +1942,7 @@ git commit -m "feat(blabber): collapse thread navigation to a single activeBlabI
 ## Task 13: Tag taps — `BlabBody`, `BlabRow`, `BlabDetail`, `Messages`, `TaggedFeed`
 
 **Files:**
+
 - Modify: `web/src/apps/blabber/components/BlabBody.svelte`
 - Modify: `web/src/apps/blabber/components/BlabRow.svelte`
 - Modify: `web/src/apps/blabber/components/BlabDetail.svelte` (add the `ontag` prop deferred from
@@ -1931,6 +1953,7 @@ git commit -m "feat(blabber): collapse thread navigation to a single activeBlabI
   screen)
 
 **Interfaces:**
+
 - Consumes: `taggedBlabs`, `loadTaggedBlabs` (Task 10).
 - Produces: `ontag(tag: string): void` threaded the same path `onhandle` already takes.
 
@@ -1980,39 +2003,39 @@ Add `ontag` to the props destructuring (alongside `onhandle`) and pass it to bot
 sites (the row's own body and the mouthed-quote body):
 
 ```ts
-  let {
-    blab,
-    editable = false,
-    stats,
-    onhandle,
-    ontag,
-    onedit,
-    ondelete,
-    onreply,
-    onmouth,
-    onlike,
-    onopen
-  }: {
-    blab: Blab;
-    editable?: boolean;
-    stats?: BlabEngagement;
-    onhandle?: (handle: string) => void;
-    ontag?: (tag: string) => void;
-    onedit?: (blab: Blab) => void;
-    ondelete?: (blab: Blab) => void;
-    onreply?: (blab: Blab) => void;
-    onmouth?: (blab: Blab) => void;
-    onlike?: (blab: Blab) => void;
-    onopen?: (blab: Blab) => void;
-  } = $props();
+let {
+  blab,
+  editable = false,
+  stats,
+  onhandle,
+  ontag,
+  onedit,
+  ondelete,
+  onreply,
+  onmouth,
+  onlike,
+  onopen
+}: {
+  blab: Blab;
+  editable?: boolean;
+  stats?: BlabEngagement;
+  onhandle?: (handle: string) => void;
+  ontag?: (tag: string) => void;
+  onedit?: (blab: Blab) => void;
+  ondelete?: (blab: Blab) => void;
+  onreply?: (blab: Blab) => void;
+  onmouth?: (blab: Blab) => void;
+  onlike?: (blab: Blab) => void;
+  onopen?: (blab: Blab) => void;
+} = $props();
 ```
 
 ```svelte
-        <BlabBody body={blab.body ?? ''} {onhandle} {ontag} />
+<BlabBody body={blab.body ?? ''} {onhandle} {ontag} />
 ```
 
 ```svelte
-        <BlabBody body={blab.mouthed.body ?? ''} {onhandle} {ontag} />
+<BlabBody body={blab.mouthed.body ?? ''} {onhandle} {ontag} />
 ```
 
 - [ ] **Step 3: `BlabDetail.svelte` — add `ontag` prop and thread it**
@@ -2125,18 +2148,18 @@ flows through this file.
 Add `'tag'` to the `view` union (currently `'feed' | 'profile' | 'thread' | 'dms' | 'follows'`):
 
 ```ts
-  let view = $state<'feed' | 'profile' | 'thread' | 'dms' | 'follows' | 'tag'>('feed');
+let view = $state<'feed' | 'profile' | 'thread' | 'dms' | 'follows' | 'tag'>('feed');
 ```
 
 Add a tag-open helper near `openBlab`/`openProfile`:
 
 ```ts
-  let activeTag = $state<string | null>(null);
+let activeTag = $state<string | null>(null);
 
-  const openTag = (tag: string) => {
-    activeTag = tag;
-    view = 'tag';
-  };
+const openTag = (tag: string) => {
+  activeTag = tag;
+  view = 'tag';
+};
 ```
 
 Add a `useAppLevels` rung for it — same shape as the `profile` rung, placed alongside it:
@@ -2180,6 +2203,7 @@ git commit -m "feat(blabber): make hashtags tappable, everywhere a Blab body ren
 ## Task 14: `SearchBar.svelte` — fix the `use:focus` stub
 
 **Files:**
+
 - Modify: `web/src/sdk/ui/SearchBar.svelte`
 
 - [ ] **Step 1: Fix it**
@@ -2187,17 +2211,17 @@ git commit -m "feat(blabber): make hashtags tappable, everywhere a Blab body ren
 Replace:
 
 ```ts
-  const focus = (node: HTMLInputElement) => {
-    // Optional autofocus could be added here if needed
-  };
+const focus = (node: HTMLInputElement) => {
+  // Optional autofocus could be added here if needed
+};
 ```
 
 with:
 
 ```ts
-  const focus = (node: HTMLInputElement) => {
-    node.focus();
-  };
+const focus = (node: HTMLInputElement) => {
+  node.focus();
+};
 ```
 
 - [ ] **Step 2: Typecheck**
@@ -2216,10 +2240,12 @@ git commit -m "fix(sdk): SearchBar's use:focus actually focuses the field"
 ## Task 15: `Search.svelte` — the fourth tab
 
 **Files:**
+
 - Create: `web/src/apps/blabber/components/Search.svelte`
 - Modify: `web/src/apps/blabber/index.svelte`
 
 **Interfaces:**
+
 - Consumes: `accountResults`/`searchAccounts`, `blabResults`/`searchBlabs`, `tagResults`/
   `searchTags`, `trendingTags`/`loadTrendingTags` (Task 10); `SearchBar`, `SegmentedControl`
   (existing SDK exports).
@@ -2300,7 +2326,10 @@ git commit -m "fix(sdk): SearchBar's use:focus actually focuses the field"
   <div class="flex-1 overflow-y-auto pb-20">
     {#if showingTrending}
       {#if $trendingTags.length === 0}
-        <EmptyState title="Nothing trending yet" description="Check back once people start posting." />
+        <EmptyState
+          title="Nothing trending yet"
+          description="Check back once people start posting."
+        />
       {:else}
         <div class="flex flex-wrap gap-2 p-3">
           {#each $trendingTags as t (t.tag)}
@@ -2374,8 +2403,8 @@ wrong as written; it must be a separate subscription, matching how `index.svelte
 before treating this task as done:
 
 ```ts
-  const accountsLoaded = accountResults.loaded;
-  const blabsLoaded = blabResults.loaded;
+const accountsLoaded = accountResults.loaded;
+const blabsLoaded = blabResults.loaded;
 ```
 
 and use `$accountsLoaded` / `$blabsLoaded` in the template instead of `$accountResults.loaded` /
@@ -2386,14 +2415,14 @@ and use `$accountsLoaded` / `$blabsLoaded` in the template instead of `$accountR
 Extend the `tab` union:
 
 ```ts
-  let tab = $state<'feed' | 'following' | 'notifications' | 'search'>('feed');
+let tab = $state<'feed' | 'following' | 'notifications' | 'search'>('feed');
 ```
 
 Add `'search'` to `selectTab`'s guard:
 
 ```ts
-    if (next !== 'feed' && next !== 'following' && next !== 'notifications' && next !== 'search')
-      return;
+if (next !== 'feed' && next !== 'following' && next !== 'notifications' && next !== 'search')
+  return;
 ```
 
 Add a fourth `TabBar` option (a `SearchIcon` needs to exist in the SDK icon set — check
@@ -2417,8 +2446,8 @@ Update the back-rung title logic (currently a two-way ternary for `notifications
 small lookup covering all three non-default tabs:
 
 ```ts
-        title: () =>
-          tab === 'notifications' ? 'Notifications' : tab === 'search' ? 'Search' : 'Following'
+title: () =>
+  tab === 'notifications' ? 'Notifications' : tab === 'search' ? 'Search' : 'Following';
 ```
 
 - [ ] **Step 3: Write the client store test for the 2-character gate**
@@ -2445,6 +2474,7 @@ git commit -m "feat(blabber): Search tab — people, Blabs, tags, and trending"
 ## Task 16: Mock registry — every new/changed action
 
 **Files:**
+
 - Modify: `web/src/nui/mocks/registry.ts`
 
 **Interfaces:** none new — this task only makes `pnpm dev` and Playwright agree with the server
@@ -2509,9 +2539,8 @@ top-level posts (ids 3 and 2), and the appropriate top-level id for the replies 
 In `'blabber:create'`'s handler, compute `root_id` the same way the server does:
 
 ```ts
-    const replyParent =
-      reply_to != null ? mockBlabs.find((b) => b.id === reply_to) : undefined;
-    const rootId = replyParent ? (replyParent.root_id ?? replyParent.id) : null;
+const replyParent = reply_to != null ? mockBlabs.find((b) => b.id === reply_to) : undefined;
+const rootId = replyParent ? (replyParent.root_id ?? replyParent.id) : null;
 ```
 
 and add `root_id: rootId` to the `created` object.
@@ -2600,7 +2629,7 @@ Also extend `'blabber:create'`'s handler to add the newly-created Blab's tags to
 the server's create-time indexing:
 
 ```ts
-    mockBlabTags.set(created.id, taggedTopics(created.body ?? ''));
+mockBlabTags.set(created.id, taggedTopics(created.body ?? ''));
 ```
 
 - [ ] **Step 2: Typecheck and a manual `pnpm dev` smoke check**
@@ -2624,6 +2653,7 @@ git commit -m "feat(blabber): mock every new/changed action — view, search, ta
 ## Task 17: E2e — flattened view, tags, search
 
 **Files:**
+
 - Modify: `web/e2e/apps/blabber.spec.ts`
 
 - [ ] **Step 1: Fix the pre-existing "opens a thread and replies to a reply" case**
@@ -2738,16 +2768,17 @@ git commit -m "test(blabber): e2e coverage for the flattened view, tags, and Sea
 ## Task 18: Docs — `docs/roadmap.md`, `web/README.md`, `README.md`
 
 **Files:**
+
 - Modify: `docs/roadmap.md`
 - Modify: `web/README.md` (only if it enumerates something now stale)
 - Modify: `README.md` (only if it enumerates something now stale)
 
-- [ ] **Step 1: Move Search and hashtags from *Proposed* to *Shipped* in `docs/roadmap.md`**
+- [ ] **Step 1: Move Search and hashtags from _Proposed_ to _Shipped_ in `docs/roadmap.md`**
 
-Read the file's current *Proposed* section for "Search and hashtags" (renumbered to §1/§2 by the
-earlier notifications-tab session) and its *Shipped* section's "Blabber — short public posts" entry
+Read the file's current _Proposed_ section for "Search and hashtags" (renumbered to §1/§2 by the
+earlier notifications-tab session) and its _Shipped_ section's "Blabber — short public posts" entry
 before writing anything — the exact heading text and surrounding structure may have shifted since
-this plan was written. Write a new subsection under *Shipped*, sibling to "The notifications tab,
+this plan was written. Write a new subsection under _Shipped_, sibling to "The notifications tab,
 and the tab nobody could open," following that entry's own pattern: what shipped, and where it
 differs from what was proposed. Specifically call out:
 
