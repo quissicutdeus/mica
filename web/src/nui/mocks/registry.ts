@@ -783,12 +783,27 @@ const mockRegistry: Record<string, MockHandler> = {
 
     let windowed = subtree;
     if (cursor === undefined && anchorId !== undefined) {
-      const newer = subtree
+      // Mirrors `BlabberRepository.findFlattenedPage`'s anchor branch exactly: `newer` is read
+      // ascending and capped at half the page so the window centers on the anchor instead of
+      // starting from the newest reply, then reversed once back to `id DESC` for the merge.
+      // `older`'s cap includes the `+1` probe row `hasMore` below reads, same as the real query's
+      // `LIMIT ?` with `limit - newer.length + 1`.
+      //
+      // Worked example, matching `subtree = [10,9,8,7,6,5,4,3,2,1]`, `anchorId = 5`, `limit = 4`:
+      //   half = ceil(4/2) = 2
+      //   newerAsc  = subtree>5 reversed to ASC = [6,7,8,9,10], sliced to half  -> [6,7]
+      //   newerDesc = newerAsc reversed back to DESC                            -> [7,6]
+      //   older     = subtree<=5, sliced to (4 - 2 + 1 = 3)                     -> [5,4,3]
+      //   windowed  = [7,6,5,4,3]  -> page = windowed.slice(0,4) = [7,6,5,4], nextCursor = 4
+      const half = Math.ceil(limit / 2);
+      const newerAsc = subtree
         .filter((b) => b.id > anchorId)
         .slice()
-        .reverse();
-      const older = subtree.filter((b) => b.id <= anchorId);
-      windowed = [...newer.slice().reverse(), ...older];
+        .reverse()
+        .slice(0, half);
+      const newerDesc = newerAsc.slice().reverse();
+      const older = subtree.filter((b) => b.id <= anchorId).slice(0, limit - newerDesc.length + 1);
+      windowed = [...newerDesc, ...older];
     } else if (cursor !== undefined) {
       windowed = subtree.filter((b) => b.id < cursor);
     }
@@ -858,7 +873,9 @@ const mockRegistry: Record<string, MockHandler> = {
     const rows = [...counts.entries()]
       .filter(([tag]) => tag.startsWith(q.toLowerCase()))
       .map(([tag, uses]) => ({ tag, uses }))
-      .sort((a, b) => b.uses - a.uses);
+      .sort((a, b) => b.uses - a.uses)
+      // Matches the real query's `LIMIT 20` — a bounded dropdown, not a full ranking.
+      .slice(0, 20);
     return { rows, nextCursor: null };
   },
   /**
@@ -891,10 +908,18 @@ const mockRegistry: Record<string, MockHandler> = {
    * A bounded snapshot, not a list a player pages through — no cursor, matching the real
    * server's un-paged top-10. Recomputed per call rather than cached, so it can never drift from
    * `mockBlabTags` the way a denormalized count could.
+   *
+   * Windowed to the last 48 hours, matching the real server's `WHERE b.created_at > NOW() -
+   * INTERVAL 48 HOUR`. Every fixture `created_at` predates that window, so — correctly, matching
+   * what a real database would answer against this same data — this returns nothing until a
+   * Blab is created during the session.
    */
   'blabber:trendingTags': () => {
+    const cutoff = Date.now() - 48 * 60 * 60 * 1000;
     const counts = new Map<string, number>();
-    for (const [, tags] of mockBlabTags) {
+    for (const [id, tags] of mockBlabTags) {
+      const blab = mockBlabs.find((b) => b.id === id && b.status === 'active');
+      if (!blab || new Date(blab.created_at).getTime() <= cutoff) continue;
       for (const tag of tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
     }
     return [...counts.entries()]
