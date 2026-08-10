@@ -754,3 +754,36 @@ describe('the Following feed', () => {
     expect(dbMock.query).not.toHaveBeenCalled();
   });
 });
+
+describe('blabber:search', () => {
+  it('matches body text, replies included', async () => {
+    dbMock.query
+      .mockResolvedValueOnce([
+        blab({ id: 8, account_id: 1, body: 'the traffic here is unreal', reply_to: 3 })
+      ])
+      .mockResolvedValueOnce([author(1, 'ada')]);
+
+    const reply = await call('search', { q: 'traffic' });
+
+    expect(reply.rows).toHaveLength(1);
+    expect(reply.rows[0]).toMatchObject({ id: 8, reply_to: 3, handle: 'ada' });
+  });
+
+  it('binds the query rather than interpolating it', async () => {
+    await call('search', { q: "x' OR '1'='1" });
+
+    const [sql, params] = dbMock.query.mock.calls[0];
+    expect(String(sql)).not.toContain("OR '1'='1");
+    expect(params).toContain(`%x' OR '1'='1%`);
+  });
+
+  it('never returns an author citizenid', async () => {
+    dbMock.query.mockResolvedValueOnce([blab({ id: 8 })]).mockResolvedValueOnce([author(1, 'ada')]);
+
+    await call('search', { q: 'anything' });
+
+    for (const [sql] of dbMock.query.mock.calls) {
+      expect(String(sql)).not.toContain('citizenid');
+    }
+  });
+});

@@ -603,6 +603,37 @@ app.registerEvent('view', async (source, cbId, data) => {
   };
 });
 
+/**
+ * Body search. Unlike the feed and Following, replies are included: a search answers "what was
+ * said," not "what was said at the top level" — a matched reply opens through `view` like
+ * everything else, landing on its flattened root screen.
+ */
+app.registerEvent('search', async (source, cbId, data) => {
+  const body = fields(data);
+  const q = optionalString(body.q)?.slice(0, 64) ?? '';
+  const { limit, cursor } = pageBounds(body, paging);
+
+  const projection = blabber.resolved.publicColumns.map((column) => `\`${column}\``).join(', ');
+  const cursorClause = cursor === null ? '' : ' AND `id` < ?';
+  const like = `%${q}%`;
+
+  const params: unknown[] = [like];
+  if (cursor !== null) params.push(cursor);
+  params.push(limit + 1);
+
+  const rows = await Database.query<Blab[]>(
+    `SELECT ${projection} FROM \`gphone_blabber\`
+     WHERE \`status\` = 'active' AND \`body\` LIKE ?${cursorClause}
+     ORDER BY \`id\` DESC
+     LIMIT ?`,
+    params
+  );
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  return { rows: await repo.hydrate(page), nextCursor: hasMore ? page[page.length - 1].id : null };
+});
+
 app.registerEvent('profile', async (source, cbId, data) => {
   const body = fields(data);
   const accountId = requirePositiveInt(body.account_id, 'account id');
