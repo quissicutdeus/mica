@@ -29,7 +29,7 @@
   import EditProfile from './components/EditProfile.svelte';
   import FollowList from './components/FollowList.svelte';
   import Profile from './components/Profile.svelte';
-  import Thread from './components/Thread.svelte';
+  import BlabDetail from './components/BlabDetail.svelte';
   import Messages from './components/Messages.svelte';
   import NotificationsTab from './components/NotificationsTab.svelte';
 
@@ -127,13 +127,14 @@
   let editingProfile = $state(false);
   let claiming = $state(false);
   /**
-   * The thread stack, not a single value.
-   *
-   * Opening a reply's own thread pushes onto it, so Back walks out one level at a time instead
-   * of jumping to the feed. Replies nest through one column, so the depth is whatever the
-   * conversation is.
+   * Which Blab is open, or null. One value rather than a stack: `BlabDetail` flattens the whole
+   * reply tree into one screen (Task 11), so there is no second level to push onto — opening a
+   * reply from inside an already-open Blab is not a thing that happens any more (§ design spec,
+   * "Navigation: one screen, not a stack").
    */
-  let threads = $state<Blab[]>([]);
+  let activeBlabId = $state<number | null>(null);
+  /** Set only for a reply reached via search — scrolls that row into view once it renders. */
+  let activeAnchorId = $state<number | undefined>(undefined);
 
   /**
    * Every visit, not once per session — apps stay resident, so `onMount` would fetch whatever
@@ -270,20 +271,15 @@
       },
       { open: () => claiming, close: () => (claiming = false), title: () => 'New handle' },
       { open: () => menu, close: () => (menu = false), title: () => 'Posting as' },
-      // Back pops one thread, then leaves the thread view, then the profile, and only then
-      // leaves the app.
-      {
-        open: () => view === 'thread' && threads.length > 1,
-        close: () => threads.pop(),
-        title: () => 'Thread'
-      },
+      // Back leaves the thread view, then the profile, and only then leaves the app.
       {
         open: () => view === 'thread',
         close: () => {
-          threads = [];
+          activeBlabId = null;
+          activeAnchorId = undefined;
           view = 'feed';
         },
-        title: () => 'Thread'
+        title: () => 'Blab'
       },
       /**
        * One rung for both lists, with the title telling you which — the shape Settings' panes use.
@@ -353,7 +349,7 @@
    */
   useDeepLink('blabber', () => {
     if (blabId) {
-      openThread({ id: blabId } as Blab);
+      openBlab(blabId);
       return true;
     }
     if (handle) {
@@ -371,8 +367,9 @@
     return false;
   });
 
-  const openThread = (blab: Blab) => {
-    threads = view === 'thread' ? [...threads, blab] : [blab];
+  const openBlab = (id: number, anchorId?: number) => {
+    activeBlabId = id;
+    activeAnchorId = anchorId;
     view = 'thread';
   };
 
@@ -380,12 +377,6 @@
 
   const mouth = (blab: Blab) =>
     void run(() => mouthBlab(blab.id), { title: 'Blabber', success: 'Mouthed' });
-
-  const replyTo = async (parent: Blab, body: string): Promise<void> => {
-    // Awaited and discarded: Thread refreshes itself afterwards, and `run` resolves to a
-    // success flag the reply composer has no use for.
-    await run(() => postBlab(body, parent.id), { title: 'Blabber', success: 'Replied' });
-  };
 
   /**
    * Counts for whatever is on screen, refreshed when the window grows.
@@ -590,14 +581,13 @@
       onpeername={(name) => (dmThreadName = name)}
       onhandle={openProfile}
     />
-  {:else if view === 'thread' && threads.length > 0}
-    <Thread
-      root={threads[threads.length - 1]}
+  {:else if view === 'thread' && activeBlabId !== null}
+    <BlabDetail
+      blabId={activeBlabId}
+      anchorId={activeAnchorId}
       handle={$activeAccount?.handle}
       busy={$busy}
       onhandle={openProfile}
-      onopen={openThread}
-      onreply={replyTo}
       onmouth={mouth}
       onlike={like}
     />
@@ -621,10 +611,7 @@
     <!-- Nothing to post from yet. Told, rather than shown an empty feed and a dead composer. -->
     <ClaimHandle busy={$busy} onclaim={claim} />
   {:else if tab === 'notifications'}
-    <NotificationsTab
-      onopenblab={(blabId) => openThread({ id: blabId } as Blab)}
-      onopenhandle={openProfile}
-    />
+    <NotificationsTab onopenblab={openBlab} onopenhandle={openProfile} />
   {:else if tab === 'following'}
     <!-- `pb-20` clears the nav and safe bottom inset: without it the last row hides underneath the bar. -->
     <div class="flex-1 overflow-y-auto pb-20" onscroll={followingPage.onScroll}>
@@ -646,10 +633,10 @@
             onhandle={openProfile}
             onedit={(b) => (editing = b)}
             ondelete={remove}
-            onreply={openThread}
+            onreply={(b) => openBlab(b.id)}
             onmouth={mouth}
             onlike={like}
-            onopen={openThread}
+            onopen={(b) => openBlab(b.id)}
           />
         {/each}
         {#if followingPage.loading}
@@ -674,10 +661,10 @@
             onhandle={openProfile}
             onedit={(b) => (editing = b)}
             ondelete={remove}
-            onreply={openThread}
+            onreply={(b) => openBlab(b.id)}
             onmouth={mouth}
             onlike={like}
-            onopen={openThread}
+            onopen={(b) => openBlab(b.id)}
           />
         {/each}
         {#if page.loading}
