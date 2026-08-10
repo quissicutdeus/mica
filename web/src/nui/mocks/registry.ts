@@ -266,8 +266,14 @@ const mockBlabs: Blab[] = [
     reply_to: null,
     root_id: null,
     status: 'active',
-    created_at: '2026-08-02T12:00:00Z',
-    updated_at: '2026-08-02T12:00:00Z'
+    // Relative, not a fixed date, and deliberately so: `blabber:trendingTags` windows to the
+    // last 48 hours (matching the real server), so a fixed timestamp goes stale the moment the
+    // suite runs more than 48 hours after it was written — exactly what happened here once. This
+    // is the one fixture a tag needs to stay live in, so it needs to stay inside the window on
+    // every run rather than just the run it was written on. Same pattern as the notification
+    // fixtures above.
+    created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    updated_at: new Date(Date.now() - 60 * 60 * 1000).toISOString()
   },
   {
     id: 2,
