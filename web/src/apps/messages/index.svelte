@@ -423,7 +423,11 @@
           </button>
         </div>
 
-        <SearchBar bind:value={recipientQuery} placeholder="To: Name or Phone Number" />
+        <SearchBar
+          bind:value={recipientQuery}
+          placeholder="To: Name or Phone Number"
+          focus={true}
+        />
 
         <div
           class="divide-outline-variant bg-surface-container max-h-56 divide-y overflow-y-auto rounded-xl p-1"
@@ -467,7 +471,11 @@
       {#if showInChatSearch}
         <!-- In-Chat Search Bar -->
         <div class="border-outline-variant bg-surface border-b p-2 backdrop-blur-md">
-          <SearchBar bind:value={inChatSearchQuery} placeholder="Search in conversation..." />
+          <SearchBar
+            bind:value={inChatSearchQuery}
+            placeholder="Search in conversation..."
+            focus={true}
+          />
         </div>
       {/if}
 

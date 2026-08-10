@@ -297,7 +297,7 @@
       <div
         class="animate-in slide-in-from-top border-outline-variant bg-surface sticky top-0 z-20 border-b p-3 backdrop-blur-md duration-200"
       >
-        <SearchBar bind:value={searchQuery} placeholder="Search contacts..." />
+        <SearchBar bind:value={searchQuery} placeholder="Search contacts..." focus={true} />
       </div>
     {/if}
 

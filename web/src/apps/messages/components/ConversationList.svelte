@@ -38,7 +38,7 @@
   <div
     class="animate-in slide-in-from-top border-outline-variant bg-surface sticky top-0 z-20 border-b p-3 backdrop-blur-md duration-200"
   >
-    <SearchBar bind:value={query} placeholder="Search chats, names, or messages..." />
+    <SearchBar bind:value={query} placeholder="Search chats, names, or messages..." focus={true} />
   </div>
 {/if}
 
