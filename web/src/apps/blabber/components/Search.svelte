@@ -10,7 +10,12 @@
   }: {
     onhandle?: (handle: string) => void;
     ontag?: (tag: string) => void;
-    onopen?: (id: number) => void;
+    /**
+     * `anchorId` is set whenever the result itself is a reply, so `BlabDetail` opens already
+     * scrolled to the row that matched — however old it is — rather than landing on the top of
+     * its flattened root with the match somewhere below the fold.
+     */
+    onopen?: (id: number, anchorId?: number) => void;
   } = $props();
 
   const {
@@ -62,7 +67,7 @@
 
 <div class="flex h-full flex-col">
   <div class="border-outline-variant space-y-2 border-b p-3">
-    <SearchBar bind:value={query} placeholder="Search Blabber" />
+    <SearchBar bind:value={query} placeholder="Search Blabber" focus={true} />
     <SegmentedControl
       selected={segment}
       onchange={(id) => (segment = id as typeof segment)}
@@ -125,7 +130,7 @@
             stats={$engagement[blab.id]}
             {onhandle}
             {ontag}
-            onopen={() => onopen?.(blab.id)}
+            onopen={() => onopen?.(blab.id, blab.reply_to != null ? blab.id : undefined)}
           />
         {/each}
       {/if}

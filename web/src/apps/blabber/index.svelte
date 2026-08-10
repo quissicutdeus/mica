@@ -637,7 +637,11 @@
   {:else if tab === 'notifications'}
     <NotificationsTab onopenblab={openBlab} onopenhandle={openProfile} />
   {:else if tab === 'search'}
-    <Search onhandle={openProfile} ontag={openTag} onopen={(id) => openBlab(id)} />
+    <Search
+      onhandle={openProfile}
+      ontag={openTag}
+      onopen={(id, anchorId) => openBlab(id, anchorId)}
+    />
   {:else if tab === 'following'}
     <!-- `pb-20` clears the nav and safe bottom inset: without it the last row hides underneath the bar. -->
     <div class="flex-1 overflow-y-auto pb-20" onscroll={followingPage.onScroll}>

@@ -46,6 +46,15 @@
   /** Who the pinned composer targets — the root by default, or whichever row's Reply was tapped. */
   let replyTarget = $state<Blab | null>(null);
 
+  /**
+   * The scrolling wrapper the anchor row is found and centered within — scoped to this
+   * component's own subtree rather than a global `document.querySelector`, so this cannot reach
+   * outside a screen it does not own.
+   */
+  let container: HTMLDivElement | undefined = $state();
+  /** Which anchor has already been scrolled to, so a later reactive update does not re-scroll. */
+  let scrolledAnchorId: number | undefined;
+
   const refresh = async () => {
     loading = true;
     try {
@@ -74,7 +83,29 @@
     // window sized from the previous Blab's `limit`, showing more replies than a fresh page
     // and asking `loadEngagement` for ids nobody scrolled to yet.
     page.reset();
+    scrolledAnchorId = undefined;
     void refresh();
+  });
+
+  /**
+   * Center the anchor row once it is actually present, and only once.
+   *
+   * `refresh` requests a page centered on `anchorId` (§ server `findFlattenedPage`), but the
+   * row still has to reach the DOM before it can be scrolled to — this effect re-runs as
+   * `replies` fills in and stops once `scrolledAnchorId` records that this anchor is done, so a
+   * later reactive update (loading older replies, an engagement refresh) cannot re-scroll under
+   * the player.
+   */
+  $effect(() => {
+    if (anchorId === undefined || scrolledAnchorId === anchorId) return;
+    const present = replies.some((reply) => reply.id === anchorId) || root?.id === anchorId;
+    if (!present || !container) return;
+
+    const node = container.querySelector(`[data-blab-id="${anchorId}"]`);
+    if (!node) return;
+
+    node.scrollIntoView({ block: 'center' });
+    scrolledAnchorId = anchorId;
   });
 
   const page = usePagedList<Blab>({
@@ -132,22 +163,24 @@
       onsubmit={submitReply}
     />
 
-    <div class="flex-1 overflow-y-auto" onscroll={page.onScroll}>
+    <div class="flex-1 overflow-y-auto" onscroll={page.onScroll} bind:this={container}>
       {#if loading && replies.length === 0}
         <div class="p-4"><Skeleton count={2} height="h-16" /></div>
       {:else if replies.length === 0}
         <EmptyState title="No replies yet" description="Say something back." />
       {:else}
         {#each page.visible as reply (reply.id)}
-          <BlabRow
-            blab={reply}
-            stats={$engagement[reply.id]}
-            {onhandle}
-            {ontag}
-            onreply={() => (replyTarget = reply)}
-            onmouth={() => onmouth?.(reply)}
-            onlike={() => onlike?.(reply)}
-          />
+          <div data-blab-id={reply.id}>
+            <BlabRow
+              blab={reply}
+              stats={$engagement[reply.id]}
+              {onhandle}
+              {ontag}
+              onreply={() => (replyTarget = reply)}
+              onmouth={() => onmouth?.(reply)}
+              onlike={() => onlike?.(reply)}
+            />
+          </div>
         {/each}
         {#if page.loading}
           <div class="p-4"><Skeleton count={2} height="h-16" /></div>
