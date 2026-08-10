@@ -197,9 +197,11 @@ test.describe('Blabber', () => {
     await expect(page.locator('article').first().locator('text=Mouthed')).toBeVisible();
   });
 
-  test('opens a thread and replies to a reply', async ({ page }) => {
-    // `first` has a reply in the fixture, and that reply has its own — which is the point of a
-    // reply being a Blab: the same read one level deeper.
+  test('opens a Blab and replies to a reply, both landing in the same flattened view', async ({
+    page
+  }) => {
+    // `BlabDetail` flattens the whole reply tree — root, the reply, and the reply's own reply —
+    // into one screen (Task 11), so there is no second "View thread" to open here any more.
     // Scoped by author: "first" also appears inside "congratulations on being first", so a text
     // filter alone matches the reply too.
     await page
@@ -208,19 +210,25 @@ test.describe('Blabber', () => {
       .getByRole('button', { name: 'View thread' })
       .click();
 
+    // The reply is already flattened into this one screen — no further navigation, and its own
+    // reply ("thank you") is right there too rather than one level deeper.
     await expect(page.locator('text=congratulations on being first')).toBeVisible();
-
-    // Down another level, into the reply's own thread.
-    await page
-      .locator('article', { hasText: 'congratulations' })
-      .getByRole('button', { name: 'View thread' })
-      .click();
-
     await expect(page.locator('text=thank you')).toBeVisible();
 
-    await page.locator('textarea').fill('and again');
+    // Tapping Reply on that flattened reply retargets the one pinned composer, rather than
+    // opening anything new — the placeholder names the reply's author.
+    await page
+      .locator('article', { hasText: 'congratulations on being first' })
+      .getByRole('button', { name: 'Reply' })
+      .click();
+    await expect(page.getByPlaceholder('Reply to @nightowl')).toBeVisible();
+
+    await page.locator('textarea').fill('replying to the reply');
     await page.getByRole('button', { name: 'Post', exact: true }).click();
-    await expect(page.locator('text=and again')).toBeVisible();
+
+    await expect(page.locator('text=replying to the reply')).toBeVisible();
+    // Still one screen — no second Thread/BlabDetail level was pushed.
+    await expect(page.locator('h1', { hasText: 'Blab' })).toBeVisible();
   });
 
   test('opens a DM thread from the inbox and replies', async ({ page }) => {
@@ -537,10 +545,13 @@ test.describe('Blabber', () => {
       /**
        * And the root is rendered, which is the half that was broken. A deep link carries an id
        * and nothing else, so the thread opened around a `{ id }` stub and painted its replies
-       * above an empty row — no body, no author, no timestamp. The root is @ada's and the reply
-       * is @nightowl's, so this locator can only match the post at the top.
+       * above an empty row — no body, no author, no timestamp.
+       *
+       * `.first()`, not a bare match: the flattened view (Task 11) also shows the reply's own
+       * reply ("thank you"), which is @ada's too, so two "Ada's profile" buttons are on screen —
+       * the root's is the one rendered first, above the composer.
        */
-      await expect(page.getByRole('button', { name: "Ada's profile" })).toBeVisible();
+      await expect(page.getByRole('button', { name: "Ada's profile" }).first()).toBeVisible();
     });
 
     test('Back leaves Notifications for the feed before leaving the app', async ({ page }) => {
@@ -553,6 +564,70 @@ test.describe('Blabber', () => {
 
       await expect(page.locator('text=traffic on the interstate')).toBeVisible();
       await expect(page.locator('h1', { hasText: 'Blabber' })).toBeVisible();
+    });
+  });
+
+  /**
+   * The fourth tab (Task 15): People/Blabs/Tags segments over the search stores, and a trending
+   * chip rail before anything is typed. `#losangeles` is the one tag the fixture keeps alive for
+   * this — `mockBlabs` id 3 carries it with a `created_at` relative to `Date.now()` specifically
+   * so it never ages out of `trendingTags`' 48-hour window (`web/src/nui/mocks/registry.ts`).
+   */
+  test.describe('Search tab', () => {
+    const openSearch = (page: import('@playwright/test').Page) =>
+      page.getByRole('button', { name: 'Search', exact: true }).click();
+
+    test('a query under 2 characters fires no request', async ({ page }) => {
+      await openSearch(page);
+      await page.locator('input[placeholder="Search Blabber"]').fill('a');
+
+      // Trending, not results — the empty/results branch never activates below 2 characters, so
+      // neither empty state can be showing.
+      await expect(page.locator('text=Nothing trending yet')).toHaveCount(0);
+      await expect(page.locator('text=No people found')).toHaveCount(0);
+    });
+
+    test('trending chips render before typing and disappear once a query is entered', async ({
+      page
+    }) => {
+      await openSearch(page);
+      await expect(page.locator('button', { hasText: '#losangeles' })).toBeVisible();
+
+      await page.locator('input[placeholder="Search Blabber"]').fill('ad');
+      await expect(page.locator('button', { hasText: '#losangeles' })).toHaveCount(0);
+    });
+
+    test('finding a Blab by body and opening it lands on the flattened view', async ({ page }) => {
+      // Not the "traffic" post (id 3, no replies): `BlabRow`'s "View thread" affordance only
+      // renders once a Blab has at least one reply, in search results same as everywhere else —
+      // there is no other way to open one from this list. "congratulations on being first"
+      // (id 4) is a reply with its own reply ("thank you", id 5), so it has one.
+      await openSearch(page);
+      await page.getByRole('button', { name: 'Blabs', exact: true }).click();
+      await page.locator('input[placeholder="Search Blabber"]').fill('congratulations');
+
+      await page
+        .locator('article', { hasText: 'congratulations on being first' })
+        .getByRole('button', { name: 'View thread' })
+        .click();
+
+      // Landing on the flattened root — id 4's root is id 1, "first", @ada's.
+      await expect(page.getByRole('button', { name: "Ada's profile" }).first()).toBeVisible();
+    });
+
+    test('tapping a tag inline, and the same tag from the Tags segment, both land on the same tag screen', async ({
+      page
+    }) => {
+      await page.locator('button', { hasText: '#losangeles' }).first().click();
+      await expect(page.locator('h1', { hasText: '#losangeles' })).toBeVisible();
+      await page.keyboard.press('Backspace');
+
+      await openSearch(page);
+      await page.getByRole('button', { name: 'Tags', exact: true }).click();
+      await page.locator('input[placeholder="Search Blabber"]').fill('los');
+      await page.locator('button', { hasText: '#losangeles' }).click();
+
+      await expect(page.locator('h1', { hasText: '#losangeles' })).toBeVisible();
     });
   });
 });
