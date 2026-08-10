@@ -14,7 +14,7 @@
   }: Props = $props();
 
   const focus = (node: HTMLInputElement) => {
-    // Optional autofocus could be added here if needed
+    node.focus();
   };
 </script>
 
