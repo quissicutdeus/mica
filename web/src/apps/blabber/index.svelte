@@ -8,6 +8,7 @@
     HomeIcon,
     MessageIcon,
     Screen,
+    SearchIcon,
     Skeleton,
     TabBar,
     UsersIcon,
@@ -33,6 +34,7 @@
   import Messages from './components/Messages.svelte';
   import NotificationsTab from './components/NotificationsTab.svelte';
   import TaggedFeed from './components/TaggedFeed.svelte';
+  import Search from './components/Search.svelte';
 
   let {
     onback,
@@ -94,11 +96,9 @@
    * Which top-level destination the bottom nav is on.
    *
    * Separate from `view`, which is the overlay stack above it — a thread opened from Following
-   * comes back to Following. Three tabs, not the four the end state wants: Search is the one still
-   * without a server behind it, and a tab that apologises for itself is the Store's invented
-   * add-ons one layer down.
+   * comes back to Following.
    */
-  let tab = $state<'feed' | 'following' | 'notifications'>('feed');
+  let tab = $state<'feed' | 'following' | 'notifications' | 'search'>('feed');
   /** Which correspondent's thread is open, or null for the inbox. */
   let dmPeer = $state<number | null>(null);
   /**
@@ -208,7 +208,8 @@
    * that narrowing can happen.
    */
   const selectTab = (next: string) => {
-    if (next !== 'feed' && next !== 'following' && next !== 'notifications') return;
+    if (next !== 'feed' && next !== 'following' && next !== 'notifications' && next !== 'search')
+      return;
     tab = next;
     if (tab === 'following') void loadFollowing();
     if (tab === 'notifications') void loadNotifications();
@@ -316,7 +317,8 @@
       {
         open: () => tab !== 'feed',
         close: () => (tab = 'feed'),
-        title: () => (tab === 'notifications' ? 'Notifications' : 'Following')
+        title: () =>
+          tab === 'notifications' ? 'Notifications' : tab === 'search' ? 'Search' : 'Following'
       }
     ]
   });
@@ -572,7 +574,8 @@
       options={[
         { id: 'feed', label: 'Feed', icon: HomeIcon },
         { id: 'following', label: 'Following', icon: UsersIcon },
-        { id: 'notifications', label: 'Notifications', icon: BellIcon }
+        { id: 'notifications', label: 'Notifications', icon: BellIcon },
+        { id: 'search', label: 'Search', icon: SearchIcon }
       ]}
     />
   {/if}
@@ -633,6 +636,8 @@
     <ClaimHandle busy={$busy} onclaim={claim} />
   {:else if tab === 'notifications'}
     <NotificationsTab onopenblab={openBlab} onopenhandle={openProfile} />
+  {:else if tab === 'search'}
+    <Search onhandle={openProfile} ontag={openTag} onopen={(id) => openBlab(id)} />
   {:else if tab === 'following'}
     <!-- `pb-20` clears the nav and safe bottom inset: without it the last row hides underneath the bar. -->
     <div class="flex-1 overflow-y-auto pb-20" onscroll={followingPage.onScroll}>
