@@ -496,6 +496,46 @@ app.registerEvent('followers', (source, cbId, data) => followList(data, 'followe
 app.registerEvent('following', (source, cbId, data) => followList(data, 'following'));
 
 /**
+ * Find an account by handle or display name, within one app.
+ *
+ * Placed here rather than on Blabber: identity is shared (`gphone_accounts`), and a future
+ * social app gets the same search for free — the same reasoning `followers`/`following` are
+ * declared here rather than per-app.
+ *
+ * Public, like every other account read: `citizenid` is withheld by `publicColumns`
+ * automatically, so this cannot answer "which accounts belong to one player" — it answers "find
+ * the account named X," the same fact a handle button anywhere in the app already exposes.
+ */
+app.registerEvent('search', async (source, cbId, data) => {
+  const body = fields(data);
+  const appId = optionalString(body.app);
+  if (!appId) throw new Error('An app id is required.');
+
+  const q = optionalString(body.q)?.slice(0, 64) ?? '';
+  const { limit, cursor } = pageBounds(body, paging);
+
+  const projection = accounts.resolved.publicColumns.map((column) => `\`${column}\``).join(', ');
+  const cursorClause = cursor === null ? '' : ' AND `id` < ?';
+  const like = `%${q}%`;
+
+  const params: unknown[] = [appId, like, like];
+  if (cursor !== null) params.push(cursor);
+  params.push(limit + 1);
+
+  const rows = await Database.query<Account[]>(
+    `SELECT ${projection} FROM \`gphone_accounts\`
+     WHERE \`app\` = ? AND \`status\` = 'active' AND (\`handle\` LIKE ? OR \`display_name\` LIKE ?)${cursorClause}
+     ORDER BY \`id\` DESC
+     LIMIT ?`,
+    params
+  );
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  return { rows: page, nextCursor: hasMore ? page[page.length - 1].id : null };
+});
+
+/**
  * Is this account one the caller may post as?
  *
  * Exported for the social apps: a post carries an `account_id` the client chose, and nothing
