@@ -32,6 +32,7 @@
   import BlabDetail from './components/BlabDetail.svelte';
   import Messages from './components/Messages.svelte';
   import NotificationsTab from './components/NotificationsTab.svelte';
+  import TaggedFeed from './components/TaggedFeed.svelte';
 
   let {
     onback,
@@ -88,7 +89,7 @@
    */
   const feedLoaded = feed.loaded;
 
-  let view = $state<'feed' | 'profile' | 'thread' | 'dms' | 'follows'>('feed');
+  let view = $state<'feed' | 'profile' | 'thread' | 'dms' | 'follows' | 'tag'>('feed');
   /**
    * Which top-level destination the bottom nav is on.
    *
@@ -112,6 +113,9 @@
   /** The inbox's own answer, for a thread opened from it rather than from a profile. */
   let dmThreadName = $state<string | null>(null);
   let profileHandle = $state<string | null>(null);
+  /** Which tag a `TaggedFeed` screen is showing — an inline `#tag` tap, the Tags search segment,
+   * or a trending chip all land here. */
+  let activeTag = $state<string | null>(null);
   /**
    * Whose follow list is open, and which direction.
    *
@@ -295,6 +299,7 @@
         title: () => (follows?.kind === 'following' ? 'Following' : 'Followers')
       },
       { open: () => view === 'profile', close: () => (view = 'feed'), title: () => 'Profile' },
+      { open: () => view === 'tag', close: () => (view = 'feed'), title: () => `#${activeTag}` },
       {
         open: () => view === 'dms' && dmPeer !== null,
         close: () => {
@@ -333,6 +338,11 @@
   const openFollows = (account: Account, kind: 'followers' | 'following') => {
     follows = { account, kind };
     view = 'follows';
+  };
+
+  const openTag = (tag: string) => {
+    activeTag = tag;
+    view = 'tag';
   };
 
   /**
@@ -580,6 +590,7 @@
       }}
       onpeername={(name) => (dmThreadName = name)}
       onhandle={openProfile}
+      ontag={openTag}
     />
   {:else if view === 'thread' && activeBlabId !== null}
     <BlabDetail
@@ -588,6 +599,16 @@
       handle={$activeAccount?.handle}
       busy={$busy}
       onhandle={openProfile}
+      ontag={openTag}
+      onmouth={mouth}
+      onlike={like}
+    />
+  {:else if view === 'tag' && activeTag}
+    <TaggedFeed
+      tag={activeTag}
+      onhandle={openProfile}
+      ontag={openTag}
+      onopen={(b) => openBlab(b.id)}
       onmouth={mouth}
       onlike={like}
     />
@@ -631,6 +652,7 @@
             editable={isMine(blab)}
             stats={$engagement[blab.id]}
             onhandle={openProfile}
+            ontag={openTag}
             onedit={(b) => (editing = b)}
             ondelete={remove}
             onreply={(b) => openBlab(b.id)}
@@ -659,6 +681,7 @@
             editable={isMine(blab)}
             stats={$engagement[blab.id]}
             onhandle={openProfile}
+            ontag={openTag}
             onedit={(b) => (editing = b)}
             ondelete={remove}
             onreply={(b) => openBlab(b.id)}

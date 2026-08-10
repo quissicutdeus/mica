@@ -39,7 +39,8 @@
     peerAccount = null,
     onopen,
     onpeername,
-    onhandle
+    onhandle,
+    ontag
   }: {
     busy?: boolean;
     peer?: number | null;
@@ -48,6 +49,7 @@
     /** Reports the peer's name upward, so the screen title can be it rather than "Message". */
     onpeername?: (name: string | null) => void;
     onhandle?: (handle: string) => void;
+    ontag?: (tag: string) => void;
   } = $props();
 
   const { dmThreads, dmMessages, loadDmThreads, loadDmMessages, sendDm } = useBlabber();
@@ -154,7 +156,7 @@
               class:bg-primary={mine}
               class:bg-surface-container={!mine}
             >
-              <BlabBody body={message.body} {onhandle} />
+              <BlabBody body={message.body} {onhandle} {ontag} />
               <div class="mt-0.5 flex items-center gap-1">
                 <p class="text-on-surface-variant text-[10px]">
                   {formatDate(message.created_at)}

@@ -22,6 +22,7 @@
     handle,
     busy = false,
     onhandle,
+    ontag,
     onmouth,
     onlike
   }: {
@@ -30,6 +31,7 @@
     handle?: string;
     busy?: boolean;
     onhandle?: (handle: string) => void;
+    ontag?: (tag: string) => void;
     onmouth?: (blab: Blab) => void;
     onlike?: (blab: Blab) => void;
   } = $props();
@@ -111,6 +113,7 @@
           blab={root}
           stats={$engagement[root.id]}
           {onhandle}
+          {ontag}
           onmouth={() => root && onmouth?.(root)}
           onlike={() => root && onlike?.(root)}
           onreply={() => (replyTarget = root)}
@@ -140,6 +143,7 @@
             blab={reply}
             stats={$engagement[reply.id]}
             {onhandle}
+            {ontag}
             onreply={() => (replyTarget = reply)}
             onmouth={() => onmouth?.(reply)}
             onlike={() => onlike?.(reply)}

@@ -9,6 +9,7 @@
     editable = false,
     stats,
     onhandle,
+    ontag,
     onedit,
     ondelete,
     onreply,
@@ -20,6 +21,7 @@
     editable?: boolean;
     stats?: BlabEngagement;
     onhandle?: (handle: string) => void;
+    ontag?: (tag: string) => void;
     onedit?: (blab: Blab) => void;
     ondelete?: (blab: Blab) => void;
     onreply?: (blab: Blab) => void;
@@ -105,7 +107,7 @@
 
     {#if !isPlainMouth}
       <div class="mt-1">
-        <BlabBody body={blab.body ?? ''} {onhandle} />
+        <BlabBody body={blab.body ?? ''} {onhandle} {ontag} />
       </div>
     {/if}
 
@@ -117,7 +119,7 @@
           {blab.mouthed.display_name || blab.mouthed.handle}
           <span class="text-outline">@{blab.mouthed.handle}</span>
         </p>
-        <BlabBody body={blab.mouthed.body ?? ''} {onhandle} />
+        <BlabBody body={blab.mouthed.body ?? ''} {onhandle} {ontag} />
       </div>
     {/if}
 

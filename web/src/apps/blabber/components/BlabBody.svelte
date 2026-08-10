@@ -11,7 +11,15 @@
    * Notes' markdown, and it earns it with `marked` + DOMPurify; matching that would be taking
    * on the same risk to gain styling we can do without it.
    */
-  let { body, onhandle }: { body: string; onhandle?: (handle: string) => void } = $props();
+  let {
+    body,
+    onhandle,
+    ontag
+  }: {
+    body: string;
+    onhandle?: (handle: string) => void;
+    ontag?: (tag: string) => void;
+  } = $props();
 
   const tokens = $derived(tokenizeRichText(body));
 </script>
@@ -25,7 +33,11 @@
         onclick={() => onhandle?.(token.value)}>@{token.value}</button
       >
     {:else if token.kind === 'tag'}
-      <span class="font-semibold text-sky-300">#{token.value}</span>
+      <button
+        type="button"
+        class="font-semibold text-sky-300 hover:underline"
+        onclick={() => ontag?.(token.value)}>#{token.value}</button
+      >
     {:else}{token.value}{/if}
   {/each}
 </p>
