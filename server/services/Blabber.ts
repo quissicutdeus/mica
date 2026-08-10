@@ -573,7 +573,10 @@ app.registerEvent('view', async (source, cbId, data) => {
   }
 
   const rootId = requested.root_id ?? requested.id;
-  const root = rootId === requested.id ? requested : await repo.findPublicById(rootId);
+  // Always through the public projection, never the raw `requested` row: `findById` is
+  // `SELECT *` and carries `citizenid`, and the id-is-already-the-root case (every feed tap,
+  // every top-level deep link) used to hand that row straight back over the wire.
+  const root = await repo.findPublicById(rootId);
   if (!root) return { root: null, replies: [], nextCursor: null };
 
   /**
@@ -587,7 +590,9 @@ app.registerEvent('view', async (source, cbId, data) => {
   if (cursor === null && rawAnchor !== undefined && rawAnchor !== null) {
     const candidate = requirePositiveInt(rawAnchor, 'anchor id');
     const owns = await repo.findById(candidate);
-    if (owns && (owns.id === rootId || owns.root_id === rootId)) anchorId = candidate;
+    if (owns && owns.status === 'active' && (owns.id === rootId || owns.root_id === rootId)) {
+      anchorId = candidate;
+    }
   }
 
   const page = await repo.findFlattenedPage(rootId, { limit, cursor, anchorId });
@@ -596,8 +601,10 @@ app.registerEvent('view', async (source, cbId, data) => {
   // reader in this file uses. Renamed to `replies` here rather than spread, since `rows` next to
   // `root` reads as "which rows," and this reply is the one place in the app that answers "the
   // root, and everything under it" as two distinctly-named things.
+  // `root` came from `findPublicById`, which already hydrates internally — a second `hydrate`
+  // call here would be redundant work on an already-complete row.
   return {
-    root: await repo.hydrate([root]).then((rows) => rows[0]),
+    root,
     replies: page.rows,
     nextCursor: page.nextCursor
   };
@@ -664,7 +671,7 @@ app.registerEvent('searchTags', async (source, cbId, data) => {
  */
 app.registerEvent('byTag', async (source, cbId, data) => {
   const body = fields(data);
-  const tag = optionalString(body.tag);
+  const tag = optionalString(body.tag)?.slice(0, 32);
   if (!tag) throw new Error('A tag is required.');
 
   const { limit, cursor } = pageBounds(body, paging);

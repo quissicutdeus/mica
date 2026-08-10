@@ -534,18 +534,38 @@ describe('author hydration', () => {
 describe('blabber:view', () => {
   it('resolves the root and returns it with the flattened, hydrated replies', async () => {
     dbMock.single.mockResolvedValueOnce(blab({ id: 7, account_id: 2, body: 'root post' })); // root lookup
-    // The root is hydrated separately from the replies page (it's not one of `findFlattenedPage`'s
-    // rows), so its author is a distinct batched query rather than sharing the replies' one.
+    // The root is always resolved through `findPublicById` — never handed back as the raw
+    // `findById` row — so it costs its own `selectPublic` + author query up front, distinct
+    // from the replies page's own author batch.
     dbMock.query
+      .mockResolvedValueOnce([blab({ id: 7, account_id: 2, body: 'root post' })]) // selectPublic([7]) for the root
+      .mockResolvedValueOnce([author(2, 'ada')]) // root's own author
       .mockResolvedValueOnce([blab({ id: 9, account_id: 3, root_id: 7 })]) // replies
-      .mockResolvedValueOnce([author(3, 'bob')]) // replies' authors
-      .mockResolvedValueOnce([author(2, 'ada')]); // root's own author
+      .mockResolvedValueOnce([author(3, 'bob')]); // replies' authors
 
     const reply = await call('view', { id: 7 });
 
     expect(reply.root).toMatchObject({ id: 7, handle: 'ada' });
     expect(reply.replies).toHaveLength(1);
     expect(reply.replies[0]).toMatchObject({ id: 9, handle: 'bob' });
+  });
+
+  it('never returns the root author citizenid, even when the requested id is the root itself', async () => {
+    // The trap this regresses: `findById` (used to resolve `requested`) is `SELECT *` and
+    // carries `citizenid`. When the requested id IS the root — every feed tap, every top-level
+    // deep link — the old code handed that raw row back as `root` unchanged.
+    dbMock.single.mockResolvedValueOnce(
+      blab({ id: 7, account_id: 2, body: 'root post', citizenid: 'CIT_ROOT_OWNER' })
+    );
+    dbMock.query
+      .mockResolvedValueOnce([blab({ id: 7, account_id: 2, body: 'root post' })]) // selectPublic([7]) — no citizenid column
+      .mockResolvedValueOnce([author(2, 'ada')]) // root's own author
+      .mockResolvedValueOnce([]); // flattened replies — empty, so hydrate never queries again
+
+    const reply = await call('view', { id: 7 });
+
+    expect(reply.root).not.toBeNull();
+    expect(reply.root.citizenid).toBeUndefined();
   });
 
   it('resolves the root from a reply id, not just a top-level id', async () => {
@@ -583,19 +603,22 @@ describe('blabber:view', () => {
     dbMock.single.mockResolvedValueOnce(blab({ id: 7, account_id: 2 }));
     // membership check for the bogus anchor fails
     dbMock.single.mockResolvedValueOnce(null);
-    dbMock.query.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    dbMock.query
+      .mockResolvedValueOnce([blab({ id: 7, account_id: 2 })]) // selectPublic([7]) for the root
+      .mockResolvedValueOnce([]) // root's own author
+      .mockResolvedValueOnce([]); // flattened replies (empty, no anchor split)
 
     await call('view', { id: 7, anchorId: 4242 });
 
     /**
      * A rejected anchor must fall back to plain-cursor mode: one `Database.query` for the
      * flattened replies (empty here) rather than the two-query newer/older anchor split. The
-     * second `query` call below is not that split — it is the root's own hydration (`view`
-     * always hydrates the root separately from the replies page), which runs regardless of the
-     * anchor outcome. What proves the split never ran is that neither `query` call's SQL orders
-     * `ASC` — the anchor split's "newer" half is the only query in this file that does.
+     * other two calls below are the root's own resolution through `findPublicById`
+     * (`selectPublic` + its author batch), which runs regardless of the anchor outcome. What
+     * proves the split never ran is that none of the three calls' SQL orders `ASC` — the anchor
+     * split's "newer" half is the only query in this file that does.
      */
-    expect(dbMock.query).toHaveBeenCalledTimes(2);
+    expect(dbMock.query).toHaveBeenCalledTimes(3);
     for (const [sql] of dbMock.query.mock.calls) {
       expect(String(sql)).not.toMatch(/ORDER BY `id` ASC/);
     }
