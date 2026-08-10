@@ -22,6 +22,7 @@ import type {
   Transaction
 } from '@shared/types';
 import { defineMockCrud } from './defineMockCrud';
+import { taggedTopics } from '@shared/richText';
 
 // Helper to simulate delays
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -263,6 +264,7 @@ const mockBlabs: Blab[] = [
     display_name: 'Ada',
     body: 'traffic on the interstate is unreal today #losangeles',
     reply_to: null,
+    root_id: null,
     status: 'active',
     created_at: '2026-08-02T12:00:00Z',
     updated_at: '2026-08-02T12:00:00Z'
@@ -274,6 +276,7 @@ const mockBlabs: Blab[] = [
     display_name: 'Night Owl',
     body: 'anyone up? @ada',
     reply_to: null,
+    root_id: null,
     status: 'active',
     created_at: '2026-08-02T11:00:00Z',
     updated_at: '2026-08-02T11:00:00Z'
@@ -285,12 +288,15 @@ const mockBlabs: Blab[] = [
     display_name: 'Ada',
     body: 'first',
     reply_to: null,
+    root_id: null,
     status: 'active',
     created_at: '2026-08-02T10:00:00Z',
     updated_at: '2026-08-02T10:00:00Z'
   },
   // A reply, and a reply to that reply — replies nest through the same column, so a thread is
-  // the same read one level deeper.
+  // the same read one level deeper. `root_id` is set the way the server sets it at create: from
+  // the parent's own `root_id` when the parent is itself a reply, never by walking the chain at
+  // read time — so both descend from id 1, "first", not from their immediate parent.
   {
     id: 4,
     account_id: 2,
@@ -298,6 +304,7 @@ const mockBlabs: Blab[] = [
     display_name: 'Night Owl',
     body: 'congratulations on being first',
     reply_to: 1,
+    root_id: 1,
     status: 'active',
     created_at: '2026-08-02T10:05:00Z',
     updated_at: '2026-08-02T10:05:00Z'
@@ -309,11 +316,22 @@ const mockBlabs: Blab[] = [
     display_name: 'Ada',
     body: 'thank you',
     reply_to: 4,
+    root_id: 1,
     status: 'active',
     created_at: '2026-08-02T10:06:00Z',
     updated_at: '2026-08-02T10:06:00Z'
   }
 ];
+
+/**
+ * Hashtags per Blab, seeded from the real tokenizer so this fixture cannot say a tag exists
+ * that the actual server-side indexer would not have extracted from the same body. `blabber:byTag`,
+ * `blabber:searchTags` and `blabber:trendingTags` all read this rather than re-scanning bodies —
+ * mirroring `gphone_blabber_tags`, the child table the server writes at create time.
+ */
+const mockBlabTags = new Map<number, string[]>(
+  mockBlabs.map((b) => [b.id, taggedTopics(b.body ?? '')])
+);
 
 const mockLikes: { blab_id: number; account_id: number }[] = [{ blab_id: 1, account_id: 2 }];
 
@@ -427,6 +445,38 @@ const mockRegistry: Record<string, MockHandler> = {
       (a) => a.app === 'blabber' && (handle === undefined || a.handle === handle)
     );
     return { rows: matches.slice(0, limit), nextCursor: null };
+  },
+  /**
+   * Handle/display-name autocomplete for the Search app's Accounts segment — every app's
+   * identity lives in this one table (AGENTS.md §10), so this action is `accounts:*` rather than
+   * `blabber:*` even though Blabber is the only caller today. Keyset-paged like every other
+   * reader here, `citizenid` withheld by construction: the fixture rows never carried one.
+   */
+  'accounts:search': ({
+    app,
+    q,
+    cursor,
+    limit = 30
+  }: {
+    app: string;
+    q: string;
+    cursor?: number;
+    limit?: number;
+  }) => {
+    const needle = q.toLowerCase();
+    const visible = mockAccounts
+      .filter(
+        (a) =>
+          a.app === app &&
+          a.status === 'active' &&
+          (a.handle.toLowerCase().includes(needle) ||
+            (a.display_name ?? '').toLowerCase().includes(needle)) &&
+          (cursor === undefined || a.id < cursor)
+      )
+      .sort((a, b) => b.id - a.id);
+    const page = visible.slice(0, limit);
+    const hasMore = visible.length > page.length;
+    return { rows: page, nextCursor: hasMore ? page[page.length - 1].id : null };
   },
 
   /**
@@ -634,6 +684,11 @@ const mockRegistry: Record<string, MockHandler> = {
     // already claiming it while the check only asked whether the row existed at all.
     const account = mockAccounts.find((a) => a.id === account_id && mockOwnedAccountIds.has(a.id));
     if (!account) throw new Error('That account is not yours to post from.');
+    // Inherited from the parent's own `root_id`, never walked at read time — the parent is either
+    // top-level (`root_id` null, so it becomes the root) or itself a reply (`root_id` already the
+    // true top-level ancestor), exactly as the server computes it at create.
+    const replyParent = reply_to != null ? mockBlabs.find((b) => b.id === reply_to) : undefined;
+    const rootId = replyParent ? (replyParent.root_id ?? replyParent.id) : null;
     const created: Blab = {
       id: nextBlabId++,
       account_id: account.id,
@@ -647,6 +702,7 @@ const mockRegistry: Record<string, MockHandler> = {
       avatar: account.avatar ?? null,
       body: body ?? null,
       reply_to: reply_to ?? null,
+      root_id: rootId,
       mouth_of: mouth_of ?? null,
       mouthed:
         mouth_of == null
@@ -657,6 +713,9 @@ const mockRegistry: Record<string, MockHandler> = {
       updated_at: new Date().toISOString()
     };
     mockBlabs.unshift(created);
+    // Indexed at create, matching `gphone_blabber_tags` — otherwise a Blab posted in the browser
+    // would never surface from a tag tap or trending chip added in this same session.
+    mockBlabTags.set(created.id, taggedTopics(created.body ?? ''));
     return { ...created, editWindow: 900 };
   },
   'blabber:update': ({ id, body }: { id: number; body: string }) => {
@@ -690,10 +749,54 @@ const mockRegistry: Record<string, MockHandler> = {
     if (at >= 0) mockLikes.splice(at, 1);
     return true;
   },
-  // One Blab by id, for a deep link that names one and nothing else. `null` for a row that is
-  // gone, matching the server: a notification outlives the post it points at.
-  'blabber:blab': ({ id }: { id: number }) =>
-    mockBlabs.find((b) => b.id === id && b.status === 'active') ?? null,
+  /**
+   * The one way to open a Blab — the root of its thread, plus every reply at any depth,
+   * flattened and keyset-paged. Supersedes the single-row `blabber:blab`: that mock answered
+   * "what is this row," which left the app with no way to reach a reply's own top-level
+   * ancestor, exactly like the real single-row read it replaced server-side.
+   *
+   * `anchorId` only matters on the initial open (no `cursor`) and centers the returned window on
+   * that row rather than starting from the newest reply — mirroring the real server's windowed
+   * query when a feed tap or notification names a specific reply to land on.
+   */
+  'blabber:view': ({
+    id,
+    cursor,
+    limit = 30,
+    anchorId
+  }: {
+    id: number;
+    cursor?: number;
+    limit?: number;
+    anchorId?: number;
+  }) => {
+    const requested = mockBlabs.find((b) => b.id === id && b.status === 'active');
+    if (!requested) return { root: null, replies: [], nextCursor: null };
+
+    const rootId = requested.root_id ?? requested.id;
+    const root = mockBlabs.find((b) => b.id === rootId && b.status === 'active') ?? null;
+    if (!root) return { root: null, replies: [], nextCursor: null };
+
+    const subtree = mockBlabs
+      .filter((b) => b.status === 'active' && b.id !== rootId && (b.root_id ?? b.id) === rootId)
+      .sort((a, b) => b.id - a.id);
+
+    let windowed = subtree;
+    if (cursor === undefined && anchorId !== undefined) {
+      const newer = subtree
+        .filter((b) => b.id > anchorId)
+        .slice()
+        .reverse();
+      const older = subtree.filter((b) => b.id <= anchorId);
+      windowed = [...newer.slice().reverse(), ...older];
+    } else if (cursor !== undefined) {
+      windowed = subtree.filter((b) => b.id < cursor);
+    }
+
+    const page = windowed.slice(0, limit);
+    const hasMore = windowed.length > page.length;
+    return { root, replies: page, nextCursor: hasMore ? page[page.length - 1].id : null };
+  },
   'blabber:profile': ({
     account_id,
     tab,
@@ -723,6 +826,81 @@ const mockRegistry: Record<string, MockHandler> = {
     const blab = mockBlabs.find((b) => b.id === id);
     if (blab) blab.status = 'deleted';
     return true;
+  },
+  /**
+   * Body search. Unlike the feed and Following, replies are included — a search answers "what
+   * was said," not "what was said at the top level" — so a matched reply opens through
+   * `blabber:view` like everything else, landing on its flattened root screen.
+   */
+  'blabber:search': ({ q, cursor, limit = 30 }: { q: string; cursor?: number; limit?: number }) => {
+    const needle = q.toLowerCase();
+    const visible = mockBlabs
+      .filter(
+        (b) =>
+          b.status === 'active' &&
+          (b.body ?? '').toLowerCase().includes(needle) &&
+          (cursor === undefined || b.id < cursor)
+      )
+      .sort((a, b) => b.id - a.id);
+    const page = visible.slice(0, limit);
+    const hasMore = visible.length > page.length;
+    return { rows: page, nextCursor: hasMore ? page[page.length - 1].id : null };
+  },
+  /**
+   * Tag-name autocomplete for the Search app's Tags segment. Not keyset-paged — a bounded
+   * autocomplete list, not a feed a player scrolls to the bottom of — matching the real server.
+   */
+  'blabber:searchTags': ({ q }: { q: string }) => {
+    const counts = new Map<string, number>();
+    for (const [, tags] of mockBlabTags) {
+      for (const tag of tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+    const rows = [...counts.entries()]
+      .filter(([tag]) => tag.startsWith(q.toLowerCase()))
+      .map(([tag, uses]) => ({ tag, uses }))
+      .sort((a, b) => b.uses - a.uses);
+    return { rows, nextCursor: null };
+  },
+  /**
+   * Blabs carrying one exact tag — the shared landing spot for a Tags-search result, an inline
+   * `#tag` tap, and a trending-chip tap. Exact match against `mockBlabTags`, never a substring:
+   * `#car` must not surface `#cars` or `#carpet`.
+   */
+  'blabber:byTag': ({
+    tag,
+    cursor,
+    limit = 30
+  }: {
+    tag: string;
+    cursor?: number;
+    limit?: number;
+  }) => {
+    const ids = new Set(
+      [...mockBlabTags.entries()].filter(([, tags]) => tags.includes(tag)).map(([id]) => id)
+    );
+    const visible = mockBlabs
+      .filter(
+        (b) => ids.has(b.id) && b.status === 'active' && (cursor === undefined || b.id < cursor)
+      )
+      .sort((a, b) => b.id - a.id);
+    const page = visible.slice(0, limit);
+    const hasMore = visible.length > page.length;
+    return { rows: page, nextCursor: hasMore ? page[page.length - 1].id : null };
+  },
+  /**
+   * A bounded snapshot, not a list a player pages through — no cursor, matching the real
+   * server's un-paged top-10. Recomputed per call rather than cached, so it can never drift from
+   * `mockBlabTags` the way a denormalized count could.
+   */
+  'blabber:trendingTags': () => {
+    const counts = new Map<string, number>();
+    for (const [, tags] of mockBlabTags) {
+      for (const tag of tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([tag, uses]) => ({ tag, uses }))
+      .sort((a, b) => b.uses - a.uses)
+      .slice(0, 10);
   },
 
   // Contacts
