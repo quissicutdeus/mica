@@ -66,6 +66,12 @@
     void anchorId;
     root = null;
     replies = [];
+    // `index.svelte` renders this component unkeyed — switching Blabs changes props on one
+    // persistent instance rather than remounting — so the window has to be reset by hand.
+    // Without this, opening a long thread after scrolling deep into another one reveals a
+    // window sized from the previous Blab's `limit`, showing more replies than a fresh page
+    // and asking `loadEngagement` for ids nobody scrolled to yet.
+    page.reset();
     void refresh();
   });
 
