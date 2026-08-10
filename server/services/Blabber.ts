@@ -634,6 +634,80 @@ app.registerEvent('search', async (source, cbId, data) => {
   return { rows: await repo.hydrate(page), nextCursor: hasMore ? page[page.length - 1].id : null };
 });
 
+/**
+ * Tag-name autocomplete for the Tags search segment.
+ *
+ * Not keyset-paged: a tag-name search answers a bounded autocomplete list, not a feed a player
+ * scrolls to the bottom of. Twenty rows is generous for a dropdown and cheap for the index scan
+ * this LIKE-prefix query runs against.
+ */
+app.registerEvent('searchTags', async (source, cbId, data) => {
+  const body = fields(data);
+  const q = optionalString(body.q)?.slice(0, 32) ?? '';
+
+  const rows = await Database.query<{ tag: string; uses: number }[]>(
+    `SELECT \`tag\`, COUNT(*) AS uses FROM \`gphone_blabber_tags\`
+     WHERE \`tag\` LIKE ?
+     GROUP BY \`tag\`
+     ORDER BY uses DESC
+     LIMIT 20`,
+    [`${q}%`]
+  );
+
+  return { rows, nextCursor: null };
+});
+
+/**
+ * Blabs carrying one exact tag — the shared landing spot for a Tags-search result, an inline
+ * `#tag` tap, and a trending-chip tap. Exact match, never a substring: `#car` must not surface
+ * `#cars` or `#carpet`.
+ */
+app.registerEvent('byTag', async (source, cbId, data) => {
+  const body = fields(data);
+  const tag = optionalString(body.tag);
+  if (!tag) throw new Error('A tag is required.');
+
+  const { limit, cursor } = pageBounds(body, paging);
+  const projection = blabber.resolved.publicColumns.map((column) => `b.\`${column}\``).join(', ');
+  const cursorClause = cursor === null ? '' : ' AND b.`id` < ?';
+
+  const params: unknown[] = [tag.toLowerCase()];
+  if (cursor !== null) params.push(cursor);
+  params.push(limit + 1);
+
+  const rows = await Database.query<Blab[]>(
+    `SELECT ${projection} FROM \`gphone_blabber_tags\` t
+     JOIN \`gphone_blabber\` b ON b.\`id\` = t.\`blab_id\`
+     WHERE t.\`tag\` = ? AND b.\`status\` = 'active'${cursorClause}
+     ORDER BY b.\`id\` DESC
+     LIMIT ?`,
+    params
+  );
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  return { rows: await repo.hydrate(page), nextCursor: hasMore ? page[page.length - 1].id : null };
+});
+
+/**
+ * A bounded snapshot, not a list a player pages through — no cursor.
+ *
+ * Recomputed per request rather than cached: a windowed aggregate over an indexed range is not
+ * the per-row denormalized count AGENTS.md's "Blabber is the worked example" section warns
+ * against.
+ */
+app.registerEvent('trendingTags', async () => {
+  return await Database.query<{ tag: string; uses: number }[]>(
+    `SELECT t.\`tag\`, COUNT(*) AS uses
+     FROM \`gphone_blabber_tags\` t
+     JOIN \`gphone_blabber\` b ON b.\`id\` = t.\`blab_id\`
+     WHERE b.\`status\` = 'active' AND b.\`created_at\` > NOW() - INTERVAL 48 HOUR
+     GROUP BY t.\`tag\`
+     ORDER BY uses DESC
+     LIMIT 10`
+  );
+});
+
 app.registerEvent('profile', async (source, cbId, data) => {
   const body = fields(data);
   const accountId = requirePositiveInt(body.account_id, 'account id');

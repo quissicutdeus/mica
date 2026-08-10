@@ -787,3 +787,55 @@ describe('blabber:search', () => {
     }
   });
 });
+
+describe('blabber:searchTags', () => {
+  it('prefix-matches tag names with usage counts', async () => {
+    dbMock.query.mockResolvedValueOnce([
+      { tag: 'losangeles', uses: 12 },
+      { tag: 'losfeliz', uses: 3 }
+    ]);
+
+    const reply = await call('searchTags', { q: 'los' });
+
+    expect(reply.rows).toEqual([
+      { tag: 'losangeles', uses: 12 },
+      { tag: 'losfeliz', uses: 3 }
+    ]);
+    const [sql, params] = dbMock.query.mock.calls[0];
+    expect(String(sql)).toContain('LIKE');
+    expect(params).toContain('los%');
+  });
+});
+
+describe('blabber:byTag', () => {
+  it('returns Blabs carrying the exact tag, not a substring match', async () => {
+    dbMock.query
+      .mockResolvedValueOnce([blab({ id: 8, account_id: 1 })])
+      .mockResolvedValueOnce([author(1, 'ada')]);
+
+    const reply = await call('byTag', { tag: 'car' });
+
+    const [sql, params] = dbMock.query.mock.calls[0];
+    expect(String(sql)).toContain('t.`tag` = ?');
+    expect(params).toContain('car');
+    expect(reply.rows).toHaveLength(1);
+  });
+
+  it('requires a tag', async () => {
+    const reply = await call('byTag', {});
+    expect(reply.error).toBeTruthy();
+  });
+});
+
+describe('blabber:trendingTags', () => {
+  it('returns the top tags from the last 48 hours', async () => {
+    dbMock.query.mockResolvedValueOnce([{ tag: 'losangeles', uses: 40 }]);
+
+    const reply = await call('trendingTags', {});
+
+    expect(reply).toEqual([{ tag: 'losangeles', uses: 40 }]);
+    const sql = String(dbMock.query.mock.calls[0][0]);
+    expect(sql).toContain('INTERVAL 48 HOUR');
+    expect(sql).toContain('LIMIT 10');
+  });
+});
