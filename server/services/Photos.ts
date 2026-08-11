@@ -1,5 +1,8 @@
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { MediaItem } from '@shared/types';
+import { findNearbyVisiblePlayers } from '../lib/proximity';
+import { appEventChannel } from '../lib/appEvents';
+import { requirePositiveInt, fields } from '../lib/payload';
 
 /**
  * The media table: owner-scoped, create/read/delete only.
@@ -118,3 +121,65 @@ const coerceBinaryText = (item: MediaItem): MediaItem => {
   }
   return item;
 };
+
+const app = photos.app;
+const repo = photos.repo;
+
+/**
+ * Bluetooth proximity drop: copy one of the caller's own media rows to everyone nearby
+ * and Bluetooth-visible.
+ *
+ * A custom `registerEvent` action rather than a raw `onNet` handler — reached through the
+ * named `sharePhotoNearby` route (`shared/routes.ts`), so `ServiceEndpoint`'s own rate
+ * limiting and citizenid resolution already cover it, and its return value becomes the
+ * NUI response directly (§10's `BlabberDms.ts` `send` action is the worked example of
+ * this shape).
+ *
+ * `findById(mediaId, citizenid)` is the ownership check (§2.9) — a `mediaId` naming a row
+ * the caller does not own resolves to `null` and the whole request is refused before
+ * anything nearby is even computed. Each recipient gets a **copy**, not a shared
+ * reference: gPhone's gallery is owned per player, and the sender deleting their photo
+ * later must not delete anyone else's.
+ */
+app.registerEvent('drop', async (source, _cbId, data, citizenid) => {
+  const mediaId = requirePositiveInt(fields(data).mediaId, 'mediaId');
+
+  const owned = await repo.findById(mediaId, citizenid);
+  if (!owned) throw new Error('That photo could not be found.');
+
+  const nearby = await findNearbyVisiblePlayers(source, citizenid);
+
+  let count = 0;
+  for (const target of nearby) {
+    await repo.create({
+      citizenid: target.citizenid,
+      kind: owned.kind,
+      data: owned.data,
+      url: owned.url,
+      thumbnail: owned.thumbnail,
+      mime_type: owned.mime_type,
+      width: owned.width,
+      height: owned.height,
+      duration_ms: owned.duration_ms,
+      byte_size: owned.byte_size,
+      alt_text: owned.alt_text
+    } as Partial<MediaItem>);
+    count += 1;
+
+    const outcome = appEventChannel('photos').push(
+      target.citizenid,
+      'media_received',
+      {},
+      {
+        notify: { title: 'Media received', message: 'A nearby phone sent you a photo.' }
+      }
+    );
+    if (!outcome.delivered && outcome.reason !== 'offline') {
+      console.error(
+        `[photos] mediaReceived push to ${target.citizenid} was refused: ${outcome.reason}.`
+      );
+    }
+  }
+
+  return { count };
+});

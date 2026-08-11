@@ -14,6 +14,7 @@ export function usePhotos() {
     // kinds now, and a writer that does not say which one it is means the row's meaning
     // depends on a DDL default nobody reading this file can see.
     capturePhoto: async (data: string) => photos.add({ kind: 'photo', data }),
-    deletePhoto: async (id: number) => photos.delete(id)
+    deletePhoto: async (id: number) => photos.delete(id),
+    dropNearby: async (mediaId: number) => photos.dropNearby(mediaId)
   };
 }

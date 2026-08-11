@@ -89,13 +89,18 @@ test.describe('Photos', () => {
     await expect(page.getByText('Report content')).toBeVisible();
   });
 
-  test('sharing says it is unimplemented instead of claiming success', async ({ page }) => {
-    // Was a browser `alert('Photo shared! (Mock)')`.
+  test('sharing sends to nearby devices instead of claiming it is unimplemented', async ({
+    page
+  }) => {
+    // Was a browser `alert('Photo shared! (Mock)')`, then a stub that said "not
+    // implemented" forever. Bluetooth proximity drops are real now — this only guards
+    // against the lie, either shape of it, coming back.
     await openApp(page, 'Photos');
     await page.locator('img').first().click();
 
-    await page.getByRole('button', { name: 'Share photo' }).click();
-    await expect(page.getByText(/not implemented/i)).toBeVisible();
+    await page.getByRole('button', { name: 'Send to nearby devices' }).click();
+    await expect(page.getByText(/not implemented/i)).toHaveCount(0);
+    await expect(page.getByText(/no bluetooth-visible players/i)).toBeVisible();
   });
 });
 

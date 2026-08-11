@@ -12,6 +12,7 @@
     TrashIcon,
     onAppForeground,
     useAppAction,
+    useAppEvents,
     useAppLevels,
     MediaThumb,
     useDeepLink,
@@ -28,7 +29,7 @@
     initialPhotoId
   }: AppProps & { initialPhoto?: MediaItem; initialPhotoId?: number } = $props();
 
-  const { photos, deletePhoto } = usePhotos();
+  const { photos, deletePhoto, dropNearby } = usePhotos();
   const photosLoaded = photos.loaded;
   const { busy, run } = useAppAction('photos');
   const { toast } = usePhoneNotification();
@@ -40,6 +41,13 @@
   let reporting = $state(false);
 
   onAppForeground('photos', () => {
+    void photos.load();
+  });
+
+  // A drop landed while the gallery was already open — onAppForeground alone would miss
+  // it until the app is reopened. The push is the notice; the fetch is still what feeds
+  // the list, same as every other app's push contract.
+  useAppEvents('photos').on('media_received', () => {
     void photos.load();
   });
 
@@ -101,6 +109,27 @@
     isSelectionMode = false;
   };
 
+  const sendNearby = async () => {
+    if (!selectedPhoto) return;
+    const mediaId = selectedPhoto.id;
+
+    let count = 0;
+    const done = await run(async () => {
+      const result = await dropNearby(mediaId);
+      count = result?.count ?? 0;
+    });
+    if (!done) return;
+
+    toast.show({
+      type: count > 0 ? 'success' : 'info',
+      app: 'photos',
+      message:
+        count > 0
+          ? `Sent to ${count} nearby ${count === 1 ? 'phone' : 'phones'}.`
+          : 'No Bluetooth-visible players are in range.'
+    });
+  };
+
   const deleteSingle = async () => {
     if (!selectedPhoto) return;
     if (!(await run(() => deletePhoto(selectedPhoto!.id), { success: 'Photo deleted' }))) return;
@@ -152,13 +181,9 @@
       >
         <button
           class="text-primary hover:text-primary p-2 transition-colors"
-          aria-label="Share photo"
-          onclick={() =>
-            toast.show({
-              type: 'info',
-              app: 'photos',
-              message: 'Sharing photos is not implemented yet'
-            })}
+          aria-label="Send to nearby devices"
+          disabled={$busy}
+          onclick={sendNearby}
         >
           <ShareSquareIcon class="h-6 w-6" />
         </button>

@@ -1348,6 +1348,29 @@ const mockRegistry: Record<string, MockHandler> = {
       defaults: { status: 'active' }
     }
   ),
+  // Bluetooth proximity drop. A named route (`sharePhotoNearby`), not `defineMockCrud` —
+  // no CRUD verb fits copying a row to N nearby recipients.
+  sharePhotoNearby: async () => {
+    const count = bluetoothNearbyCount;
+    if (count > 0 && typeof window !== 'undefined') {
+      delay(150).then(() => {
+        window.postMessage(
+          {
+            action: 'appEvent',
+            data: {
+              app: 'photos',
+              event: 'media_received',
+              payload: {},
+              at: Date.now(),
+              notify: { title: 'Media received', message: 'A nearby phone sent you a photo.' }
+            }
+          },
+          '*'
+        );
+      });
+    }
+    return { count };
+  },
 
   // Mail
   ...defineMockCrud<Mail>(
