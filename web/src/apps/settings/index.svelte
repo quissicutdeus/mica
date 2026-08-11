@@ -124,7 +124,11 @@
     if (!$isAdmin) {
       // Say so outright. Silently counting to ten and then showing nothing reads as a
       // broken build.
-      toast.show({ type: 'error', message: 'Developer Tools require the gphone.admin permission' });
+      toast.show({
+        type: 'error',
+        app: 'settings',
+        message: 'Developer Tools require the gphone.admin permission'
+      });
       return;
     }
 
@@ -140,9 +144,14 @@
       devToolsUnlocked.set(true);
       devToolsTaps = 0;
       cancelTapReset?.();
-      toast.show({ type: 'success', title, message: 'Developer Tools unlocked' });
+      toast.show({ type: 'success', app: 'settings', title, message: 'Developer Tools unlocked' });
     } else if (remaining <= 3) {
-      toast.show({ type: 'info', title, message: `${remaining} more to unlock Developer Tools` });
+      toast.show({
+        type: 'info',
+        app: 'settings',
+        title,
+        message: `${remaining} more to unlock Developer Tools`
+      });
     }
   };
 
@@ -153,7 +162,11 @@
     devToolsUnlocked.set(false);
     devToolsTaps = 0;
     pane = 'root';
-    toast.show({ type: 'info', message: 'Developer Tools hidden — tap OS Version 10x to restore' });
+    toast.show({
+      type: 'info',
+      app: 'settings',
+      message: 'Developer Tools hidden — tap OS Version 10x to restore'
+    });
   };
 
   // Admin status is granted server-side and can change between visits.

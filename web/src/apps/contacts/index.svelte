@@ -33,7 +33,7 @@
   const { contactsStore } = useContacts();
   const { photos } = usePhotos();
   const { toast } = usePhoneNotification();
-  const { busy, run } = useAppAction();
+  const { busy, run } = useAppAction('contacts');
 
   const contacts = contactsStore;
   const contactsLoaded = contactsStore.loaded;
@@ -148,6 +148,7 @@
     if (firstname?.trim() && phone?.trim()) return true;
     toast.show({
       type: 'error',
+      app: 'contacts',
       message: forSharing
         ? 'First name and phone number are required to share contact.'
         : 'First name and phone number are required.'

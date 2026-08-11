@@ -79,7 +79,7 @@
     dmThreads,
     unreadDms
   } = useBlabber();
-  const { run, busy } = useAppAction();
+  const { run, busy } = useAppAction('blabber');
   /**
    * The Notifications tab reads the OS shade filtered to this app, so the fetch is the shell's
    * rather than Blabber's — the app id only narrows the view.

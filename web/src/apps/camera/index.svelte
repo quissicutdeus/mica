@@ -20,7 +20,7 @@
   const { isTakingPhoto, isPreviewingPhoto } = useCamera();
   const { capturePhoto, photos } = usePhotos();
   const { openApp } = useNavigation();
-  const { run } = useAppAction();
+  const { run } = useAppAction('camera');
   const { toast } = usePhoneNotification();
   const { after } = useTimer();
   import { sampleAvatars } from './mockViewfinder';
@@ -232,7 +232,7 @@
         // Reported rather than swallowed: a shutter press that saves nothing looked
         // identical to one that worked, because the viewfinder is unchanged either way.
         console.error('Failed to take photo', err);
-        toast.show({ type: 'error', message: 'Could not save that photo' });
+        toast.show({ type: 'error', app: 'camera', message: 'Could not save that photo' });
       } finally {
         isTakingPhoto.set(false);
       }

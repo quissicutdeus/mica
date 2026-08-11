@@ -25,7 +25,7 @@
 
   const { notesStore: notes } = useNotes();
   const notesLoaded = notes.loaded;
-  const { busy, run } = useAppAction();
+  const { busy, run } = useAppAction('notes');
   const { after } = useTimer();
   import { fade } from 'svelte/transition';
 

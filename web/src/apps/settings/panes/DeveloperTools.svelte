@@ -17,7 +17,7 @@
   const { charge, signalLevel, setSignal, soundVolume, soundMuted, setVolume, toggleMute } =
     useSystemHardware();
   const { toast } = usePhoneNotification();
-  const { run } = useAppAction();
+  const { run } = useAppAction('settings');
   const { openApp } = useNavigation();
   const { fetchNui } = useNuiBridge();
   const { callStore } = useCall();
@@ -60,6 +60,7 @@
   const triggerNotification = () => {
     toast.show({
       type: 'info',
+      app: 'settings',
       title: 'Simulated Toast',
       message: 'This is a test push notification from Developer Tools.'
     });

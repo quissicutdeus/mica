@@ -209,6 +209,7 @@
   <ReportDialog
     targetTable="gphone_blabber_dms"
     targetId={reportingDm}
+    appId="blabber"
     onclose={() => (reportingDm = null)}
   />
 {/if}

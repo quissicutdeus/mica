@@ -30,7 +30,7 @@
 
   const { photos, deletePhoto } = usePhotos();
   const photosLoaded = photos.loaded;
-  const { busy, run } = useAppAction();
+  const { busy, run } = useAppAction('photos');
   const { toast } = usePhoneNotification();
 
   let selectedPhoto: MediaItem | null = $state(null);
@@ -96,7 +96,7 @@
 
   const shareSelected = () => {
     // Not implemented. Says so, rather than an `alert()` claiming it worked.
-    toast.show({ type: 'info', message: 'Sharing photos is not implemented yet' });
+    toast.show({ type: 'info', app: 'photos', message: 'Sharing photos is not implemented yet' });
     selectedIds.clear();
     isSelectionMode = false;
   };
@@ -154,7 +154,11 @@
           class="text-primary hover:text-primary p-2 transition-colors"
           aria-label="Share photo"
           onclick={() =>
-            toast.show({ type: 'info', message: 'Sharing photos is not implemented yet' })}
+            toast.show({
+              type: 'info',
+              app: 'photos',
+              message: 'Sharing photos is not implemented yet'
+            })}
         >
           <ShareSquareIcon class="h-6 w-6" />
         </button>
@@ -270,6 +274,7 @@
   <ReportDialog
     targetTable="gphone_media"
     targetId={selectedPhoto.id}
+    appId="photos"
     onclose={() => (reporting = false)}
   />
 {/if}

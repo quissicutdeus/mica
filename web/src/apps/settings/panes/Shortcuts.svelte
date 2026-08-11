@@ -38,7 +38,11 @@
 
     const conflict = findConflict(capturingId, key);
     if (conflict) {
-      toast.show({ type: 'error', message: `${describeKey(key)} is already ${conflict.label}` });
+      toast.show({
+        type: 'error',
+        app: 'settings',
+        message: `${describeKey(key)} is already ${conflict.label}`
+      });
       capturingId = null;
       return;
     }

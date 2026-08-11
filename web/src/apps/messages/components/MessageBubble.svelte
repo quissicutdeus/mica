@@ -53,6 +53,7 @@
   <ReportDialog
     targetTable="gphone_messages"
     targetId={msg.id}
+    appId="messages"
     onclose={() => (reporting = false)}
   />
 {/if}

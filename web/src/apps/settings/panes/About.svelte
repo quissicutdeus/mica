@@ -48,8 +48,8 @@
 
     toast.show(
       copied
-        ? { type: 'success', message: `Copied ${number} to clipboard` }
-        : { type: 'error', message: 'Could not copy your number' }
+        ? { type: 'success', app: 'settings', message: `Copied ${number} to clipboard` }
+        : { type: 'error', app: 'settings', message: 'Could not copy your number' }
     );
   };
 </script>

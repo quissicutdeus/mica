@@ -31,7 +31,7 @@
 
   const { conversationsStore } = useMessages();
   const conversationsLoaded = conversationsStore.loaded;
-  const { busy, run } = useAppAction();
+  const { busy, run } = useAppAction('messages');
   const { contactsStore: contacts } = useContacts();
   const { photos } = usePhotos();
   const { citizenid } = useAccount();

@@ -19,7 +19,7 @@
 
   const { registryStore, unregisterApp, registerApp } = useAppRegistry();
   const { openApp: openPhoneApp } = useNavigation();
-  const { run } = useAppAction();
+  const { run } = useAppAction('store');
 
   let activeTab = $state<'catalog' | 'installed'>('catalog');
   let installedFilter = $state<'all' | 'system' | 'addon'>('all');

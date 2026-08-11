@@ -14,7 +14,7 @@
 
   let { onback }: AppProps = $props();
 
-  const { busy, run } = useAppAction();
+  const { busy, run } = useAppAction('admin');
   const {
     pendingReports,
     resolvedReports,

@@ -49,7 +49,7 @@
   const { myAccounts, followStats, loadFollowStats, toggleFollow, toggleBlock, activeAccount } =
     useBlabber();
   const { fetchNui } = useNuiBridge();
-  const { run, busy } = useAppAction();
+  const { run, busy } = useAppAction('blabber');
 
   let account = $state<Account | null>(null);
   let tab = $state<'blabs' | 'replies'>('blabs');
@@ -285,6 +285,7 @@
   <ReportDialog
     targetTable="gphone_accounts"
     targetId={account.id}
+    appId="blabber"
     onclose={() => (reporting = false)}
   />
 {/if}

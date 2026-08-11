@@ -173,6 +173,7 @@
   <ReportDialog
     targetTable="gphone_blabber"
     targetId={blab.id}
+    appId="blabber"
     onclose={() => (reporting = false)}
   />
 {/if}

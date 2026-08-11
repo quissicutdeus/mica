@@ -32,7 +32,7 @@
   } = $props();
 
   const { unregisterApp } = useAppRegistry();
-  const { run, busy } = useAppAction();
+  const { run, busy } = useAppAction('settings');
 
   let confirming = $state<'clear' | 'uninstall' | null>(null);
 
