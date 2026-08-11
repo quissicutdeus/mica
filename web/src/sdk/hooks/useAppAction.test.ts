@@ -74,4 +74,23 @@ describe('useAppAction', () => {
 
     expect(get(toast)[0].message).toBe('Could not delete that contact');
   });
+
+  it('tags its toasts with the app id it was given', async () => {
+    const { run } = useAppAction('contacts');
+
+    await run(async () => {}, { success: 'Saved' });
+    expect(get(toast)[0].app).toBe('contacts');
+
+    await run(async () => {
+      throw new Error('nope');
+    });
+    expect(get(toast)[0].app).toBe('contacts');
+  });
+
+  it('leaves toasts untagged when no app id was given', async () => {
+    const { run } = useAppAction();
+
+    await run(async () => {}, { success: 'Saved' });
+    expect(get(toast)[0].app).toBeUndefined();
+  });
 });

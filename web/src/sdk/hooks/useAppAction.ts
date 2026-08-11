@@ -28,7 +28,7 @@ export interface AppActionOptions {
  * `try` where a failure would skip it by accident.
  *
  * ```svelte
- * const { busy, run } = useAppAction();
+ * const { busy, run } = useAppAction('contacts');
  *
  * const save = async () => {
  *   if (await run(() => contacts.update(draft), { success: 'Contact updated' })) {
@@ -37,7 +37,7 @@ export interface AppActionOptions {
  * };
  * ```
  */
-export function useAppAction() {
+export function useAppAction(appId?: string) {
   const busy = writable(false);
 
   const run = async (
@@ -48,13 +48,14 @@ export function useAppAction() {
     try {
       await work();
       if (options.success) {
-        toast.show({ type: 'success', title: options.title, message: options.success });
+        toast.show({ type: 'success', app: appId, title: options.title, message: options.success });
       }
       return true;
     } catch (e) {
       console.error(options.error || 'App action failed', e);
       toast.show({
         type: 'error',
+        app: appId,
         title: options.title,
         message: options.error || messageOf(e, 'That did not work')
       });

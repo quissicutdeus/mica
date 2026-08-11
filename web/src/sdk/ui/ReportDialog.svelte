@@ -23,10 +23,12 @@
      */
     targetTable: string;
     targetId: number;
+    /** Which app's icon/name a confirmation toast identifies itself with. */
+    appId?: string;
     onclose: () => void;
   }
 
-  let { targetTable, targetId, onclose }: Props = $props();
+  let { targetTable, targetId, appId, onclose }: Props = $props();
 
   const CATEGORIES: { id: ReportCategory; label: string }[] = [
     { id: 'harassment', label: 'Harassment' },
@@ -54,10 +56,10 @@
         note: note.trim() || undefined
       });
       if (res?.error) throw new Error(res.error);
-      toast.show({ type: 'success', message: 'Report sent for review' });
+      toast.show({ type: 'success', app: appId, message: 'Report sent for review' });
       onclose();
     } catch (e) {
-      toast.show({ type: 'error', message: messageOf(e, 'Could not send the report') });
+      toast.show({ type: 'error', app: appId, message: messageOf(e, 'Could not send the report') });
     } finally {
       sending = false;
     }
