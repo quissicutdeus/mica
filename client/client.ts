@@ -1,9 +1,9 @@
 import './services';
 import './game';
-import { sendChargeToNui } from './services/Battery';
 import { FrameworkBridge } from './lib/FrameworkBridge';
 import { sendNuiMessage } from './lib/nui';
 import { PhoneState } from './lib/PhoneState';
+import { openPhone, closePhone } from './lib/PhoneVisibility';
 import { PhoneAnimation } from './game/PhoneAnimation';
 import { Freelook } from './game/Freelook';
 import { PhoneCamera } from './game/PhoneCamera';
@@ -25,27 +25,13 @@ RegisterCommand(
     if (PhoneState.isTyping()) return;
 
     const open = !PhoneState.isOpen();
-    PhoneState.setOpen(open);
+    // A disabled phone refuses to open at all; closing it is always allowed.
+    if (open && !PhoneState.isEnabled()) return;
 
     if (open) {
-      SetNuiFocus(true, true);
-      sendNuiMessage('setVisible', true);
-
-      const ped = PlayerPedId();
-      PhoneAnimation.playAppAnimation(ped, null, open);
-      PhoneAnimation.spawnPhoneProp(ped, open);
-
-      // Send time and battery charge immediately when opening
-      sendTimeToNui();
-      sendChargeToNui();
+      openPhone();
     } else {
-      const ped = PlayerPedId();
-      PhoneCamera.disable();
-      PhoneAnimation.removePhoneProp();
-      PhoneAnimation.stopAllPhoneAnimations(ped);
-      Freelook.resetFreelook();
-
-      sendNuiMessage('setVisible', false);
+      closePhone();
     }
   },
   false
@@ -88,18 +74,8 @@ on('__cfx_nui:setTyping', (data: { typing: boolean }, cb: Function) => {
 // NUI Callback to close phone
 RegisterNuiCallbackType('hideFrame');
 on('__cfx_nui:hideFrame', (_: any, cb: Function) => {
-  PhoneState.setOpen(false);
   PhoneState.setTyping(false);
-  // Otherwise the scripted cam survives the phone closing and the player is stuck
-  // looking through it.
-  PhoneCamera.disable();
-
-  const ped = PlayerPedId();
-  PhoneAnimation.removePhoneProp();
-  PhoneAnimation.stopAllPhoneAnimations(ped);
-  Freelook.resetFreelook();
-
-  sendNuiMessage('setVisible', false);
+  closePhone();
   cb({});
 });
 

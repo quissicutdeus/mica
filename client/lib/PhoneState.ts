@@ -9,12 +9,30 @@
 
 let phoneOpen = false;
 let typing = false;
+let enabled = true;
 
 export const PhoneState = {
   isOpen: (): boolean => phoneOpen,
 
+  /**
+   * Pushed to the server on every change so `IsPhoneOpen` has something to answer from
+   * (`server/lib/PhoneOpenState.ts`) — there is no way for the server to ask a client
+   * synchronously, so it is told rather than queried.
+   */
   setOpen: (open: boolean): void => {
     phoneOpen = open;
+    TriggerServerEvent('gphone:server:shell:setOpen', open);
+  },
+
+  /**
+   * Whether the phone may be opened at all, set by `SetPhoneEnabled` for a job or an
+   * item that needs to confiscate it. `togglePhone` refuses to open while this is false,
+   * and disabling it while open force-closes it the same way `hideFrame` does.
+   */
+  isEnabled: (): boolean => enabled,
+
+  setEnabled: (value: boolean): void => {
+    enabled = value;
   },
 
   /**
