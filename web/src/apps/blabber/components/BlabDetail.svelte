@@ -24,7 +24,7 @@
     onhandle,
     ontag,
     onmouth,
-    onlike
+    onear
   }: {
     blabId: number;
     anchorId?: number;
@@ -33,7 +33,7 @@
     onhandle?: (handle: string) => void;
     ontag?: (tag: string) => void;
     onmouth?: (blab: Blab) => void;
-    onlike?: (blab: Blab) => void;
+    onear?: (blab: Blab) => void;
   } = $props();
 
   const { viewBlab, loadMoreReplies, engagement, loadEngagement, postBlab } = useBlabber();
@@ -146,7 +146,7 @@
           {onhandle}
           {ontag}
           onmouth={() => root && onmouth?.(root)}
-          onlike={() => root && onlike?.(root)}
+          onear={() => root && onear?.(root)}
           onreply={() => (replyTarget = root)}
         />
       {:else}
@@ -178,7 +178,7 @@
               {ontag}
               onreply={() => (replyTarget = reply)}
               onmouth={() => onmouth?.(reply)}
-              onlike={() => onlike?.(reply)}
+              onear={() => onear?.(reply)}
             />
           </div>
         {/each}

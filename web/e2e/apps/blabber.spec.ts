@@ -177,15 +177,15 @@ test.describe('Blabber', () => {
     await expect(page.locator('article b')).toHaveCount(0);
   });
 
-  test('likes a Blab and fills the heart', async ({ page }) => {
+  test('ears a Blab and fills the heart', async ({ page }) => {
     const first = page.locator('article').first();
 
-    await first.getByRole('button', { name: 'Like' }).click();
+    await first.getByRole('button', { name: 'Ear' }).click();
 
     // The label flips because the state did — an optimistic update that only changed a color
     // would leave the control lying to a screen reader.
-    await expect(first.getByRole('button', { name: 'Unlike' })).toBeVisible();
-    await expect(first.getByRole('button', { name: 'Unlike' })).toHaveAttribute(
+    await expect(first.getByRole('button', { name: 'Unear' })).toBeVisible();
+    await expect(first.getByRole('button', { name: 'Unear' })).toHaveAttribute(
       'aria-pressed',
       'true'
     );

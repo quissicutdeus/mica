@@ -116,10 +116,10 @@ describe('the declaration', () => {
     expect(unique).toMatchObject({ columns: ['account_id', 'mouth_of'], unique: true });
   });
 
-  it('makes a like unique per account, in the child table', () => {
-    const likes = blabber.resolved.childTables.find((t) => t.name === 'gphone_blabber_likes');
-    expect(likes).toBeDefined();
-    const unique = (likes?.indexes ?? []).find((i: any) => i.name === 'blab_account');
+  it('makes an ear unique per account, in the child table', () => {
+    const ears = blabber.resolved.childTables.find((t) => t.name === 'gphone_blabber_ears');
+    expect(ears).toBeDefined();
+    const unique = (ears?.indexes ?? []).find((i: any) => i.name === 'blab_account');
     expect(unique).toMatchObject({ unique: true });
   });
 
@@ -373,29 +373,29 @@ describe('replies, mouths and likes', () => {
     expect(reply.error).toBe('You have already mouthed that.');
   });
 
-  it('treats a duplicate like as success, so a double tap is not an error', async () => {
+  it('treats a duplicate ear as success, so a double tap is not an error', async () => {
     // The unique index makes it idempotent; a read-then-write would have a race two taps find.
     dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
     dbMock.single.mockResolvedValueOnce({ id: 9, status: 'active' });
     dbMock.insert.mockRejectedValueOnce(new Error('Duplicate entry for key blab_account'));
 
-    await expect(call('like', { account_id: 1, blab_id: 9 })).resolves.toBe(true);
+    await expect(call('ear', { account_id: 1, blab_id: 9 })).resolves.toBe(true);
   });
 
-  it('scopes an unlike to the caller own account', async () => {
-    // A row id is not authorization to remove somebody else's like (§2.9).
+  it('scopes an unear to the caller own account', async () => {
+    // A row id is not authorization to remove somebody else's ear (§2.9).
     dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
 
-    await call('unlike', { account_id: 1, blab_id: 9 });
+    await call('unear', { account_id: 1, blab_id: 9 });
 
     const params = dbMock.update.mock.calls[0][1] as unknown[];
     expect(params).toEqual([9, 1]);
   });
 
-  it('refuses to like as an account the caller does not own', async () => {
+  it('refuses to ear as an account the caller does not own', async () => {
     dbMock.single.mockResolvedValueOnce(null);
 
-    const reply = await call('like', { account_id: 999, blab_id: 9 });
+    const reply = await call('ear', { account_id: 999, blab_id: 9 });
 
     expect(reply.error).toMatch(/not yours/);
     expect(dbMock.insert).not.toHaveBeenCalled();
@@ -660,8 +660,8 @@ describe('engagement', () => {
     expect(reply[7]).toEqual({
       replies: 0,
       mouths: 0,
-      likes: 0,
-      likedByMe: false,
+      ears: 0,
+      earedByMe: false,
       mouthedByMe: false
     });
   });

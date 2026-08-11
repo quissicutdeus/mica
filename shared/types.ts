@@ -223,8 +223,8 @@ export interface Blab {
 export interface BlabEngagement {
   replies: number;
   mouths: number;
-  likes: number;
-  likedByMe: boolean;
+  ears: number;
+  earedByMe: boolean;
   mouthedByMe: boolean;
 }
 

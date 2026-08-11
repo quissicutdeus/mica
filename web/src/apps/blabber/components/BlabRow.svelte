@@ -14,7 +14,7 @@
     ondelete,
     onreply,
     onmouth,
-    onlike,
+    onear,
     onopen
   }: {
     blab: Blab;
@@ -26,7 +26,7 @@
     ondelete?: (blab: Blab) => void;
     onreply?: (blab: Blab) => void;
     onmouth?: (blab: Blab) => void;
-    onlike?: (blab: Blab) => void;
+    onear?: (blab: Blab) => void;
     onopen?: (blab: Blab) => void;
   } = $props();
 
@@ -127,7 +127,7 @@
       {stats}
       onreply={() => onreply?.(blab)}
       onmouth={() => onmouth?.(blab)}
-      onlike={() => onlike?.(blab)}
+      onear={() => onear?.(blab)}
       onreport={editable ? undefined : () => (reporting = true)}
     />
 

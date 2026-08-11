@@ -3,23 +3,23 @@
   import type { BlabEngagement } from '@shared/types';
 
   /**
-   * Reply / mouth / like, with counts.
+   * Reply / mouth / ear, with counts.
    *
-   * Counts come from the batched engagement read rather than columns on the Blab — a
-   * `like_count` would be a second copy of a fact the likes table already holds, and it drifts
-   * the first time something removes a like without decrementing.
+   * Counts come from the batched engagement read rather than columns on the Blab — an
+   * `ear_count` would be a second copy of a fact the ears table already holds, and it drifts
+   * the first time something removes an ear without decrementing.
    */
   let {
     stats,
     onreply,
     onmouth,
-    onlike,
+    onear,
     onreport
   }: {
     stats?: BlabEngagement;
     onreply?: () => void;
     onmouth?: () => void;
-    onlike?: () => void;
+    onear?: () => void;
     /** Absent on the player's own Blab — reporting yourself is not moderation. */
     onreport?: () => void;
   } = $props();
@@ -65,15 +65,15 @@
   <button
     type="button"
     class="hover:text-error flex items-center gap-1.5 transition-colors"
-    class:text-error={stats?.likedByMe}
-    aria-label={stats?.likedByMe ? 'Unlike' : 'Like'}
-    aria-pressed={stats?.likedByMe ?? false}
-    onclick={onlike}
+    class:text-error={stats?.earedByMe}
+    aria-label={stats?.earedByMe ? 'Unear' : 'Ear'}
+    aria-pressed={stats?.earedByMe ?? false}
+    onclick={onear}
   >
     <svg
       class="h-4 w-4"
       viewBox="0 0 24 24"
-      fill={stats?.likedByMe ? 'currentColor' : 'none'}
+      fill={stats?.earedByMe ? 'currentColor' : 'none'}
       stroke="currentColor"
       stroke-width="1.5"
     >
@@ -83,7 +83,7 @@
         d="M12 20s-7-4.35-7-9.5A4.5 4.5 0 0 1 12 7.8 4.5 4.5 0 0 1 19 10.5c0 5.15-7 9.5-7 9.5Z"
       />
     </svg>
-    {count(stats?.likes)}
+    {count(stats?.ears)}
   </button>
 
   {#if onreport}

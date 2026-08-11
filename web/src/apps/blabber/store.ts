@@ -206,11 +206,11 @@ const findInFeed = (id: number): Partial<Blab> => feedSnapshot.find((row) => row
  *
  * Fetched in one batch for a page of ids rather than three counts per row — thirty posts asking
  * individually is ninety round trips through NUI. Kept in its own map rather than merged onto the
- * rows so a like can update without the feed store replacing a row and losing its identity in
+ * rows so an ear can update without the feed store replacing a row and losing its identity in
  * the keyed `{#each}`.
  *
- * Not denormalised onto the Blab either: a `like_count` column is a second copy of a fact the
- * likes table already holds, and it drifts the first time something removes a like without
+ * Not denormalised onto the Blab either: an `ear_count` column is a second copy of a fact the
+ * ears table already holds, and it drifts the first time something removes an ear without
  * decrementing.
  */
 export const engagement = writable<Record<number, BlabEngagement>>({});
@@ -218,8 +218,8 @@ export const engagement = writable<Record<number, BlabEngagement>>({});
 const EMPTY: BlabEngagement = {
   replies: 0,
   mouths: 0,
-  likes: 0,
-  likedByMe: false,
+  ears: 0,
+  earedByMe: false,
   mouthedByMe: false
 };
 
@@ -233,21 +233,21 @@ export const loadEngagement = async (ids: number[]): Promise<void> => {
   engagement.update((current) => ({ ...current, ...reply }));
 };
 
-/** Optimistic, then reconciled: a heart must fill on tap, not after a round trip. */
-export const toggleLike = async (blabId: number): Promise<void> => {
+/** Optimistic, then reconciled: an ear must fill on tap, not after a round trip. */
+export const toggleEar = async (blabId: number): Promise<void> => {
   const accountId = getActiveAccountId();
   if (accountId === null) throw new Error('Claim a handle first.');
 
-  let liked = false;
+  let eared = false;
   engagement.update((current) => {
     const existing = current[blabId] ?? EMPTY;
-    liked = existing.likedByMe;
+    eared = existing.earedByMe;
     return {
       ...current,
       [blabId]: {
         ...existing,
-        likedByMe: !liked,
-        likes: Math.max(0, existing.likes + (liked ? -1 : 1))
+        earedByMe: !eared,
+        ears: Math.max(0, existing.ears + (eared ? -1 : 1))
       }
     };
   });
@@ -256,10 +256,10 @@ export const toggleLike = async (blabId: number): Promise<void> => {
     // Two literal calls rather than one with a ternary action name. A computed action is
     // invisible to `routes.test.ts`, which cross-references every layer by scanning for
     // literals — and a route it cannot see is reported as dead weight.
-    if (liked) {
-      await blabberService().call('unlike', { blab_id: blabId, account_id: accountId });
+    if (eared) {
+      await blabberService().call('unear', { blab_id: blabId, account_id: accountId });
     } else {
-      await blabberService().call('like', { blab_id: blabId, account_id: accountId });
+      await blabberService().call('ear', { blab_id: blabId, account_id: accountId });
     }
   } catch (error) {
     // Put it back. An optimistic update that survives a failed write is a lie the UI tells.
@@ -318,7 +318,7 @@ export const loadFollowingList = async (accountId: number): Promise<void> => {
 /**
  * Follow or unfollow, optimistically.
  *
- * Same shape as `toggleLike`, and for the same reason: a Follow button must change on tap rather
+ * Same shape as `toggleEar`, and for the same reason: a Follow button must change on tap rather
  * than after a round trip. A failure puts it back, because an optimistic update that survives a
  * refused write is a lie the UI tells.
  *
@@ -555,7 +555,7 @@ export function useBlabber() {
     loadDmMessages: (peerAccountId: number) => loadDmMessages(peerAccountId),
     sendDm: (peerAccountId: number, body: string) => sendDm(peerAccountId, body),
     loadEngagement: (ids: number[]) => loadEngagement(ids),
-    toggleLike: (blabId: number) => toggleLike(blabId),
+    toggleEar: (blabId: number) => toggleEar(blabId),
     mouthBlab: (blabId: number, body?: string) => mouthBlab(blabId, body),
     loadMyAccounts: () => loadMyAccounts(),
     claimAccount: (handle: string, displayName?: string) => claimAccount(handle, displayName),

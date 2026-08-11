@@ -17,7 +17,7 @@ import {
   deleteBlab,
   engagement,
   loadEngagement,
-  toggleLike,
+  toggleEar,
   followStats,
   loadFollowStats,
   toggleFollow,
@@ -270,10 +270,10 @@ describe('blabber service', () => {
     });
   });
 
-  describe('engagement & likes', () => {
+  describe('engagement & ears', () => {
     it('loadEngagement updates engagement map', async () => {
       const mockData: Record<number, BlabEngagement> = {
-        101: { replies: 2, mouths: 1, likes: 5, likedByMe: true, mouthedByMe: false }
+        101: { replies: 2, mouths: 1, ears: 5, earedByMe: true, mouthedByMe: false }
       };
       vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockData as any);
 
@@ -282,46 +282,46 @@ describe('blabber service', () => {
       expect(get(engagement)[101]).toEqual(mockData[101]);
     });
 
-    it('toggleLike optimistically likes a blab and calls likeBlab', async () => {
+    it('toggleEar optimistically ears a blab and calls earBlab', async () => {
       activeAccountId.set(1);
       myAccounts.set([{ id: 1 } as Account]);
       engagement.set({
-        101: { replies: 0, mouths: 0, likes: 0, likedByMe: false, mouthedByMe: false }
+        101: { replies: 0, mouths: 0, ears: 0, earedByMe: false, mouthedByMe: false }
       });
 
       const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(undefined as any);
 
-      await toggleLike(101);
+      await toggleEar(101);
 
-      expect(get(engagement)[101].likedByMe).toBe(true);
-      expect(get(engagement)[101].likes).toBe(1);
+      expect(get(engagement)[101].earedByMe).toBe(true);
+      expect(get(engagement)[101].ears).toBe(1);
       expect(spy).toHaveBeenCalledWith(
         'svc',
-        { service: 'blabber', action: 'like', data: { blab_id: 101, account_id: 1 } },
+        { service: 'blabber', action: 'ear', data: { blab_id: 101, account_id: 1 } },
         undefined
       );
     });
 
-    it('toggleLike reverts optimistic update if NUI call fails', async () => {
+    it('toggleEar reverts optimistic update if NUI call fails', async () => {
       activeAccountId.set(1);
       myAccounts.set([{ id: 1 } as Account]);
       engagement.set({
-        101: { replies: 0, mouths: 0, likes: 0, likedByMe: false, mouthedByMe: false }
+        101: { replies: 0, mouths: 0, ears: 0, earedByMe: false, mouthedByMe: false }
       });
 
       vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation((name, payload) => {
         const action = actionOf(name, payload);
-        if (action === 'blabber:like') return Promise.reject(new Error('Server error'));
+        if (action === 'blabber:ear') return Promise.reject(new Error('Server error'));
         if (action === 'blabber:engagement')
           return Promise.resolve({
-            101: { replies: 0, mouths: 0, likes: 0, likedByMe: false, mouthedByMe: false }
+            101: { replies: 0, mouths: 0, ears: 0, earedByMe: false, mouthedByMe: false }
           } as any);
         return Promise.resolve(undefined as any);
       });
 
-      await expect(toggleLike(101)).rejects.toThrow('Server error');
-      expect(get(engagement)[101].likedByMe).toBe(false);
-      expect(get(engagement)[101].likes).toBe(0);
+      await expect(toggleEar(101)).rejects.toThrow('Server error');
+      expect(get(engagement)[101].earedByMe).toBe(false);
+      expect(get(engagement)[101].ears).toBe(0);
     });
   });
 

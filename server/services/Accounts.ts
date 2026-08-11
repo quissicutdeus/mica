@@ -269,7 +269,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
  * the session that sent it (§2.9) — without the check, a player follows and unfollows on anyone
  * else's behalf by guessing an id.
  *
- * The same shape as `blabber:like`/`unlike`, which already got this right: insert-only with the
+ * The same shape as `blabber:ear`/`unear`, which already got this right: insert-only with the
  * unique index making it idempotent, and a delete scoped to the caller's own account.
  */
 app.registerEvent('follow', async (source, cbId, data, citizenid) => {

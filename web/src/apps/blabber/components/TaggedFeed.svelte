@@ -14,14 +14,14 @@
     ontag,
     onopen,
     onmouth,
-    onlike
+    onear
   }: {
     tag: string;
     onhandle?: (handle: string) => void;
     ontag?: (tag: string) => void;
     onopen?: (blab: Blab) => void;
     onmouth?: (blab: Blab) => void;
-    onlike?: (blab: Blab) => void;
+    onear?: (blab: Blab) => void;
   } = $props();
 
   const { taggedBlabs, loadTaggedBlabs, engagement, loadEngagement } = useBlabber();
@@ -63,7 +63,7 @@
         {ontag}
         onreply={() => onopen?.(blab)}
         onmouth={() => onmouth?.(blab)}
-        onlike={() => onlike?.(blab)}
+        onear={() => onear?.(blab)}
         {onopen}
       />
     {/each}

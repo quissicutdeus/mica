@@ -72,7 +72,7 @@
     deleteBlab,
     engagement,
     loadEngagement,
-    toggleLike,
+    toggleEar,
     mouthBlab,
     loadDmThreads,
     dmThreads,
@@ -385,7 +385,7 @@
     view = 'thread';
   };
 
-  const like = (blab: Blab) => void run(() => toggleLike(blab.id), { title: 'Blabber' });
+  const ear = (blab: Blab) => void run(() => toggleEar(blab.id), { title: 'Blabber' });
 
   const mouth = (blab: Blab) =>
     void run(() => mouthBlab(blab.id), { title: 'Blabber', success: 'Mouthed' });
@@ -604,7 +604,7 @@
       onhandle={openProfile}
       ontag={openTag}
       onmouth={mouth}
-      onlike={like}
+      onear={ear}
     />
   {:else if view === 'tag' && activeTag}
     <TaggedFeed
@@ -613,7 +613,7 @@
       ontag={openTag}
       onopen={(b) => openBlab(b.id)}
       onmouth={mouth}
-      onlike={like}
+      onear={ear}
     />
   {:else if view === 'follows' && follows}
     <FollowList
@@ -666,7 +666,7 @@
             ondelete={remove}
             onreply={(b) => openBlab(b.id)}
             onmouth={mouth}
-            onlike={like}
+            onear={ear}
             onopen={(b) => openBlab(b.id)}
           />
         {/each}
@@ -695,7 +695,7 @@
             ondelete={remove}
             onreply={(b) => openBlab(b.id)}
             onmouth={mouth}
-            onlike={like}
+            onear={ear}
             onopen={(b) => openBlab(b.id)}
           />
         {/each}

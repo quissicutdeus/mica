@@ -131,13 +131,14 @@ export const blabber = defineService<Blab>({
     { name: 'account_mouth', columns: ['account_id', 'mouth_of'], unique: true }
   ],
   /**
-   * Likes. A child table rather than a service of its own: it is Blabber's, not shared, and
-   * DDL-only keeps the generic CRUD off something that only ever needs insert, delete and
-   * count. Uniqueness is the point of declaring it here at all.
+   * Ears. Pairs with a Mouth: one speaks, one listens. A child table rather than a service of
+   * its own: it is Blabber's, not shared, and DDL-only keeps the generic CRUD off something
+   * that only ever needs insert, delete and count. Uniqueness is the point of declaring it here
+   * at all.
    */
   childTables: [
     {
-      name: 'gphone_blabber_likes',
+      name: 'gphone_blabber_ears',
       columns: {
         blab_id: {
           type: 'int',
@@ -386,13 +387,13 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
 });
 
 /**
- * Like a Blab, as one of the caller's accounts.
+ * Ear a Blab, as one of the caller's accounts.
  *
  * Insert-only; the unique index is what makes it idempotent rather than a read-then-write with
  * a race two rapid taps would find. A duplicate is reported as success, because from the
- * player's point of view the like is exactly as applied as they wanted.
+ * player's point of view the ear is exactly as applied as they wanted.
  */
-app.registerEvent('like', async (source, cbId, data, citizenid) => {
+app.registerEvent('ear', async (source, cbId, data, citizenid) => {
   const body = fields(data);
   const account = await ownedAccount(body.account_id, citizenid, APP);
   if (!account) throw new Error('That account is not yours.');
@@ -401,7 +402,7 @@ app.registerEvent('like', async (source, cbId, data, citizenid) => {
 
   try {
     await Database.insert(
-      'INSERT INTO `gphone_blabber_likes` (`blab_id`, `account_id`) VALUES (?, ?)',
+      'INSERT INTO `gphone_blabber_ears` (`blab_id`, `account_id`) VALUES (?, ?)',
       [target.id, account.id]
     );
   } catch (error) {
@@ -411,29 +412,29 @@ app.registerEvent('like', async (source, cbId, data, citizenid) => {
   return true;
 });
 
-app.registerEvent('unlike', async (source, cbId, data, citizenid) => {
+app.registerEvent('unear', async (source, cbId, data, citizenid) => {
   const body = fields(data);
   const account = await ownedAccount(body.account_id, citizenid, APP);
   if (!account) throw new Error('That account is not yours.');
 
   const blabId = requirePositiveInt(body.blab_id, 'blab id');
   // Scoped to the caller's own account, so a row id is not authorization to remove somebody
-  // else's like (§2.9).
+  // else's ear (§2.9).
   await Database.update(
-    'DELETE FROM `gphone_blabber_likes` WHERE `blab_id` = ? AND `account_id` = ?',
+    'DELETE FROM `gphone_blabber_ears` WHERE `blab_id` = ? AND `account_id` = ?',
     [blabId, account.id]
   );
   return true;
 });
 
 /**
- * Reply, mouth and like counts for a page of Blabs, plus what this player has already done.
+ * Reply, mouth and ear counts for a page of Blabs, plus what this player has already done.
  *
  * One batched read rather than three per row. A feed of thirty posts asking individually is
  * ninety round trips through NUI, and the counts are the part a reader notices missing.
  *
- * Not denormalised onto the Blab row, which was the alternative. A `like_count` column is a
- * second copy of a fact the likes table already holds, and it drifts the first time a like is
+ * Not denormalised onto the Blab row, which was the alternative. An `ear_count` column is a
+ * second copy of a fact the ears table already holds, and it drifts the first time an ear is
  * removed by a path that forgets to decrement — the same defect class as the invented storage
  * figure in `72b6d10`.
  */
@@ -467,7 +468,7 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
 
   const placeholders = ids.map(() => '?').join(', ');
 
-  const [replies, mouths, likes] = await Promise.all([
+  const [replies, mouths, ears] = await Promise.all([
     Database.query<{ parent: number; total: number }[]>(
       `SELECT \`reply_to\` AS parent, COUNT(*) AS total FROM \`gphone_blabber\`
        WHERE \`reply_to\` IN (${placeholders}) AND \`status\` = 'active'
@@ -481,16 +482,16 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
       ids
     ),
     Database.query<{ blab_id: number; total: number }[]>(
-      `SELECT \`blab_id\`, COUNT(*) AS total FROM \`gphone_blabber_likes\`
+      `SELECT \`blab_id\`, COUNT(*) AS total FROM \`gphone_blabber_ears\`
        WHERE \`blab_id\` IN (${placeholders})
        GROUP BY \`blab_id\``,
       ids
     )
   ]);
 
-  const myLikes = myAccountIds.length
+  const myEars = myAccountIds.length
     ? await Database.query<{ blab_id: number }[]>(
-        `SELECT \`blab_id\` FROM \`gphone_blabber_likes\`
+        `SELECT \`blab_id\` FROM \`gphone_blabber_ears\`
          WHERE \`blab_id\` IN (${placeholders})
          AND \`account_id\` IN (${myAccountIds.map(() => '?').join(', ')})`,
         [...ids, ...myAccountIds]
@@ -507,22 +508,22 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
       )
     : [];
 
-  const likedByMe = new Set(myLikes.map((row) => row.blab_id));
+  const earedByMe = new Set(myEars.map((row) => row.blab_id));
   const mouthedByMe = new Set(myMouths.map((row) => row.mouth_of));
   const byId = (rows: { parent?: number; blab_id?: number; total: number }[]) =>
     new Map(rows.map((row) => [Number(row.parent ?? row.blab_id), Number(row.total)]));
 
   const replyCounts = byId(replies);
   const mouthCounts = byId(mouths);
-  const likeCounts = byId(likes);
+  const earCounts = byId(ears);
 
   const out: Record<number, unknown> = {};
   for (const id of ids) {
     out[id] = {
       replies: replyCounts.get(id) ?? 0,
       mouths: mouthCounts.get(id) ?? 0,
-      likes: likeCounts.get(id) ?? 0,
-      likedByMe: likedByMe.has(id),
+      ears: earCounts.get(id) ?? 0,
+      earedByMe: earedByMe.has(id),
       mouthedByMe: mouthedByMe.has(id)
     };
   }

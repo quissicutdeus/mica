@@ -339,7 +339,7 @@ const mockBlabTags = new Map<number, string[]>(
   mockBlabs.map((b) => [b.id, taggedTopics(b.body ?? '')])
 );
 
-const mockLikes: { blab_id: number; account_id: number }[] = [{ blab_id: 1, account_id: 2 }];
+const mockEars: { blab_id: number; account_id: number }[] = [{ blab_id: 1, account_id: 2 }];
 
 /**
  * The follow graph, empty to begin with.
@@ -735,8 +735,8 @@ const mockRegistry: Record<string, MockHandler> = {
       out[id] = {
         replies: mockBlabs.filter((b) => b.reply_to === id && b.status === 'active').length,
         mouths: mockBlabs.filter((b) => b.mouth_of === id && b.status === 'active').length,
-        likes: mockLikes.filter((l) => l.blab_id === id).length,
-        likedByMe: mockLikes.some((l) => l.blab_id === id && l.account_id === 1),
+        ears: mockEars.filter((l) => l.blab_id === id).length,
+        earedByMe: mockEars.some((l) => l.blab_id === id && l.account_id === 1),
         mouthedByMe: mockBlabs.some(
           (b) => b.mouth_of === id && b.account_id === 1 && b.status === 'active'
         )
@@ -744,15 +744,15 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     return out;
   },
-  'blabber:like': ({ blab_id }: { blab_id: number }) => {
-    if (!mockLikes.some((l) => l.blab_id === blab_id && l.account_id === 1)) {
-      mockLikes.push({ blab_id, account_id: 1 });
+  'blabber:ear': ({ blab_id }: { blab_id: number }) => {
+    if (!mockEars.some((l) => l.blab_id === blab_id && l.account_id === 1)) {
+      mockEars.push({ blab_id, account_id: 1 });
     }
     return true;
   },
-  'blabber:unlike': ({ blab_id }: { blab_id: number }) => {
-    const at = mockLikes.findIndex((l) => l.blab_id === blab_id && l.account_id === 1);
-    if (at >= 0) mockLikes.splice(at, 1);
+  'blabber:unear': ({ blab_id }: { blab_id: number }) => {
+    const at = mockEars.findIndex((l) => l.blab_id === blab_id && l.account_id === 1);
+    if (at >= 0) mockEars.splice(at, 1);
     return true;
   },
   /**
