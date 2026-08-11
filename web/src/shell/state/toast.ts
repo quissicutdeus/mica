@@ -73,6 +73,7 @@ function createToastStore() {
     const id = options.id || `toast_${Date.now()}_${++toastCounter}`;
     const newToast: ToastMessage = {
       id,
+      app: options.app,
       title: options.title,
       message: options.message,
       type: options.type || 'info',
@@ -176,6 +177,7 @@ function createToastStore() {
       audio.play('pop');
       return show({
         type: 'message',
+        app: 'messages',
         title: options.sender,
         sender: options.sender,
         message: options.message,
@@ -200,6 +202,7 @@ function createToastStore() {
       audio.play('notification');
       return show({
         type: 'contact',
+        app: 'contacts',
         title: 'Contact Shared',
         message: `${options.name}${options.phone ? ` (${options.phone})` : ''}`,
         avatar: options.avatar,
@@ -240,6 +243,7 @@ function createToastStore() {
       }
       return show({
         type: 'call',
+        app: 'phone',
         onExpire: options.onExpire,
         title: 'Incoming Call',
         message: options.name ? `${options.name} (${options.number})` : options.number,
@@ -268,6 +272,7 @@ function createToastStore() {
       audio.play('notification');
       return show({
         type: 'info',
+        app: 'mail',
         title: `New Email: ${options.sender}`,
         message: options.subject,
         duration: 5000,

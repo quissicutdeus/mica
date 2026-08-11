@@ -113,3 +113,35 @@ describe('toast store interactive notifications', () => {
     expect(onClickSpy).toHaveBeenCalledOnce();
   });
 });
+
+describe('a toast carries which app it came from', () => {
+  beforeEach(() => toast.clear());
+
+  it('stores the app id passed to the generic show()', () => {
+    toast.show({ message: 'Hi', app: 'notes' });
+    expect(get(toast)[0].app).toBe('notes');
+  });
+
+  it('has no app id when none is given', () => {
+    toast.show({ message: 'Hi' });
+    expect(get(toast)[0].app).toBeUndefined();
+  });
+
+  it.each([
+    ['showMail', () => toast.showMail({ sender: 'x', subject: 'y' }), 'mail'],
+    [
+      'showIncomingMessage',
+      () => toast.showIncomingMessage({ sender: 'x', message: 'y', onReply: () => {} }),
+      'messages'
+    ],
+    [
+      'showContactShare',
+      () => toast.showContactShare({ name: 'x', phone: 'y', onAccept: () => {} }),
+      'contacts'
+    ],
+    ['showCall', () => toast.showCall({ number: 'x', onAccept: () => {} }), 'phone']
+  ])('%s tags its own app', (_name, trigger, app) => {
+    trigger();
+    expect(get(toast)[0].app).toBe(app);
+  });
+});
