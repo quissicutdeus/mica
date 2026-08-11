@@ -557,8 +557,20 @@ not persist — "Copied to clipboard" is not a notification.
 
 The shade itself groups by app, expands a group in place, and has an archive of cleared items that
 can be restored. It opens from the status bar and closes from the home indicator or the backdrop.
-Two things specified alongside it are **not** built and are in _Proposed_ below: its drag and swipe
-gestures, and the toast visual hierarchy.
+One thing specified alongside it is **not** built and is in _Proposed_ below: its drag and swipe
+gestures.
+
+A toast now says which app is talking before it says what about: `ToastMessage.app`, resolved against
+`appRegistryStore.getManifest` in `ToastHost.svelte` into a small icon-and-name header above the
+title. It renders initials rather than the manifest's own icon component — the same call
+`NotificationShade`'s history rows already made, since an icon's `h-8 w-8` sizing (§11) does not
+shrink cleanly into a header this small. `showMail`/`showIncomingMessage`/`showContactShare`/
+`showCall` each tag their own app id; the generic `appEvent` push threads `envelope.app` through,
+which is what puts a header on every per-app notification, including an add-on's; `useAppAction` and
+`ReportDialog` take the calling app's id as an explicit parameter, the same convention `useAppLevels`
+already uses, since nothing in the SDK tracks an ambient "current app" for a hook to read instead. A
+handful of shell-level toasts — the server's own `notify` route, install/uninstall — stay headerless
+on purpose: none of them speak for a single app.
 
 ### Network and Bluetooth settings
 
