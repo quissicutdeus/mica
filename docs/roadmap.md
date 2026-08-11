@@ -657,10 +657,29 @@ Another resource can now make the phone do things. Before this the entire public
 named `exports` is gPhone _consuming_ somebody else.
 
 `server/lib/exports.ts` holds the scaffolding and `publicApi.ts` the catalogue, registered from
-`server.ts` after `./services` so everything has loaded before it can be called. Eight exports:
-`GetApiVersion`, `SendSystemEmail`, `SendNotification`, `BuildDeepLink`, `GetBatteryLevel`,
-`SetBatteryLevel`, `AddBatteryCharge` and `SetCharging`. Documented in `README.md`, because server
-owners are the audience.
+`server.ts` after `./services` so everything has loaded before it can be called. Grown in three
+passes — `GetApiVersion`, `SendSystemEmail`, `SendNotification`, `BuildDeepLink` and the battery
+group first; then reception (`SetGlobalSignal`, `ClearGlobalSignal`, `AddDeadZone`, `RemoveDeadZone`,
+`SetSignal`, `GetSignal`) and `AddMedia` alongside the zones themselves; then the phone-state group
+below. Documented in `README.md`, because server owners are the audience.
+
+The phone-state group needed a mechanism the others did not: nothing in the codebase let the server
+ask a client anything and wait, so `IsPhoneOpen(source)` is fed by a fire-and-forget push —
+`PhoneState.setOpen` now also tells the server, cached in `server/lib/PhoneOpenState.ts`, and
+`IsPhoneOpen` answers from whatever it last heard rather than asking live. `SetPhoneEnabled(source,
+enabled)` and `OpenApp(source, appId, props)` push the other way, onto a new `client/lib/
+PhoneVisibility.ts` that `client.ts`'s `togglePhone` and `hideFrame` now share rather than each
+carrying their own copy of the open/close sequence; disabling a currently-open phone force-closes it
+through the same path. `GetPhoneNumber(citizenid)` and its inverse `GetCitizenId(phone)` are pure
+server-side, through `PlayerDirectory`. `AddContact(citizenid, contact)` needed `Contacts.ts`'s first
+`repositoryFactory`, an `addForPlayer` method mirroring `Photos.ts`'s — for a job handing out its
+dispatch number while the player may be offline.
+
+**Deliberately out of scope**, so nothing above reads as covering it: client-side exports for other
+resources' client scripts beyond what signal polling needs; anything letting an external resource
+_read_ a player's messages, photos or notes, which is a privacy surface rather than an integration one
+and stays closed; and a general "run any service action" export, which would hand out the whole
+`ServiceEndpoint` surface without the payload validation and rate limiting §2.9 puts in front of it.
 
 Every one returns `{ ok: true, value }` or `{ ok: false, reason, message }` — a bare `false` that
 cannot separate "player offline" from "gPhone has not started" is unusable from the calling script —
@@ -799,24 +818,6 @@ capturing the pointer on its own `pointerdown` takes every touch that starts on 
 Doing it properly needs a grab handle to attach to and a transform that follows the finger, and
 swipe-to-clear needs per-row pointer handling that does not fight vertical scrolling.
 
-### Phone-state exports
-
-The export API under _Shipped_ left one group out — the one still needing a mechanism rather than a
-wrapper. (The signal exports it also deferred have since shipped alongside the zones themselves.)
-
-**Phone state and identity** — `GetPhoneNumber(citizenid)` and its inverse `GetCitizenId(phone)`
-(`PlayerDirectory` already resolves both directions), `IsPhoneOpen(source)`,
-`SetPhoneEnabled(source, enabled)` for confiscated or jailed, `OpenApp(source, appId, props)` and
-`AddContact(citizenid, contact)` for a job handing out its dispatch number. Each needs a client
-round trip that does not exist yet, which is why they waited.
-
-**Deliberately out of scope**, listed so nothing above reads as covering it: client-side exports for
-other resources' client scripts beyond what signal polling needs; anything letting an external
-resource _read_ a player's messages, photos or notes, which is a privacy surface rather than an
-integration one and stays closed; and a general "run any service action" export, which would hand out
-the whole `ServiceEndpoint` surface without the payload validation and rate limiting §2.9 puts in
-front of it.
-
 ---
 
 ## Ideas, not yet started
@@ -897,10 +898,11 @@ Referenced by number from the ideas above.
    success. Best-effort, not ACID: there is no transaction spanning another resource's money system.
    Offline recipients are refused rather than dropped.
 
-6. **A resource-facing export API** — built. `server/lib/exports.ts` and `publicApi.ts`, fifteen
-   exports, discriminated outcomes, `GetApiVersion`, and a contract test pinning every name. Phone
-   state and identity are the one group still out — see _Phone-state exports_ above — because each
-   needs a client round trip that does not exist yet.
+6. **A resource-facing export API** — built. `server/lib/exports.ts` and `publicApi.ts`, twenty-one
+   exports, discriminated outcomes, `GetApiVersion`, and a contract test pinning every name. The
+   phone-state group (`IsPhoneOpen`, `SetPhoneEnabled`, `OpenApp`) closed the one gap the others
+   didn't have — no mechanism existed for the server to learn anything from a client — with a
+   fire-and-forget push cached on the receiving side, the same shape Signal and Battery already use.
 
 **`location` and `network` are still permissions with no capability behind them**, but for different
 reasons now. `location` has nothing behind it at all. `network` has state — dead zones, a global
