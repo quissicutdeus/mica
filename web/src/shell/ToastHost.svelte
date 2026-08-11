@@ -4,6 +4,7 @@
   import CloseIcon from '../sdk/ui/icons/CloseIcon.svelte';
   import SendIcon from '../sdk/ui/icons/SendIcon.svelte';
   import Avatar from '../sdk/ui/Avatar.svelte';
+  import { appRegistryStore } from './state/registry';
 
   let toasts = $derived($toast);
 
@@ -69,6 +70,7 @@
       toast.dismiss(t.id);
       toast.show({
         type: 'success',
+        app: 'messages',
         message: 'Reply sent',
         duration: 2500
       });
@@ -142,6 +144,30 @@
           {/if}
 
           <div class="min-w-0 flex-1">
+            {#if t.app}
+              {@const manifest = appRegistryStore.getManifest(t.app)}
+              {#if manifest}
+                <!-- Which app is talking, before what it's saying. Initials rather than
+                     the manifest's own icon component: that renders at a fixed 32px
+                     (AGENTS.md §11 icons are sized `h-8 w-8`), too large to shrink into
+                     a header this small without a scaling hack — `NotificationShade`
+                     already settled on initials for the same reason. -->
+                <div class="mb-1 flex items-center gap-1.5">
+                  <Avatar
+                    src={typeof manifest.icon === 'string' ? manifest.icon : ''}
+                    initials={manifest.name.charAt(0)}
+                    bgClass={manifest.color}
+                    size="h-4 w-4"
+                    textClass="text-[8px]"
+                  />
+                  <span
+                    class="text-on-surface-variant truncate text-[10px] font-bold tracking-wide uppercase"
+                  >
+                    {manifest.name}
+                  </span>
+                </div>
+              {/if}
+            {/if}
             {#if t.title}
               <h4 class="text-on-surface mb-0.5 truncate text-xs font-bold tracking-tight">
                 {t.title}
