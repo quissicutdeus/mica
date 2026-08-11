@@ -16,15 +16,25 @@ const { dbMock, handlers } = vi.hoisted(() => {
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 const bridge = vi.hoisted(() => ({ current: 'CIT_A' }));
+const getSourceByCitizenId = vi.hoisted(() => vi.fn(() => null));
 vi.mock('../lib/FrameworkBridge', () => ({
   FrameworkBridge: {
     getPlayer: () => ({ citizenid: bridge.current, source: 5, setMeta: () => {} }),
     getCitizenId: () => bridge.current,
-    registerUsableItem: () => {}
+    registerUsableItem: () => {},
+    // `null` (offline) rather than a crash: nothing here exercises real delivery, and a push
+    // being attempted is what `getSourceByCitizenId` having been called stands in for.
+    getSourceByCitizenId
   }
 }));
 
 import { accounts, ownedAccount } from '../services/Accounts';
+import { registerReactable } from '../lib/reactions';
+
+// Registered by `BlabberDms.ts`'s own `defineService` call in the real app, which this file
+// never imports — so the reactions tests below register it directly rather than pulling in an
+// unrelated service just to trigger its module-scope side effect.
+registerReactable('gphone_blabber_dms', { label: 'Direct message' });
 
 const SRC = 5;
 
@@ -359,7 +369,7 @@ describe('following', () => {
       viewer_account_id: 3
     });
 
-    expect(reply).toEqual({ followers: 12, following: 4, followedByMe: true });
+    expect(reply).toEqual({ followers: 12, following: 4, followedByMe: true, blockedByMe: false });
   });
 
   it('answers followedByMe false for a viewer the caller does not own', async () => {
@@ -384,13 +394,280 @@ describe('following', () => {
 
     const reply = await call('follows', { app: 'blabber', account_id: 4 });
 
-    expect(reply).toEqual({ followers: 0, following: 0, followedByMe: false });
+    expect(reply).toEqual({ followers: 0, following: 0, followedByMe: false, blockedByMe: false });
   });
 
   it('requires an app id, since the graph is per app', async () => {
     const reply = await call('follow', { follower_account_id: 3, followee_account_id: 4 });
 
     expect(reply.error).toMatch(/app id is required/);
+  });
+});
+
+describe('blocking', () => {
+  const MINE = { id: 3, citizenid: 'CIT_A', app: 'blabber', handle: 'ada', status: 'active' };
+
+  it('refuses to block as an account the caller does not own', async () => {
+    dbMock.single.mockResolvedValueOnce(null);
+
+    const reply = await call('block', {
+      app: 'blabber',
+      blocker_account_id: 9,
+      blocked_account_id: 4
+    });
+
+    expect(reply.error).toMatch(/not yours/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('refuses to block yourself', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE);
+
+    const reply = await call('block', {
+      app: 'blabber',
+      blocker_account_id: 3,
+      blocked_account_id: 3
+    });
+
+    expect(reply.error).toMatch(/cannot block yourself/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('refuses a target that is gone or in another app', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE);
+    dbMock.single.mockResolvedValueOnce(null);
+
+    const reply = await call('block', {
+      app: 'blabber',
+      blocker_account_id: 3,
+      blocked_account_id: 4
+    });
+
+    expect(reply.error).toMatch(/no longer available/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('inserts the verified account id and cascades the follow graph both directions', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE);
+    dbMock.single.mockResolvedValueOnce({ id: 4 });
+
+    await call('block', {
+      app: 'blabber',
+      blocker_account_id: 3,
+      blocked_account_id: 4
+    });
+
+    expect(dbMock.insert.mock.calls[0][1]).toEqual([MINE.id, 4]);
+    // Both directions in one statement, so a stale "blocked but still following" row cannot
+    // survive either way.
+    const [sql, params] = dbMock.update.mock.calls[0];
+    expect(String(sql)).toContain('gphone_account_follows');
+    expect(params).toEqual([3, 4, 4, 3]);
+  });
+
+  it('treats a duplicate block as success, same as follow', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE);
+    dbMock.single.mockResolvedValueOnce({ id: 4 });
+    dbMock.insert.mockRejectedValueOnce(new Error('ER_DUP_ENTRY: Duplicate entry'));
+
+    const reply = await call('block', {
+      app: 'blabber',
+      blocker_account_id: 3,
+      blocked_account_id: 4
+    });
+
+    expect(reply).toBe(true);
+  });
+
+  it('scopes an unblock to the caller’s own account', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE);
+
+    await call('unblock', {
+      app: 'blabber',
+      blocker_account_id: 3,
+      blocked_account_id: 4
+    });
+
+    expect(dbMock.update.mock.calls[0][1]).toEqual([MINE.id, 4]);
+  });
+
+  it('refuses an unblock as an account the caller does not own', async () => {
+    dbMock.single.mockResolvedValueOnce(null);
+
+    const reply = await call('unblock', {
+      app: 'blabber',
+      blocker_account_id: 9,
+      blocked_account_id: 4
+    });
+
+    expect(reply.error).toMatch(/not yours/);
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  it('suppresses the follow notification when the followee has blocked the follower', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE); // ownedAccount(follower)
+    dbMock.single.mockResolvedValueOnce({ id: 4, citizenid: 'CIT_B', handle: 'bob' }); // followee
+    dbMock.single.mockResolvedValueOnce({ id: 1 }); // isBlocked(followee, follower) -> blocked
+
+    await call('follow', {
+      app: 'blabber',
+      follower_account_id: 3,
+      followee_account_id: 4
+    });
+
+    // `getSourceByCitizenId` is the first thing an attempted push does — never reached when
+    // the followee has blocked the follower.
+    expect(getSourceByCitizenId).not.toHaveBeenCalled();
+  });
+
+  it('still notifies a follow when there is no block', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE); // ownedAccount(follower)
+    dbMock.single.mockResolvedValueOnce({ id: 4, citizenid: 'CIT_B', handle: 'bob' }); // followee
+    dbMock.single.mockResolvedValueOnce(null); // isBlocked(followee, follower) -> not blocked
+
+    await call('follow', {
+      app: 'blabber',
+      follower_account_id: 3,
+      followee_account_id: 4
+    });
+
+    expect(getSourceByCitizenId).toHaveBeenCalledWith('CIT_B');
+  });
+});
+
+describe('reactions', () => {
+  const MINE = { id: 3, citizenid: 'CIT_A', app: 'blabber', handle: 'ada', status: 'active' };
+
+  it('refuses a reaction as an account the caller does not own', async () => {
+    dbMock.single.mockResolvedValueOnce(null);
+
+    const reply = await call('react', {
+      app: 'blabber',
+      account_id: 9,
+      target_table: 'gphone_blabber_dms',
+      target_id: 4,
+      emoji: '👍'
+    });
+
+    expect(reply.error).toMatch(/not yours/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('refuses a table that never opted in', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE);
+
+    const reply = await call('react', {
+      app: 'blabber',
+      account_id: 3,
+      target_table: 'gphone_players',
+      target_id: 4,
+      emoji: '👍'
+    });
+
+    expect(reply.error).toMatch(/cannot be reacted to/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('refuses a value that is not a plausible single emoji', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE);
+
+    const reply = await call('react', {
+      app: 'blabber',
+      account_id: 3,
+      target_table: 'gphone_blabber_dms',
+      target_id: 4,
+      emoji: 'not an emoji at all, this is far too long'
+    });
+
+    expect(reply.error).toMatch(/not a single emoji/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('inserts a reaction on a reactable table', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE);
+
+    await call('react', {
+      app: 'blabber',
+      account_id: 3,
+      target_table: 'gphone_blabber_dms',
+      target_id: 4,
+      emoji: '👍'
+    });
+
+    expect(dbMock.insert.mock.calls[0][1]).toEqual([3, 'gphone_blabber_dms', 4, '👍']);
+  });
+
+  it('treats a duplicate reaction as success', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE);
+    dbMock.insert.mockRejectedValueOnce(new Error('ER_DUP_ENTRY: Duplicate entry'));
+
+    const reply = await call('react', {
+      app: 'blabber',
+      account_id: 3,
+      target_table: 'gphone_blabber_dms',
+      target_id: 4,
+      emoji: '👍'
+    });
+
+    expect(reply).toBe(true);
+  });
+
+  it('scopes an unreact to the caller’s own account', async () => {
+    dbMock.single.mockResolvedValueOnce(MINE);
+
+    await call('unreact', {
+      app: 'blabber',
+      account_id: 3,
+      target_table: 'gphone_blabber_dms',
+      target_id: 4,
+      emoji: '👍'
+    });
+
+    expect(dbMock.update.mock.calls[0][1]).toEqual([3, 'gphone_blabber_dms', 4, '👍']);
+  });
+
+  it('refuses reactionsFor on a table that never opted in', async () => {
+    const reply = await call('reactionsFor', {
+      app: 'blabber',
+      target_table: 'gphone_players',
+      target_ids: [1, 2]
+    });
+
+    expect(reply.error).toMatch(/cannot be reacted to/);
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('answers empty for no target ids, without querying', async () => {
+    const reply = await call('reactionsFor', {
+      app: 'blabber',
+      target_table: 'gphone_blabber_dms',
+      target_ids: []
+    });
+
+    expect(reply).toEqual({});
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('groups counts per target and emoji, and reports which are the caller’s own', async () => {
+    dbMock.query
+      .mockResolvedValueOnce([
+        { target_id: 4, emoji: '👍', total: 2 },
+        { target_id: 4, emoji: '❤️', total: 1 },
+        { target_id: 5, emoji: '👍', total: 1 }
+      ])
+      .mockResolvedValueOnce([{ id: 3 }]) // the caller's own accounts in this app
+      .mockResolvedValueOnce([{ target_id: 4, emoji: '👍' }]);
+
+    const reply = await call('reactionsFor', {
+      app: 'blabber',
+      target_table: 'gphone_blabber_dms',
+      target_ids: [4, 5]
+    });
+
+    expect(reply).toEqual({
+      4: { counts: { '👍': 2, '❤️': 1 }, mine: ['👍'] },
+      5: { counts: { '👍': 1 }, mine: [] }
+    });
   });
 });
 

@@ -346,9 +346,91 @@ describe('a profile feed', () => {
     expect(reply.error).toBeTruthy();
     expect(dbMock.query).not.toHaveBeenCalled();
   });
+
+  it('answers an unfiltered profile when no viewer is supplied', async () => {
+    // Reading a profile is not a privileged act — an absent viewer is not an error.
+    dbMock.query.mockResolvedValueOnce([blab({ id: 5, account_id: 1 })]);
+
+    const reply = await call('profile', { account_id: 1, tab: 'blabs' });
+
+    expect(reply.rows).toHaveLength(1);
+  });
+
+  it('answers an empty profile, one-directionally, when the viewer has blocked this account', async () => {
+    dbMock.single
+      .mockResolvedValueOnce(MY_ACCOUNT) // ownedAccount(viewer_account_id)
+      .mockResolvedValueOnce({ id: 1 }); // isBlocked(viewer, account) -> blocked
+
+    const reply = await call('profile', {
+      account_id: 9,
+      tab: 'blabs',
+      viewer_account_id: MY_ACCOUNT.id
+    });
+
+    expect(reply).toEqual({ rows: [], nextCursor: null });
+    // Never even queries the Blab table once the viewer's block is confirmed.
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('reads normally when the viewer has not blocked this account', async () => {
+    dbMock.single
+      .mockResolvedValueOnce(MY_ACCOUNT) // ownedAccount(viewer_account_id)
+      .mockResolvedValueOnce(null); // isBlocked -> not blocked
+    dbMock.query.mockResolvedValueOnce([blab({ id: 5, account_id: 9 })]);
+
+    const reply = await call('profile', {
+      account_id: 9,
+      tab: 'blabs',
+      viewer_account_id: MY_ACCOUNT.id
+    });
+
+    expect(reply.rows).toHaveLength(1);
+  });
 });
 
-describe('replies, mouths and likes', () => {
+describe('the public feed', () => {
+  it('answers unfiltered when no account_id is supplied', async () => {
+    dbMock.query.mockResolvedValueOnce([]);
+
+    await call('feed', {});
+
+    const [sql, params] = dbMock.query.mock.calls[0];
+    expect(sql).not.toContain('gphone_account_blocks');
+    // Just the limit+1 probe — no viewer id to bind.
+    expect(params).toEqual([31]);
+  });
+
+  it('excludes accounts the caller has blocked when account_id is owned', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.query.mockResolvedValueOnce([]);
+
+    await call('feed', { account_id: 1 });
+
+    const [sql, params] = dbMock.query.mock.calls[0];
+    expect(sql).toMatch(/NOT IN \(\s*SELECT `blocked_account_id`/);
+    expect(params[0]).toBe(MY_ACCOUNT.id);
+  });
+
+  it('falls back to unfiltered when account_id is not the caller’s own', async () => {
+    dbMock.single.mockResolvedValueOnce(null);
+    dbMock.query.mockResolvedValueOnce([]);
+
+    await call('feed', { account_id: 999 });
+
+    const [sql] = dbMock.query.mock.calls[0];
+    expect(sql).not.toContain('gphone_account_blocks');
+  });
+
+  it('is top-level only, like Following', async () => {
+    dbMock.query.mockResolvedValueOnce([]);
+
+    await call('feed', {});
+
+    expect(dbMock.query.mock.calls[0][0]).toContain('`reply_to` IS NULL');
+  });
+});
+
+describe('replies, mouths and ears', () => {
   it('accepts a reply to a reply, because a reply is just a Blab', async () => {
     // The reason `reply_to` self-references rather than getting its own table: nesting is the
     // same column one level deeper, so a thread needs no recursive query and no second shape.
@@ -758,6 +840,20 @@ describe('the Following feed', () => {
     await call('following', { account_id: 1 });
 
     expect(dbMock.query.mock.calls[0][0]).not.toContain('citizenid');
+  });
+
+  it('excludes accounts the viewer has blocked', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.query.mockResolvedValueOnce([]);
+
+    await call('following', { account_id: 1 });
+
+    const [sql, params] = dbMock.query.mock.calls[0];
+    expect(sql).toMatch(/NOT IN \(\s*SELECT `blocked_account_id`/);
+    expect(sql).toMatch(/`blocker_account_id` = \?/);
+    // The verified viewer's own id, both for the follow subquery and the block one.
+    expect(params[0]).toBe(MY_ACCOUNT.id);
+    expect(params[1]).toBe(MY_ACCOUNT.id);
   });
 
   it('is top-level only, like the public feed', async () => {

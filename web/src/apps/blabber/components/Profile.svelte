@@ -46,7 +46,8 @@
     onfollows?: (account: Account, kind: 'followers' | 'following') => void;
   } = $props();
 
-  const { myAccounts, followStats, loadFollowStats, toggleFollow, activeAccount } = useBlabber();
+  const { myAccounts, followStats, loadFollowStats, toggleFollow, toggleBlock, activeAccount } =
+    useBlabber();
   const { fetchNui } = useNuiBridge();
   const { run, busy } = useAppAction();
 
@@ -101,6 +102,16 @@
     void run(() => toggleFollow(target.id), { title: 'Blabber' });
   };
 
+  /**
+   * Blocking acts as the *active* account too. One-directional: this account is never told,
+   * and the only visible effect on this screen is the button's own label flipping.
+   */
+  const block = () => {
+    const target = account;
+    if (!target) return;
+    void run(() => toggleBlock(target.id), { title: 'Blabber' }).then(() => loadPage(null));
+  };
+
   const loadPage = async (from: number | null) => {
     if (!account) return;
     loading = true;
@@ -109,7 +120,12 @@
       // no row in the core route table.
       const reply = await useService('blabber').call<{ rows: Blab[]; nextCursor: number | null }>(
         'profile',
-        { account_id: account.id, tab, cursor: from ?? undefined },
+        {
+          account_id: account.id,
+          tab,
+          cursor: from ?? undefined,
+          viewer_account_id: $activeAccount?.id
+        },
         { rows: [], nextCursor: null }
       );
       rows = from === null ? reply.rows : [...rows, ...reply.rows];
@@ -202,6 +218,9 @@
             onclick={follow}
           >
             {stats?.followedByMe ? 'Following' : 'Follow'}
+          </Button>
+          <Button variant="secondary" class="px-3 py-1.5 text-xs" disabled={$busy} onclick={block}>
+            {stats?.blockedByMe ? 'Unblock' : 'Block'}
           </Button>
         {/if}
         {#if onmessage}

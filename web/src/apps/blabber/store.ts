@@ -55,7 +55,16 @@ const { on: onBlabberKind } = useAppEvents('blabber');
  * rather than shown an empty feed.
  */
 
-export const feed = createPagedStore<Blab>('get', { pageSize: 30, service: 'blabber' });
+export const feed = createPagedStore<Blab>('feed', { pageSize: 30, service: 'blabber' });
+
+/**
+ * Loads (or reloads) the public feed as whichever account is active, so the server can filter
+ * out accounts that account has blocked. A bare `feed.load({})` would ask for the unfiltered
+ * feed every time — correct for a fresh player with no account yet, wrong for everyone else.
+ */
+export const loadFeed = async (): Promise<void> => {
+  await feed.load({ account_id: getActiveAccountId() ?? undefined });
+};
 
 /**
  * The Following feed, a second paged store rather than a filter on the first.
@@ -282,7 +291,12 @@ export const toggleEar = async (blabId: number): Promise<void> => {
  */
 export const followStats = writable<Record<number, FollowStats>>({});
 
-const NO_FOLLOWS: FollowStats = { followers: 0, following: 0, followedByMe: false };
+const NO_FOLLOWS: FollowStats = {
+  followers: 0,
+  following: 0,
+  followedByMe: false,
+  blockedByMe: false
+};
 
 export const loadFollowStats = async (accountId: number): Promise<void> => {
   const reply = await fetchNui<FollowStats>(
@@ -363,6 +377,46 @@ export const toggleFollow = async (accountId: number): Promise<void> => {
         app: 'blabber',
         follower_account_id: follower,
         followee_account_id: accountId
+      });
+    }
+  } catch (error) {
+    await loadFollowStats(accountId);
+    throw error;
+  }
+};
+
+/**
+ * Block or unblock, optimistically — same shape as `toggleFollow`.
+ *
+ * One-directional and silent: the blocked account is never told, and nothing here surfaces a
+ * "you have been blocked" state anywhere, because there isn't one to surface.
+ */
+export const toggleBlock = async (accountId: number): Promise<void> => {
+  const blocker = getActiveAccountId();
+  if (blocker === null) throw new Error('Claim a handle first.');
+  if (blocker === accountId) throw new Error('You cannot block yourself.');
+
+  let wasBlocked = false;
+  followStats.update((current) => {
+    const existing = current[accountId] ?? NO_FOLLOWS;
+    wasBlocked = existing.blockedByMe;
+    return { ...current, [accountId]: { ...existing, blockedByMe: !wasBlocked } };
+  });
+
+  try {
+    // Two literal calls, matching `toggleFollow`'s reasoning: a computed action name is
+    // invisible to `routes.test.ts`.
+    if (wasBlocked) {
+      await fetchNui('unblockAccount', {
+        app: 'blabber',
+        blocker_account_id: blocker,
+        blocked_account_id: accountId
+      });
+    } else {
+      await fetchNui('blockAccount', {
+        app: 'blabber',
+        blocker_account_id: blocker,
+        blocked_account_id: accountId
       });
     }
   } catch (error) {
@@ -532,6 +586,7 @@ export const loadTaggedBlabs = (tag: string): Promise<void> => taggedBlabs.load(
 export function useBlabber() {
   return {
     feed,
+    loadFeed: () => loadFeed(),
     followingFeed,
     /**
      * The two lists behind a profile's counts. Read-only from an app's side: they are filled by
@@ -545,6 +600,7 @@ export function useBlabber() {
     loadFollowing: () => loadFollowing(),
     loadFollowStats: (accountId: number) => loadFollowStats(accountId),
     toggleFollow: (accountId: number) => toggleFollow(accountId),
+    toggleBlock: (accountId: number) => toggleBlock(accountId),
     myAccounts,
     accountsLoaded,
     accountLimit,

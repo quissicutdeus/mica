@@ -88,6 +88,34 @@ CREATE TABLE IF NOT EXISTS `gphone_account_follows` (
         REFERENCES `gphone_accounts` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `gphone_account_blocks` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `blocker_account_id` int(11) NOT NULL,
+    `blocked_account_id` int(11) NOT NULL,
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `blocker_blocked` (`blocker_account_id`, `blocked_account_id`),
+    KEY `blocked_account_id` (`blocked_account_id`),
+    CONSTRAINT `fk_gphone_account_blocks_blocker_account_id` FOREIGN KEY (`blocker_account_id`)
+        REFERENCES `gphone_accounts` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_gphone_account_blocks_blocked_account_id` FOREIGN KEY (`blocked_account_id`)
+        REFERENCES `gphone_accounts` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `gphone_account_reactions` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `account_id` int(11) NOT NULL,
+    `target_table` varchar(64) NOT NULL,
+    `target_id` int(11) NOT NULL,
+    `emoji` varchar(32) NOT NULL,
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `account_target_emoji` (`account_id`, `target_table`, `target_id`, `emoji`),
+    KEY `target` (`target_table`, `target_id`),
+    CONSTRAINT `fk_gphone_account_reactions_account_id` FOREIGN KEY (`account_id`)
+        REFERENCES `gphone_accounts` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 -- Generated from the 'battery' defineService declaration.
 -- Do not edit by hand; change the declaration and regenerate.
 

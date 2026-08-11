@@ -56,6 +56,7 @@
 
   const {
     feed,
+    loadFeed,
     followingFeed,
     loadFollowing,
     myAccounts,
@@ -149,7 +150,7 @@
     // Top-level only. A timeline that mixed replies in would show half a conversation with no
     // way to see what it was replying to — and `reply_to: null` is expressible only because a
     // null filter now means IS NULL rather than `= NULL`.
-    void feed.load({ reply_to: null });
+    void loadFeed();
     /**
      * The DM badge is derived from `dmThreads`, and nothing filled that until the inbox was
      * opened — so the count next to Messages read 0 on every visit unless a DM happened to
@@ -235,7 +236,7 @@
    * flushes whatever arrived while the app was unmounted, and that should not scroll the feed.
    */
   useAppEvents('blabber').on('mention', (event) => {
-    if (!event.replayed) void feed.load({ reply_to: null });
+    if (!event.replayed) void loadFeed();
   });
 
   const closeComposer = () => {

@@ -348,6 +348,8 @@ const mockEars: { blab_id: number; account_id: number }[] = [{ blab_id: 1, accou
  * carries an `app`, so a row can only link two accounts in the same one.
  */
 const mockFollows: { follower: number; followee: number }[] = [];
+const mockBlocks: { blocker: number; blocked: number }[] = [];
+const mockReactions: { account: number; table: string; target: number; emoji: string }[] = [];
 
 const mockDms: BlabberDm[] = [
   {
@@ -531,6 +533,52 @@ const mockRegistry: Record<string, MockHandler> = {
     if (at >= 0) mockFollows.splice(at, 1);
     return true;
   },
+  blockAccount: ({
+    blocker_account_id,
+    blocked_account_id
+  }: {
+    blocker_account_id: number;
+    blocked_account_id: number;
+  }) => {
+    if (blocker_account_id === blocked_account_id) {
+      throw new Error('You cannot block yourself.');
+    }
+    if (!mockOwnedAccountIds.has(blocker_account_id)) {
+      throw new Error('That account is not yours.');
+    }
+    if (
+      !mockBlocks.some((b) => b.blocker === blocker_account_id && b.blocked === blocked_account_id)
+    ) {
+      mockBlocks.push({ blocker: blocker_account_id, blocked: blocked_account_id });
+    }
+    // Cascade-remove any follow row between the two, both directions — matching the server.
+    for (let i = mockFollows.length - 1; i >= 0; i--) {
+      const f = mockFollows[i];
+      if (
+        (f.follower === blocker_account_id && f.followee === blocked_account_id) ||
+        (f.follower === blocked_account_id && f.followee === blocker_account_id)
+      ) {
+        mockFollows.splice(i, 1);
+      }
+    }
+    return true;
+  },
+  unblockAccount: ({
+    blocker_account_id,
+    blocked_account_id
+  }: {
+    blocker_account_id: number;
+    blocked_account_id: number;
+  }) => {
+    if (!mockOwnedAccountIds.has(blocker_account_id)) {
+      throw new Error('That account is not yours.');
+    }
+    const at = mockBlocks.findIndex(
+      (b) => b.blocker === blocker_account_id && b.blocked === blocked_account_id
+    );
+    if (at >= 0) mockBlocks.splice(at, 1);
+    return true;
+  },
   /**
    * The two lists behind the counts, paged the way the server pages them: on the **follow row's**
    * position, most-recently-followed first, not on the account id. `mockFollows` is append-only, so
@@ -567,8 +615,82 @@ const mockRegistry: Record<string, MockHandler> = {
     followedByMe:
       viewer_account_id !== undefined &&
       mockOwnedAccountIds.has(viewer_account_id) &&
-      mockFollows.some((f) => f.follower === viewer_account_id && f.followee === account_id)
+      mockFollows.some((f) => f.follower === viewer_account_id && f.followee === account_id),
+    blockedByMe:
+      viewer_account_id !== undefined &&
+      mockOwnedAccountIds.has(viewer_account_id) &&
+      mockBlocks.some((b) => b.blocker === viewer_account_id && b.blocked === account_id)
   }),
+
+  /**
+   * Reactions, on any target table — DM messages today. `mockReactions` holds every row this
+   * session has created, keyed by the same `(account_id, target_table, target_id, emoji)` tuple
+   * the server's unique index enforces.
+   */
+  reactToTarget: ({
+    account_id,
+    target_table,
+    target_id,
+    emoji
+  }: {
+    account_id: number;
+    target_table: string;
+    target_id: number;
+    emoji: string;
+  }) => {
+    if (!mockOwnedAccountIds.has(account_id)) throw new Error('That account is not yours.');
+    if (
+      !mockReactions.some(
+        (r) =>
+          r.account === account_id &&
+          r.table === target_table &&
+          r.target === target_id &&
+          r.emoji === emoji
+      )
+    ) {
+      mockReactions.push({ account: account_id, table: target_table, target: target_id, emoji });
+    }
+    return true;
+  },
+  unreactToTarget: ({
+    account_id,
+    target_table,
+    target_id,
+    emoji
+  }: {
+    account_id: number;
+    target_table: string;
+    target_id: number;
+    emoji: string;
+  }) => {
+    if (!mockOwnedAccountIds.has(account_id)) throw new Error('That account is not yours.');
+    const at = mockReactions.findIndex(
+      (r) =>
+        r.account === account_id &&
+        r.table === target_table &&
+        r.target === target_id &&
+        r.emoji === emoji
+    );
+    if (at >= 0) mockReactions.splice(at, 1);
+    return true;
+  },
+  getReactionsFor: ({
+    target_table,
+    target_ids
+  }: {
+    target_table: string;
+    target_ids: number[];
+  }) => {
+    const out: Record<number, { counts: Record<string, number>; mine: string[] }> = {};
+    for (const id of target_ids) out[id] = { counts: {}, mine: [] };
+    for (const row of mockReactions) {
+      if (row.table !== target_table || !(row.target in out)) continue;
+      out[row.target].counts[row.emoji] = (out[row.target].counts[row.emoji] ?? 0) + 1;
+      // The mock's single active account, matching every other "mine" fixture here.
+      if (row.account === 1) out[row.target].mine.push(row.emoji);
+    }
+    return out;
+  },
 
   // Blabber DMs. 1:1, so a thread is the union of both directions between two accounts.
   //
@@ -606,6 +728,16 @@ const mockRegistry: Record<string, MockHandler> = {
     return { rows, nextCursor: null };
   },
   'blabber_dms:send': ({ peer_account_id, body }: { peer_account_id: number; body: string }) => {
+    // Bidirectional, matching the server: either side's block refuses the send.
+    if (
+      mockBlocks.some(
+        (b) =>
+          (b.blocker === 1 && b.blocked === peer_account_id) ||
+          (b.blocker === peer_account_id && b.blocked === 1)
+      )
+    ) {
+      throw new Error("You can't message this account.");
+    }
     const created = {
       id: nextDmId++,
       from_account: 1,
@@ -628,24 +760,28 @@ const mockRegistry: Record<string, MockHandler> = {
     return true;
   },
 
-  // Blabber. Keyset paging on `id DESC`, matching the server: a cursor names the last row
-  // already delivered, and `nextCursor: null` means the end.
-  'blabber:get': ({
+  /**
+   * The public feed. Keyset paging on `id DESC`, matching the server: a cursor names the last
+   * row already delivered, and `nextCursor: null` means the end. `account_id` is optional and,
+   * when present, filters out accounts that account has blocked — matching `feed`'s server-side
+   * `NOT IN` subquery.
+   */
+  'blabber:feed': ({
+    account_id,
     cursor,
-    limit = 30,
-    reply_to
-  }: { cursor?: number; limit?: number; reply_to?: number | null } = {}) => {
-    // `reply_to: null` means top-level, matching the server's IS NULL. Honoured here or the
-    // browser mock would show a feed the real server never returns.
-    const matchesParent = (b: Blab) =>
-      reply_to === undefined
-        ? true
-        : reply_to === null
-          ? b.reply_to == null
-          : b.reply_to === reply_to;
+    limit = 30
+  }: { account_id?: number; cursor?: number; limit?: number } = {}) => {
+    const blocked =
+      account_id !== undefined
+        ? new Set(mockBlocks.filter((b) => b.blocker === account_id).map((b) => b.blocked))
+        : null;
     const visible = mockBlabs
       .filter(
-        (b) => b.status === 'active' && matchesParent(b) && (cursor === undefined || b.id < cursor)
+        (b) =>
+          b.status === 'active' &&
+          b.reply_to == null &&
+          !(blocked && blocked.has(b.account_id)) &&
+          (cursor === undefined || b.id < cursor)
       )
       .sort((a, b) => b.id - a.id);
     const page = visible.slice(0, limit);
@@ -653,7 +789,8 @@ const mockRegistry: Record<string, MockHandler> = {
     return { rows: page, nextCursor: hasMore ? page[page.length - 1].id : null };
   },
   /**
-   * The Following feed: top-level Blabs by accounts this account follows.
+   * The Following feed: top-level Blabs by accounts this account follows, minus accounts it has
+   * blocked.
    *
    * Paged the same way as every other read here — `id DESC`, cursor is the last id delivered,
    * `nextCursor: null` is the end. A mock that answered a bare array would let the app look right
@@ -672,12 +809,16 @@ const mockRegistry: Record<string, MockHandler> = {
     const followed = new Set(
       mockFollows.filter((f) => f.follower === account_id).map((f) => f.followee)
     );
+    const blocked = new Set(
+      mockBlocks.filter((b) => b.blocker === account_id).map((b) => b.blocked)
+    );
     const visible = mockBlabs
       .filter(
         (b) =>
           b.status === 'active' &&
           b.reply_to == null &&
           followed.has(b.account_id) &&
+          !blocked.has(b.account_id) &&
           (cursor === undefined || b.id < cursor)
       )
       .sort((a, b) => b.id - a.id);
@@ -838,13 +979,23 @@ const mockRegistry: Record<string, MockHandler> = {
     account_id,
     tab,
     cursor,
-    limit = 30
+    limit = 30,
+    viewer_account_id
   }: {
     account_id: number;
     tab?: string;
     cursor?: number;
     limit?: number;
+    viewer_account_id?: number;
   }) => {
+    // One-directional, matching the server: a viewer who has blocked this account sees an
+    // empty profile rather than a filtered one.
+    if (
+      viewer_account_id !== undefined &&
+      mockBlocks.some((b) => b.blocker === viewer_account_id && b.blocked === account_id)
+    ) {
+      return { rows: [], nextCursor: null };
+    }
     const repliesOnly = tab === 'replies';
     const visible = mockBlabs
       .filter(

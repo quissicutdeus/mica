@@ -1,5 +1,5 @@
 import { defineService } from '../lib/defineService';
-import { ownedAccount } from './Accounts';
+import { ownedAccount, isBlocked } from './Accounts';
 // Photos is a declared app; reuse its derived repository rather than a second instance, so
 // the attachment-ownership check runs against the same allowlist Messages already uses.
 import { photos } from './Photos';
@@ -277,18 +277,31 @@ const editWindowSeconds = (): number => {
  * skipped rather than queued — the row is written, so they get it from the ordinary fetch, which
  * is the rule §11.6 already states for message delivery.
  */
-const notifyMentions = async (body: string, fromHandle: string, blabId: number): Promise<void> => {
+const notifyMentions = async (
+  body: string,
+  fromAccountId: number,
+  fromHandle: string,
+  blabId: number
+): Promise<void> => {
   const handles = mentionedHandles(body).filter((handle) => handle !== fromHandle);
   if (handles.length === 0) return;
 
   const placeholders = handles.map(() => '?').join(', ');
-  const rows = await Database.query<{ citizenid: string }[]>(
-    `SELECT DISTINCT \`citizenid\` FROM \`gphone_accounts\`
+  const rows = await Database.query<{ id: number; citizenid: string }[]>(
+    `SELECT \`id\`, \`citizenid\` FROM \`gphone_accounts\`
      WHERE \`app\` = ? AND \`status\` = 'active' AND \`handle\` IN (${placeholders})`,
     [APP, ...handles.slice(0, 20)]
   );
 
-  const citizenids = rows.map((row) => row.citizenid);
+  /**
+   * Dropped when the mentioned account has blocked the poster — the same reasoning as the DM
+   * refusal: a block is meant to end contact, and a mention is a form of contact a block-list
+   * screen has no other way to prevent.
+   */
+  const notBlocked = await Promise.all(
+    rows.map(async (row) => ((await isBlocked(row.id, fromAccountId)) ? null : row.citizenid))
+  );
+  const citizenids = [...new Set(notBlocked.filter((id): id is string => id !== null))];
   if (citizenids.length === 0) return;
 
   channel.pushMany(
@@ -405,7 +418,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
      * After the row is written, and never allowed to fail the post: the Blab is committed either
      * way, and the author should not see an error for something that already happened.
      */
-    void notifyMentions(text, account.handle, id).catch((error) =>
+    void notifyMentions(text, account.id, account.handle, id).catch((error) =>
       console.error('[blabber] Mention notification failed for', id, error)
     );
 
@@ -614,6 +627,53 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
 const pageOf = (body: Record<string, unknown>) => pageBounds(body, paging);
 
 /**
+ * The public feed — every account's top-level Blabs, newest first. Supersedes the generic
+ * `get` (`options.disableGet: true` above), because the generic path has no caller identity to
+ * filter blocked accounts with: `ServiceEndpoint` never threads one into a public read's
+ * `findAll`, and a public read has no ownership predicate for a `repositoryFactory` override
+ * to hook. `following` already needed exactly this shape for its own subquery.
+ *
+ * `account_id` is optional. A viewer with no claimed account yet (or none supplied) sees the
+ * unfiltered feed — the same thing the generic `get` always returned — and the block filter
+ * only ever narrows what an authenticated viewer sees, never what an anonymous read returns.
+ */
+app.registerEvent('feed', async (source, cbId, data, citizenid) => {
+  const body = fields(data);
+  const { limit, cursor } = pageOf(body);
+
+  const viewer =
+    body.account_id === undefined || body.account_id === null
+      ? null
+      : await ownedAccount(body.account_id, citizenid, APP);
+
+  const projection = blabber.resolved.publicColumns.map((column) => `\`${column}\``).join(', ');
+  const cursorClause = cursor === null ? '' : ' AND `id` < ?';
+  const blockClause = viewer
+    ? ' AND `account_id` NOT IN (SELECT `blocked_account_id` FROM `gphone_account_blocks` WHERE `blocker_account_id` = ?)'
+    : '';
+
+  const params: unknown[] = [];
+  if (viewer) params.push(viewer.id);
+  if (cursor !== null) params.push(cursor);
+  params.push(limit + 1);
+
+  const rows = await Database.query<Blab[]>(
+    `SELECT ${projection} FROM \`gphone_blabber\`
+     WHERE \`status\` = 'active' AND \`reply_to\` IS NULL${blockClause}${cursorClause}
+     ORDER BY \`id\` DESC
+     LIMIT ?`,
+    params
+  );
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  return {
+    rows: await repo.hydrate(page),
+    nextCursor: hasMore ? page[page.length - 1].id : null
+  };
+});
+
+/**
  * The one way to open a Blab. Every entry point — a feed tap, a search result, a tag tap, a
  * deep link — calls this and gets the same flattened screen: the root, then every reply at any
  * depth, `id DESC`, keyset-paged.
@@ -775,12 +835,24 @@ app.registerEvent('trendingTags', async () => {
   );
 });
 
-app.registerEvent('profile', async (source, cbId, data) => {
+app.registerEvent('profile', async (source, cbId, data, citizenid) => {
   const body = fields(data);
   const accountId = requirePositiveInt(body.account_id, 'account id');
   const repliesOnly = body.tab === 'replies';
 
   const { limit, cursor } = pageOf(body);
+
+  /**
+   * Optional, and checked the same way `following`'s and `follows`'s viewer is: an absent or
+   * unowned viewer just means an unfiltered read, since viewing a profile is not a privileged
+   * act. One-directional — this filters what *the viewer* sees when they have blocked the
+   * profile's account, never the reverse.
+   */
+  const viewer =
+    body.viewer_account_id === undefined || body.viewer_account_id === null
+      ? null
+      : await ownedAccount(body.viewer_account_id, citizenid, APP);
+  const viewerBlocksAuthor = viewer ? await isBlocked(viewer.id, accountId) : false;
 
   /**
    * Every identifier here is a literal in this file and every value is bound — the account id,
@@ -791,6 +863,13 @@ app.registerEvent('profile', async (source, cbId, data) => {
   const projection = blabber.resolved.publicColumns.map((column) => `\`${column}\``).join(', ');
   const parentClause = repliesOnly ? 'IS NOT NULL' : 'IS NULL';
   const cursorClause = cursor === null ? '' : ' AND `id` < ?';
+
+  // A viewer who has blocked this account sees an empty profile rather than a filtered one —
+  // there is nothing left to page through once every post is excluded, and a partial timeline
+  // would be a stranger fact to explain than an empty one.
+  if (viewerBlocksAuthor) {
+    return { rows: [], nextCursor: null };
+  }
 
   const params: unknown[] = [accountId];
   if (cursor !== null) params.push(cursor);
@@ -849,7 +928,7 @@ app.registerEvent('following', async (source, cbId, data, citizenid) => {
   const projection = blabber.resolved.publicColumns.map((column) => `\`${column}\``).join(', ');
   const cursorClause = cursor === null ? '' : ' AND `id` < ?';
 
-  const params: unknown[] = [viewer.id];
+  const params: unknown[] = [viewer.id, viewer.id];
   if (cursor !== null) params.push(cursor);
   params.push(limit + 1);
 
@@ -858,6 +937,9 @@ app.registerEvent('following', async (source, cbId, data, citizenid) => {
      WHERE \`account_id\` IN (
        SELECT \`followee_account_id\` FROM \`gphone_account_follows\`
        WHERE \`follower_account_id\` = ?
+     )
+     AND \`account_id\` NOT IN (
+       SELECT \`blocked_account_id\` FROM \`gphone_account_blocks\` WHERE \`blocker_account_id\` = ?
      )
      AND \`status\` = 'active' AND \`reply_to\` IS NULL${cursorClause}
      ORDER BY \`id\` DESC

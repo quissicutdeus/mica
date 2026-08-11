@@ -58,6 +58,11 @@ export const ROUTES: readonly Route[] = [
   // stranger's profile, not about the caller.
   route('getFollowers', 'accounts', 'followers'),
   route('getFollowing', 'accounts', 'following'),
+  // The block graph, alongside the follow one. One-directional: it hides the blocked account
+  // from the blocker's own feeds and notifications and refuses a DM between the two, and does
+  // not tell the blocked account anything happened.
+  route('blockAccount', 'accounts', 'block'),
+  route('unblockAccount', 'accounts', 'unblock'),
 
   // Contacts
   route('getContacts', 'contacts', 'get'),

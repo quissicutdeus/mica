@@ -138,6 +138,31 @@ describe('sending', () => {
 
     expect(reply.error).toMatch(/needs something in it/);
   });
+
+  it('refuses a send when the sender has blocked the recipient', async () => {
+    dbMock.single
+      .mockResolvedValueOnce(MY_ACCOUNT) // ownedAccount
+      .mockResolvedValueOnce(PEER) // recipient lookup
+      .mockResolvedValueOnce({ id: 5 }); // isBlocked(mine, peer) -> blocked
+
+    const reply = await call('send', { account_id: 1, peer_account_id: 2, body: 'hi' });
+
+    expect(reply.error).toMatch(/can't message this account/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('refuses a send when the recipient has blocked the sender', async () => {
+    dbMock.single
+      .mockResolvedValueOnce(MY_ACCOUNT) // ownedAccount
+      .mockResolvedValueOnce(PEER) // recipient lookup
+      .mockResolvedValueOnce(null) // isBlocked(mine, peer) -> not blocked
+      .mockResolvedValueOnce({ id: 5 }); // isBlocked(peer, mine) -> blocked
+
+    const reply = await call('send', { account_id: 1, peer_account_id: 2, body: 'hi' });
+
+    expect(reply.error).toMatch(/can't message this account/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
 });
 
 describe('reading a thread', () => {

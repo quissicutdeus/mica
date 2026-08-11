@@ -327,7 +327,12 @@ describe('blabber service', () => {
 
   describe('follow stats & follows', () => {
     it('loadFollowStats updates followStats map', async () => {
-      const stats: FollowStats = { followers: 10, following: 5, followedByMe: true };
+      const stats: FollowStats = {
+        followers: 10,
+        following: 5,
+        followedByMe: true,
+        blockedByMe: false
+      };
       vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(stats as any);
 
       await loadFollowStats(42);
@@ -346,7 +351,7 @@ describe('blabber service', () => {
       activeAccountId.set(1);
       myAccounts.set([{ id: 1 } as Account]);
       followStats.set({
-        42: { followers: 10, following: 5, followedByMe: false }
+        42: { followers: 10, following: 5, followedByMe: false, blockedByMe: false }
       });
 
       const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(undefined as any);

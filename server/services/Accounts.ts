@@ -1,6 +1,7 @@
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
+import { isReactableTable } from '../lib/reactions';
 import { Account } from '@shared/types';
 import { fields, optionalString, pageBounds, requirePositiveInt } from '../lib/payload';
 import { buildDeepLink } from '@shared/deepLink';
@@ -133,6 +134,78 @@ export const accounts = defineService<Account>({
          * appended primary key makes it `(followee_account_id, id)` already.
          */
         { name: 'follower_recent', columns: ['follower_account_id', 'id'] }
+      ]
+    },
+    /**
+     * The block graph. Same shape as follows, and for the same reason it lives here rather than
+     * on Blabber: blocking is account-to-account, and accounts are shared.
+     *
+     * One-directional by design: a block hides the blocked account from the *blocker's* feed,
+     * Following feed and profile view. The blocked account is unaffected and is never told —
+     * there is no "blocked you" state anywhere in this codebase, deliberately, since surfacing
+     * one would be a second, larger UX surface than the roadmap item asked for.
+     */
+    {
+      name: 'gphone_account_blocks',
+      columns: {
+        blocker_account_id: {
+          type: 'int',
+          notNull: true,
+          references: { table: 'gphone_accounts', column: 'id' }
+        },
+        blocked_account_id: {
+          type: 'int',
+          notNull: true,
+          references: { table: 'gphone_accounts', column: 'id' }
+        },
+        created_at: { type: 'timestamp', notNull: true, defaultNow: true }
+      },
+      indexes: [
+        {
+          name: 'blocker_blocked',
+          columns: ['blocker_account_id', 'blocked_account_id'],
+          unique: true
+        },
+        // The reverse lookup every enforcement point needs: "has X blocked me."
+        { name: 'blocked_account_id', columns: ['blocked_account_id'] }
+      ]
+    },
+    /**
+     * Reactions. Keyed on `account_id` rather than `citizenid`, like every other row here —
+     * an account reacts, not a player, and a player may hold several. Declared under Accounts
+     * rather than Blabber for the same reason follows and blocks are: reactions are a property
+     * of the identity graph, not of one app's content, so a future app that wants them needs
+     * only `registerReactable`, not a migration.
+     *
+     * `target_table`/`target_id` have no foreign key — there is no single parent table a
+     * reaction can point at — so `isReactableTable` (`server/lib/reactions.ts`) is what stands
+     * between this column and a client naming a table it has no business reacting to.
+     */
+    {
+      name: 'gphone_account_reactions',
+      columns: {
+        account_id: {
+          type: 'int',
+          notNull: true,
+          references: { table: 'gphone_accounts', column: 'id' }
+        },
+        target_table: { type: 'string', length: 64, notNull: true },
+        target_id: { type: 'int', notNull: true },
+        // Free text rather than an enum: the picker offers a fixed palette plus a "+" for any
+        // other emoji, so the column has to accept anything the palette does not enumerate.
+        emoji: { type: 'string', length: 32, notNull: true },
+        created_at: { type: 'timestamp', notNull: true, defaultNow: true }
+      },
+      indexes: [
+        // One reaction per account per emoji per target — tapping the same emoji twice toggles
+        // it off rather than stacking a duplicate row.
+        {
+          name: 'account_target_emoji',
+          columns: ['account_id', 'target_table', 'target_id', 'emoji'],
+          unique: true
+        },
+        // The batched read's own lookup: every reaction on a page of targets, one query.
+        { name: 'target', columns: ['target_table', 'target_id'] }
       ]
     }
   ],
@@ -307,26 +380,30 @@ app.registerEvent('follow', async (source, cbId, data, citizenid) => {
       [follower.id, followee.id]
     );
 
-    const channel = appEventChannel(appId);
-    channel.push(
-      followee.citizenid,
-      'follow',
-      { follower_account_id: follower.id, handle: follower.handle },
-      {
-        notify: {
-          type: 'info',
+    // Suppressed when the followee has blocked the follower — a block is meant to end contact,
+    // and a "they followed you" toast is exactly the kind of contact it exists to prevent.
+    if (!(await isBlocked(followee.id, follower.id))) {
+      const channel = appEventChannel(appId);
+      channel.push(
+        followee.citizenid,
+        'follow',
+        { follower_account_id: follower.id, handle: follower.handle },
+        {
+          notify: {
+            type: 'info',
+            title: `@${follower.handle} followed you`,
+            message: `Started following @${followee.handle}`
+          },
+          kind: 'follow',
           title: `@${follower.handle} followed you`,
-          message: `Started following @${followee.handle}`
-        },
-        kind: 'follow',
-        title: `@${follower.handle} followed you`,
-        // `appId`, never a literal. This service is the shared identity for every social
-        // app — the channel above was already keyed on it, and a hardcoded 'blabber' here
-        // would have sent an Instagram-alike's follow notification into Blabber. The
-        // convention a consuming app has to honor is the prop name, not its own id.
-        deepLink: buildDeepLink(appId, { handle: follower.handle })
-      }
-    );
+          // `appId`, never a literal. This service is the shared identity for every social
+          // app — the channel above was already keyed on it, and a hardcoded 'blabber' here
+          // would have sent an Instagram-alike's follow notification into Blabber. The
+          // convention a consuming app has to honor is the prop name, not its own id.
+          deepLink: buildDeepLink(appId, { handle: follower.handle })
+        }
+      );
+    }
   } catch (error) {
     // The unique index refusing a duplicate. Reported as success: from the player's point of
     // view the follow is exactly as applied as they wanted.
@@ -356,6 +433,197 @@ app.registerEvent('unfollow', async (source, cbId, data, citizenid) => {
 });
 
 /**
+ * Blocking. Same insert-only-with-unique-index shape as `follow`, plus one side effect
+ * `follow` does not have: a block cascade-deletes any existing follow row between the two
+ * accounts, in **both** directions. A blocked-but-still-following relationship is a state
+ * nobody reading a follower list should have to make sense of, and leaving it behind would be
+ * cheaper to implement than to explain.
+ */
+app.registerEvent('block', async (source, cbId, data, citizenid) => {
+  const body = fields(data);
+  const appId = optionalString(body.app);
+  if (!appId) throw new Error('An app id is required.');
+
+  const blocker = await ownedAccount(body.blocker_account_id, citizenid, appId);
+  if (!blocker) throw new Error('That account is not yours.');
+
+  const blockedId = requirePositiveInt(body.blocked_account_id, 'blocked account id');
+  if (blockedId === blocker.id) throw new Error('You cannot block yourself.');
+
+  const blocked = await Database.single<{ id: number }>(
+    "SELECT `id` FROM `gphone_accounts` WHERE `id` = ? AND `app` = ? AND `status` = 'active' LIMIT 1",
+    [blockedId, appId]
+  );
+  if (!blocked) throw new Error('That account is no longer available.');
+
+  try {
+    await Database.insert(
+      'INSERT INTO `gphone_account_blocks` (`blocker_account_id`, `blocked_account_id`) VALUES (?, ?)',
+      [blocker.id, blocked.id]
+    );
+  } catch (error) {
+    // The unique index refusing a duplicate. Reported as success, same as `follow`.
+    const message = error instanceof Error ? error.message : '';
+    if (!/duplicate/i.test(message)) throw error;
+  }
+
+  await Database.update(
+    `DELETE FROM \`gphone_account_follows\`
+     WHERE (\`follower_account_id\` = ? AND \`followee_account_id\` = ?)
+        OR (\`follower_account_id\` = ? AND \`followee_account_id\` = ?)`,
+    [blocker.id, blocked.id, blocked.id, blocker.id]
+  );
+
+  return true;
+});
+
+app.registerEvent('unblock', async (source, cbId, data, citizenid) => {
+  const body = fields(data);
+  const appId = optionalString(body.app);
+  if (!appId) throw new Error('An app id is required.');
+
+  const blocker = await ownedAccount(body.blocker_account_id, citizenid, appId);
+  if (!blocker) throw new Error('That account is not yours.');
+
+  const blockedId = requirePositiveInt(body.blocked_account_id, 'blocked account id');
+
+  // Scoped to the caller's own account, so a row id is not authorization to lift somebody
+  // else's block (§2.9). Unblocking does not restore any follow the block cascade removed.
+  await Database.update(
+    'DELETE FROM `gphone_account_blocks` WHERE `blocker_account_id` = ? AND `blocked_account_id` = ?',
+    [blocker.id, blockedId]
+  );
+  return true;
+});
+
+/** 1–16 UTF-16 code units: a single emoji up to a multi-codepoint ZWJ/skin-tone sequence. */
+const isPlausibleEmoji = (value: unknown): value is string =>
+  typeof value === 'string' && value.length >= 1 && value.length <= 16;
+
+/**
+ * React to a row on any table that opted in via `defineService`'s `reactable`.
+ *
+ * `target_table` is bound as a value, not interpolated as an identifier, so this is not the
+ * SQL-injection boundary `REPORTABLE` is — but an unchecked one would still let a client
+ * invent a namespace and pollute counts for a table it has no business reacting to, so
+ * `isReactableTable` is checked anyway (§2.9).
+ *
+ * Insert-only with a unique index, same idempotency shape as `ear`/`follow`/`block`: tapping
+ * the same emoji twice is one reaction, not an error.
+ */
+app.registerEvent('react', async (source, cbId, data, citizenid) => {
+  const body = fields(data);
+  const appId = optionalString(body.app);
+  if (!appId) throw new Error('An app id is required.');
+
+  const account = await ownedAccount(body.account_id, citizenid, appId);
+  if (!account) throw new Error('That account is not yours.');
+
+  const targetTable = optionalString(body.target_table);
+  if (!isReactableTable(targetTable)) throw new Error('That cannot be reacted to.');
+  const targetId = requirePositiveInt(body.target_id, 'target id');
+
+  if (!isPlausibleEmoji(body.emoji)) throw new Error('That is not a single emoji.');
+
+  try {
+    await Database.insert(
+      `INSERT INTO \`gphone_account_reactions\`
+       (\`account_id\`, \`target_table\`, \`target_id\`, \`emoji\`) VALUES (?, ?, ?, ?)`,
+      [account.id, targetTable, targetId, body.emoji]
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (!/duplicate/i.test(message)) throw error;
+  }
+  return true;
+});
+
+app.registerEvent('unreact', async (source, cbId, data, citizenid) => {
+  const body = fields(data);
+  const appId = optionalString(body.app);
+  if (!appId) throw new Error('An app id is required.');
+
+  const account = await ownedAccount(body.account_id, citizenid, appId);
+  if (!account) throw new Error('That account is not yours.');
+
+  const targetTable = optionalString(body.target_table);
+  if (!isReactableTable(targetTable)) throw new Error('That cannot be reacted to.');
+  const targetId = requirePositiveInt(body.target_id, 'target id');
+  if (!isPlausibleEmoji(body.emoji)) throw new Error('That is not a single emoji.');
+
+  // Scoped to the caller's own account, so a row id is not authorization to remove somebody
+  // else's reaction (§2.9).
+  await Database.update(
+    `DELETE FROM \`gphone_account_reactions\`
+     WHERE \`account_id\` = ? AND \`target_table\` = ? AND \`target_id\` = ? AND \`emoji\` = ?`,
+    [account.id, targetTable, targetId, body.emoji]
+  );
+  return true;
+});
+
+/**
+ * Grouped reaction counts for a page of targets on one table, plus which of the caller's own
+ * accounts have used which emoji — mirrors `blabber:engagement`'s batched shape, one call per
+ * page of messages rather than one per row.
+ */
+app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
+  const body = fields(data);
+  const appId = optionalString(body.app);
+  if (!appId) throw new Error('An app id is required.');
+
+  const targetTable = optionalString(body.target_table);
+  if (!isReactableTable(targetTable)) throw new Error('That cannot be reacted to.');
+
+  const raw = Array.isArray(body.target_ids) ? body.target_ids : [];
+  const targetIds = raw
+    .map((value) => {
+      try {
+        return requirePositiveInt(value, 'target id');
+      } catch {
+        return null;
+      }
+    })
+    .filter((id): id is number => id !== null)
+    .slice(0, 60);
+
+  if (targetIds.length === 0) return {};
+
+  const placeholders = targetIds.map(() => '?').join(', ');
+  const [counts, mine] = await Promise.all([
+    Database.query<{ target_id: number; emoji: string; total: number }[]>(
+      `SELECT \`target_id\`, \`emoji\`, COUNT(*) AS total FROM \`gphone_account_reactions\`
+       WHERE \`target_table\` = ? AND \`target_id\` IN (${placeholders})
+       GROUP BY \`target_id\`, \`emoji\``,
+      [targetTable, ...targetIds]
+    ),
+    (async () => {
+      const mineAccounts = await Database.query<{ id: number }[]>(
+        "SELECT `id` FROM `gphone_accounts` WHERE `citizenid` = ? AND `app` = ? AND `status` = 'active'",
+        [citizenid, appId]
+      );
+      const myIds = mineAccounts.map((row) => row.id);
+      if (myIds.length === 0) return [];
+      return await Database.query<{ target_id: number; emoji: string }[]>(
+        `SELECT \`target_id\`, \`emoji\` FROM \`gphone_account_reactions\`
+         WHERE \`target_table\` = ? AND \`target_id\` IN (${placeholders})
+         AND \`account_id\` IN (${myIds.map(() => '?').join(', ')})`,
+        [targetTable, ...targetIds, ...myIds]
+      );
+    })()
+  ]);
+
+  const out: Record<number, { counts: Record<string, number>; mine: string[] }> = {};
+  for (const id of targetIds) out[id] = { counts: {}, mine: [] };
+  for (const row of counts) {
+    out[row.target_id].counts[row.emoji] = Number(row.total);
+  }
+  for (const row of mine) {
+    out[row.target_id].mine.push(row.emoji);
+  }
+  return out;
+});
+
+/**
  * Follower and following counts for one account, plus whether the viewer follows it.
  *
  * Counted rather than denormalised onto `gphone_accounts`. A `follower_count` column is a second
@@ -381,7 +649,7 @@ app.registerEvent('follows', async (source, cbId, data, citizenid) => {
       ? null
       : await ownedAccount(body.viewer_account_id, citizenid, appId);
 
-  const [followers, following, mine] = await Promise.all([
+  const [followers, following, mine, blocked] = await Promise.all([
     Database.scalar<number>(
       'SELECT COUNT(*) FROM `gphone_account_follows` WHERE `followee_account_id` = ?',
       [accountId]
@@ -396,13 +664,17 @@ app.registerEvent('follows', async (source, cbId, data, citizenid) => {
            WHERE \`follower_account_id\` = ? AND \`followee_account_id\` = ? LIMIT 1`,
           [viewer.id, accountId]
         )
-      : Promise.resolve(null)
+      : Promise.resolve(null),
+    // Same "absent viewer answers false" rule as `followedByMe` — reading a profile is not a
+    // privileged act, and only the Block button needs an identity.
+    viewer ? isBlocked(viewer.id, accountId) : Promise.resolve(false)
   ]);
 
   return {
     followers: followers ?? 0,
     following: following ?? 0,
-    followedByMe: mine !== null
+    followedByMe: mine !== null,
+    blockedByMe: blocked
   };
 });
 
@@ -563,4 +835,23 @@ export async function ownedAccount(
      LIMIT 1`,
     [id, citizenid, appId]
   );
+}
+
+/**
+ * Has `blockerAccountId` blocked `blockedAccountId`?
+ *
+ * Exported for the same reason `ownedAccount` is: every enforcement point that needs to check
+ * a block — feed filtering, notification suppression, DM refusal — lives in a different
+ * service file, and the block graph is this service's table.
+ */
+export async function isBlocked(
+  blockerAccountId: number,
+  blockedAccountId: number
+): Promise<boolean> {
+  const row = await Database.single<{ id: number }>(
+    `SELECT \`id\` FROM \`gphone_account_blocks\`
+     WHERE \`blocker_account_id\` = ? AND \`blocked_account_id\` = ? LIMIT 1`,
+    [blockerAccountId, blockedAccountId]
+  );
+  return row !== null;
 }

@@ -248,6 +248,19 @@ export interface FollowStats {
   followers: number;
   following: number;
   followedByMe: boolean;
+  /** Whether the viewer's account has blocked this one. Absent viewer answers `false`. */
+  blockedByMe: boolean;
+}
+
+/**
+ * Reaction counts for one target, plus which emoji the caller's own accounts have used.
+ *
+ * `counts` is keyed by emoji rather than a fixed shape — the palette is a UI affordance, not a
+ * data constraint, so any table opting into reactions can carry any emoji, not a closed set.
+ */
+export interface ReactionSummary {
+  counts: Record<string, number>;
+  mine: string[];
 }
 
 /**

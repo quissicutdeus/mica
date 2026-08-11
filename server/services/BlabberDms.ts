@@ -1,7 +1,7 @@
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
-import { ownedAccount } from './Accounts';
+import { ownedAccount, isBlocked } from './Accounts';
 import { BlabberDm } from '@shared/types';
 import { fields, optionalString, requirePositiveInt } from '../lib/payload';
 import { buildDeepLink } from '@shared/deepLink';
@@ -210,6 +210,16 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
     [peerId, APP]
   );
   if (!peer) throw new Error('No such account.');
+
+  /**
+   * Bidirectional, unlike the feed/profile filters above: a DM has exactly two participants,
+   * so either side's block ends the conversation for both — there is no "you see them, they
+   * don't" reading of a private thread the way there is for a public timeline. Existing
+   * history stays readable; a block doesn't retroactively hide it, only refuses a new send.
+   */
+  if ((await isBlocked(mine.id, peer.id)) || (await isBlocked(peer.id, mine.id))) {
+    throw new Error("You can't message this account.");
+  }
 
   const id = await repo.create({
     citizenid,
