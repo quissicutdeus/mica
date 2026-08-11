@@ -248,6 +248,14 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
         message
       });
     },
+    // The `OpenApp` export. The client has already force-opened the frame; this just
+    // navigates it, same as a notification's own click-through.
+    openApp: (data) => {
+      const payload = fields(data);
+      const appId = str(payload.appId);
+      if (!appId) return;
+      bridge.openFromNotification(appId, fields(payload.props));
+    },
     installApp,
     uninstallApp,
     receiveMail,

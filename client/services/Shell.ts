@@ -1,4 +1,6 @@
 import { sendNuiMessage } from '../lib/nui';
+import { PhoneState } from '../lib/PhoneState';
+import { openPhone, closePhone } from '../lib/PhoneVisibility';
 
 /**
  * Shell-scoped client events — the ones that belong to the phone itself rather than to
@@ -27,5 +29,40 @@ onNet(
       title: payload?.title,
       message
     });
+  }
+);
+
+/**
+ * The `SetPhoneEnabled` export. A job confiscating the phone, or an item that jams it.
+ *
+ * Disabling while open force-closes it the same way `hideFrame` does — leaving it open
+ * would mean the ban applies to the *next* press of `M` rather than to right now.
+ */
+onNet('gphone:client:shell:setEnabled', (enabled: unknown) => {
+  const value = enabled === true;
+  PhoneState.setEnabled(value);
+  if (!value && PhoneState.isOpen()) {
+    closePhone();
+  }
+});
+
+/**
+ * The `OpenApp` export. Force-opens the phone and lands on the named app, the same
+ * `appId?key=value` shape a notification's deep link already carries.
+ *
+ * Silently refused while the phone is disabled — there is no reply channel for this
+ * event to report through, matching `guardNetEvent`'s own reasoning on the server side.
+ */
+onNet(
+  'gphone:client:shell:openApp',
+  (payload: { appId?: string; props?: Record<string, unknown> }) => {
+    if (!PhoneState.isEnabled()) return;
+    const appId = payload?.appId;
+    if (!appId) return;
+
+    if (!PhoneState.isOpen()) {
+      openPhone();
+    }
+    sendNuiMessage('openApp', { appId, props: payload?.props ?? {} });
   }
 );
