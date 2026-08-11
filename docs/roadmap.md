@@ -41,8 +41,9 @@ than a placeholder. `server/services/Blabber.ts` and `BlabberDms.ts`;
 - **Replies, and mouths.** A **mouth** is a repeat; with a body of its own it is a quote. Both are
   self-references on the Blab table rather than tables of their own, so they inherit the paging, the
   edit window and the moderation predicate for free.
-- **Likes**, in `gphone_blabber_likes`, unique per account per Blab in the database rather than by
-  find-then-insert, and counted in one batched `engagement` read rather than three queries per row.
+- **Ears**, in `gphone_blabber_ears` — pairs with Mouth, one speaks and one listens — unique per
+  account per Blab in the database rather than by find-then-insert, and counted in one batched
+  `engagement` read rather than three queries per row.
 - **Mentions.** `@handle` tokenized by `shared/richText.ts` — the same tokenizer the UI renders with,
   because two definitions of "what counts as a mention" is how you get one that highlights and never
   notifies. Fan-out is deduplicated by owner and drops self-mentions.
@@ -348,6 +349,81 @@ afterward should say what changed rather than pretend it was foreseen:
   same search for free rather than reimplementing it.
 - **The four-tab `TabBar` is complete.** Search was the one destination left after Notifications
   shipped (see above); it is not anymore.
+
+#### Ear, attachments, block and DM reactions
+
+The last of what a "next iteration" proposal once described here — the tabbed shell, the composer
+as a FAB, identity as a small avatar, the follow graph, the notifications tab, and search and
+hashtags had already shipped and moved up (see above). This was the media and moderation half, and
+it is built too now — the app is fully shipped rather than an add-on with a known-open tail.
+
+Decisions the earlier proposal settled, and how each landed:
+
+| Decision               | Choice                                                                              |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| Tabs                   | Public feed (default), Following, Search, Notifications — bottom nav                |
+| Identity               | Small avatar top-right, opening a sheet for switch / claim / edit profile           |
+| Composer               | FAB, matching Messages' "Start Chat" and Contacts' "Add Contact"                    |
+| Notifications          | The shared `gphone_notifications` OS service, not a per-app table                   |
+| Follow graph           | `gphone_account_follows`, declared on the shared `accounts` service                 |
+| Public-feed affordance | **Ear** — pairs with Mouth, one speaks and one listens. No reaction bar in a feed   |
+| Reactions / emoji      | Private surfaces only, Blabber DMs — palette plus a full picker behind "+"          |
+| Media                  | Generic `gphone_media` table via the `table:` override; app id stays `photos`       |
+| Block                  | One-directional (`gphone_account_blocks`, shared with follows), cascades any follow |
+
+**The `gphone_media` rename** landed alongside the Photos app work above and needed nothing further
+here — `gphone_blabber_attachments.media_id` references it directly.
+
+**Ear.** `gphone_blabber_likes` renamed to `gphone_blabber_ears`, the wire actions to `ear`/`unear`,
+and `BlabEngagement`'s fields to `ears`/`earedByMe`, across the server handler, the client store, the
+browser mock and every component that renders the count. Mouth is unchanged — the pair is the point.
+
+**Blab attachments.** `gphone_blabber_attachments` (`blab_id`, `citizenid`, `media_id`), read back
+`id ASC` and hydrated in the same batched pass `BlabberRepository` already used for authors and
+quoted Blabs. `resolveOwnedAttachments` moved out of `Messages.ts` into `server/lib/attachments.ts`
+so both services validate ownership through the same function rather than two copies of "trust
+nothing about this id" (§2.9). The Composer's attach button reuses `PhotoPickerModal`'s multi-select
+path, which already returns full `MediaPreview` rows rather than base64. A Blab may now be
+attachment-only — no body, no mouth — the same relaxation Messages already made for a picture-only
+send.
+
+**Report** turned out to need no server work at all: `gphone_blabber`, `gphone_blabber_dms` and
+`gphone_accounts` were already registered reportable, and `ReportButton`/`ReportDialog` were already
+wired into `BlabRow`, the DM thread and `Profile`. What the original proposal described as missing
+had shipped separately in the interim.
+
+**Block**, one-directional: `gphone_account_blocks` sits beside follows on the shared `accounts`
+service, with the same insert-only-unique-index shape. Blocking cascade-deletes any existing follow
+between the two accounts, both directions. Server-side enforcement at every point a client-side
+filter would have been a lie: the public feed (a new `feed` action replaces the generic `get`, which
+had no caller identity to filter blocked accounts with), the Following feed, a profile view (an
+empty page rather than a partial one once the viewer has blocked the account), mention and follow
+notifications, and DM `send` — refused **bidirectionally** there, since a DM has exactly two
+participants and either side's block ends it. Nothing tells the blocked account anything happened;
+there is no "blocked you" state anywhere in this codebase.
+
+**Private-surface reactions, Blabber DMs only.** `gphone_account_reactions` (`account_id`,
+`target_table`, `target_id`, `emoji`), declared on the shared `accounts` service the same way follows
+and blocks are — reactions are a property of the identity graph, not of one app's content, so a
+future app adopting them needs only `registerReactable`, no migration. `defineService` grew a
+`reactable` option mirroring `reportable`, and `isReactableTable` guards `target_table` the same way
+`isReportableTable` guards a report — not against SQL injection, since the value is bound rather than
+interpolated, but against a client naming a table it has no business reacting to. `EmojiPicker` and
+`ReactionBar`, new SDK primitives in `sdk/ui/`: a fixed palette row (👍❤️😂😮😢😡) plus a "+" opening
+a small bundled catalog, no network call and no new dependency. Wired into `DmComposer` (typing an
+emoji into a message) and the DM thread (`ReactionBar` under each bubble, backed by a batched
+`reactionsFor` read that mirrors `engagement`'s shape).
+
+**Deliberately out of scope.** GIF sourcing in the DM composer — it needs a provider (Tenor or
+Giphy) and an API key that do not exist yet, so `DmComposer` leaves room for the button but the
+`GifBridge`, the CDN host allowlist and the `gphone_gif_provider`/`gphone_gif_api_key` convars are
+not built. Everything reactions and attachments needed is in place, so adding it later is additive
+rather than a rework. Also out of scope, unchanged from the original proposal: Messages adopting the
+emoji/reaction primitives and threaded replies in Messages; video and voice **capture**, which the
+schema accommodates but no capture path exists for; a quote-Blab composer, though `mouthBlab` already
+accepts a body with no UI to supply one; a dedicated "manage blocked accounts" screen —
+block/unblock is Profile-only; pull-to-refresh and a new-posts indicator; and whether Blabber should
+stay `core: false` at all now that it is a flagship app.
 
 ---
 
@@ -740,84 +816,6 @@ resource _read_ a player's messages, photos or notes, which is a privacy surface
 integration one and stays closed; and a general "run any service action" export, which would hand out
 the whole `ServiceEndpoint` surface without the payload validation and rate limiting §2.9 puts in
 front of it.
-
-### Blabber, next iteration
-
-Most of what this section originally proposed has since shipped and moved up: the tabbed shell, the
-composer as a FAB, identity as a small avatar, the follow graph, the notifications tab, and now search
-and hashtags. **What is left is the media and moderation work below.**
-
-The end state is a signed-up-only tabbed shell — public feed as the default, the feed of people you
-follow one tap away, search and notifications in a bottom nav. All four exist.
-
-Decisions already settled, recorded so they are not re-litigated:
-
-| Decision                | Choice                                                                              |
-| ----------------------- | ----------------------------------------------------------------------------------- |
-| Tabs                    | Public feed (default), Following, Search, Notifications — bottom nav — done         |
-| Identity                | Small avatar top-right, opening a sheet for switch / claim / edit profile — done    |
-| Composer                | FAB, matching Messages' "Start Chat" and Contacts' "Add Contact" — done             |
-| Notifications           | The shared `gphone_notifications` OS service, not a per-app table — done            |
-| Follow graph            | `gphone_account_follows`, declared on the shared `accounts` service — done          |
-| Public-feed affordance  | **Ear** — pairs with Mouth, one speaks and one listens. No reaction bar in a feed   |
-| Reactions / emoji / GIF | Private surfaces only; Blabber DMs first, Messages adopts the same primitives later |
-| Media                   | Generic `gphone_media` table via the `table:` override; app id stays `photos`       |
-
-Search as the fourth tab, and search and hashtags underneath it, both shipped — see "Search,
-hashtags, and the flattened view a search result needed" under Shipped, alongside "The notifications
-tab, and the tab nobody could open" for the destination search completed the nav with. Read this
-section's earlier proposal for either as superseded, not as pending: the flattened `root_id` view a
-search result needed was not foreseen here at all, and `accounts:search` landed on the shared
-`accounts` service rather than a Blabber-owned one, matching how `followers`/`following` already work.
-
-#### Media, private-surface richness, and moderation
-
-- **The `gphone_media` rename**, below — the prerequisite for everything else in this step. Bundle the
-  `gphone_blabber_likes` → `gphone_blabber_ears` rename into the same migration file: doing it while
-  Blabber is a fresh `core: false` add-on is far cheaper than later.
-- **Blab attachments**, `gphone_blabber_attachments` (`blab_id`, `citizenid`, `media_id`), ordered by
-  `id ASC` as Messages already relies on. Reuse `resolveOwnedAttachments` from `Messages.ts` — or lift
-  it to `server/lib/` — so a `media_id` the poster does not own is dropped rather than trusted, and
-  reuse `PhotoPickerModal`'s existing `multiSelect`. Hydrate through the Blabber repository subclass,
-  batched per page.
-- **Ear.** Rename Like across the UI copy, the wire actions (`likeBlab`/`unlikeBlab` →
-  `earBlab`/`unearBlab`, `blabber:like`/`unlike` → `blabber:ear`/`unear`), the `BlabEngagement` fields
-  (`likes`/`likedByMe` → `ears`/`earedByMe`) and the table. Keep Mouth — the pair is the point. Route
-  renames must land in all three layers plus the mock or the feature silently no-ops (§8), and
-  `routes.test.ts` cross-references them. Keep the two-literal `fetchNui` calls: a computed action name
-  is invisible to that test.
-- **Private-surface richness, Blabber DMs only.** No reaction bar and no GIF button on a Blab
-  composer; a public post gets Ear and nothing else. `gphone_account_reactions` declared as a shared
-  table now (keyed on account plus target) so Messages needs no migration when it adopts this. New
-  `EmojiPicker`, `GifPicker` and `ReactionBar` primitives, exported from `components.ts` so they are
-  reachable — a primitive nobody can import is not a primitive — and wired into `DmComposer` and the
-  DM thread only. GIF sourcing goes through `gphone_gif_provider` / `gphone_gif_api_key` convars with
-  the **server** calling the provider, so the key never reaches the client, and a stored `url`
-  validated against an allowlist of that provider's CDN hosts before it is ever rendered: an
-  unvalidated client-supplied URL rendered in CEF is an IP-leak beacon and a way to display
-  unmoderated content (§2.9). Server-side fetch, no new npm dependency.
-- **Report and block.** `REPORTABLE` in `server/lib/moderation.ts` lists only messages and photos, so
-  a Blab, a DM and an account cannot be reported at all, and nothing ever writes `moderated` on those
-  tables — Blabber only respects the status defensively through `visibleTarget`. Add `gphone_blabber`,
-  `gphone_blabber_dms` and `gphone_accounts` with preview columns, and surface the existing
-  `ReportDialog` from `BlabRow`, the DM thread and profiles. **Block/mute** is a new shared table
-  alongside follows, and it matters most once strangers can DM you: a block has to filter the
-  blocker's feeds, suppress notifications and refuse DMs **server-side**, because a client-side filter
-  is not a block.
-
-#### Deliberately out of scope
-
-Listed so nothing above reads as covering them: Messages adopting the emoji, GIF and reaction
-primitives, and threaded replies in Messages; video and voice **capture**, which the schema
-accommodates but no capture path exists for; a quote-Blab composer, though `mouthBlab` already accepts
-a body with no UI to supply one; pull-to-refresh and a new-posts indicator; and whether Blabber should
-stay `core: false` at all once it is a flagship app.
-
-New server logic here gets a server test (§9), and the ones worth naming in advance: a notification
-row per kind with `read_at` clearing the count, tag extraction agreeing with `tokenizeRichText` on the
-same input, a GIF URL off the host allowlist being refused, and a blocked account being unable to DM
-or appear in a feed. `routes.test.ts` and `appEventContract.test.ts` are what catch a missing NUI or
-push layer — the failure mode that silently does nothing in game.
 
 ---
 
