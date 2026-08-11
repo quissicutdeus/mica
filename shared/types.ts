@@ -217,6 +217,12 @@ export interface Blab {
   avatar?: string | null;
   /** The Blab being mouthed, hydrated for display. */
   mouthed?: Blab | null;
+  /**
+   * `photo_id` on the way in, `media` on the way back — same split as `Message.attachments`
+   * and for the same reason: this is a public read, so the uploader's `citizenid` must not
+   * ride along on the projection (§10).
+   */
+  attachments?: { id?: number; photo_id?: number; media?: MediaPreview }[];
 }
 
 /** Counts for one Blab, plus what the asking player has already done to it. */

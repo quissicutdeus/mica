@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Avatar, formatDate, ReportDialog } from '@gphone/sdk';
+  import { Avatar, formatDate, MediaThumb, ReportDialog } from '@gphone/sdk';
   import type { Blab, BlabEngagement } from '@shared/types';
   import BlabBody from './BlabBody.svelte';
   import BlabActions from './BlabActions.svelte';
@@ -108,6 +108,18 @@
     {#if !isPlainMouth}
       <div class="mt-1">
         <BlabBody body={blab.body ?? ''} {onhandle} {ontag} />
+      </div>
+    {/if}
+
+    {#if blab.attachments && blab.attachments.length > 0}
+      <div class="mt-2 grid grid-cols-2 gap-1.5">
+        {#each blab.attachments as attach (attach.id)}
+          {#if attach.media}
+            <div class="max-w-full overflow-hidden rounded-lg">
+              <MediaThumb item={attach.media} fit="contain" alt="Attachment" />
+            </div>
+          {/if}
+        {/each}
       </div>
     {/if}
 

@@ -124,9 +124,9 @@
     hasMore: () => cursor !== null
   });
 
-  const submitReply = async (body: string) => {
+  const submitReply = async (body: string, attachments?: { photo_id: number }[]) => {
     if (!replyTarget) return;
-    await postBlab(body, replyTarget.id);
+    await postBlab(body, replyTarget.id, attachments);
     await refresh();
   };
 </script>

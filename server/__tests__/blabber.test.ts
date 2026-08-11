@@ -181,6 +181,50 @@ describe('posting', () => {
   });
 });
 
+describe('attachments', () => {
+  it('allows a picture post with no body, as long as it owns the photo', async () => {
+    dbMock.single
+      .mockResolvedValueOnce(MY_ACCOUNT) // ownedAccount
+      .mockResolvedValueOnce({ id: 5, citizenid: 'CIT_A' }); // photoRepo.findById(5, 'CIT_A')
+    dbMock.insert.mockResolvedValueOnce(50); // the Blab row
+
+    const reply = await call('create', { account_id: 1, attachments: [{ photo_id: 5 }] });
+
+    expect(reply.error).toBeUndefined();
+    // One insert for the Blab row, one for the attachment join row.
+    expect(dbMock.insert).toHaveBeenCalledTimes(2);
+    const [table, values] = dbMock.insert.mock.calls[1];
+    expect(String(table)).toContain('gphone_blabber_attachments');
+    expect(values).toEqual([50, 'CIT_A', 5]);
+  });
+
+  it('drops a photo id the caller does not own, silently', async () => {
+    dbMock.single
+      .mockResolvedValueOnce(MY_ACCOUNT) // ownedAccount
+      .mockResolvedValueOnce(null); // photoRepo.findById: not owned
+    dbMock.insert.mockResolvedValueOnce(50);
+
+    const reply = await call('create', {
+      account_id: 1,
+      body: 'still has text',
+      attachments: [{ photo_id: 999 }]
+    });
+
+    expect(reply.error).toBeUndefined();
+    // Only the Blab row is inserted — the dropped attachment never reaches SQL.
+    expect(dbMock.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a Blab with no body, no mouth and no attachment', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+
+    const reply = await call('create', { account_id: 1 });
+
+    expect(reply.error).toMatch(/needs something in it/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+});
+
 describe('root_id inheritance', () => {
   it('is null for a top-level post', async () => {
     dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
@@ -441,7 +485,8 @@ describe('author hydration', () => {
 
     await repo.hydrate(rows);
 
-    expect(dbMock.query).toHaveBeenCalledTimes(1);
+    // One for the batched authors, one for the batched attachments.
+    expect(dbMock.query).toHaveBeenCalledTimes(2);
     expect(dbMock.query.mock.calls[0][1]).toEqual([1, 2]);
   });
 
@@ -460,8 +505,8 @@ describe('author hydration', () => {
     expect(row.handle).toBe('ada');
     expect(row.mouthed).toMatchObject({ id: 9, handle: 'bob', display_name: 'Bob' });
     // Both pages of authors in one read: a quote is usually somebody else's, so splitting this
-    // would double the query count on any feed with mouths in it.
-    expect(dbMock.query).toHaveBeenCalledTimes(2);
+    // would double the query count on any feed with mouths in it. Plus one for attachments.
+    expect(dbMock.query).toHaveBeenCalledTimes(3);
     expect(dbMock.query.mock.calls[1][1]).toEqual([1, 2]);
   });
 
@@ -540,8 +585,11 @@ describe('blabber:view', () => {
     dbMock.query
       .mockResolvedValueOnce([blab({ id: 7, account_id: 2, body: 'root post' })]) // selectPublic([7]) for the root
       .mockResolvedValueOnce([author(2, 'ada')]) // root's own author
+      .mockResolvedValueOnce([]) // root's own attachments
       .mockResolvedValueOnce([blab({ id: 9, account_id: 3, root_id: 7 })]) // replies
       .mockResolvedValueOnce([author(3, 'bob')]); // replies' authors
+    // Replies' own attachments query falls through to the default `[]` — it is the last
+    // query call in this test, so nothing downstream depends on its slot being queued.
 
     const reply = await call('view', { id: 7 });
 
@@ -575,6 +623,7 @@ describe('blabber:view', () => {
     dbMock.query
       .mockResolvedValueOnce([blab({ id: 7, account_id: 2 })]) // selectPublic([7]) for the root
       .mockResolvedValueOnce([]) // its author
+      .mockResolvedValueOnce([]) // its attachments
       .mockResolvedValueOnce([blab({ id: 9, account_id: 3, root_id: 7 })]) // flattened replies
       .mockResolvedValueOnce([]); // reply authors
 
@@ -606,6 +655,7 @@ describe('blabber:view', () => {
     dbMock.query
       .mockResolvedValueOnce([blab({ id: 7, account_id: 2 })]) // selectPublic([7]) for the root
       .mockResolvedValueOnce([]) // root's own author
+      .mockResolvedValueOnce([]) // root's own attachments
       .mockResolvedValueOnce([]); // flattened replies (empty, no anchor split)
 
     await call('view', { id: 7, anchorId: 4242 });
@@ -613,12 +663,12 @@ describe('blabber:view', () => {
     /**
      * A rejected anchor must fall back to plain-cursor mode: one `Database.query` for the
      * flattened replies (empty here) rather than the two-query newer/older anchor split. The
-     * other two calls below are the root's own resolution through `findPublicById`
-     * (`selectPublic` + its author batch), which runs regardless of the anchor outcome. What
-     * proves the split never ran is that none of the three calls' SQL orders `ASC` — the anchor
-     * split's "newer" half is the only query in this file that does.
+     * other three calls below are the root's own resolution through `findPublicById`
+     * (`selectPublic` + its author batch + its attachment batch), which runs regardless of the
+     * anchor outcome. What proves the split never ran is that none of the four calls' SQL orders
+     * `ASC` — the anchor split's "newer" half is the only query in this file that does.
      */
-    expect(dbMock.query).toHaveBeenCalledTimes(3);
+    expect(dbMock.query).toHaveBeenCalledTimes(4);
     for (const [sql] of dbMock.query.mock.calls) {
       expect(String(sql)).not.toMatch(/ORDER BY `id` ASC/);
     }

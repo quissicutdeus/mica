@@ -4,7 +4,8 @@ import { conversations, type ConversationRepo } from './Conversations';
 // instance, so the attachment-ownership check runs against the same allowlist.
 import { photos } from './Photos';
 import { defineService } from '../lib/defineService';
-import { conversationIdFrom, fields, requirePositiveInt } from '../lib/payload';
+import { conversationIdFrom, fields } from '../lib/payload';
+import { resolveOwnedAttachments } from '../lib/attachments';
 import { Message } from '@shared/types';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 
@@ -105,36 +106,6 @@ const requireParticipant = async (conversationId: number, citizenid: string): Pr
   }
 };
 
-/**
- * Keep only the attachments whose photo the sender actually owns. A `photo_id` is
- * a client-supplied row id, so an unchecked one lets a player attach — and thereby
- * disclose — someone else's photo.
- */
-const resolveOwnedAttachments = async (
-  raw: unknown,
-  citizenid: string
-): Promise<{ photo_id: number }[]> => {
-  if (!Array.isArray(raw)) return [];
-
-  const owned: { photo_id: number }[] = [];
-  for (const attachment of raw) {
-    let photoId: number;
-    try {
-      photoId = requirePositiveInt(attachment?.photo_id, 'photo id');
-    } catch {
-      continue;
-    }
-
-    const photo = await photoRepo.findById(photoId, citizenid);
-    if (photo) {
-      owned.push({ photo_id: photoId });
-    } else {
-      console.warn(`[messages] Dropped attachment ${photoId} not owned by ${citizenid}.`);
-    }
-  }
-  return owned;
-};
-
 app.registerEvent('get', async (source, cbId, data, citizenid) => {
   const conversationId = conversationIdFrom(data);
   await requireParticipant(conversationId, citizenid);
@@ -188,7 +159,7 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
 
   const body = fields(data);
   const message = typeof body.message === 'string' ? body.message : '';
-  const attachments = await resolveOwnedAttachments(body.attachments, citizenid);
+  const attachments = await resolveOwnedAttachments(body.attachments, citizenid, photoRepo);
   if (!message.trim() && attachments.length === 0) {
     throw new Error('A message body or an attachment is required.');
   }

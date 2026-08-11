@@ -403,9 +403,9 @@
     if (ids.length > 0) void loadEngagement(ids);
   });
 
-  const post = (body: string) => {
+  const post = (body: string, attachments?: { photo_id: number }[]) => {
     composing = false;
-    void run(() => postBlab(body), { title: 'Blabber', success: 'Posted' });
+    void run(() => postBlab(body, undefined, attachments), { title: 'Blabber', success: 'Posted' });
   };
 
   const saveEdit = (body: string) => {
@@ -513,6 +513,7 @@
         initial={editing?.body ?? ''}
         placeholder={editing ? 'Fix a typo' : "What's happening?"}
         busy={$busy}
+        allowAttachments={!editing}
         onsubmit={editing ? saveEdit : post}
         oncancel={closeComposer}
       />

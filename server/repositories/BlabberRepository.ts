@@ -1,6 +1,6 @@
 import { SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { Blab } from '@shared/types';
+import { Blab, MediaPreview } from '@shared/types';
 
 /**
  * Author hydration for Blabber.
@@ -53,6 +53,27 @@ export class BlabberRepository extends SchemaRepository<Blab> {
     this.publicColumns = resolved.publicColumns;
   }
 
+  /**
+   * Insert the Blab, then its attachments — mirrors `MessageRepository.create`. The caller
+   * (`Blabber.ts`'s `create` handler) has already run every attachment id through
+   * `resolveOwnedAttachments`, so what arrives here is trusted.
+   */
+  async create(data: Partial<Blab> & { attachments?: { photo_id: number }[] }): Promise<number> {
+    const { attachments, ...rest } = data;
+    const id = await super.create(rest as Partial<Blab>);
+
+    if (attachments && attachments.length > 0) {
+      for (const attachment of attachments) {
+        await Database.insert(
+          'INSERT INTO `gphone_blabber_attachments` (`blab_id`, `citizenid`, `media_id`) VALUES (?, ?, ?)',
+          [id, data.citizenid, attachment.photo_id]
+        );
+      }
+    }
+
+    return id;
+  }
+
   async findAll(
     where: Partial<Blab> = {},
     page?: { limit?: number; cursor?: number },
@@ -88,6 +109,10 @@ export class BlabberRepository extends SchemaRepository<Blab> {
       mouthed.map((row) => [Number(row.id), this.attachAuthor(row, authors)])
     );
 
+    // Attachments for the page's own rows only — a mouthed card renders its own text and
+    // avatar but was never designed to carry a second row's media inline.
+    const attachmentsById = await this.findAttachmentsFor(rows.map((row) => row.id));
+
     for (const row of rows) {
       this.attachAuthor(row, authors);
       if (row.mouth_of != null) {
@@ -96,9 +121,61 @@ export class BlabberRepository extends SchemaRepository<Blab> {
         // than carry a stale card.
         row.mouthed = mouthedById.get(Number(row.mouth_of)) ?? null;
       }
+      row.attachments = attachmentsById.get(Number(row.id)) ?? [];
     }
 
     return rows;
+  }
+
+  /**
+   * A page's attachments, batched — mirrors `MessageRepository.findByConversation`'s inline
+   * join, generalized to a **set** of ids because Blabber hydrates a page of thirty-plus posts
+   * rather than one thread.
+   *
+   * The projection deliberately excludes any citizenid-shaped column: this is a public read,
+   * and the uploader's citizenid is the one field that would tie an image back to whichever of
+   * their accounts posted it (§10).
+   */
+  async findAttachmentsFor(
+    blabIds: number[]
+  ): Promise<Map<number, { id: number; media: MediaPreview }[]>> {
+    const ids = distinctIds(blabIds);
+    if (ids.length === 0) return new Map();
+
+    const placeholders = ids.map(() => '?').join(', ');
+    const rows = await Database.query<any[]>(
+      `SELECT a.id, a.blab_id,
+              m.id AS media_id, m.kind, m.data, m.url, m.thumbnail,
+              m.mime_type, m.duration_ms, m.alt_text
+         FROM \`gphone_blabber_attachments\` a
+         JOIN \`gphone_media\` m ON a.media_id = m.id
+        WHERE a.blab_id IN (${placeholders})
+        ORDER BY a.id ASC`,
+      ids
+    );
+
+    const byBlab = new Map<number, { id: number; media: MediaPreview }[]>();
+    for (const row of rows) {
+      const list = byBlab.get(row.blab_id) ?? [];
+      list.push({
+        id: row.id,
+        media: {
+          id: row.media_id,
+          kind: row.kind ?? 'photo',
+          // `toString()` for the same reason `Photos.ts` coerces these: depending on driver
+          // and column type a `mediumtext` arrives as a Buffer, which crosses NUI as
+          // `{type:'Buffer',data:[...]}` and renders as nothing.
+          data: row.data ? String(row.data) : undefined,
+          url: row.url ?? undefined,
+          thumbnail: row.thumbnail ? String(row.thumbnail) : undefined,
+          mime_type: row.mime_type ?? undefined,
+          duration_ms: row.duration_ms ?? undefined,
+          alt_text: row.alt_text ?? undefined
+        }
+      });
+      byBlab.set(row.blab_id, list);
+    }
+    return byBlab;
   }
 
   /**

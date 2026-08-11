@@ -685,7 +685,13 @@ const mockRegistry: Record<string, MockHandler> = {
     const hasMore = visible.length > page.length;
     return { rows: page, nextCursor: hasMore ? page[page.length - 1].id : null };
   },
-  'blabber:create': ({ account_id, body, reply_to, mouth_of }: Partial<Blab>) => {
+  'blabber:create': ({
+    account_id,
+    body,
+    reply_to,
+    mouth_of,
+    attachments
+  }: Partial<Blab> & { attachments?: { photo_id: number }[] }) => {
     // Ownership, not mere existence — this is `ownedAccount` on the server, and the message was
     // already claiming it while the check only asked whether the row existed at all.
     const account = mockAccounts.find((a) => a.id === account_id && mockOwnedAccountIds.has(a.id));
@@ -695,6 +701,15 @@ const mockRegistry: Record<string, MockHandler> = {
     // true top-level ancestor), exactly as the server computes it at create.
     const replyParent = reply_to != null ? mockBlabs.find((b) => b.id === reply_to) : undefined;
     const rootId = replyParent ? (replyParent.root_id ?? replyParent.id) : null;
+    // The real server resolves a bare `photo_id` back to a full media row before it ever
+    // reaches the client (`resolveOwnedAttachments` then `findAttachmentsFor`) — a mock that
+    // echoed the id alone would render a blank thumbnail while the server rendered a real one.
+    const resolvedAttachments = (attachments ?? [])
+      .map((att, i) => {
+        const photo = mockPhotos.find((p) => p.id === att.photo_id);
+        return photo ? { id: i, media: photo } : null;
+      })
+      .filter((att): att is { id: number; media: (typeof mockPhotos)[number] } => att !== null);
     const created: Blab = {
       id: nextBlabId++,
       account_id: account.id,
@@ -714,6 +729,7 @@ const mockRegistry: Record<string, MockHandler> = {
         mouth_of == null
           ? null
           : (mockBlabs.find((b) => b.id === mouth_of && b.status === 'active') ?? null),
+      attachments: resolvedAttachments,
       status: 'active',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()

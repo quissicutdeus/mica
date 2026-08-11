@@ -168,14 +168,19 @@ export const claimAccount = async (handle: string, displayName?: string): Promis
 };
 
 /** Post. Prepends optimistically only after the server has confirmed the row. */
-export const postBlab = async (body: string, replyTo?: number | null): Promise<Blab> => {
+export const postBlab = async (
+  body: string,
+  replyTo?: number | null,
+  attachments?: { photo_id: number }[]
+): Promise<Blab> => {
   const accountId = getActiveAccountId();
   if (accountId === null) throw new Error('Claim a handle before posting.');
 
   const created = await blabberService().call<Blab & { editWindow?: number }>('create', {
     account_id: accountId,
     body,
-    reply_to: replyTo ?? undefined
+    reply_to: replyTo ?? undefined,
+    attachments
   });
   if (typeof created.editWindow === 'number') editWindow.set(created.editWindow);
   feed.prepend(created);
@@ -561,7 +566,8 @@ export function useBlabber() {
     claimAccount: (handle: string, displayName?: string) => claimAccount(handle, displayName),
     updateAccount: (id: number, patch: Parameters<typeof updateAccount>[1]) =>
       updateAccount(id, patch),
-    postBlab: (body: string, replyTo?: number | null) => postBlab(body, replyTo),
+    postBlab: (body: string, replyTo?: number | null, attachments?: { photo_id: number }[]) =>
+      postBlab(body, replyTo, attachments),
     editBlab: (id: number, body: string) => editBlab(id, body),
     deleteBlab: (id: number) => deleteBlab(id),
     viewBlab: (id: number, opts?: { anchorId?: number }) => viewBlab(id, opts),

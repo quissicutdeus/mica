@@ -1,7 +1,11 @@
 import { defineService } from '../lib/defineService';
 import { ownedAccount } from './Accounts';
+// Photos is a declared app; reuse its derived repository rather than a second instance, so
+// the attachment-ownership check runs against the same allowlist Messages already uses.
+import { photos } from './Photos';
 import { Blab } from '@shared/types';
 import { fields, optionalString, pageBounds, requirePositiveInt } from '../lib/payload';
+import { resolveOwnedAttachments } from '../lib/attachments';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { mentionedHandles, taggedTopics } from '@shared/richText';
@@ -175,10 +179,51 @@ export const blabber = defineService<Blab>({
         { name: 'tag', columns: ['tag'] },
         { name: 'blab_id', columns: ['blab_id'] }
       ]
+    },
+    /**
+     * Attachments. Mirrors `gphone_messages_attachments` — `media_id` rather than a bare
+     * base64 blob, so an attachment can be a photo, a video or a GIF without a second shape.
+     * `citizenid` is carried for the same reason it is on the Messages table: the ownership
+     * check in `resolveOwnedAttachments` runs before insert, but the row still needs to say
+     * whose upload this was for any later moderation pass, even though a public read never
+     * projects it back out (§10).
+     */
+    {
+      name: 'gphone_blabber_attachments',
+      columns: {
+        blab_id: {
+          type: 'int',
+          notNull: true,
+          references: { table: 'gphone_blabber', column: 'id' }
+        },
+        citizenid: {
+          type: 'string',
+          length: 50,
+          notNull: true,
+          references: { table: 'players', column: 'citizenid' }
+        },
+        media_id: {
+          type: 'int',
+          notNull: true,
+          references: { table: 'gphone_media', column: 'id' }
+        }
+      },
+      indexes: [
+        { name: 'blab_id', columns: ['blab_id'] },
+        { name: 'citizenid', columns: ['citizenid'] },
+        { name: 'media_id', columns: ['media_id'] }
+      ]
     }
   ],
-  // Custom: has to verify the account is the caller's before accepting a post.
-  options: { disableCreate: true },
+  /**
+   * Both custom. `create` has to verify the account is the caller's before accepting a post.
+   * `get` is replaced by the `feed` action below — the generic path has no way to filter out
+   * accounts the viewer has blocked, since `ServiceEndpoint` never threads a caller identity
+   * into a public read's `findAll` (§10's public-read reasoning stops at the ownership
+   * predicate, which a public read does not have). A custom action already has `citizenid` in
+   * hand, the same way `following` and `profile` do.
+   */
+  options: { disableCreate: true, disableGet: true },
   /**
    * Author hydration. Every read here returns rows the reader does not own, so the handle,
    * display name and avatar have to be joined on — see `BlabberRepository` for why the join
@@ -189,6 +234,7 @@ export const blabber = defineService<Blab>({
 
 const app = blabber.app;
 const repo = blabber.repo as BlabberRepository;
+const photoRepo = photos.repo;
 const channel = appEventChannel(APP);
 
 /**
@@ -301,13 +347,19 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
       ? null
       : (await visibleTarget(body.mouth_of, 'mouth target')).id;
 
+  const attachments = await resolveOwnedAttachments(body.attachments, citizenid, photoRepo);
+
   /**
-   * The rule the DDL cannot express: something to say, or something to repeat.
+   * The rule the DDL cannot express: something to say, something to repeat, or something to
+   * show.
    *
-   * A mouth with a body is a quote; a mouth without one is a plain repeat; a Blab with neither
-   * is nothing at all, and would render as an empty row nobody can explain.
+   * A mouth with a body is a quote; a mouth without one is a plain repeat; a Blab with an
+   * attachment and no text is a picture post; a Blab with none of the three is nothing at all,
+   * and would render as an empty row nobody can explain.
    */
-  if (!text && mouthOf === null) throw new Error('A Blab needs something in it.');
+  if (!text && mouthOf === null && attachments.length === 0) {
+    throw new Error('A Blab needs something in it.');
+  }
   if (mouthOf !== null && replyTo !== null) {
     throw new Error('A Blab can reply or mouth, not both.');
   }
@@ -319,8 +371,9 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
       body: text || null,
       reply_to: replyTo,
       mouth_of: mouthOf,
-      root_id: rootId
-    } as Partial<Blab>);
+      root_id: rootId,
+      attachments
+    } as Partial<Blab> & { attachments: { photo_id: number }[] });
 
     /**
      * Fixed at creation, never re-extracted on edit — the 15-minute edit window (§10) is framed
@@ -362,6 +415,11 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
      * came to attach its quoted Blab client-side from whatever happened to be in the local
      * feed, and so showed nothing at all for a Blab mouthed from a profile or a thread.
      */
+    // Resolved before the return so the mouthed target's own hydration (which does its own
+    // queries) runs first — this keeps the two independent regardless of statement order below.
+    const mouthedEcho = mouthOf === null ? null : await repo.findPublicById(mouthOf);
+    const attachmentsById = await repo.findAttachmentsFor([id]);
+
     return {
       id,
       account_id: account.id,
@@ -371,7 +429,8 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
       body: text || null,
       reply_to: replyTo,
       mouth_of: mouthOf,
-      mouthed: mouthOf === null ? null : await repo.findPublicById(mouthOf),
+      mouthed: mouthedEcho,
+      attachments: attachmentsById.get(id) ?? [],
       status: 'active',
       editWindow: editWindowSeconds()
     };
