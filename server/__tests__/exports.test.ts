@@ -9,6 +9,7 @@ const { dbMock, bridgeMock } = vi.hoisted(() => ({
     // The push path resolves a recipient to a live source; undefined is "offline", which
     // is the case these assertions mostly want anyway.
     getSourceByCitizenId: vi.fn(() => undefined),
+    getPlayerByPhone: vi.fn(() => undefined),
     registerUsableItem: vi.fn()
   }
 }));
@@ -48,19 +49,25 @@ describe('the public export surface', () => {
     // Adding one here is a deliberate act. Removing or renaming one breaks a caller.
     expect(publishedExports()).toEqual([
       'AddBatteryCharge',
+      'AddContact',
       'AddDeadZone',
       'AddMedia',
       'BuildDeepLink',
       'ClearGlobalSignal',
       'GetApiVersion',
       'GetBatteryLevel',
+      'GetCitizenId',
+      'GetPhoneNumber',
       'GetSignal',
+      'IsPhoneOpen',
+      'OpenApp',
       'RemoveDeadZone',
       'SendNotification',
       'SendSystemEmail',
       'SetBatteryLevel',
       'SetCharging',
       'SetGlobalSignal',
+      'SetPhoneEnabled',
       'SetSignal'
     ]);
   });
@@ -213,5 +220,97 @@ describe('AddMedia', () => {
 
   it('requires a citizenid', async () => {
     expect((await add({ kind: 'gif', url: 'https://x.test/a.gif' }, '')).ok).toBe(false);
+  });
+});
+
+describe('AddContact', () => {
+  const add = (contact: unknown, citizenid: unknown = CID) =>
+    publishedExport('AddContact')!(citizenid, contact) as Promise<any>;
+
+  beforeEach(() => {
+    dbMock.insert.mockResolvedValue(42);
+  });
+
+  it('accepts a contact and returns its row id', async () => {
+    const result = await add({ firstname: 'Dispatch', phone: '555-0100' });
+    expect(result).toMatchObject({ ok: true, value: { id: 42 } });
+  });
+
+  it('requires a firstname and a phone', async () => {
+    expect((await add({ phone: '555-0100' })).ok).toBe(false);
+    expect((await add({ firstname: 'Dispatch' })).ok).toBe(false);
+  });
+
+  it('writes under the citizenid it was given', async () => {
+    await add({ firstname: 'Dispatch', phone: '555-0100' }, 'OTHER99');
+    const params = dbMock.insert.mock.calls[0][1] as unknown[];
+    expect(params).toContain('OTHER99');
+  });
+
+  it('requires a citizenid', async () => {
+    expect((await add({ firstname: 'Dispatch', phone: '555-0100' }, '')).ok).toBe(false);
+  });
+});
+
+describe('phone-directory exports', () => {
+  it('GetPhoneNumber resolves a citizenid to a phone', async () => {
+    // null, not undefined: `PlayerDirectory.resolve` treats only `null` as "offline" and
+    // falls through to the SQL lookup this test is exercising.
+    bridgeMock.getSourceByCitizenId.mockReturnValue(null);
+    dbMock.single.mockResolvedValue({ citizenid: CID, charinfo: { phone: '555-0100' } });
+    const result = (await publishedExport('GetPhoneNumber')!(CID)) as any;
+    expect(result).toMatchObject({ ok: true, value: '555-0100' });
+  });
+
+  it('GetPhoneNumber refuses an unknown citizenid', async () => {
+    bridgeMock.getSourceByCitizenId.mockReturnValue(null);
+    dbMock.single.mockResolvedValue(undefined);
+    const result = (await publishedExport('GetPhoneNumber')!('nobody')) as any;
+    expect(result).toMatchObject({ ok: false, reason: 'unknown_player' });
+  });
+
+  it('GetCitizenId resolves a phone to a citizenid', async () => {
+    dbMock.single.mockResolvedValue({ citizenid: CID, charinfo: {} });
+    const result = (await publishedExport('GetCitizenId')!('555-0100')) as any;
+    expect(result).toMatchObject({ ok: true, value: CID });
+  });
+
+  it('GetCitizenId refuses an unknown phone', async () => {
+    dbMock.single.mockResolvedValue(undefined);
+    const result = (await publishedExport('GetCitizenId')!('555-9999')) as any;
+    expect(result).toMatchObject({ ok: false, reason: 'unknown_player' });
+  });
+});
+
+describe('phone-state exports', () => {
+  it('IsPhoneOpen defaults to closed for a source never heard from', () => {
+    const result = publishedExport('IsPhoneOpen')!(SRC) as any;
+    expect(result).toMatchObject({ ok: true, value: false });
+  });
+
+  it('IsPhoneOpen refuses a source that is not connected', () => {
+    bridgeMock.getPlayer.mockReturnValue(undefined);
+    const result = publishedExport('IsPhoneOpen')!(SRC) as any;
+    expect(result).toMatchObject({ ok: false, reason: 'unknown_player' });
+  });
+
+  it('SetPhoneEnabled pushes to the client', () => {
+    const result = publishedExport('SetPhoneEnabled')!(SRC, false) as any;
+    expect(result.ok).toBe(true);
+    expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:shell:setEnabled', SRC, false);
+  });
+
+  it('OpenApp refuses an app gPhone does not have', () => {
+    const result = publishedExport('OpenApp')!(SRC, 'not_an_app', {}) as any;
+    expect(result).toMatchObject({ ok: false, reason: 'invalid_args' });
+  });
+
+  it('OpenApp pushes to the client for a known app', () => {
+    const result = publishedExport('OpenApp')!(SRC, 'mail', { mailId: 1 }) as any;
+    expect(result.ok).toBe(true);
+    expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:shell:openApp', SRC, {
+      appId: 'mail',
+      props: { mailId: 1 }
+    });
   });
 });

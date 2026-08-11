@@ -14,6 +14,8 @@ import { FrameworkBridge } from './FrameworkBridge';
 import { appEventChannel } from './appEvents';
 import { buildDeepLink, parseDeepLink } from '@shared/deepLink';
 import { knownServices } from './services';
+import * as PlayerDirectory from './PlayerDirectory';
+import { isPhoneOpen } from './PhoneOpenState';
 import {
   MICA_API_VERSION,
   ExportOutcome,
@@ -26,6 +28,7 @@ import {
 import { SendSystemEmail } from '../services/Mail';
 import { getBatteryLevel, setBatteryLevel, setCharging } from '../services/Battery';
 import { photos } from '../services/Photos';
+import { contacts } from '../services/Contacts';
 import {
   addDeadZone,
   describeSignalFor,
@@ -35,7 +38,7 @@ import {
   setPlayerSignal,
   FULL_SIGNAL
 } from '../services/Signal';
-import type { MediaItem, MediaKind } from '@shared/types';
+import type { Contact, MediaItem, MediaKind } from '@shared/types';
 
 /**
  * How an external resource names itself in the notification shade.
@@ -236,6 +239,44 @@ const AddMedia = async (
   return ok({ id });
 };
 
+/**
+ * Add a contact to a player's address book.
+ *
+ * By citizenid, so a job handing out a dispatch number can write it whether or not the
+ * player is on right now — the row is the point, same reasoning as `AddMedia`.
+ */
+const AddContact = async (
+  citizenid: unknown,
+  contact: unknown
+): Promise<ExportOutcome<{ id: number }>> => {
+  if (typeof citizenid !== 'string' || !citizenid.trim()) {
+    return fail('invalid_args', 'A citizenid is required.');
+  }
+  if (!contact || typeof contact !== 'object') {
+    return fail('invalid_args', 'A contact object is required.');
+  }
+
+  const item = contact as Partial<Contact>;
+  const firstname = String(item.firstname ?? '').trim();
+  const phone = String(item.phone ?? '').trim();
+  if (!firstname) return fail('invalid_args', 'A firstname is required.');
+  if (!phone) return fail('invalid_args', 'A phone is required.');
+
+  const repo = contacts.repo as unknown as {
+    addForPlayer(citizenid: string, item: Partial<Contact>): Promise<number>;
+  };
+
+  const id = await repo.addForPlayer(citizenid, {
+    firstname: firstname.slice(0, 50),
+    lastname: item.lastname ? String(item.lastname).slice(0, 50) : undefined,
+    phone: phone.slice(0, 20),
+    email: item.email ? String(item.email).slice(0, 100) : undefined,
+    favorite: item.favorite === true
+  });
+
+  return ok({ id });
+};
+
 export function registerPublicApi(): void {
   publish(
     'GetApiVersion',
@@ -254,6 +295,8 @@ export function registerPublicApi(): void {
   publish('SendNotification', guarded('SendNotification', SendNotification));
 
   publish('AddMedia', guardedAsync('AddMedia', AddMedia));
+
+  publish('AddContact', guardedAsync('AddContact', AddContact));
 
   /** Build a deep link without needing to know the format. */
   publish(
@@ -403,6 +446,87 @@ export function registerPublicApi(): void {
       const resolved = citizenOf(source);
       if (isFailure(resolved)) return resolved as ExportOutcome<never>;
       setCharging(source as number, isCharging === true);
+      return ok();
+    })
+  );
+
+  /** The phone number for a citizenid, online or off — via the same directory Blabber uses. */
+  publish(
+    'GetPhoneNumber',
+    guardedAsync('GetPhoneNumber', async (citizenid: unknown) => {
+      if (typeof citizenid !== 'string' || !citizenid.trim()) {
+        return fail<string>('invalid_args', 'A citizenid is required.');
+      }
+      const entry = await PlayerDirectory.resolve(citizenid);
+      if (!entry) return fail<string>('unknown_player', 'No character with that citizenid.');
+      if (!entry.phone) return fail<string>('not_ready', 'That character has no phone number.');
+      return ok(entry.phone);
+    })
+  );
+
+  /** The reverse lookup: whose phone number is this. */
+  publish(
+    'GetCitizenId',
+    guardedAsync('GetCitizenId', async (phone: unknown) => {
+      if (typeof phone !== 'string' || !phone.trim()) {
+        return fail<string>('invalid_args', 'A phone number is required.');
+      }
+      const entry = await PlayerDirectory.resolveByPhone(phone);
+      if (!entry) return fail<string>('unknown_player', 'No character with that phone number.');
+      return ok(entry.citizenid);
+    })
+  );
+
+  /**
+   * Whether a player's phone is open right now.
+   *
+   * Mirrored from the client rather than asked live — see `PhoneOpenState.ts` for why
+   * there is no synchronous way to ask one. `false` for a source never heard from, which
+   * is also correct: a player who has never opened the phone this session has it closed.
+   */
+  publish(
+    'IsPhoneOpen',
+    guarded('IsPhoneOpen', (source: unknown) => {
+      if (typeof source !== 'number' || !isConnected(source)) {
+        return fail<boolean>('unknown_player', 'That player is not connected.');
+      }
+      return ok(isPhoneOpen(source));
+    })
+  );
+
+  /**
+   * Confiscate or return a player's phone. Disabling while it is open force-closes it —
+   * see `client/services/Shell.ts`'s `setEnabled` handler.
+   */
+  publish(
+    'SetPhoneEnabled',
+    guarded('SetPhoneEnabled', (source: unknown, enabled: unknown) => {
+      if (typeof source !== 'number' || !isConnected(source)) {
+        return fail('unknown_player', 'That player is not connected.');
+      }
+      emitNet('gphone:client:shell:setEnabled', source, enabled === true);
+      return ok();
+    })
+  );
+
+  /**
+   * Force-open the phone on a named app, the same destination shape a notification's own
+   * deep link uses. `props` becomes that app's `useDeepLink` payload.
+   */
+  publish(
+    'OpenApp',
+    guarded('OpenApp', (source: unknown, appId: unknown, props: unknown) => {
+      if (typeof source !== 'number' || !isConnected(source)) {
+        return fail('unknown_player', 'That player is not connected.');
+      }
+      const id = String(appId ?? '').toLowerCase();
+      if (!APP_ID.test(id) || !isKnownApp(id)) {
+        return fail('invalid_args', `'${appId}' is not a gPhone app.`);
+      }
+      emitNet('gphone:client:shell:openApp', source, {
+        appId: id,
+        props: props && typeof props === 'object' ? props : {}
+      });
       return ok();
     })
   );
