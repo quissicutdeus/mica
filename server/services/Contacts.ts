@@ -1,4 +1,4 @@
-import { defineService } from '../lib/defineService';
+import { defineService, SchemaRepository } from '../lib/defineService';
 import { Contact } from '@shared/types';
 
 /**
@@ -25,5 +25,18 @@ export const contacts = defineService<Contact>({
     { name: 'phone', columns: ['phone'] },
     { name: 'citizenid_phone', columns: ['citizenid', 'phone'] },
     { name: 'citizenid_favorite', columns: ['citizenid', 'favorite', 'status'] }
-  ]
+  ],
+  /**
+   * `addForPlayer` is what makes the `AddContact` export possible — a job handing out a
+   * dispatch number writes on the player's behalf, which the generic owner-scoped create
+   * cannot do because there is no NUI request to scope it to. Same pattern as
+   * `Photos.ts`'s `addForPlayer`: a named method rather than a service-level bypass (§2.9),
+   * so the columns it sets are exactly the ones a contact needs and nothing wider opens up.
+   */
+  repositoryFactory: (resolved) =>
+    new (class extends SchemaRepository<Contact> {
+      async addForPlayer(citizenid: string, item: Partial<Contact>): Promise<number> {
+        return await this.create({ ...item, citizenid } as Partial<Contact>);
+      }
+    })(resolved)
 });
