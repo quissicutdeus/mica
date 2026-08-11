@@ -120,6 +120,41 @@ describe('settings service', () => {
       expect(sql).toMatch(/citizenid = \? AND app = \?/);
       expect(params).toEqual([CID, 'snake']);
     });
+
+    it('reads one setting for many players in one query', async () => {
+      // Built for server/lib/proximity.ts's Bluetooth visibility filter — one query per
+      // candidate would mean one query per nearby player on every share.
+      dbMock.query.mockResolvedValueOnce([
+        { citizenid: 'CID_B', setting_value: 'false' },
+        { citizenid: 'CID_C', setting_value: 'true' }
+      ]);
+
+      const values = await repo().getValuesFor(
+        ['CID_B', 'CID_C', 'CID_D'],
+        'settings',
+        'bluetooth_enabled'
+      );
+
+      expect(dbMock.query).toHaveBeenCalledTimes(1);
+      const [sql, params] = dbMock.query.mock.calls[0];
+      expect(sql).toMatch(/citizenid IN \(\?,\?,\?\)/);
+      expect(params).toEqual(['settings', 'bluetooth_enabled', 'CID_B', 'CID_C', 'CID_D']);
+      // CID_D never had a row and is simply absent, not defaulted here — the caller
+      // decides what a missing preference means.
+      expect(values).toEqual(
+        new Map([
+          ['CID_B', 'false'],
+          ['CID_C', 'true']
+        ])
+      );
+    });
+
+    it('makes no query for an empty citizenid list', async () => {
+      const values = await repo().getValuesFor([], 'settings', 'bluetooth_enabled');
+
+      expect(dbMock.query).not.toHaveBeenCalled();
+      expect(values.size).toBe(0);
+    });
   });
 
   describe('payload validation', () => {

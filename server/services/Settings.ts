@@ -51,6 +51,27 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
     );
   }
 
+  /**
+   * One setting for many players, in one query.
+   *
+   * Built for `server/lib/proximity.ts`'s visibility check: without it, filtering a
+   * candidate list of nearby players to the Bluetooth-visible ones would be one query per
+   * candidate, on a path that already fans out per share. Rows are keyed by citizenid; a
+   * citizenid with no row is not in the returned map at all, so a caller decides what a
+   * missing preference means rather than this method guessing on its behalf.
+   */
+  async getValuesFor(citizenids: string[], app: string, key: string): Promise<Map<string, string>> {
+    if (citizenids.length === 0) return new Map();
+
+    const placeholders = citizenids.map(() => '?').join(',');
+    const rows = await Database.query<{ citizenid: string; setting_value: string }[]>(
+      `SELECT citizenid, setting_value FROM gphone_settings
+       WHERE app = ? AND setting_key = ? AND status = 'active' AND citizenid IN (${placeholders})`,
+      [app, key, ...citizenids]
+    );
+    return new Map(rows.map((row) => [row.citizenid, row.setting_value]));
+  }
+
   /** Remove one key. Hard delete: a tombstoned preference is not a preference. */
   async remove(citizenid: string, app: string, key: string): Promise<void> {
     await Database.query(
