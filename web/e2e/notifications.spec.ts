@@ -295,6 +295,13 @@ test.describe('Interactive Toast Notifications E2E', () => {
     // `mail` is core and declares `notifications`, so it is installed and permitted.
     await pushAppEvent(page, 'mail', 'You have new mail');
     await expect(page.getByText('You have new mail')).toBeVisible();
+
+    // The toast identifies which app is talking before it says what about — `envelope.app`
+    // is threaded through to `toast.show`, resolved against the manifest, and rendered as
+    // a small header above the title. Scoped to the toast card itself: the home screen
+    // behind it has its own "Mail" label under the launcher icon.
+    const toastCard = page.locator('.pointer-events-auto', { hasText: 'You have new mail' });
+    await expect(toastCard.getByText('Mail', { exact: true })).toBeVisible();
   });
 
   test('an app that is not installed does not get to interrupt the player', async ({ page }) => {
