@@ -765,6 +765,26 @@ is the load-bearing part rather than tidiness, and it is `publicColumns`' reason
 conversation is shared, so anything the join selects reaches every participant, and the citizenid is
 the field that ties a picture back to somebody who only meant to send it.
 
+### Camera capture is a fixed resolution
+
+A photo's pixel size used to depend on how large the phone happened to be drawn: `takePhoto` crops
+`containerRef.getBoundingClientRect()` out of the full-screen screenshot, and that rect is measured
+**after** `Shell.svelte`'s `transform: scale($phoneScale)` — `getBoundingClientRect()` reports
+post-transform screen pixels, so a bigger Display setting alone produced a bigger stored photo.
+
+The crop region was never the bug — a uniform `scale()` changes `rect.width` and `rect.height` by the
+same factor, so the ratio between them, and therefore the framing, was already scale-invariant. Only
+the _absolute_ resolution floated with it. `apps/camera/capture.ts`'s `computeCropGeometry` now reads
+the source rect exactly as before and separately pins the output to `CAPTURE_WIDTH` (1080), computing
+the output height from the crop's own aspect ratio. `cropViewportToCanvas` draws from the
+variably-sized source into that fixed-size canvas, so `drawImage` resamples rather than blitting 1:1 —
+which is also why `imageSmoothingEnabled` flipped from off to on.
+
+Pulled apart from the canvas/draw side effects specifically so it is unit-testable at all: jsdom has no
+`getContext('2d')`, so nothing downstream of a real canvas ever ran in the test suite, which is why the
+only prior coverage was a single invalid-input case. `computeCropGeometry` is the same
+exported-for-testing split `display.ts`'s `fitScaleFor` already uses for the same reason.
+
 ---
 
 ## Proposed, not built
@@ -782,18 +802,6 @@ Two constraints shape every schema item below:
   to be over-provisioned now, because every value added later costs another migration.
 - **Base64 will not carry video.** `gphone_media.data` is `mediumtext` holding base64; a video or
   voice clip at that size will not survive crossing NUI.
-
-### Camera capture resolution is tied to display scale
-
-`apps/camera/index.svelte` crops `containerRef.getBoundingClientRect()` against
-`window.innerWidth`/`Height`, so what a photo _is_ depends on how large the phone happened to be
-drawn when it was taken. Settings > Display scales the frame with a `transform`, which means the same
-shot produces a different image at a different setting.
-
-This used to be filed as the blocker for wallpapers. It is not — wallpapers ship, and a photo can be
-one — but it is still wrong on its own terms, and it is the reason a photo wallpaper is sharper or
-softer depending on a setting that has nothing to do with the camera. Capture belongs at a fixed
-resolution independent of the on-screen box.
 
 ### Bluetooth proximity, and the anti-doxxing model it exists for
 

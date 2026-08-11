@@ -50,21 +50,51 @@ export interface CropRect {
   height: number;
 }
 
+interface CropGeometry {
+  physX: number;
+  physY: number;
+  physWidth: number;
+  physHeight: number;
+  outWidth: number;
+  outHeight: number;
+}
+
 /**
- * Crop a raw full-screen image using natural dimensions and unscaled rect coordinates.
+ * The output width every capture is resampled to, regardless of the on-screen scale the
+ * source rect happened to be measured at.
+ *
+ * `rect` comes from `containerRef.getBoundingClientRect()`, which reports **post-transform**
+ * screen pixels — `Shell.svelte` draws the whole phone at a fixed 400x850 design size and
+ * applies one `transform: scale()` on top of it (`shell/state/display.ts`), so the same
+ * viewfinder measures differently depending on the Display setting alone. Before this, that
+ * measurement became the output canvas's actual pixel size, so the same photo came out
+ * sharper or softer depending on a setting that has nothing to do with the camera.
+ *
+ * Pinning `outWidth` fixes the *resolution*, not the *framing* — `outHeight` still follows
+ * the crop's own aspect ratio (`physHeight / physWidth`), which was never the problem: a
+ * uniform `scale()` changes `rect.width` and `rect.height` by the same factor, so their
+ * ratio was already scale-invariant. Only the absolute size floated.
  */
-export const cropViewportToCanvas = (
-  img: HTMLImageElement,
+export const CAPTURE_WIDTH = 1080;
+
+/**
+ * The crop math, pulled out so it can be tested without a real `<canvas>` — jsdom has no
+ * `getContext('2d')` implementation, so `cropViewportToCanvas` itself is only exercised by
+ * this function's return value up to the draw call.
+ */
+export const computeCropGeometry = (
   rect: CropRect,
+  naturalWidth: number,
+  naturalHeight: number,
   viewportWidth: number,
   viewportHeight: number
-): string | null => {
+): CropGeometry | null => {
   if (!rect || rect.width <= 0 || rect.height <= 0 || viewportWidth <= 0 || viewportHeight <= 0) {
     return null;
   }
 
-  const scaleX = img.naturalWidth / viewportWidth;
-  const scaleY = img.naturalHeight / viewportHeight;
+  const scaleX = naturalWidth / viewportWidth;
+  const scaleY = naturalHeight / viewportHeight;
 
   const physX = Math.round(rect.left * scaleX);
   const physY = Math.round(rect.top * scaleY);
@@ -75,15 +105,43 @@ export const cropViewportToCanvas = (
     return null;
   }
 
+  const outWidth = CAPTURE_WIDTH;
+  const outHeight = Math.round(outWidth * (physHeight / physWidth));
+
+  return { physX, physY, physWidth, physHeight, outWidth, outHeight };
+};
+
+/**
+ * Crop a raw full-screen image using natural dimensions and unscaled rect coordinates.
+ */
+export const cropViewportToCanvas = (
+  img: HTMLImageElement,
+  rect: CropRect,
+  viewportWidth: number,
+  viewportHeight: number
+): string | null => {
+  const geometry = computeCropGeometry(
+    rect,
+    img.naturalWidth,
+    img.naturalHeight,
+    viewportWidth,
+    viewportHeight
+  );
+  if (!geometry) return null;
+  const { physX, physY, physWidth, physHeight, outWidth, outHeight } = geometry;
+
   const canvas = document.createElement('canvas');
-  canvas.width = physWidth;
-  canvas.height = physHeight;
+  canvas.width = outWidth;
+  canvas.height = outHeight;
 
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
 
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(img, physX, physY, physWidth, physHeight, 0, 0, physWidth, physHeight);
+  // Smoothing was off when this drew 1:1 (source and destination were the same size).
+  // Resampling to a fixed output size makes this a real scale, and off would alias every
+  // capture whose source size isn't an exact multiple of the target.
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(img, physX, physY, physWidth, physHeight, 0, 0, outWidth, outHeight);
 
   const cropped = encodeCrop(canvas);
   return cropped && cropped.length > 30 && cropped !== 'data:,' ? cropped : null;
