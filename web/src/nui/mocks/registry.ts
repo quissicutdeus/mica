@@ -256,6 +256,21 @@ const startFresh =
  */
 const mockOwnedAccountIds = new Set<number>(startFresh ? [] : [1, 4]);
 
+/**
+ * `?bluetoothNearby=N` simulates N other Bluetooth-visible players in range.
+ *
+ * There is no "who is nearby" concept to mock against — there are no other players in the
+ * browser at all — so this is the axis that makes both outcomes (delivered to someone /
+ * nobody in range) reachable in `pnpm dev` and in Playwright. Defaults to 0 rather than a
+ * plausible-looking number, same reasoning `startFresh` documents above: a mock that
+ * always succeeds hides the empty-range path from anything that doesn't think to ask for
+ * the other one.
+ */
+const bluetoothNearbyCount =
+  (typeof window === 'undefined'
+    ? null
+    : Number(new URLSearchParams(window.location.search).get('bluetoothNearby'))) || 0;
+
 const mockBlabs: Blab[] = [
   {
     id: 3,
@@ -1108,9 +1123,38 @@ const mockRegistry: Record<string, MockHandler> = {
     update: 'updateContact',
     remove: 'deleteContact'
   }),
-  // Matches the client exactly. A mock that succeeded where the game fails is how the
-  // stub survived this long.
-  shareContact: async () => ({ error: 'Sharing a contact is not implemented yet' }),
+  /**
+   * The real client resolves this NUI callback immediately and pushes the outcome
+   * asynchronously as a toast — mirrored here via the same `appEvent` message the real
+   * server push travels over, so the round trip is exercised rather than faked.
+   */
+  shareContact: async () => {
+    const count = bluetoothNearbyCount;
+    if (typeof window !== 'undefined') {
+      delay(150).then(() => {
+        window.postMessage(
+          {
+            action: 'appEvent',
+            data: {
+              app: 'contacts',
+              event: 'share_result',
+              payload: { count },
+              at: Date.now(),
+              notify: {
+                title: count > 0 ? 'Contact shared' : 'Nobody nearby',
+                message:
+                  count > 0
+                    ? `Shared with ${count} nearby ${count === 1 ? 'phone' : 'phones'}.`
+                    : 'No Bluetooth-visible players are in range.'
+              }
+            }
+          },
+          '*'
+        );
+      });
+    }
+    return { ok: true };
+  },
 
   // Notes
   ...defineMockCrud<Note>(mockNotes, {

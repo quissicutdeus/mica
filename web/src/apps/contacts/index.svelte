@@ -229,16 +229,20 @@
     if (!selectedContact) return;
     if (!requireNameAndPhone(selectedContact.firstname, selectedContact.phone, true)) return;
 
-    await run(
-      () =>
-        contactsStore.share({
-          name: `${selectedContact!.firstname.trim()} ${selectedContact!.lastname?.trim() || ''}`.trim(),
-          firstname: selectedContact!.firstname.trim(),
-          lastname: selectedContact!.lastname?.trim() || '',
-          phone: selectedContact!.phone.trim(),
-          avatar: selectedContact!.avatar || ''
-        }),
-      { success: 'Contact shared successfully' }
+    // No success toast here: the callback resolves optimistically the instant the
+    // request leaves the phone, before the server has looked for anyone nearby. The
+    // real outcome — delivered to N phones, or nobody in range — arrives afterward as
+    // its own pushed toast (`share_result`, `server/services/Contacts.ts`), and a
+    // second, unconditional "success" here would be the exact lie this flow used to
+    // tell before proximity sharing existed.
+    await run(() =>
+      contactsStore.share({
+        name: `${selectedContact!.firstname.trim()} ${selectedContact!.lastname?.trim() || ''}`.trim(),
+        firstname: selectedContact!.firstname.trim(),
+        lastname: selectedContact!.lastname?.trim() || '',
+        phone: selectedContact!.phone.trim(),
+        avatar: selectedContact!.avatar || ''
+      })
     );
   };
 

@@ -2,20 +2,26 @@
 // `shared/routes.ts` and registered by the relay.
 
 /**
- * Proximity contact sharing — declared, not built.
+ * Proximity contact sharing.
  *
- * The callback stays registered because an absent one hangs the NUI request for fifteen
- * seconds. It answers with an error rather than `{ success: true }`, which is what it
- * used to do: the phone then toasted "Contact shared successfully" for a contact that
- * never went anywhere, and no test could tell, because the callback existed and replied.
- *
- * `fetchNui` turns an `{ error }` reply into a thrown error when the caller passes no
- * default, so the app reports it the same way it reports any other refused write. Listed
- * in `UNIMPLEMENTED_ACTIONS`, which is the promise that the web says so visibly.
- *
- * Implementing it means finding players within range and emitting the payload to them.
+ * Fire-and-forget like `startCall` in `Call.ts`: the NUI callback resolves immediately,
+ * and the server does the actual work of finding who is nearby and Bluetooth-visible.
+ * The outcome — delivered to N phones, or nobody in range — reaches the sender through a
+ * pushed toast rather than through this callback's reply, because that outcome is not
+ * known until after the round trip to the server completes.
  */
 RegisterNuiCallbackType('shareContact');
-on('__cfx_nui:shareContact', (_data: unknown, cb: Function) => {
-  cb({ error: 'Sharing a contact is not implemented yet' });
+on('__cfx_nui:shareContact', (data: unknown, cb: Function) => {
+  TriggerServerEvent('gphone:server:contacts:share', data);
+  cb({ ok: true });
+});
+
+/**
+ * The receiving half: another player's server pushed this because we were nearby and
+ * Bluetooth-visible. Forwarded into the NUI the same way `receiveMail`/`receiveMessage`
+ * relay a server push — `web/src/shell/nuiMessages.ts`'s `receiveContactShare` is the
+ * handler already built and waiting for it.
+ */
+onNet('gphone:client:contacts:incoming', (payload: unknown) => {
+  SendNuiMessage(JSON.stringify({ action: 'shareContact', data: payload }));
 });

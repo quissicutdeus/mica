@@ -158,18 +158,23 @@ test.describe('Backgrounded apps are hidden without breaking focus', () => {
 });
 
 test.describe('Contacts', () => {
-  test('sharing says it is unimplemented instead of claiming success', async ({ page }) => {
+  test('sharing reaches a real server round trip instead of an unconditional claim', async ({
+    page
+  }) => {
     // The same lie as Photos' old `alert(...)`, one layer deeper and so missed for
-    // longer: the client callback logged to console and answered `{ success: true }`,
-    // so the phone announced "Contact shared successfully" for a contact that never
-    // left the machine. Nothing caught it — the callback was registered, which is all
-    // the route table can check.
+    // longer: the client callback logged to console and answered `{ success: true }`
+    // unconditionally, so the phone announced "Contact shared successfully" for a
+    // contact that never left the machine. Bluetooth proximity sharing is real now —
+    // see `bluetooth-share.spec.ts` for both outcomes in full — this only guards
+    // against either the old "not implemented" stub or an unconditional success
+    // claim coming back.
     await openApp(page, 'Contacts');
     await page.locator('[role="button"]').first().click();
 
     await page.getByRole('button', { name: 'Share' }).click();
-    await expect(page.getByText(/not implemented/i)).toBeVisible();
+    await expect(page.getByText(/not implemented/i)).toHaveCount(0);
     await expect(page.getByText(/shared successfully/i)).toHaveCount(0);
+    await expect(page.getByText(/nobody nearby/i)).toBeVisible();
   });
 });
 

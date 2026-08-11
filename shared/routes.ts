@@ -116,6 +116,8 @@ export const ROUTES: readonly Route[] = [
   route('getPhotos', 'photos', 'get'),
   route('createPhoto', 'photos', 'create'),
   route('deletePhoto', 'photos', 'delete'),
+  // Bluetooth proximity: copy a photo the caller owns to everyone nearby and visible.
+  route('sharePhotoNearby', 'photos', 'drop'),
 
   // Notifications — persistent OS notification service
   route('getShadeNotifications', 'notifications', 'getShadeNotifications'),
@@ -157,6 +159,9 @@ export const CLIENT_ONLY_ACTIONS: readonly string[] = [
   'rejectCall',
   'toggleSpeaker',
   'toggleMute',
+  // Proximity contact sharing — same fire-and-forget shape as a call. The outcome is
+  // pushed back as a toast rather than returned on this reply.
+  'shareContact',
   // Hardware and framework reads
   'getBankBalance',
   'getCitizenId',
@@ -176,11 +181,12 @@ export const CLIENT_ONLY_ACTIONS: readonly string[] = [
  *
  * `flipCamera` lived here until the scripted camera made it real.
  */
-export const UNIMPLEMENTED_ACTIONS: readonly string[] = [
-  // Proximity share. The client callback is a stub that logs and returns success, so
-  // the phone announced "Contact shared successfully" and nothing left the machine —
-  // the same lie `alert('Photos shared! (Mock)')` used to tell, hidden one layer deeper.
-  // It was listed as client-only, which satisfied every check: the callback really is
-  // registered, and no test can see that the body does nothing.
-  'shareContact'
-] as const;
+/**
+ * Deliberately empty.
+ *
+ * `shareContact` used to be the one entry — a stub that logged and returned success, so
+ * the phone announced "Contact shared successfully" and nothing left the machine. It is
+ * now real (`CLIENT_ONLY_ACTIONS` above) and this list is what stays empty until the next
+ * feature ships ahead of its wiring.
+ */
+export const UNIMPLEMENTED_ACTIONS: readonly string[] = [] as const;
