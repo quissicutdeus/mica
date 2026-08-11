@@ -60,10 +60,18 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     appRegistryStore
       .loadRemoteApp(url)
       .then(({ manifest }) => {
-        toast.show({ type: 'success', message: `App '${manifest.name}' installed successfully` });
+        toast.show({
+          type: 'success',
+          app: 'store',
+          message: `App '${manifest.name}' installed successfully`
+        });
       })
       .catch((err) => {
-        toast.show({ type: 'error', message: messageOf(err, 'Failed to install remote app') });
+        toast.show({
+          type: 'error',
+          app: 'store',
+          message: messageOf(err, 'Failed to install remote app')
+        });
       });
   };
 
@@ -72,9 +80,13 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     if (!appId) return;
     try {
       appRegistryStore.unregisterApp(appId);
-      toast.show({ type: 'info', message: 'App uninstalled' });
+      toast.show({ type: 'info', app: 'store', message: 'App uninstalled' });
     } catch (err) {
-      toast.show({ type: 'error', message: messageOf(err, 'Failed to uninstall app') });
+      toast.show({
+        type: 'error',
+        app: 'store',
+        message: messageOf(err, 'Failed to uninstall app')
+      });
     }
   };
 
@@ -128,6 +140,7 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
       if (!firstname || !phone) {
         toast.show({
           type: 'error',
+          app: 'contacts',
           message: 'Cannot add contact: missing required name or phone number'
         });
         return;
@@ -142,9 +155,13 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
           avatar: str(share.avatar),
           favorite: share.favorite === true
         });
-        toast.show({ type: 'success', message: 'Contact added to address book' });
+        toast.show({ type: 'success', app: 'contacts', message: 'Contact added to address book' });
       } catch (e) {
-        toast.show({ type: 'error', message: messageOf(e, 'Failed to add contact') });
+        toast.show({
+          type: 'error',
+          app: 'contacts',
+          message: messageOf(e, 'Failed to add contact')
+        });
       }
     };
 
@@ -157,7 +174,7 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
       avatar: str(share.avatar),
       onAccept: accept,
       onDecline: () => {
-        toast.show({ type: 'info', message: 'Contact share declined' });
+        toast.show({ type: 'info', app: 'contacts', message: 'Contact share declined' });
       },
       onClick: accept
     });
@@ -200,6 +217,7 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
 
     toast.show({
       type: envelope.notify.type ?? 'info',
+      app: envelope.app,
       title: envelope.notify.title,
       message: envelope.notify.message,
       avatar: envelope.notify.avatar,
