@@ -63,6 +63,11 @@ export const ROUTES: readonly Route[] = [
   // not tell the blocked account anything happened.
   route('blockAccount', 'accounts', 'block'),
   route('unblockAccount', 'accounts', 'unblock'),
+  // Reactions, on any table that opted in via `defineService`'s `reactable`. Shared by every
+  // social app for the same reason follows and blocks are.
+  route('reactToTarget', 'accounts', 'react'),
+  route('unreactToTarget', 'accounts', 'unreact'),
+  route('getReactionsFor', 'accounts', 'reactionsFor'),
 
   // Contacts
   route('getContacts', 'contacts', 'get'),

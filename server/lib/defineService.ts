@@ -1,5 +1,6 @@
 import { Repository } from './Repository';
 import { registerReportable, type ReportableDefinition } from './moderation';
+import { registerReactable, type ReactableDefinition } from './reactions';
 import { ServiceEndpoint, ServiceOptions } from './ServiceEndpoint';
 
 /**
@@ -316,6 +317,14 @@ export interface ServiceDefinition {
    * `summariseTarget` also selects.
    */
   reportable?: ReportableDefinition;
+  /**
+   * Make this service's rows reactable — `gphone_account_reactions` may target them.
+   *
+   * Same shape as `reportable` and for the same reason: declared here so core never has to
+   * name an add-on's table, and validated at declaration time rather than failing the first
+   * time a reaction targets it.
+   */
+  reactable?: ReactableDefinition;
   /** Defaults to `{ read: 'owner', write: 'owner' }`. */
   access?: AccessDefinition;
   /** Keyset paging on the generic read. **Required** when `access.read` is `public`. */
@@ -744,6 +753,11 @@ export function defineService<T>(definition: ServiceDefinition): ServerAppHandle
       );
     }
     registerReportable(resolved.table, definition.reportable);
+  }
+
+  /** Opt in to reactions, if the declaration asked for it. Same reasoning as `reportable`. */
+  if (definition.reactable) {
+    registerReactable(resolved.table, definition.reactable);
   }
 
   const accessLockdown: ServiceOptions = {

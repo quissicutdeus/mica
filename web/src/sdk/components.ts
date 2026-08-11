@@ -22,11 +22,13 @@
 export { default as Avatar } from './ui/Avatar.svelte';
 export { default as Button } from './ui/Button.svelte';
 export { default as ConfirmDialog } from './ui/ConfirmDialog.svelte';
+export { default as EmojiPicker } from './ui/EmojiPicker.svelte';
 export { default as EmptyState } from './ui/EmptyState.svelte';
 export { default as FloatingActionButton } from './ui/FloatingActionButton.svelte';
 export { default as ListItem } from './ui/ListItem.svelte';
 export { default as MediaThumb } from './ui/MediaThumb.svelte';
 export { default as PhotoPickerModal } from './ui/PhotoPickerModal.svelte';
+export { default as ReactionBar } from './ui/ReactionBar.svelte';
 export { default as ReportButton } from './ui/ReportButton.svelte';
 export { default as ReportDialog } from './ui/ReportDialog.svelte';
 export { default as Screen } from './ui/Screen.svelte';

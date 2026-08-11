@@ -2,6 +2,7 @@
   import {
     Avatar,
     EmptyState,
+    ReactionBar,
     ReportButton,
     ReportDialog,
     Skeleton,
@@ -52,7 +53,16 @@
     ontag?: (tag: string) => void;
   } = $props();
 
-  const { dmThreads, dmMessages, loadDmThreads, loadDmMessages, sendDm } = useBlabber();
+  const {
+    dmThreads,
+    dmMessages,
+    loadDmThreads,
+    loadDmMessages,
+    sendDm,
+    dmReactions,
+    loadDmReactions,
+    toggleDmReaction
+  } = useBlabber();
 
   let loading = $state(true);
 
@@ -60,6 +70,11 @@
     loading = true;
     const task = peer === null ? loadDmThreads() : loadDmMessages(peer);
     void task.finally(() => (loading = false));
+  });
+
+  $effect(() => {
+    const ids = $dmMessages.map((message) => message.id);
+    if (ids.length > 0) void loadDmReactions(ids);
   });
 
   const thread = $derived($dmThreads.find((row) => row.peer_account_id === peer));
@@ -173,6 +188,13 @@
                   />
                 {/if}
               </div>
+              <ReactionBar
+                counts={$dmReactions[message.id]?.counts ?? {}}
+                mine={$dmReactions[message.id]?.mine ?? []}
+                onreact={(emoji) => toggleDmReaction(message.id, emoji)}
+                onunreact={(emoji) => toggleDmReaction(message.id, emoji)}
+                class="mt-1"
+              />
             </div>
           </div>
         {/each}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SendIcon } from '@gphone/sdk';
+  import { EmojiPicker, SendIcon } from '@gphone/sdk';
 
   /**
    * The DM input.
@@ -39,6 +39,12 @@
 </script>
 
 <div class="border-outline-variant border-t p-3">
+  <!-- The picker types an emoji into the body rather than sending it standalone — reacting to a
+       message the person already sent is `ReactionBar`'s job, on the thread side, not this
+       composer's. -->
+  <div class="mb-1.5">
+    <EmojiPicker onselect={(emoji) => (text += emoji)} />
+  </div>
   <div class="flex w-full items-end gap-2.5">
     <!-- A solid `sky-600` focus border rather than `sky-500/50`: an opacity modifier compiles to
          `color-mix()`, which CEF 103 does not have (§6), and one hairline does not earn a theme

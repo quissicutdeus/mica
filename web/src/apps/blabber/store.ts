@@ -5,7 +5,8 @@ import type {
   BlabEngagement,
   BlabberDm,
   BlabberDmThread,
-  FollowStats
+  FollowStats,
+  ReactionSummary
 } from '@shared/types';
 import {
   createPagedStore,
@@ -538,6 +539,69 @@ export const sendDm = async (peerAccountId: number, body: string): Promise<void>
 };
 
 /**
+ * Reactions on a page of DMs. Keyed by message id, mirroring `engagement`'s shape — one
+ * batched read for a page of messages rather than one per bubble.
+ *
+ * `gphone_account_reactions` lives on the shared `accounts` service (§10's "the accounts
+ * graph" framing), so this goes through named routes rather than `blabberService()`.
+ */
+export const dmReactions = writable<Record<number, ReactionSummary>>({});
+
+const NO_REACTIONS: ReactionSummary = { counts: {}, mine: [] };
+
+export const loadDmReactions = async (ids: number[]): Promise<void> => {
+  if (ids.length === 0) return;
+  const reply = await fetchNui<Record<number, ReactionSummary>>(
+    'getReactionsFor',
+    { app: 'blabber', target_table: 'gphone_blabber_dms', target_ids: ids },
+    { defaultValue: {} }
+  );
+  dmReactions.update((current) => ({ ...current, ...reply }));
+};
+
+/** Optimistic, then reconciled — same discipline as `toggleEar`/`toggleFollow`. */
+export const toggleDmReaction = async (messageId: number, emoji: string): Promise<void> => {
+  const accountId = getActiveAccountId();
+  if (accountId === null) throw new Error('Claim a handle first.');
+
+  let hadIt = false;
+  dmReactions.update((current) => {
+    const existing = current[messageId] ?? NO_REACTIONS;
+    hadIt = existing.mine.includes(emoji);
+    const counts = { ...existing.counts };
+    counts[emoji] = Math.max(0, (counts[emoji] ?? 0) + (hadIt ? -1 : 1));
+    return {
+      ...current,
+      [messageId]: {
+        counts,
+        mine: hadIt ? existing.mine.filter((e) => e !== emoji) : [...existing.mine, emoji]
+      }
+    };
+  });
+
+  const payload = {
+    app: 'blabber',
+    account_id: accountId,
+    target_table: 'gphone_blabber_dms',
+    target_id: messageId,
+    emoji
+  };
+
+  try {
+    // Two literal calls, matching every other toggle here: a computed action name is
+    // invisible to `routes.test.ts`.
+    if (hadIt) {
+      await fetchNui('unreactToTarget', payload);
+    } else {
+      await fetchNui('reactToTarget', payload);
+    }
+  } catch (error) {
+    await loadDmReactions([messageId]);
+    throw error;
+  }
+};
+
+/**
  * An incoming DM, subscribed at module scope.
  *
  * Same reasoning as the mention badge: the registry imports this file before anything mounts and
@@ -615,6 +679,9 @@ export function useBlabber() {
     loadDmThreads: () => loadDmThreads(),
     loadDmMessages: (peerAccountId: number) => loadDmMessages(peerAccountId),
     sendDm: (peerAccountId: number, body: string) => sendDm(peerAccountId, body),
+    dmReactions,
+    loadDmReactions: (ids: number[]) => loadDmReactions(ids),
+    toggleDmReaction: (messageId: number, emoji: string) => toggleDmReaction(messageId, emoji),
     loadEngagement: (ids: number[]) => loadEngagement(ids),
     toggleEar: (blabId: number) => toggleEar(blabId),
     mouthBlab: (blabId: number, body?: string) => mouthBlab(blabId, body),
