@@ -785,6 +785,54 @@ Pulled apart from the canvas/draw side effects specifically so it is unit-testab
 only prior coverage was a single invalid-input case. `computeCropGeometry` is the same
 exported-for-testing split `display.ts`'s `fitScaleFor` already uses for the same reason.
 
+### Bluetooth proximity: contact sharing and photo drops
+
+Bluetooth Visibility had been a persisted toggle and a status-bar icon with nothing behind it —
+no proximity scan, and `client/services/Contact.ts`'s `shareContact` NUI callback was a stub
+whose own comment named exactly what was missing: _"finding players within range and emitting
+the payload to them."_ Two capabilities now exist on top of one shared primitive.
+
+**`server/lib/proximity.ts`'s `findNearbyVisiblePlayers` is computed on demand, not polled.**
+`Signal.ts` is the closest precedent for reading a connected player's position server-side, but
+its continuous 2-second poll exists because reception has to be current at all times. Proximity
+only matters at the instant a player taps Share, so there is no interval and nothing to clean up
+on `playerDropped` — a plain distance check over `FrameworkBridge.getAllPlayers()` at request
+time. Range defaults to 15 meters, configurable per server via `gphone_bluetooth_range`.
+
+**The visibility check is the one place the anti-doxxing rule actually lives.** Before this,
+nothing anywhere read `bluetooth_enabled` before writing to a player from another player's
+action. `findNearbyVisiblePlayers` filters candidates through a new batched read on
+`SettingsRepository` (`getValuesFor`) — one query for every nearby candidate's setting rather
+than one query per candidate, the same reasoning `getSourcesByCitizenId` already applies to a
+fan-out. A missing row defaults to visible, matching `usePersisted`'s own client-side default.
+**That default stays ON** — flipping it to off-by-default was considered and deliberately left
+alone as a separate product decision, not bundled into wiring the feature that reads it.
+
+**Contact sharing finishes the stub rather than replacing its shape.** The receiving half was
+already fully built — `web/src/shell/nuiMessages.ts`'s `receiveContactShare`, wired to the NUI
+action `shareContact` — and the Share button already sent a payload with no recipient field, so
+the design was always "broadcast to whoever is in range," not a picker. The client callback now
+resolves immediately (fire-and-forget, the same shape `Call.ts`'s `startCall` uses) and the
+server fans the payload out over a raw `gphone:server:contacts:share` handler guarded by
+`guardNetEvent`, same as every other handler outside `ServiceEndpoint` (§2.9). The outcome —
+delivered to N phones, or nobody in range — reaches the sender as a pushed toast through the
+generic `appEventChannel`, not through the fire-and-forget event's own (nonexistent) reply.
+
+**Photo drops are new, and took the more idiomatic path available to a core app.** Rather than a
+second raw handler, `sharePhotoNearby` is a named route (`shared/routes.ts`) reaching a custom
+`registerEvent('drop', ...)` action on the `photos` service — `ServiceEndpoint`'s own rate
+limiting and citizenid resolution already cover it, and its return value (`{ count }`) becomes
+the NUI reply directly, so the sender's toast needs no separate push. Ownership is checked once,
+by `findById(mediaId, citizenid)`, before anything nearby is even computed. Each recipient gets a
+**copy**, not a shared reference — gPhone's gallery is owned per player, and the sender deleting
+their photo later must not delete anyone else's. A recipient still foregrounded in Photos when a
+drop lands is refreshed live via `useAppEvents('photos')`, in addition to the ordinary
+`onAppForeground` refetch every app already gets.
+
+**App event names are `lower_snake_case`, and this was the one thing not obvious from the
+existing examples.** `share_result` and `media_received` — `APP_EVENT_NAME_PATTERN` rejects
+camelCase outright, which every existing shipped push (`dm`, `mention`) already happened to be.
+
 ---
 
 ## Proposed, not built
@@ -802,30 +850,6 @@ Two constraints shape every schema item below:
   to be over-provisioned now, because every value added later costs another migration.
 - **Base64 will not carry video.** `gphone_media.data` is `mediumtext` holding base64; a video or
   voice clip at that size will not survive crossing NUI.
-
-### Bluetooth proximity, and the anti-doxxing model it exists for
-
-Bluetooth Visibility is a persisted toggle and a status-bar icon. The feature underneath is
-short-range peer-to-peer between nearby players — contact exchange, local file drops — that works
-where there is no cell reception.
-
-The privacy argument is the part worth keeping. Phone systems that expose a character's name or
-number to anyone nearby whenever the phone is out cause accidental self-doxxing, and the person doxxed
-never chose it. So visibility is the player's switch: off means invisible to proximity scans and
-unsolicited shares are refused, and the setting persists. That is why the toggle shipped ahead of the
-capability rather than with it — the default and the persistence are the parts a player relies on.
-
-Nothing enumerates nearby players yet, on either side.
-
-### Notification toast hierarchy
-
-Toasts carry a title and a body and, for messages and contacts, an avatar. The specified layout also
-has the source app's icon and its name in a smaller header face above the primary line, so a toast
-says which app is talking before it says what about.
-
-`ToastHost.svelte` has no access to an app icon today: a toast is raised by kind, not by app id, so
-this needs the toast payload to carry the originating app and the launcher's manifest lookup to be
-reachable from the shell.
 
 ### Notification shade gestures
 
