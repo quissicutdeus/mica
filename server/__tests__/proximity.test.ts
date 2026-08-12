@@ -27,6 +27,7 @@ beforeEach(() => {
   for (const key of Object.keys(coordsFor)) delete coordsFor[key];
   (globalThis as any).GetPlayerPed = (src: string) => pedFor[src] ?? null;
   (globalThis as any).GetEntityCoords = (ped: string) => coordsFor[ped] ?? null;
+  (globalThis as any).DoesEntityExist = (ped: string) => ped in coordsFor;
   (globalThis as any).GetConvarInt = (_name: string, fallback: number) => fallback;
 });
 
@@ -93,5 +94,29 @@ describe('findNearbyVisiblePlayers', () => {
     (globalThis as any).GetConvarInt = () => 25;
 
     expect(await findNearbyVisiblePlayers(1, 'CID_A')).toEqual([{ source: 2, citizenid: 'CID_B' }]);
+  });
+
+  /**
+   * The same guard `signal.test.ts` pins for `pollSignal`: `GetPlayerPed` can hand back a
+   * non-zero handle for a ped that is not yet synced server-side, and `GetEntityCoords`
+   * throws a native argument error on it rather than returning something falsy.
+   */
+  it('treats a not-yet-existing ped as no coords rather than throwing', async () => {
+    // Sender resolves normally through the usual fixture; player 2's ped is the phantom
+    // handle — non-zero, but not yet a real entity.
+    place(1, [0, 0, 0]);
+    (FrameworkBridge.getAllPlayers as any).mockReturnValue({
+      2: { PlayerData: { citizenid: 'CID_B' } }
+    });
+    (globalThis as any).GetPlayerPed = (src: string) => (src === '2' ? 'phantom-ped' : pedFor[src]);
+    (globalThis as any).GetEntityCoords = (ped: string) => {
+      if (ped === 'phantom-ped') {
+        throw new Error('native 000000002f7a49e6: Argument at index 1 was null.');
+      }
+      return coordsFor[ped] ?? null;
+    };
+    (globalThis as any).DoesEntityExist = (ped: string) => ped !== 'phantom-ped';
+
+    await expect(findNearbyVisiblePlayers(1, 'CID_A')).resolves.toEqual([]);
   });
 });

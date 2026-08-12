@@ -29,13 +29,20 @@ const rangeMeters = (): number =>
 /**
  * Where the player is, or null.
  *
- * Guarded exactly like `Signal.ts`'s `playerCoords`: these natives do not exist outside
- * the FiveM server runtime, and this module is imported by tests.
+ * Guarded exactly like `Signal.ts`'s `playerCoords`, `DoesEntityExist` included: a ped
+ * handle can be non-zero before it is fully synced server-side, and `GetEntityCoords`
+ * throws a native argument error on one rather than returning something falsy.
  */
 const playerCoords = (src: number): [number, number, number] | null => {
-  if (typeof GetPlayerPed !== 'function' || typeof GetEntityCoords !== 'function') return null;
+  if (
+    typeof GetPlayerPed !== 'function' ||
+    typeof GetEntityCoords !== 'function' ||
+    typeof DoesEntityExist !== 'function'
+  ) {
+    return null;
+  }
   const ped = GetPlayerPed(String(src));
-  if (!ped) return null;
+  if (!ped || !DoesEntityExist(ped)) return null;
   const coords = GetEntityCoords(ped) as unknown as number[];
   return coords && coords.length >= 3 ? [coords[0], coords[1], coords[2]] : null;
 };

@@ -177,11 +177,25 @@ export const pollSignal = (): void => {
  *
  * Guarded because these natives do not exist outside the FiveM server runtime, and this
  * module is imported by the SQL codegen and by tests.
+ *
+ * `GetPlayerPed` can hand back a non-zero handle for a player whose ped is not yet synced
+ * server-side — the window right around `QBCore:Server:OnPlayerLoaded` — so `!ped` alone
+ * does not catch it. `GetEntityCoords` throws a native argument error on a handle like that
+ * rather than returning something falsy, and this runs inside `pollSignal`'s `setInterval`
+ * loop, so an uncaught throw here crashed the game console every poll and aborted the
+ * update for every player after the failing one in that cycle. `DoesEntityExist` is the
+ * same guard `client/game/PhoneCamera.ts` already uses before trusting a ped handle.
  */
 const playerCoords = (src: number): [number, number, number] | null => {
-  if (typeof GetPlayerPed !== 'function' || typeof GetEntityCoords !== 'function') return null;
+  if (
+    typeof GetPlayerPed !== 'function' ||
+    typeof GetEntityCoords !== 'function' ||
+    typeof DoesEntityExist !== 'function'
+  ) {
+    return null;
+  }
   const ped = GetPlayerPed(String(src));
-  if (!ped) return null;
+  if (!ped || !DoesEntityExist(ped)) return null;
   const coords = GetEntityCoords(ped) as unknown as number[];
   return coords && coords.length >= 3 ? [coords[0], coords[1], coords[2]] : null;
 };

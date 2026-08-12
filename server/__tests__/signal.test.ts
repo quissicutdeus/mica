@@ -10,6 +10,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
   }
 }));
 
+import { FrameworkBridge } from '../lib/FrameworkBridge';
 import {
   addDeadZone,
   currentRules,
@@ -68,6 +69,42 @@ describe('signal rules', () => {
     expect(playerOverride(7)).toBe(0);
     setPlayerSignal(7, null);
     expect(playerOverride(7)).toBeNull();
+  });
+
+  /**
+   * `GetPlayerPed` can hand back a non-zero handle for a player whose ped is not yet
+   * synced server-side — the window right around `QBCore:Server:OnPlayerLoaded`. The
+   * `!ped` guard only catches a falsy handle; it does not catch this one, and
+   * `GetEntityCoords` throws on it rather than returning something falsy. Unguarded, that
+   * exception was uncaught inside `pollSignal`'s loop, which is a `setInterval` callback —
+   * so it crashed silently in the game console every two seconds and, worse, aborted the
+   * poll partway through, leaving every player after the failing one un-updated that cycle.
+   */
+  it('does not crash when a native throws for a not-yet-existing ped', () => {
+    (FrameworkBridge.getAllPlayers as any).mockReturnValue({ 5: {} });
+    (globalThis as any).GetPlayerPed = () => 999;
+    (globalThis as any).GetEntityCoords = () => {
+      throw new Error('native 000000002f7a49e6: Argument at index 1 was null.');
+    };
+    (globalThis as any).DoesEntityExist = () => false;
+
+    try {
+      // Breaks the `worldIsQuiet` early-out, so `pollSignal` actually has to ask where
+      // player 5 is rather than skipping straight to full bars for everyone.
+      expect(() => setGlobalSignal(1)).not.toThrow();
+
+      // No ped yet beats a spurious blackout — the same fallback an unspawned player
+      // already gets.
+      const pushed = (globalThis.emitNet as any).mock.calls.find(
+        (c: unknown[]) => c[0] === 'gphone:client:signal:set' && c[1] === 5
+      );
+      expect(pushed?.[2]).toBe(FULL_SIGNAL);
+    } finally {
+      delete (globalThis as any).GetPlayerPed;
+      delete (globalThis as any).GetEntityCoords;
+      delete (globalThis as any).DoesEntityExist;
+      (FrameworkBridge.getAllPlayers as any).mockReturnValue({});
+    }
   });
 });
 
