@@ -768,7 +768,7 @@ app.registerEvent('search', async (source, cbId, data) => {
  * scrolls to the bottom of. Twenty rows is generous for a dropdown and cheap for the index scan
  * this LIKE-prefix query runs against.
  */
-app.registerEvent('searchTags', async (source, cbId, data) => {
+app.registerEvent('search_tags', async (source, cbId, data) => {
   const body = fields(data);
   const q = optionalString(body.q)?.slice(0, 32) ?? '';
 
@@ -789,7 +789,7 @@ app.registerEvent('searchTags', async (source, cbId, data) => {
  * `#tag` tap, and a trending-chip tap. Exact match, never a substring: `#car` must not surface
  * `#cars` or `#carpet`.
  */
-app.registerEvent('byTag', async (source, cbId, data) => {
+app.registerEvent('by_tag', async (source, cbId, data) => {
   const body = fields(data);
   const tag = optionalString(body.tag)?.slice(0, 32);
   if (!tag) throw new Error('A tag is required.');
@@ -823,7 +823,7 @@ app.registerEvent('byTag', async (source, cbId, data) => {
  * the per-row denormalized count AGENTS.md's "Blabber is the worked example" section warns
  * against.
  */
-app.registerEvent('trendingTags', async () => {
+app.registerEvent('trending_tags', async () => {
   return await Database.query<{ tag: string; uses: number }[]>(
     `SELECT t.\`tag\`, COUNT(*) AS uses
      FROM \`gphone_blabber_tags\` t

@@ -625,7 +625,7 @@ export const searchBlabs = (q: string): Promise<void> => blabResults.load({ q })
 export const tagResults = writable<{ tag: string; uses: number }[]>([]);
 export const searchTags = async (q: string): Promise<void> => {
   const reply = await blabberService().call<{ rows: { tag: string; uses: number }[] }>(
-    'searchTags',
+    'search_tags',
     { q },
     { rows: [] }
   );
@@ -635,12 +635,16 @@ export const searchTags = async (q: string): Promise<void> => {
 /** A bounded snapshot loaded once when the Search tab opens, not paged. */
 export const trendingTags = writable<{ tag: string; uses: number }[]>([]);
 export const loadTrendingTags = async (): Promise<void> => {
-  const rows = await blabberService().call<{ tag: string; uses: number }[]>('trendingTags', {}, []);
+  const rows = await blabberService().call<{ tag: string; uses: number }[]>(
+    'trending_tags',
+    {},
+    []
+  );
   trendingTags.set(rows);
 };
 
 /** Blabs carrying one exact tag — the shared landing spot for a Tags result, an inline tap, or a trending chip. */
-export const taggedBlabs = createPagedStore<Blab>('byTag', { service: 'blabber' });
+export const taggedBlabs = createPagedStore<Blab>('by_tag', { service: 'blabber' });
 export const loadTaggedBlabs = (tag: string): Promise<void> => taggedBlabs.load({ tag });
 
 /**

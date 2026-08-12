@@ -957,14 +957,14 @@ describe('blabber:search', () => {
   });
 });
 
-describe('blabber:searchTags', () => {
+describe('blabber:search_tags', () => {
   it('prefix-matches tag names with usage counts', async () => {
     dbMock.query.mockResolvedValueOnce([
       { tag: 'losangeles', uses: 12 },
       { tag: 'losfeliz', uses: 3 }
     ]);
 
-    const reply = await call('searchTags', { q: 'los' });
+    const reply = await call('search_tags', { q: 'los' });
 
     expect(reply.rows).toEqual([
       { tag: 'losangeles', uses: 12 },
@@ -976,13 +976,13 @@ describe('blabber:searchTags', () => {
   });
 });
 
-describe('blabber:byTag', () => {
+describe('blabber:by_tag', () => {
   it('returns Blabs carrying the exact tag, not a substring match', async () => {
     dbMock.query
       .mockResolvedValueOnce([blab({ id: 8, account_id: 1 })])
       .mockResolvedValueOnce([author(1, 'ada')]);
 
-    const reply = await call('byTag', { tag: 'car' });
+    const reply = await call('by_tag', { tag: 'car' });
 
     const [sql, params] = dbMock.query.mock.calls[0];
     expect(String(sql)).toContain('t.`tag` = ?');
@@ -991,16 +991,16 @@ describe('blabber:byTag', () => {
   });
 
   it('requires a tag', async () => {
-    const reply = await call('byTag', {});
+    const reply = await call('by_tag', {});
     expect(reply.error).toBeTruthy();
   });
 });
 
-describe('blabber:trendingTags', () => {
+describe('blabber:trending_tags', () => {
   it('returns the top tags from the last 48 hours', async () => {
     dbMock.query.mockResolvedValueOnce([{ tag: 'losangeles', uses: 40 }]);
 
-    const reply = await call('trendingTags', {});
+    const reply = await call('trending_tags', {});
 
     expect(reply).toEqual([{ tag: 'losangeles', uses: 40 }]);
     const sql = String(dbMock.query.mock.calls[0][0]);

@@ -570,7 +570,7 @@ describe('blabber service', () => {
         'svc',
         {
           service: 'blabber',
-          action: 'byTag',
+          action: 'by_tag',
           data: { tag: 'losangeles', cursor: undefined, limit: undefined }
         },
         { defaultValue: { rows: [], nextCursor: null } }

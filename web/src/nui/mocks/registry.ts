@@ -281,7 +281,7 @@ const mockBlabs: Blab[] = [
     reply_to: null,
     root_id: null,
     status: 'active',
-    // Relative, not a fixed date, and deliberately so: `blabber:trendingTags` windows to the
+    // Relative, not a fixed date, and deliberately so: `blabber:trending_tags` windows to the
     // last 48 hours (matching the real server), so a fixed timestamp goes stale the moment the
     // suite runs more than 48 hours after it was written — exactly what happened here once. This
     // is the one fixture a tag needs to stay live in, so it needs to stay inside the window on
@@ -346,8 +346,8 @@ const mockBlabs: Blab[] = [
 
 /**
  * Hashtags per Blab, seeded from the real tokenizer so this fixture cannot say a tag exists
- * that the actual server-side indexer would not have extracted from the same body. `blabber:byTag`,
- * `blabber:searchTags` and `blabber:trendingTags` all read this rather than re-scanning bodies —
+ * that the actual server-side indexer would not have extracted from the same body. `blabber:by_tag`,
+ * `blabber:search_tags` and `blabber:trending_tags` all read this rather than re-scanning bodies —
  * mirroring `gphone_blabber_tags`, the child table the server writes at create time.
  */
 const mockBlabTags = new Map<number, string[]>(
@@ -1053,7 +1053,7 @@ const mockRegistry: Record<string, MockHandler> = {
    * Tag-name autocomplete for the Search app's Tags segment. Not keyset-paged — a bounded
    * autocomplete list, not a feed a player scrolls to the bottom of — matching the real server.
    */
-  'blabber:searchTags': ({ q }: { q: string }) => {
+  'blabber:search_tags': ({ q }: { q: string }) => {
     const counts = new Map<string, number>();
     for (const [, tags] of mockBlabTags) {
       for (const tag of tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
@@ -1071,7 +1071,7 @@ const mockRegistry: Record<string, MockHandler> = {
    * `#tag` tap, and a trending-chip tap. Exact match against `mockBlabTags`, never a substring:
    * `#car` must not surface `#cars` or `#carpet`.
    */
-  'blabber:byTag': ({
+  'blabber:by_tag': ({
     tag,
     cursor,
     limit = 30
@@ -1102,7 +1102,7 @@ const mockRegistry: Record<string, MockHandler> = {
    * what a real database would answer against this same data — this returns nothing until a
    * Blab is created during the session.
    */
-  'blabber:trendingTags': () => {
+  'blabber:trending_tags': () => {
     const cutoff = Date.now() - 48 * 60 * 60 * 1000;
     const counts = new Map<string, number>();
     for (const [id, tags] of mockBlabTags) {
