@@ -12,6 +12,7 @@ import {
   type KeybindEnvironment
 } from './keybinds';
 import { findAction } from '@shared/keybinds';
+import { useStorage } from '../../sdk/hooks/useStorage';
 
 const IDLE: KeybindEnvironment = { currentApp: 'home', callStatus: 'idle' };
 
@@ -97,6 +98,13 @@ describe('keybind resolution', () => {
     setBinding('back', 'q');
     resetBindings();
     expect(get(bindings).back).toBe('Backspace');
+  });
+
+  it('writes overrides to storage so a reload keeps them', () => {
+    setBinding('back', 'q');
+    expect(useStorage('settings').getItem<Record<string, string>>('keybinds')).toEqual({
+      back: 'q'
+    });
   });
 
   it('treats call:any as anything but idle', () => {
