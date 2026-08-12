@@ -145,4 +145,11 @@ describe('volume buttons', () => {
     setVolumeStep(10);
     expect(useStorage('settings').getItem<number>('volumeStep')).toBe(10);
   });
+
+  it('writes volume and mute to storage so a reload keeps them', () => {
+    soundVolume.set(0.8);
+    soundMuted.set(true);
+    expect(useStorage('settings').getItem<number>('soundVolume')).toBe(0.8);
+    expect(useStorage('settings').getItem<boolean>('soundMuted')).toBe(true);
+  });
 });

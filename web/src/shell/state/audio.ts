@@ -3,8 +3,19 @@ import { usePersisted } from '../../sdk/hooks/usePersisted';
 
 export type SoundEffect = 'click' | 'pop' | 'camera' | 'notification' | 'ringtone';
 
-export const soundVolume = writable<number>(0.5);
-export const soundMuted = writable<boolean>(false);
+const sanitizeVolume = (value: unknown): number => {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0.5;
+};
+export const soundVolume = usePersisted<number>('settings', 'soundVolume', 0.5, {
+  sanitize: sanitizeVolume
+});
+
+const sanitizeMuted = (value: unknown): boolean => value === true;
+export const soundMuted = usePersisted<boolean>('settings', 'soundMuted', false, {
+  sanitize: sanitizeMuted
+});
+
 export const volumeHudVisible = writable<boolean>(false);
 
 /**
