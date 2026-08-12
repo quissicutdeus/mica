@@ -1,5 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { usePersisted } from '../../sdk/hooks/usePersisted';
+import { isBatteryDead } from './charge';
 
 export type SoundEffect = 'click' | 'pop' | 'camera' | 'notification' | 'ringtone';
 
@@ -54,6 +55,7 @@ export const soundVolumePercent = derived([soundVolume, soundMuted], ([$volume, 
 });
 
 export const setVolume = (val: number) => {
+  if (get(isBatteryDead)) return;
   const clamped = Math.max(0, Math.min(1, val));
   soundVolume.set(clamped);
   if (clamped === 0) {
@@ -65,6 +67,7 @@ export const setVolume = (val: number) => {
 };
 
 export const adjustVolume = (delta: number) => {
+  if (get(isBatteryDead)) return;
   const current = get(soundVolume);
   const next = Math.max(0, Math.min(1, current + delta));
   setVolume(next);
@@ -79,6 +82,7 @@ export const adjustVolume = (delta: number) => {
  * behaving like 4.
  */
 export const stepVolume = (direction: 1 | -1) => {
+  if (get(isBatteryDead)) return;
   const currentPercent = Math.round(get(soundVolume) * 100);
   const nextPercent = Math.max(0, Math.min(100, currentPercent + direction * get(volumeStep)));
   setVolume(nextPercent / 100);
@@ -86,6 +90,7 @@ export const stepVolume = (direction: 1 | -1) => {
 };
 
 export const toggleMute = () => {
+  if (get(isBatteryDead)) return;
   soundMuted.update(($muted) => !$muted);
   showVolumeHud();
 };

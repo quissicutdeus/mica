@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   audio,
   soundMuted,
   soundVolume,
   soundVolumePercent,
   adjustVolume,
+  setVolume,
   setVolumeStep,
   stepVolume,
   toggleMute,
@@ -14,6 +15,7 @@ import {
 } from './audio';
 import { get } from 'svelte/store';
 import { useStorage } from '../../sdk/hooks/useStorage';
+import { charge } from './charge';
 
 describe('audio', () => {
   beforeEach(() => {
@@ -151,5 +153,39 @@ describe('volume buttons', () => {
     soundMuted.set(true);
     expect(useStorage('settings').getItem<number>('soundVolume')).toBe(0.8);
     expect(useStorage('settings').getItem<boolean>('soundMuted')).toBe(true);
+  });
+});
+
+describe('while the battery is dead', () => {
+  beforeEach(() => {
+    soundMuted.set(false);
+    soundVolume.set(0.5);
+    charge.set(0);
+  });
+
+  afterEach(() => {
+    // Module-scope store, so a value left at 0 would fail every other describe block
+    // in this file depending on run order.
+    charge.set(100);
+  });
+
+  it('refuses setVolume', () => {
+    setVolume(0.9);
+    expect(get(soundVolume)).toBe(0.5);
+  });
+
+  it('refuses adjustVolume', () => {
+    adjustVolume(0.2);
+    expect(get(soundVolume)).toBe(0.5);
+  });
+
+  it('refuses stepVolume', () => {
+    stepVolume(1);
+    expect(get(soundVolumePercent)).toBe(50);
+  });
+
+  it('refuses toggleMute', () => {
+    toggleMute();
+    expect(get(soundMuted)).toBe(false);
   });
 });

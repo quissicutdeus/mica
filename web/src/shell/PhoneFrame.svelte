@@ -61,14 +61,16 @@
   <!-- Volume Buttons -->
   <div class="absolute top-[250px] -right-[13px] flex flex-col gap-2">
     <button
-      class="h-10 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600"
+      class="h-10 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-800 disabled:active:bg-gray-800"
       onclick={() => stepVolume(1)}
+      disabled={$isBatteryDead}
       title="Volume Up"
       aria-label="Volume Up"
     ></button>
     <button
-      class="h-10 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600"
+      class="h-10 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-800 disabled:active:bg-gray-800"
       onclick={() => stepVolume(-1)}
+      disabled={$isBatteryDead}
       title="Volume Down"
       aria-label="Volume Down"
     ></button>
