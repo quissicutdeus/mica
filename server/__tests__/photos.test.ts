@@ -84,6 +84,27 @@ describe('photos:drop', () => {
     expect(dbMock.insert).not.toHaveBeenCalled();
   });
 
+  it('refuses a moderated photo, even though the owner can still find it by id', async () => {
+    // findById scopes by citizenid but not by status, so a row a moderator pulled from
+    // every ordinary read is still reachable by id — this is the one place that has to
+    // check status itself rather than trusting the ownership predicate alone.
+    dbMock.single.mockResolvedValueOnce({ ...OWNED_ROW, status: 'moderated' });
+
+    const reply = await call({ mediaId: 42 });
+
+    expect(reply.error).toMatch(/could not be found/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('refuses a photo the owner has already deleted', async () => {
+    dbMock.single.mockResolvedValueOnce({ ...OWNED_ROW, status: 'deleted' });
+
+    const reply = await call({ mediaId: 42 });
+
+    expect(reply.error).toMatch(/could not be found/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
   it('copies the row to each nearby, visible player and reports the count', async () => {
     dbMock.single.mockResolvedValueOnce(OWNED_ROW);
     proximity.nearby = [

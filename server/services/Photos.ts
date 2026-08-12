@@ -140,12 +140,19 @@ const repo = photos.repo;
  * anything nearby is even computed. Each recipient gets a **copy**, not a shared
  * reference: gPhone's gallery is owned per player, and the sender deleting their photo
  * later must not delete anyone else's.
+ *
+ * `findById` scopes by owner but not by `status` — it is the primitive `findById(id,
+ * citizenid?)` on `Repository`, and nothing about it knows this table has a moderation
+ * state. Without the explicit check below, a photo a moderator had already pulled from
+ * every read (`status = 'moderated'`) — or one its own owner had deleted — was still
+ * reachable by its id and would go right back out to nearby players, the same hole
+ * `access.editWindow`'s `status != 'moderated'` predicate closes on the write side.
  */
 app.registerEvent('drop', async (source, _cbId, data, citizenid) => {
   const mediaId = requirePositiveInt(fields(data).mediaId, 'mediaId');
 
   const owned = await repo.findById(mediaId, citizenid);
-  if (!owned) throw new Error('That photo could not be found.');
+  if (!owned || owned.status !== 'active') throw new Error('That photo could not be found.');
 
   const nearby = await findNearbyVisiblePlayers(source, citizenid);
 
