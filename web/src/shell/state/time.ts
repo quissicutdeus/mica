@@ -1,5 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import { isBrowser } from '../../lib/isBrowser';
+import { usePersisted } from '../../sdk/hooks/usePersisted';
 
 export interface TimeState {
   hours: number;
@@ -15,7 +16,9 @@ const getRealTime = (): TimeState => {
 };
 
 export const time = writable<TimeState>(getRealTime());
-export const is24Hour = writable<boolean>(false);
+export const is24Hour = usePersisted<boolean>('settings', 'is24Hour', false, {
+  sanitize: (value: unknown): boolean => value === true
+});
 
 // Live update time in browser dev mode (outside FiveM NUI)
 if (isBrowser()) {

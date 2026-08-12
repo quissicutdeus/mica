@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { time, is24Hour, formattedTime } from './time';
 import { get } from 'svelte/store';
+import { useStorage } from '../../sdk/hooks/useStorage';
 
 describe('time store', () => {
   it('formats time in 12-hour format by default', () => {
@@ -22,5 +23,10 @@ describe('time store', () => {
     is24Hour.set(false);
 
     expect(get(formattedTime)).toBe('12:05 AM');
+  });
+
+  it('writes the 24-hour preference to storage so a reload keeps it', () => {
+    is24Hour.set(true);
+    expect(useStorage('settings').getItem<boolean>('is24Hour')).toBe(true);
   });
 });
