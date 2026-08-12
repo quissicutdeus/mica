@@ -1,7 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { AppComponent } from '@gphone/sdk';
 import { get } from 'svelte/store';
+
+const serviceMock = vi.hoisted(() => ({
+  fetchSettings: vi.fn().mockResolvedValue([]),
+  saveSetting: vi.fn(),
+  removeSetting: vi.fn(),
+  clearAppSettings: vi.fn()
+}));
+vi.mock('../../services/settings', () => serviceMock);
+
 import { appRegistryStore, getFirstBootTime, type AppManifest } from './registry';
+import { hydrateSettings, useStorage } from '../../sdk/hooks/useStorage';
 
 describe('App Registry Store', () => {
   it('does not warn when installing a bundled add-on, but warns when replacing an already installed app', () => {
@@ -177,5 +187,48 @@ describe('App Registry Store', () => {
     await expect(appRegistryStore.loadRemoteApp('')).rejects.toThrow(
       'gPhone App Loader error: Remote app URL must be a valid string.'
     );
+  });
+});
+
+describe('installed add-on persistence', () => {
+  it('persists a bundled add-on install and removes it on uninstall', async () => {
+    const blabberComponent = (await appRegistryStore.loadComponent('blabber')) as AppComponent;
+
+    appRegistryStore.registerApp(
+      { id: 'blabber', name: 'Blabber', color: 'bg-sky-500', icon: null, core: false },
+      blabberComponent
+    );
+    expect(useStorage('store').getItem<string[]>('installedAddOns')).toEqual(['blabber']);
+
+    appRegistryStore.unregisterApp('blabber');
+    expect(useStorage('store').getItem<string[]>('installedAddOns')).toEqual([]);
+  });
+
+  it('does not track a remote app in the installed add-on list', async () => {
+    const code = `
+      export const manifest = { id: 'remote_installed_addons_test', name: 'Remote', color: 'bg-gray-600', icon: null };
+      export const component = { type: 'MockRemoteComponent' };
+    `;
+    const url = `data:text/javascript;charset=utf-8,${encodeURIComponent(code)}`;
+
+    await appRegistryStore.loadRemoteApp(url);
+    expect(useStorage('store').getItem<string[]>('installedAddOns')).toEqual([]);
+
+    appRegistryStore.unregisterApp('remote_installed_addons_test');
+  });
+
+  it('re-registers a previously installed bundled add-on when the server row arrives', async () => {
+    expect(get(appRegistryStore).some((a) => a.id === 'blabber')).toBe(false);
+
+    serviceMock.fetchSettings.mockResolvedValueOnce([
+      { app: 'store', setting_key: 'installedAddOns', setting_value: '["blabber"]' }
+    ]);
+
+    await hydrateSettings();
+    await vi.waitFor(() => {
+      expect(get(appRegistryStore).some((a) => a.id === 'blabber')).toBe(true);
+    });
+
+    appRegistryStore.unregisterApp('blabber');
   });
 });

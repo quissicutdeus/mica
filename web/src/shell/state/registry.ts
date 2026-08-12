@@ -1,6 +1,7 @@
 import { get, writable } from 'svelte/store';
 import { type AppComponent, type AppManifest, clearAppStorage, defineApp } from '@gphone/sdk';
 import { messageOf } from '../../lib/errors';
+import { usePersisted } from '../../sdk/hooks/usePersisted';
 
 export type { AppManifest } from '@gphone/sdk';
 
@@ -204,6 +205,29 @@ function removeSavedRemoteAppUrl(url: string) {
   }
 }
 
+const addOnIds = new Set(addOns.map((a) => a.id));
+
+/** Drop anything that is not a string id this build actually ships as an add-on. */
+const sanitizeInstalledAddOnIds = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? [...new Set(value.filter((v): v is string => typeof v === 'string' && addOnIds.has(v)))]
+    : [];
+
+/**
+ * Bundled add-ons the player installed from the Store, character-scoped.
+ *
+ * Unlike `LOCAL_STORAGE_KEY` above (the remote-app URL list — machine-scoped, raw
+ * localStorage), this rides `usePersisted`/`gphone_settings` so an install follows the
+ * character rather than the PC, consistent with every other preference in the phone.
+ * Namespaced under `'store'`, the app that owns this bookkeeping — not `'settings'` (a
+ * phone-wide preference) and not the add-on's own id (its own namespace is its data, not
+ * the Store's record that it is installed). Safe: the Store app itself is `core: true`, so
+ * `unregisterApp`/`clearAppStorage` can never target this namespace.
+ */
+const installedAddOnIds = usePersisted<string[]>('store', 'installedAddOns', [], {
+  sanitize: sanitizeInstalledAddOnIds
+});
+
 // Reactive App Registry Store for Dynamic Community App Installation
 function createAppRegistry() {
   const installed = writable<AppManifest[]>(loadedApps);
@@ -256,6 +280,17 @@ function createAppRegistry() {
         }
         return updated.sort((a, b) => a.name.localeCompare(b.name));
       });
+
+      // Bundled add-ons only — never a remote app (which has its own URL-based
+      // persistence and must not be double-tracked), and never an id outside this
+      // build (e.g. a test's ad-hoc manifest). Guarded so re-registering an id already
+      // marked installed — including the rehydration below — does not fire a redundant
+      // write, since `usePersisted`'s `update` always persists.
+      if (!validatedManifest.isRemote && addOnIds.has(validatedManifest.id)) {
+        if (!get(installedAddOnIds).includes(validatedManifest.id)) {
+          installedAddOnIds.update((ids) => [...ids, validatedManifest.id]);
+        }
+      }
     },
     unregisterApp: (appId: string) => {
       let currentApps: AppManifest[] = [];
@@ -276,6 +311,8 @@ function createAppRegistry() {
       }
       if (targetApp?.bundleUrl) {
         removeSavedRemoteAppUrl(targetApp.bundleUrl);
+      } else {
+        installedAddOnIds.update((ids) => ids.filter((id) => id !== appId));
       }
       /**
        * The runtime map only. A bundled add-on's component stays where the glob put it, because
@@ -374,6 +411,31 @@ function createAppRegistry() {
         console.warn(`gPhone Registry failed to re-hydrate remote app from '${url}':`, err);
       });
     }
+
+    /**
+     * Re-register every previously installed bundled add-on.
+     *
+     * `subscribe` rather than a one-shot loop like the remote-URL rehydration above:
+     * unlike that raw-localStorage read, `installedAddOnIds` is a live `usePersisted`
+     * store, so one subscription covers both boot (fires immediately with the current
+     * value) and a later character switch (`usePersisted`'s own rehydrate-on-server-copy
+     * pushes a new value, which re-fires this subscription).
+     */
+    installedAddOnIds.subscribe((ids) => {
+      for (const id of ids) {
+        if (get(installed).some((a) => a.id === id)) continue;
+        const manifest = addOns.find((a) => a.id === id);
+        if (!manifest) continue; // no longer part of this build
+        loadComponent(id)
+          .then((component) => {
+            if (!component) return; // build doesn't have it after all
+            store.registerApp(manifest, component);
+          })
+          .catch((err) => {
+            console.warn(`gPhone Registry failed to re-hydrate installed add-on '${id}':`, err);
+          });
+      }
+    });
   }
 
   return store;
