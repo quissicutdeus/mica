@@ -86,4 +86,16 @@ describe('with a defaultValue — reads', () => {
     transport.send.mockResolvedValue([{ id: 1 }]);
     await expect(fetchNui('getNotes', null, { defaultValue: [] })).resolves.toEqual([{ id: 1 }]);
   });
+
+  it('quiet suppresses the console warning on a transport failure', async () => {
+    transport.send.mockRejectedValue(new Error('boom'));
+    await fetchNui('getSettings', null, { defaultValue: [], quiet: true });
+    expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it('quiet suppresses the console warning on an error reply', async () => {
+    transport.send.mockResolvedValue({ error: 'Player not authenticated' });
+    await fetchNui('getSettings', null, { defaultValue: [], quiet: true });
+    expect(console.warn).not.toHaveBeenCalled();
+  });
 });

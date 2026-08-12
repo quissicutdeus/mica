@@ -34,7 +34,7 @@ const errorFrom = (reply: unknown): string | null => {
 export async function fetchNui<T = any>(
   eventName: string,
   data?: unknown,
-  options?: { defaultValue?: T }
+  options?: { defaultValue?: T; quiet?: boolean }
 ): Promise<T> {
   const hasDefault = options?.defaultValue !== undefined;
 
@@ -43,7 +43,9 @@ export async function fetchNui<T = any>(
     reply = await getTransport().send<T>(eventName, data);
   } catch (e) {
     if (hasDefault) {
-      console.warn(`fetchNui('${eventName}') failed; using the default value.`, e);
+      if (!options!.quiet) {
+        console.warn(`fetchNui('${eventName}') failed; using the default value.`, e);
+      }
       return options!.defaultValue as T;
     }
     throw e instanceof Error ? e : new Error(String(e));
@@ -52,7 +54,9 @@ export async function fetchNui<T = any>(
   const error = errorFrom(reply);
   if (error) {
     if (hasDefault) {
-      console.warn(`fetchNui('${eventName}') returned an error; using the default.`, error);
+      if (!options!.quiet) {
+        console.warn(`fetchNui('${eventName}') returned an error; using the default.`, error);
+      }
       return options!.defaultValue as T;
     }
     throw new Error(error);

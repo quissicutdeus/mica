@@ -12,9 +12,19 @@ import type { PhoneSetting } from '@shared/types';
  * Reached from `sdk/hooks/settingsSync.ts`, not from an app. Apps see `useStorage`.
  */
 
-/** Every preference this character has. `[]` for a browser with no server behind it. */
+/**
+ * Every preference this character has. `[]` for a browser with no server behind it.
+ *
+ * `quiet: true` because the CEF page hydrates at resource start, before a character is
+ * selected — the server's "Player not authenticated" reply is the expected first answer,
+ * not a failure worth a console warning. `hydrateSettings` already treats any failure here
+ * as tolerable by design ("keeping the values already on the phone" beats resetting a
+ * working phone over one bad request), so there is no later call where this same warning
+ * would suddenly mean something — quieting it here is consistent with that, not a special
+ * case for the boot-time one.
+ */
 export const fetchSettings = (): Promise<PhoneSetting[]> =>
-  fetchNui<PhoneSetting[]>('getSettings', undefined, { defaultValue: [] });
+  fetchNui<PhoneSetting[]>('getSettings', undefined, { defaultValue: [], quiet: true });
 
 /**
  * Write one key. `value` is the JSON string `useStorage` already produced.
