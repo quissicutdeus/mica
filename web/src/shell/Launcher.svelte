@@ -24,7 +24,7 @@
   <h1 class="mb-8 text-4xl font-bold tracking-tight">gPhone</h1>
 
   <div class="grid w-full grid-cols-4 gap-4 px-4">
-    {#each visibleApps as app}
+    {#each visibleApps as app (app.id)}
       <AppIcon
         name={app.name}
         color={app.color}

@@ -53,8 +53,9 @@ test.describe('Blabber', () => {
      * uninstall means a reinstall mounts the placeholder — for an app whose code never left the
      * bundle. `registry.test.ts` pins the map; this pins the path a player actually walks.
      *
-     * Its own `goto`, which also resets the registry, so the sequence is the real one: install,
-     * uninstall, install.
+     * Its own `goto`, which reloads the page but — deliberately, since bundled add-on installs
+     * are now character-persisted — does not reset the registry. `beforeEach` already installed
+     * Blabber, so the reload leaves it installed and the row starts on Uninstall.
      */
     await page.goto('/');
     const storeRow = () => page.locator('div.rounded-xl', { hasText: 'Blabber' });
@@ -66,7 +67,6 @@ test.describe('Blabber', () => {
      * of each on the page.
      */
     await page.locator('button', { hasText: 'Store' }).first().click();
-    await storeRow().getByRole('button', { name: 'Install', exact: true }).click();
     await storeRow().getByRole('button', { name: 'Uninstall', exact: true }).click();
     await confirm.getByRole('button', { name: 'Uninstall', exact: true }).click();
     await expect(confirm).toHaveCount(0);
