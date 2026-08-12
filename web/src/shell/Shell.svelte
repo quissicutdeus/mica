@@ -26,6 +26,8 @@
   import { bootstrapStores } from './state/bootstrap';
   import ToastContainer from './ToastHost.svelte';
   import ErrorBoundary from './ErrorBoundary.svelte';
+  import NotNetworkScreen from './NotNetworkScreen.svelte';
+  import { clampedSignalLevel } from './state/signal';
 
   let visible = $state(isBrowser());
 
@@ -377,13 +379,21 @@
             {#each $runningApps as instance (instance.id)}
               {@const AppComponent = appRegistryStore.getComponent(instance.id)}
               {@const isActive = $currentApp.id === instance.id}
+              {@const manifest = appRegistryStore.getManifest(instance.id)}
+              {@const isNetworkBlocked =
+                (manifest?.permissions?.includes('network') ?? false) && $clampedSignalLevel === 0}
               <div class="absolute inset-0" class:hidden={!isActive} inert={!isActive}>
                 {#if AppComponent}
-                  <ErrorBoundary
-                    appName={appRegistryStore.getManifest(instance.id)?.name ?? instance.id}
-                  >
-                    <AppComponent onback={goHome} {...instance.props} />
+                  <ErrorBoundary appName={manifest?.name ?? instance.id}>
+                    <div class="h-full w-full" inert={isNetworkBlocked}>
+                      <AppComponent onback={goHome} {...instance.props} />
+                    </div>
                   </ErrorBoundary>
+                  {#if isNetworkBlocked}
+                    <div class="absolute inset-0 z-30">
+                      <NotNetworkScreen title={manifest?.name ?? instance.id} onback={goHome} />
+                    </div>
+                  {/if}
                 {:else}
                   <!-- The app's chunk is still arriving. Components load on demand now, so
                        there is a moment between opening an app and having its code — and

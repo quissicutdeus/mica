@@ -176,3 +176,45 @@ test.describe('App residency', () => {
     await expect(page.locator('h1').filter({ hasText: /^Photo$/ })).toHaveCount(0);
   });
 });
+
+test.describe('Not Network gate', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+  });
+
+  test('blocks a network app at zero bars, but Home and local apps stay usable', async ({
+    page
+  }) => {
+    await page.evaluate(() => window.setSignalLevel(0));
+
+    // Home is untouched by signal loss.
+    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+
+    // A purely local app (no `network` permission) is unaffected.
+    await openApp(page, 'Calculator');
+    await expect(page.getByText('No Signal')).toHaveCount(0);
+    await goHome(page);
+
+    // Tapping a network app's icon still opens it — into the blocked state, not a dead
+    // tap — and the launcher/home indicator remain reachable underneath.
+    await page
+      .getByRole('button', { name: /Messages/i })
+      .first()
+      .click();
+    await expect(page.getByText('No Signal')).toBeVisible();
+    await expect(page.locator("button[aria-label='Return to home screen']")).toBeVisible();
+  });
+
+  test('signal returning clears the block without losing the app underneath', async ({ page }) => {
+    await page.evaluate(() => window.setSignalLevel(0));
+    await page
+      .getByRole('button', { name: /Messages/i })
+      .first()
+      .click();
+    await expect(page.getByText('No Signal')).toBeVisible();
+
+    await page.evaluate(() => window.setSignalLevel(4));
+    await expect(page.getByText('No Signal')).toHaveCount(0);
+    await expect(page.locator('h1', { hasText: 'Messages' })).toBeVisible();
+  });
+});

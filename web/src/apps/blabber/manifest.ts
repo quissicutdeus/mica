@@ -10,7 +10,7 @@ export default defineApp({
   // An add-on: absent from the launcher until installed from the Store. The first real
   // non-core app, and the first genuine listing the Store has ever had.
   core: false,
-  permissions: ['notifications', 'media', 'storage'],
+  permissions: ['notifications', 'media', 'storage', 'network'],
   /**
    * This app's unread persistent notifications, and nothing added to them.
    *

@@ -6,6 +6,6 @@ export default defineApp({
   color: 'bg-green-500',
   icon: Icon,
   description: 'Make phone calls and view call history',
-  permissions: ['contacts', 'notifications'],
+  permissions: ['contacts', 'notifications', 'network'],
   core: true
 });
