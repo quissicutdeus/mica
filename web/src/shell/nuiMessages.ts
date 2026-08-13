@@ -4,42 +4,25 @@ import { mailStore } from '../services/mail';
 import { conversationsStore } from '../services/conversations';
 import { appRegistryStore } from './state/registry';
 import { setSignal } from './state/signal';
-import { time, type TimeState } from './state/time';
+import { time } from './state/time';
 import { hydrateSettings } from '../sdk/hooks/useStorage';
-import { toast, type ToastMessage } from './state/toast';
+import { toast } from './state/toast';
 import { messageOf } from '../lib/errors';
 import { APP_EVENT_NUI_ACTION, parseAppEventEnvelope } from '@shared/appEvents';
 import { deliverAppEvent } from './state/appEvents';
 import { parseDeepLink } from '@shared/deepLink';
-
-/**
- * A message that arrived from the client, as something with readable fields.
- *
- * These handlers were typed `any`, which meant a typo in a field name compiled and
- * produced `undefined` at runtime — on the one boundary where every value was chosen by
- * something outside the web. Mirrors `server/lib/payload.ts`, for the same reason.
- */
-const fields = (data: unknown): Record<string, unknown> =>
-  data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
-
-const str = (raw: unknown): string | undefined =>
-  typeof raw === 'string' && raw.length > 0 ? raw : undefined;
-
-const num = (raw: unknown): number | undefined => (typeof raw === 'number' ? raw : undefined);
-
-/**
- * Routing for messages the client pushes into the NUI.
- *
- * This was 168 lines of `else if` inside `App.svelte`, which is both the largest
- * single thing that file did and the least tested — twelve message types, including
- * the contact-share validation, covered only incidentally by a few e2e specs. Pulling
- * it out is what makes it testable at all; nothing here needs a DOM or a component.
- *
- * Only the cases that are pure store work live here. `setVisible` and `callStatus`
- * stay with the shell because they act on shell state — frame visibility and the id of
- * the ring toast — and threading that back through a callback would be more coupling,
- * not less.
- */
+import {
+  parseContactShare,
+  parseInstallApp,
+  parseNotify,
+  parseOpenApp,
+  parseReceiveMail,
+  parseReceiveMessage,
+  parseSetCharge,
+  parseSetSignal,
+  parseSetTime,
+  parseUninstallApp
+} from '@shared/nui';
 
 /** The little the router needs from the shell, rather than the whole component. */
 export interface NotificationBridge {
@@ -55,10 +38,10 @@ export interface NotificationBridge {
  */
 export function createNuiMessageRouter(bridge: NotificationBridge) {
   const installApp = (data: unknown) => {
-    const url = str(fields(data).url);
-    if (!url) return;
+    const payload = parseInstallApp(data);
+    if (!payload) return;
     appRegistryStore
-      .loadRemoteApp(url)
+      .loadRemoteApp(payload.url)
       .then(({ manifest }) => {
         toast.show({
           type: 'success',
@@ -76,10 +59,10 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
   };
 
   const uninstallApp = (data: unknown) => {
-    const appId = str(fields(data).appId);
-    if (!appId) return;
+    const payload = parseUninstallApp(data);
+    if (!payload) return;
     try {
-      appRegistryStore.unregisterApp(appId);
+      appRegistryStore.unregisterApp(payload.appId);
       toast.show({ type: 'info', app: 'store', message: 'App uninstalled' });
     } catch (err) {
       toast.show({
@@ -91,51 +74,49 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
   };
 
   const receiveMail = (data: unknown) => {
-    const mail = fields(data);
+    const mail = parseReceiveMail(data);
+    if (!mail) return;
     mailStore.addReceivedMail(mail as unknown as Parameters<typeof mailStore.addReceivedMail>[0]);
     toast.showMail({
-      sender: str(mail.sender) ?? 'Mail',
-      subject: str(mail.subject) ?? 'New Message',
-      onClick: () => bridge.openFromNotification('mail', { mailId: num(mail.id) })
+      sender: mail.sender,
+      subject: mail.subject,
+      onClick: () => bridge.openFromNotification('mail', { mailId: mail.id })
     });
   };
 
   const receiveMessage = (data: unknown) => {
-    const msg = fields(data);
-    const conversationId = num(msg.conversation_id);
+    const msg = parseReceiveMessage(data);
+    if (!msg) return;
     conversationsStore.addReceivedMessage({
-      conversation_id: conversationId,
-      message: str(msg.message),
-      senderName: str(msg.senderName),
-      phone: str(msg.phone),
-      avatar: str(msg.avatar),
-      created_at: str(msg.created_at)
+      conversation_id: msg.conversationId,
+      message: msg.message,
+      senderName: msg.senderName,
+      phone: msg.phone,
+      avatar: msg.avatar,
+      created_at: msg.created_at
     });
     toast.showIncomingMessage({
-      sender: str(msg.senderName) ?? str(msg.phone) ?? 'Message',
-      message: str(msg.message) ?? '',
-      avatar: str(msg.avatar),
+      sender: msg.senderName ?? msg.phone ?? 'Message',
+      message: msg.message,
+      avatar: msg.avatar,
       onReply: async (replyText) => {
-        if (conversationId) await conversationsStore.sendMessage(conversationId, replyText);
+        if (msg.conversationId) await conversationsStore.sendMessage(msg.conversationId, replyText);
       },
       onClick: () =>
         bridge.openFromNotification('messages', {
-          conversationId,
-          phone: str(msg.phone) ?? str(msg.senderPhone)
+          conversationId: msg.conversationId,
+          phone: msg.phone
         })
     });
   };
 
   const receiveContactShare = (data: unknown) => {
-    const share = fields(data);
-    /**
-     * Accepting is the same whether the player taps Accept or the toast body, so both
-     * run this. It validates rather than trusting the payload: a share arriving with no
-     * name or number would otherwise be written as a blank contact.
-     */
+    const share = parseContactShare(data);
+    if (!share) return;
+
     const accept = async () => {
-      const firstname = str(share.firstname)?.trim() ?? '';
-      const phone = str(share.phone)?.trim() ?? '';
+      const firstname = share.firstname?.trim() ?? '';
+      const phone = share.phone?.trim() ?? '';
 
       if (!firstname || !phone) {
         toast.show({
@@ -149,10 +130,10 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
       try {
         await contacts.add({
           firstname,
-          lastname: str(share.lastname)?.trim() ?? '',
+          lastname: share.lastname?.trim() ?? '',
           phone,
-          email: str(share.email)?.trim(),
-          avatar: str(share.avatar),
+          email: share.email?.trim(),
+          avatar: share.avatar,
           favorite: share.favorite === true
         });
         toast.show({ type: 'success', app: 'contacts', message: 'Contact added to address book' });
@@ -166,12 +147,9 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     };
 
     toast.showContactShare({
-      name:
-        `${str(share.firstname) ?? ''} ${str(share.lastname) ?? ''}`.trim() ??
-        str(share.phone) ??
-        'Contact',
-      phone: str(share.phone) ?? '',
-      avatar: str(share.avatar),
+      name: `${share.firstname ?? ''} ${share.lastname ?? ''}`.trim() || share.phone || 'Contact',
+      phone: share.phone ?? '',
+      avatar: share.avatar,
       onAccept: accept,
       onDecline: () => {
         toast.show({ type: 'info', app: 'contacts', message: 'Contact share declined' });
@@ -180,14 +158,6 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     });
   };
 
-  /**
-   * The one route that is not a fixed name.
-   *
-   * `setTime`, `setCharge` and `setSignal` genuinely are a closed shell set and stay hardcoded.
-   * App-space stops being one: a new app joins by subscribing at runtime, with nothing added
-   * here — which is the whole point, because an add-on installed from the Store cannot edit this
-   * file (`sdk/boundary.test.ts` forbids importing outside `@gphone/sdk`).
-   */
   const appEvent = (data: unknown) => {
     const envelope = parseAppEventEnvelope(data);
     if (!envelope) return;
@@ -197,14 +167,6 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
 
     if (!envelope.notify) return;
 
-    /**
-     * `notifications` gates the toast and nothing else.
-     *
-     * Withholding the data would be theatre: the app can fetch the same rows through its own
-     * service, and §7 already says permissions are a disclosure rather than a sandbox. What this
-     * buys is that the disclosure stays *true* at runtime — an app that did not declare it does
-     * not get to interrupt the player.
-     */
     const manifest = appRegistryStore.getManifest(envelope.app);
     if (!manifest?.permissions?.includes('notifications')) {
       if (import.meta.env.DEV) {
@@ -221,12 +183,6 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
       title: envelope.notify.title,
       message: envelope.notify.message,
       avatar: envelope.notify.avatar,
-      // One rule, no options: tapping opens the app with the payload as deep-link props.
-      // `openApp` merges them and `consumeAppProps` makes them one-shot, so this composes with
-      // `useDeepLink` for free.
-      // The declared destination wins over the raw payload. A push payload is app data —
-      // `{ blab_id, handle }` — and is not a navigation contract; the deep link is. Falling
-      // back to the payload keeps a push that declared no link working as it did.
       onClick: () => {
         const link = envelope.deepLink ? parseDeepLink(envelope.deepLink) : null;
         if (link) bridge.openFromNotification(link.app, link.props);
@@ -237,49 +193,40 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
 
   const routes: Record<string, (data: unknown) => void> = {
     [APP_EVENT_NUI_ACTION]: appEvent,
-    setTime: (data) => time.set(data as TimeState),
-    setCharge: (data) => {
-      if (typeof data === 'number') charge.set(data);
+    setTime: (data) => {
+      const parsed = parseSetTime(data);
+      if (parsed) time.set(parsed);
     },
-    /**
-     * The player loaded a character; re-read what that character had saved.
-     *
-     * The page never unloads in CEF, so without this a character switch leaves the
-     * previous character's theme, volume and toggles on screen for the rest of the
-     * session.
-     */
+    setCharge: (data) => {
+      const parsed = parseSetCharge(data);
+      if (parsed !== null) charge.set(parsed);
+    },
     rehydrateSettings: () => {
       void hydrateSettings();
     },
     setSignal: (data) => {
-      if (typeof data === 'number') setSignal(data);
+      const parsed = parseSetSignal(data);
+      if (parsed !== null) setSignal(parsed);
     },
-    // Server-originated toast, relayed by the client's shell system. Used by the
-    // ace-denial paths and the call failure cases.
     notify: (data) => {
-      const notification = fields(data);
-      const message = str(notification.message);
-      if (!message) return;
+      const parsed = parseNotify(data);
+      if (!parsed) return;
       toast.show({
-        type: (str(notification.type) as ToastMessage['type']) ?? 'info',
-        title: str(notification.title),
-        message
+        type: parsed.type,
+        title: parsed.title,
+        message: parsed.message
       });
     },
-    // The `OpenApp` export. The client has already force-opened the frame; this just
-    // navigates it, same as a notification's own click-through.
     openApp: (data) => {
-      const payload = fields(data);
-      const appId = str(payload.appId);
-      if (!appId) return;
-      bridge.openFromNotification(appId, fields(payload.props));
+      const parsed = parseOpenApp(data);
+      if (!parsed) return;
+      bridge.openFromNotification(parsed.appId, parsed.props);
     },
     installApp,
     uninstallApp,
     receiveMail,
     receiveMessage,
     receiveContactShare,
-    // Two names for one thing; the client has used both.
     shareContact: receiveContactShare
   };
 
