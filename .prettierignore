@@ -8,3 +8,7 @@ pnpm-lock.yaml
 # failed run leaves an error-context.md that turns `pnpm format:check` red.
 playwright-report
 test-results
+
+# Subagent-driven-development scratch state (ledgers, task briefs, review
+# packages). Gitignored via .superpowers/sdd/.gitignore, same reason as above.
+.superpowers
