@@ -20,6 +20,8 @@
     isReadByOther,
     unreadCount,
     searching,
+    onreply,
+    onscrollto,
     onloadmore,
     onscroll
   }: {
@@ -35,6 +37,8 @@
     /** Whether the in-chat search is filtering, so "empty" reads correctly. */
     searching: boolean;
     isReadByOther: (msg: UIMessage) => boolean;
+    onreply?: (msg: UIMessage) => void;
+    onscrollto?: (msgId: number) => void;
     onloadmore: () => void;
     onscroll: (event: Event) => void;
   } = $props();
@@ -82,6 +86,8 @@
         {currentConv}
         isLastReadMyMessage={msg.id === lastReadMyMessageId}
         isReadByOther={isReadByOther(msg)}
+        {onreply}
+        {onscrollto}
       />
     {/if}
   {/each}

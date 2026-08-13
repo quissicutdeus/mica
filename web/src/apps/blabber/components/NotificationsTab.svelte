@@ -6,7 +6,8 @@
     Avatar,
     BellIcon,
     UsersIcon,
-    MessageIcon
+    MessageIcon,
+    formatTime
   } from '@gphone/sdk';
   import type { NotificationItem } from '@shared/types';
   import { parseDeepLink } from '@shared/deepLink';
@@ -120,10 +121,7 @@
             <div class="flex items-baseline justify-between gap-2">
               <span class="text-on-surface truncate text-sm font-semibold">{item.title}</span>
               <span class="text-on-surface-variant shrink-0 text-[11px] font-medium">
-                {new Date(item.created_at).toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
+                {formatTime(item.created_at)}
               </span>
             </div>
 

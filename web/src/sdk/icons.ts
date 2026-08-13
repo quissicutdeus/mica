@@ -34,6 +34,7 @@ export { default as PaperclipIcon } from './ui/icons/PaperclipIcon.svelte';
 export { default as PhoneIcon } from './ui/icons/PhoneIcon.svelte';
 export { default as PhotoIcon } from './ui/icons/PhotoIcon.svelte';
 export { default as PlayIcon } from './ui/icons/PlayIcon.svelte';
+export { default as ReplyIcon } from './ui/icons/ReplyIcon.svelte';
 export { default as SearchIcon } from './ui/icons/SearchIcon.svelte';
 export { default as SendIcon } from './ui/icons/SendIcon.svelte';
 export { default as ShareIcon } from './ui/icons/ShareIcon.svelte';

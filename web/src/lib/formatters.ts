@@ -1,3 +1,6 @@
+import { get } from 'svelte/store';
+import { is24Hour } from '../shell/state/time';
+
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
@@ -9,11 +12,21 @@ export function formatTimestamp(timestamp: number): string {
   return new Date(timestamp * 1000).toLocaleDateString();
 }
 
-export function formatTime(isoString?: string | number | Date): string {
+export function formatTime(isoString?: string | number | Date, override24Hour?: boolean): string {
   if (!isoString) return '';
   const date = isoString instanceof Date ? isoString : new Date(isoString);
+  if (isNaN(date.getTime())) return '';
+
+  const use24 = override24Hour ?? get(is24Hour);
+
+  if (use24) {
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+  }
+
   return date.toLocaleTimeString([], {
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit'
   });
 }

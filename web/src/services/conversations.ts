@@ -16,6 +16,7 @@ export interface UIConversation extends Conversation {
 
 export interface UIMessage extends Message {
   sender: 'me' | 'other';
+  replyToMsg?: UIMessage | null;
 }
 
 function createMessagesStore() {
@@ -58,12 +59,10 @@ function createMessagesStore() {
 
     // If we have a phone target, try to improve name & avatar from address book
     if (target && target !== 'group') {
-      const contact = currentContacts.find((c) => c.phone === target);
-      if (contact) {
-        targetName = `${contact.firstname} ${contact.lastname || ''}`.trim();
-        if (contact.avatar) {
-          targetAvatar = contact.avatar;
-        }
+      const found = currentContacts.find((c) => c.phone === target);
+      if (found) {
+        targetName = `${found.firstname} ${found.lastname || ''}`.trim();
+        targetAvatar = found.avatar;
       }
     }
 
@@ -76,23 +75,18 @@ function createMessagesStore() {
     messages: { subscribe: messagesByConversation.subscribe },
     activeConversationId: { subscribe: activeConversationId.subscribe },
 
-    setActiveConversationId: (id: number | null) => {
-      activeConversationId.set(id);
-    },
+    setActiveConversationId: (id: number | null) => activeConversationId.set(id),
 
     loadConversations: async () => {
-      // Ensure we have citizenid
       let myId = get(citizenid);
       if (!myId) {
         myId = await fetchCitizenId();
       }
       const currentContacts = get(contacts);
 
-      const data = await fetchNui<Conversation[]>('getConversations', null, { defaultValue: [] });
-
-      // Map to UIConversation & sort newest first
-      const mapped: UIConversation[] = (data || [])
-        .map((c) => {
+      try {
+        const data = await fetchNui<Conversation[]>('getConversations', {}, { defaultValue: [] });
+        const mapped: UIConversation[] = (data || []).map((c) => {
           const { target, targetName, targetAvatar } = resolveDisplayInfo(c, myId, currentContacts);
           return {
             ...c,
@@ -103,14 +97,20 @@ function createMessagesStore() {
             lastMessageAt: (c.last_message?.created_at || c.updated_at) as string,
             unreadCount: c.unread_count || 0
           };
-        })
-        .sort(
+        });
+
+        // Sort newest-first initially
+        mapped.sort(
           (a, b) =>
             new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime()
         );
 
-      set(mapped);
-      loaded.set(true);
+        set(mapped);
+        loaded.set(true);
+      } catch (e) {
+        console.error('Failed to load conversations:', e);
+        loaded.set(true);
+      }
     },
 
     loadMessages: async (conversationId: number) => {
@@ -123,10 +123,20 @@ function createMessagesStore() {
         { conversation_id: conversationId },
         { defaultValue: [] }
       );
-      const mapped: UIMessage[] = (data || []).map((m) => ({
-        ...m,
-        sender: m.citizenid === myId ? 'me' : 'other'
-      }));
+      const rawList = data || [];
+      const mapped: UIMessage[] = rawList.map((m) => {
+        const replyToRaw = m.reply_to_id ? rawList.find((r) => r.id === m.reply_to_id) : null;
+        return {
+          ...m,
+          sender: m.citizenid === myId ? 'me' : 'other',
+          replyToMsg: replyToRaw
+            ? {
+                ...replyToRaw,
+                sender: replyToRaw.citizenid === myId ? 'me' : 'other'
+              }
+            : null
+        };
+      });
 
       messagesByConversation.update((msgs) => ({
         ...msgs,
@@ -137,15 +147,27 @@ function createMessagesStore() {
     sendMessage: async (
       conversationId: number,
       message: string,
-      attachments: { photo_id: number; attachment?: string }[] = []
+      attachments: { photo_id: number; attachment?: string }[] = [],
+      replyToId?: number | null
     ) => {
-      const payload = { conversation_id: conversationId, message, attachments };
+      const payload = {
+        conversation_id: conversationId,
+        message,
+        attachments,
+        reply_to_id: replyToId
+      };
 
       try {
         const sent = await fetchNui<Message>('sendMessage', payload);
         if (!sent) return null;
 
-        const uiSent: UIMessage = { ...sent, sender: 'me' };
+        let replyToMsg: UIMessage | null = null;
+        if (replyToId) {
+          const currentMsgs = get(messagesByConversation)[conversationId] || [];
+          replyToMsg = currentMsgs.find((m) => m.id === replyToId) || null;
+        }
+
+        const uiSent: UIMessage = { ...sent, sender: 'me', replyToMsg };
 
         messagesByConversation.update((msgs) => ({
           ...msgs,
@@ -266,6 +288,7 @@ function createMessagesStore() {
       phone?: string;
       avatar?: string;
       created_at?: string;
+      reply_to_id?: number | null;
     }) => {
       const convId = incoming.conversation_id || 1;
       const currentActiveId = get(activeConversationId);
@@ -311,28 +334,35 @@ function createMessagesStore() {
         fetchNui('readConversation', { conversation_id: convId }).catch(() => {});
       }
 
-      // Append to active conversation trail if loaded
-      const newUiMsg: UIMessage = {
-        id: Math.floor(Math.random() * 1000000),
-        conversation_id: convId,
-        citizenid: 'other-cit',
-        sender: 'other',
-        status: 'active',
-        message: incoming.message || '',
-        attachments: [],
-        created_at: incoming.created_at || new Date().toISOString(),
-        updated_at: incoming.created_at || new Date().toISOString()
-      };
-
       messagesByConversation.update((msgs) => {
         const currentMsgs = msgs[convId];
-        if (currentMsgs) {
-          return {
-            ...msgs,
-            [convId]: [...currentMsgs, newUiMsg]
-          };
-        }
-        return msgs;
+        if (!currentMsgs) return msgs;
+
+        // Resolved against what's already loaded, same as `sendMessage`'s optimistic append
+        // and `loadMessages`'s own resolution — without it, a reply arriving live (rather
+        // than via a reload) rendered with no quoted-preview banner.
+        const replyToMsg = incoming.reply_to_id
+          ? (currentMsgs.find((m) => m.id === incoming.reply_to_id) ?? null)
+          : null;
+
+        const newUiMsg: UIMessage = {
+          id: Math.floor(Math.random() * 1000000),
+          conversation_id: convId,
+          citizenid: 'other-cit',
+          sender: 'other',
+          status: 'active',
+          message: incoming.message || '',
+          attachments: [],
+          reply_to_id: incoming.reply_to_id,
+          replyToMsg,
+          created_at: incoming.created_at || new Date().toISOString(),
+          updated_at: incoming.created_at || new Date().toISOString()
+        };
+
+        return {
+          ...msgs,
+          [convId]: [...currentMsgs, newUiMsg]
+        };
       });
     }
   };

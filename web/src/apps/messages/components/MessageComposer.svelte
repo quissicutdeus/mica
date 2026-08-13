@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { MediaThumb, useLocation, useAppAction } from '@gphone/sdk';
+  import { MediaThumb, useLocation, useAppAction, useContacts } from '@gphone/sdk';
   import type { MediaPreview } from '@shared/types';
   import {
     CloseIcon,
@@ -7,7 +7,11 @@
     PaperclipIcon,
     PhotoIcon,
     PhotoPickerModal,
-    SendIcon
+    SendIcon,
+    ReplyIcon,
+    Avatar,
+    type UIMessage,
+    type UIConversation
   } from '@gphone/sdk';
   import { fly } from 'svelte/transition';
 
@@ -21,15 +25,21 @@
   let {
     text = $bindable(''),
     attachments = $bindable([]),
+    replyingTo = null,
+    currentConv = null,
     busy,
     onsend,
-    onopenphotos
+    onopenphotos,
+    oncancelreply
   }: {
     text: string;
     attachments: { photo_id: number; media: MediaPreview }[];
+    replyingTo?: UIMessage | null;
+    currentConv?: UIConversation | null;
     busy: boolean;
     onsend: () => void;
     onopenphotos: () => void;
+    oncancelreply?: () => void;
   } = $props();
 
   let showAttachMenu = $state(false);
@@ -37,6 +47,21 @@
 
   const { shareLocation } = useLocation();
   const { run } = useAppAction('messages');
+  const { contactsStore: contacts } = useContacts();
+
+  const getSenderInfo = (targetMsg: UIMessage) => {
+    if (targetMsg.sender === 'me') {
+      return { name: 'You', avatar: undefined };
+    }
+    if (!currentConv) return { name: 'Member', avatar: undefined };
+    const p = currentConv.participants?.find((part) => part.citizenid === targetMsg.citizenid);
+    const contact = p?.contact || $contacts.find((c) => c.citizenid === targetMsg.citizenid);
+    const name = contact
+      ? `${contact.firstname} ${contact.lastname || ''}`.trim()
+      : p?.citizenid || 'Member';
+    const avatar = contact?.avatar;
+    return { name, avatar };
+  };
 
   const handleShareLocation = async () => {
     await run(
@@ -52,6 +77,38 @@
 
 <!-- Input Area -->
 <div class="border-outline-variant bg-surface-container border-t p-3 backdrop-blur-md">
+  {#if replyingTo}
+    {@const replySender = getSenderInfo(replyingTo)}
+    <div
+      class="bg-surface-container-high border-primary mb-2 flex items-center justify-between rounded-xl border-l-4 p-2 text-xs shadow-sm"
+      transition:fly={{ y: 10, duration: 150 }}
+    >
+      <div class="flex min-w-0 flex-1 flex-col pr-2">
+        <div class="text-primary flex items-center gap-1.5 font-semibold">
+          <ReplyIcon class="h-3.5 w-3.5 shrink-0" />
+          <Avatar
+            src={replySender.avatar}
+            initials={replySender.name[0] || '?'}
+            size="w-3.5 h-3.5"
+            textClass="text-[8px]"
+          />
+          <span class="truncate text-[11px]">Replying to {replySender.name}</span>
+        </div>
+        <p class="text-on-surface-variant mt-0.5 truncate text-[11px]">
+          {replyingTo.message || (replyingTo.attachments?.length ? '[Attachment]' : '')}
+        </p>
+      </div>
+      <button
+        type="button"
+        class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface shrink-0 cursor-pointer rounded-full p-1 transition-colors"
+        onclick={oncancelreply}
+        aria-label="Cancel reply"
+        title="Cancel reply"
+      >
+        <CloseIcon class="h-4 w-4" />
+      </button>
+    </div>
+  {/if}
   {#if attachments.length > 0}
     <div class="no-scrollbar mb-2 flex gap-2 overflow-x-auto p-1">
       {#each attachments as att}

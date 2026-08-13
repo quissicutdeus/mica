@@ -183,8 +183,8 @@
                 {#if !mine}
                   <ReportButton
                     subject="message"
+                    size="mini"
                     onclick={() => (reportingDm = message.id)}
-                    class="-my-1"
                   />
                 {/if}
               </div>

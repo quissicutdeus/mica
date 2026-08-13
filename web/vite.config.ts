@@ -55,6 +55,10 @@ export default defineConfig({
     emptyOutDir: true,
     target: 'chrome92',
     rollupOptions: {
+      onwarn(warning, warn) {
+        if (warning.code === 'INEFFECTIVE_DYNAMIC_IMPORT') return;
+        warn(warning);
+      },
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {

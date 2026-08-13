@@ -93,7 +93,8 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
       senderName: msg.senderName,
       phone: msg.phone,
       avatar: msg.avatar,
-      created_at: msg.created_at
+      created_at: msg.created_at,
+      reply_to_id: msg.replyToId
     });
     toast.showIncomingMessage({
       sender: msg.senderName ?? msg.phone ?? 'Message',

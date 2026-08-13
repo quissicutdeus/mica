@@ -46,6 +46,7 @@ export interface Message {
   message: string;
   created_at: Date | string;
   updated_at: Date | string;
+  reply_to_id?: number | null;
   /**
    * `photo_id` on the way in, `media` on the way back.
    *

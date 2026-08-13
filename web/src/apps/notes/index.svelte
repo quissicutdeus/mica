@@ -14,6 +14,7 @@
     EditIcon,
     ListBulletIcon,
     filterByQuery,
+    formatDate,
     onAppForeground,
     renderMarkdown,
     useAppAction,
@@ -300,7 +301,7 @@
                 {note.content}
               </p>
               <span class="text-outline mt-2 block text-xs">
-                {new Date(note.updated_at).toLocaleDateString()}
+                {formatDate(note.updated_at)}
               </span>
             </div>
           </ListItem>

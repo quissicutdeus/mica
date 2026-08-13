@@ -55,6 +55,7 @@
   let showAttachMenu = $state(false);
   let showPhotoPicker = $state(false);
   let selectedAttachments = $state<{ photo_id: number; media: MediaPreview }[]>([]);
+  let replyingToMsg = $state<UIMessage | null>(null);
   let viewingArchive = $state(false);
   let showDetailsModal = $state(false);
   let showSearch = $state(false);
@@ -154,6 +155,7 @@
     newMessageText = '';
     recipientQuery = '';
     selectedAttachments = [];
+    replyingToMsg = null;
     unreadDividerIndex = -1;
     page.reset();
   };
@@ -260,12 +262,34 @@
     showAttachMenu = false;
   };
 
+  const handleScrollToMessage = (msgId: number) => {
+    const targetEl = document.getElementById(`msg-${msgId}`);
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      targetEl.classList.add(
+        'ring-2',
+        'ring-primary',
+        'bg-surface-container-highest',
+        'rounded-2xl'
+      );
+      setTimeout(() => {
+        targetEl.classList.remove(
+          'ring-2',
+          'ring-primary',
+          'bg-surface-container-highest',
+          'rounded-2xl'
+        );
+      }, 1500);
+    }
+  };
+
   const handleSendMessage = async () => {
     if ((!newMessageText.trim() && selectedAttachments.length === 0) || !selectedConversationId)
       return;
 
     // The draft survives a failure: clearing it before the server has taken the message
     // would lose what the player typed with nothing to show for it.
+    const replyId = replyingToMsg?.id;
     const sent = await run(() =>
       conversationsStore.sendMessage(
         selectedConversationId!,
@@ -273,13 +297,15 @@
         // `photo_id` only. The server resolves the row and projects what a reader is
         // allowed to see; sending the preview back would be the client telling the server
         // what its own table says.
-        selectedAttachments.map((att) => ({ photo_id: att.photo_id }))
+        selectedAttachments.map((att) => ({ photo_id: att.photo_id })),
+        replyId
       )
     );
     if (!sent) return;
 
     newMessageText = '';
     selectedAttachments = [];
+    replyingToMsg = null;
     await tick();
     scrollToBottom();
   };
@@ -488,6 +514,8 @@
         {currentConv}
         {lastReadMyMessageId}
         isReadByOther={isMessageReadByOther}
+        onreply={(msg) => (replyingToMsg = msg)}
+        onscrollto={handleScrollToMessage}
         onloadmore={page.loadMore}
         onscroll={page.onScroll}
         unreadCount={initialUnreadCount}
@@ -497,9 +525,12 @@
       <MessageComposer
         bind:text={newMessageText}
         bind:attachments={selectedAttachments}
+        replyingTo={replyingToMsg}
+        {currentConv}
         busy={$busy}
         onsend={handleSendMessage}
         onopenphotos={openPhotoPicker}
+        oncancelreply={() => (replyingToMsg = null)}
       />
     </div>
   {:else}

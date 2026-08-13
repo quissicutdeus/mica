@@ -20,20 +20,16 @@
     /** What is being reported, for the label — "photo", "message", "post", "account". */
     subject: string;
     onclick: () => void;
-    /** `inline` sits in a row of actions; `header` sits among a screen's header buttons. */
-    size?: 'inline' | 'header';
+    /** `inline` sits in a row of actions; `header` sits among a screen's header buttons; `mini` sits in dense message timestamp rows. */
+    size?: 'inline' | 'header' | 'mini';
     class?: string;
   }
 
   let { subject, onclick, size = 'inline', class: className = '' }: Props = $props();
 
-  /**
-   * M3 wants a 24dp icon in a 48dp target, and 20dp where it sits inline among dense
-   * secondary actions. Both keep the 48dp touch target — the padding grows as the glyph
-   * shrinks, rather than the target shrinking with it.
-   */
-  let glyph = $derived(size === 'header' ? 'h-6 w-6' : 'h-5 w-5');
-  let pad = $derived(size === 'header' ? 'p-3' : 'p-2');
+  let glyph = $derived(size === 'header' ? 'h-6 w-6' : size === 'mini' ? 'h-3.5 w-3.5' : 'h-5 w-5');
+  let pad = $derived(size === 'header' ? 'p-3' : size === 'mini' ? 'p-0.5' : 'p-2');
+  let opacity = $derived(size === 'mini' ? 'opacity-40 hover:opacity-100' : '');
 </script>
 
 <button
@@ -41,7 +37,7 @@
   {onclick}
   aria-label="Report {subject}"
   title="Report {subject}"
-  class="text-on-surface-variant hover:text-error hover:bg-error-container focus-visible:ring-primary flex cursor-pointer items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none {pad} {className}"
+  class="text-on-surface-variant hover:text-error hover:bg-error-container focus-visible:ring-primary flex cursor-pointer items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none {pad} {opacity} {className}"
 >
   <FlagIcon class={glyph} />
 </button>
