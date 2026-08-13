@@ -33,6 +33,18 @@ onNet(
 );
 
 /**
+ * A freshly loaded character's phone should stop showing the previous one's data.
+ *
+ * `server/lib/shell.ts`'s `pushRehydrate` is the one place both frameworks'
+ * character-loaded event feeds into this. The push carries nothing — the phone re-reads
+ * everything over the ordinary bootstrap round trip, which already scopes each read to the
+ * caller's citizenid.
+ */
+onNet('gphone:client:shell:rehydrate', () => {
+  sendNuiMessage('rehydrateShell', {});
+});
+
+/**
  * The `SetPhoneEnabled` export. A job confiscating the phone, or an item that jams it.
  *
  * Disabling while open force-closes it the same way `hideFrame` does — leaving it open

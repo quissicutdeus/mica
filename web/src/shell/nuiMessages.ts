@@ -6,6 +6,7 @@ import { appRegistryStore } from './state/registry';
 import { setSignal } from './state/signal';
 import { time } from './state/time';
 import { hydrateSettings } from '../sdk/hooks/useStorage';
+import { bootstrapStores, resetBootstrapState } from './state/bootstrap';
 import { toast } from './state/toast';
 import { messageOf } from '../lib/errors';
 import { APP_EVENT_NUI_ACTION, parseAppEventEnvelope } from '@shared/appEvents';
@@ -204,6 +205,10 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     },
     rehydrateSettings: () => {
       void hydrateSettings();
+    },
+    rehydrateShell: () => {
+      resetBootstrapState();
+      void bootstrapStores(true);
     },
     setSignal: (data) => {
       const parsed = parseSetSignal(data);
