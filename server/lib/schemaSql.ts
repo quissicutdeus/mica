@@ -233,3 +233,36 @@ export function toSqlFile(resolved: ResolvedService): string {
     ''
   ].join('\n');
 }
+
+/**
+ * The ledger table versioned migrations record themselves into. No `defineService` behind
+ * it — like the framework audit ledger in `scripts/framework-schema.sql`, it is
+ * infrastructure rather than an app table, so it does not fit the app-table shape
+ * `expectedShape` produces.
+ */
+export const SCHEMA_MIGRATIONS_TABLE = 'gphone_schema_migrations';
+
+export const schemaMigrationsLedgerDdl = (): string =>
+  [
+    `CREATE TABLE IF NOT EXISTS \`${SCHEMA_MIGRATIONS_TABLE}\` (`,
+    '    `id` varchar(255) NOT NULL,',
+    '    `applied_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,',
+    '    PRIMARY KEY (`id`)',
+    ') ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;'
+  ].join('\n');
+
+/**
+ * `INSERT IGNORE` seeding every migration id that exists as of generation time.
+ *
+ * A fresh install imports every table already in its final shape, so its migrations must
+ * never actually run — each would find a table that was never in the shape it expects to
+ * find it in. Seeding the ledger marks them applied without running `up()`. `INSERT IGNORE`
+ * rather than `INSERT`: re-running `pnpm generate:sql` against a database that already has
+ * some of these rows (e.g. a dev database that both imported an older `gphone.sql` and later
+ * ran `gphoneschema apply`) must not error.
+ */
+export const schemaMigrationsSeedSql = (ids: readonly string[]): string | null => {
+  if (ids.length === 0) return null;
+  const values = ids.map((id) => `('${id.replace(/'/g, "''")}')`).join(',\n  ');
+  return `INSERT IGNORE INTO \`${SCHEMA_MIGRATIONS_TABLE}\` (\`id\`) VALUES\n  ${values};`;
+};
