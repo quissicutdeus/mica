@@ -230,16 +230,16 @@ allowlist, then answered as many requests of any size as arrived.
 
 11. **One planning document, `docs/roadmap.md`, and do not create a second.**
 
-    It records what exists, what is proposed and explicitly unbuilt, and the app ideas after that.
-    Every statement in it describes today's code; a proposal lives only under a heading that says so.
-    That split is the structure of the file rather than a style note — description and intent were
-    merged once and the document undid itself as you read down, because a reader could not tell which
-    half they were in.
+    It is a pure backlog — what is proposed but unbuilt, and the app ideas after that. Nothing in it
+    describes code that exists: when a proposal ships, its entry leaves the file rather than staying
+    behind relabeled as done. That replaces an earlier split into a shipped half and a proposed half,
+    kept apart because description and intent were merged once and the document undid itself as you
+    read down — a reader could not tell which half they were in. Removing the shipped half removes the
+    seam instead of just labeling it: there is no wrong half to be in anymore. Git history is the
+    record of what shipped and why; this file only ever tracks what is still ahead.
 
-    A second planning file goes stale in a way one file cannot. `docs/roadmap2.md` proposed four
-    things, three shipped, and it went on describing all four as intentions; the roadmap meanwhile
-    described the same features as built. Two documents disagreeing about the same code is worse than
-    either alone. It was folded back in and deleted.
+    A second planning file goes stale in a way one file cannot: two documents can end up disagreeing
+    about the same code, which is worse than either alone.
 
     An **untracked** plan is worse still: no history, one reader, and the tracked document ends up
     deferring to a file nobody else has. Blabber's phase plan lived in a local TODO before it moved

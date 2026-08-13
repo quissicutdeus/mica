@@ -7,939 +7,17 @@
 > that names this path is a comment in `web/src/apps/store/appInfo.ts`, recording where the Store's
 > four invented add-ons went.
 
-What exists, what is proposed but unbuilt, the app ideas after that, and what the platform owes each
-of them.
-
-**Every statement here describes the code as it is today; a proposal is only ever under a heading
-that says so.** That rule is the structure of the file rather than a style note, and it is the one
-thing not to relax. Description and intent were merged once, and it went badly: a section describing
-what existed asserted a fact a later section renamed, so the document undid itself as you read down.
-The failure mode is not an inaccurate line — it is a reader who cannot tell which half they are in.
-So the reasoning behind an unbuilt thing belongs under its own proposal heading here, not in a second
-document that this one defers to and a reader may not have.
+A pure backlog: what is proposed but unbuilt, and the app ideas after that. Nothing here describes
+code that exists — the code and `AGENTS.md` are that record. When an entry ships, it leaves this file
+rather than staying behind as a "done" essay; git history is where the reasoning behind a shipped
+decision still lives. This file only ever tracks what is still ahead.
 
 This file exists because the Store's catalog used to carry four app ideas as **installable
 manifests with no code behind them** — Blabber, Crypto Tracker, Downtown Taxi and Marketplace,
 complete with invented studios and version numbers. Tapping any of them opened a screen apologising
 for itself. An idea recorded in a document is honest; the same idea rendered as an Install button is
-not, which is the whole reason they moved here. Blabber has since been built and is a real Store
-listing; the other three are still ideas, further down.
-
----
-
-## Shipped
-
-### Blabber — short public posts
-
-The first genuinely `core: false` app: the add-on path and the Store both have a real consumer rather
-than a placeholder. `server/services/Blabber.ts` and `BlabberDms.ts`;
-[`AGENTS.md` §10](../AGENTS.md) uses it as the worked example of a public read.
-
-- **Feed and profiles.** Public feed on keyset paging, plus a per-account profile split into Blabs
-  and Replies — a custom action, because the two tabs are `reply_to IS NULL` and `IS NOT NULL` and
-  the generic filter only does equality.
-- **Replies, and mouths.** A **mouth** is a repeat; with a body of its own it is a quote. Both are
-  self-references on the Blab table rather than tables of their own, so they inherit the paging, the
-  edit window and the moderation predicate for free.
-- **Ears**, in `gphone_blabber_ears` — pairs with Mouth, one speaks and one listens — unique per
-  account per Blab in the database rather than by find-then-insert, and counted in one batched
-  `engagement` read rather than three queries per row.
-- **Mentions.** `@handle` tokenized by `shared/richText.ts` — the same tokenizer the UI renders with,
-  because two definitions of "what counts as a mention" is how you get one that highlights and never
-  notifies. Fan-out is deduplicated by owner and drops self-mentions.
-- **Direct messages**, strictly one-to-one by construction: two account columns and no participants
-  table, so there is no shape a third person could be added to.
-- **Editing.** 15 minutes by default, `gphone_blabber_edit_window` per server, enforced by a
-  predicate in the `UPDATE` rather than a check before it. Delete stays available forever.
-
-**Identity is one shared `gphone_accounts` table** with `app` as a column, not a table per app: a
-handle, display name, avatar and bio are the same four fields for every social app, so an
-Instagram-alike would have wanted a second table of identical shape. A player may hold **several**
-accounts per app and switch between them, which is what forced `ColumnDef.private` and the automatic
-withholding of `citizenid` from every public projection — a public read carrying the owner's
-citizenid would correlate two deliberately-separate identities back to one person.
-
-#### Author hydration, and the bug the mock hid
-
-`Blab.handle`, `display_name` and `avatar` are hydrated for display, and for a while nothing joined
-`gphone_accounts` to supply them — only `create`'s echo carried a handle, so a feed, a profile and a
-quote card each rendered a blank author **in game only**. Every fixture in
-`web/src/nui/mocks/registry.ts` embedded a handle, so the feed looked correct in `pnpm dev` and
-Playwright stayed green throughout. That is the reusable lesson rather than a footnote: a mock that
-over-provides hides exactly the layer it stands in for.
-
-`server/repositories/BlabberRepository.ts` overrides `findAll` and exposes `hydrate` and
-`findPublicById`, batching the join for a whole page as `MessageRepository` already did for
-attachments. Three consumers go through it — the generic public read, `blabber:profile`, and
-`create`'s echo of a mouth — so the two feeds cannot disagree. Two queries per page regardless of
-page length, with quoted rows' authors fetched alongside the page's own, since a quote is usually
-somebody else's. The join **never** selects the author's `citizenid`: re-adding it through a join
-would defeat the alt-privacy property `publicColumns` exists for. `server/__tests__/blabber.test.ts`
-is what stands behind it, including that neither query returns an author citizenid, that a missing
-quote target resolves to `null` rather than a stale card, and that a vanished account leaves the page
-standing.
-
-**One level of mouthing.** A quote of a quote renders its immediate target and no further, because
-`BlabRow` paints one nested card and a deeper walk would fetch rows nothing shows.
-
-This is the one shipped item that still wants in-game eyes, and for the same reason it was missed:
-Playwright being green says nothing about it. Against a real database, confirm a feed, a profile, a
-thread and a quote card each render an author.
-
-#### Two composers, deliberately not one
-
-The DM thread reused the post `Composer` with a `placeholder`, so its send button read "Post", a
-280-character counter sat over a `varchar(500)` column, and "Posting as @handle" appeared inside a
-private conversation. `Composer.svelte` now keeps the public shape — text button, 280 counter,
-"Posting as @x" — and `DmComposer.svelte` mirrors Messages' icon-only send instead. The two are
-diverging rather than converging, which is the argument against parameterising one: a shared
-component would force the public composer to carry the GIF and reaction affordances that are
-explicitly ruled out for Blabs. `Composer`'s `placeholder` prop stays, because `Thread` and the edit
-path both pass one and both are public.
-
-The DM e2e spec had been **asserting the bug** — it clicked a button named `Post` — so it was green
-_because_ the composer was wrong. Three smaller defects went with it: the `EmptyState` flashed before
-the first page returned (now gated on `feed.loaded`, per AGENTS.md §11.6), the DM unread badge read 0
-until a push arrived (`loadDmThreads` now runs on `onAppForeground`), and the active account reset to
-the first one every session (`activeAccountId` is `usePersisted`).
-
-#### Identity, and the composer as a FAB
-
-The app was one screen with a permanently-expanded composer, a "Posting as @x" strip, an account
-switcher and a text link to DMs. Identity is now a small avatar in the header opening a menu beneath
-it, and the composer a FAB and a full-screen overlay reused for editing. `Screen`'s `actions` snippet
-also carries the DM icon and its unread badge.
-
-**The identity menu drops from the top, and that is a correction.** It was first built as a bottom
-sheet copying `ReportDialog`, the repo's only one, and the borrowing was wrong: a sheet rises from the
-bottom because a phone is tall and a thumb lives down there. gPhone is a mouse-driven overlay inside a
-game, so that reasoning does not transfer, and a five-item menu opening a full screen-height away from
-the control that triggered it is only travel. A dialog that wants the player's whole attention —
-reporting content — still belongs at the bottom. The scrim is a real `<button>` rather than a dimmed
-`div`, so the menu is dismissable by the gesture a menu is dismissed by and not only by Back.
-
-**A Blab's avatar goes to the profile**, like the name beside it. It is a picture of a person sitting
-next to a link to that person, and it did nothing when tapped — the one part of a row that looked like
-a link and was not. Labelled for its destination rather than its contents, which also keeps it
-distinct from the name button in the accessibility tree.
-
-**Two features the server already allowed were unreachable from the phone**, and the sheet is what
-reaches them:
-
-- **A second handle.** `gphone_max_accounts_per_app` has always permitted three, while `ClaimHandle`
-  rendered only when the account list was _empty_ — so accounts two and three could not be created at
-  all. The cap now rides along with the account list rather than being copied into the client: it is a
-  convar, and a hardcoded 3 goes wrong the first time an owner raises it. Same reasoning as
-  `createBlab` echoing `editWindow`.
-- **Editing a profile.** `display_name` and `bio` were client-writable columns with no UI and no
-  route. `updateAccount` is the generic owner-scoped `accounts:update`, which is only safe to expose
-  because `app` and `handle` are `clientWritable: false` — a renamed handle would break every mention
-  already posted.
-
-**No avatar picker, and it is blocked rather than skipped.** `gphone_accounts.avatar` is
-`varchar(255)`; `PhotoPickerModal` hands back the base64 image rather than a reference, so wiring it
-up produces a value the per-column length rule correctly refuses. It needs the column to hold a media
-reference — the `gphone_media` work — and widening it is a type change `SchemaMigrator` will not
-apply.
-
-**The DM title is the peer**, not the literal `'Message'`, and resolved from the account already in
-hand rather than from the inbox list — which is what makes **starting a DM from a profile** possible,
-something the DM empty state has always promised and no code path implemented. A thread with a peer
-not yet in the inbox used to title as `@` with a `?` avatar.
-
-#### The follow graph, and a nav with somewhere to go
-
-`gphone_account_follows` is a child table of the **accounts** service rather than Blabber's, because
-it is account-to-account and accounts are shared — a future Instagram-alike inherits the graph instead
-of growing a parallel one. Two account columns, `created_at`, a unique index over the pair, and a key
-on the followee. **No `citizenid` column and none needed:** every account row carries an `app`, so a
-row can only ever link two accounts in the same app, and ownership stays behind each account where a
-reader cannot see it.
-
-`follow`, `unfollow` and `follows` all call `ownedAccount` first — `follower_account_id` arrives in a
-payload and a payload is not proof of intent (§2.9). `follow` is insert-only with the unique index
-making it idempotent, so a duplicate is reported as success; `unfollow` is a `DELETE` scoped to the
-caller's own account. Both refuse a self-follow, which would put your own posts in your Following feed
-and inflate both counts for everybody, and refuse a followee in another app.
-
-Counts are read from the graph rather than denormalised onto the account row — a `follower_count`
-column is a second copy of a fact the table already holds, and it drifts the first time a follow is
-removed by a path that forgets to decrement. `followedByMe` is about **one** of the viewer's accounts,
-not all of them, because a main and an alt follow different people and the button acts as whichever is
-active. That is the one place this differs from `engagement`, which answers across every account a
-player holds.
-
-**The Following feed is `IN (subquery)`, not a join.** A join emits one row per matching follow row, so
-the feed would duplicate a post if the graph ever held a duplicate — which the unique index prevents,
-but which the query should not depend on. It also keeps one table in the FROM, which is what lets the
-projection name bare `publicColumns`. Top-level only, like the public feed. Client-side it is a second
-`createPagedStore` with its own cursor: one shared store would mean one cursor walking two result sets,
-so switching tabs would resume the other feed's position.
-
-**The bottom nav landed with it, and that was the point of holding it back.** `TabBar` was written once
-before Following existed and deleted unbuilt — `components.ts` says exactly that about `ActionSheet`,
-and `pnpm deadcode` enforces it. It carries Feed and Following, not the four the end state wants,
-because Search and Notifications have no server behind them. `FloatingActionButton` gained an opt-in
-`raised` so it clears the bar they share the `overlay` snippet with, and a non-default tab is its own
-back rung so Back returns to the feed rather than sending the player home.
-
-#### The lists behind the counts
-
-The counts above shipped deliberately inert, with a comment in `Profile.svelte` saying the screens
-behind them did not exist — a count is a fact and a link to nothing is a promise. `followers` and
-`following` on the **accounts** service are those screens, so the numbers are buttons now.
-
-**Public, like the counts.** No `ownedAccount` check, and there must not be one: requiring ownership
-would mean you could only see your own followers, which is not what the number on a stranger's
-profile is counting. Every row is a public projection of `gphone_accounts`, so `citizenid` is withheld
-exactly as it is on a Blab — a follower list is the one screen that would otherwise correlate every
-alt in the graph back to its owner.
-
-**Keyset paged on the follow row's own id, not the account's.** That is the only ordering a reader can
-make sense of: most-recently-followed first. Account id order is "whoever signed up first", and a
-`created_at` cursor is second-resolution, so the naive form silently drops a row wherever two follows
-share a second. `gphone_account_follows` gained a `(follower_account_id, id)` index to make the
-following direction a plain range scan — the unique index starts with the same column but InnoDB
-appends the primary key after `followee_account_id`, so it yields followee order and the list would
-have taken a filesort. The other direction needs no key: `followee_account_id` is non-unique, so its
-appended primary key already makes it `(followee_account_id, id)`.
-
-**A join here, where the Following _feed_ used `IN (subquery)`.** Not an inconsistency. There the
-follows table was a filter over posts and a duplicate row would have duplicated a post; here it **is**
-the list, one row per relation, so it belongs in the FROM with the account joined onto it.
-
-**One rung, not two, and no Follow button on a row.** Both lists are the same depth, so two
-predicates only one of which can ever be true would be a dead branch pretending to be a ladder — the
-title says which list it is, the way Settings' panes do. A per-row Follow button would need this
-viewer's follow state for all thirty rows, which is the round-trip storm the batched `engagement` read
-exists to avoid; a row opens the profile, which already owns the button.
-
-`pageBounds` moved from a local helper in `Blabber.ts` to `lib/payload.ts` on the way, since these
-were its third and fourth call sites, and it now reads the numbers from the service's own `paging`
-declaration rather than from two retyped constants.
-
-#### The notifications tab, and the tab nobody could open
-
-Blabber's third nav destination reads the OS notification shade filtered to `blabber`, through the
-generic `useNotifications(appId)` — no per-app table, which is why an add-on can have this at all.
-Mentions, follows and DMs already wrote rows through the push channel, so the tab is a reader of
-something that was being persisted correctly the whole time.
-
-**It shipped unreachable, and that is the part worth keeping.** `selectTab` narrowed with a ternary
-— `next === 'following' ? 'following' : 'feed'` — so every id that was not `following` selected the
-feed. The tab was rendered, routed, server-backed and impossible to open: tapping it read as a dead
-button. Nothing caught it because no spec had ever tapped the third tab, and the two that existed
-both passed. A destination present in the markup is not a destination a player can reach, and the
-only thing that distinguishes them is a test that clicks it.
-
-Three smaller things went with it. The back rung's title was hardcoded to `'Following'`, so the
-Notifications tab announced itself as the other one. The tab fetched from an `$effect`, which §11.6
-rules out — the parent loads on tab select, exactly as it does for Following. And the browser mock
-held no `blabber` notification at all, so the tab could only ever have rendered its empty state in
-`pnpm dev`; the row and its deep link went unexercised. That is the mirror of the author-hydration
-lesson above — a mock that **under**-provides leaves a path untested just as effectively as one that
-over-provides leaves it wrong.
-
-**A deep link opened a blank post**, which the tab made visible rather than caused. A link names an
-id and nothing else, so `index.svelte` opened a thread around a `{ id } as Blab` stub and `Thread`
-rendered it directly: replies loaded above a post with no body, no author and no timestamp. Every
-path that follows a mention hit it — the shade, the toast, and now this tab. The generic `get`
-cannot answer "one row by id": `id` is framework-supplied and so never `clientFilterable`, and a
-public read is paged rather than addressed. A `blabber:blab` action returned one row through the same
-`findPublicById` the quote cards already use, so a deep-linked Blab and the same Blab in a feed
-could not disagree about its author, and `status = 'active'` kept a link from outliving a moderated
-post — `blabber:blab` is superseded now by `blabber:view`, which answers the same question plus the
-flattened reply tree in one call, so a reply's own top-level ancestor no longer needs a second
-request. A row that is genuinely gone answers `null` and the thread says so, because tapping a stale
-notification is an ordinary thing to do.
-
-**Unread counts were never loaded at boot.** `loadUnreadCounts` ran only when the shade or an
-in-app notifications screen was opened, so a launcher badge fed from it counted only what arrived
-over the push channel while the phone happened to be running — the persisted rows the notifications
-table exists for reached the badge nowhere. It is in `bootstrapStores` now, beside the account and
-the admin check: one query answering for every app, rather than something each `preload` repeats.
-A badge has to be right before the launcher paints (§11.1).
-
-#### Two things that made first-run unreachable
-
-**Uninstalling a bundled add-on deleted a component that was still in the build.**
-`shell/state/registry.ts` kept one `componentRegistry` for two different facts — what the glob found
-in `apps/` at startup, and what has been registered since boot — and `unregisterApp` deleted from it.
-So installing Blabber, uninstalling it and installing it again left the Store's
-`getComponent(id) || placeholderComponent()` with nothing to find, and the icon opened **"Not part of
-this build"** for an app whose code had never left the resource. In CEF the page never unloads, so it
-stayed wrong for the rest of the session rather than until a refresh. The two maps are now separate and
-`getComponent` falls back to the bundled one; a remote app's component is still forgotten on uninstall,
-because that code really is gone. `registry.test.ts` pins the map and the e2e spec pins the path a
-player walks.
-
-**And the first-run screen could not be seen in the browser at all.** The mock fixture always held
-accounts, so Blabber's claim gate — the only thing a new player sees — never rendered in `pnpm dev` or
-under Playwright. `?state=fresh` presents the phone as never used, alongside the existing `?app=`
-harness: `?app=blabber&state=fresh`. A path no developer can look at is a path that rots, and this one
-is every player's first impression.
-
-Two things about that flag are deliberate. It is **one axis rather than a list of app ids** — it began
-as `?fresh=blabber`, which made the ordinary invocation repeat the id `?app=` had just named, buying
-per-app independence nothing wanted. And it is **not the default for `?app=`**: opening an app to look
-at a populated feed is what the harness is mostly for, and every other spec in `e2e/apps/` needs the
-fixtures.
-
-Worth being explicit about what first run _is_, since it is easy to assume there is more to it: install
-from the Store, tap the icon, and the app asks for a handle — lowercase, 3–32 characters — with no feed
-and no composer until one is claimed. Uninstalling does **not** surrender it: the account lives in
-`gphone_accounts` keyed on citizenid, so reinstalling goes straight to the feed. Only the app's local
-storage is cleared, which is where the active-account choice lives.
-
-**The mock could not say no, and that hid two things.** `getMyAccounts` filtered by `app` alone, so
-every account in the fixture came back as the player's: every profile rendered as your own, and the DM
-fixture had @nightowl messaging an account it supposedly was. The fixture now records which accounts
-the player owns, `createBlab` checks ownership rather than mere existence — its error message had been
-claiming that check for a while — and the browser can therefore reach a profile that is somebody
-else's.
-
-Every overlay is its own `useAppLevels` rung, or Backspace skips it and sends the player home from
-what looks like a modal (§2.7). The overlays are `inset-0` like `PhotoPickerModal`, so they paint over
-the header: the arrow is hidden rather than broken, and the shell dispatches `back` regardless of what
-is on top.
-
-**Which makes an on-screen exit per overlay mandatory, not decorative.** With the header covered, an
-overlay whose only way out is the keybind has no visible way out at all — and Claim shipped exactly
-like that for a moment, since `ClaimHandle` had a Claim button and nothing else. Its `oncancel` is
-optional for the reason `Composer`'s is: the same component is also the zero-account gate, where there
-is nothing behind it to go back to and a Cancel would dismiss the only thing on screen. The other
-three were already covered — the composer's Cancel, Edit profile's Cancel, and the menu's scrim, which
-is a real button precisely so clicking away works.
-
-#### Search, hashtags, and the flattened view a search result needed
-
-The fourth tab now exists: `TabBar` carries Feed, Following, Notifications and Search, and every one
-of those four opens. `Search.svelte` is a `SearchBar` over three segments — People, Blabs, Tags — plus
-trending tags shown before anything is typed, each backed by a real server-side search rather than
-`filterByQuery` over a partial in-memory list: `accounts:search`, `blabber:search` (body, including
-replies) and `blabber:searchTags`/`byTag`/`trendingTags`. All of it paginated with the same keyset
-cursor as every other public read (§10) — a search is a public read like any other, and `defineService`
-throws for one without `paging`.
-
-Hashtags moved from render-only to indexed. `taggedTopics`, a sibling of `mentionedHandles` in
-`shared/richText.ts`, is what a Blab is scanned with at create time, so what `BlabBody` highlights and
-what the server indexes read the same tokens off the same input. `gphone_blabber_tags` (`blab_id`,
-`tag`) is the child table that scan writes to, and it is what makes a tag feed, a trending aggregate
-and a tappable tag possible at all — a body scan alone can render a tag, but it cannot answer "what
-else has this tag" without walking every row. A tag is now a `<button>` in both Blabs and DMs, since
-`BlabBody` renders both, with the same token discipline as a mention: text through `{text}`, never
-`{@html}` (§7).
-
-Three things here were not in the original sketch below, worth naming because a proposal read
-afterward should say what changed rather than pretend it was foreseen:
-
-- **The `root_id` and flattened-view rework.** The proposal imagined search landing you in the
-  existing nested `Thread` — push a screen per reply, same as opening a Blab from the feed always
-  had. That falls over the moment a search result is a reply three levels deep: `Thread` had no way
-  to open at that reply without first pushing every ancestor screen on top of it, one tap at a time.
-  `root_id` (`server/services/Blabber.ts`) is set once at create from the parent's own `root_id` — so
-  it names the true top-level ancestor at any depth, not just the immediate parent — and
-  `BlabberRepository.findFlattenedPage` walks one Blab and every reply under it, at any depth, as one
-  page. `BlabDetail.svelte` replaces `Thread.svelte` outright: one screen, the root then its replies in
-  order, with an `anchorId` so a search result opens already scrolled to the reply that matched rather
-  than to the top of the thread.
-- **`accounts:search` lives on the shared `accounts` service, not Blabber's own.** Same reasoning as
-  `followers`/`following`: a handle or display-name search is a property of the identity table every
-  social app posts through, not something specific to Blabber's own tables, so another app gets the
-  same search for free rather than reimplementing it.
-- **The four-tab `TabBar` is complete.** Search was the one destination left after Notifications
-  shipped (see above); it is not anymore.
-
-#### Ear, attachments, block and DM reactions
-
-The last of what a "next iteration" proposal once described here — the tabbed shell, the composer
-as a FAB, identity as a small avatar, the follow graph, the notifications tab, and search and
-hashtags had already shipped and moved up (see above). This was the media and moderation half, and
-it is built too now — the app is fully shipped rather than an add-on with a known-open tail.
-
-Decisions the earlier proposal settled, and how each landed:
-
-| Decision               | Choice                                                                              |
-| ---------------------- | ----------------------------------------------------------------------------------- |
-| Tabs                   | Public feed (default), Following, Search, Notifications — bottom nav                |
-| Identity               | Small avatar top-right, opening a sheet for switch / claim / edit profile           |
-| Composer               | FAB, matching Messages' "Start Chat" and Contacts' "Add Contact"                    |
-| Notifications          | The shared `gphone_notifications` OS service, not a per-app table                   |
-| Follow graph           | `gphone_account_follows`, declared on the shared `accounts` service                 |
-| Public-feed affordance | **Ear** — pairs with Mouth, one speaks and one listens. No reaction bar in a feed   |
-| Reactions / emoji      | Private surfaces only, Blabber DMs — palette plus a full picker behind "+"          |
-| Media                  | Generic `gphone_media` table via the `table:` override; app id stays `photos`       |
-| Block                  | One-directional (`gphone_account_blocks`, shared with follows), cascades any follow |
-
-**The `gphone_media` rename** landed alongside the Photos app work above and needed nothing further
-here — `gphone_blabber_attachments.media_id` references it directly.
-
-**Ear.** `gphone_blabber_likes` renamed to `gphone_blabber_ears`, the wire actions to `ear`/`unear`,
-and `BlabEngagement`'s fields to `ears`/`earedByMe`, across the server handler, the client store, the
-browser mock and every component that renders the count. Mouth is unchanged — the pair is the point.
-
-**Blab attachments.** `gphone_blabber_attachments` (`blab_id`, `citizenid`, `media_id`), read back
-`id ASC` and hydrated in the same batched pass `BlabberRepository` already used for authors and
-quoted Blabs. `resolveOwnedAttachments` moved out of `Messages.ts` into `server/lib/attachments.ts`
-so both services validate ownership through the same function rather than two copies of "trust
-nothing about this id" (§2.9). The Composer's attach button reuses `PhotoPickerModal`'s multi-select
-path, which already returns full `MediaPreview` rows rather than base64. A Blab may now be
-attachment-only — no body, no mouth — the same relaxation Messages already made for a picture-only
-send.
-
-**Report** turned out to need no server work at all: `gphone_blabber`, `gphone_blabber_dms` and
-`gphone_accounts` were already registered reportable, and `ReportButton`/`ReportDialog` were already
-wired into `BlabRow`, the DM thread and `Profile`. What the original proposal described as missing
-had shipped separately in the interim.
-
-**Block**, one-directional: `gphone_account_blocks` sits beside follows on the shared `accounts`
-service, with the same insert-only-unique-index shape. Blocking cascade-deletes any existing follow
-between the two accounts, both directions. Server-side enforcement at every point a client-side
-filter would have been a lie: the public feed (a new `feed` action replaces the generic `get`, which
-had no caller identity to filter blocked accounts with), the Following feed, a profile view (an
-empty page rather than a partial one once the viewer has blocked the account), mention and follow
-notifications, and DM `send` — refused **bidirectionally** there, since a DM has exactly two
-participants and either side's block ends it. Nothing tells the blocked account anything happened;
-there is no "blocked you" state anywhere in this codebase.
-
-**Private-surface reactions, Blabber DMs only.** `gphone_account_reactions` (`account_id`,
-`target_table`, `target_id`, `emoji`), declared on the shared `accounts` service the same way follows
-and blocks are — reactions are a property of the identity graph, not of one app's content, so a
-future app adopting them needs only `registerReactable`, no migration. `defineService` grew a
-`reactable` option mirroring `reportable`, and `isReactableTable` guards `target_table` the same way
-`isReportableTable` guards a report — not against SQL injection, since the value is bound rather than
-interpolated, but against a client naming a table it has no business reacting to. `EmojiPicker` and
-`ReactionBar`, new SDK primitives in `sdk/ui/`: a fixed palette row (👍❤️😂😮😢😡) plus a "+" opening
-a small bundled catalog, no network call and no new dependency. Wired into `DmComposer` (typing an
-emoji into a message) and the DM thread (`ReactionBar` under each bubble, backed by a batched
-`reactionsFor` read that mirrors `engagement`'s shape).
-
-**Deliberately out of scope.** GIF sourcing in the DM composer — it needs a provider (Tenor or
-Giphy) and an API key that do not exist yet, so `DmComposer` leaves room for the button but the
-`GifBridge`, the CDN host allowlist and the `gphone_gif_provider`/`gphone_gif_api_key` convars are
-not built. Everything reactions and attachments needed is in place, so adding it later is additive
-rather than a rework. Also out of scope, unchanged from the original proposal: Messages adopting the
-emoji/reaction primitives and threaded replies in Messages; video and voice **capture**, which the
-schema accommodates but no capture path exists for; a quote-Blab composer, though `mouthBlab` already
-accepts a body with no UI to supply one; a dedicated "manage blocked accounts" screen —
-block/unblock is Profile-only; pull-to-refresh and a new-posts indicator; and whether Blabber should
-stay `core: false` at all now that it is a flagship app.
-
----
-
-### The add-on path, and the test that measures it
-
-`boundary.test.ts` has long enforced that apps may not reach past the SDK. The opposite
-direction went unchecked, and drifted three times before anyone noticed — `sdk/utils.ts`
-exporting `blabberTotalUnread`, `Accounts.ts` hardcoding `buildDeepLink('blabber')`, and
-`moderation.ts` listing `gphone_blabber` in the reportable allowlist. Each was caught by a
-person reading a diff, which is not a mechanism.
-
-`sdk/coreBoundary.test.ts` is the mechanism. It scans `sdk/`, `shell/`, `services/`,
-`lib/`, `shared/` and `server/lib/` for the id of any app declaring `core: false`, and
-fails on a new one. **Not every app**: `contacts`, `photos` and `notes` are also ordinary
-English words, and a blanket rule flagged 55 files on its first run. An add-on is
-different in kind — it is not in this repository when a server installs it, so core naming
-it cannot mean anything.
-
-Running it measured something worth having in writing. Two apps declare `core: false`,
-`notes` and `blabber`, and on the first run both were first-party apps wearing the label:
-
-| Where                     | Then | Now | Why an add-on could not do it      |
-| ------------------------- | ---- | --- | ---------------------------------- |
-| `sdk/hooks/useBlabber.ts` | 1    | —   | an add-on cannot add an SDK hook   |
-| `sdk/hooks/useNotes.ts`   | 6    | —   | likewise                           |
-| `services/blabber.ts`     | 10   | —   | nor a store in core's services dir |
-| `services/notes.ts`       | 1    | —   | likewise                           |
-| `shared/routes.ts`        | 13   | 0   | nor a row in the core route table  |
-
-The route table was the wall: it enumerates every NUI action, and `routes.test.ts`
-cross-references it, so an add-on could not have a server half at all. What the Store path
-supported was UI-only apps, and Blabber read as proof the add-on story worked when it was
-better read as proof of its limits.
-
-The grandfather list is empty now, and that is the finish line rather than an oversight.
-Three pieces made it so, the same inversion `registerReportable` did for moderation applied
-to routes and to the client data layer:
-
-- **One generic NUI route.** `GENERIC_SERVICE_ACTION` in `shared/rpc.ts` — a single `svc`
-  callback carrying `{ service, action, data }`, relayed to `gphone:server:<service>:<action>`.
-  Reached from an app through `useService(id).call(...)`. This widened what NUI can reach and
-  `docs/security.md` records the correction; `reachability.test.ts` is what keeps the reachable
-  set deliberate now that "the UI does not call it" has been shown not to be a control.
-- **`service:` on both store factories.** `createCrudStore` and `createPagedStore` take it, and
-  the argument that was a NUI action name becomes a **server** action name. Both are exported
-  from `@gphone/sdk`, so an app builds its own data layer inside its own directory.
-- **Stores moved into the apps.** `apps/notes/store.ts` and `apps/blabber/store.ts`, each
-  exporting its own `useNotes` / `useBlabber` rather than core carrying a hook for it.
-
-Leave the list empty. An entry added back is a claim that some app needs to be special, and
-the reason belongs in the comment beside it.
-
-### The SDK barrel, split so a manifest can import it
-
-`byNewest is not a function`, thrown from a line that plainly imported it. The cause was a cycle
-rather than a missing export: `@gphone/sdk` re-exports `useAppRegistry`, which reaches
-`shell/state/registry.ts`, which globbed every app manifest **eagerly** — so a manifest importing the
-barrel got a half-initialised module and its bindings came back `undefined`.
-
-Two changes, and the first is the one that matters:
-
-- **`@gphone/sdk/app` is a leaf entry.** `defineApp` and `lazyBadge`, importing nothing that reaches
-  the registry. A manifest imports that; only the app's `index.svelte` imports the full barrel.
-  `sdk/barrelCycle.test.ts` reads the source and fails a manifest that reaches for the wrong one —
-  the first version of that test asserted nothing and would have passed against the bug, which is
-  worth remembering as the general case: a test written to prove your own change gets written to
-  pass.
-- **The component glob is lazy, the manifest glob stays eager.** The launcher needs every manifest
-  before it paints and needs no app's code until one is opened, so the split is forced rather than
-  chosen. It also gives each app its own chunk — Blabber is 41 kB of a build that no longer pays for
-  it at startup.
-
-`lazyBadge` exists for the same reason and emits `0` until its store resolves. A manifest that needs
-its store `import('./store')` inside `preload` rather than at module scope.
-
-### The security pass, and two things that moved server-side
-
-`docs/security.md` is the threat model: what is trusted, from whom, and why. It exists because the
-assumptions were the undocumented part — a checklist records what was done, and what breaks under a
-well-meaning change is what was assumed.
-
-The pass found one property lost and one never held.
-
-**A registered net event is reachable**, full stop. Not "reachable if a NUI route points at it": a
-modified client emits `gphone:server:<service>:<action>` directly and never touches NUI, so
-`shared/routes.ts` only ever bounded CEF XSS. That was easy to miss while every reachable action
-happened to have a route in front of it, and the generic route made it visible by decoupling the two.
-Six actions were registered, routed by nothing and called by nothing; they are no longer registered,
-and `server/__tests__/reachability.test.ts` keeps that deliberate.
-
-**Eight raw `onNet` handlers sat outside `ServiceEndpoint`** with no rate limit, no authentication
-and no payload validation. Six now share `guardNetEvent` in `server/lib/netGuard.ts` — the same two
-checks in the same order the endpoint uses, refused silently because nothing is waiting on a reply.
-The other two are gone rather than guarded, which is the better outcome and the reason the count
-moved:
-
-- **Battery charge.** The client ran the drain timer and reported its own number every fifteen
-  seconds. Validating that payload would never have changed what it was, so the event is deleted and
-  the server ticks the charge itself. The authoritative version is _smaller_ than the one it
-  replaced: one interval and a map, against a client timer plus a report path plus a clamp plus a
-  write-skip cache that existed to absorb four redundant writes a minute.
-- **Signal zones.** Covered under _Cellular dead zones_ above. The client no longer receives the zone
-  list, so `signal:rules` went with it and that service has no raw handler left at all.
-
-The correction worth carrying forward: `docs/security.md` first called all three client-authoritative
-values "by design", which let two "has not moved yet" cases read as "cannot move". Only
-`PhoneState.isTyping` is genuinely client-owned — the server cannot see DOM focus. The default is
-server-authoritative, and anything the client owns needs a reason it _cannot_ move rather than a
-reason it has not.
-
-### Notifications as an OS service
-
-`gphone_notifications` is declared in `server/services/Notifications.ts` with
-`{ read: 'owner', write: 'server' }` — rows arrive from the server and a player can mark them read
-or clear them, which is a soft delete onto `cleared_at` rather than a row disappearing. Three
-indexes, one per read: `(citizenid, cleared_at, id)` for the shade, `(citizenid, app, id)` for a
-per-app tab, `(citizenid, read_at)` for the unread badges. `gphone_notification_retention` (days,
-default 30) prunes on resource start.
-
-Persistence rides on the push channel rather than beside it: `appEventChannel(id).push` with a
-`notify` block writes a row as well as raising the toast, for online and offline recipients alike,
-and the write is fire-and-forget so it cannot fail the event that occasioned it. Mail, Blabber
-mentions, Blabber DMs and new followers all arrive this way.
-
-`useNotifications(appId?)` is the whole client surface — items filtered to one app, that app's
-unread count, `markRead`, `clear`, `clearAll` — and it is **generic**, keyed on an app id rather
-than on anything the SDK knows the name of. That is what lets any app, including one the SDK has
-never heard of, feed a launcher badge: Blabber composes its own from this plus its own mention and
-DM counts, through `lazyBadge`. `usePhoneNotification` remains for ephemeral feedback that should
-not persist — "Copied to clipboard" is not a notification.
-
-The shade itself groups by app, expands a group in place, and has an archive of cleared items that
-can be restored. It opens and closes by tap (status bar, home indicator, backdrop) and now by drag
-too, and a row or a group header swipes to clear or restore — see _Notification shade gestures_
-below.
-
-A toast now says which app is talking before it says what about: `ToastMessage.app`, resolved against
-`appRegistryStore.getManifest` in `ToastHost.svelte` into a small icon-and-name header above the
-title. It renders initials rather than the manifest's own icon component — the same call
-`NotificationShade`'s history rows already made, since an icon's `h-8 w-8` sizing (§11) does not
-shrink cleanly into a header this small. `showMail`/`showIncomingMessage`/`showContactShare`/
-`showCall` each tag their own app id; the generic `appEvent` push threads `envelope.app` through,
-which is what puts a header on every per-app notification, including an add-on's; `useAppAction` and
-`ReportDialog` take the calling app's id as an explicit parameter, the same convention `useAppLevels`
-already uses, since nothing in the SDK tracks an ambient "current app" for a hook to read instead. A
-handful of shell-level toasts — the server's own `notify` route, install/uninstall — stay headerless
-on purpose: none of them speak for a single app.
-
-### Notification shade gestures
-
-The shade drags open from the status bar and drags closed from a grab handle inside the drawer,
-and a row or a collapsed group header swipes to clear (active view) or restore (archive). All three
-build on one Svelte-agnostic utility, `web/src/lib/pointerDrag.ts`: pure functions for axis-locking,
-progress clamping, a rolling velocity estimate and the two commit heuristics
-(`shouldCommitDrag` for the shade, `shouldCommitSwipe` for a row), plus `attachDragGesture`, the
-DOM-wiring half that pointer-captures once an axis commits and never before.
-
-This is the feature the removed "gestural pull drawer" comment named as unbuilt: dead pointer
-handlers sat in `NotificationShade.svelte`, wired to nothing, because capturing the pointer on the
-drawer's own `pointerdown` — the drawer is `inset-0` around the one scrollable list — takes every
-touch that starts on a notification row. The fix is exactly what that comment said was missing: a
-grab handle scoped away from the scrollable list, and a transform that follows the finger. The
-handle is a small bar in the drawer's own header, marked `data-gesture-drag` and `aria-hidden`
-(the existing Close button is its accessible equivalent); `SwipeableRow.svelte` wraps each row and
-group header the same way for the horizontal case.
-
-**`data-gesture-drag` is also what keeps the new gestures from racing `dragScroll.ts`.**
-`enableDragScroll` already installs a `mousedown` listener across the _entire_ phone screen and
-walks up from the press to find a scrollable ancestor — a press starting on a notification row
-finds the shade's list and would otherwise open an independent mouse-drag-to-scroll session
-alongside the row's own horizontal tracking. `dragScroll.ts`'s `handlePointerDown` now returns
-early for any press inside `[data-gesture-drag]`, the same early-return shape it already used for
-form inputs. The trade-off is real and narrow: pressing directly on a row and dragging no longer
-scrolls the list by mouse — only the gaps between rows, the header, and the wheel still do.
-
-**A drag that overshoots its own target got stuck, and the fix is a fallback timer, not a tighter
-bound.** The drawer and each `SwipeableRow` settle from a live drag to a resting value (open,
-closed, or off-screen) with a CSS transition, and both relied on `transitionend` to know when to
-stop — flip `shadeDragPhase` back to `'idle'`, or fire `onCommit`. But `transitionend` only fires
-when the animated property actually changes value, and a fast, far drag can already be resting
-_at_ the commit target the instant the pointer releases, since the live drag got there first. No
-value change, no event, and the shade stayed mounted (or a swiped row stayed in the list) forever.
-Caught by e2e, not by the unit suite: a synthetic pointer sequence in jsdom never triggers a real
-CSS transition either way, so the bug was invisible until Playwright dragged past the threshold in
-an actual browser. Both sites now pair the real listener with a `setTimeout` slightly past the
-transition's own duration, cancelled by whichever fires first — the general shape for any
-JS-driven CSS transition that a live drag can pre-empt.
-
-**Reaching a row or the grab handle's true position needs one more wait than reaching the phone
-frame's.** `display.spec.ts`'s `frameBox` already waits for `getAnimations().length === 0` before
-trusting a `boundingBox()`, because the entrance `transition:fly` is still mid-flight for up to
-500ms and a bounding box read during it is nonsense — off-screen, mid-transform. The shade's own
-300ms open animation is the same hazard one level in: a tap-opened shade's grab handle measured
-immediately after `toBeVisible()` returned a box hundreds of pixels off-screen, and a drag started
-from it landed on nothing. `notifications.spec.ts`'s `waitForSettled` is the same wait generalized
-to `{ subtree: true }`, since a row's own animation lives on a child element it wraps rather than
-on the element being measured.
-
-### Network and Bluetooth settings
-
-Settings > Network holds two persisted toggles, Cellular Service and Bluetooth Visibility, and
-Bluetooth drives the status-bar icon.
-
-**Neither toggle gates anything yet**, and that is worth stating plainly because the UI implies
-otherwise. Turning cellular off changes no app's behaviour, and Bluetooth visibility has no
-proximity surface to be visible to — the privacy model it exists to serve is in _Proposed_ below.
-They are settings that persist a preference, which is the first half of the feature.
-
-### Material 3 color system
-
-Every color in the phone is generated from one seed. `web/src/lib/m3.ts` builds the 34 standard M3
-roles plus 13 derived state-layer values with `@material/material-color-utilities`, and
-`shell/state/theme.ts` writes all 47 as custom properties onto the phone screen element, where they
-inherit into every app. `app.css` holds the shipped dark scheme as literals so first paint and every
-jsdom render are correct before any JS runs, and `m3.test.ts` asserts those literals are exactly what
-the engine produces.
-
-The wallpaper is generated from the same seed, so a preset and a color dragged off the wheel are the
-same operation — a preset is a named color and nothing else. A photo wallpaper instead quantizes the
-image and takes its dominant color as the seed.
-
-Two constraints shape the implementation, both from the Chromium 103 baseline (AGENTS.md §6). All
-tone maths runs in JS and emits resolved `rgb()`, because `color-mix()` and `oklch()` are out of
-reach; M3's state layers are therefore composited numerically into flat opaque tokens rather than
-expressed as opacity modifiers. And `sdk/cef.test.ts` fails outright on an opacity modifier applied
-to a role token, because Tailwind computes its fallback from the build-time literal and would render
-the _default_ seed's color for anyone who changed theirs.
-
-`SchemeVibrant`, not M3's default `SchemeTonalSpot`: the default is documented as "low to medium
-colorfulness" and returned a picked color noticeably muted. Measured across eleven seeds, Vibrant
-carries about half again the chroma at identical worst-case contrast.
-
-### Cellular dead zones and outages
-
-Reception is real state. `server/services/Signal.ts` holds a city-wide level, a set of dead zones and
-per-player overrides, evaluates each player's bars on a two-second poll, and pushes the number.
-Before this, `signalLevel` was a `writable(4)` that only Developer Tools could change, on your own
-phone — so a dispatch script could not black out a district and an EMP could not exist, because
-there was nothing to call.
-
-Global and per-zone are deliberately the **same primitive** with a precedence order — lowest wins —
-because two mechanisms drift the first time they disagree. A per-player override beats both in either
-direction, which is what lets a script give somebody bars inside a blackout.
-
-Zones live in memory rather than a table. One is placed by another resource at runtime and belongs to
-that session; persisting them would mean a jammer outliving the heist that placed it, with nobody
-left knowing why a block has no bars.
-
-**The server evaluates, and that was a correction rather than the original design.** The client used
-to: it received the zone list and decided its own bars, on the reasoning that the server does not
-know where anybody is standing and polling every player is exactly the cost that avoids. That held
-only while nothing read the level, and it stopped holding the moment an app was going to degrade at
-zero bars — a client that decides its own bars is a client that decides whether it is in a dead
-zone. It no longer receives the zone list at all, which is the load-bearing half: a client that
-cannot see the zones cannot decide it is outside one. The cost is bounded twice, by an early-out
-that reads no coordinates in the ordinary case and by pushing only when the whole-bar value moves.
-`docs/security.md` carries the full reasoning.
-
-**What is still unbuilt is the half that matters to apps.** Nothing reads the level yet: every app
-behaves identically at four bars and at zero, and `network` remains a permission with no capability
-behind it. The remaining question is not mechanical but per-app — Messages, Phone, Blabber, Store,
-Bank and Mail need a live connection, while Notes, Camera, Media, Calculator and Settings are local
-and should not care. Giving `network` meaning means every app in the first group grows a zero-bar
-path that degrades rather than throws.
-
-### Day-zero schema
-
-gPhone is pre-release — nothing has been installed anywhere and there is no data to preserve — so
-the upgrade machinery went away and installation became one step.
-
-`pnpm generate:sql` now writes the **whole** schema into `gphone.sql`: the audit ledger (which has no
-`defineService` behind it and lives in `scripts/framework-schema.sql`) followed by every app table, in
-the dependency order it already computed. Install is "import one file". That replaced `gphone.sql`
-plus a numbered file per service in `sql/apps/`, which worked but cost a filename-order rule every
-server owner had to be told, a prefix that renumbered existing files whenever an app was added, and
-two places to look for one schema.
-
-`SchemaMigrator` is **report-only**. It used to read `information_schema` at resource start and apply
-missing columns and indexes behind a `gphone_auto_migrate` convar; every column it could add is in
-the generated file already, so a database that disagrees with the code has not drifted — it has not
-been imported. Saying so beats patching it halfway and leaving the operator unsure which half they
-have. `gphoneschema` prints the same report on demand, and the hand-written migration written for
-`gphone_photos` → `gphone_media` was deleted with the rest.
-
-**This posture expires.** The day this ships to a server with players on it, a drop, a rename or a
-type change starts costing data and migrations come back. The absence of them is not "renames are
-free"; it is "there is nothing to migrate yet".
-
-### A resource-facing export API
-
-Another resource can now make the phone do things. Before this the entire public surface was one
-`exports('SendSystemEmail', ...)` at the bottom of `services/Mail.ts`; everything else in the tree
-named `exports` is gPhone _consuming_ somebody else.
-
-`server/lib/exports.ts` holds the scaffolding and `publicApi.ts` the catalogue, registered from
-`server.ts` after `./services` so everything has loaded before it can be called. Grown in three
-passes — `GetApiVersion`, `SendSystemEmail`, `SendNotification`, `BuildDeepLink` and the battery
-group first; then reception (`SetGlobalSignal`, `ClearGlobalSignal`, `AddDeadZone`, `RemoveDeadZone`,
-`SetSignal`, `GetSignal`) and `AddMedia` alongside the zones themselves; then the phone-state group
-below. Documented in `README.md`, because server owners are the audience.
-
-The phone-state group needed a mechanism the others did not: nothing in the codebase let the server
-ask a client anything and wait, so `IsPhoneOpen(source)` is fed by a fire-and-forget push —
-`PhoneState.setOpen` now also tells the server, cached in `server/lib/PhoneOpenState.ts`, and
-`IsPhoneOpen` answers from whatever it last heard rather than asking live. `SetPhoneEnabled(source,
-enabled)` and `OpenApp(source, appId, props)` push the other way, onto a new `client/lib/
-PhoneVisibility.ts` that `client.ts`'s `togglePhone` and `hideFrame` now share rather than each
-carrying their own copy of the open/close sequence; disabling a currently-open phone force-closes it
-through the same path. `GetPhoneNumber(citizenid)` and its inverse `GetCitizenId(phone)` are pure
-server-side, through `PlayerDirectory`. `AddContact(citizenid, contact)` needed `Contacts.ts`'s first
-`repositoryFactory`, an `addForPlayer` method mirroring `Media.ts`'s — for a job handing out its
-dispatch number while the player may be offline.
-
-**Deliberately out of scope**, so nothing above reads as covering it: client-side exports for other
-resources' client scripts beyond what signal polling needs; anything letting an external resource
-_read_ a player's messages, photos or notes, which is a privacy surface rather than an integration one
-and stays closed; and a general "run any service action" export, which would hand out the whole
-`ServiceEndpoint` surface without the payload validation and rate limiting §2.9 puts in front of it.
-
-Every one returns `{ ok: true, value }` or `{ ok: false, reason, message }` — a bare `false` that
-cannot separate "player offline" from "gPhone has not started" is unusable from the calling script —
-and none can throw into the caller's resource. Identity is explicit per export: citizenid where it
-must work offline, source where it is inherently live, and never an implicit `source` global, because
-`TriggerEvent` from another resource makes that the wrong player.
-`server/__tests__/exports.test.ts` pins every name and arity, since a rename breaks somebody else's
-script and the person who finds out is a server owner reading a runtime error.
-
-`SendNotification` is the first thing in the stack to validate `app` at all — the field was mandatory
-and its value was whatever arrived. External callers group under `ext_<resource>` with a required
-label, and `defineApp` refuses an `ext_` id, so the reservation is enforced rather than conventional.
-
-`SetCharging` is a state rather than a top-up: the drain loop is client-side, so charging reverses it
-instead of racing it with repeated writes.
-
-### Settings that follow the character
-
-Every preference lived in `localStorage`, which is per-PC and shared between characters — a theme did
-not follow a player to another machine, and a second character on the same PC inherited the first
-one's phone.
-
-`gphone_settings` is key-value, `(citizenid, app, setting_key)` unique, written with
-`ON DUPLICATE KEY UPDATE`. Key-value rather than one JSON document per player because it maps 1:1
-onto `useStorage(app).setItem(key, value)` — so the SDK gained no new concepts and **no call site
-changed** — and because per-key writes cannot clobber each other the way a read-modify-write on one
-document does.
-
-`localStorage` stayed on as a cache, which is what let the API remain synchronous: `getItem` is
-called once per store at module scope, so making it a promise would have meant rewriting every call
-site. Reads hit the cache, writes go local-first then to the server debounced per key, and hydration
-re-reads the live stores. It runs at page load rather than from `bootstrapStores` — that is gated on
-the phone being _opened_, which would paint the shipped theme and flip to the player's in front of
-them — and again on character load, since the CEF page never unloads.
-
-A wallpaper **image** is the one exception, via `sync: false`: it is a base64 data URL of unbounded
-size. The seed and mode still sync, and they are what generate the scheme.
-
-### `gphone_photos` → `gphone_media`
-
-The photos table held one payload column, `image mediumtext` holding base64, which can only ever be a
-photo. It is now `gphone_media` with `kind` — an
-`enum('photo','video','audio','gif','sticker','file','link')`, deliberately over-provisioned because
-widening one later is another hand-written migration — plus `data` (the renamed `image`, nullable
-now), `url` for hotlinks, `thumbnail`, `mime_type`, `width`, `height`, `duration_ms`, `byte_size` and
-`alt_text`.
-
-**The service and app id are `media` now too.** They stayed `photos` for a while after the table
-moved, deliberately — those are keys (the directory, the storage namespace, the event segment, the
-`?app=` deep link, the launcher label), so renaming one is a bigger change than renaming a table,
-which is a key to nothing outside SQL. That gap closed once the id itself became the thing causing
-confusion: a `shareLocation` action living on a service still called `photos` read as if it belonged
-to the photo kind specifically, when it belongs to the table (any media kind) — the exact ambiguity
-finishing the rename removes. `usePhotos` is `useMedia` now, `web/src/apps/photos/` is
-`web/src/apps/media/`, and the player-visible launcher label changed from "Photos" to "Media" along
-with it, since leaving the display name behind would have recreated the same two-names-for-one-thing
-problem the table rename already fixed once.
-
-`kind` and `data` are the only client-writable columns. The other nine are `clientWritable: false`
-until a feature writes them, because a column a client can set before any caller needs it is
-unconstrained surface (§2.9).
-
-There is no migration, and there does not need to be one: gPhone is pre-release, so the schema is
-imported whole from the generated `gphone.sql` against an empty database. A migration was written and
-then deleted along with the rest of the upgrade machinery — see _Day-zero schema_ below.
-
-`MediaThumb` in `sdk/ui/` draws a row by its `kind`, and the gallery, the full view and the picker
-all go through it — four copies of "what does this look like" is four places to forget `kind` exists.
-Video renders as its poster frame with a play badge rather than a `<video>` element: the game is on
-Chromium 103 and the bytes would have to arrive base64 across the NUI bridge, which is the constraint
-at the top of this section. `AddMedia` is the creation path, since the camera can only ever produce a
-`photo` — without it the other six kinds had no way to exist.
-
-Message attachments go through the same renderer. They used to carry a bare base64 string, which made
-every attachment a photo by construction — a voice note had nowhere to say what it was. They now carry
-a `MediaPreview`: enough of the row to draw it, and **not** the uploader's `citizenid`. That omission
-is the load-bearing part rather than tidiness, and it is `publicColumns`' reasoning one table over — a
-conversation is shared, so anything the join selects reaches every participant, and the citizenid is
-the field that ties a picture back to somebody who only meant to send it.
-
-### Camera capture is a fixed resolution
-
-A photo's pixel size used to depend on how large the phone happened to be drawn: `takePhoto` crops
-`containerRef.getBoundingClientRect()` out of the full-screen screenshot, and that rect is measured
-**after** `Shell.svelte`'s `transform: scale($phoneScale)` — `getBoundingClientRect()` reports
-post-transform screen pixels, so a bigger Display setting alone produced a bigger stored photo.
-
-The crop region was never the bug — a uniform `scale()` changes `rect.width` and `rect.height` by the
-same factor, so the ratio between them, and therefore the framing, was already scale-invariant. Only
-the _absolute_ resolution floated with it. `apps/camera/capture.ts`'s `computeCropGeometry` now reads
-the source rect exactly as before and separately pins the output to `CAPTURE_WIDTH` (1080), computing
-the output height from the crop's own aspect ratio. `cropViewportToCanvas` draws from the
-variably-sized source into that fixed-size canvas, so `drawImage` resamples rather than blitting 1:1 —
-which is also why `imageSmoothingEnabled` flipped from off to on.
-
-Pulled apart from the canvas/draw side effects specifically so it is unit-testable at all: jsdom has no
-`getContext('2d')`, so nothing downstream of a real canvas ever ran in the test suite, which is why the
-only prior coverage was a single invalid-input case. `computeCropGeometry` is the same
-exported-for-testing split `display.ts`'s `fitScaleFor` already uses for the same reason.
-
-### Bluetooth proximity: contact sharing and photo drops
-
-Bluetooth Visibility had been a persisted toggle and a status-bar icon with nothing behind it —
-no proximity scan, and `client/services/Contact.ts`'s `shareContact` NUI callback was a stub
-whose own comment named exactly what was missing: _"finding players within range and emitting
-the payload to them."_ Two capabilities now exist on top of one shared primitive.
-
-**`server/lib/proximity.ts`'s `findNearbyVisiblePlayers` is computed on demand, not polled.**
-`Signal.ts` is the closest precedent for reading a connected player's position server-side, but
-its continuous 2-second poll exists because reception has to be current at all times. Proximity
-only matters at the instant a player taps Share, so there is no interval and nothing to clean up
-on `playerDropped` — a plain distance check over `FrameworkBridge.getAllPlayers()` at request
-time. Range defaults to 15 meters, configurable per server via `gphone_bluetooth_range`.
-
-**The visibility check is the one place the anti-doxxing rule actually lives.** Before this,
-nothing anywhere read `bluetooth_enabled` before writing to a player from another player's
-action. `findNearbyVisiblePlayers` filters candidates through a new batched read on
-`SettingsRepository` (`getValuesFor`) — one query for every nearby candidate's setting rather
-than one query per candidate, the same reasoning `getSourcesByCitizenId` already applies to a
-fan-out. A missing row defaults to visible, matching `usePersisted`'s own client-side default.
-**That default stays ON** — flipping it to off-by-default was considered and deliberately left
-alone as a separate product decision, not bundled into wiring the feature that reads it.
-
-**Contact sharing finishes the stub rather than replacing its shape.** The receiving half was
-already fully built — `web/src/shell/nuiMessages.ts`'s `receiveContactShare`, wired to the NUI
-action `shareContact` — and the Share button already sent a payload with no recipient field, so
-the design was always "broadcast to whoever is in range," not a picker. The client callback now
-resolves immediately (fire-and-forget, the same shape `Call.ts`'s `startCall` uses) and the
-server fans the payload out over a raw `gphone:server:contacts:share` handler guarded by
-`guardNetEvent`, same as every other handler outside `ServiceEndpoint` (§2.9). The outcome —
-delivered to N phones, or nobody in range — reaches the sender as a pushed toast through the
-generic `appEventChannel`, not through the fire-and-forget event's own (nonexistent) reply.
-
-**Photo drops are new, and took the more idiomatic path available to a core app.** Rather than a
-second raw handler, `sharePhotoNearby` is a named route (`shared/routes.ts`) reaching a custom
-`registerEvent('drop', ...)` action on the `media` service — `ServiceEndpoint`'s own rate
-limiting and citizenid resolution already cover it, and its return value (`{ count }`) becomes
-the NUI reply directly, so the sender's toast needs no separate push. Ownership is checked once,
-by `findById(mediaId, citizenid)`, before anything nearby is even computed. Each recipient gets a
-**copy**, not a shared reference — gPhone's gallery is owned per player, and the sender deleting
-their photo later must not delete anyone else's. A recipient still foregrounded in Media when a
-drop lands is refreshed live via `useAppEvents('media')`, in addition to the ordinary
-`onAppForeground` refetch every app already gets.
-
-**App event names are `lower_snake_case`, and this was the one thing not obvious from the
-existing examples.** `share_result` and `media_received` — `APP_EVENT_NAME_PATTERN` rejects
-camelCase outright, which every existing shipped push (`dm`, `mention`) already happened to be.
-
-### Location sharing in Messages, and the `location` permission's first real capability
-
-A sender attaches their current in-game position to a message; the recipient taps it to set a GPS
-waypoint. `location` had been a valid `AppPermission` with nothing behind it since the permission
-enum was written — this is what finally exercises it, the same way Blabber was the first real
-consumer of `read: 'public'`.
-
-**The coordinates are server-authoritative; only the label is not, and that split was forced rather
-than chosen.** `GET_STREET_NAME_AT_COORD`/`GET_STREET_NAME_FROM_HASH_KEY` are client-only natives —
-the server cannot resolve a street name — so a human-readable label can only be produced on the
-sender's own client. But a waypoint's actual target has real stakes, the same trust-boundary
-reasoning the Battery correction above already established: the server independently re-reads the
-sender's position via `playerCoords(source)` (the same guarded `GetPlayerPed`/`DoesEntityExist`/
-`GetEntityCoords` read `Signal.ts` and the Bluetooth proximity scan above already used, now
-extracted to `server/lib/playerCoords.ts` as a third caller made duplicating it not worth it
-anymore) rather than trusting anything the payload claims. The label rides along as cosmetic
-display text — trusted the same way a contact name already is, never as anything the waypoint
-depends on.
-
-**`shareLocation` reuses the whole media-attachment pipeline rather than inventing a second one.**
-A location share is, structurally, just another `gphone_media` row — `kind: 'location'`, coordinates
-JSON-encoded into the existing `data` column, the label in the existing `alt_text` column — created
-through the same privileged `addForPlayer` bypass `AddMedia` already uses for columns the ordinary
-client-writable path can't reach. No new columns, no `MediaPreview` type changes: `data` and
-`alt_text` were already in that projection. `resolveOwnedAttachments`, the attach tray, and
-`MediaThumb`'s kind-switched placeholder all needed either nothing or one new branch.
-
-**One route is a real exception to "every NUI action is a dumb passthrough."**
-`client/services/Relay.ts`'s generic loop registers every declared route unconditionally — but
-`shareLocation` needs client-side work (the street-name read) to happen _between_ the NUI call and
-the server relay, which that loop has no way to express. It is excluded via a small
-`CUSTOM_CLIENT_RELAY` set and handled by its own file, `client/services/Location.ts`, which still
-reuses `ServiceProxy.relay` for the timeout/correlation machinery rather than reimplementing it.
-`setWaypoint` is the opposite case — no server round trip at all, since `SetNewWaypoint` fires
-locally on data the message already carried — and lives in `CLIENT_ONLY_ACTIONS` instead.
-
-#### Finishing the `photos` → `media` rename the table started
-
-`gphone_photos` became `gphone_media` first (below), and the service/app id stayed `photos` at the
-time deliberately — an id is a key, so renaming it is a bigger change than renaming a table. That
-gap is closed now: the service, the app directory, the SDK hook (`usePhotos` → `useMedia`), the
-client-side store, every NUI action name (`getPhotos`/`createPhoto`/`deletePhoto`/
-`sharePhotoNearby` → `getMedia`/`createMedia`/`deleteMedia`/`shareMediaNearby`) and the
-player-visible launcher label ("Photos" → "Media") are all `media` now. The trigger was concrete
-rather than a tidying pass: `shareLocation` living on a service still called `photos` read as if it
-belonged to the photo kind specifically, when it belongs to the table — any media kind — and that
-ambiguity is exactly what a reader would trip over next. The **kind** value `'photo'`, the
-`photo_id` column name on both attachment join tables, and kind-specific UI copy/components
-(`PhotoPickerModal`, "Delete Photo?", `capturePhoto`) all stay — a photo is still a photo; only the
-app/service that was carrying the old table's name changed.
+not, which is the whole reason they moved here. Blabber has since shipped and its entry left this
+file with it; the other three are still ideas, below.
 
 ---
 
@@ -979,6 +57,86 @@ the same relay. Either is a real architectural change — a new transport layer 
 `@gphone/sdk` — not a small patch, and not worth building until remote distribution is a real
 channel rather than a capability sitting unused.
 
+### Versioned migrations for breaking schema changes
+
+Today `SchemaMigrator` (`server/lib/migrate.ts`, `server/lib/SchemaMigrator.ts`) is additive-only and
+report-only. It already diffs `information_schema` against every `defineService` declaration and
+correctly separates what is safe to infer (a missing column, a missing index — real, generated
+`ALTER TABLE` SQL) from what is not (a type mismatch, an undeclared column), which it calls `drift`
+and leaves alone. Nothing applies either half today: `server/services/Schema.ts` only ever calls
+`SchemaMigrator.report()`, because `gphone.sql` is generated whole and importing it _is_ the schema —
+a database that disagrees has not drifted, it has not been imported. That reasoning stops holding the
+day a real server has player data it cannot wipe and reimport, which is the day this proposal is for.
+
+**Versioned migration files, not a smarter planner.** A rename, a retype, an enum widened or a drop is
+never inferable from a diff — `migrate.ts`'s own comment already says so, and it is right: a renamed
+column is indistinguishable from one dropped and another added. `defineService` stays purely
+declarative, describing only the schema's current shape, exactly as it does today. `server/migrations/`
+gets one file per breaking change, numbered for order (`0001_rename_photos_to_media.ts`), each
+exporting:
+
+```ts
+export interface Migration {
+  id: string; // filename stem, and the ledger key
+  description: string; // one line, for the boot-time report
+  up: () => Promise<void>;
+}
+```
+
+`up` calls `Database.query` directly, the same convention as the rest of `server/lib`. Forward-only,
+deliberately: fixing a bad migration is a new forward migration, not a reversed old one, and a `down`
+for a narrowed varchar or a dropped column usually cannot be written honestly anyway. TypeScript
+rather than raw `.sql`, both because `server/` is typechecked (unlike `server/__tests__`) and because
+this codebase already moved away from hand-written per-app SQL files once — the old `sql/apps/` — in
+favor of declarations that generate SQL. A directory of hand-written `.sql` migrations would be a step
+back toward exactly that.
+
+**MySQL DDL is not transactional, and the design does not pretend otherwise.** `ALTER TABLE` and
+`RENAME TABLE` each auto-commit in InnoDB regardless of any surrounding transaction, so a migration
+with three statements is not all-or-nothing the way a row-data transaction is. The runner records a
+migration as applied — one `INSERT` into a new `gphone_schema_migrations` ledger table (`id`,
+`applied_at`) — only after `up()` returns without throwing. If it throws partway, the runner stops
+immediately rather than continuing to the next migration: retrying blind could re-run a statement that
+already succeeded before the one that failed.
+
+**A fresh install must never run inherited migrations.** Today's `gphone.sql` already declares
+`gphone_media`, not `gphone_photos` — if a brand-new install's ledger started empty, the runner would
+try `0001_rename_photos_to_media` against a table that was never called that on this install, and fail
+immediately. `pnpm generate:sql` closes this the way Rails' `schema.rb` does: it also scans
+`server/migrations/` and has `gphone.sql` (and `dev-reset.sql`) pre-seed the ledger with every
+migration id that exists as of that generation, via `INSERT IGNORE`. A fresh install's ledger says
+"already applied" for all of history without ever running `up()`; only a database genuinely upgrading
+from an older `gphone.sql` has gaps for the runner to fill. `server/__tests__` gets a structural test
+in the shape of `routes.test.ts`: every file in `server/migrations/` must appear in the generated seed
+`INSERT`, so the generator cannot drift from the directory the way `shared/routes.ts` used to drift
+from `fetchNui` call sites.
+
+**`gphoneschema apply`, console-only.** `server/services/Schema.ts` gains a subcommand — the same
+shape `gphoneseed add`/`gphoneseed clear` already use — rather than a new top-level command.
+`onResourceStart` keeps reporting and changes nothing, now also listing pending versioned migrations
+by id alongside the existing additive/drift report. `apply` runs both halves in one pass: the additive
+statements `SchemaMigrator.plan()` already generates, then any pending versioned migrations in order.
+One command, because an operator thinks "bring my database up to date," not "apply the two kinds of
+change separately." Gated on `source === 0` rather than `isAdmin` — the same trust tier
+`docs/security.md` already draws around the console, and the one that can actually take a backup
+first, which an in-game admin typically cannot.
+
+**Deliberately out of scope for a first cut.** A `pnpm new:migration <description>` scaffold,
+mirroring `scripts/new-app.js` — cheap to add later, easy to defer now. Rollback of any kind beyond
+forward-only. Running a migration's SQL against real MySQL in the automated suite — out of reach the
+same way every other DB-shaped thing in this codebase is (§8 already says so), and the runner's own
+tests drive a mocked `Database`, the same convention every repository test already follows.
+
+### Per-app signal degradation
+
+`network` has been a declarable `AppPermission` since the enum was written, with no capability behind
+it. `server/services/Signal.ts` already computes and pushes a real per-player bars value — a
+city-wide level, dead zones, per-player overrides — evaluated on a two-second poll, so the state
+exists and reaches the phone; nothing reads it. Every app behaves identically at four bars and at
+zero. Closing the gap is per-app rather than platform work: Messages, Phone, Blabber, Store, Bank and
+Mail each need a live connection and so need their own zero-bar path that degrades rather than
+throws; Notes, Camera, Media, Calculator and Settings are local and should stay indifferent to it.
+
 ---
 
 ## Ideas, not yet started
@@ -1000,29 +158,28 @@ Live prices, a watchlist, a portfolio valuation.
 A rider posts a request, a driver accepts, the fare moves at drop-off.
 
 - **Blocked on:** a location capability, though less completely than before. Messages can now share
-  the _caller's own_ position (item 7 below), server-authoritative and read on demand — but a taxi
-  app needs the rider to see the _driver's_ live position en route, which is a different, unbuilt
-  shape: a continuous or polled read of someone else's coordinates, not a one-shot self-share.
-- **Payment is available** (item 5): `FrameworkPlayer.addMoney` exists and `server/lib/Payments.ts`
-  has `transfer`. One restriction — **both players must be online**, because crediting an offline
-  player would mean writing the framework's own `players` table. A driver paid at drop-off is online
-  by definition, so this app is unaffected.
-- **The push channel it needs is available** (item 2) — "a driver accepted" is the entire product,
-  and `useAppEvents` delivers it. The recipient must be online: nothing is queued, which is correct
-  here, since a rider who logged off is not taking the ride.
-- **Membership-scoped rows are available** (item 1). A ride has exactly two parties and cannot grow,
-  so the two-column shape Blabber's DMs use fits better than `access.membership` and a join table.
+  the _caller's own_ position, server-authoritative and read on demand — but a taxi app needs the
+  rider to see the _driver's_ live position en route, which is a different, unbuilt shape: a
+  continuous or polled read of someone else's coordinates, not a one-shot self-share.
+- **Payment is available:** `FrameworkPlayer.addMoney` exists and `server/lib/Payments.ts` has
+  `transfer`. One restriction — **both players must be online**, because crediting an offline player
+  would mean writing the framework's own `players` table. A driver paid at drop-off is online by
+  definition, so this app is unaffected.
+- **The push channel it needs is available** — "a driver accepted" is the entire product, and
+  `useAppEvents` delivers it. The recipient must be online: nothing is queued, which is correct here,
+  since a rider who logged off is not taking the ride.
+- **Membership-scoped rows are available.** A ride has exactly two parties and cannot grow, so the
+  two-column shape Blabber's DMs use fits better than `access.membership` and a join table.
 
 ### Marketplace — peer-to-peer listings
 
 List an item, browse, make an offer, buy.
 
-- **Partly unblocked** (item 5): `transfer` can pay a seller, but it refuses an offline recipient,
-  and a sale to a seller who logged off is the case that matters. The fix is a gPhone-owned
-  pending-payments table flushed on `playerLoaded` — a mailbox, legitimate here because the money
-  would sit in _our_ ledger rather than being pretended into the framework's. Not built ahead of the
-  app that needs it.
-- **Not blocked on the platform** (items 1 and 2): membership-scoped rows for an offer thread and
+- **Partly unblocked:** `transfer` can pay a seller, but it refuses an offline recipient, and a sale
+  to a seller who logged off is the case that matters. The fix is a gPhone-owned pending-payments
+  table flushed on `playerLoaded` — a mailbox, legitimate here because the money would sit in _our_
+  ledger rather than being pretended into the framework's. Not built ahead of the app that needs it.
+- **Not blocked on the platform:** membership-scoped rows for an offer thread and
   public-read-with-paging for the listing index both exist, and Blabber has exercised them. What
   remains is this app's own work plus the offline-payment gap above.
 - Push for "your listing sold" is available — a known, small recipient set, which is exactly what
@@ -1031,49 +188,3 @@ List an item, browse, make an offer, buy.
   `FrameworkBridge.removeInventoryItem` deliberately **fails open** — it returns `true` when no
   inventory resource is present — which is survivable for a consumable and is not survivable for a
   trade.
-
----
-
-## Platform capabilities, and where each stands
-
-Referenced by number from the ideas above.
-
-1. **Multiplayer authorization in `defineService`** — built. Read/write axes, declared membership,
-   `read: 'public'`, and keyset paging on `id DESC`, which `defineService` **requires** for a public
-   read and throws without: `findAll` has no per-player bound once the ownership predicate is gone,
-   so an unpaged public read is the whole table.
-2. **A generic server→app push channel** — built. `appEventChannel(appId).push` / `pushMany` on the
-   server, one net event, and a single generic `appEvent` route in `shell/nuiMessages.ts` that
-   dispatches by app id, so an add-on joins it without touching the route table. Apps subscribe with
-   `useAppEvents`. At-most-once and best-effort across sessions: nothing is queued, because the row
-   is already written and an offline player gets it from the ordinary fetch.
-3. **A shared player directory and social identity** — built. `server/lib/PlayerDirectory.ts`
-   resolves a citizenid or phone number to a display name, online or offline, and absorbed the fork
-   `Conversations.ts` had been carrying. Handles and avatars live in the shared `gphone_accounts`
-   table, so anything social can claim a handle without new schema.
-4. **Abuse controls at the `ServiceEndpoint` chokepoint** — built. Rate limit at the transport
-   boundary, and per-column validation derived from the schema. The chokepoint is no longer the only
-   guarded path: `guardNetEvent` applies the same two checks to the raw `onNet` handlers that cannot
-   go through the endpoint, and `reachability.test.ts` keeps the registered set down to what the app
-   uses. `docs/security.md` is the model.
-5. **An economy primitive** — built. `addMoney` on both framework paths, failing closed, and
-   `transfer` with a compensating refund and a `PaymentOutcome` union that cannot be mistaken for
-   success. Best-effort, not ACID: there is no transaction spanning another resource's money system.
-   Offline recipients are refused rather than dropped.
-
-6. **A resource-facing export API** — built. `server/lib/exports.ts` and `publicApi.ts`, twenty-one
-   exports, discriminated outcomes, `GetApiVersion`, and a contract test pinning every name. The
-   phone-state group (`IsPhoneOpen`, `SetPhoneEnabled`, `OpenApp`) closed the one gap the others
-   didn't have — no mechanism existed for the server to learn anything from a client — with a
-   fire-and-forget push cached on the receiving side, the same shape Signal and Battery already use.
-
-7. **A location-sharing primitive** — built, but scoped rather than general. Messages can attach the
-   caller's own current position (server-authoritative, read via `playerCoords(source)` at request
-   time) to a message, and the recipient can set a waypoint from it. What does not exist yet is a
-   general "read any player's live position" export the way `Signal.ts`'s reception or the Bluetooth
-   proximity scan can — `shareLocation` only ever answers "where is the caller, right now."
-
-**`network` is still a permission with no capability behind it.** State — dead zones, a global level
-and per-player overrides — all exist and reach the phone, and there is no _consumer_: every app
-behaves identically at four bars and at zero. Closing that is per-app work rather than platform
-work, and it is the open half of _Cellular dead zones and outages_ under Shipped.
