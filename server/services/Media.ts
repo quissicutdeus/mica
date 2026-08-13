@@ -3,27 +3,31 @@ import { MediaItem } from '@shared/types';
 import { findNearbyVisiblePlayers } from '../lib/proximity';
 import { appEventChannel } from '../lib/appEvents';
 import { requirePositiveInt, fields } from '../lib/payload';
+import { playerCoords } from '../lib/playerCoords';
 
 /**
  * The media table: owner-scoped, create/read/delete only.
  *
- * **The table is `gphone_media`; the service and app id stay `photos`.** That split is
- * deliberate. An id is a key — it is the directory name, the per-app storage namespace,
- * the `<app>` segment of every event, the `?app=photos` deep link and the launcher label —
- * so renaming one is a data migration (§11.1). A table name is not a key to anything
- * outside SQL, so the `table:` override moves it for free.
+ * **The table, the service and the app id are all `media` now.** They were not always in
+ * agreement — the table moved off `gphone_photos` first, to `gphone_media`, while the
+ * service/app id stayed `photos` because an id is a key: it is the directory name, the
+ * per-app storage namespace, the `<app>` segment of every event, the `?app=` deep link and
+ * the launcher label, so renaming it is a bigger change than renaming a table (§11.1). That
+ * gap is what this second pass closes — the id finishing the same rename the table already
+ * made, rather than three names for one thing settling into two.
  *
  * (That namespace is spelled out in words rather than as a literal on purpose:
  * `eventNames.test.ts` scans source for event-shaped string literals and cannot tell prose
  * from a real name, so writing one here reads as a malformed event.)
  *
- * The rename is a **consequence** of needing more than one storage shape, not a tidying
- * exercise. The old table had exactly one payload column, `image mediumtext` holding
- * base64, which can only ever be a photo — and that is what blocked voice clips, video
- * with a poster frame, GIFs by URL, RCS-style file transfer and link previews.
+ * The table rename was a **consequence** of needing more than one storage shape, not a
+ * tidying exercise. The old table had exactly one payload column, `image mediumtext`
+ * holding base64, which can only ever be a photo — and that is what blocked voice clips,
+ * video with a poster frame, GIFs by URL, RCS-style file transfer, link previews and now a
+ * shared location.
  *
- * `data` rather than `image` for the same reason: the column will hold base64 audio and
- * video, and the old name becomes a lie the moment the table earns its own. It is also
+ * `data` rather than `image` for the same reason: the column holds base64 audio and video
+ * too, and the old name would be a lie the moment the table earned its own. It is also
  * **nullable** now, where `image` was `notNull` — a `link` or a hotlinked `gif` row has a
  * `url` and no bytes at all.
  *
@@ -32,8 +36,8 @@ import { requirePositiveInt, fields } from '../lib/payload';
  * status = 'active', and delete is an ownership-scoped soft delete that writes the audit
  * entry.
  */
-export const photos = defineService<MediaItem>({
-  id: 'photos',
+export const media = defineService<MediaItem>({
+  id: 'media',
   table: 'gphone_media',
   reportable: { label: 'Photo', previewColumn: 'data' },
   access: { read: 'owner', write: 'owner' },
@@ -48,7 +52,7 @@ export const photos = defineService<MediaItem>({
      */
     kind: {
       type: 'enum',
-      values: ['photo', 'video', 'audio', 'gif', 'sticker', 'file', 'link'],
+      values: ['photo', 'video', 'audio', 'gif', 'sticker', 'file', 'link', 'location'],
       notNull: true,
       default: 'photo'
     },
@@ -122,15 +126,15 @@ const coerceBinaryText = (item: MediaItem): MediaItem => {
   return item;
 };
 
-const app = photos.app;
-const repo = photos.repo;
+const app = media.app;
+const repo = media.repo;
 
 /**
  * Bluetooth proximity drop: copy one of the caller's own media rows to everyone nearby
  * and Bluetooth-visible.
  *
  * A custom `registerEvent` action rather than a raw `onNet` handler — reached through the
- * named `sharePhotoNearby` route (`shared/routes.ts`), so `ServiceEndpoint`'s own rate
+ * named `shareMediaNearby` route (`shared/routes.ts`), so `ServiceEndpoint`'s own rate
  * limiting and citizenid resolution already cover it, and its return value becomes the
  * NUI response directly (§10's `BlabberDms.ts` `send` action is the worked example of
  * this shape).
@@ -173,7 +177,7 @@ app.registerEvent('drop', async (source, _cbId, data, citizenid) => {
     } as Partial<MediaItem>);
     count += 1;
 
-    const outcome = appEventChannel('photos').push(
+    const outcome = appEventChannel('media').push(
       target.citizenid,
       'media_received',
       {},
@@ -183,10 +187,54 @@ app.registerEvent('drop', async (source, _cbId, data, citizenid) => {
     );
     if (!outcome.delivered && outcome.reason !== 'offline') {
       console.error(
-        `[photos] mediaReceived push to ${target.citizenid} was refused: ${outcome.reason}.`
+        `[media] mediaReceived push to ${target.citizenid} was refused: ${outcome.reason}.`
       );
     }
   }
 
   return { count };
+});
+
+/**
+ * Share the caller's current in-game position as a message attachment.
+ *
+ * The coordinates never come from `data` — only `playerCoords(source)` does, the same
+ * guarded `GetPlayerPed`/`DoesEntityExist`/`GetEntityCoords` read `Signal.ts` and
+ * `proximity.ts` already trust for a player's live position. A client-reported
+ * coordinate would be exactly the failure the roadmap's Battery correction already named:
+ * a value with real stakes (this is what a recipient's waypoint points at) accepted from
+ * self-report instead of read independently.
+ *
+ * `label` is the one thing actually trusted from the payload, and deliberately: the
+ * street name it names can only be resolved by a client-only native
+ * (`GetStreetNameAtCoord`/`GetStreetNameFromHashKey` do not exist server-side), so it is
+ * resolved on the sender's own client and carried here as cosmetic display text — the
+ * same trust level as a contact name or a message body, never as anything the waypoint's
+ * actual target depends on. Bounded to `alt_text`'s own 255-char column length here,
+ * since a custom action is not covered by `assertWritableValue`'s per-column rules the
+ * way generic CRUD is.
+ *
+ * `addForPlayer` (the same privileged bypass `AddMedia` uses) rather than the ordinary
+ * client-writable path, because `data` and `alt_text` here are both server-determined —
+ * a location row's `data` is never something the client itself should be free to set.
+ */
+app.registerEvent('shareLocation', async (source, _cbId, data, citizenid) => {
+  const rawLabel = fields(data).label;
+  const label =
+    typeof rawLabel === 'string' && rawLabel.trim() ? rawLabel.trim().slice(0, 255) : undefined;
+
+  const coords = playerCoords(source);
+  if (!coords) throw new Error('Could not determine your location.');
+  const [x, y, z] = coords;
+
+  const privileged = repo as unknown as {
+    addForPlayer(citizenid: string, item: Partial<MediaItem>): Promise<number>;
+  };
+  const id = await privileged.addForPlayer(citizenid, {
+    kind: 'location',
+    data: JSON.stringify({ x, y, z }),
+    alt_text: label
+  } as Partial<MediaItem>);
+
+  return { id, media: await repo.findById(id, citizenid) };
 });

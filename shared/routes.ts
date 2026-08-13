@@ -111,13 +111,18 @@ export const ROUTES: readonly Route[] = [
   route('getReportHistory', 'reports', 'history'),
   route('reopenReport', 'reports', 'reopen'),
 
-  // Photos — no `updatePhoto`: a stored photo has no mutable fields, and the server
-  // does not register the endpoint.
-  route('getPhotos', 'photos', 'get'),
-  route('createPhoto', 'photos', 'create'),
-  route('deletePhoto', 'photos', 'delete'),
-  // Bluetooth proximity: copy a photo the caller owns to everyone nearby and visible.
-  route('sharePhotoNearby', 'photos', 'drop'),
+  // Media — no `updateMedia`: a stored row has no mutable fields, and the server does
+  // not register the endpoint.
+  route('getMedia', 'media', 'get'),
+  route('createMedia', 'media', 'create'),
+  route('deleteMedia', 'media', 'delete'),
+  // Bluetooth proximity: copy a media row the caller owns to everyone nearby and visible.
+  route('shareMediaNearby', 'media', 'drop'),
+  // Location sharing. Not a dumb passthrough — its client relay in `client/services/
+  // Location.ts` resolves a street-name label locally (a client-only native) before
+  // forwarding, so it is excluded from `Relay.ts`'s generic per-route registration.
+  // Declared here anyway, for `routes.test.ts`'s completeness checks.
+  route('shareLocation', 'media', 'shareLocation'),
 
   // Notifications — persistent OS notification service
   route('getShadeNotifications', 'notifications', 'getShadeNotifications'),
@@ -169,7 +174,10 @@ export const CLIENT_ONLY_ACTIONS: readonly string[] = [
   'setBatteryLevel',
   'takePhoto',
   // Front/rear toggle on the scripted camera.
-  'flipCamera'
+  'flipCamera',
+  // Setting a GPS waypoint from a location a message already carries is purely local —
+  // `SetNewWaypoint` fires on the recipient's own client with no server round trip.
+  'setWaypoint'
 ] as const;
 
 /**

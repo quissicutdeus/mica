@@ -48,7 +48,7 @@ describe('column limits — derived from the declaration, not invented', () => {
 
   it('lets a mediumtext column hold a base64 screenshot', () => {
     // The reason the cap is per column rather than one number for the whole payload:
-    // `photos.image` is mediumtext and legitimately carries an image.
+    // `media.data` is mediumtext and legitimately carries an image.
     const repo = buildRepository(
       resolveAppSchema({ id: 'shots', schema: { image: { type: 'mediumtext', notNull: true } } })
     );
@@ -139,7 +139,7 @@ describe('rate limiting', () => {
   it('counts each action separately, so opening the phone is not a flood', () => {
     // Bootstrap preloads every app at once. Keyed per action, that is one call each rather
     // than eight against a shared budget.
-    for (const service of ['notes', 'contacts', 'mail', 'photos', 'messages']) {
+    for (const service of ['notes', 'contacts', 'mail', 'media', 'messages']) {
       for (let i = 0; i < 60; i++) {
         expect(allow(1, service, 'get')).toBe(true);
       }

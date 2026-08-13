@@ -41,7 +41,7 @@ import '../services/Reports';
  * explicit, which is the honest shape — the registry really is populated by import.
  */
 import '../services/Messages';
-import '../services/Photos';
+import '../services/Media';
 import '../services/Accounts';
 import '../services/Blabber';
 import '../services/BlabberDms';

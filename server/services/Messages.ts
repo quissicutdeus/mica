@@ -1,8 +1,8 @@
 import { MessageRepository } from '../repositories/MessageRepository';
 import { conversations, type ConversationRepo } from './Conversations';
-// Photos is a declared app; reuse its derived repository rather than a second
+// Media is a declared app; reuse its derived repository rather than a second
 // instance, so the attachment-ownership check runs against the same allowlist.
-import { photos } from './Photos';
+import { media } from './Media';
 import { defineService } from '../lib/defineService';
 import { conversationIdFrom, fields } from '../lib/payload';
 import { resolveOwnedAttachments } from '../lib/attachments';
@@ -88,7 +88,7 @@ export const messages = defineService<Message>({
 const app = messages.app;
 const messageRepo = messages.repo as MessageRepository;
 const conversationRepo = conversations.repo as ConversationRepo;
-const photoRepo = photos.repo;
+const mediaRepo = media.repo;
 
 /**
  * Messages live in a table shared between players, so ownership by `citizenid` is
@@ -159,7 +159,7 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
 
   const body = fields(data);
   const message = typeof body.message === 'string' ? body.message : '';
-  const attachments = await resolveOwnedAttachments(body.attachments, citizenid, photoRepo);
+  const attachments = await resolveOwnedAttachments(body.attachments, citizenid, mediaRepo);
   if (!message.trim() && attachments.length === 0) {
     throw new Error('A message body or an attachment is required.');
   }

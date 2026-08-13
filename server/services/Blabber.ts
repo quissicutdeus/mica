@@ -1,8 +1,8 @@
 import { defineService } from '../lib/defineService';
 import { ownedAccount, isBlocked } from './Accounts';
-// Photos is a declared app; reuse its derived repository rather than a second instance, so
+// Media is a declared app; reuse its derived repository rather than a second instance, so
 // the attachment-ownership check runs against the same allowlist Messages already uses.
-import { photos } from './Photos';
+import { media } from './Media';
 import { Blab } from '@shared/types';
 import { fields, optionalString, pageBounds, requirePositiveInt } from '../lib/payload';
 import { resolveOwnedAttachments } from '../lib/attachments';
@@ -234,7 +234,7 @@ export const blabber = defineService<Blab>({
 
 const app = blabber.app;
 const repo = blabber.repo as BlabberRepository;
-const photoRepo = photos.repo;
+const mediaRepo = media.repo;
 const channel = appEventChannel(APP);
 
 /**
@@ -360,7 +360,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
       ? null
       : (await visibleTarget(body.mouth_of, 'mouth target')).id;
 
-  const attachments = await resolveOwnedAttachments(body.attachments, citizenid, photoRepo);
+  const attachments = await resolveOwnedAttachments(body.attachments, citizenid, mediaRepo);
 
   /**
    * The rule the DDL cannot express: something to say, something to repeat, or something to

@@ -91,11 +91,11 @@ const DROP_ALL_MICA_TABLES = [
 /**
  * Order apps so every table's foreign-key targets already exist when it is applied.
  *
- * Cross-app foreign keys make this necessary and alphabetical order wrong: the
- * messages app's attachment table references `gphone_photos`, and `messages` sorts
- * before `photos`, so a clean database fails with errno 150. Files are emitted with a
- * numeric prefix so that globbing or importing in name order is correct by default —
- * the failure mode this replaces was silent until a fresh install.
+ * Cross-app foreign keys make this necessary: nothing guarantees a table's dependencies
+ * sort earlier than it does alphabetically, and a clean database fails with errno 150 the
+ * moment one doesn't. Files are emitted with a numeric prefix so that globbing or
+ * importing in name order is correct by default — the failure mode this replaces was
+ * silent until a fresh install.
  *
  * Kahn's algorithm, alphabetical within a dependency level so output is stable.
  */

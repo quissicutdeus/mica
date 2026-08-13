@@ -316,14 +316,15 @@ export type MediaPreview = Pick<
 >;
 
 /** What `gphone_media` can hold. Over-provisioned on purpose — see `services/Photos.ts`. */
-export type MediaKind = 'photo' | 'video' | 'audio' | 'gif' | 'sticker' | 'file' | 'link';
+export type MediaKind =
+  'photo' | 'video' | 'audio' | 'gif' | 'sticker' | 'file' | 'link' | 'location';
 
 /**
- * A row in `gphone_media` — the table the Photos app is built on.
+ * A row in `gphone_media` — the table the Media app is built on.
  *
- * Named for what it holds rather than for the app that owns it. The service and app id
- * stay `photos`, because those are keys and renaming one is a data migration (§11.1); a
- * type name is neither, so it can say the true thing for free.
+ * Named for what it holds, and now the service and app id agree: both are `media`, the
+ * same rename the table made first (§11.1 — an id is a key, so it was the bigger of the
+ * two changes and came second).
  *
  * Everything past `kind` is optional. Locally captured media has `data` and nothing else;
  * a hotlinked GIF has `url` and no bytes at all.

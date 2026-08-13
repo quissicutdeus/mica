@@ -27,7 +27,9 @@ import {
 } from './exports';
 import { SendSystemEmail } from '../services/Mail';
 import { getBatteryLevel, setBatteryLevel, setCharging } from '../services/Battery';
-import { photos } from '../services/Photos';
+// Aliased: `AddMedia`'s own parameter is named `media` (the raw payload), which would
+// otherwise shadow this import for the whole function body.
+import { media as mediaService } from '../services/Media';
 import { contacts } from '../services/Contacts';
 import {
   addDeadZone,
@@ -182,7 +184,7 @@ const SAFE_URL = /^(https?:|data:image\/)/i;
  * poster frame, a voice clip or a link preview.
  *
  * By citizenid, so it works offline — the row is the point, and the player finds it next
- * time they open Photos.
+ * time they open Media.
  */
 const AddMedia = async (
   citizenid: unknown,
@@ -219,7 +221,7 @@ const AddMedia = async (
     return fail('invalid_args', 'A thumbnail must be http(s) or a data:image.');
   }
 
-  const repo = photos.repo as unknown as {
+  const repo = mediaService.repo as unknown as {
     addForPlayer(citizenid: string, item: Partial<MediaItem>): Promise<number>;
   };
 

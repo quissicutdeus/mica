@@ -19,7 +19,7 @@ import { conversations } from '../services/Conversations';
 import { messages } from '../services/Messages';
 // Notes has migrated to a defineService declaration; its repository is derived.
 import { notes } from '../services/Notes';
-import { photos } from '../services/Photos';
+import { media } from '../services/Media';
 import { reports } from '../services/Reports';
 import { batteryApp } from '../services/Battery';
 
@@ -36,7 +36,7 @@ const ALL = [
   { name: 'mail', repo: mail.repo },
   { name: 'messages', repo: messages.repo },
   { name: 'notes', repo: notes.repo },
-  { name: 'photos', repo: photos.repo },
+  { name: 'media', repo: media.repo },
   // Both were missing, which is how a dead-code scan came to report `reports` as an
   // unused export: this file was the only thing that ever imported a declaration, so
   // one absent from it looked like one nobody used.
@@ -52,7 +52,7 @@ describe('shipped repositories — declared client write policy', () => {
     // `kind` and `data` only. The media table carries nine more columns, and every one is
     // `clientWritable: false` until a feature writes it — a column a client can set before
     // any caller needs it is unconstrained surface (§2.9).
-    ['photos', ['kind', 'data']],
+    ['media', ['kind', 'data']],
     // Every mutation on these goes through a named, authorizing method.
     ['mail', []],
     ['messages', []],
