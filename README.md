@@ -28,6 +28,7 @@
 - **Calculator**: Full mathematical calculator with an optimized touchscreen keypad layout.
 - **Blabber** _(add-on)_: Short public posts under an `@handle`. Replies, **mouths** (a repeat, or a quote when you add your own words), likes, `@mention` notifications, and strictly one-to-one direct messages. Follow an account and its posts turn up in a Following feed of their own; the counts on a profile open the lists behind them. An author can fix a typo for 15 minutes — `gphone_blabber_edit_window` — and then the post freezes. A player may hold several accounts and switch between them, and the owning `citizenid` never reaches another reader, so alts stay uncorrelated. Not on the home screen out of the box: it is the first genuinely non-core app and installs from the Store.
 - **Store Application**: Built-in app marketplace to browse, install, and manage community add-on apps. Features Installed tab sorting (`newest`, `oldest`, `updated`, `name`), installation date metrics (`installedAt`, `updatedAt`), permissions inspector, and app storage footprint metrics.
+- **Admin**: Review and moderate player reports. Hidden from the home screen for anyone without an admin ace; the server gates the queue and every moderation action independently of what the UI shows.
 - **Settings & Status**: Settings application with an **About** section (phone number, OS version, first boot timestamp, and smart git build/commit info), 24-hour time toggles, embedded Developer Tools, dynamic battery drain lifecycle, and hardware controls.
 - **Home Screen Edit Mode**: Right-click icon gesture to trigger Edit Mode, swapping unread notification badges for gray minus action buttons on removable add-on apps with automatic Edit Mode exit when no add-on apps remain.
 
@@ -238,20 +239,20 @@ group can never be silently merged with one shipped later.
 
 ```
 gphone/
-├── client/           # Client-side systems (Animation, Battery, Camera, Call, Relay, etc.)
-├── server/           # Server-side services, FrameworkBridge, AuditLogger, & Database access
-├── shared/           # Shared types, interfaces, and constants
-├── web/              # Svelte 5 + Vite + Tailwind CSS v4 frontend application
+├── client/                       # Client-side systems (Animation, Battery, Camera, Call, Relay, etc.)
+├── server/                       # Server-side services, FrameworkBridge, AuditLogger, & Database access
+├── shared/                       # Shared types, interfaces, and constants
+├── web/                          # Svelte 5 + Vite + Tailwind CSS v4 frontend application
 │   └── src/
-│       ├── apps/     # One directory per app — the registry discovers them, nothing registers them
-│       ├── sdk/      # @gphone/sdk: the only thing an app may import
-│       ├── shell/    # The phone around the apps: frame, launcher, navigation, state
-│       └── services/ # Stores backing the SDK hooks; apps reach these through the SDK, never by path
-├── scripts/          # Manifest generation, SQL generation, and build automation
-├── build/            # esbuild bundle configuration
-├── gphone.sql        # Generated: the whole schema (pnpm generate:sql)
-├── gphone.sql        # Framework schema (moderation audit ledger)
-└── fxmanifest.lua    # Resource manifest file
+│       ├── apps/                 # One directory per app — the registry discovers them, nothing registers them
+│       ├── sdk/                  # @gphone/sdk: the only thing an app may import
+│       ├── shell/                # The phone around the apps: frame, launcher, navigation, state
+│       └── services/             # Stores backing the SDK hooks; apps reach these through the SDK, never by path
+├── scripts/                      # Manifest generation, SQL generation, and build automation
+├── build/                        # esbuild bundle configuration
+├── gphone.sql                    # Generated: the whole schema (pnpm generate:sql)
+├── scripts/framework-schema.sql  # Hand-written: the moderation audit ledger
+└── fxmanifest.lua                # Resource manifest file
 ```
 
 ---
