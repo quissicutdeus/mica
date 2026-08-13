@@ -556,9 +556,9 @@ DM counts, through `lazyBadge`. `usePhoneNotification` remains for ephemeral fee
 not persist — "Copied to clipboard" is not a notification.
 
 The shade itself groups by app, expands a group in place, and has an archive of cleared items that
-can be restored. It opens from the status bar and closes from the home indicator or the backdrop.
-One thing specified alongside it is **not** built and is in _Proposed_ below: its drag and swipe
-gestures.
+can be restored. It opens and closes by tap (status bar, home indicator, backdrop) and now by drag
+too, and a row or a group header swipes to clear or restore — see _Notification shade gestures_
+below.
 
 A toast now says which app is talking before it says what about: `ToastMessage.app`, resolved against
 `appRegistryStore.getManifest` in `ToastHost.svelte` into a small icon-and-name header above the
@@ -571,6 +571,56 @@ which is what puts a header on every per-app notification, including an add-on's
 already uses, since nothing in the SDK tracks an ambient "current app" for a hook to read instead. A
 handful of shell-level toasts — the server's own `notify` route, install/uninstall — stay headerless
 on purpose: none of them speak for a single app.
+
+### Notification shade gestures
+
+The shade drags open from the status bar and drags closed from a grab handle inside the drawer,
+and a row or a collapsed group header swipes to clear (active view) or restore (archive). All three
+build on one Svelte-agnostic utility, `web/src/lib/pointerDrag.ts`: pure functions for axis-locking,
+progress clamping, a rolling velocity estimate and the two commit heuristics
+(`shouldCommitDrag` for the shade, `shouldCommitSwipe` for a row), plus `attachDragGesture`, the
+DOM-wiring half that pointer-captures once an axis commits and never before.
+
+This is the feature the removed "gestural pull drawer" comment named as unbuilt: dead pointer
+handlers sat in `NotificationShade.svelte`, wired to nothing, because capturing the pointer on the
+drawer's own `pointerdown` — the drawer is `inset-0` around the one scrollable list — takes every
+touch that starts on a notification row. The fix is exactly what that comment said was missing: a
+grab handle scoped away from the scrollable list, and a transform that follows the finger. The
+handle is a small bar in the drawer's own header, marked `data-gesture-drag` and `aria-hidden`
+(the existing Close button is its accessible equivalent); `SwipeableRow.svelte` wraps each row and
+group header the same way for the horizontal case.
+
+**`data-gesture-drag` is also what keeps the new gestures from racing `dragScroll.ts`.**
+`enableDragScroll` already installs a `mousedown` listener across the _entire_ phone screen and
+walks up from the press to find a scrollable ancestor — a press starting on a notification row
+finds the shade's list and would otherwise open an independent mouse-drag-to-scroll session
+alongside the row's own horizontal tracking. `dragScroll.ts`'s `handlePointerDown` now returns
+early for any press inside `[data-gesture-drag]`, the same early-return shape it already used for
+form inputs. The trade-off is real and narrow: pressing directly on a row and dragging no longer
+scrolls the list by mouse — only the gaps between rows, the header, and the wheel still do.
+
+**A drag that overshoots its own target got stuck, and the fix is a fallback timer, not a tighter
+bound.** The drawer and each `SwipeableRow` settle from a live drag to a resting value (open,
+closed, or off-screen) with a CSS transition, and both relied on `transitionend` to know when to
+stop — flip `shadeDragPhase` back to `'idle'`, or fire `onCommit`. But `transitionend` only fires
+when the animated property actually changes value, and a fast, far drag can already be resting
+_at_ the commit target the instant the pointer releases, since the live drag got there first. No
+value change, no event, and the shade stayed mounted (or a swiped row stayed in the list) forever.
+Caught by e2e, not by the unit suite: a synthetic pointer sequence in jsdom never triggers a real
+CSS transition either way, so the bug was invisible until Playwright dragged past the threshold in
+an actual browser. Both sites now pair the real listener with a `setTimeout` slightly past the
+transition's own duration, cancelled by whichever fires first — the general shape for any
+JS-driven CSS transition that a live drag can pre-empt.
+
+**Reaching a row or the grab handle's true position needs one more wait than reaching the phone
+frame's.** `display.spec.ts`'s `frameBox` already waits for `getAnimations().length === 0` before
+trusting a `boundingBox()`, because the entrance `transition:fly` is still mid-flight for up to
+500ms and a bounding box read during it is nonsense — off-screen, mid-transform. The shade's own
+300ms open animation is the same hazard one level in: a tap-opened shade's grab handle measured
+immediately after `toBeVisible()` returned a box hundreds of pixels off-screen, and a drag started
+from it landed on nothing. `notifications.spec.ts`'s `waitForSettled` is the same wait generalized
+to `{ subtree: true }`, since a row's own animation lives on a child element it wraps rather than
+on the element being measured.
 
 ### Network and Bluetooth settings
 
@@ -851,16 +901,9 @@ Two constraints shape every schema item below:
 - **Base64 will not carry video.** `gphone_media.data` is `mediumtext` holding base64; a video or
   voice clip at that size will not survive crossing NUI.
 
-### Notification shade gestures
-
-The shade opens from the status bar and closes from the home indicator or the backdrop. It does not
-drag open, and rows do not swipe to clear.
-
-Handlers for the drag existed and were wired to nothing — removed in the commit that found them,
-because they could not have worked as written: the drawer is `inset-0` around a scrolling list, and
-capturing the pointer on its own `pointerdown` takes every touch that starts on a notification row.
-Doing it properly needs a grab handle to attach to and a transform that follows the finger, and
-swipe-to-clear needs per-row pointer handling that does not fight vertical scrolling.
+Nothing currently sits under this heading — the one item that did, notification shade gestures, is
+built and moved up into _Shipped_. The heading and the two constraints above stay: they are where
+the next proposal's reasoning goes, not scaffolding for this one.
 
 ---
 
