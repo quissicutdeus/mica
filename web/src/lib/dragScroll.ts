@@ -1,3 +1,5 @@
+import { measureDragRatio } from './dragRatio';
+
 /**
  * Attaches mouse & touch drag-to-scroll functionality to a container element.
  * Recursively delegates drag scrolling to whichever scrollable child element is under the cursor.
@@ -10,28 +12,7 @@ export function enableDragScroll(container: HTMLElement): () => void {
   let initialScrollTop = 0;
   let initialScrollLeft = 0;
   let activeScrollableElement: HTMLElement | null = null;
-
-  /**
-   * How many CSS pixels of content one pixel of cursor travel is worth.
-   *
-   * The phone is drawn through a `transform: scale()` (see `shell/state/display.ts`), and
-   * the two sides of this calculation live on opposite sides of it: `clientX` is in
-   * on-screen pixels, `scrollTop` in the element's own unscaled ones. Applied 1:1, a
-   * phone drawn at 75% scrolled three quarters as far as the cursor moved — the content
-   * visibly lagged behind the grab.
-   *
-   * Measured off the element rather than read from the store so this stays a DOM helper
-   * with no gPhone state (AGENTS.md §8), and so it is right for any transform in the
-   * ancestry rather than only the one we know about. Zero on either side means nothing has
-   * been laid out — jsdom — so there is no ratio to apply.
-   */
   let dragRatio = 1;
-
-  function measureDragRatio(element: HTMLElement): number {
-    const rendered = element.getBoundingClientRect().width;
-    const layout = element.offsetWidth;
-    return rendered > 0 && layout > 0 ? rendered / layout : 1;
-  }
 
   function findScrollableParent(target: HTMLElement | null): HTMLElement | null {
     let curr: HTMLElement | null = target;
@@ -63,6 +44,15 @@ export function enableDragScroll(container: HTMLElement): () => void {
       target.tagName === 'SELECT' ||
       target.isContentEditable
     ) {
+      return;
+    }
+
+    // Nor if interacting with a dedicated pointer-drag gesture surface (a swipeable
+    // notification row, a shade grab handle). Both attach their own `pointerdown`
+    // handling that captures the pointer once an axis is decided; without this
+    // exemption a press starting on a row also opens an independent mouse-drag-to-scroll
+    // session here, racing the row's own horizontal swipe tracking.
+    if (target.closest('[data-gesture-drag]')) {
       return;
     }
 

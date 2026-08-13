@@ -55,4 +55,62 @@ describe('Drag Scroll Utility', () => {
     });
     window.dispatchEvent(mouseUpEvent);
   });
+
+  it('never starts a drag-scroll session on an element carrying data-gesture-drag', () => {
+    scrollable.setAttribute('data-gesture-drag', '');
+    scrollable.scrollTop = 50;
+
+    scrollable.dispatchEvent(
+      new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 100,
+        clientY: 100,
+        button: 0
+      })
+    );
+    window.dispatchEvent(
+      new MouseEvent('mousemove', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 100,
+        clientY: 50
+      })
+    );
+
+    expect(scrollable.scrollTop).toBe(50);
+
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+  });
+
+  it('exempts a descendant of a data-gesture-drag element too', () => {
+    const gestureSurface = document.createElement('div');
+    gestureSurface.setAttribute('data-gesture-drag', '');
+    const row = document.createElement('div');
+    gestureSurface.appendChild(row);
+    scrollable.appendChild(gestureSurface);
+    scrollable.scrollTop = 50;
+
+    row.dispatchEvent(
+      new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 100,
+        clientY: 100,
+        button: 0
+      })
+    );
+    window.dispatchEvent(
+      new MouseEvent('mousemove', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 100,
+        clientY: 50
+      })
+    );
+
+    expect(scrollable.scrollTop).toBe(50);
+
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+  });
 });
