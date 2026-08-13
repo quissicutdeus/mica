@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import { fly } from 'svelte/transition';
   import { formattedTime } from './state/time';
   import { goHome } from './state/navigation';
@@ -8,18 +9,26 @@
   import { bluetoothEnabled } from './state/bluetooth';
   import { stepVolume } from './state/audio';
   import { enableDragScroll } from '../lib/dragScroll';
-  import { PHONE_HEIGHT, PHONE_WIDTH } from './state/display';
+  import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
+  import { PHONE_HEIGHT, PHONE_WIDTH, SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
   import LightningWarningIcon from '../sdk/ui/icons/LightningWarningIcon.svelte';
   import SignalIcon from '../sdk/ui/icons/SignalIcon.svelte';
   import BluetoothIcon from '../sdk/ui/icons/BluetoothIcon.svelte';
   import VolumeHud from './VolumeHud.svelte';
   import NotificationShade from './NotificationShade.svelte';
-  import { openShade, isShadeOpen, closeShade } from './state/shade';
+  import {
+    openShade,
+    isShadeOpen,
+    closeShade,
+    shadeDragProgress,
+    shadeDragPhase
+  } from './state/shade';
   import { wallpaperBackground } from './state/wallpaper';
   import { themeStyleStore } from './state/theme';
 
   let { transparent = false, onClose, children } = $props();
   let screenElement = $state<HTMLElement | null>(null);
+  let statusBarRef = $state<HTMLElement | null>(null);
   const wallpaper = $derived($wallpaperBackground);
   const themeStyle = $derived($themeStyleStore);
 
@@ -27,6 +36,33 @@
     if (screenElement) {
       return enableDragScroll(screenElement);
     }
+  });
+
+  // A plain `onMount` runs once and would miss the status bar entirely when it isn't
+  // rendered yet at mount time (transparent mode, a dead battery) — both toggle after
+  // mount, at which point `statusBarRef` changes without a remount. An `$effect` re-runs
+  // its cleanup and re-attaches whenever the ref itself changes, so the gesture tracks
+  // the button's actual lifetime instead of the component's.
+  $effect(() => {
+    if (!statusBarRef) return;
+    return attachDragGesture(statusBarRef, {
+      axis: 'y',
+      onMove: (deltaY) => {
+        if (get(isShadeOpen)) return;
+        shadeDragPhase.set('dragging');
+        shadeDragProgress.set(clampProgress(deltaY / SHADE_DRAG_REVEAL_DISTANCE));
+      },
+      onEnd: (deltaY, velocity) => {
+        if (get(isShadeOpen)) return;
+        shadeDragPhase.set('settling');
+        if (shouldCommitDrag(get(shadeDragProgress), velocity)) {
+          shadeDragProgress.set(1);
+          openShade();
+        } else {
+          shadeDragProgress.set(0);
+        }
+      }
+    });
   });
 </script>
 
@@ -145,6 +181,7 @@
     <!-- Status Bar -->
     {#if !transparent && !$isBatteryDead}
       <button
+        bind:this={statusBarRef}
         type="button"
         class="text-on-surface absolute top-0 z-60 flex w-full cursor-pointer items-center justify-between px-8 pt-3 text-sm font-medium transition-opacity hover:opacity-90 active:opacity-75"
         onclick={() => ($isShadeOpen ? closeShade() : openShade())}
