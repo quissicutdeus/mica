@@ -483,3 +483,10 @@ CREATE TABLE IF NOT EXISTS `gphone_settings` (
     CONSTRAINT `fk_settings_citizenid` FOREIGN KEY (`citizenid`)
         REFERENCES `players` (`citizenid`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+-- Versioned schema migrations ledger.
+CREATE TABLE IF NOT EXISTS `gphone_schema_migrations` (
+    `id` varchar(255) NOT NULL,
+    `applied_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;

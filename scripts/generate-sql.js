@@ -40,7 +40,7 @@ globalThis.GetConvar = globalThis.GetConvar ?? ((_n, fallback) => fallback);
 const entry = `
 import '${path.join(root, 'server/services/index.ts').split(path.sep).join('/')}';
 export { declaredServices } from '${path.join(root, 'server/lib/defineService.ts').split(path.sep).join('/')}';
-export { toSqlFile } from '${path.join(root, 'server/lib/schemaSql.ts').split(path.sep).join('/')}';
+export { toSqlFile, schemaMigrationsLedgerDdl, schemaMigrationsSeedSql } from '${path.join(root, 'server/lib/schemaSql.ts').split(path.sep).join('/')}';
 `;
 
 const bundlePath = path.join(root, 'node_modules', '.cache', 'gphone-sqlgen.mjs');
@@ -151,8 +151,24 @@ function orderAppsByDependency(apps) {
   return ordered;
 }
 
+/**
+ * Same directory `generateMigrationsIndex` in generate-barrels.js reads — kept as an
+ * independent scan rather than importing that barrel, so a stale generated barrel can't
+ * hide a migration from the seed. server/__tests__/migrationsSeed.test.ts is the check that
+ * the two agree.
+ */
+function migrationIds() {
+  const dir = path.join(root, 'server', 'migrations');
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .filter((file) => file.endsWith('.ts') && file !== 'index.ts' && !file.endsWith('.test.ts'))
+    .map((file) => file.replace(/\.ts$/, ''))
+    .sort();
+}
+
 /** Wipe-and-rebuild in one file: drop everything, then the framework and app schemas. */
-function buildResetSql(appFiles) {
+function buildResetSql(appFiles, migrationsBlock) {
   const frameworkSql = fs
     .readFileSync(path.join(__dirname, 'framework-schema.sql'), 'utf8')
     .trimEnd();
@@ -175,6 +191,7 @@ function buildResetSql(appFiles) {
     frameworkSql,
     '',
     ...appFiles.flatMap(({ id, sql }) => [`-- App: ${id}`, sql.trimEnd(), '']),
+    migrationsBlock,
     ''
   ].join('\n');
 }
@@ -192,7 +209,8 @@ async function main() {
     logLevel: 'warning'
   });
 
-  const { declaredServices, toSqlFile } = await import(`file://${bundlePath}?t=${Date.now()}`);
+  const { declaredServices, toSqlFile, schemaMigrationsLedgerDdl, schemaMigrationsSeedSql } =
+    await import(`file://${bundlePath}?t=${Date.now()}`);
 
   if (declaredServices.length === 0) {
     console.log('No defineService declarations found; nothing to generate.');
@@ -232,10 +250,23 @@ async function main() {
     ''
   ].join('\n');
 
+  const ids = migrationIds();
+  const seedSql = schemaMigrationsSeedSql(ids);
+  const migrationsBlock = [
+    '-- Versioned schema migrations ledger.',
+    schemaMigrationsLedgerDdl(),
+    ...(seedSql ? ['', seedSql] : [])
+  ].join('\n');
+
   fs.writeFileSync(
     outFile,
-    [banner, frameworkSql.trimEnd(), '', ...appFiles.map((f) => f.sql.trimEnd())].join('\n\n') +
-      '\n'
+    [
+      banner,
+      frameworkSql.trimEnd(),
+      '',
+      ...appFiles.map((f) => f.sql.trimEnd()),
+      migrationsBlock
+    ].join('\n\n') + '\n'
   );
 
   const tableCount = declaredServices.reduce((n, a) => n + 1 + a.childTables.length, 0);
@@ -245,7 +276,7 @@ async function main() {
 
   if (withReset) {
     const resetPath = path.join(root, 'sql', 'dev-reset.sql');
-    fs.writeFileSync(resetPath, buildResetSql(appFiles));
+    fs.writeFileSync(resetPath, buildResetSql(appFiles, migrationsBlock));
     console.log('');
     console.log('Also wrote sql/dev-reset.sql — DESTRUCTIVE.');
     console.log('  It drops every gphone_ table in the schema you connect it to,');
