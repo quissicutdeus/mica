@@ -22,7 +22,7 @@
 - **Messages**: Individual and group messaging with support for image attachments directly linked to the photo gallery.
 - **Mail System**: Dedicated email application with full database integration and unread status indicators.
 - **Banking**: Dynamic bank card generation based on player citizen ID, live balance tracking, and transfer handling.
-- **Photos & Camera**: In-game screenshot/camera integration, automatic image compression, gallery view, and attachment sharing.
+- **Media & Camera**: In-game screenshot/camera integration, automatic image compression, gallery view, location sharing, and attachment sharing.
 - **Notes**: Full-featured note-taking app with instant saving.
 - **Bluetooth Proximity Sharing**: Share a contact or drop a photo to every nearby, Bluetooth-visible player — computed server-side from live in-game position, no external player list ever reaches the client. Range defaults to 15 meters, configurable via `gphone_bluetooth_range`. A player turns discoverability off in Settings > Network; while off, they are invisible to a scan and receive nothing unsolicited.
 - **Calculator**: Full mathematical calculator with an optimized touchscreen keypad layout.
@@ -33,7 +33,7 @@
 
 ### 🛠️ Backend & Core Architecture
 
-- **SDK-First Architecture (`@gphone/sdk`)**: OS hooks for data (`useContacts`, `usePhotos`, `useMail`, `useMessages`, `useAccount`, `useCall`, `useReports`), for the device (`useSystemHardware`, `useClock`, `useDisplay`, `useCamera`, `useSound`, `useKeybinds`, `useNuiBridge`), and for the app itself (`useNavigation`, `useAppLevels`, `useAppAction`, `useStorage`, `usePersisted`, `useTimer`, `useDeepLink`, `usePagedList`, `usePhoneNotification`, `useAppRegistry`, `useAppEvents`). Plus `AppProps` — the one boundary every app crosses, and typechecked. Apps import the SDK and nothing else, enforced by a test rather than documented and hoped for.
+- **SDK-First Architecture (`@gphone/sdk`)**: OS hooks for data (`useContacts`, `useMedia`, `useMail`, `useMessages`, `useAccount`, `useCall`, `useReports`), for the device (`useSystemHardware`, `useClock`, `useDisplay`, `useCamera`, `useSound`, `useKeybinds`, `useNuiBridge`), and for the app itself (`useNavigation`, `useAppLevels`, `useAppAction`, `useStorage`, `usePersisted`, `useTimer`, `useDeepLink`, `usePagedList`, `usePhoneNotification`, `useAppRegistry`, `useAppEvents`). Plus `AppProps` — the one boundary every app crosses, and typechecked. Apps import the SDK and nothing else, enforced by a test rather than documented and hoped for.
 - **Written for app authors**: `pnpm new:app <id>` scaffolds a working app, `localhost:5173/?app=<id>` boots straight into one, and `renderApp` from `@gphone/sdk/testing` unit-tests one. See [docs/writing-an-app.md](docs/writing-an-app.md).
 - **Client & NUI Transport Safety**: Deterministic ID generation and 15-second safety timeouts (`ClientApp.ts`) preventing NUI callbacks from hanging CEF indefinitely.
 - **Core vs. Add-on Protection Engine**: Every manifest declares `core` explicitly — `true` ships with the phone and cannot be uninstalled, `false` is a Store-managed add-on. Stated rather than inferred, because it was once derived from the app's `author` string, which made a display value decide whether an app could be removed. A remote bundle is never core.

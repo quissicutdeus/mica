@@ -685,7 +685,7 @@ that reads no coordinates in the ordinary case and by pushing only when the whol
 **What is still unbuilt is the half that matters to apps.** Nothing reads the level yet: every app
 behaves identically at four bars and at zero, and `network` remains a permission with no capability
 behind it. The remaining question is not mechanical but per-app — Messages, Phone, Blabber, Store,
-Bank and Mail need a live connection, while Notes, Camera, Photos, Calculator and Settings are local
+Bank and Mail need a live connection, while Notes, Camera, Media, Calculator and Settings are local
 and should not care. Giving `network` meaning means every app in the first group grows a zero-bar
 path that degrades rather than throws.
 
@@ -734,7 +734,7 @@ PhoneVisibility.ts` that `client.ts`'s `togglePhone` and `hideFrame` now share r
 carrying their own copy of the open/close sequence; disabling a currently-open phone force-closes it
 through the same path. `GetPhoneNumber(citizenid)` and its inverse `GetCitizenId(phone)` are pure
 server-side, through `PlayerDirectory`. `AddContact(citizenid, contact)` needed `Contacts.ts`'s first
-`repositoryFactory`, an `addForPlayer` method mirroring `Photos.ts`'s — for a job handing out its
+`repositoryFactory`, an `addForPlayer` method mirroring `Media.ts`'s — for a job handing out its
 dispatch number while the player may be offline.
 
 **Deliberately out of scope**, so nothing above reads as covering it: client-side exports for other
@@ -789,9 +789,16 @@ widening one later is another hand-written migration — plus `data` (the rename
 now), `url` for hotlinks, `thumbnail`, `mime_type`, `width`, `height`, `duration_ms`, `byte_size` and
 `alt_text`.
 
-**The service and app id are still `photos`.** Those are keys — the directory, the storage namespace,
-the event segment, the `?app=photos` deep link — so renaming one is a data migration; a table name is
-a key to nothing outside SQL, so the `table:` override moved it for free.
+**The service and app id are `media` now too.** They stayed `photos` for a while after the table
+moved, deliberately — those are keys (the directory, the storage namespace, the event segment, the
+`?app=` deep link, the launcher label), so renaming one is a bigger change than renaming a table,
+which is a key to nothing outside SQL. That gap closed once the id itself became the thing causing
+confusion: a `shareLocation` action living on a service still called `photos` read as if it belonged
+to the photo kind specifically, when it belongs to the table (any media kind) — the exact ambiguity
+finishing the rename removes. `usePhotos` is `useMedia` now, `web/src/apps/photos/` is
+`web/src/apps/media/`, and the player-visible launcher label changed from "Photos" to "Media" along
+with it, since leaving the display name behind would have recreated the same two-names-for-one-thing
+problem the table rename already fixed once.
 
 `kind` and `data` are the only client-writable columns. The other nine are `clientWritable: false`
 until a feature writes them, because a column a client can set before any caller needs it is
@@ -870,18 +877,69 @@ generic `appEventChannel`, not through the fire-and-forget event's own (nonexist
 
 **Photo drops are new, and took the more idiomatic path available to a core app.** Rather than a
 second raw handler, `sharePhotoNearby` is a named route (`shared/routes.ts`) reaching a custom
-`registerEvent('drop', ...)` action on the `photos` service — `ServiceEndpoint`'s own rate
+`registerEvent('drop', ...)` action on the `media` service — `ServiceEndpoint`'s own rate
 limiting and citizenid resolution already cover it, and its return value (`{ count }`) becomes
 the NUI reply directly, so the sender's toast needs no separate push. Ownership is checked once,
 by `findById(mediaId, citizenid)`, before anything nearby is even computed. Each recipient gets a
 **copy**, not a shared reference — gPhone's gallery is owned per player, and the sender deleting
-their photo later must not delete anyone else's. A recipient still foregrounded in Photos when a
-drop lands is refreshed live via `useAppEvents('photos')`, in addition to the ordinary
+their photo later must not delete anyone else's. A recipient still foregrounded in Media when a
+drop lands is refreshed live via `useAppEvents('media')`, in addition to the ordinary
 `onAppForeground` refetch every app already gets.
 
 **App event names are `lower_snake_case`, and this was the one thing not obvious from the
 existing examples.** `share_result` and `media_received` — `APP_EVENT_NAME_PATTERN` rejects
 camelCase outright, which every existing shipped push (`dm`, `mention`) already happened to be.
+
+### Location sharing in Messages, and the `location` permission's first real capability
+
+A sender attaches their current in-game position to a message; the recipient taps it to set a GPS
+waypoint. `location` had been a valid `AppPermission` with nothing behind it since the permission
+enum was written — this is what finally exercises it, the same way Blabber was the first real
+consumer of `read: 'public'`.
+
+**The coordinates are server-authoritative; only the label is not, and that split was forced rather
+than chosen.** `GET_STREET_NAME_AT_COORD`/`GET_STREET_NAME_FROM_HASH_KEY` are client-only natives —
+the server cannot resolve a street name — so a human-readable label can only be produced on the
+sender's own client. But a waypoint's actual target has real stakes, the same trust-boundary
+reasoning the Battery correction above already established: the server independently re-reads the
+sender's position via `playerCoords(source)` (the same guarded `GetPlayerPed`/`DoesEntityExist`/
+`GetEntityCoords` read `Signal.ts` and the Bluetooth proximity scan above already used, now
+extracted to `server/lib/playerCoords.ts` as a third caller made duplicating it not worth it
+anymore) rather than trusting anything the payload claims. The label rides along as cosmetic
+display text — trusted the same way a contact name already is, never as anything the waypoint
+depends on.
+
+**`shareLocation` reuses the whole media-attachment pipeline rather than inventing a second one.**
+A location share is, structurally, just another `gphone_media` row — `kind: 'location'`, coordinates
+JSON-encoded into the existing `data` column, the label in the existing `alt_text` column — created
+through the same privileged `addForPlayer` bypass `AddMedia` already uses for columns the ordinary
+client-writable path can't reach. No new columns, no `MediaPreview` type changes: `data` and
+`alt_text` were already in that projection. `resolveOwnedAttachments`, the attach tray, and
+`MediaThumb`'s kind-switched placeholder all needed either nothing or one new branch.
+
+**One route is a real exception to "every NUI action is a dumb passthrough."**
+`client/services/Relay.ts`'s generic loop registers every declared route unconditionally — but
+`shareLocation` needs client-side work (the street-name read) to happen _between_ the NUI call and
+the server relay, which that loop has no way to express. It is excluded via a small
+`CUSTOM_CLIENT_RELAY` set and handled by its own file, `client/services/Location.ts`, which still
+reuses `ServiceProxy.relay` for the timeout/correlation machinery rather than reimplementing it.
+`setWaypoint` is the opposite case — no server round trip at all, since `SetNewWaypoint` fires
+locally on data the message already carried — and lives in `CLIENT_ONLY_ACTIONS` instead.
+
+#### Finishing the `photos` → `media` rename the table started
+
+`gphone_photos` became `gphone_media` first (below), and the service/app id stayed `photos` at the
+time deliberately — an id is a key, so renaming it is a bigger change than renaming a table. That
+gap is closed now: the service, the app directory, the SDK hook (`usePhotos` → `useMedia`), the
+client-side store, every NUI action name (`getPhotos`/`createPhoto`/`deletePhoto`/
+`sharePhotoNearby` → `getMedia`/`createMedia`/`deleteMedia`/`shareMediaNearby`) and the
+player-visible launcher label ("Photos" → "Media") are all `media` now. The trigger was concrete
+rather than a tidying pass: `shareLocation` living on a service still called `photos` read as if it
+belonged to the photo kind specifically, when it belongs to the table — any media kind — and that
+ambiguity is exactly what a reader would trip over next. The **kind** value `'photo'`, the
+`photo_id` column name on both attachment join tables, and kind-specific UI copy/components
+(`PhotoPickerModal`, "Delete Photo?", `capturePhoto`) all stay — a photo is still a photo; only the
+app/service that was carrying the old table's name changed.
 
 ---
 
@@ -925,8 +983,10 @@ Live prices, a watchlist, a portfolio valuation.
 
 A rider posts a request, a driver accepts, the fare moves at drop-off.
 
-- **Blocked on:** a location capability. `location` is the other decorative permission — the only
-  `GetEntityCoords` call in the tree drives the phone prop animation, and nothing is exposed to apps.
+- **Blocked on:** a location capability, though less completely than before. Messages can now share
+  the _caller's own_ position (item 7 below), server-authoritative and read on demand — but a taxi
+  app needs the rider to see the _driver's_ live position en route, which is a different, unbuilt
+  shape: a continuous or polled read of someone else's coordinates, not a one-shot self-share.
 - **Payment is available** (item 5): `FrameworkPlayer.addMoney` exists and `server/lib/Payments.ts`
   has `transfer`. One restriction — **both players must be online**, because crediting an offline
   player would mean writing the framework's own `players` table. A driver paid at drop-off is online
@@ -991,8 +1051,13 @@ Referenced by number from the ideas above.
    didn't have — no mechanism existed for the server to learn anything from a client — with a
    fire-and-forget push cached on the receiving side, the same shape Signal and Battery already use.
 
-**`location` and `network` are still permissions with no capability behind them**, but for different
-reasons now. `location` has nothing behind it at all. `network` has state — dead zones, a global
-level and per-player overrides all exist and reach the phone — and no _consumer_: every app behaves
-identically at four bars and at zero. Closing that is per-app work rather than platform work, and it
-is the open half of _Cellular dead zones and outages_ under Shipped.
+7. **A location-sharing primitive** — built, but scoped rather than general. Messages can attach the
+   caller's own current position (server-authoritative, read via `playerCoords(source)` at request
+   time) to a message, and the recipient can set a waypoint from it. What does not exist yet is a
+   general "read any player's live position" export the way `Signal.ts`'s reception or the Bluetooth
+   proximity scan can — `shareLocation` only ever answers "where is the caller, right now."
+
+**`network` is still a permission with no capability behind it.** State — dead zones, a global level
+and per-player overrides — all exist and reach the phone, and there is no _consumer_: every app
+behaves identically at four bars and at zero. Closing that is per-app work rather than platform
+work, and it is the open half of _Cellular dead zones and outages_ under Shipped.
