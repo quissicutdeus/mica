@@ -1,29 +1,29 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { get } from 'svelte/store';
-  import { fly, fade } from 'svelte/transition';
-  import { isShadeOpen, closeShade, shadeDragProgress, shadeDragPhase } from './state/shade';
-  import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
-  import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
-  import {
-    shadeNotifications,
-    loadShadeNotifications,
-    loadNotificationHistory,
-    loadUnreadCounts,
-    markNotificationsRead,
-    clearNotifications,
-    clearAllNotifications,
-    restoreNotifications
-  } from '../services/notifications';
-  import { openApp } from './state/navigation';
   import { parseDeepLink } from '@shared/deepLink';
   import type { NotificationItem } from '@shared/types';
+  import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
+  import { fade, fly } from 'svelte/transition';
+  import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
   import Avatar from '../sdk/ui/Avatar.svelte';
+  import ArchiveIcon from '../sdk/ui/icons/ArchiveIcon.svelte';
+  import CheckIcon from '../sdk/ui/icons/CheckIcon.svelte';
+  import ChevronDownIcon from '../sdk/ui/icons/ChevronDownIcon.svelte';
   import CloseIcon from '../sdk/ui/icons/CloseIcon.svelte';
   import TrashIcon from '../sdk/ui/icons/TrashIcon.svelte';
-  import CheckIcon from '../sdk/ui/icons/CheckIcon.svelte';
-  import ArchiveIcon from '../sdk/ui/icons/ArchiveIcon.svelte';
-  import ChevronDownIcon from '../sdk/ui/icons/ChevronDownIcon.svelte';
+  import {
+    clearAllNotifications,
+    clearNotifications,
+    loadNotificationHistory,
+    loadShadeNotifications,
+    loadUnreadCounts,
+    markNotificationsRead,
+    restoreNotifications,
+    shadeNotifications
+  } from '../services/notifications';
+  import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
+  import { openApp } from './state/navigation';
+  import { closeShade, isShadeOpen, shadeDragPhase, shadeDragProgress } from './state/shade';
   import SwipeableRow from './SwipeableRow.svelte';
 
   let notifications = $derived($shadeNotifications);
@@ -280,7 +280,7 @@
        unobservable. -->
   <div
     transition:fly={{ y: -850, duration: $shadeDragPhase === 'idle' ? 300 : 0 }}
-    class="bg-surface-container-high text-on-surface absolute inset-0 z-50 flex h-full w-full flex-col pt-14 pb-2 shadow-2xl backdrop-blur-3xl {$shadeDragPhase ===
+    class="bg-surface-container-high text-on-surface absolute inset-0 z-55 flex h-full w-full flex-col pt-14 pb-2 shadow-2xl backdrop-blur-3xl {$shadeDragPhase ===
     'settling'
       ? 'transition-transform duration-200 ease-out'
       : ''}"
@@ -297,24 +297,6 @@
     role="dialog"
     aria-label="Notification Shade"
   >
-    <!-- Grab Handle.
-
-         Pointer-only, scoped by `data-gesture-drag` so `dragScroll.ts` never claims a
-         press here, and deliberately not the drawer root or any part of the scrollable
-         list below — that scoping is the whole fix for the conflict the removed code
-         couldn't resolve. `aria-hidden` because it adds no action a keyboard/screen-reader
-         user lacks: the Close button below is the existing accessible equivalent. -->
-    <div
-      bind:this={handleRef}
-      class="flex w-full touch-none items-center justify-center py-2"
-      data-gesture-drag
-      data-testid="shade-grab-handle"
-      role="presentation"
-      aria-hidden="true"
-    >
-      <div class="bg-outline-variant h-1.5 w-10 rounded-full"></div>
-    </div>
-
     <!-- Header Bar -->
     <div class="mb-4 flex items-center justify-between px-6">
       <div class="flex items-baseline gap-2">
@@ -372,7 +354,7 @@
     </div>
 
     <!-- Notification List Area -->
-    <div class="flex-1 scrollbar-none overflow-y-auto px-5">
+    <div class="flex-1 scrollbar-none overflow-y-auto px-5 pb-8">
       {#if showHistory}
         <!-- History List View -->
         {#if loadingHistory}
@@ -791,5 +773,26 @@
         {/if}
       {/if}
     </div>
+
+    <!-- Grab Handle / Home Gesture Bar.
+
+         Pointer-only drag handle, styled to match and overlap PhoneFrame's home gesture
+         bar so there is a single white pill at the bottom of the screen when the shade is open.
+         Scoped by `data-gesture-drag` so `dragScroll.ts` never claims a press here,
+         and attached to `handleRef` for drag-up to close gesture. -->
+    <button
+      type="button"
+      bind:this={handleRef}
+      class="absolute bottom-0 left-0 z-10 flex h-6 w-full cursor-pointer touch-none items-end justify-center pb-1.5"
+      data-gesture-drag
+      data-testid="shade-grab-handle"
+      onclick={closeShade}
+      aria-hidden="true"
+      tabindex="-1"
+    >
+      <div
+        class="h-1 w-1/3 rounded-full bg-white opacity-80 transition-opacity duration-200 hover:opacity-100"
+      ></div>
+    </button>
   </div>
 {/if}

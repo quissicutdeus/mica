@@ -24,12 +24,10 @@ export const PHONE_HEIGHT = 850;
 /**
  * How far, in phone-design px, a finger has to travel to fully reveal or dismiss the
  * notification shade by drag. Shared by the status-bar open-drag and the shade's own
- * grab-handle close-drag so the two gestures feel symmetric — not the drawer's full
- * 850px of travel, since dragging the entire screen height to open it would fight the
- * "progressively reveal" feel every mobile OS uses. A feel parameter, not a derived
- * constant; tune in `pnpm dev`.
+ * grab-handle close-drag so the two gestures feel symmetric — equal to `PHONE_HEIGHT`
+ * (850px) so the panel tracks the finger 1:1 with zero offset across the full screen.
  */
-export const SHADE_DRAG_REVEAL_DISTANCE = PHONE_HEIGHT * 0.6;
+export const SHADE_DRAG_REVEAL_DISTANCE = PHONE_HEIGHT;
 
 /**
  * Breathing room between the phone and the edge of the window, in CSS pixels.

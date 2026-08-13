@@ -7,7 +7,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test';
  * importing app source.
  */
 const PHONE_WIDTH = 400;
-const SHADE_DRAG_REVEAL_DISTANCE = 850 * 0.6;
+const SHADE_DRAG_REVEAL_DISTANCE = 850;
 
 /** The frame's rendered rectangle, after the entrance fly-in has landed. See `display.spec.ts`. */
 const frameBox = async (page: Page) => {
