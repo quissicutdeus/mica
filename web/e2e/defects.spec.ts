@@ -78,11 +78,11 @@ test.describe('Store', () => {
   });
 });
 
-test.describe('Photos', () => {
+test.describe('Media', () => {
   test('a photo can be reported', async ({ page }) => {
     // ReportDialog was rendered but nothing ever opened it, so a photo could not be
     // reported at all.
-    await openApp(page, 'Photos');
+    await openApp(page, 'Media');
     await page.locator('img').first().click();
 
     await page.getByRole('button', { name: 'Report photo' }).click();
@@ -95,7 +95,7 @@ test.describe('Photos', () => {
     // Was a browser `alert('Photo shared! (Mock)')`, then a stub that said "not
     // implemented" forever. Bluetooth proximity drops are real now — this only guards
     // against the lie, either shape of it, coming back.
-    await openApp(page, 'Photos');
+    await openApp(page, 'Media');
     await page.locator('img').first().click();
 
     await page.getByRole('button', { name: 'Send to nearby devices' }).click();
@@ -123,7 +123,7 @@ test.describe('Lists can be used from the keyboard', () => {
   test('a photo opens on Enter', async ({ page }) => {
     // The grid was bare divs with no role and no tabindex, so the gallery could not be
     // opened from the keyboard at all.
-    await openApp(page, 'Photos');
+    await openApp(page, 'Media');
 
     const tile = page.getByRole('button', { name: /Open photo/ }).first();
     await tile.focus();
@@ -166,7 +166,7 @@ test.describe('Contacts', () => {
   test('sharing reaches a real server round trip instead of an unconditional claim', async ({
     page
   }) => {
-    // The same lie as Photos' old `alert(...)`, one layer deeper and so missed for
+    // The same lie as Media's old `alert(...)`, one layer deeper and so missed for
     // longer: the client callback logged to console and answered `{ success: true }`
     // unconditionally, so the phone announced "Contact shared successfully" for a
     // contact that never left the machine. Bluetooth proximity sharing is real now —
@@ -185,7 +185,7 @@ test.describe('Contacts', () => {
 
 test.describe('Notes and Contacts persist in the browser mock', () => {
   // The mock handlers never touched their fixtures, so a created note vanished and a
-  // deleted contact came back — while photos and mail behaved correctly.
+  // deleted contact came back — while media and mail behaved correctly.
   test('a deleted contact stays deleted across a re-entry', async ({ page }) => {
     await openApp(page, 'Contacts');
     const before = await page.locator('[role="button"]').count();

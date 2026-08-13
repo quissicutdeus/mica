@@ -12,9 +12,9 @@ import Camera from '../apps/camera/index.svelte';
 import Contacts from '../apps/contacts/index.svelte';
 import Mail from '../apps/mail/index.svelte';
 import Messages from '../apps/messages/index.svelte';
+import Media from '../apps/media/index.svelte';
 import Notes from '../apps/notes/index.svelte';
 import Phone from '../apps/phone/index.svelte';
-import Photos from '../apps/photos/index.svelte';
 import Settings from '../apps/settings/index.svelte';
 import Store from '../apps/store/index.svelte';
 
@@ -41,10 +41,10 @@ const APPS: Record<string, AppComponent> = {
   camera: Camera,
   contacts: Contacts,
   mail: Mail,
+  media: Media,
   messages: Messages,
   notes: Notes,
   phone: Phone,
-  photos: Photos,
   settings: Settings,
   store: Store
 };

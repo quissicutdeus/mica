@@ -58,7 +58,7 @@ const CORE_DIRS = [
 /**
  * Add-ons — the apps declaring `core: false`.
  *
- * **Not every app**, and the distinction is the whole rule. `contacts`, `photos` and
+ * **Not every app**, and the distinction is the whole rule. `contacts`, `media` and
  * `notes` ship with the phone, so core naming them is core naming part of itself; they
  * are also ordinary English words appearing across half the tree, which makes a blanket
  * rule both wrong and unusably noisy — the first version of this test flagged 55 files.

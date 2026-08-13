@@ -1,7 +1,7 @@
 <script lang="ts">
   import MediaThumb from './MediaThumb.svelte';
   import type { MediaPreview } from '@shared/types';
-  import { photos } from '../../services/photos';
+  import { media } from '../../services/media';
   import PhotoIcon from './icons/PhotoIcon.svelte';
   import CloseIcon from './icons/CloseIcon.svelte';
   import CheckCircleIcon from './icons/CheckCircleIcon.svelte';
@@ -57,7 +57,7 @@
 
   <!-- Photo Grid -->
   <div class="grid flex-1 grid-cols-3 content-start gap-2 overflow-y-auto p-3">
-    {#each $photos as photo}
+    {#each $media as photo}
       {#if multiSelect}
         {@const selected = isSelected(photo.id)}
         <button
@@ -85,7 +85,7 @@
       {/if}
     {/each}
 
-    {#if $photos.length === 0}
+    {#if $media.length === 0}
       <div
         class="text-on-surface-variant col-span-3 flex flex-col items-center py-12 text-center text-sm"
       >
@@ -105,7 +105,7 @@
           onclick={() => {
             // Clear all — parent handles resetting the array
             for (const id of [...selectedIds]) {
-              const photo = $photos.find((p) => p.id === id);
+              const photo = $media.find((p) => p.id === id);
               if (photo) onmultichange?.(photo.id, photo);
             }
           }}

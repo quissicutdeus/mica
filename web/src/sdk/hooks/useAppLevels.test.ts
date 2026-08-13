@@ -49,7 +49,7 @@ describe('useAppLevels', () => {
     let detail = false;
     const onback = vi.fn();
     const app = useAppLevels({
-      appId: 'photos',
+      appId: 'media',
       title: 'Photos',
       onback,
       levels: [{ open: () => detail, close: () => (detail = false) }]
@@ -145,7 +145,7 @@ describe('useAppLevels', () => {
     let confirming = false;
     let detail = false;
     const app = useAppLevels({
-      appId: 'photos',
+      appId: 'media',
       title: 'Photos',
       levels: [
         { open: () => confirming, close: () => (confirming = false) },

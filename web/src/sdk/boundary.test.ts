@@ -31,7 +31,7 @@ const FORBIDDEN = ['shell', 'services', 'sdk', 'nui', 'lib'];
 /**
  * `../../sdk` is a violation too, and the directory pattern above missed it: it requires
  * a `/` after the directory name, and the SDK barrel is imported as the bare directory.
- * Photos had both forms in one file and only the tidy one was caught.
+ * Media had both forms in one file and only the tidy one was caught.
  */
 const BARE_SDK_IMPORT = /from\s+['"](?:\.\.\/)+sdk['"]/g;
 

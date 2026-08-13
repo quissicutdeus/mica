@@ -16,7 +16,7 @@
     useAppLevels,
     MediaThumb,
     useDeepLink,
-    usePhotos,
+    useMedia,
     usePhoneNotification,
     type AppProps
   } from '@gphone/sdk';
@@ -29,9 +29,9 @@
     initialPhotoId
   }: AppProps & { initialPhoto?: MediaItem; initialPhotoId?: number } = $props();
 
-  const { photos, deletePhoto, dropNearby } = usePhotos();
-  const photosLoaded = photos.loaded;
-  const { busy, run } = useAppAction('photos');
+  const { media, deletePhoto, dropNearby } = useMedia();
+  const mediaLoaded = media.loaded;
+  const { busy, run } = useAppAction('media');
   const { toast } = usePhoneNotification();
 
   let selectedPhoto: MediaItem | null = $state(null);
@@ -40,18 +40,18 @@
   let showDeleteConfirm = $state(false);
   let reporting = $state(false);
 
-  onAppForeground('photos', () => {
-    void photos.load();
+  onAppForeground('media', () => {
+    void media.load();
   });
 
   // A drop landed while the gallery was already open — onAppForeground alone would miss
   // it until the app is reopened. The push is the notice; the fetch is still what feeds
   // the list, same as every other app's push contract.
-  useAppEvents('photos').on('media_received', () => {
-    void photos.load();
+  useAppEvents('media').on('media_received', () => {
+    void media.load();
   });
 
-  useDeepLink('photos', () => {
+  useDeepLink('media', () => {
     if (initialPhoto) {
       selectedPhoto = initialPhoto;
       return true;
@@ -60,7 +60,7 @@
 
     // Read the store reactively: on a cold open the photo list has not arrived yet, and
     // the link must survive until it does.
-    const found = $photos.find((p) => p.id === initialPhotoId);
+    const found = $media.find((p) => p.id === initialPhotoId);
     if (!found) return false;
 
     selectedPhoto = found;
@@ -104,7 +104,7 @@
 
   const shareSelected = () => {
     // Not implemented. Says so, rather than an `alert()` claiming it worked.
-    toast.show({ type: 'info', app: 'photos', message: 'Sharing photos is not implemented yet' });
+    toast.show({ type: 'info', app: 'media', message: 'Sharing photos is not implemented yet' });
     selectedIds.clear();
     isSelectionMode = false;
   };
@@ -122,7 +122,7 @@
 
     toast.show({
       type: count > 0 ? 'success' : 'info',
-      app: 'photos',
+      app: 'media',
       message:
         count > 0
           ? `Sent to ${count} nearby ${count === 1 ? 'phone' : 'phones'}.`
@@ -139,8 +139,8 @@
   };
 
   const app = useAppLevels({
-    appId: 'photos',
-    title: 'Photos',
+    appId: 'media',
+    title: 'Media',
     onback: () => onback(),
     levels: [
       { open: () => reporting, close: () => (reporting = false) },
@@ -211,9 +211,9 @@
   {:else}
     <!-- Grid View -->
     <div class="no-scrollbar bg-surface relative h-full overflow-y-auto p-1">
-      {#if !$photosLoaded}
+      {#if !$mediaLoaded}
         <Skeleton count={4} height="h-24" rounded="rounded-none" />
-      {:else if $photos.length === 0}
+      {:else if $media.length === 0}
         <EmptyState title="No photos yet">
           {#snippet icon()}
             <EmptyPhotoIcon class="h-16 w-16" />
@@ -221,7 +221,7 @@
         </EmptyState>
       {:else}
         <div class="grid grid-cols-3 gap-1">
-          {#each $photos as photo (photo.id)}
+          {#each $media as photo (photo.id)}
             <!-- A real button: the grid is the only way into a photo, and it was a bare
                  div, so the gallery could not be opened from the keyboard at all. -->
             <button
@@ -299,7 +299,7 @@
   <ReportDialog
     targetTable="gphone_media"
     targetId={selectedPhoto.id}
-    appId="photos"
+    appId="media"
     onclose={() => (reporting = false)}
   />
 {/if}

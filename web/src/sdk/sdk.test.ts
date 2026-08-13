@@ -4,7 +4,7 @@ import {
   defineApp,
   usePhoneNotification,
   useContacts,
-  usePhotos,
+  useMedia,
   useNuiBridge,
   useNavigation,
   useStorage,
@@ -21,7 +21,7 @@ import {
 } from './index';
 import { toast } from '../shell/state/toast';
 import { contacts } from '../services/contacts';
-import { photos } from '../services/photos';
+import { media } from '../services/media';
 import { get } from 'svelte/store';
 
 describe('gPhone SDK (@gphone/sdk)', () => {
@@ -100,15 +100,15 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       expect(contactList[0].phone).toBe('555-0100');
     });
 
-    it('usePhotos captures and deletes photo items', async () => {
-      const { capturePhoto, deletePhoto } = usePhotos();
+    it('useMedia captures and deletes photo items', async () => {
+      const { capturePhoto, deletePhoto } = useMedia();
 
       await capturePhoto('data:image/png;base64,mockImageBytes');
-      let photoList = get(photos);
+      let photoList = get(media);
       expect(photoList.length).toBe(1);
 
       await deletePhoto(photoList[0].id);
-      photoList = get(photos);
+      photoList = get(media);
       expect(photoList.length).toBe(0);
     });
 

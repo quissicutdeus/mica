@@ -2,7 +2,7 @@
   import { asDataUri, cropViewportToCanvas } from './capture';
   import {
     useCamera,
-    usePhotos,
+    useMedia,
     useKeybinds,
     useNavigation,
     useNuiBridge,
@@ -18,7 +18,7 @@
   } from '@gphone/sdk';
 
   const { isTakingPhoto, isPreviewingPhoto } = useCamera();
-  const { capturePhoto, photos } = usePhotos();
+  const { capturePhoto, media } = useMedia();
   const { openApp } = useNavigation();
   const { run } = useAppAction('camera');
   const { toast } = usePhoneNotification();
@@ -117,7 +117,7 @@
 
   // The thumbnail shows the newest photo, which may have arrived from anywhere.
   onAppForeground('camera', () => {
-    void photos.load();
+    void media.load();
   });
 
   onDestroy(() => {
@@ -224,7 +224,7 @@
 
         // Directly save captured photo to gallery
         await capturePhoto(capturedImage);
-        await photos.load();
+        await media.load();
 
         // Send the frame down into the thumbnail, then bounce it on arrival.
         flyToThumbnail(capturedImage);
@@ -362,27 +362,27 @@
 
       <!-- Shutter Row: Gallery Preview (Left) | Shutter Button (Center) | Flip Camera (Right) -->
       <div class="flex w-full items-center justify-between px-6 pt-1">
-        <!-- Left: Gallery Preview Thumbnail (Clicking opens directly to that photo in Photos app) -->
+        <!-- Left: Gallery Preview Thumbnail (Clicking opens directly to that photo in Media app) -->
         <button
           type="button"
           bind:this={thumbnailRef}
           onclick={() => {
-            if ($photos.length > 0) {
-              openApp('photos', {
-                initialPhoto: $photos[0]
+            if ($media.length > 0) {
+              openApp('media', {
+                initialPhoto: $media[0]
               });
             } else {
-              openApp('photos');
+              openApp('media');
             }
           }}
           class="group flex h-12 w-12 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-white/30 bg-black/40 shadow-lg transition-all duration-300 {isThumbnailBouncing
             ? 'scale-110 border-yellow-400 shadow-xl ring-2 shadow-yellow-400/30 ring-yellow-400/60'
             : 'hover:scale-105'}"
-          aria-label="Open Photos Gallery"
+          aria-label="Open Media Gallery"
         >
-          {#if $photos.length > 0}
+          {#if $media.length > 0}
             <img
-              src={$photos[0].data}
+              src={$media[0].data}
               alt="Recent capture"
               class="h-full w-full object-cover transition-opacity group-hover:opacity-90"
             />

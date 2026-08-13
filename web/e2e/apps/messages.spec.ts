@@ -52,4 +52,34 @@ test.describe('Messages App E2E', () => {
       messagesContainer.locator('button', { hasText: 'Load older messages' })
     ).not.toBeVisible();
   });
+
+  test('shares a location and sets a waypoint from it', async ({ page }) => {
+    const convItem = page.locator('[role="button"]').filter({ hasText: 'Trevor' }).first();
+    await expect(convItem).toBeVisible();
+    await convItem.click({ force: true });
+
+    await expect(page.locator('button', { hasText: 'Trevor Philips' }).first()).toBeVisible();
+
+    await page.getByRole('button', { name: 'Attachments' }).click();
+    await page.locator('button', { hasText: 'Location' }).click();
+
+    // Sharing the location is async — wait for the attach tray to actually show it (its
+    // remove button) before sending, or Send fires while the share is still in flight.
+    await expect(page.getByRole('button', { name: 'Remove attachment' })).toBeVisible();
+
+    const messagesContainer = page.locator('#messages-container');
+    await page.getByRole('button', { name: 'Send' }).click();
+
+    // The sent bubble renders the location placeholder plus its resolved label, and an
+    // "Add Waypoint" affordance that a plain photo/gif/etc. attachment never gets.
+    const waypointButton = messagesContainer.locator('button', { hasText: 'Add Waypoint' }).first();
+    await expect(waypointButton).toBeVisible();
+    await expect(waypointButton.locator('text=Vespucci Beach')).toBeVisible();
+
+    await waypointButton.click();
+
+    // The mock's `setWaypoint` can't call a real native in a browser, so the assertion is
+    // on the toast/feedback path only, never on map state.
+    await expect(page.locator('text=Waypoint set')).toBeVisible();
+  });
 });

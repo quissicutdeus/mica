@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { bootstrapStores, resetBootstrapState } from './bootstrap';
 import { contacts } from '../../services/contacts';
 import { conversationsStore } from '../../services/conversations';
-import { photos } from '../../services/photos';
+import { media } from '../../services/media';
 import { mailStore } from '../../services/mail';
 import { notes } from '../../apps/notes/store';
 import * as accountModule from '../../services/account';
@@ -21,7 +21,7 @@ describe('bootstrapStores', () => {
     const spyBalance = vi.spyOn(accountModule, 'fetchBalance').mockResolvedValue();
     const spyContacts = vi.spyOn(contacts, 'load').mockResolvedValue();
     const spyMessages = vi.spyOn(conversationsStore, 'loadConversations').mockResolvedValue();
-    const spyPhotos = vi.spyOn(photos, 'load').mockResolvedValue();
+    const spyPhotos = vi.spyOn(media, 'load').mockResolvedValue();
     const spyMail = vi.spyOn(mailStore, 'load').mockResolvedValue();
     const spyNotes = vi.spyOn(notes, 'load').mockResolvedValue();
 

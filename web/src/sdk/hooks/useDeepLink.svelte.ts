@@ -18,7 +18,7 @@ import { consumeAppProps } from '../../shell/state/navigation';
  * clears them.
  *
  * ```ts
- * useDeepLink('photos', () => {
+ * useDeepLink('media', () => {
  *   if (initialPhoto) { selectedPhoto = initialPhoto; return true; }
  *   const found = initialPhotoId && $photos.find((p) => p.id === initialPhotoId);
  *   if (!found) return false;   // not loaded yet — ask again when it is

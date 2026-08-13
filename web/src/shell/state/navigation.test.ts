@@ -94,7 +94,7 @@ describe('residency cap', () => {
    * rejects, so the residency cap has to be exercised with apps that actually exist —
    * which is also what it is really about.
    */
-  const REAL = ['notes', 'photos', 'camera', 'calculator', 'bank', 'store', 'admin'];
+  const REAL = ['notes', 'media', 'camera', 'calculator', 'bank', 'store', 'admin'];
 
   it('evicts the least recently used', () => {
     const opened = REAL.slice(0, MAX_RESIDENT_APPS + 2);
@@ -109,9 +109,9 @@ describe('residency cap', () => {
 
   it('re-opening refreshes recency rather than duplicating', () => {
     openApp('notes');
-    openApp('photos');
+    openApp('media');
     openApp('notes');
-    expect(names()).toEqual(['photos', 'notes']);
+    expect(names()).toEqual(['media', 'notes']);
   });
 
   it('never evicts an app that stays in use', () => {
@@ -141,26 +141,26 @@ describe('deep-link props', () => {
     // Both matter: the component reads `currentApp.props`, while `runningApps` is what
     // survives a trip to another app. Clearing one and not the other would put the deep
     // link back on the next visit.
-    openApp('photos', { initialPhotoId: 3 });
-    consumeAppProps('photos');
+    openApp('media', { initialPhotoId: 3 });
+    consumeAppProps('media');
 
     expect(get(currentApp).props).toEqual({});
-    expect(get(runningApps).find((a) => a.id === 'photos')?.props).toEqual({});
+    expect(get(runningApps).find((a) => a.id === 'media')?.props).toEqual({});
   });
 
   it('consuming leaves other apps alone', () => {
     openApp('mail', { mailId: 7 });
-    openApp('photos', { initialPhotoId: 3 });
-    consumeAppProps('photos');
+    openApp('media', { initialPhotoId: 3 });
+    consumeAppProps('media');
 
     expect(get(runningApps).find((a) => a.id === 'mail')?.props).toEqual({ mailId: 7 });
   });
 
   it('a consumed deep link does not come back on reopen', () => {
-    openApp('photos', { initialPhotoId: 3 });
-    consumeAppProps('photos');
+    openApp('media', { initialPhotoId: 3 });
+    consumeAppProps('media');
     goHome();
-    openApp('photos');
+    openApp('media');
 
     expect(get(currentApp).props).toEqual({});
   });

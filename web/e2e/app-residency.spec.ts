@@ -151,7 +151,7 @@ test.describe('App residency', () => {
   });
 
   test('back works inside an app opened by a deep link', async ({ page }) => {
-    // Deep-link props became sticky when apps started staying resident: Photos was
+    // Deep-link props became sticky when apps started staying resident: Media was
     // opened on a specific picture, so pressing back cleared the selection, the
     // "open this one" effect saw the prop still set and immediately reopened it. The
     // back button looked dead.
@@ -163,16 +163,17 @@ test.describe('App residency', () => {
     const shutter = page.getByRole('button', { name: /take photo/i });
     await expect(shutter).toBeVisible();
     await shutter.click();
-    await expect(page.getByRole('button', { name: /Open Photos Gallery/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Open Media Gallery/i })).toBeVisible();
 
-    await page.getByRole('button', { name: /Open Photos Gallery/i }).click();
-    // Anchored: the gallery's own title is "Photos", so a substring match on "Photo"
-    // passes whether or not the detail view actually opened.
+    await page.getByRole('button', { name: /Open Media Gallery/i }).click();
+    // Anchored: the individual item's own title is "Photo", not the gallery's "Media",
+    // so a substring match on "Photo" passes whether or not the detail view actually
+    // opened — the item's kind is unchanged by the app-level rename.
     await expect(page.locator('h1').filter({ hasText: /^Photo$/ })).toBeVisible();
 
-    // Role-based: Camera is still resident behind Photos and has its own back button.
+    // Role-based: Camera is still resident behind Media and has its own back button.
     await page.getByRole('button', { name: 'Go back' }).click();
-    await expect(page.locator('h1').filter({ hasText: /^Photos$/ })).toBeVisible();
+    await expect(page.locator('h1').filter({ hasText: /^Media$/ })).toBeVisible();
     await expect(page.locator('h1').filter({ hasText: /^Photo$/ })).toHaveCount(0);
   });
 });

@@ -2,6 +2,7 @@
   import type { MediaPreview } from '@shared/types';
   import DocumentIcon from './icons/DocumentIcon.svelte';
   import LinkIcon from './icons/LinkIcon.svelte';
+  import LocationIcon from './icons/LocationIcon.svelte';
   import MicrophoneIcon from './icons/MicrophoneIcon.svelte';
   import PlayIcon from './icons/PlayIcon.svelte';
 
@@ -89,6 +90,8 @@
         <MicrophoneIcon class="h-6 w-6" />
       {:else if item.kind === 'link'}
         <LinkIcon class="h-6 w-6" />
+      {:else if item.kind === 'location'}
+        <LocationIcon class="h-6 w-6" />
       {:else}
         <DocumentIcon class="h-6 w-6" />
       {/if}

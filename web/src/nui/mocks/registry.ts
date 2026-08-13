@@ -3,9 +3,10 @@ import {
   mockContacts,
   mockConversations,
   mockEmails,
+  mockLocationShare,
   mockMessages,
   mockNotes,
-  mockPhotos,
+  mockMedia,
   sampleAvatars
 } from './data';
 import type {
@@ -862,10 +863,10 @@ const mockRegistry: Record<string, MockHandler> = {
     // echoed the id alone would render a blank thumbnail while the server rendered a real one.
     const resolvedAttachments = (attachments ?? [])
       .map((att, i) => {
-        const photo = mockPhotos.find((p) => p.id === att.photo_id);
+        const photo = mockMedia.find((p) => p.id === att.photo_id);
         return photo ? { id: i, media: photo } : null;
       })
-      .filter((att): att is { id: number; media: (typeof mockPhotos)[number] } => att !== null);
+      .filter((att): att is { id: number; media: (typeof mockMedia)[number] } => att !== null);
     const created: Blab = {
       id: nextBlabId++,
       account_id: account.id,
@@ -1202,7 +1203,16 @@ const mockRegistry: Record<string, MockHandler> = {
       citizenid: 'my-id',
       status: 'active',
       message: payload.message,
-      attachments: (payload.attachments || []).map((a: any, i: number) => ({ ...a, id: i })),
+      // Hydrated the same way the real server does: `photo_id` resolves to the owning
+      // row's full media, not just echoed back bare. Without this a freshly-sent
+      // attachment rendered nothing until the next fetch re-hydrated it — invisible for
+      // any kind a test sends and immediately asserts on, which a pre-seeded fixture
+      // (already carrying `media`) never exercised.
+      attachments: (payload.attachments || []).map((a: any, i: number) => ({
+        ...a,
+        id: i,
+        media: mockMedia.find((p) => p.id === a.photo_id)
+      })),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -1328,7 +1338,7 @@ const mockRegistry: Record<string, MockHandler> = {
     return true;
   },
 
-  // Camera & Photos
+  // Camera & Media
   takePhoto: () => {
     const photo = sampleAvatars[mockPhotoIndex % sampleAvatars.length];
     mockPhotoIndex++;
@@ -1336,11 +1346,11 @@ const mockRegistry: Record<string, MockHandler> = {
   },
   flipCamera: async (data: any) => ({ supported: true, isFrontCamera: !!data?.isFrontCamera }),
   onCameraApp: async () => true,
-  // Photos and mail are soft-deleted, as the server does it: a removed row is still
+  // Media and mail are soft-deleted, as the server does it: a removed row is still
   // there to be moderated.
   ...defineMockCrud<MediaItem>(
-    mockPhotos,
-    { list: 'getPhotos', create: 'createPhoto', remove: 'deletePhoto' },
+    mockMedia,
+    { list: 'getMedia', create: 'createMedia', remove: 'deleteMedia' },
     {
       remove: 'soft',
       visible: (p) => p.status !== 'deleted',
@@ -1348,9 +1358,9 @@ const mockRegistry: Record<string, MockHandler> = {
       defaults: { status: 'active' }
     }
   ),
-  // Bluetooth proximity drop. A named route (`sharePhotoNearby`), not `defineMockCrud` —
+  // Bluetooth proximity drop. A named route (`shareMediaNearby`), not `defineMockCrud` —
   // no CRUD verb fits copying a row to N nearby recipients.
-  sharePhotoNearby: async () => {
+  shareMediaNearby: async () => {
     const count = bluetoothNearbyCount;
     if (count > 0 && typeof window !== 'undefined') {
       delay(150).then(() => {
@@ -1358,7 +1368,7 @@ const mockRegistry: Record<string, MockHandler> = {
           {
             action: 'appEvent',
             data: {
-              app: 'photos',
+              app: 'media',
               event: 'media_received',
               payload: {},
               at: Date.now(),
@@ -1371,6 +1381,12 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     return { count };
   },
+  // Location sharing. Fixed coordinates rather than anything real — the browser has no
+  // ped position to read — matching the mock's job of exercising every layer above the
+  // native call, not the native call itself.
+  shareLocation: async () => ({ id: mockLocationShare.id, media: mockLocationShare }),
+  // Purely local in game (`SetNewWaypoint`); nothing for the browser to do but succeed.
+  setWaypoint: async () => ({ ok: true }),
 
   // Mail
   ...defineMockCrud<Mail>(

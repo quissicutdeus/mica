@@ -68,6 +68,20 @@ const mockCaptures: MediaItem[] = sampleAvatars.map((url, index) => ({
 }));
 
 /**
+ * The fixed row `shareLocation`'s mock hands back — its own binding rather than an index
+ * into `mockOtherMedia`, so reordering that array can't quietly change what gets shared.
+ */
+export const mockLocationShare: MediaItem = {
+  id: 903,
+  citizenid: 'mock-id',
+  kind: 'location',
+  data: JSON.stringify({ x: 215.3, y: -810.6, z: 30.7 }),
+  alt_text: 'Vespucci Beach',
+  status: 'active',
+  ...ts()
+};
+
+/**
  * One row of each non-photo kind the table understands.
  *
  * Fixtures for kinds nothing can capture, because the camera only ever produces a `photo`
@@ -78,7 +92,9 @@ const mockCaptures: MediaItem[] = sampleAvatars.map((url, index) => ({
  *
  * They also cover the two branches that are easy to get wrong: a video has no `data` at
  * all and must render from its `thumbnail`, and an audio clip has neither and must fall
- * back to a labelled placeholder rather than a broken image.
+ * back to a labelled placeholder rather than a broken image. `location` (the last entry)
+ * is `mockLocationShare` itself, so a location attachment already in a conversation and a
+ * freshly-shared one in the mock are the same row rather than two that could disagree.
  */
 const mockOtherMedia: MediaItem[] = [
   {
@@ -113,10 +129,11 @@ const mockOtherMedia: MediaItem[] = [
     alt_text: 'Voice note',
     status: 'active',
     ...ts()
-  }
+  },
+  mockLocationShare
 ];
 
-export const mockPhotos: MediaItem[] = [...mockOtherMedia, ...mockCaptures];
+export const mockMedia: MediaItem[] = [...mockOtherMedia, ...mockCaptures];
 
 export const mockNotes: Note[] = [
   {

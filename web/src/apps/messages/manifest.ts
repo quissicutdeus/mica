@@ -14,6 +14,6 @@ export default defineApp({
     return useMessages().conversationsStore.loadConversations();
   },
   description: 'Send text messages and share content with contacts',
-  permissions: ['contacts', 'media', 'notifications', 'network'],
+  permissions: ['contacts', 'media', 'notifications', 'network', 'location'],
   core: true
 });

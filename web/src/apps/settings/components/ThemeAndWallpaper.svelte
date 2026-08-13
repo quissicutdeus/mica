@@ -2,7 +2,7 @@
   import {
     useWallpaper,
     useTheme,
-    usePhotos,
+    useMedia,
     useClock,
     useDisplay,
     EmptyState,
@@ -23,7 +23,7 @@
     presets
   } = useWallpaper();
   const { themeStore, setThemeMode, schemeStore, seedFromRgbString } = useTheme();
-  const { photos } = usePhotos();
+  const { media } = useMedia();
   const { formattedTime } = useClock();
   const { phoneBox } = useDisplay();
 
@@ -217,7 +217,7 @@
       From a Photo
     </h2>
     <div class="bg-surface-container rounded-xl p-4 text-center">
-      {#if $photos.length === 0}
+      {#if $media.length === 0}
         <EmptyState
           title="No photos in Gallery"
           description="Photos taken with the Camera app can be used as a wallpaper, and the phone takes its colors from them."
@@ -227,7 +227,7 @@
           <!-- `data` is optional now: a hotlinked or link-preview row has a url and no
                bytes. Nothing writes one yet, but a wallpaper needs actual bytes, so the
                ones without are skipped rather than rendered as a broken tile. -->
-          {#each $photos.filter((p) => p.data).slice(0, 6) as photo (photo.id)}
+          {#each $media.filter((p) => p.data).slice(0, 6) as photo (photo.id)}
             <button
               type="button"
               onclick={() => applyPhoto(photo.data!)}

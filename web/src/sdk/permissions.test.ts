@@ -28,14 +28,16 @@ import { bundledAddOns, registeredApps } from '../shell/state/registry';
  * discloses it.
  *
  * Deliberately narrow. Only hooks that touch player data or device hardware are here, because
- * those are what a permission means to the person reading it. `network` and `location` are
- * absent on purpose: every app talks to its own service over the NUI bridge, so deriving
- * `network` from that would mark all twelve and disclose nothing. Those stay hand-declared.
+ * those are what a permission means to the person reading it. `network` is absent on purpose:
+ * every app talks to its own service over the NUI bridge, so deriving it from that would mark
+ * all twelve and disclose nothing. It stays hand-declared. `location` used to be hand-declared
+ * for the same reason — nothing inferred it — until `useLocation` gave it a real, specific hook.
  */
 const REQUIRED_BY: Record<string, AppPermission> = {
   useContacts: 'contacts',
-  usePhotos: 'media',
+  useMedia: 'media',
   useCamera: 'camera',
+  useLocation: 'location',
   usePhoneNotification: 'notifications',
   useStorage: 'storage',
   usePersisted: 'storage',

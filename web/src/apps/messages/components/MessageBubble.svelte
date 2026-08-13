@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { MediaThumb } from '@gphone/sdk';
+  import { MediaThumb, useLocation, useAppAction } from '@gphone/sdk';
   import {
     useNavigation,
     useContacts,
@@ -11,10 +11,12 @@
     ReportButton,
     ReportDialog
   } from '@gphone/sdk';
-  import type { Contact } from '@shared/types';
+  import type { Contact, MediaPreview } from '@shared/types';
 
   const { openApp } = useNavigation();
   const { contactsStore: contacts } = useContacts();
+  const { setWaypoint } = useLocation();
+  const { run } = useAppAction('messages');
 
   interface Props {
     msg: UIMessage;
@@ -46,6 +48,26 @@
     if (contact) {
       openApp('contacts', { initialContact: contact });
     }
+  };
+
+  /**
+   * `media.data` is `JSON.stringify({x,y,z})` for a location row (`server/services/
+   * Photos.ts`'s `shareLocation` action) — parsed here rather than trusted as anything
+   * more than what it is, since it still crossed the network as ordinary message content.
+   */
+  const handleAddWaypoint = async (media: MediaPreview) => {
+    await run(
+      async () => {
+        const parsed = media.data ? JSON.parse(media.data) : null;
+        const x = parsed?.x;
+        const y = parsed?.y;
+        if (typeof x !== 'number' || typeof y !== 'number') {
+          throw new Error('Bad location data');
+        }
+        await setWaypoint(x, y);
+      },
+      { success: 'Waypoint set', error: 'Could not set waypoint' }
+    );
   };
 </script>
 
@@ -88,9 +110,27 @@
       <div class="mb-2 space-y-2">
         {#each msg.attachments as attach}
           {#if attach.media}
-            <div class="max-w-full overflow-hidden rounded-lg">
-              <MediaThumb item={attach.media} fit="contain" alt="Attachment" />
-            </div>
+            {@const media = attach.media}
+            {#if media.kind === 'location'}
+              <button
+                type="button"
+                class="border-outline-variant hover:bg-surface-container-high flex w-full flex-col overflow-hidden rounded-lg border transition-colors"
+                onclick={() => handleAddWaypoint(media)}
+              >
+                <div class="h-24 w-full">
+                  <!-- No `alt` override here, deliberately: MediaThumb's label falls
+                       through to `item.alt_text`, which is the street name resolved on
+                       the sender's own client (`shareLocation`'s handler) — passing a
+                       fixed "Shared location" would silently hide it. -->
+                  <MediaThumb item={media} fit="contain" />
+                </div>
+                <span class="text-primary px-2 py-1.5 text-xs font-semibold">Add Waypoint</span>
+              </button>
+            {:else}
+              <div class="max-w-full overflow-hidden rounded-lg">
+                <MediaThumb item={media} fit="contain" alt="Attachment" />
+              </div>
+            {/if}
           {/if}
         {/each}
       </div>

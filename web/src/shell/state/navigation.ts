@@ -108,7 +108,7 @@ export const openApp = (appName: string, props: Record<string, unknown> = {}) =>
  * mount-per-navigation model the props died with the component and the problem could
  * not arise.
  *
- * One-shot is the right semantic regardless: `openApp('photos', { initialPhoto })` is
+ * One-shot is the right semantic regardless: `openApp('media', { initialPhoto })` is
  * an instruction to do something once, not a description of lasting state.
  */
 export const consumeAppProps = (appName: string) => {

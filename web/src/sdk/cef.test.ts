@@ -74,7 +74,7 @@ const GRANDFATHERED: Record<string, number> = {
   'src/apps/messages/components/MessageComposer.svelte': 2,
   'src/apps/messages/components/MessageThread.svelte': 1,
   'src/apps/phone/index.svelte': 3,
-  'src/apps/photos/index.svelte': 2,
+  'src/apps/media/index.svelte': 2,
   'src/apps/store/components/AppDetails.svelte': 1,
   'src/shell/PhoneFrame.svelte': 3,
   'src/shell/Shell.svelte': 1,

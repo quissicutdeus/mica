@@ -1,20 +1,20 @@
-import { photos } from '../../services/photos';
+import { media } from '../../services/media';
 
 /**
- * The photo gallery — the client face of the `photos` service.
+ * The media gallery — the client face of the `media` service.
  *
  * Split out of `useCamera`, which owned both the hardware and the library. They are
- * used by different apps for different reasons: Photos reads the gallery and never
+ * used by different apps for different reasons: Media reads the gallery and never
  * touches the shutter, and an app attaching an image to a message wants neither.
  */
-export function usePhotos() {
+export function useMedia() {
   return {
-    photos,
-    // `kind` is stated rather than left to the column default: the table holds seven
+    media,
+    // `kind` is stated rather than left to the column default: the table holds eight
     // kinds now, and a writer that does not say which one it is means the row's meaning
     // depends on a DDL default nobody reading this file can see.
-    capturePhoto: async (data: string) => photos.add({ kind: 'photo', data }),
-    deletePhoto: async (id: number) => photos.delete(id),
-    dropNearby: async (mediaId: number) => photos.dropNearby(mediaId)
+    capturePhoto: async (data: string) => media.add({ kind: 'photo', data }),
+    deletePhoto: async (id: number) => media.delete(id),
+    dropNearby: async (mediaId: number) => media.dropNearby(mediaId)
   };
 }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { MediaThumb } from '@gphone/sdk';
+  import { MediaThumb, useLocation, useAppAction } from '@gphone/sdk';
   import type { MediaPreview } from '@shared/types';
   import {
     CloseIcon,
@@ -34,6 +34,20 @@
 
   let showAttachMenu = $state(false);
   let showPicker = $state(false);
+
+  const { shareLocation } = useLocation();
+  const { run } = useAppAction('messages');
+
+  const handleShareLocation = async () => {
+    await run(
+      async () => {
+        const { id, media } = await shareLocation();
+        attachments = [...attachments, { photo_id: id, media }];
+      },
+      { error: 'Could not share your location' }
+    );
+    showAttachMenu = false;
+  };
 </script>
 
 <!-- Input Area -->
@@ -112,6 +126,7 @@
       </button>
       <button
         class="hover:bg-surface-container-high flex flex-col items-center justify-center rounded-lg p-3 transition-colors"
+        onclick={handleShareLocation}
       >
         <div
           class="mb-1 flex h-8 w-8 items-center justify-center rounded-full bg-green-500/20 text-green-400"

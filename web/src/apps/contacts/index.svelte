@@ -2,7 +2,7 @@
   import {
     useAppAction,
     useContacts,
-    usePhotos,
+    useMedia,
     usePhoneNotification,
     useNavigation,
     useCall,
@@ -31,7 +31,7 @@
   let { onback }: AppProps = $props();
 
   const { contactsStore } = useContacts();
-  const { photos } = usePhotos();
+  const { media } = useMedia();
   const { toast } = usePhoneNotification();
   const { busy, run } = useAppAction('contacts');
 
@@ -94,7 +94,7 @@
 
   const openPhotoPicker = (target: 'new' | 'edit') => {
     photoPickerTarget = target;
-    photos.load();
+    media.load();
     showPhotoPicker = true;
   };
 

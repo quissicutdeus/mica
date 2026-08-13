@@ -3,7 +3,7 @@
   import {
     useMessages,
     useContacts,
-    usePhotos,
+    useMedia,
     useAccount,
     onAppForeground,
     useAppAction,
@@ -33,7 +33,7 @@
   const conversationsLoaded = conversationsStore.loaded;
   const { busy, run } = useAppAction('messages');
   const { contactsStore: contacts } = useContacts();
-  const { photos } = usePhotos();
+  const { media } = useMedia();
   const { citizenid } = useAccount();
   import ConversationList from './components/ConversationList.svelte';
   import MessageComposer from './components/MessageComposer.svelte';
@@ -255,7 +255,7 @@
   };
 
   const openPhotoPicker = async () => {
-    await photos.load();
+    await media.load();
     showPhotoPicker = true;
     showAttachMenu = false;
   };

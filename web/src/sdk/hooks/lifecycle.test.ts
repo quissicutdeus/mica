@@ -55,11 +55,11 @@ describe('onAppForeground', () => {
 
   it('does not re-fire when the same app republishes itself', () => {
     // Consuming a deep link rewrites `currentApp` with the same id. That is not a visit.
-    openApp('photos', { initialPhotoId: 7 });
+    openApp('media', { initialPhotoId: 7 });
     const load = vi.fn();
-    watch('photos', load);
+    watch('media', load);
 
-    openApp('photos', { initialPhotoId: 9 });
+    openApp('media', { initialPhotoId: 9 });
 
     expect(load).toHaveBeenCalledTimes(1);
   });
