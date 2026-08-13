@@ -959,9 +959,25 @@ Two constraints shape every schema item below:
 - **Base64 will not carry video.** `gphone_media.data` is `mediumtext` holding base64; a video or
   voice clip at that size will not survive crossing NUI.
 
-Nothing currently sits under this heading — the one item that did, notification shade gestures, is
-built and moved up into _Shipped_. The heading and the two constraints above stay: they are where
-the next proposal's reasoning goes, not scaffolding for this one.
+### Isolating remote/Store-installed add-ons
+
+Today `loadRemoteApp` (`web/src/shell/state/registry.ts`) dynamic-imports a fetched bundle
+directly into the shell's own JS context — no isolation of any kind. `docs/security.md` already
+states this plainly: `permissions` on a manifest is a disclosure, not a sandbox, because every app
+shares the shell's context and any check made there is one an add-on can route around. That is the
+correct description of what exists today, not a gap in it — the platform has never claimed to run
+untrusted code safely.
+
+It stops being merely honest and starts being a real hole the day a remote add-on is something a
+player installs from an author gPhone did not vet — a genuine third-party distribution channel
+rather than a bundled add-on shipped in-tree. At that point the shell's own `localStorage`, its
+stores, and every NUI callback a malicious bundle can reach become fair game for anything it loads.
+
+Two candidate approaches, not designed further here: an `<iframe>` boundary with postMessage
+relaying the SDK surface across it, or a Web Worker running the add-on off the DOM entirely with
+the same relay. Either is a real architectural change — a new transport layer between an add-on and
+`@gphone/sdk` — not a small patch, and not worth building until remote distribution is a real
+channel rather than a capability sitting unused.
 
 ---
 
