@@ -8,16 +8,20 @@
  */
 const noop = () => {};
 
+const oxmysqlStub = {
+  query_async: noop,
+  insert_async: noop,
+  update_async: noop,
+  scalar_async: noop,
+  single_async: noop,
+  transaction_async: noop
+};
+
+const exportsFn = function () {};
+(exportsFn as any).oxmysql = oxmysqlStub;
+
 const fivemGlobals: Record<string, unknown> = {
-  // Dual-purpose in FiveM: indexed to reach another resource (`exports['qbx_core']`)
-  // and called to publish one (`exports('SendSystemEmail', fn)`). A function covers
-  // both, since a function is also an object.
-  //
-  // Caveat worth knowing: Vite's module wrapper supplies its own non-callable
-  // `exports` binding in module scope, which shadows this global. So the indexed use
-  // resolves against Vite's object and the callable use does NOT reach this stub —
-  // which is why `services/Mail.ts` guards its `exports(...)` call with a typeof check.
-  exports: function () {},
+  exports: exportsFn,
   onNet: noop,
   emitNet: noop,
   on: noop,
@@ -26,8 +30,6 @@ const fivemGlobals: Record<string, unknown> = {
   GetCurrentResourceName: () => 'gphone',
   RegisterCommand: noop,
   GetConvar: (_name: string, fallback: string) => fallback,
-  // Denies by default, so a suite that forgets to stub it cannot accidentally exercise
-  // the privileged path.
   IsPlayerAceAllowed: () => false
 };
 
