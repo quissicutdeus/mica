@@ -528,30 +528,28 @@ test.describe('Blabber', () => {
       await openTab(page);
 
       // The mock shade holds settings, messages and mail rows too; the tab is filtered to the
-      // app it belongs to, so none of them may appear here.
-      await expect(page.locator('text=thinking about what @ada said')).toBeVisible();
+      // app it belongs to, so none of them may appear here. The preview is the mentioning
+      // Blab's actual body (`mockBlabs` id 2, "anyone up? @ada") rather than an invented line —
+      // see the comment on `mentionNotification` in `web/src/nui/mocks/registry.ts`.
+      await expect(page.locator('text=anyone up? @ada')).toBeVisible();
       await expect(page.locator('text=Developer Tools unlocked')).toHaveCount(0);
       await expect(page.locator('text=GET DOWN HERE')).toHaveCount(0);
     });
 
     test('a notification opens the Blab it names, root included', async ({ page }) => {
       await openTab(page);
-      await page.locator('text=thinking about what @ada said').click();
+      await page.locator('text=anyone up? @ada').click();
 
       // `deep_link` resolved through the shared parser, not a private regex — the row names
-      // `blabId=1`, so this is that Blab's thread and its reply proves it.
-      await expect(page.locator('text=congratulations on being first')).toBeVisible();
-
-      /**
-       * And the root is rendered, which is the half that was broken. A deep link carries an id
-       * and nothing else, so the thread opened around a `{ id }` stub and painted its replies
-       * above an empty row — no body, no author, no timestamp.
-       *
-       * `.first()`, not a bare match: the flattened view (Task 11) also shows the reply's own
-       * reply ("thank you"), which is @ada's too, so two "Ada's profile" buttons are on screen —
-       * the root's is the one rendered first, above the composer.
-       */
-      await expect(page.getByRole('button', { name: "Ada's profile" }).first()).toBeVisible();
+      // `blabId=2`, so this is @nightowl's "anyone up? @ada" post, the one Blab in the fixture
+      // that actually mentions the player.
+      //
+      // And the root is rendered, which is the half a past regression broke. A deep link
+      // carries an id and nothing else, so the thread used to open around a `{ id }` stub and
+      // paint only replies — no body, no author, no timestamp, for a Blab that in this case has
+      // no replies at all. Asserting the root's own author button is what still catches that
+      // with a leaf post.
+      await expect(page.getByRole('button', { name: "Night Owl's profile" })).toBeVisible();
     });
 
     test('Back leaves Notifications for the feed before leaving the app', async ({ page }) => {

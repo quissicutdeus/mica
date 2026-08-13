@@ -68,4 +68,34 @@ describe('mock notification fixtures', () => {
       expect(n.body).toBe(mail!.subject);
     }
   });
+
+  /**
+   * The title-only check above would have passed the whole time `body` was an invented
+   * paraphrase of the thread ("GET DOWN HERE. NOW." for a Trevor conversation that never
+   * says it) — the conversation resolved, and the name over it was even right. Only the
+   * preview text disagreed with what tapping through actually shows.
+   */
+  it('previews the conversation it links to, not an invented line', async () => {
+    for (const n of (await shade()).filter((x) => x.app === 'messages')) {
+      const id = parseDeepLink(n.deep_link!)?.props.conversationId;
+      const conv = mockConversations.find((c) => c.id === id);
+      expect(conv, `${n.title} -> conversation ${id}`).toBeDefined();
+      expect(n.body).toBe(conv!.last_message?.message);
+    }
+  });
+
+  it('a mention notification points at a Blab that actually mentions the player', async () => {
+    for (const n of (await shade()).filter((x) => x.app === 'blabber' && x.kind === 'mention')) {
+      const id = parseDeepLink(n.deep_link!)?.props.blabId;
+      const { root } = (await MockRegistry.handle('blabber:view', { id })) as {
+        root: { handle: string; body: string } | null;
+      };
+      expect(root, `${n.title} -> blab ${id}`).not.toBeNull();
+      expect(n.title).toBe(`@${root!.handle} mentioned you`);
+      expect(n.body).toBe(root!.body);
+      // A "mentioned you" notification whose Blab doesn't actually @-mention anyone is the
+      // same class of lie as a conversation notification quoting a line nobody sent.
+      expect(root!.body).toMatch(/@\w+/);
+    }
+  });
 });

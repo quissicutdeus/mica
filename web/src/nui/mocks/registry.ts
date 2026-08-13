@@ -77,109 +77,12 @@ const mockReports: Report[] = [
  */
 const mockSettings = new Map<string, string>();
 
-const mockNotifications: NotificationItem[] = [
-  {
-    id: 1,
-    citizenid: 'mock_citizenid',
-    app: 'settings',
-    kind: 'info',
-    title: 'Developer Tools',
-    body: 'Developer Tools unlocked successfully.',
-    avatar: null,
-    deep_link: 'settings',
-    read_at: null,
-    cleared_at: null,
-    created_at: new Date(Date.now() - 60000).toISOString(),
-    updated_at: new Date(Date.now() - 60000).toISOString()
-  },
-  // An add-on's notification, so the browser exercises the per-app filter and the deep link an
-  // in-app notifications tab reads. Without one, Blabber's tab could only ever render its empty
-  // state here, leaving the row — and the tap that resolves `blabId` — unexercised.
-  {
-    id: 7,
-    citizenid: 'mock_citizenid',
-    app: 'blabber',
-    kind: 'mention',
-    title: '@nightowl mentioned you',
-    body: 'thinking about what @ada said re: the tunnel. she was right',
-    avatar: null,
-    deep_link: 'blabber?blabId=1',
-    read_at: null,
-    cleared_at: null,
-    created_at: new Date(Date.now() - 90000).toISOString(),
-    updated_at: new Date(Date.now() - 90000).toISOString()
-  },
-  {
-    id: 2,
-    citizenid: 'mock_citizenid',
-    app: 'messages',
-    kind: 'info',
-    title: 'Ursula (Crazy Ex)',
-    body: 'i drove past your place again. dont make it weird',
-    avatar: null,
-    deep_link: 'messages?conversationId=1',
-    read_at: null,
-    cleared_at: null,
-    created_at: new Date(Date.now() - 120000).toISOString(),
-    updated_at: new Date(Date.now() - 120000).toISOString()
-  },
-  {
-    id: 3,
-    citizenid: 'mock_citizenid',
-    app: 'messages',
-    kind: 'info',
-    title: 'Trevor Philips',
-    body: 'GET DOWN HERE. NOW.',
-    avatar: null,
-    deep_link: 'messages?conversationId=3',
-    read_at: null,
-    cleared_at: null,
-    created_at: new Date(Date.now() - 300000).toISOString(),
-    updated_at: new Date(Date.now() - 300000).toISOString()
-  },
-  {
-    id: 4,
-    citizenid: 'mock_citizenid',
-    app: 'messages',
-    kind: 'info',
-    title: 'LSPD Central Dispatch',
-    body: 'Units respond: 10-90 in progress, Vinewood Blvd.',
-    avatar: null,
-    deep_link: 'messages?conversationId=4',
-    read_at: null,
-    cleared_at: null,
-    created_at: new Date(Date.now() - 600000).toISOString(),
-    updated_at: new Date(Date.now() - 600000).toISOString()
-  },
-  {
-    id: 5,
-    citizenid: 'mock_citizenid',
-    app: 'mail',
-    kind: 'email',
-    title: 'Email from Fleeca Bank',
-    body: 'Account Statement Available',
-    avatar: null,
-    deep_link: 'mail?mailId=1',
-    read_at: null,
-    cleared_at: null,
-    created_at: new Date(Date.now() - 900000).toISOString(),
-    updated_at: new Date(Date.now() - 900000).toISOString()
-  },
-  {
-    id: 6,
-    citizenid: 'mock_citizenid',
-    app: 'mail',
-    kind: 'email',
-    title: 'Email from Los Santos Police Dept',
-    body: 'Traffic Citation Notice',
-    avatar: null,
-    deep_link: 'mail?mailId=2',
-    read_at: null,
-    cleared_at: null,
-    created_at: new Date(Date.now() - 1200000).toISOString(),
-    updated_at: new Date(Date.now() - 1200000).toISOString()
-  }
-];
+/**
+ * `mockNotifications` itself is declared further down, after `mockBlabs` — a mention
+ * notification needs a real Blab to point at, and this comment's own rule ("take the title
+ * and the id from the fixture it points at") is enforced by deriving from that fixture
+ * rather than retyping it.
+ */
 
 /**
  * Blabber's mock state: three accounts — two the player owns, one they do not — and a short feed.
@@ -357,6 +260,103 @@ const mockBlabTags = new Map<number, string[]>(
 );
 
 const mockEars: { blab_id: number; account_id: number }[] = [{ blab_id: 1, account_id: 2 }];
+
+/**
+ * Notification previews are derived from the fixture they link to, not typed out by hand a
+ * second time. `body` used to be an invented paraphrase — "GET DOWN HERE. NOW." for Trevor,
+ * a line that appears nowhere in his actual thread — so the shade showed one message and
+ * opening the conversation showed the real last message underneath it. Deriving from
+ * `mockConversations`/`mockEmails`/`mockBlabs` means the two views can't disagree, the same
+ * way `Email from <sender>` already matched `server/services/Mail.ts` by construction.
+ */
+const messageNotification = (
+  id: number,
+  conversationId: number,
+  ageMs: number
+): NotificationItem => {
+  const conv = mockConversations.find((c) => c.id === conversationId);
+  const created_at = new Date(Date.now() - ageMs).toISOString();
+  return {
+    id,
+    citizenid: 'mock_citizenid',
+    app: 'messages',
+    kind: 'info',
+    title: conv?.name ?? 'Messages',
+    body: conv?.last_message?.message ?? '',
+    avatar: null,
+    deep_link: `messages?conversationId=${conversationId}`,
+    read_at: null,
+    cleared_at: null,
+    created_at,
+    updated_at: created_at
+  };
+};
+
+const mailNotification = (id: number, mailId: number, ageMs: number): NotificationItem => {
+  const mail = mockEmails.find((m) => m.id === mailId);
+  const created_at = new Date(Date.now() - ageMs).toISOString();
+  return {
+    id,
+    citizenid: 'mock_citizenid',
+    app: 'mail',
+    kind: 'email',
+    title: `Email from ${mail?.sender ?? 'Mail'}`,
+    body: mail?.subject ?? '',
+    avatar: null,
+    deep_link: `mail?mailId=${mailId}`,
+    read_at: null,
+    cleared_at: null,
+    created_at,
+    updated_at: created_at
+  };
+};
+
+/** `blabId` must name a Blab that actually mentions the player, not merely one that exists. */
+const mentionNotification = (id: number, blabId: number, ageMs: number): NotificationItem => {
+  const blab = mockBlabs.find((b) => b.id === blabId);
+  const created_at = new Date(Date.now() - ageMs).toISOString();
+  return {
+    id,
+    citizenid: 'mock_citizenid',
+    app: 'blabber',
+    kind: 'mention',
+    title: `@${blab?.handle ?? 'someone'} mentioned you`,
+    body: blab?.body ?? '',
+    avatar: null,
+    deep_link: `blabber?blabId=${blabId}`,
+    read_at: null,
+    cleared_at: null,
+    created_at,
+    updated_at: created_at
+  };
+};
+
+const mockNotifications: NotificationItem[] = [
+  {
+    id: 1,
+    citizenid: 'mock_citizenid',
+    app: 'settings',
+    kind: 'info',
+    title: 'Developer Tools',
+    body: 'Developer Tools unlocked successfully.',
+    avatar: null,
+    deep_link: 'settings',
+    read_at: null,
+    cleared_at: null,
+    created_at: new Date(Date.now() - 60000).toISOString(),
+    updated_at: new Date(Date.now() - 60000).toISOString()
+  },
+  // Blab 2 ("anyone up? @ada") is the one post in the fixture that actually mentions @ada,
+  // one of the two accounts the player owns (`mockOwnedAccountIds`) — a mention notification
+  // has to point at a mention, not merely a post that exists. It also exercises the per-app
+  // filter and the deep link an in-app notifications tab reads.
+  mentionNotification(7, 2, 90000),
+  messageNotification(2, 1, 120000),
+  messageNotification(3, 3, 300000),
+  messageNotification(4, 4, 600000),
+  mailNotification(5, 1, 900000),
+  mailNotification(6, 2, 1200000)
+];
 
 /**
  * The follow graph, empty to begin with.
