@@ -19,15 +19,20 @@ import { isTypingTarget } from './keybinds';
  * ratio for an inexact one.
  */
 export const PHONE_WIDTH = 400;
-export const PHONE_HEIGHT = 850;
+const PHONE_DESIGN_HEIGHT = 850;
+export const PHONE_HEIGHT = PHONE_DESIGN_HEIGHT;
 
 /**
  * How far, in phone-design px, a finger has to travel to fully reveal or dismiss the
  * notification shade by drag. Shared by the status-bar open-drag and the shade's own
  * grab-handle close-drag so the two gestures feel symmetric — equal to `PHONE_HEIGHT`
  * (850px) so the panel tracks the finger 1:1 with zero offset across the full screen.
+ *
+ * Sourced from the same private constant as `PHONE_HEIGHT` rather than from that export
+ * directly, so the two read as independently-named quantities that happen to coincide
+ * (per the paragraph above) instead of one export aliasing another.
  */
-export const SHADE_DRAG_REVEAL_DISTANCE = PHONE_HEIGHT;
+export const SHADE_DRAG_REVEAL_DISTANCE = PHONE_DESIGN_HEIGHT;
 
 /**
  * Breathing room between the phone and the edge of the window, in CSS pixels.

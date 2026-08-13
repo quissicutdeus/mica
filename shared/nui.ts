@@ -11,14 +11,6 @@ export interface SetTimePayload {
   minutes: number;
 }
 
-export interface SetChargePayload {
-  level: number;
-}
-
-export interface SetSignalPayload {
-  level: number;
-}
-
 export interface NotifyPayload {
   type: 'info' | 'success' | 'warning' | 'error';
   title?: string;
