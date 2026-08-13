@@ -1,4 +1,63 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
+
+/**
+ * Mirrors `web/src/shell/state/display.ts`'s `PHONE_WIDTH`/`SHADE_DRAG_REVEAL_DISTANCE`
+ * rather than importing them — `display.spec.ts` establishes the same convention for
+ * `PHONE_WIDTH`/`PHONE_HEIGHT`, since a Playwright spec drives the built page rather than
+ * importing app source.
+ */
+const PHONE_WIDTH = 400;
+const SHADE_DRAG_REVEAL_DISTANCE = 850 * 0.6;
+
+/** The frame's rendered rectangle, after the entrance fly-in has landed. See `display.spec.ts`. */
+const frameBox = async (page: Page) => {
+  const frame = page.getByTestId('phone-frame');
+  await expect(frame).toBeVisible();
+  await expect
+    .poll(async () => frame.evaluate((el) => el.getAnimations().length), { timeout: 5000 })
+    .toBe(0);
+  const box = await frame.boundingBox();
+  if (!box) throw new Error('the phone frame is not on screen');
+  return box;
+};
+
+/** On-screen px per design px, at the phone's current zoom. */
+const currentScale = async (page: Page) => (await frameBox(page)).width / PHONE_WIDTH;
+
+/**
+ * Waits for a locator's own (and descendant) animations to finish before anything reads
+ * its geometry. `boundingBox()` waits for visibility, not for a transform to settle — a
+ * tap-driven shade open plays a real 300ms `transition:fly`, and a row newly rendered
+ * into a freshly-switched view (e.g. opening the archive) plays its own 150ms one.
+ * Starting a drag mid-flight reads a bogus, still-animating position: exactly the bug
+ * behind this helper existing, first found and fixed for the phone frame itself in
+ * `display.spec.ts`'s `frameBox`. `{ subtree: true }` is what makes this reusable for a
+ * row, where the animation lives on a descendant rather than the queried element itself.
+ */
+const waitForSettled = async (locator: Locator) => {
+  await expect(locator).toBeVisible();
+  await expect
+    .poll(async () => locator.evaluate((el) => el.getAnimations({ subtree: true }).length), {
+      timeout: 5000
+    })
+    .toBe(0);
+};
+
+/** Drags from `(x, startY)` to `(x, startY + onScreenDeltaY)`, spread over real steps. */
+const dragVertical = async (page: Page, x: number, startY: number, onScreenDeltaY: number) => {
+  await page.mouse.move(x, startY);
+  await page.mouse.down();
+  await page.mouse.move(x, startY + onScreenDeltaY, { steps: 8 });
+  await page.mouse.up();
+};
+
+/** Drags from `(startX, y)` to `(startX + onScreenDeltaX, y)`, spread over real steps. */
+const dragHorizontal = async (page: Page, startX: number, y: number, onScreenDeltaX: number) => {
+  await page.mouse.move(startX, y);
+  await page.mouse.down();
+  await page.mouse.move(startX + onScreenDeltaX, y, { steps: 8 });
+  await page.mouse.up();
+};
 
 test.describe('Interactive Toast Notifications E2E', () => {
   test.beforeEach(async ({ page }) => {
@@ -315,5 +374,153 @@ test.describe('Interactive Toast Notifications E2E', () => {
     // deliberately; §7 says permissions are a disclosure, not a sandbox.
     await pushAppEvent(page, 'blabber', '@michael mentioned you');
     await expect(page.getByText('@michael mentioned you')).toHaveCount(0);
+  });
+});
+
+test.describe('Notification shade gestures', () => {
+  test.beforeEach(async ({ page }) => {
+    // A small viewport forces `phoneScale < 1`, the same technique `display.spec.ts`'s
+    // own drag test uses — a scale-blind gesture (raw on-screen px applied 1:1) would
+    // pass at the default 1280x960 viewport and still be wrong.
+    await page.setViewportSize({ width: 390, height: 664 });
+    await page.goto('/');
+    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+  });
+
+  test('dragging down from the status bar past the threshold opens the shade', async ({ page }) => {
+    const scale = await currentScale(page);
+    const statusBar = page.getByRole('button', { name: 'Open notification shade' });
+    const box = await statusBar.boundingBox();
+    if (!box) throw new Error('status bar not on screen');
+
+    // Comfortably past the 0.5 commit threshold — clampProgress saturates at 1, so
+    // overshooting the reveal distance is a safety margin, not an error.
+    await dragVertical(page, box.x + box.width / 2, box.y + box.height / 2, scale * 700);
+
+    await expect(page.getByRole('dialog', { name: 'Notification Shade' })).toBeVisible();
+  });
+
+  test('dragging down below the threshold springs back closed', async ({ page }) => {
+    const scale = await currentScale(page);
+    const statusBar = page.getByRole('button', { name: 'Open notification shade' });
+    const box = await statusBar.boundingBox();
+    if (!box) throw new Error('status bar not on screen');
+
+    // Well under half of SHADE_DRAG_REVEAL_DISTANCE, and slow (8 steps over a short
+    // distance) so neither the progress nor the velocity commit heuristic fires.
+    await dragVertical(
+      page,
+      box.x + box.width / 2,
+      box.y + box.height / 2,
+      scale * SHADE_DRAG_REVEAL_DISTANCE * 0.15
+    );
+
+    await expect(page.getByRole('dialog', { name: 'Notification Shade' })).toBeHidden();
+  });
+
+  test('dragging up from the grab handle past the threshold closes the shade', async ({ page }) => {
+    await page.getByRole('button', { name: 'Open notification shade' }).click();
+    const shade = page.getByRole('dialog', { name: 'Notification Shade' });
+    await waitForSettled(shade);
+
+    const scale = await currentScale(page);
+    const handle = page.getByTestId('shade-grab-handle');
+    const box = await handle.boundingBox();
+    if (!box) throw new Error('grab handle not on screen');
+
+    await dragVertical(page, box.x + box.width / 2, box.y + box.height / 2, -scale * 700);
+
+    await expect(shade).toBeHidden();
+  });
+
+  test('swiping a standalone notification clears it and moves it to the archive', async ({
+    page
+  }) => {
+    await page.getByRole('button', { name: 'Open notification shade' }).click();
+    const shade = page.getByRole('dialog', { name: 'Notification Shade' });
+    await waitForSettled(shade);
+
+    const scale = await currentScale(page);
+    const row = shade.locator('[data-gesture-drag]', {
+      has: page.getByText('Developer Tools unlocked successfully.')
+    });
+    const box = await row.boundingBox();
+    if (!box) throw new Error('row not on screen');
+
+    await dragHorizontal(page, box.x + box.width / 2, box.y + box.height / 2, scale * 400);
+
+    await expect(shade.getByText('Developer Tools unlocked successfully.')).toBeHidden();
+
+    await page.getByRole('button', { name: 'Notification Archive' }).click();
+    await expect(shade.getByText('Developer Tools unlocked successfully.')).toBeVisible();
+  });
+
+  test('swiping a group header clears the whole group', async ({ page }) => {
+    await page.getByRole('button', { name: 'Open notification shade' }).click();
+    const shade = page.getByRole('dialog', { name: 'Notification Shade' });
+    await waitForSettled(shade);
+
+    // The three "messages" fixtures collapse into one group card.
+    await expect(shade.getByText('3 notifications')).toBeVisible();
+
+    const scale = await currentScale(page);
+    const groupHeader = shade.locator('[data-gesture-drag]', {
+      has: page.getByText('3 notifications')
+    });
+    const box = await groupHeader.boundingBox();
+    if (!box) throw new Error('group header not on screen');
+
+    await dragHorizontal(page, box.x + box.width / 2, box.y + box.height / 2, scale * 400);
+
+    await expect(shade.getByText('3 notifications')).toBeHidden();
+    await expect(shade.getByText('Ursula (Crazy Ex)')).toBeHidden();
+
+    // The archive groups by app too, so the three cleared "messages" notifications
+    // collapse into their own group card there — the individual "Trevor Philips" item is
+    // only visible once that card is expanded, which isn't what this test is checking.
+    await page.getByRole('button', { name: 'Notification Archive' }).click();
+    await expect(shade.getByText('3 notifications')).toBeVisible();
+    await expect(shade.getByText('Ursula (Crazy Ex)')).toBeVisible();
+  });
+
+  test('swiping a row in the archive restores it to the active list', async ({ page }) => {
+    await page.getByRole('button', { name: 'Open notification shade' }).click();
+    const shade = page.getByRole('dialog', { name: 'Notification Shade' });
+    await waitForSettled(shade);
+
+    const scale = await currentScale(page);
+
+    // Clear it first — via the same swipe gesture, so this test also stands as a second,
+    // independent exercise of swipe-to-clear — then restore it from the archive.
+    const activeRow = shade.locator('[data-gesture-drag]', {
+      has: page.getByText('Developer Tools unlocked successfully.')
+    });
+    const activeBox = await activeRow.boundingBox();
+    if (!activeBox) throw new Error('row not on screen');
+    await dragHorizontal(
+      page,
+      activeBox.x + activeBox.width / 2,
+      activeBox.y + activeBox.height / 2,
+      scale * 400
+    );
+    await expect(shade.getByText('Developer Tools unlocked successfully.')).toBeHidden();
+
+    await page.getByRole('button', { name: 'Notification Archive' }).click();
+    const archivedRow = shade.locator('[data-gesture-drag]', {
+      has: page.getByText('Developer Tools unlocked successfully.')
+    });
+    await waitForSettled(archivedRow);
+    const archivedBox = await archivedRow.boundingBox();
+    if (!archivedBox) throw new Error('archived row not on screen');
+    await dragHorizontal(
+      page,
+      archivedBox.x + archivedBox.width / 2,
+      archivedBox.y + archivedBox.height / 2,
+      scale * 400
+    );
+    await expect(shade.getByText('Developer Tools unlocked successfully.')).toBeHidden();
+
+    await page.getByRole('button', { name: 'Back to Active Notifications' }).click();
+    await expect(shade.getByText('Developer Tools unlocked successfully.')).toBeVisible();
   });
 });
