@@ -17,7 +17,9 @@
     PHONE_HEIGHT,
     PHONE_WIDTH
   } from './state/display';
+  import { get } from 'svelte/store';
   import { callStore } from '../services/call';
+  import { contacts } from '../services/contacts';
   import { isPreviewingPhoto } from '../services/camera';
   import PhoneFrame from './PhoneFrame.svelte';
   import Home from './Launcher.svelte';
@@ -60,9 +62,14 @@
     if (action === 'callStatus') {
       // { status: 'connected' | 'idle' | 'incoming', number: '...', name: '...' }
       if (data.status === 'incoming') {
-        callStore.setIncoming(data.number, data.name);
+        // The client has no address book to check — that lives in the web layer's own
+        // contacts store — so it sends 'Unknown' and this is the one place that can
+        // still resolve a name from the caller's number before the toast renders.
+        const known = get(contacts).find((c) => c.phone === data.number);
+        const displayName = known ? `${known.firstname} ${known.lastname || ''}`.trim() : data.name;
+        callStore.setIncoming(data.number, displayName);
         incomingToastId = toast.showCall({
-          name: data.name,
+          name: displayName,
           number: data.number,
           onAccept: () => {
             visible = true;

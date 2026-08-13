@@ -51,16 +51,8 @@ on('__cfx_nui:toggleMute', (data: { muted: boolean }, cb: Function) => {
 
 RegisterNuiCallbackType('toggleSpeaker');
 on('__cfx_nui:toggleSpeaker', (data: { enabled: boolean }, cb: Function) => {
-  // There isn't a standard "toggleSpeaker" export in pma-voice usually exposed to client this way without routing audio?
-  // Actually, pma-voice usually handles voice targets.
-  // However, for "speakerphone" effect (hearing caller loudly nearby), submixes are often used.
-  // Without advanced audio work, we can might simple assume this is UI only or specific server logic.
-  // User asked for "speakerphone toggling".
-  // Does pma-voice allow setting a call as "speaker"?
-  // Checking docs (simulated): No standard export.
-  // We will just callback success. The UI already toggles the icon.
-  // Ideally we'd set a variable that affects `exports['pma-voice'].setVoicePropery`?
-  // Let's keep it simple: It's UI state. If pma-voice updates later, we add it here.
+  // pma-voice exposes no speakerphone/submix control, so this is UI state only — the
+  // icon already toggles client-side. Revisit if pma-voice adds a routing export.
   cb({ success: true });
 });
 
@@ -85,7 +77,9 @@ onNet('gphone:client:phone:incoming', (data: { from: string; callId: number }) =
       data: {
         status: 'incoming',
         number: data.from,
-        name: 'Unknown' // TODO: Lookup contact name on client side if possible or let UI do it
+        // The client has no address book. The shell resolves a display name from its
+        // own contacts store when the number matches a saved contact.
+        name: 'Unknown'
       }
     })
   );
