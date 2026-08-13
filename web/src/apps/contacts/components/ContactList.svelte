@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Avatar, ListItem, Skeleton, StarIcon, type Contact } from '@gphone/sdk';
+  import { Avatar, EmptyState, ListItem, Skeleton, StarIcon, type Contact } from '@gphone/sdk';
 
   /**
    * The contact list: favourites first, then everyone else.
@@ -86,8 +86,6 @@
       <Skeleton count={6} height="h-14" />
     </div>
   {:else if total === 0}
-    <div class="text-on-surface-variant py-16 text-center text-sm">
-      {query.trim() ? 'No matching contacts found.' : 'No contacts yet.'}
-    </div>
+    <EmptyState title={query.trim() ? 'No matching contacts' : 'No contacts yet'} />
   {/if}
 </div>
