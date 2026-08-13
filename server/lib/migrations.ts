@@ -4,6 +4,10 @@
  * migrations for breaking schema changes", for the full design.
  */
 
+import { Database } from './Database';
+import { schemaMigrationsLedgerDdl, SCHEMA_MIGRATIONS_TABLE } from './schemaSql';
+import { migrations as migrationsOnDisk } from '../migrations';
+
 export interface Migration {
   id: string;
   description: string;
@@ -53,4 +57,41 @@ export async function runMigrations(
     applied.push(migration.id);
   }
   return { applied, failed: null, remaining: [] };
+}
+
+async function ensureMigrationsLedger(): Promise<void> {
+  await Database.query(schemaMigrationsLedgerDdl(), []);
+}
+
+async function appliedMigrationIds(): Promise<Set<string>> {
+  const rows = await Database.query<{ id: string }[]>(
+    `SELECT \`id\` FROM \`${SCHEMA_MIGRATIONS_TABLE}\``,
+    []
+  );
+  return new Set((rows ?? []).map((r) => r.id));
+}
+
+/** Applies every migration `server/migrations/` has that the ledger does not, in order. */
+export async function runPendingMigrations(): Promise<MigrationRunResult> {
+  await ensureMigrationsLedger();
+  const applied = await appliedMigrationIds();
+  const pending = pendingMigrations(migrationsOnDisk, applied);
+
+  return runMigrations(pending, async (id) => {
+    await Database.query(`INSERT INTO \`${SCHEMA_MIGRATIONS_TABLE}\` (\`id\`) VALUES (?)`, [id]);
+  });
+}
+
+/** Boot-time visibility only — never applies anything. Backs the `onResourceStart` report. */
+export async function reportPendingMigrations(): Promise<void> {
+  await ensureMigrationsLedger();
+  const applied = await appliedMigrationIds();
+  const pending = pendingMigrations(migrationsOnDisk, applied);
+
+  if (pending.length === 0) return;
+  console.log('[gphone] pending schema migrations:');
+  for (const migration of pending) {
+    console.log(`  ${migration.id}: ${migration.description}`);
+  }
+  console.log("[gphone] run 'gphoneschema apply' from the server console to apply them.");
 }

@@ -1,5 +1,23 @@
-import { describe, it, expect, vi } from 'vitest';
-import { pendingMigrations, runMigrations, type Migration } from '../lib/migrations';
+const { dbMock } = vi.hoisted(() => ({
+  dbMock: { query: vi.fn(), insert: vi.fn(), update: vi.fn(), scalar: vi.fn(), single: vi.fn() }
+}));
+vi.mock('../lib/Database', () => ({ Database: dbMock }));
+vi.mock('../migrations', () => ({
+  migrations: [
+    { id: '0001_a', description: 'first', up: vi.fn(async () => {}) },
+    { id: '0002_b', description: 'second', up: vi.fn(async () => {}) }
+  ]
+}));
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  pendingMigrations,
+  runMigrations,
+  runPendingMigrations,
+  reportPendingMigrations,
+  type Migration
+} from '../lib/migrations';
+import { SCHEMA_MIGRATIONS_TABLE } from '../lib/schemaSql';
 
 const fakeMigration = (id: string, up: () => Promise<void> = async () => {}): Migration => ({
   id,
@@ -70,5 +88,75 @@ describe('runMigrations', () => {
   it('returns an empty result for an empty pending list', async () => {
     const result = await runMigrations([], vi.fn());
     expect(result).toEqual({ applied: [], failed: null, remaining: [] });
+  });
+});
+
+describe('runPendingMigrations', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('creates the ledger table before checking it', async () => {
+    dbMock.query.mockResolvedValue([]);
+    await runPendingMigrations();
+    expect(dbMock.query).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE'), []);
+  });
+
+  it('skips ids already recorded in the ledger', async () => {
+    dbMock.query.mockImplementation((sql: string) => {
+      if (sql.trim().startsWith('SELECT')) return Promise.resolve([{ id: '0001_a' }]);
+      return Promise.resolve([]);
+    });
+
+    const result = await runPendingMigrations();
+
+    expect(result.applied).toEqual(['0002_b']);
+  });
+
+  it('inserts a ledger row for each migration it applies', async () => {
+    dbMock.query.mockImplementation((sql: string) => {
+      if (sql.trim().startsWith('SELECT')) return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    await runPendingMigrations();
+
+    expect(dbMock.query).toHaveBeenCalledWith(
+      `INSERT INTO \`${SCHEMA_MIGRATIONS_TABLE}\` (\`id\`) VALUES (?)`,
+      ['0001_a']
+    );
+    expect(dbMock.query).toHaveBeenCalledWith(
+      `INSERT INTO \`${SCHEMA_MIGRATIONS_TABLE}\` (\`id\`) VALUES (?)`,
+      ['0002_b']
+    );
+  });
+});
+
+describe('reportPendingMigrations', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('logs nothing when everything is already applied', async () => {
+    dbMock.query.mockImplementation((sql: string) => {
+      if (sql.trim().startsWith('SELECT')) {
+        return Promise.resolve([{ id: '0001_a' }, { id: '0002_b' }]);
+      }
+      return Promise.resolve([]);
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await reportPendingMigrations();
+
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it('lists every pending migration by id and description', async () => {
+    dbMock.query.mockImplementation((sql: string) => {
+      if (sql.trim().startsWith('SELECT')) return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await reportPendingMigrations();
+
+    expect(logSpy).toHaveBeenCalledWith('  0001_a: first');
+    expect(logSpy).toHaveBeenCalledWith('  0002_b: second');
   });
 });
