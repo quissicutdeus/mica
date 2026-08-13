@@ -162,15 +162,18 @@ const nameOf = (participant: unknown): string | null => {
 app.registerEvent('create', async (source, cbId, data, citizenid) => {
   // The client chooses every field here, so it is read once into named locals with the
   // shape each one is actually allowed to have. `participant` is the exception and stays
-  // loose: the UI sends either a citizenid or a whole contact object, and both branches
-  // below already handle that.
+  // loose: the UI sends either a whole contact object (used only for its display name,
+  // below) or nothing. It is never trusted as a citizenid — a raw citizenid is never proof
+  // the caller knows this person (§2.9), and a modified client could otherwise force its
+  // way into a thread with anyone it can guess an id for. A citizenid only ever becomes a
+  // participant by resolving through a phone number, the same as the 1-on-1 path.
   const body = fields(data);
   const isGroup = body.is_group === true;
   const phone = optionalString(body.phone);
   const requestedName = optionalString(body.name);
   const participant = body.participant;
 
-  let targetCitizenId = typeof participant === 'string' ? participant : undefined;
+  let targetCitizenId: string | undefined;
 
   /**
    * Resolve the number to a person, online or off.
@@ -223,13 +226,15 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     console.log(`[Conversation] No targetCitizenId found (payload: ${JSON.stringify(data)})`);
   }
 
-  // If group list (assuming they are already citizenids for now, or we recursively resolve them)
-  const participants = Array.isArray(body.participants) ? body.participants : [];
-  for (const p of participants) {
-    if (typeof p === 'string' && p !== citizenid) {
-      // Avoid double add
-      await conversationRepo.addParticipant(conversationId, p, 'member');
-    }
+  // Group members: each entry is a phone number, resolved the same way the 1-on-1 target
+  // is — never a raw citizenid, for the same reason `targetCitizenId` above isn't one.
+  const participantPhones = Array.isArray(body.participants)
+    ? body.participants.filter((p): p is string => typeof p === 'string')
+    : [];
+  for (const memberPhone of participantPhones) {
+    const target = await resolveByPhone(memberPhone);
+    if (!target || target.citizenid === citizenid) continue; // unknown number, or self (already added)
+    await conversationRepo.addParticipant(conversationId, target.citizenid, 'member');
   }
 
   return { ...newConv, id: conversationId };
