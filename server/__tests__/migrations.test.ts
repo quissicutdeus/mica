@@ -97,7 +97,15 @@ describe('runPendingMigrations', () => {
   it('creates the ledger table before checking it', async () => {
     dbMock.query.mockResolvedValue([]);
     await runPendingMigrations();
-    expect(dbMock.query).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE'), []);
+
+    const createCallIndex = dbMock.query.mock.calls.findIndex((call) =>
+      String(call[0]).includes('CREATE TABLE')
+    );
+    const selectCallIndex = dbMock.query.mock.calls.findIndex((call) =>
+      String(call[0]).trim().startsWith('SELECT')
+    );
+    expect(createCallIndex).toBeGreaterThanOrEqual(0);
+    expect(selectCallIndex).toBeGreaterThan(createCallIndex);
   });
 
   it('skips ids already recorded in the ledger', async () => {

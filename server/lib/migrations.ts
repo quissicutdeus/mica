@@ -71,11 +71,20 @@ async function appliedMigrationIds(): Promise<Set<string>> {
   return new Set((rows ?? []).map((r) => r.id));
 }
 
-/** Applies every migration `server/migrations/` has that the ledger does not, in order. */
-export async function runPendingMigrations(): Promise<MigrationRunResult> {
+/**
+ * Ensures the ledger exists, then reads it, then filters — the exact sequence both
+ * `runPendingMigrations` and `reportPendingMigrations` need before they diverge. Held here
+ * once rather than as two copies staying in sync by discipline.
+ */
+async function loadPendingMigrations(): Promise<Migration[]> {
   await ensureMigrationsLedger();
   const applied = await appliedMigrationIds();
-  const pending = pendingMigrations(migrationsOnDisk, applied);
+  return pendingMigrations(migrationsOnDisk, applied);
+}
+
+/** Applies every migration `server/migrations/` has that the ledger does not, in order. */
+export async function runPendingMigrations(): Promise<MigrationRunResult> {
+  const pending = await loadPendingMigrations();
 
   return runMigrations(pending, async (id) => {
     await Database.query(`INSERT INTO \`${SCHEMA_MIGRATIONS_TABLE}\` (\`id\`) VALUES (?)`, [id]);
@@ -84,9 +93,7 @@ export async function runPendingMigrations(): Promise<MigrationRunResult> {
 
 /** Boot-time visibility only — never applies anything. Backs the `onResourceStart` report. */
 export async function reportPendingMigrations(): Promise<void> {
-  await ensureMigrationsLedger();
-  const applied = await appliedMigrationIds();
-  const pending = pendingMigrations(migrationsOnDisk, applied);
+  const pending = await loadPendingMigrations();
 
   if (pending.length === 0) return;
   console.log('[gphone] pending schema migrations:');
