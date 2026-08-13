@@ -1,4 +1,4 @@
-import { writable, derived } from 'svelte/store';
+import { derived, writable } from 'svelte/store';
 import { isBrowser } from '../../lib/isBrowser';
 
 // Charge level between 0 and 100
@@ -43,6 +43,5 @@ if (isBrowser()) {
   };
   window.setDrainSpeed = (multiplier: number) => {
     drainMultiplier = multiplier;
-    console.log(`[gPhone] Battery drain speed set to ${multiplier}x`);
   };
 }

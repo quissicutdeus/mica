@@ -1,14 +1,5 @@
+import { taggedTopics } from '@shared/richText';
 import { GENERIC_SERVICE_ACTION } from '@shared/rpc';
-import {
-  mockContacts,
-  mockConversations,
-  mockEmails,
-  mockLocationShare,
-  mockMessages,
-  mockNotes,
-  mockMedia,
-  sampleAvatars
-} from './data';
 import type {
   Account,
   Blab,
@@ -16,14 +7,24 @@ import type {
   Contact,
   Conversation,
   Mail,
+  MediaItem,
   Message,
   Note,
   NotificationItem,
-  MediaItem,
+  Report,
   Transaction
 } from '@shared/types';
+import {
+  mockContacts,
+  mockConversations,
+  mockEmails,
+  mockLocationShare,
+  mockMedia,
+  mockMessages,
+  mockNotes,
+  sampleAvatars
+} from './data';
 import { defineMockCrud } from './defineMockCrud';
-import { taggedTopics } from '@shared/richText';
 
 // Helper to simulate delays
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -32,7 +33,7 @@ export type MockHandler<T = any> = (data?: any) => Promise<T> | T;
 
 let mockPhotoIndex = 5;
 
-const mockReports: any[] = [
+const mockReports: Report[] = [
   {
     id: 1,
     citizenid: 'REPORTER',
@@ -1172,16 +1173,16 @@ const mockRegistry: Record<string, MockHandler> = {
   getMessages: ({ conversation_id }: { conversation_id: number }) => {
     return mockMessages[conversation_id] || [];
   },
-  receiveMessage: async (payload: any) => {
-    const convId = payload.conversation_id || 1;
-    const msgText = payload.message || '1... 🤬😡🗯️‼️';
+  receiveMessage: async (payload?: { conversation_id?: number; message?: string }) => {
+    const convId = payload?.conversation_id || 1;
+    const msgText = payload?.message || '1... 🤬😡🗯️‼️';
     const conv = mockConversations.find((c) => c.id === convId);
     if (conv) {
       conv.unread_count = (conv.unread_count || 0) + 1;
       const newMsg: Message = {
         id: Math.floor(Math.random() * 1000000),
         conversation_id: convId,
-        citizenid: (conv as any).cit || 'cit-ursula',
+        citizenid: (conv as Conversation & { cit?: string }).cit || 'cit-ursula',
         status: 'active',
         message: msgText,
         attachments: [],
@@ -1194,7 +1195,11 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     return true;
   },
-  sendMessage: async (payload: any) => {
+  sendMessage: async (payload: {
+    conversation_id: number;
+    message: string;
+    attachments?: { photo_id: number; attachment?: string }[];
+  }) => {
     await delay(200);
     const convId = payload.conversation_id;
     const msg: Message = {
@@ -1208,7 +1213,7 @@ const mockRegistry: Record<string, MockHandler> = {
       // attachment rendered nothing until the next fetch re-hydrated it — invisible for
       // any kind a test sends and immediately asserts on, which a pre-seeded fixture
       // (already carrying `media`) never exercised.
-      attachments: (payload.attachments || []).map((a: any, i: number) => ({
+      attachments: (payload.attachments || []).map((a, i) => ({
         ...a,
         id: i,
         media: mockMedia.find((p) => p.id === a.photo_id)
@@ -1230,7 +1235,7 @@ const mockRegistry: Record<string, MockHandler> = {
 
     return msg;
   },
-  startConversation: async ({ phone, is_group }: any) => {
+  startConversation: async ({ is_group }: { phone?: string; is_group?: boolean }) => {
     await delay(300);
     return {
       id: Math.random(),
@@ -1242,7 +1247,7 @@ const mockRegistry: Record<string, MockHandler> = {
       participants: []
     } as Conversation;
   },
-  readConversation: async (data: any) => {
+  readConversation: async (data?: number | { conversation_id?: number }) => {
     await delay(200);
     const id = typeof data === 'number' ? data : data?.conversation_id;
     const conv = mockConversations.find((c) => c.id === id);
@@ -1255,7 +1260,7 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     return true;
   },
-  archiveConversation: async (data: any) => {
+  archiveConversation: async (data?: { conversation_id?: number; status?: string }) => {
     await delay(200);
     // Reads `status`, which is what `store/messages.ts` actually sends. It used to read
     // `archived`, a key nothing ever set, so archiving was a silent no-op in the browser
@@ -1266,7 +1271,7 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     return true;
   },
-  deleteConversation: async (data: any) => {
+  deleteConversation: async (data?: number | { conversation_id?: number }) => {
     await delay(200);
     const id = typeof data === 'number' ? data : data?.conversation_id;
     const idx = mockConversations.findIndex((c) => c.id === id);
@@ -1275,7 +1280,7 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     return true;
   },
-  renameConversation: async (data: any) => {
+  renameConversation: async (data?: { id?: number; conversation_id?: number; name?: string }) => {
     await delay(200);
     const id = data?.id ?? data?.conversation_id;
     const name = data?.name;
@@ -1344,7 +1349,10 @@ const mockRegistry: Record<string, MockHandler> = {
     mockPhotoIndex++;
     return photo;
   },
-  flipCamera: async (data: any) => ({ supported: true, isFrontCamera: !!data?.isFrontCamera }),
+  flipCamera: async (data?: { isFrontCamera?: boolean }) => ({
+    supported: true,
+    isFrontCamera: !!data?.isFrontCamera
+  }),
   onCameraApp: async () => true,
   // Media and mail are soft-deleted, as the server does it: a removed row is still
   // there to be moderated.
@@ -1411,12 +1419,12 @@ const mockRegistry: Record<string, MockHandler> = {
   createReport: async () => ({ ok: true, id: 1 }),
   getReportQueue: async () => mockReports.filter((r) => r.resolution === 'pending'),
   getReportHistory: async () => mockReports.filter((r) => r.resolution !== 'pending'),
-  resolveReport: async (data: any) => {
+  resolveReport: async (data?: { id?: number; action?: string }) => {
     const report = mockReports.find((r) => r.id === data?.id);
     if (report) report.resolution = data?.action === 'moderate' ? 'actioned' : 'dismissed';
     return { ok: true, resolution: report?.resolution };
   },
-  reopenReport: async (data: any) => {
+  reopenReport: async (data?: { id?: number }) => {
     const report = mockReports.find((r) => r.id === data?.id);
     if (report) report.resolution = 'pending';
     return { ok: true, resolution: 'pending' };
@@ -1482,7 +1490,7 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     return counts;
   },
-  markNotificationRead: async (data: any) => {
+  markNotificationRead: async (data?: { ids?: number[] }) => {
     const ids = data?.ids || [];
     const now = new Date().toISOString();
     mockNotifications.forEach((n) => {
@@ -1490,7 +1498,7 @@ const mockRegistry: Record<string, MockHandler> = {
     });
     return true;
   },
-  clearNotifications: async (data: any) => {
+  clearNotifications: async (data?: { ids?: number[] }) => {
     const ids = data?.ids || [];
     const now = new Date().toISOString();
     mockNotifications.forEach((n) => {
@@ -1498,14 +1506,14 @@ const mockRegistry: Record<string, MockHandler> = {
     });
     return true;
   },
-  clearAllNotifications: async (data: any) => {
+  clearAllNotifications: async (data?: { appId?: string }) => {
     const now = new Date().toISOString();
     mockNotifications.forEach((n) => {
       if (!data?.appId || n.app === data.appId) n.cleared_at = now;
     });
     return true;
   },
-  restoreNotifications: async (data: any) => {
+  restoreNotifications: async (data?: { ids?: number[] }) => {
     const ids = data?.ids || [];
     mockNotifications.forEach((n) => {
       if (ids.includes(n.id)) {
@@ -1538,7 +1546,7 @@ const mockRegistry: Record<string, MockHandler> = {
  * Falls back to the bare action name, so a service whose actions are also named routes
  * needs no second fixture.
  */
-function resolveGeneric(data?: any): { key: string; payload: unknown } | null {
+function resolveGeneric(data?: unknown): { key: string; payload: unknown } | null {
   if (!data || typeof data !== 'object') return null;
   const { service, action, data: inner } = data as Record<string, unknown>;
   if (typeof service !== 'string' || typeof action !== 'string') return null;
@@ -1547,7 +1555,7 @@ function resolveGeneric(data?: any): { key: string; payload: unknown } | null {
   return { key: mockRegistry[scoped] ? scoped : action, payload: inner };
 }
 
-async function getMockData(eventName: string, data?: any): Promise<any> {
+async function getMockData(eventName: string, data?: unknown): Promise<unknown> {
   if (eventName === GENERIC_SERVICE_ACTION) {
     const resolved = resolveGeneric(data);
     if (!resolved) {
@@ -1568,5 +1576,5 @@ async function getMockData(eventName: string, data?: any): Promise<any> {
 export const MockRegistry = {
   has: (eventName: string) =>
     eventName === GENERIC_SERVICE_ACTION || Boolean(mockRegistry[eventName]),
-  handle: (eventName: string, data?: any) => getMockData(eventName, data)
+  handle: (eventName: string, data?: unknown) => getMockData(eventName, data)
 };
