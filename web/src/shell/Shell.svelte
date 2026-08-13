@@ -31,8 +31,13 @@
   import NotNetworkScreen from './NotNetworkScreen.svelte';
   import AppCapabilityProvider from '../sdk/AppCapabilityProvider.svelte';
   import { clampedSignalLevel } from './state/signal';
+  import { audio } from './state/audio';
 
   let visible = $state(isBrowser());
+
+  $effect(() => {
+    if (visible) audio.warm();
+  });
 
   /**
    * Everything that is not shell state is routed away.
@@ -53,6 +58,7 @@
 
     if (action === 'setVisible') {
       visible = data;
+      if (visible) audio.warm();
       if (!visible && isFreelook) isFreelook = false;
       // Developer Tools are earned per session, so closing the phone puts them back
       // behind the ten taps.

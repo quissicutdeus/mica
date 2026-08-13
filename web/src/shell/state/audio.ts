@@ -105,11 +105,12 @@ const showVolumeHud = () => {
 
 class SoundService {
   private audioCtx: AudioContext | null = null;
+  private warmingListenersAttached = false;
 
   private getAudioContext(): AudioContext | null {
     if (typeof window === 'undefined') return null;
     if (!this.audioCtx) {
-      const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtxClass) {
         this.audioCtx = new AudioCtxClass();
       }
@@ -118,6 +119,35 @@ class SoundService {
       this.audioCtx.resume().catch(() => {});
     }
     return this.audioCtx;
+  }
+
+  /**
+   * Proactively warm and unlock the Web AudioContext on phone reveal or user gesture.
+   * Prevents Chromium CEF autoplay restrictions from muting ringtones and notifications.
+   */
+  public warm(): void {
+    if (typeof window === 'undefined') return;
+    const ctx = this.getAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+
+    if (this.warmingListenersAttached) return;
+    this.warmingListenersAttached = true;
+
+    const unlock = () => {
+      const activeCtx = this.getAudioContext();
+      if (activeCtx && activeCtx.state === 'suspended') {
+        activeCtx.resume().catch(() => {});
+      }
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+      window.removeEventListener('touchstart', unlock);
+    };
+
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    window.addEventListener('touchstart', unlock, { once: true });
   }
 
   public play(effect: SoundEffect): void {

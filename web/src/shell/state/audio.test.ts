@@ -62,6 +62,12 @@ describe('audio', () => {
     }).not.toThrow();
   });
 
+  it('warms audio context without throwing', () => {
+    expect(() => {
+      audio.warm();
+    }).not.toThrow();
+  });
+
   it('respects mute setting', () => {
     soundMuted.set(true);
     expect(() => {
