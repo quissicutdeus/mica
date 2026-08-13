@@ -116,5 +116,23 @@ export const SchemaMigrator = {
     for (const plan of interesting) {
       for (const line of describe(plan)) console.log(line);
     }
+  },
+
+  /**
+   * Execute every additive statement `plan()` finds — the missing columns and indexes it is
+   * always safe to add. Never touches anything `plan()` reports as `drift`; those need a
+   * human, and stay untouched. Returns what it did, one line per statement, for the caller
+   * to print.
+   */
+  async apply(): Promise<string[]> {
+    const plans = await SchemaMigrator.plan();
+    const applied: string[] = [];
+    for (const plan of plans) {
+      for (const statement of plan.additive) {
+        await Database.query(statement.sql, []);
+        applied.push(statement.description);
+      }
+    }
+    return applied;
   }
 };

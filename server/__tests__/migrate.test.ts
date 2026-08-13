@@ -231,12 +231,59 @@ describe('planChildMigration', () => {
 });
 
 describe('SchemaMigrator', () => {
-  it('never touches the database', async () => {
-    // The migrator applies nothing now. `gphone.sql` is generated whole from the
-    // declarations, so a database that disagrees with the code has not drifted — it has
-    // not been imported, and saying so beats silently patching halfway there and leaving
-    // an operator unsure which half they have.
-    expect(SchemaMigrator).not.toHaveProperty('run');
+  it('report() never writes to the database', async () => {
+    // `../services/index`, imported above for `declaredServices`, pulls in
+    // `Notifications.ts`, which prunes stale rows at module scope on import — a real
+    // (mocked) `Database.query` call this file never clears between tests. Clear it so
+    // this assertion is about `report()`, not about an unrelated import-time side effect.
+    dbMock.query.mockClear();
+    vi.spyOn(SchemaMigrator, 'plan').mockResolvedValueOnce([]);
+    await SchemaMigrator.report();
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('apply() runs every additive statement plan() finds', async () => {
+    vi.spyOn(SchemaMigrator, 'plan').mockResolvedValueOnce([
+      {
+        table: 'gphone_widgets',
+        missingTable: false,
+        additive: [
+          {
+            description: 'add column gphone_widgets.body',
+            sql: 'ALTER TABLE `gphone_widgets` ADD COLUMN `body` text'
+          }
+        ],
+        drift: []
+      }
+    ]);
+    dbMock.query.mockResolvedValue([]);
+
+    const applied = await SchemaMigrator.apply();
+
+    expect(dbMock.query).toHaveBeenCalledWith(
+      'ALTER TABLE `gphone_widgets` ADD COLUMN `body` text',
+      []
+    );
+    expect(applied).toEqual(['add column gphone_widgets.body']);
+  });
+
+  it('apply() never runs a drift-only plan', async () => {
+    // See the comment in the previous test — same unrelated import-time call to clear.
+    dbMock.query.mockClear();
+    vi.spyOn(SchemaMigrator, 'plan').mockResolvedValueOnce([
+      {
+        table: 'gphone_widgets',
+        missingTable: false,
+        additive: [],
+        drift: ['gphone_widgets.x exists but is not declared']
+      }
+    ]);
+    dbMock.query.mockResolvedValue([]);
+
+    const applied = await SchemaMigrator.apply();
+
+    expect(dbMock.query).not.toHaveBeenCalled();
+    expect(applied).toEqual([]);
   });
 
   it('plans migration by querying information_schema', async () => {
