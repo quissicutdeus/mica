@@ -1,4 +1,5 @@
 import { toast, type ToastMessage } from '../../shell/state/toast';
+import { assertCapability } from '../capability';
 
 export interface SendNotificationOptions {
   title?: string;
@@ -13,6 +14,7 @@ export interface SendNotificationOptions {
  * OS Service Hook for sending toast notifications and system alerts.
  */
 export function usePhoneNotification() {
+  assertCapability('notifications', 'usePhoneNotification');
   return {
     sendNotification: (options: SendNotificationOptions) => {
       return toast.show({

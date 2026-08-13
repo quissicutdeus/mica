@@ -1,4 +1,5 @@
 import { isTakingPhoto, isPreviewingPhoto } from '../../services/camera';
+import { assertCapability } from '../capability';
 
 /**
  * The camera hardware — whether a capture is in flight, and whether the shot just taken
@@ -9,6 +10,7 @@ import { isTakingPhoto, isPreviewingPhoto } from '../../services/camera';
  * app did exactly that.
  */
 export function useCamera() {
+  assertCapability('camera', 'useCamera');
   return {
     isTakingPhoto,
     isPreviewingPhoto

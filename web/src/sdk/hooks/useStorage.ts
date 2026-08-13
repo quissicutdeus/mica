@@ -1,5 +1,6 @@
 import { fetchSettings } from '../../services/settings';
 import { isUnsynced, queueClearApp, queueRemove, queueWrite } from './settingsSync';
+import { assertCapability } from '../capability';
 
 const memoryStore = new Map<string, string>();
 
@@ -163,6 +164,7 @@ export function appStorageBytes(appId: string): number {
  * OS Service Hook for app key-value storage.
  */
 export function useStorage(appId: string) {
+  assertCapability('storage', 'useStorage');
   const getStorageKey = (key: string) => `${namespaceOf(appId)}${key}`;
 
   return {

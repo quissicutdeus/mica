@@ -1,4 +1,5 @@
 import { media } from '../../services/media';
+import { assertCapability } from '../capability';
 
 /**
  * The media gallery — the client face of the `media` service.
@@ -8,6 +9,7 @@ import { media } from '../../services/media';
  * touches the shutter, and an app attaching an image to a message wants neither.
  */
 export function useMedia() {
+  assertCapability('media', 'useMedia');
   return {
     media,
     // `kind` is stated rather than left to the column default: the table holds eight

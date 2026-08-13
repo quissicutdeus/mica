@@ -29,6 +29,7 @@
   import ToastContainer from './ToastHost.svelte';
   import ErrorBoundary from './ErrorBoundary.svelte';
   import NotNetworkScreen from './NotNetworkScreen.svelte';
+  import AppCapabilityProvider from '../sdk/AppCapabilityProvider.svelte';
   import { clampedSignalLevel } from './state/signal';
 
   let visible = $state(isBrowser());
@@ -392,9 +393,11 @@
               <div class="absolute inset-0" class:hidden={!isActive} inert={!isActive}>
                 {#if AppComponent}
                   <ErrorBoundary appName={manifest?.name ?? instance.id}>
-                    <div class="h-full w-full" inert={isNetworkBlocked}>
-                      <AppComponent onback={goHome} {...instance.props} />
-                    </div>
+                    <AppCapabilityProvider appId={instance.id} {manifest}>
+                      <div class="h-full w-full" inert={isNetworkBlocked}>
+                        <AppComponent onback={goHome} {...instance.props} />
+                      </div>
+                    </AppCapabilityProvider>
                   </ErrorBoundary>
                   {#if isNetworkBlocked}
                     <div class="absolute inset-0 z-30">

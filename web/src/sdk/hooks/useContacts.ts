@@ -1,9 +1,11 @@
 import { contacts, favoriteContacts } from '../../services/contacts';
+import { assertCapability } from '../capability';
 
 /**
  * OS Service Hook for accessing address book contacts and sharing contacts.
  */
 export function useContacts() {
+  assertCapability('contacts', 'useContacts');
   return {
     contactsStore: contacts,
     favoriteContacts,
