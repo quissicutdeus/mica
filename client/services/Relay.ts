@@ -16,7 +16,21 @@ import { GENERIC_SERVICE_ACTION, parseGenericRequest, requestEventFor } from '@s
  */
 const proxies = new Map<string, ServiceProxy>();
 
+/**
+ * Routes whose client relay is not a dumb passthrough of whatever `web/` sent — client-side
+ * logic has to run *between* the NUI call and the server relay. `shareLocation` needs a
+ * street name, and that can only be resolved by a client-only native
+ * (`GetStreetNameAtCoord`/`GetStreetNameFromHashKey` do not exist server-side), so it
+ * cannot be resolved in `web/` and handed down. Still declared in `ROUTES` for
+ * completeness/mock checking; only the automatic `registerCallback` below is skipped. The
+ * dedicated handler lives in `client/services/Location.ts`. Add here — and nowhere else —
+ * the next time a route needs client-side work before it reaches the server.
+ */
+const CUSTOM_CLIENT_RELAY = new Set(['shareLocation']);
+
 for (const route of ROUTES) {
+  if (CUSTOM_CLIENT_RELAY.has(route.action)) continue;
+
   let proxy = proxies.get(route.service);
   if (!proxy) {
     proxy = new ServiceProxy(route.service);

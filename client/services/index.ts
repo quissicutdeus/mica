@@ -5,6 +5,7 @@ import './Battery';
 import './Call';
 import './Camera';
 import './Contact';
+import './Location';
 import './Mail';
 import './Message';
 import './Relay';
