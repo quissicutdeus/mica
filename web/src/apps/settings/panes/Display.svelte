@@ -8,7 +8,20 @@
   // dark first, since it reframes everything after it, then the color, the presets, a
   // photo, and finally the size and the clock.
   const { is24Hour } = useClock();
-  const { displaySize, setDisplaySize, displaySizeDefault, phoneBox, isSizeLimited } = useDisplay();
+  const {
+    displaySize,
+    setDisplaySize,
+    displaySizeDefault,
+    phoneBox,
+    isSizeLimited,
+    homeGridColumns,
+    homeGridRows,
+    homeGridColumnsMin,
+    homeGridColumnsMax,
+    homeGridRowsMin,
+    homeGridRowsMax,
+    setHomeGridSize
+  } = useDisplay();
 
   const rendered = $derived(
     `${Math.round($phoneBox.width)} × ${Math.round($phoneBox.height)} pixels`
@@ -66,6 +79,64 @@
     </div>
     <p class="text-on-surface-variant mt-2 px-2 text-xs">
       The phone always keeps its shape; this changes how large it is drawn on screen.
+    </p>
+  </div>
+
+  <div>
+    <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
+      Home Screen Grid
+    </h2>
+    <div class="bg-surface-container overflow-hidden rounded-xl p-4">
+      <div class="flex flex-col gap-3">
+        <div class="flex items-center justify-between text-sm">
+          <span class="text-on-surface font-medium">Columns</span>
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              aria-label="Fewer columns"
+              disabled={$homeGridColumns <= homeGridColumnsMin}
+              onclick={() => setHomeGridSize($homeGridColumns - 1, $homeGridRows)}
+              class="bg-surface text-on-surface hover:bg-surface-container-high h-7 w-7 cursor-pointer rounded-full text-sm font-semibold disabled:cursor-default disabled:opacity-40"
+              >−</button
+            >
+            <span class="text-on-surface w-4 text-center font-mono">{$homeGridColumns}</span>
+            <button
+              type="button"
+              aria-label="More columns"
+              disabled={$homeGridColumns >= homeGridColumnsMax}
+              onclick={() => setHomeGridSize($homeGridColumns + 1, $homeGridRows)}
+              class="bg-surface text-on-surface hover:bg-surface-container-high h-7 w-7 cursor-pointer rounded-full text-sm font-semibold disabled:cursor-default disabled:opacity-40"
+              >+</button
+            >
+          </div>
+        </div>
+        <div class="flex items-center justify-between text-sm">
+          <span class="text-on-surface font-medium">Rows</span>
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              aria-label="Fewer rows"
+              disabled={$homeGridRows <= homeGridRowsMin}
+              onclick={() => setHomeGridSize($homeGridColumns, $homeGridRows - 1)}
+              class="bg-surface text-on-surface hover:bg-surface-container-high h-7 w-7 cursor-pointer rounded-full text-sm font-semibold disabled:cursor-default disabled:opacity-40"
+              >−</button
+            >
+            <span class="text-on-surface w-4 text-center font-mono">{$homeGridRows}</span>
+            <button
+              type="button"
+              aria-label="More rows"
+              disabled={$homeGridRows >= homeGridRowsMax}
+              onclick={() => setHomeGridSize($homeGridColumns, $homeGridRows + 1)}
+              class="bg-surface text-on-surface hover:bg-surface-container-high h-7 w-7 cursor-pointer rounded-full text-sm font-semibold disabled:cursor-default disabled:opacity-40"
+              >+</button
+            >
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="text-on-surface-variant mt-2 px-2 text-xs">
+      Shrinking the grid moves anything it no longer fits to the next open space, rather than
+      hiding it.
     </p>
   </div>
 
