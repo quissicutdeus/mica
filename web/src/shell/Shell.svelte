@@ -23,6 +23,8 @@
   import { isPreviewingPhoto } from '../services/camera';
   import PhoneFrame from './PhoneFrame.svelte';
   import Home from './Launcher.svelte';
+  import Dock from './Dock.svelte';
+  import AppDrawer from './AppDrawer.svelte';
   import { fetchNui } from '../nui/fetchNui';
   import { toast } from './state/toast';
   import { bootstrapStores } from './state/bootstrap';
@@ -388,6 +390,8 @@
           <div class="relative h-full w-full">
             {#if $currentApp.id === 'home'}
               <Home {openApp} />
+              <Dock {openApp} />
+              <AppDrawer {openApp} />
             {/if}
 
             {#each $runningApps as instance (instance.id)}

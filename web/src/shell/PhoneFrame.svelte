@@ -16,6 +16,7 @@
   import BluetoothIcon from '../sdk/ui/icons/BluetoothIcon.svelte';
   import VolumeHud from './VolumeHud.svelte';
   import NotificationShade from './NotificationShade.svelte';
+  import DragGhost from './DragGhost.svelte';
   import {
     openShade,
     isShadeOpen,
@@ -145,6 +146,10 @@
 
     <!-- Notification Shade Overlay -->
     <NotificationShade />
+
+    <!-- Drag ghost: renders above every layer regardless of which surface (App Drawer,
+         home grid, dock, folder popup) started the drag. -->
+    <DragGhost />
 
     <!-- Dead Phone Screen Overlay -->
     {#if $isBatteryDead}
