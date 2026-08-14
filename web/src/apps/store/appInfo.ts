@@ -19,8 +19,8 @@ import { appStorageBytes, useAppRegistry, type AppManifest, type AppPermission }
  * Marketplace — sat here as manifests with no code behind them, so the Store's catalog was
  * mostly fiction and installing any of it got a screen apologising for itself. Both are gone.
  * An app appears in the Store by *existing* and shipping `core: false`; the ideas the
- * fictions stood in for are recorded in `docs/roadmap.md`, which cannot pretend to be
- * installable.
+ * fictions stood in for are tracked in the gPhone Jira project (`MICA`), which
+ * cannot pretend to be installable.
  *
  * A function, not a constant, and it has to be. The registry globs every manifest eagerly,
  * each manifest imports `@gphone/sdk`, and the SDK barrel reaches back into the registry —

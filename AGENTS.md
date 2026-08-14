@@ -231,24 +231,30 @@ allowlist, then answered as many requests of any size as arrived.
     commit must match that statement. Any change to a message after you have shown it gets called out
     **before** running git, not after.
 
-11. **One planning document, `docs/roadmap.md`, and do not create a second.**
+11. **One planning system of record, the Jira project `MICA`, and do not create a second.**
 
     It is a pure backlog — what is proposed but unbuilt, and the app ideas after that. Nothing in it
-    describes code that exists: when a proposal ships, its entry leaves the file rather than staying
-    behind relabeled as done. That replaces an earlier split into a shipped half and a proposed half,
-    kept apart because description and intent were merged once and the document undid itself as you
-    read down — a reader could not tell which half they were in. Removing the shipped half removes the
-    seam instead of just labeling it: there is no wrong half to be in anymore. Git history is the
-    record of what shipped and why; this file only ever tracks what is still ahead.
+    describes code that exists: when a proposal ships, its issue is closed rather than staying open
+    relabeled as done. This file previously kept that backlog as `docs/roadmap.md`, itself the
+    successor to an earlier split into a shipped half and a proposed half, kept apart because
+    description and intent were merged once and the document undid itself as you read down — a
+    reader could not tell which half they were in. Removing the shipped half removed the seam instead
+    of just labeling it, and the same reasoning is why a closed issue stays closed rather than
+    growing a "done" essay: there is no wrong state to be in. Git history is the record of what
+    shipped and why; Jira only ever tracks what is still ahead.
 
-    A second planning file goes stale in a way one file cannot: two documents can end up disagreeing
-    about the same code, which is worse than either alone.
+    A second planning system goes stale in a way one cannot: two places can end up disagreeing about
+    the same proposal, which is worse than either alone. Do not restart `docs/roadmap.md` or any
+    other committed planning file as a shadow copy of the Jira backlog.
 
-    An **untracked** plan is worse still: no history, one reader, and the tracked document ends up
+    An **untracked** plan is worse still: no history, one reader, and the system of record ends up
     deferring to a file nobody else has. Blabber's phase plan lived in a local TODO before it moved
-    into the roadmap. If a plan is worth writing down it is worth committing, which is also why this
-    rule is here rather than only in a gitignored assistant file — a rule no other contributor can
-    read is not a rule.
+    into the roadmap, which is the failure this rule still guards against even though the backlog
+    itself moved to Jira — a plan worth writing down is worth putting where every contributor with
+    project access can read it, which is also why this rule is here rather than only in a gitignored
+    assistant file. A proposal being evaluated in this repo (a design doc, a phased plan under
+    `docs/superpowers/`) should link the Jira issue it corresponds to, the same way those documents
+    used to cite a `docs/roadmap.md` entry.
 
 ---
 
