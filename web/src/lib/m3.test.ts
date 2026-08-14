@@ -264,6 +264,32 @@ describe('shape scale (app.css)', () => {
   });
 });
 
+describe('elevation tokens (app.css)', () => {
+  it('declares the five M3 elevation shadows as plain rgba() pairs', () => {
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
+    const expected: Record<string, string> = {
+      1: '0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 1px 3px 1px rgba(0, 0, 0, 0.15)',
+      2: '0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 2px 6px 2px rgba(0, 0, 0, 0.15)',
+      3: '0px 1px 3px 0px rgba(0, 0, 0, 0.3), 0px 4px 8px 3px rgba(0, 0, 0, 0.15)',
+      4: '0px 2px 3px 0px rgba(0, 0, 0, 0.3), 0px 6px 10px 4px rgba(0, 0, 0, 0.15)',
+      5: '0px 4px 4px 0px rgba(0, 0, 0, 0.3), 0px 8px 12px 6px rgba(0, 0, 0, 0.15)'
+    };
+    for (const [level, value] of Object.entries(expected)) {
+      const match = css.match(new RegExp(`--shadow-elevation-${level}:\\s*([^;]+);`));
+      expect(match, `--shadow-elevation-${level} declared in app.css`).not.toBeNull();
+      expect(match![1].trim(), `--shadow-elevation-${level} value`).toBe(value);
+    }
+  });
+
+  it('uses no color function newer than rgba()', () => {
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
+    const block = css.match(/--shadow-elevation-1:[\s\S]*?--shadow-elevation-5:[^;]+;/)![0];
+    for (const banned of ['oklch', 'oklab', 'color-mix', 'lab(', 'lch(', 'hwb(']) {
+      expect(block).not.toContain(banned);
+    }
+  });
+});
+
 /** A token's L*, for contrast comparisons. */
 function lstar(cssColor: string): number {
   const [r, g, b] = cssColor.match(/\d+/g)!.slice(0, 3).map(Number);

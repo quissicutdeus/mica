@@ -160,6 +160,19 @@
   --radius-frame-inner: 3rem;
 
   /**
+   * M3 elevation: real drop-shadow for elements that float above the surface stack
+   * (FAB, a dragged icon, an open dialog/sheet, the dock) rather than sitting at a
+   * higher tone. Ordinary cards and containers use a `surface-container-*` tier and no
+   * shadow instead — see the surface-tier usage map in the M3 foundation spec. Standard
+   * M3 umbra/penumbra pairs, plain rgba(), nothing newer than CSS 2.
+   */
+  --shadow-elevation-1: 0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 1px 3px 1px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-2: 0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 2px 6px 2px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-3: 0px 1px 3px 0px rgba(0, 0, 0, 0.3), 0px 4px 8px 3px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-4: 0px 2px 3px 0px rgba(0, 0, 0, 0.3), 0px 6px 10px 4px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-5: 0px 4px 4px 0px rgba(0, 0, 0, 0.3), 0px 8px 12px 6px rgba(0, 0, 0, 0.15);
+
+  /**
    * The frame's own insets. `PhoneFrame` expressed these as bare `pt-8`/`pb-4` with
    * nothing exported, so an app had no way to ask how much of the screen it actually
    * owns. Same numbers, now with a name.
