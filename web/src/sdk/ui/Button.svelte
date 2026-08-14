@@ -11,8 +11,8 @@
 
   let baseClass = $derived(
     variant === 'icon'
-      ? 'p-2 rounded-full transition-colors disabled:opacity-50 flex items-center justify-center'
-      : 'p-3 rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center justify-center'
+      ? 'p-2 rounded-full transition-colors disabled:text-disabled-content flex items-center justify-center'
+      : 'p-3 rounded-lg font-medium transition-colors disabled:bg-disabled-container disabled:text-disabled-content flex items-center justify-center'
   );
 
   /**
