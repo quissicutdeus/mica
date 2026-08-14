@@ -102,7 +102,7 @@ export const blabber = defineService<Blab>({
      * walk up `reply_to`, and never mutated afterward. Same discipline as `reply_to` and
      * `mouth_of`: a self-reference fixed at creation, so "flatten this thread" and "find a
      * reply's top-level ancestor" are both a single indexed lookup rather than a recursive
-     * query. See docs/superpowers/specs/2026-08-08-blabber-search-and-hashtags-design.md.
+     * query.
      */
     root_id: {
       type: 'int',
