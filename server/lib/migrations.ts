@@ -1,7 +1,12 @@
 /**
  * Versioned, forward-only schema migrations for changes `SchemaMigrator`'s additive planner
- * cannot safely infer — a rename, a retype, a drop. See docs/roadmap.md, "Versioned
- * migrations for breaking schema changes", for the full design.
+ * cannot safely infer — a rename, a retype, a drop. See AGENTS.md §8, "Schema changes", for
+ * the full design.
+ *
+ * Two paths, and the split between them is the important part: `runPendingMigrations` is the
+ * only one allowed to touch the database's shape — it creates the ledger and applies what is
+ * missing — while `reportPendingMigrations` reads and never writes, matching the same
+ * property `SchemaMigrator.report()` holds. Boot calls the second one.
  */
 
 import { Database } from './Database';
@@ -53,12 +58,42 @@ export async function runMigrations(
         remaining: pending.slice(i + 1).map((m) => m.id)
       };
     }
-    await recordApplied(migration.id);
+
+    /**
+     * The ledger write is guarded separately from `up()`, and reported differently, because
+     * the two failures leave the database in opposite states. A failed `up()` means the
+     * migration did not happen and re-running it is the fix. A failed ledger write means it
+     * *did* happen and nothing recorded it — so a blind retry runs it a second time, against
+     * a table already in its new shape. It is not counted in `applied`, since `applied` means
+     * "applied and recorded", and the operator is told which of the two they are looking at.
+     */
+    try {
+      await recordApplied(migration.id);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      return {
+        applied,
+        failed: {
+          id: migration.id,
+          error:
+            `it ran, but recording it in \`${SCHEMA_MIGRATIONS_TABLE}\` failed: ${detail}. ` +
+            'Check that table by hand before retrying — this migration has already been ' +
+            'applied, so running it again is not a no-op.'
+        },
+        remaining: pending.slice(i + 1).map((m) => m.id)
+      };
+    }
     applied.push(migration.id);
   }
   return { applied, failed: null, remaining: [] };
 }
 
+/**
+ * The one piece of DDL this resource runs on its own account, and it is reached from the
+ * apply path only. `IF NOT EXISTS` is safe here in a way it is not for an app table (§10):
+ * this table has exactly one shape and never gains a column, so "already there" really is
+ * nothing to do rather than a change silently skipped.
+ */
 async function ensureMigrationsLedger(): Promise<void> {
   await Database.query(schemaMigrationsLedgerDdl(), []);
 }
@@ -72,9 +107,11 @@ async function appliedMigrationIds(): Promise<Set<string>> {
 }
 
 /**
- * Ensures the ledger exists, then reads it, then filters — the exact sequence both
- * `runPendingMigrations` and `reportPendingMigrations` need before they diverge. Held here
- * once rather than as two copies staying in sync by discipline.
+ * The write path's preamble: create the ledger if it is not there, read it, filter.
+ *
+ * Creating it belongs here and nowhere else. `apply` is the one command an operator runs
+ * deliberately, from the console, having decided the database should change — so it is the
+ * one path allowed to bring its own infrastructure into being.
  */
 async function loadPendingMigrations(): Promise<Migration[]> {
   await ensureMigrationsLedger();
@@ -82,7 +119,31 @@ async function loadPendingMigrations(): Promise<Migration[]> {
   return pendingMigrations(migrationsOnDisk, applied);
 }
 
-/** Applies every migration `server/migrations/` has that the ledger does not, in order. */
+/**
+ * The read path's variant: reads the ledger, never creates it, and reports `null` rather
+ * than throwing when it cannot be read at all.
+ *
+ * A missing ledger is the expected case here — a server upgrading from a `gphone.sql` older
+ * than the ledger has no such table until `apply` runs once. Any failure is treated as
+ * "cannot report", rather than sniffing for `ER_NO_SUCH_TABLE`: the caller is advisory-only,
+ * so being wrong about which error this is must not cost more than the report itself, and
+ * this codebase's one precedent for classifying a driver error matches on message text
+ * (Blabber's duplicate-key translation), which is not a thing to lean on at boot. The
+ * message is surfaced to the caller's log either way, so nothing is swallowed silently.
+ */
+async function readPendingMigrations(): Promise<{ pending: Migration[] } | { error: string }> {
+  try {
+    const applied = await appliedMigrationIds();
+    return { pending: pendingMigrations(migrationsOnDisk, applied) };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
+ * Applies every migration `server/migrations/` has that the ledger does not, in order.
+ * Creates the ledger first. Backs `gphoneschema apply`, and nothing else calls it.
+ */
 export async function runPendingMigrations(): Promise<MigrationRunResult> {
   const pending = await loadPendingMigrations();
 
@@ -91,13 +152,30 @@ export async function runPendingMigrations(): Promise<MigrationRunResult> {
   });
 }
 
-/** Boot-time visibility only — never applies anything. Backs the `onResourceStart` report. */
+/**
+ * Boot-time visibility only — reads the ledger if it can, and writes nothing whatever it
+ * finds. Backs the `onResourceStart` report.
+ *
+ * An unreadable ledger is reported only when there is something on disk it could have been
+ * hiding. With no migration files, a fresh server has nothing to say about migrations and
+ * says nothing — inventing a line about a table it also declines to create would be noise
+ * on every boot of every install that is working correctly.
+ */
 export async function reportPendingMigrations(): Promise<void> {
-  const pending = await loadPendingMigrations();
+  const result = await readPendingMigrations();
 
-  if (pending.length === 0) return;
+  if ('error' in result) {
+    if (migrationsOnDisk.length === 0) return;
+    console.log(
+      `[gphone] could not read the migrations ledger (${result.error}) — run ` +
+        "'gphoneschema apply' from the server console to create it and apply what is pending."
+    );
+    return;
+  }
+
+  if (result.pending.length === 0) return;
   console.log('[gphone] pending schema migrations:');
-  for (const migration of pending) {
+  for (const migration of result.pending) {
     console.log(`  ${migration.id}: ${migration.description}`);
   }
   console.log("[gphone] run 'gphoneschema apply' from the server console to apply them.");

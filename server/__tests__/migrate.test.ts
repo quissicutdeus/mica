@@ -258,13 +258,17 @@ describe('SchemaMigrator', () => {
     ]);
     dbMock.query.mockResolvedValue([]);
 
-    const applied = await SchemaMigrator.apply();
+    const result = await SchemaMigrator.apply();
 
     expect(dbMock.query).toHaveBeenCalledWith(
       'ALTER TABLE `gphone_widgets` ADD COLUMN `body` text',
       []
     );
-    expect(applied).toEqual(['add column gphone_widgets.body']);
+    expect(result).toEqual({
+      applied: ['add column gphone_widgets.body'],
+      failed: null,
+      remaining: []
+    });
   });
 
   it('apply() never runs a drift-only plan', async () => {
@@ -280,10 +284,68 @@ describe('SchemaMigrator', () => {
     ]);
     dbMock.query.mockResolvedValue([]);
 
-    const applied = await SchemaMigrator.apply();
+    const result = await SchemaMigrator.apply();
 
     expect(dbMock.query).not.toHaveBeenCalled();
-    expect(applied).toEqual([]);
+    expect(result).toEqual({ applied: [], failed: null, remaining: [] });
+  });
+
+  /**
+   * MySQL DDL auto-commits per statement, so the statements before a failure are applied
+   * and permanent. Rejecting the whole call threw that list away and told the operator only
+   * that something had gone wrong — in the one command that changes a live database.
+   */
+  it('apply() keeps what already ran when a later statement throws', async () => {
+    dbMock.query.mockClear();
+    const statement = (name: string) => ({
+      description: `add column gphone_widgets.${name}`,
+      sql: `ALTER TABLE \`gphone_widgets\` ADD COLUMN \`${name}\` text`
+    });
+    vi.spyOn(SchemaMigrator, 'plan').mockResolvedValueOnce([
+      {
+        table: 'gphone_widgets',
+        missingTable: false,
+        additive: [statement('body'), statement('subtitle')],
+        drift: []
+      },
+      {
+        table: 'gphone_notes',
+        missingTable: false,
+        additive: [
+          { description: 'add column gphone_notes.pinned', sql: 'ALTER TABLE `gphone_notes` ...' }
+        ],
+        drift: []
+      }
+    ]);
+    dbMock.query.mockImplementation((sql: string) => {
+      if (sql.includes('subtitle')) return Promise.reject(new Error('Duplicate column name'));
+      return Promise.resolve([]);
+    });
+
+    const result = await SchemaMigrator.apply();
+
+    expect(result.applied).toEqual(['add column gphone_widgets.body']);
+    expect(result.failed).toEqual({
+      description: 'add column gphone_widgets.subtitle',
+      error: 'Duplicate column name'
+    });
+    // Statements after the failure span the plan boundary, so they are counted across
+    // plans rather than per table — one flat list is what an operator reads.
+    expect(result.remaining).toEqual(['add column gphone_notes.pinned']);
+    // And nothing past the failure was attempted.
+    expect(dbMock.query).toHaveBeenCalledTimes(2);
+  });
+
+  it('apply() still throws when the plan itself cannot be built', async () => {
+    // No partial progress to report: nothing has been applied, and the caller's `.catch()`
+    // at the command boundary is what surfaces it.
+    vi.spyOn(SchemaMigrator, 'plan').mockRejectedValueOnce(
+      new Error('could not determine the current database')
+    );
+
+    await expect(SchemaMigrator.apply()).rejects.toThrow(
+      'could not determine the current database'
+    );
   });
 
   it('plans migration by querying information_schema', async () => {
