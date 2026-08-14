@@ -1,10 +1,8 @@
 # Blabber: search, hashtags, and a flattened Blab view
 
-**Status:** approved, not yet implemented.
-**Roadmap:** `docs/roadmap.md`, "Blabber, next iteration" §1 ("Search as the fourth tab") and §2
-("Search and hashtags"). This spec supersedes §2's original sketch — it is closer to what actually
-gets built, and the roadmap should be updated to point here once this lands, per AGENTS.md §2.11
-("do not restate a plan in a second document — fix the first one").
+**Status:** shipped. See git history (`aef9a5a docs(blabber): Search and hashtags — Proposed to
+Shipped`) for the record of it moving out of the backlog that was current at the time
+(`docs/roadmap.md`, since retired in favor of the `MICA` Jira project — AGENTS.md §2.11).
 
 ## Why
 
