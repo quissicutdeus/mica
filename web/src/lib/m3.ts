@@ -197,10 +197,11 @@ export const STATE_TOKEN_NAMES: readonly string[] = [
   ]),
   'primary-glow',
   'disabled-content',
-  'disabled-container'
+  'disabled-container',
+  'focus-ring'
 ];
 
-/** Every `--color-*` this module emits: the 34 roles plus the 24 derived values. */
+/** Every `--color-*` this module emits: the 34 roles plus the 25 derived values. */
 export const TOKEN_NAMES: readonly string[] = [...ROLE_NAMES, ...STATE_TOKEN_NAMES];
 
 export type M3Tokens = Record<string, string>;
@@ -286,6 +287,7 @@ export function buildSchemes(seedHex: string): { light: M3Tokens; dark: M3Tokens
       argbOf('on-surface'),
       DISABLED_CONTAINER_ALPHA
     );
+    tokens['focus-ring'] = tokens['primary'];
 
     return tokens;
   };

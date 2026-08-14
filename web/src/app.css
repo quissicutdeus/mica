@@ -146,6 +146,11 @@
   --color-primary-container-pressed: rgb(22, 76, 183);
   --color-primary-glow: rgba(182, 196, 255, 0.3);
 
+  /* Keyboard focus outline. Aliased to `primary` rather than a distinct color — this
+     app is mouse-driven inside CEF, so a separate role would be one more value to keep
+     honest for a low-priority accessibility affordance. */
+  --color-focus-ring: rgb(182, 196, 255);
+
   /* Badges drawn over media — a GIF tag, a duration, the video play affordance. Not
      `--color-scrim` (0.32), which is tuned for dimming a whole surface behind a dialog
      and is far too light to keep 10px white text legible over an arbitrary photo. It sits
@@ -241,6 +246,15 @@
   --duration-long: 400ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-emphasized: cubic-bezier(0.05, 0.7, 0.1, 1);
+
+  /**
+   * Inline glyph icon sizes (status bar, list-item affordances, dialog icons), matching
+   * M3's icon scale. App icons stay the fixed 32px (`h-8 w-8`) mandated by AGENTS.md
+   * §11.1 and are not part of this scale.
+   */
+  --size-icon-sm: 1rem;
+  --size-icon-md: 1.25rem;
+  --size-icon-lg: 1.5rem;
 
   /**
    * The frame's own insets. `PhoneFrame` expressed these as bare `pt-8`/`pb-4` with

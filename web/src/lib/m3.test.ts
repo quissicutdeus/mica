@@ -36,10 +36,10 @@ const SEEDS = ['#155dfc', '#ff0090', '#00ff00', '#ffffff', '#000000', '#7f7f7f',
 
 describe('M3 color engine', () => {
   describe('token set', () => {
-    it('declares 34 roles and 24 derived tokens after disabled/selected', () => {
+    it('declares 34 roles and 25 derived tokens after disabled/selected', () => {
       expect(ROLE_NAMES).toHaveLength(34);
-      expect(STATE_TOKEN_NAMES).toHaveLength(24);
-      expect(TOKEN_NAMES).toHaveLength(58);
+      expect(STATE_TOKEN_NAMES).toHaveLength(25);
+      expect(TOKEN_NAMES).toHaveLength(59);
     });
 
     it('names no token twice', () => {
@@ -120,7 +120,12 @@ describe('M3 color engine', () => {
         // from — both are composited over `surface`, not over a role named by
         // stripping a suffix off their own name — and both already have a dedicated
         // "differs from surface" assertion above.
-        if (name === 'primary-glow' || name === 'disabled-content' || name === 'disabled-container')
+        if (
+          name === 'primary-glow' ||
+          name === 'disabled-content' ||
+          name === 'disabled-container' ||
+          name === 'focus-ring'
+        )
           continue;
         const base = name.replace(/-(hover|pressed|selected)$/, '');
         expect(dark[name], name).not.toBe(dark[base]);
@@ -147,6 +152,13 @@ describe('M3 color engine', () => {
         const selected = dark[`${base}-selected`];
         expect(selected, `${base}-selected`).toMatch(OPAQUE_RGB);
         expect(selected, `${base}-selected differs from base`).not.toBe(dark[base]);
+      }
+    });
+
+    it('aliases focus-ring to primary rather than composing a new color', () => {
+      for (const seed of SEEDS) {
+        const { dark } = buildSchemes(seed);
+        expect(dark['focus-ring']).toBe(dark['primary']);
       }
     });
   });
@@ -353,6 +365,15 @@ describe('motion tokens (app.css)', () => {
     expect(css.match(/--ease-emphasized:\s*([^;]+);/)?.[1].trim()).toBe(
       'cubic-bezier(0.05, 0.7, 0.1, 1)'
     );
+  });
+});
+
+describe('icon size tokens (app.css)', () => {
+  it('declares the M3 icon size scale', () => {
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
+    expect(css.match(/--size-icon-sm:\s*([^;]+);/)?.[1].trim()).toBe('1rem');
+    expect(css.match(/--size-icon-md:\s*([^;]+);/)?.[1].trim()).toBe('1.25rem');
+    expect(css.match(/--size-icon-lg:\s*([^;]+);/)?.[1].trim()).toBe('1.5rem');
   });
 });
 
