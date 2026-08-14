@@ -243,6 +243,27 @@ describe('M3 color engine', () => {
   });
 });
 
+describe('shape scale (app.css)', () => {
+  it('declares the M3 shape scale', () => {
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
+    const expected: Record<string, string> = {
+      none: '0',
+      xs: '4px',
+      sm: '8px',
+      md: '12px',
+      lg: '16px',
+      xl: '28px',
+      full: '9999px',
+      'frame-inner': '3rem'
+    };
+    for (const [name, value] of Object.entries(expected)) {
+      const match = css.match(new RegExp(`--radius-${name}:\\s*([^;]+);`));
+      expect(match, `--radius-${name} declared in app.css`).not.toBeNull();
+      expect(match![1].trim(), `--radius-${name} value`).toBe(value);
+    }
+  });
+});
+
 /** A token's L*, for contrast comparisons. */
 function lstar(cssColor: string): number {
   const [r, g, b] = cssColor.match(/\d+/g)!.slice(0, 3).map(Number);

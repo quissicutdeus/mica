@@ -141,6 +141,25 @@
   /* --- end generated --- */
 
   /**
+   * M3 shape scale. Replaces Tailwind's default `--radius-*` scale, so `rounded-*`
+   * utilities are real M3 values rather than Tailwind's un-opinionated defaults.
+   *
+   * Usage map: buttons/chips/pills/avatars -> full. List rows, small icon buttons ->
+   * sm-md. Cards, list-item containers -> md-lg. Dialogs, bottom sheets, PhotoPicker ->
+   * xl. FAB -> lg. Anything flush against the phone's own screen edge -> frame-inner (on
+   * that edge only), which tracks PhoneFrame's own screen radius rather than duplicating
+   * it as a magic number at each call site.
+   */
+  --radius-none: 0;
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 28px;
+  --radius-full: 9999px;
+  --radius-frame-inner: 3rem;
+
+  /**
    * The frame's own insets. `PhoneFrame` expressed these as bare `pt-8`/`pb-4` with
    * nothing exported, so an app had no way to ask how much of the screen it actually
    * owns. Same numbers, now with a name.
