@@ -4,11 +4,12 @@ import { fileURLToPath } from 'url';
 import esbuild from 'esbuild';
 
 /**
- * Emit one .sql file per defineService declaration into sql/apps/.
+ * Emit the whole schema — every defineService declaration, in dependency order, plus the
+ * framework tables nothing declares — as one gphone.sql.
  *
- * Nothing here touches a database. The generated files are reviewable artifacts you
+ * Nothing here touches a database. The generated file is a reviewable artifact you
  * apply yourself — see the note in server/lib/schemaSql.ts for why runtime
- * `CREATE TABLE IF NOT EXISTS` was rejected.
+ * `CREATE TABLE IF NOT EXISTS` was rejected for app tables.
  *
  * Loading the declarations means executing server/ code in node, which touches FiveM
  * globals at import time (`Database` reads `exports.oxmysql`, ServiceEndpoint calls
@@ -269,9 +270,13 @@ async function main() {
     ].join('\n\n') + '\n'
   );
 
-  const tableCount = declaredServices.reduce((n, a) => n + 1 + a.childTables.length, 0);
+  // The two tables no declaration owns, both emitted above: the moderation audit ledger
+  // from framework-schema.sql, and the schema-migrations ledger.
+  const UNDECLARED_TABLES = 2;
+  const tableCount =
+    declaredServices.reduce((n, a) => n + 1 + a.childTables.length, 0) + UNDECLARED_TABLES;
   console.log(
-    `Generated gphone.sql — ${declaredServices.length} service(s), ${tableCount + 1} table(s).`
+    `Generated gphone.sql — ${declaredServices.length} service(s), ${tableCount} table(s).`
   );
 
   if (withReset) {
