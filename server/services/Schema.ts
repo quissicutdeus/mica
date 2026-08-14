@@ -54,7 +54,9 @@ RegisterCommand(
     const sub = (args?.[0] ?? '').toLowerCase();
 
     if (sub === 'apply') {
-      void runApply(source);
+      void runApply(source).catch((error) => {
+        console.error('[gphoneschema] apply failed:', error);
+      });
       return;
     }
 
