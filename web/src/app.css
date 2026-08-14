@@ -124,6 +124,22 @@
   --color-error-hover: rgb(243, 166, 158);
   --color-error-pressed: rgb(240, 162, 154);
 
+  /* Selected: the same composite at M3's 12% — between hover and pressed, so a
+     persistent selected state (an active tab, an active segment) reads as "held"
+     rather than "about to be pressed". */
+  --color-surface-selected: rgb(42, 44, 53);
+  --color-surface-container-selected: rgb(53, 54, 65);
+  --color-surface-container-high-selected: rgb(61, 64, 74);
+  --color-primary-selected: rgb(160, 177, 239);
+  --color-primary-container-selected: rgb(26, 79, 185);
+  --color-secondary-container-selected: rgb(88, 86, 119);
+  --color-error-selected: rgb(237, 158, 151);
+
+  /* Disabled: `on-surface` composited over `surface` at M3's 38% (content) / 12%
+     (container). Every disabled control here sits on the neutral `surface` role. */
+  --color-disabled-content: rgb(96, 97, 108);
+  --color-disabled-container: rgb(42, 44, 53);
+
   /* The one token with no M3 role behind it: the FAB's coloured bloom, for a
      `box-shadow`. An elevation effect rather than a semantic role. */
   --color-primary-container-hover: rgb(18, 72, 181);

@@ -125,6 +125,26 @@ const HOVER_ALPHA = 0.08;
 const PRESSED_ALPHA = 0.1;
 
 /**
+ * M3's real disabled-state opacities: 38% over content (text/icon), 12% over a
+ * container (background fill). Every disabled control in this phone sits on the
+ * neutral `surface` role rather than a colored container, so — unlike hover/pressed,
+ * which vary per base — one pair of tokens composited over `surface` covers every
+ * disabled button, toggle and input in the tree.
+ */
+const DISABLED_CONTENT_ALPHA = 0.38;
+const DISABLED_CONTAINER_ALPHA = 0.12;
+
+/**
+ * M3 defines no official "selected" opacity distinct from hover (8%) and pressed
+ * (10%) — a selected item is usually just filled with a container role outright. This
+ * phone's selected indicators (the active tab, the active segment) are a persistent
+ * state layer over whatever the element already sits on, composited the same way
+ * hover/pressed are, at a value between the two so it reads as "held" rather than
+ * "about to be pressed": 12%.
+ */
+const SELECTED_ALPHA = 0.12;
+
+/**
  * Which roles get a state layer, and what is layered over them.
  *
  * Not every role needs one — only those something is actually pressed on. The set is
@@ -137,7 +157,7 @@ const PRESSED_ALPHA = 0.1;
  * filled accent in dark mode is `primary-container` at tone 30, which is where the color
  * the player picked actually survives. See the note in `app.css`.
  */
-const STATE_LAYER_BASES = [
+export const STATE_LAYER_BASES = [
   ['surface', 'on-surface'],
   ['surface-container', 'on-surface'],
   ['surface-container-high', 'on-surface'],
@@ -170,11 +190,17 @@ const GLOW_ALPHA = 0.3;
 const SCRIM_ALPHA = 0.32;
 
 export const STATE_TOKEN_NAMES: readonly string[] = [
-  ...STATE_LAYER_BASES.flatMap(([base]) => [`${base}-hover`, `${base}-pressed`]),
-  'primary-glow'
+  ...STATE_LAYER_BASES.flatMap(([base]) => [
+    `${base}-hover`,
+    `${base}-pressed`,
+    `${base}-selected`
+  ]),
+  'primary-glow',
+  'disabled-content',
+  'disabled-container'
 ];
 
-/** Every `--color-*` this module emits: the 34 roles plus the 15 derived values. */
+/** Every `--color-*` this module emits: the 34 roles plus the 24 derived values. */
 export const TOKEN_NAMES: readonly string[] = [...ROLE_NAMES, ...STATE_TOKEN_NAMES];
 
 export type M3Tokens = Record<string, string>;
@@ -247,8 +273,19 @@ export function buildSchemes(seedHex: string): { light: M3Tokens; dark: M3Tokens
     for (const [base, on] of STATE_LAYER_BASES) {
       tokens[`${base}-hover`] = composite(argbOf(base), argbOf(on), HOVER_ALPHA);
       tokens[`${base}-pressed`] = composite(argbOf(base), argbOf(on), PRESSED_ALPHA);
+      tokens[`${base}-selected`] = composite(argbOf(base), argbOf(on), SELECTED_ALPHA);
     }
     tokens['primary-glow'] = rgba(argbOf('primary'), GLOW_ALPHA);
+    tokens['disabled-content'] = composite(
+      argbOf('surface'),
+      argbOf('on-surface'),
+      DISABLED_CONTENT_ALPHA
+    );
+    tokens['disabled-container'] = composite(
+      argbOf('surface'),
+      argbOf('on-surface'),
+      DISABLED_CONTAINER_ALPHA
+    );
 
     return tokens;
   };

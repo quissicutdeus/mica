@@ -5,6 +5,7 @@ import { Contrast, argbFromHex, lstarFromArgb } from '@material/material-color-u
 import {
   DEFAULT_SEED,
   ROLE_NAMES,
+  STATE_LAYER_BASES,
   STATE_TOKEN_NAMES,
   TOKEN_NAMES,
   buildSchemes,
@@ -35,10 +36,10 @@ const SEEDS = ['#155dfc', '#ff0090', '#00ff00', '#ffffff', '#000000', '#7f7f7f',
 
 describe('M3 color engine', () => {
   describe('token set', () => {
-    it('declares 34 roles and 15 derived tokens', () => {
+    it('declares 34 roles and 24 derived tokens after disabled/selected', () => {
       expect(ROLE_NAMES).toHaveLength(34);
-      expect(STATE_TOKEN_NAMES).toHaveLength(15);
-      expect(TOKEN_NAMES).toHaveLength(49);
+      expect(STATE_TOKEN_NAMES).toHaveLength(24);
+      expect(TOKEN_NAMES).toHaveLength(58);
     });
 
     it('names no token twice', () => {
@@ -115,8 +116,13 @@ describe('M3 color engine', () => {
       // wrong, and no visual review would catch it.
       const { dark } = buildSchemes(DEFAULT_SEED);
       for (const name of STATE_TOKEN_NAMES) {
-        if (name === 'primary-glow') continue;
-        const base = name.replace(/-(hover|pressed)$/, '');
+        // Neither follows the base+suffix shape this check derives its comparison
+        // from — both are composited over `surface`, not over a role named by
+        // stripping a suffix off their own name — and both already have a dedicated
+        // "differs from surface" assertion above.
+        if (name === 'primary-glow' || name === 'disabled-content' || name === 'disabled-container')
+          continue;
+        const base = name.replace(/-(hover|pressed|selected)$/, '');
         expect(dark[name], name).not.toBe(dark[base]);
       }
       expect(dark['surface-hover']).not.toBe(dark['surface-pressed']);
@@ -124,6 +130,24 @@ describe('M3 color engine', () => {
 
     it('bakes the usage alpha into scrim rather than leaving it to an opacity modifier', () => {
       expect(buildSchemes(DEFAULT_SEED).dark['scrim']).toBe('rgba(0, 0, 0, 0.32)');
+    });
+
+    it('composites disabled state to a flat opaque color at M3s real values', () => {
+      const { dark } = buildSchemes(DEFAULT_SEED);
+      expect(dark['disabled-content']).toMatch(OPAQUE_RGB);
+      expect(dark['disabled-container']).toMatch(OPAQUE_RGB);
+      expect(dark['disabled-content']).not.toBe(dark['surface']);
+      expect(dark['disabled-container']).not.toBe(dark['surface']);
+      expect(dark['disabled-content']).not.toBe(dark['disabled-container']);
+    });
+
+    it('composites a selected token for every hover/pressed base', () => {
+      const { dark } = buildSchemes(DEFAULT_SEED);
+      for (const [base] of STATE_LAYER_BASES) {
+        const selected = dark[`${base}-selected`];
+        expect(selected, `${base}-selected`).toMatch(OPAQUE_RGB);
+        expect(selected, `${base}-selected differs from base`).not.toBe(dark[base]);
+      }
     });
   });
 
