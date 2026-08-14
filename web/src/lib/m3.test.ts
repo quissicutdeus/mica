@@ -290,6 +290,35 @@ describe('elevation tokens (app.css)', () => {
   });
 });
 
+describe('typography scale (app.css)', () => {
+  it('declares the trimmed M3 type scale with paired line-height', () => {
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
+    const expected: Record<string, { size: string; lineHeight: string }> = {
+      'title-large': { size: '22px', lineHeight: '28px' },
+      'title-medium': { size: '16px', lineHeight: '24px' },
+      'body-large': { size: '16px', lineHeight: '24px' },
+      'body-medium': { size: '14px', lineHeight: '20px' },
+      'body-small': { size: '12px', lineHeight: '16px' },
+      'label-large': { size: '14px', lineHeight: '20px' },
+      'label-small': { size: '11px', lineHeight: '16px' }
+    };
+    for (const [name, { size, lineHeight }] of Object.entries(expected)) {
+      const sizeMatch = css.match(new RegExp(`--text-${name}:\\s*([^;]+);`));
+      expect(sizeMatch, `--text-${name} declared`).not.toBeNull();
+      expect(sizeMatch![1].trim(), `--text-${name} size`).toBe(size);
+
+      const lineHeightMatch = css.match(new RegExp(`--text-${name}--line-height:\\s*([^;]+);`));
+      expect(lineHeightMatch, `--text-${name}--line-height declared`).not.toBeNull();
+      expect(lineHeightMatch![1].trim(), `--text-${name} line-height`).toBe(lineHeight);
+    }
+  });
+
+  it('does not add a display-tier token', () => {
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
+    expect(css).not.toMatch(/--text-display-/);
+  });
+});
+
 /** A token's L*, for contrast comparisons. */
 function lstar(cssColor: string): number {
   const [r, g, b] = cssColor.match(/\d+/g)!.slice(0, 3).map(Number);
