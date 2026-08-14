@@ -15,7 +15,8 @@ const migrationIdsOnDisk = (): string[] =>
 describe('the migrations ledger seed stays in sync with server/migrations/', () => {
   it('lists every migration id in the generated gphone.sql seed', () => {
     const ids = migrationIdsOnDisk();
-    if (ids.length === 0) return; // nothing to check yet — see docs/roadmap.md
+    // Nothing to check yet: no breaking schema change has needed one (AGENTS.md §8).
+    if (ids.length === 0) return;
 
     const sql = fs.readFileSync(MICA_SQL, 'utf8');
     for (const id of ids) {

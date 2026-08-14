@@ -50,7 +50,9 @@ the targets run _different TypeScript versions_ (§3), so a web-only check prove
 ### In-game commands
 
 All admin-gated by `isAdmin` in `server/services/Admin.ts` — the `gphone_admin_aces` convar, defaulting
-to `gphone.admin` and `command`. The server console (`source` 0) is trusted.
+to `gphone.admin` and `command`. The server console (`source` 0) is trusted. **`gphoneschema apply` is
+gated harder than the rest and is the one exception**: it takes the console and nobody else, because it
+is the only command that changes a live database (§8).
 
 | Command                                 | Does                                                                              |
 | --------------------------------------- | --------------------------------------------------------------------------------- |
@@ -451,6 +453,7 @@ Four words carry the structure, and they mean exactly one thing each:
 | `server/services/`             | FiveM server | One file per service, named for the service, auto-indexed                    |
 | `server/lib/`                  | FiveM server | `ServiceEndpoint`, `defineService`, `Repository`, `Database`                 |
 | `server/repositories/`         | FiveM server | `SchemaRepository` subclasses — the joins the generic path cannot express    |
+| `server/migrations/`           | FiveM server | Forward-only versioned migrations; `index.ts` is generated                   |
 | `gphone.sql`                   | generated    | The whole schema from `pnpm generate:sql`; imported by hand                  |
 | `scripts/framework-schema.sql` | hand-written | The audit ledger, which has no `defineService` behind it                     |
 | `server/__tests__/`            | Vitest/node  | Excluded from `tsc`; see §1                                                  |
@@ -465,11 +468,14 @@ Four words carry the structure, and they mean exactly one thing each:
 | `web/src/nui/`                 | CEF+browser  | The bridge: transport, `fetchNui`, `useNuiEvent`, browser mocks              |
 | `web/src/lib/`                 | CEF+browser  | Helpers with no gPhone state and no I/O — formatters, markdown               |
 
-`client/services/index.ts`, `client/game/index.ts`, `server/services/index.ts`, `web/src/sdk/hooks/index.ts` and
-`web/src/sdk/icons.ts` are **generated** by `scripts/generate-barrels.js`. Add a file to the
-directory; do not edit the index. They are committed, and `pnpm verify` regenerates them as its
-first step, so a hand-added hook is picked up without a build — the generator used to run only
-inside `build` and `watch`, both of which come _after_ the typecheck gate.
+`client/services/index.ts`, `client/game/index.ts`, `server/services/index.ts`,
+`server/migrations/index.ts`, `web/src/sdk/hooks/index.ts` and `web/src/sdk/icons.ts` are
+**generated** by `scripts/generate-barrels.js`. Add a file to the directory; do not edit the index.
+They are committed, and `pnpm verify` regenerates them as its first step, so a hand-added hook is
+picked up without a build — the generator used to run only inside `build` and `watch`, both of which
+come _after_ the typecheck gate. The migrations one is the odd member: an ordered **array** rather
+than re-exports, because the runner iterates it in apply order and a module imported for its side
+effects would give it nothing to iterate.
 
 **`client/` splits by what a file talks to.** `client/services/` is the client half of a
 service and speaks NUI and net events; `client/game/` speaks to GTA and knows nothing about
@@ -526,29 +532,111 @@ actions accept `conversation_id`, `id`, or a bare id via `conversationIdFrom` in
 
 #### Schema changes
 
-**Nothing applies schema changes at runtime, and there is no migration path.** gPhone is
-pre-release: nobody has installed it, so there is no data anywhere to preserve. Change the
-`defineService` declaration, run `pnpm generate:sql`, and re-import `gphone.sql` against a
-wiped database. `pnpm generate:sql:reset` writes the file that wipes it.
+**A schema change is written once, in the declaration.** Change the `defineService` schema and
+run `pnpm generate:sql`: that regenerates `gphone.sql`, which is what a fresh install imports and
+is always the whole truth. Nothing happens to a live database on its own — not at import, not at
+resource start. An install that already has data is brought up to date by **`gphoneschema apply`**
+from the server console, the only thing in this resource that changes a live schema.
 
-There **was** a `SchemaMigrator` that read `information_schema` at resource start and
-applied missing columns and indexes, behind a `gphone_auto_migrate` convar. It is now
-report-only. Every column it could add is in the generated file already, so a database
-that disagrees with the code has not drifted — it has not been imported, and saying so is
-more useful than patching it halfway and leaving the operator unsure which half they have.
+`apply` runs two halves in one pass, in this order and not the other:
 
-`gphoneschema` prints that report on demand, and the same report runs at resource start.
-Neither changes anything.
+1. **Versioned migrations** — every file in `server/migrations/` the `gphone_schema_migrations`
+   ledger has no row for, oldest id first. `server/lib/migrations.ts`.
+2. **The additive pass** — `SchemaMigrator.apply()` executing the `ADD COLUMN` / `ADD KEY`
+   statements `plan()` derives from the difference between `information_schema` and the
+   declarations. `server/lib/SchemaMigrator.ts` over `server/lib/migrate.ts`.
 
-**This is a pre-release posture and it expires.** The day this ships to a server with
-players on it, a change that drops, renames or retypes a column starts costing data, and
-migrations come back. Do not read the absence of them as "renames are free" — read it as
-"there is nothing to migrate yet".
+One command rather than two, because an operator thinks "bring my database up to date", not
+"apply the two kinds of change separately".
+
+**Migrations first is a correctness constraint, not a preference.** The additive planner compares
+the live table against the declaration, and the declaration already describes the shape the
+migration is about to produce. Run the additive pass first and a migration renaming `image` to
+`data` never gets its chance: the planner sees `data` declared, finds no such column live, adds an
+empty one, and the rename then dies on a duplicate column with the real data stranded under a name
+nothing reads. A failed migration aborts the command before the additive pass runs at all, for the
+same reason — a half-migrated table is the one shape the planner cannot reason about.
+
+**Versioned migration files, not a smarter planner.** A rename, a retype, a widened enum or a drop
+is not inferable from a diff: a renamed column is indistinguishable from one dropped and another
+added. The planner reports those as `drift` and never touches them, `defineService` stays purely
+declarative — it describes the schema's current shape and carries no history — and the history
+lives in `server/migrations/`, one file per breaking change. TypeScript rather than `.sql`, because
+`server/` is typechecked and because this codebase already moved away from hand-written per-app SQL
+files once (the old `sql/apps/`); a directory of hand-written SQL migrations would be a step back
+toward it. Forward-only: fixing a bad migration is a new migration, not a reversed old one, and a
+`down` for a narrowed varchar or a dropped column cannot be written honestly anyway.
+
+**MySQL DDL is not transactional, and neither half pretends otherwise.** `ALTER TABLE` and
+`RENAME TABLE` auto-commit in InnoDB regardless of any surrounding transaction, so a migration of
+three statements is not all-or-nothing the way a row-data transaction is. Both halves therefore
+**stop at the first failure** — retrying blind would re-run whatever already succeeded before it —
+and both return `{ applied, failed, remaining }` rather than rejecting, deliberately the same shape
+in `runMigrations` and `SchemaMigrator.apply()`. Throwing away the list of what already ran is not
+an option in the one command that changes a live database. A migration reaches the ledger only
+after its `up()` returns; a ledger write that fails _after_ a successful `up()` says exactly that,
+because it is the one failure where retrying without looking at the table first is unsafe.
+
+**A fresh install never runs inherited migrations.** `gphone.sql` declares every table in its final
+shape already, so a migration renaming a column would meet a table that never had the old name on
+this install. `pnpm generate:sql` scans `server/migrations/` and pre-seeds the ledger with every id
+that exists as of that generation, via `INSERT IGNORE` — the way Rails' `schema.rb` does. A new
+install's ledger reads "already applied" for all of history without ever calling `up()`, and only a
+database upgrading from an older `gphone.sql` has gaps for the runner to fill.
+
+**`apply` is console-only**, and the check is `source === 0` inside `runApply` itself rather than
+only at the command dispatch. That is the trust tier §1 already draws, and it is the one caller
+that can take a backup first, which an in-game admin typically cannot. `gphoneschema` with no
+subcommand still only reports, and so does the report at resource start: neither creates a table,
+the migrations ledger included. Worth stating because it was broken once — the boot report created
+the ledger, which is real DDL from a function whose docstring promised it applied nothing.
 
 The expected shape of a table comes from `expectedShape()` in `server/lib/schemaSql.ts`,
 which both the `CREATE TABLE` generator and the migration planner read. Do not restate a
 table's columns anywhere else: a fresh install and an upgraded one must not be able to
 disagree.
+
+**In development none of this is the fast path.** Against a database you do not mind losing,
+`pnpm generate:sql:reset` writes the file that drops every `gphone_` table and rebuilds the schema
+— one import, no migration to write and review.
+
+#### Writing a migration
+
+One file in `server/migrations/`, named `NNNN_snake_case_description.ts`, and **the filename is the
+id**. The directory is empty today — nothing has needed a breaking change since the runner shipped —
+so the example below is the one rename this codebase did make, `gphone_media.image` to `.data`, back
+when wipe-and-reimport was the only way to do it:
+
+```ts
+import { Database } from '../lib/Database';
+import type { Migration } from '../lib/migrations';
+
+export const migration: Migration = {
+  id: '0001_rename_media_image_to_data',
+  description: 'gphone_media.image becomes gphone_media.data',
+  up: async () => {
+    await Database.query(
+      'ALTER TABLE `gphone_media` CHANGE COLUMN `image` `data` mediumtext DEFAULT NULL',
+      []
+    );
+  }
+};
+```
+
+- The export is named `migration`, exactly. `scripts/generate-barrels.js` imports that name from
+  every file in the directory to build the ordered array in `index.ts`.
+- `id` must equal the filename stem — `server/__tests__/migrationsSeed.test.ts` fails otherwise —
+  and the number is apply order. Ids sort as strings, so keep the width.
+- **Re-run `pnpm generate:sql` after adding one.** Without it the ledger seed in `gphone.sql` does
+  not name the new migration, and every fresh install runs it against a table that never needed it.
+  Same test catches this.
+- `server/migrations/` holds migration files and the generated `index.ts`, nothing else. The barrel
+  imports `migration` from every `.ts` in there that is not `index.ts` or a `.test.ts`, so a helper
+  module parked beside them breaks the generated file.
+- `up` calls `Database.query` directly, the same convention as the rest of `server/lib`. It is not
+  reached by a repository: a migration is about the shape of a table, not about rows a player owns.
+- `Migration` comes in as `import type`. A value import of `server/lib/migrations.ts` would close a
+  runtime cycle — that module imports the barrel, which imports this file.
 
 #### Event names
 
@@ -905,7 +993,7 @@ repositoryFactory: (resolved) =>
 Media uses this because `image` can come back as a Buffer depending on driver and column type, which
 would cross NUI as `{type:'Buffer',data:[...]}` and render as nothing.
 
-### Schema changes do not touch the database
+### Generating `gphone.sql`
 
 **`gphone.sql` is generated in full and must not be hand-edited.** It holds the framework half — the
 audit ledger, which has no owning module and does not fit the app-table shape, and which lives in
@@ -935,10 +1023,16 @@ whole schema. Development only.
 - Nothing in this repo connects to a database. Apply the file yourself in a DB client; it uses
   `PREPARE`/`EXECUTE`, so it will not run through oxmysql.
 
-`pnpm generate:sql` writes `gphone.sql`, which is **committed and imported by hand**. There is
-deliberately no runtime DDL: `CREATE TABLE IF NOT EXISTS` silently does nothing against an existing
+`pnpm generate:sql` writes `gphone.sql`, which is **committed and imported by hand**. No app table
+is ever created at runtime: `CREATE TABLE IF NOT EXISTS` silently does nothing against an existing
 table, so a schema change applied that way would be a no-op with no error — the same silent-failure
 shape as a missing NUI layer (§8). Regenerate and review the diff.
+
+What a running server _can_ do is bring an existing table up to date, and only when an operator asks
+it to by name: `gphoneschema apply` runs the versioned migrations and then the additive plan (§8).
+Its one `CREATE TABLE IF NOT EXISTS` is the `gphone_schema_migrations` ledger, which is exempt from
+the objection above because it has a single fixed shape and will never gain a column — "already
+there" really is nothing to do, rather than a change quietly skipped.
 
 **The numeric prefix is apply order, and alphabetical would be wrong.** Foreign keys cross app
 boundaries — `gphone_messages_attachments` references `gphone_media`, and `messages` sorts before

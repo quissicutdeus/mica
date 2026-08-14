@@ -10,14 +10,18 @@ import {
 /**
  * Emit MySQL DDL from a resolved app schema.
  *
- * Deliberately NOT executed at runtime. `CREATE TABLE IF NOT EXISTS` silently does
- * nothing when the table already exists, so a schema change to a live table would
- * be a no-op with no error — the same silent-failure shape that produced the dead
- * NUI endpoints. Output goes to a reviewable file instead; a real migration runner
- * consumes it later.
+ * No app table's `CREATE TABLE` is ever executed at runtime. `CREATE TABLE IF NOT EXISTS`
+ * silently does nothing when the table already exists, so a schema change applied that way
+ * would be a no-op with no error — the same silent-failure shape that produced the dead NUI
+ * endpoints. Output goes to a reviewable file instead, and a live table is brought up to date
+ * by `gphoneschema apply` (AGENTS.md §8) rather than by re-running this.
+ *
+ * `schemaMigrationsLedgerDdl` below is the one exception, and `server/lib/migrations.ts` does
+ * run it: that table has a single fixed shape and never gains a column, so `IF NOT EXISTS`
+ * cannot hide a change there.
  *
  * Kept separate from `defineService` so the FiveM server bundle does not carry
- * DDL-generation code it never calls.
+ * DDL-generation code it never calls — except that one function.
  */
 
 const SQL_TYPES: Record<ColumnType, (def: ColumnDef) => string> = {

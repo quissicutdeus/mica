@@ -27,13 +27,13 @@ Nothing in this section exists in the code. The reasoning sits beside each item 
 companion planning file: a proposal whose justification lives somewhere else is one nobody can
 evaluate, and the somewhere else goes missing.
 
-Two constraints shape every schema item below:
+Two constraints shape anything schema-shaped below:
 
-- **`SchemaMigrator` is additive-only** (AGENTS.md §8). A **new** table costs nothing extra — declare
-  it, run `pnpm generate:sql`, apply the file by hand; there is no runtime DDL. A **rename** or a type
-  change, _including widening an enum_, is printed for a human and never applied, so it needs a
-  hand-written migration and an existing install that skips one loses data. Anything enum-shaped has
-  to be over-provisioned now, because every value added later costs another migration.
+- **A new table costs nothing; changing an existing one costs a migration.** Declare it, run
+  `pnpm generate:sql`, import the file. `SchemaMigrator` still refuses to infer a rename, a retype or
+  a widened enum from a diff and prints those for a human — but they are no longer a dead end, since a
+  versioned migration file covers exactly that case (AGENTS.md §8, "Schema changes"). An enum value
+  added later costs one migration file and an operator running `gphoneschema apply`, not data.
 - **Base64 will not carry video.** `gphone_media.data` is `mediumtext` holding base64; a video or
   voice clip at that size will not survive crossing NUI.
 
@@ -56,76 +56,6 @@ relaying the SDK surface across it, or a Web Worker running the add-on off the D
 the same relay. Either is a real architectural change — a new transport layer between an add-on and
 `@gphone/sdk` — not a small patch, and not worth building until remote distribution is a real
 channel rather than a capability sitting unused.
-
-### Versioned migrations for breaking schema changes
-
-Today `SchemaMigrator` (`server/lib/migrate.ts`, `server/lib/SchemaMigrator.ts`) is additive-only and
-report-only. It already diffs `information_schema` against every `defineService` declaration and
-correctly separates what is safe to infer (a missing column, a missing index — real, generated
-`ALTER TABLE` SQL) from what is not (a type mismatch, an undeclared column), which it calls `drift`
-and leaves alone. Nothing applies either half today: `server/services/Schema.ts` only ever calls
-`SchemaMigrator.report()`, because `gphone.sql` is generated whole and importing it _is_ the schema —
-a database that disagrees has not drifted, it has not been imported. That reasoning stops holding the
-day a real server has player data it cannot wipe and reimport, which is the day this proposal is for.
-
-**Versioned migration files, not a smarter planner.** A rename, a retype, an enum widened or a drop is
-never inferable from a diff — `migrate.ts`'s own comment already says so, and it is right: a renamed
-column is indistinguishable from one dropped and another added. `defineService` stays purely
-declarative, describing only the schema's current shape, exactly as it does today. `server/migrations/`
-gets one file per breaking change, numbered for order (`0001_rename_photos_to_media.ts`), each
-exporting:
-
-```ts
-export interface Migration {
-  id: string; // filename stem, and the ledger key
-  description: string; // one line, for the boot-time report
-  up: () => Promise<void>;
-}
-```
-
-`up` calls `Database.query` directly, the same convention as the rest of `server/lib`. Forward-only,
-deliberately: fixing a bad migration is a new forward migration, not a reversed old one, and a `down`
-for a narrowed varchar or a dropped column usually cannot be written honestly anyway. TypeScript
-rather than raw `.sql`, both because `server/` is typechecked (unlike `server/__tests__`) and because
-this codebase already moved away from hand-written per-app SQL files once — the old `sql/apps/` — in
-favor of declarations that generate SQL. A directory of hand-written `.sql` migrations would be a step
-back toward exactly that.
-
-**MySQL DDL is not transactional, and the design does not pretend otherwise.** `ALTER TABLE` and
-`RENAME TABLE` each auto-commit in InnoDB regardless of any surrounding transaction, so a migration
-with three statements is not all-or-nothing the way a row-data transaction is. The runner records a
-migration as applied — one `INSERT` into a new `gphone_schema_migrations` ledger table (`id`,
-`applied_at`) — only after `up()` returns without throwing. If it throws partway, the runner stops
-immediately rather than continuing to the next migration: retrying blind could re-run a statement that
-already succeeded before the one that failed.
-
-**A fresh install must never run inherited migrations.** Today's `gphone.sql` already declares
-`gphone_media`, not `gphone_photos` — if a brand-new install's ledger started empty, the runner would
-try `0001_rename_photos_to_media` against a table that was never called that on this install, and fail
-immediately. `pnpm generate:sql` closes this the way Rails' `schema.rb` does: it also scans
-`server/migrations/` and has `gphone.sql` (and `dev-reset.sql`) pre-seed the ledger with every
-migration id that exists as of that generation, via `INSERT IGNORE`. A fresh install's ledger says
-"already applied" for all of history without ever running `up()`; only a database genuinely upgrading
-from an older `gphone.sql` has gaps for the runner to fill. `server/__tests__` gets a structural test
-in the shape of `routes.test.ts`: every file in `server/migrations/` must appear in the generated seed
-`INSERT`, so the generator cannot drift from the directory the way `shared/routes.ts` used to drift
-from `fetchNui` call sites.
-
-**`gphoneschema apply`, console-only.** `server/services/Schema.ts` gains a subcommand — the same
-shape `gphoneseed add`/`gphoneseed clear` already use — rather than a new top-level command.
-`onResourceStart` keeps reporting and changes nothing, now also listing pending versioned migrations
-by id alongside the existing additive/drift report. `apply` runs both halves in one pass: the additive
-statements `SchemaMigrator.plan()` already generates, then any pending versioned migrations in order.
-One command, because an operator thinks "bring my database up to date," not "apply the two kinds of
-change separately." Gated on `source === 0` rather than `isAdmin` — the same trust tier
-`docs/security.md` already draws around the console, and the one that can actually take a backup
-first, which an in-game admin typically cannot.
-
-**Deliberately out of scope for a first cut.** A `pnpm new:migration <description>` scaffold,
-mirroring `scripts/new-app.js` — cheap to add later, easy to defer now. Rollback of any kind beyond
-forward-only. Running a migration's SQL against real MySQL in the automated suite — out of reach the
-same way every other DB-shaped thing in this codebase is (§8 already says so), and the runner's own
-tests drive a mocked `Database`, the same convention every repository test already follows.
 
 ### Per-app signal degradation
 

@@ -93,9 +93,9 @@ ${lines}
  * numeric prefix for exactly this reason.
  *
  * Unlike the other barrels, a missing directory is not skipped: `server/migrations/` starts
- * genuinely empty (nothing has ever needed a breaking schema change yet, see
- * `docs/roadmap.md`), and code that imports this barrel must always find something to
- * import, even an empty array.
+ * genuinely empty — nothing has needed a breaking schema change yet (AGENTS.md §8, "Writing a
+ * migration") — and code that imports this barrel must always find something to import, even
+ * an empty array.
  */
 const generateMigrationsIndex = () => {
   const dir = 'server/migrations';
