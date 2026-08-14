@@ -85,7 +85,7 @@ Before installing, ensure your server environment meets the following requiremen
 
    It is **generated** by `pnpm generate:sql` from each app's `defineService` declaration, which is the single source of truth: the same declaration drives the SQL identifier allowlist that guards against injection, so a second hand-maintained copy of the DDL would not just drift, it would quietly weaken that guard.
 
-   Every statement is `CREATE TABLE IF NOT EXISTS`, so re-importing is harmless — and does nothing to a table that already exists. gPhone applies no schema changes at runtime: `gphoneschema` in the server console reports any difference between the database and what the code expects, without changing anything.
+   Every statement is `CREATE TABLE IF NOT EXISTS`, so re-importing is harmless — and does nothing to a table that already exists. gPhone applies no schema changes automatically: `gphoneschema` in the server console reports any difference between the database and what the code expects, and `gphoneschema apply` — console-only — applies the safe, additive half of that difference plus any pending versioned migration. A rename, a retype or a drop still needs its migration written and reviewed first; `apply` only ever runs migrations that already exist in `server/migrations/`.
 
    <details>
    <summary>Resetting the schema during development</summary>

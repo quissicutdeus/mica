@@ -52,13 +52,14 @@ the targets run _different TypeScript versions_ (§3), so a web-only check prove
 All admin-gated by `isAdmin` in `server/services/Admin.ts` — the `gphone_admin_aces` convar, defaulting
 to `gphone.admin` and `command`. The server console (`source` 0) is trusted.
 
-| Command                                 | Does                                                              |
-| --------------------------------------- | ----------------------------------------------------------------- |
-| `gphoneschema`                          | Reports where the database differs from the code. Changes nothing |
-| `gphonecharge [id] <0-100>`             | Sets a player's battery level; omit the id for yourself           |
-| `gphoneseed` / `gphoneseed add`         | Creates test characters, contacts and threads for the caller      |
-| `gphoneseed text <firstname> <message>` | Has a seeded character text you — exercises inbound delivery      |
-| `gphoneseed clear`                      | Removes everything `gphoneseed` created                           |
+| Command                                 | Does                                                                              |
+| --------------------------------------- | --------------------------------------------------------------------------------- |
+| `gphoneschema`                          | Reports where the database differs from the code. Changes nothing                 |
+| `gphoneschema apply`                    | Console-only. Applies safe additive changes, then any pending versioned migration |
+| `gphonecharge [id] <0-100>`             | Sets a player's battery level; omit the id for yourself                           |
+| `gphoneseed` / `gphoneseed add`         | Creates test characters, contacts and threads for the caller                      |
+| `gphoneseed text <firstname> <message>` | Has a seeded character text you — exercises inbound delivery                      |
+| `gphoneseed clear`                      | Removes everything `gphoneseed` created                                           |
 
 `gphoneseed` exists because a fresh database has one character and nobody to text:
 `conversations:create` resolves a phone number to a `citizenid` and gives up when
