@@ -319,6 +319,19 @@ describe('typography scale (app.css)', () => {
   });
 });
 
+describe('motion tokens (app.css)', () => {
+  it('declares M3 duration and easing tokens', () => {
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
+    expect(css.match(/--duration-short:\s*([^;]+);/)?.[1].trim()).toBe('100ms');
+    expect(css.match(/--duration-medium:\s*([^;]+);/)?.[1].trim()).toBe('250ms');
+    expect(css.match(/--duration-long:\s*([^;]+);/)?.[1].trim()).toBe('400ms');
+    expect(css.match(/--ease-standard:\s*([^;]+);/)?.[1].trim()).toBe('cubic-bezier(0.2, 0, 0, 1)');
+    expect(css.match(/--ease-emphasized:\s*([^;]+);/)?.[1].trim()).toBe(
+      'cubic-bezier(0.05, 0.7, 0.1, 1)'
+    );
+  });
+});
+
 /** A token's L*, for contrast comparisons. */
 function lstar(cssColor: string): number {
   const [r, g, b] = cssColor.match(/\d+/g)!.slice(0, 3).map(Number);

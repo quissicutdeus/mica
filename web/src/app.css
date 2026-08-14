@@ -213,6 +213,20 @@
   --text-label-small--letter-spacing: 0.5px;
 
   /**
+   * M3 motion, trimmed to the five tokens this UI needs. `emphasized` is M3's spec
+   * curve approximated as a single cubic-bezier (M3's true emphasized curve is a
+   * two-segment spring expressed with the CSS `linear()` easing function, which is
+   * Chrome 113 — years past the CEF 103 floor in AGENTS.md §6). This is M3's own
+   * "emphasized decelerate" half, appropriate for the enter/settle motions
+   * (drawer pull, dragged-icon settle) this token is used for.
+   */
+  --duration-short: 100ms;
+  --duration-medium: 250ms;
+  --duration-long: 400ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.05, 0.7, 0.1, 1);
+
+  /**
    * The frame's own insets. `PhoneFrame` expressed these as bare `pt-8`/`pb-4` with
    * nothing exported, so an app had no way to ask how much of the screen it actually
    * owns. Same numbers, now with a name.
