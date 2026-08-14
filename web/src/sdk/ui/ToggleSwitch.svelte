@@ -46,7 +46,7 @@
 
 {#snippet track()}
   <span
-    class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out {checked
+    class="duration-short ease-standard relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 border-transparent transition-colors {checked
       ? 'bg-primary'
       : 'bg-surface-container-highest'}"
   >
@@ -55,7 +55,7 @@
          the roles rather than pinning it to white is what makes a light scheme work
          later without touching this file. -->
     <span
-      class="pointer-events-none inline-block h-5 w-5 transform rounded-full shadow-md ring-0 transition duration-200 ease-in-out {checked
+      class="shadow-elevation-1 duration-short ease-standard pointer-events-none inline-block h-5 w-5 transform rounded-full ring-0 transition {checked
         ? 'bg-on-primary translate-x-5'
         : 'bg-outline translate-x-0'}"
     ></span>
@@ -71,12 +71,12 @@
     aria-label={label}
     {disabled}
     onclick={toggle}
-    class="hover:bg-surface-hover active:bg-surface-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors disabled:cursor-default disabled:opacity-38"
+    class="hover:bg-surface-hover active:bg-surface-pressed disabled:text-disabled-content flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors disabled:cursor-default"
   >
     <span class="flex flex-col">
       <span class="font-medium">{label}</span>
       {#if description}
-        <span class="text-on-surface-variant text-sm">{description}</span>
+        <span class="text-on-surface-variant text-body-medium">{description}</span>
       {/if}
     </span>
     {@render track()}
@@ -90,7 +90,7 @@
     aria-label="Toggle"
     {disabled}
     onclick={toggle}
-    class="cursor-pointer focus:outline-none disabled:cursor-default disabled:opacity-38"
+    class="disabled:text-disabled-content cursor-pointer focus:outline-none disabled:cursor-default"
   >
     {@render track()}
   </button>

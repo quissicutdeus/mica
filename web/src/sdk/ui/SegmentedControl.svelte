@@ -51,15 +51,17 @@
     <button
       type="button"
       aria-pressed={selected === opt.id}
-      class="flex-1 cursor-pointer rounded-lg py-1.5 text-center text-xs font-semibold transition-all {selected ===
+      class="text-label-large flex-1 cursor-pointer rounded-lg py-1.5 text-center transition-all {selected ===
       opt.id
-        ? 'bg-surface-container-high text-on-surface shadow-md'
+        ? 'bg-surface-container-high-selected text-on-surface shadow-elevation-1'
         : 'text-on-surface-variant hover:text-on-surface'}"
       onclick={() => select(opt.id)}
     >
       {opt.label}
       {#if opt.badge}
-        <span class="bg-error text-on-error ml-1 rounded-full px-1.5 text-xs">{opt.badge}</span>
+        <span class="bg-error text-on-error text-label-small ml-1 rounded-full px-1.5"
+          >{opt.badge}</span
+        >
       {/if}
     </button>
   {/each}
