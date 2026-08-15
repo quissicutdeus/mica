@@ -158,10 +158,10 @@
                     initials={manifest.name.charAt(0)}
                     bgClass={manifest.color}
                     size="size-icon-sm"
-                    textClass="text-[8px]"
+                    textClass="text-label-small"
                   />
                   <span
-                    class="text-on-surface-variant truncate text-[10px] font-bold tracking-wide uppercase"
+                    class="text-on-surface-variant text-label-small truncate tracking-wide uppercase"
                   >
                     {manifest.name}
                   </span>

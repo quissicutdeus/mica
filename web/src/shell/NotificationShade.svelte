@@ -416,7 +416,7 @@
                           {item.app}
                         </span>
                         <div class="flex items-center gap-2">
-                          <span class="text-on-surface-variant text-[10px] font-medium">
+                          <span class="text-on-surface-variant text-label-small">
                             {formatTimestamp(item.cleared_at ?? item.created_at)}
                           </span>
                           <button
@@ -476,13 +476,13 @@
                               {group.app}
                             </span>
                             <span
-                              class="bg-primary-container text-on-primary-container ring-primary inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1"
+                              class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex items-center rounded-full px-2 py-0.5 ring-1"
                             >
                               {group.items.length} notifications
                             </span>
                           </div>
                           <div class="flex items-center gap-1.5">
-                            <span class="text-on-surface-variant text-[10px] font-medium">
+                            <span class="text-on-surface-variant text-label-small">
                               {formatTimestamp(group.latest.cleared_at ?? group.latest.created_at)}
                             </span>
                             <button
@@ -540,7 +540,7 @@
                                   {childItem.title}
                                 </h4>
                                 <div class="flex items-center gap-1.5">
-                                  <span class="text-on-surface-variant text-[10px]">
+                                  <span class="text-on-surface-variant text-label-small">
                                     {formatTimestamp(childItem.cleared_at ?? childItem.created_at)}
                                   </span>
                                   <button
@@ -623,7 +623,7 @@
                           {item.app}
                         </span>
                         <div class="flex items-center gap-2">
-                          <span class="text-on-surface-variant text-[10px] font-medium">
+                          <span class="text-on-surface-variant text-label-small">
                             {formatTimestamp(item.created_at)}
                           </span>
                           <button
@@ -683,13 +683,13 @@
                               {group.app}
                             </span>
                             <span
-                              class="bg-primary-container text-on-primary-container ring-primary inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1"
+                              class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex items-center rounded-full px-2 py-0.5 ring-1"
                             >
                               {group.items.length} notifications
                             </span>
                           </div>
                           <div class="flex items-center gap-1.5">
-                            <span class="text-on-surface-variant text-[10px] font-medium">
+                            <span class="text-on-surface-variant text-label-small">
                               {formatTimestamp(group.latest.created_at)}
                             </span>
                             <button
@@ -747,7 +747,7 @@
                                   {childItem.title}
                                 </h4>
                                 <div class="flex items-center gap-1.5">
-                                  <span class="text-on-surface-variant text-[10px]">
+                                  <span class="text-on-surface-variant text-label-small">
                                     {formatTimestamp(childItem.created_at)}
                                   </span>
                                   <button

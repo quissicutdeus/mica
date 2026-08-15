@@ -477,7 +477,7 @@
         <MessageIcon class="size-icon-md" />
         {#if $unreadDms > 0}
           <span
-            class="bg-primary-container text-on-primary-container absolute top-0.5 right-0.5 min-w-4 rounded-full px-1 text-[10px] leading-4 font-bold"
+            class="bg-primary-container text-on-primary-container text-label-small absolute top-0.5 right-0.5 min-w-4 rounded-full px-1"
           >
             {$unreadDms > 99 ? '99+' : $unreadDms}
           </span>
@@ -496,7 +496,7 @@
           initials={($activeAccount?.handle ?? '?').slice(0, 2).toUpperCase()}
           src={$activeAccount?.avatar ?? ''}
           size="w-7 h-7"
-          textClass="text-[10px]"
+          textClass="text-label-small"
           showSilhouette={false}
         />
       </button>

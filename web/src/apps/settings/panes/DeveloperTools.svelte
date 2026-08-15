@@ -120,7 +120,7 @@
   >
     <span>Developer Tools</span>
     <span
-      class="rounded border border-emerald-800 bg-emerald-950 px-1.5 py-0.5 font-mono text-[10px] text-emerald-300"
+      class="text-label-small rounded border border-emerald-800 bg-emerald-950 px-1.5 py-0.5 font-mono text-emerald-300"
     >
       Unlocked
     </span>
@@ -156,28 +156,28 @@
         <button
           type="button"
           onclick={() => applyBatteryLevel(0)}
-          class="text-error cursor-pointer rounded border border-red-800 bg-red-950 px-2 py-1.5 text-center text-[10px] font-semibold hover:bg-red-900"
+          class="text-error text-label-small cursor-pointer rounded border border-red-800 bg-red-950 px-2 py-1.5 text-center hover:bg-red-900"
         >
           0% (Dead)
         </button>
         <button
           type="button"
           onclick={() => applyBatteryLevel(15)}
-          class="cursor-pointer rounded border border-yellow-800 bg-yellow-950 px-2 py-1.5 text-center text-[10px] font-semibold text-yellow-300 hover:bg-yellow-900"
+          class="text-label-small cursor-pointer rounded border border-yellow-800 bg-yellow-950 px-2 py-1.5 text-center text-yellow-300 hover:bg-yellow-900"
         >
           15% (Low)
         </button>
         <button
           type="button"
           onclick={() => applyBatteryLevel(50)}
-          class="border-outline bg-surface-container-high text-on-surface hover:bg-surface-container-highest cursor-pointer rounded border px-2 py-1.5 text-center text-[10px] font-semibold"
+          class="border-outline bg-surface-container-high text-on-surface hover:bg-surface-container-highest text-label-small cursor-pointer rounded border px-2 py-1.5 text-center"
         >
           50%
         </button>
         <button
           type="button"
           onclick={() => applyBatteryLevel(100)}
-          class="cursor-pointer rounded border border-emerald-800 bg-emerald-950 px-2 py-1.5 text-center text-[10px] font-semibold text-emerald-300 hover:bg-emerald-900"
+          class="text-label-small cursor-pointer rounded border border-emerald-800 bg-emerald-950 px-2 py-1.5 text-center text-emerald-300 hover:bg-emerald-900"
         >
           100%
         </button>
@@ -214,7 +214,7 @@
           <button
             type="button"
             onclick={toggleMute}
-            class="cursor-pointer rounded border px-2 py-0.5 font-mono text-[10px] {$soundMuted
+            class="text-label-small cursor-pointer rounded border px-2 py-0.5 font-mono {$soundMuted
               ? 'text-error border-red-800 bg-red-950'
               : 'border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high'}"
           >

@@ -147,7 +147,7 @@
                       : member.citizenid}
                   </p>
                   {#if pContact?.phone}
-                    <p class="text-on-surface-variant text-[10px]">
+                    <p class="text-on-surface-variant text-label-small">
                       {pContact.phone}
                     </p>
                   {/if}

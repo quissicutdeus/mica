@@ -230,8 +230,8 @@
                 >
                   {msg.sender === 'me' ? 'You' : contact.firstname}
                 </span>
-                <span class="text-on-surface-variant text-[10px]">•</span>
-                <span class="text-on-surface-variant text-[10px]">
+                <span class="text-on-surface-variant text-label-small">•</span>
+                <span class="text-on-surface-variant text-label-small">
                   {formatRelativeTime(msg.created_at)}
                 </span>
               </div>

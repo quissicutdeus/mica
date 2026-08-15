@@ -92,7 +92,7 @@
                   </p>
                 </div>
                 <span
-                  class="bg-surface text-on-surface-variant shrink-0 rounded px-2 py-0.5 font-mono text-[10px]"
+                  class="bg-surface text-on-surface-variant text-label-small shrink-0 rounded px-2 py-0.5 font-mono"
                 >
                   #{report.id}
                 </span>

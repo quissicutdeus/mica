@@ -106,7 +106,7 @@
         src={senderInfo.avatar}
         initials={senderInfo.name[0] || '?'}
         size="w-4 h-4"
-        textClass="text-[9px]"
+        textClass="text-label-small"
         bgClass="bg-surface-container border border-outline-variant"
       />
       <span class="text-primary text-body-small group-hover/sender:underline">
@@ -152,7 +152,7 @@
               src={replySender.avatar}
               initials={replySender.name[0] || '?'}
               size="w-3.5 h-3.5"
-              textClass="text-[8px]"
+              textClass="text-label-small"
               bgClass="bg-surface-container border border-outline-variant"
             />
             <span class="text-label-small truncate">{replySender.name}</span>
@@ -223,7 +223,7 @@
     {#if msg.sender === 'other'}
       <ReportButton subject="message" size="mini" onclick={() => (reporting = true)} />
     {/if}
-    <span class="text-on-surface-variant text-[10px]">
+    <span class="text-on-surface-variant text-label-small">
       {formatTime(msg.created_at)}
     </span>
     {#if msg.sender === 'me' && currentConv}

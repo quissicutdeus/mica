@@ -65,9 +65,7 @@
         </button>
       </div>
       {#each EMOJI_CATALOG as category (category.label)}
-        <p
-          class="text-on-surface-variant mt-2 mb-1 text-[10px] font-semibold tracking-wide uppercase"
-        >
+        <p class="text-on-surface-variant text-label-small mt-2 mb-1 tracking-wide uppercase">
           {category.label}
         </p>
         <div class="grid grid-cols-8 gap-0.5">

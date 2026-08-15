@@ -90,7 +90,7 @@
             src={replySender.avatar}
             initials={replySender.name[0] || '?'}
             size="w-3.5 h-3.5"
-            textClass="text-[8px]"
+            textClass="text-label-small"
           />
           <span class="text-label-small truncate">Replying to {replySender.name}</span>
         </div>

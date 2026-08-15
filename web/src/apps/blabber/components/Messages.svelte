@@ -126,7 +126,7 @@
           </div>
           {#if thread.unread > 0}
             <span
-              class="bg-primary-container text-on-primary-container shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold"
+              class="bg-primary-container text-on-primary-container text-label-small shrink-0 rounded-full px-2 py-0.5"
             >
               {thread.unread}
             </span>
@@ -177,7 +177,7 @@
             >
               <BlabBody body={message.body} {onhandle} {ontag} />
               <div class="mt-0.5 flex items-center gap-1">
-                <p class="text-on-surface-variant text-[10px]">
+                <p class="text-on-surface-variant text-label-small">
                   {formatDate(message.created_at)}
                 </p>
                 <!-- Theirs only. Reporting your own message is not moderation, and the

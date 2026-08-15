@@ -54,7 +54,7 @@
             <div class="flex items-center gap-2">
               <span class="text-on-surface text-body-medium truncate">{app.name}</span>
               <span
-                class="bg-surface-container-high text-on-surface shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px]"
+                class="bg-surface-container-high text-on-surface text-label-small shrink-0 rounded px-1.5 py-0.5 font-mono"
                 >v{app.version || '1.0'}</span
               >
             </div>

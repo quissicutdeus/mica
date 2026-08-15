@@ -75,7 +75,7 @@
         initials={account.handle.slice(0, 2).toUpperCase()}
         src={account.avatar ?? ''}
         size="w-7 h-7"
-        textClass="text-[10px]"
+        textClass="text-label-small"
         showSilhouette={false}
       />
       <span class="min-w-0 flex-1">

@@ -99,7 +99,7 @@
 
             <!-- Kind Badge Overlay -->
             <div
-              class="border-surface text-on-surface absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full border-2 text-[10px] font-bold {kind ===
+              class="border-surface text-on-surface text-label-small absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full border-2 {kind ===
               'follow'
                 ? 'bg-secondary'
                 : kind === 'mention'

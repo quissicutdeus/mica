@@ -95,7 +95,7 @@
       {:else}
         <DocumentIcon class="size-icon-lg" />
       {/if}
-      <span class="w-full truncate text-center text-[10px]">{label}</span>
+      <span class="text-label-small w-full truncate text-center">{label}</span>
     </div>
   {/if}
 
@@ -111,7 +111,7 @@
 
   {#if item.kind === 'gif'}
     <span
-      class="bg-media-overlay pointer-events-none absolute top-1 left-1 rounded px-1 text-[10px] font-semibold text-white"
+      class="bg-media-overlay text-label-small pointer-events-none absolute top-1 left-1 rounded px-1 text-white"
     >
       GIF
     </span>
@@ -119,7 +119,7 @@
 
   {#if item.duration_ms}
     <span
-      class="bg-media-overlay pointer-events-none absolute right-1 bottom-1 rounded px-1 text-[10px] font-medium text-white"
+      class="bg-media-overlay text-label-small pointer-events-none absolute right-1 bottom-1 rounded px-1 text-white"
     >
       {seconds(item.duration_ms)}
     </span>

@@ -73,7 +73,7 @@
       <div id="unread-divider" class="my-4 flex items-center gap-3 py-1">
         <div class="bg-primary h-px flex-1"></div>
         <span
-          class="border-primary text-primary shadow-elevation-2 rounded-full border bg-blue-950/90 px-3 py-1 text-[10px] font-bold tracking-wider uppercase"
+          class="border-primary text-primary shadow-elevation-2 text-label-small rounded-full border bg-blue-950/90 px-3 py-1 tracking-wider uppercase"
         >
           Unread Messages ({unreadCount})
         </span>

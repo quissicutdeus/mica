@@ -73,13 +73,13 @@
         <Icon class="size-icon-md" />
         {#if opt.badge}
           <span
-            class="bg-error text-on-error absolute -top-1.5 -right-2.5 min-w-4 rounded-full px-1 text-[10px] leading-4 font-bold"
+            class="bg-error text-on-error text-label-small absolute -top-1.5 -right-2.5 min-w-4 rounded-full px-1"
           >
             {opt.badge > 99 ? '99+' : opt.badge}
           </span>
         {/if}
       </span>
-      <span class="text-[10px] font-semibold">{opt.label}</span>
+      <span class="text-label-small">{opt.label}</span>
     </button>
   {/each}
 </nav>

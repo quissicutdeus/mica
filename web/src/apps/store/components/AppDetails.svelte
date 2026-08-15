@@ -144,20 +144,20 @@
       <h4 class="text-on-surface-variant text-body-small tracking-wider uppercase">Information</h4>
       <div class="text-body-small grid grid-cols-2 gap-2">
         <div class="border-outline-variant bg-surface-container rounded-xl border p-3">
-          <span class="text-on-surface-variant block text-[10px] font-medium uppercase">Type</span>
+          <span class="text-on-surface-variant text-label-small block uppercase">Type</span>
           <span class="text-on-surface font-semibold"
             >{system ? 'System Application' : 'Add-on'}</span
           >
         </div>
         <div class="border-outline-variant bg-surface-container rounded-xl border p-3">
-          <span class="text-on-surface-variant block text-[10px] font-medium uppercase"
+          <span class="text-on-surface-variant text-label-small block uppercase"
             >Storage Footprint</span
           >
           <span class="text-on-surface font-semibold">{getAppStorageSize(app)}</span>
         </div>
         {#if app.installedAt}
           <div class="border-outline-variant bg-surface-container rounded-xl border p-3">
-            <span class="text-on-surface-variant block text-[10px] font-medium uppercase"
+            <span class="text-on-surface-variant text-label-small block uppercase"
               >Installed Date</span
             >
             <span class="text-on-surface font-semibold">{formatDate(app.installedAt)}</span>
@@ -165,7 +165,7 @@
         {/if}
         {#if app.updatedAt}
           <div class="border-outline-variant bg-surface-container rounded-xl border p-3">
-            <span class="text-on-surface-variant block text-[10px] font-medium uppercase"
+            <span class="text-on-surface-variant text-label-small block uppercase"
               >Last Updated</span
             >
             <span class="text-on-surface font-semibold">{formatDate(app.updatedAt)}</span>

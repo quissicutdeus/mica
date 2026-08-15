@@ -109,7 +109,7 @@
         class="border-outline shadow-elevation-3 relative flex w-[132px] flex-col overflow-hidden rounded-lg border-2"
         style={`aspect-ratio: 400 / 850; background: ${background};`}
       >
-        <div class="text-on-surface flex items-center justify-between px-2 pt-1.5 text-[7px]">
+        <div class="text-on-surface text-label-small flex items-center justify-between px-2 pt-1.5">
           <span class:text-on-wallpaper={wallpaper.type === 'image'}>{$formattedTime}</span>
           <span
             class="border-on-surface h-1.5 w-3 rounded-[2px] border"
@@ -137,7 +137,7 @@
         <div class="bg-on-surface mx-auto mb-1.5 h-[2px] w-8 rounded-full opacity-60"></div>
       </div>
 
-      <span class="text-on-surface-variant font-mono text-[10px]">{rendered}</span>
+      <span class="text-on-surface-variant text-label-small font-mono">{rendered}</span>
 
       <SegmentedControl
         options={MODE_OPTIONS}
@@ -162,12 +162,12 @@
               style={`background: ${scheme[swatch.role]};`}
               title={swatch.label}
             ></div>
-            <span class="text-on-surface-variant text-[9px]">{swatch.label}</span>
+            <span class="text-on-surface-variant text-label-small">{swatch.label}</span>
           </div>
         {/each}
       </div>
       <div class="flex items-center gap-3">
-        <span class="text-on-surface-variant font-mono text-[10px]">{seed}</span>
+        <span class="text-on-surface-variant text-label-small font-mono">{seed}</span>
         <button
           type="button"
           onclick={() => resetWallpaper()}

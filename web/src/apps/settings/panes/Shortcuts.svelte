@@ -66,7 +66,7 @@
     <button
       type="button"
       onclick={resetBindings}
-      class="text-on-surface-variant hover:text-on-surface duration-short ease-standard cursor-pointer rounded px-1.5 py-0.5 text-[10px] normal-case transition-colors"
+      class="text-on-surface-variant hover:text-on-surface duration-short ease-standard text-label-small cursor-pointer rounded px-1.5 py-0.5 normal-case transition-colors"
     >
       Reset to defaults
     </button>

@@ -66,7 +66,7 @@
            belongs to the badge rather than to the surface behind it.
            -->
       <div
-        class="bg-error text-on-error shadow-elevation-2 absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full px-1 text-[10px] font-bold"
+        class="bg-error text-on-error shadow-elevation-2 text-label-small absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full px-1"
       >
         {displayBadge > 99 ? '99+' : displayBadge}
       </div>
