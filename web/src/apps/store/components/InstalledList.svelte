@@ -30,7 +30,7 @@
     <span class="text-on-surface-variant text-body-small tracking-wider uppercase"
       >Applications</span
     >
-    <div class="flex gap-1 text-[11px]">
+    <div class="text-label-small flex gap-1">
       <button
         onclick={() => (filter = 'all')}
         aria-pressed={filter === 'all'}
@@ -64,10 +64,10 @@
   <div
     class="bg-surface-container border-outline-variant text-body-small flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5"
   >
-    <span class="text-on-surface-variant text-[11px] font-medium">Sort Order</span>
+    <span class="text-on-surface-variant text-label-small">Sort Order</span>
     <select
       bind:value={sortOrder}
-      class="bg-surface-container-low border-outline-variant text-on-surface cursor-pointer rounded border px-2 py-0.5 text-[11px] focus:outline-none"
+      class="bg-surface-container-low border-outline-variant text-on-surface text-label-small cursor-pointer rounded border px-2 py-0.5 focus:outline-none"
       aria-label="Sort Installed Apps"
     >
       <option value="newest">Newest Installed</option>
@@ -102,7 +102,7 @@
         </div>
         <div class="min-w-0 flex-1">
           <span class="text-on-surface text-body-medium block truncate">{app.name}</span>
-          <div class="text-on-surface-variant flex items-center gap-1.5 truncate text-[11px]">
+          <div class="text-on-surface-variant text-label-small flex items-center gap-1.5 truncate">
             <span>{app.author || 'gPhone'}</span>
             <span>•</span>
             <span>{getAppStorageSize(app)}</span>

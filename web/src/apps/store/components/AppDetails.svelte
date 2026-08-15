@@ -92,7 +92,7 @@
               Open Application
             </button>
             <div
-              class="bg-secondary text-secondary flex items-center justify-center gap-1.5 rounded-lg border border-indigo-500/20 px-3 py-1 text-[11px] font-medium"
+              class="bg-secondary text-secondary text-label-small flex items-center justify-center gap-1.5 rounded-lg border border-indigo-500/20 px-3 py-1"
             >
               <span>🔒</span> Core System App — protected from removal
             </div>

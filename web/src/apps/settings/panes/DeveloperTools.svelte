@@ -195,7 +195,7 @@
           <button
             type="button"
             onclick={() => setSignal(level)}
-            class="cursor-pointer rounded border py-1.5 text-[11px] font-semibold transition-all {$signalLevel ===
+            class="text-label-small cursor-pointer rounded border py-1.5 transition-all {$signalLevel ===
             level
               ? 'border-emerald-500 bg-emerald-600 text-white'
               : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'} duration-short ease-standard"
@@ -267,21 +267,21 @@
         <button
           type="button"
           onclick={triggerNotification}
-          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high cursor-pointer rounded border px-2 py-1.5 text-center text-[11px] font-medium"
+          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high text-label-small cursor-pointer rounded border px-2 py-1.5 text-center"
         >
           Toast
         </button>
         <button
           type="button"
           onclick={triggerMessage}
-          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high cursor-pointer rounded border px-2 py-1.5 text-center text-[11px] font-medium"
+          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high text-label-small cursor-pointer rounded border px-2 py-1.5 text-center"
         >
           SMS
         </button>
         <button
           type="button"
           onclick={triggerMail}
-          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high cursor-pointer rounded border px-2 py-1.5 text-center text-[11px] font-medium"
+          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high text-label-small cursor-pointer rounded border px-2 py-1.5 text-center"
         >
           Email
         </button>

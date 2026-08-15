@@ -57,9 +57,7 @@
 <div
   class="animate-in fade-in border-outline-variant bg-surface shadow-elevation-4 duration-short ease-standard absolute top-20 right-2 z-40 w-56 overflow-hidden rounded-lg border"
 >
-  <p
-    class="text-on-surface-variant px-3 pt-3 pb-1 text-[11px] font-semibold tracking-wide uppercase"
-  >
+  <p class="text-on-surface-variant text-label-small px-3 pt-3 pb-1 tracking-wide uppercase">
     Posting as · {accounts.length} of {limit}
   </p>
 
@@ -82,7 +80,9 @@
       />
       <span class="min-w-0 flex-1">
         <span class="text-body-small block truncate">{account.display_name || account.handle}</span>
-        <span class="text-on-surface-variant block truncate text-[11px]">@{account.handle}</span>
+        <span class="text-on-surface-variant text-label-small block truncate"
+          >@{account.handle}</span
+        >
       </span>
       {#if active}
         <CheckIcon class="text-primary size-icon-sm shrink-0" />

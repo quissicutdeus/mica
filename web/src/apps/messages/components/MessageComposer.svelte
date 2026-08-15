@@ -92,9 +92,9 @@
             size="w-3.5 h-3.5"
             textClass="text-[8px]"
           />
-          <span class="truncate text-[11px]">Replying to {replySender.name}</span>
+          <span class="text-label-small truncate">Replying to {replySender.name}</span>
         </div>
-        <p class="text-on-surface-variant mt-0.5 truncate text-[11px]">
+        <p class="text-on-surface-variant text-label-small mt-0.5 truncate">
           {replyingTo.message || (replyingTo.attachments?.length ? '[Attachment]' : '')}
         </p>
       </div>

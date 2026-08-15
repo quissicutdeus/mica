@@ -179,7 +179,7 @@
     </div>
     <div class="bg-surface-container rounded-xl p-4">
       <ColorWheelPicker color={seed} onchange={applyCustomColor} />
-      <p class="text-on-surface-variant mt-3 text-center text-[11px] leading-relaxed">
+      <p class="text-on-surface-variant text-label-small mt-3 text-center">
         The wallpaper and every color in the phone are generated from this one.
       </p>
     </div>

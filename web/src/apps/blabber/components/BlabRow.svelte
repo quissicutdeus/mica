@@ -100,7 +100,7 @@
     </div>
 
     {#if blab.mouth_of != null}
-      <p class="mt-0.5 flex items-center gap-1 text-[11px] text-emerald-400">
+      <p class="text-label-small mt-0.5 flex items-center gap-1 text-emerald-400">
         Mouthed{#if blab.mouthed?.handle}&nbsp;@{blab.mouthed.handle}{/if}
       </p>
     {/if}
@@ -127,7 +127,7 @@
          row's action bar is where a button ends up inside a button. -->
     {#if blab.mouthed}
       <div class="border-outline-variant mt-2 rounded-lg border p-2">
-        <p class="text-on-surface-variant text-[11px]">
+        <p class="text-on-surface-variant text-label-small">
           {blab.mouthed.display_name || blab.mouthed.handle}
           <span class="text-outline">@{blab.mouthed.handle}</span>
         </p>

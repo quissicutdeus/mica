@@ -155,9 +155,9 @@
               textClass="text-[8px]"
               bgClass="bg-surface-container border border-outline-variant"
             />
-            <span class="truncate text-[11px]">{replySender.name}</span>
+            <span class="text-label-small truncate">{replySender.name}</span>
           </div>
-          <p class="mt-0.5 truncate text-[11px] opacity-80">
+          <p class="text-label-small mt-0.5 truncate opacity-80">
             {msg.replyToMsg.message || (msg.replyToMsg.attachments?.length ? '[Attachment]' : '')}
           </p>
         </div>
