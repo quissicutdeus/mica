@@ -42,7 +42,7 @@
           {contact.lastname || ''}
         </span>
         {#if contact.favorite}
-          <StarIcon class="ml-1.5 h-4 w-4 shrink-0 text-yellow-400" />
+          <StarIcon class="size-icon-sm ml-1.5 shrink-0 text-yellow-400" />
         {/if}
       </div>
       <span class="text-on-surface-variant text-body-small">{contact.phone}</span>

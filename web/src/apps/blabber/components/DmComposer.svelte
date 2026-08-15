@@ -75,7 +75,7 @@
       disabled={!canSend}
       aria-label="Send"
     >
-      <SendIcon class="text-on-surface h-4 w-4" />
+      <SendIcon class="text-on-surface size-icon-sm" />
     </button>
   </div>
 </div>

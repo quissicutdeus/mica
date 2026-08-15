@@ -10,7 +10,7 @@
     <div class="bg-surface-container-high flex h-10 w-10 items-center justify-center rounded-full">
       <svg
         xmlns="http://www.w3.org/2000/svg"
-        class="text-on-surface-variant h-5 w-5"
+        class="text-on-surface-variant size-icon-md"
         fill="none"
         viewBox="0 0 24 24"
         stroke="currentColor"

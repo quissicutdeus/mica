@@ -12,7 +12,7 @@
     {#if $soundMuted || $soundVolumePercent === 0}
       <svg
         xmlns="http://www.w3.org/2000/svg"
-        class="text-error h-4 w-4"
+        class="text-error size-icon-sm"
         viewBox="0 0 20 20"
         fill="currentColor"
       >
@@ -25,7 +25,7 @@
     {:else}
       <svg
         xmlns="http://www.w3.org/2000/svg"
-        class="h-4 w-4 text-white/90"
+        class="size-icon-sm text-white/90"
         viewBox="0 0 20 20"
         fill="currentColor"
       >

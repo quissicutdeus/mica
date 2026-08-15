@@ -54,7 +54,7 @@
               class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg {app.color} shadow-elevation-1"
             >
               {#if typeof app.icon === 'string' && app.icon.startsWith('http')}
-                <img src={app.icon} alt="" class="h-5 w-5 object-contain invert filter" />
+                <img src={app.icon} alt="" class="size-icon-md object-contain invert filter" />
               {:else if typeof app.icon === 'function'}
                 {@const IconComp = app.icon}
                 <IconComp />
@@ -68,7 +68,7 @@
                 >{sizeOf(app)}</span
               >
             </div>
-            <ChevronRightIcon class="text-on-surface-variant h-4 w-4 shrink-0" />
+            <ChevronRightIcon class="text-on-surface-variant size-icon-sm shrink-0" />
           </button>
         {/each}
       </div>

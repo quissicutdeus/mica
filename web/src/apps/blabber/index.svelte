@@ -474,7 +474,7 @@
         title="Messages"
         aria-label="Messages"
       >
-        <MessageIcon class="h-5 w-5" />
+        <MessageIcon class="size-icon-md" />
         {#if $unreadDms > 0}
           <span
             class="bg-primary-container text-on-primary-container absolute top-0.5 right-0.5 min-w-4 rounded-full px-1 text-[10px] leading-4 font-bold"
@@ -569,7 +569,7 @@
     <!-- `raised` so it clears the nav they share this snippet with. -->
     <FloatingActionButton label="Blab" collapsed raised onclick={() => (composing = true)}>
       {#snippet icon()}
-        <AddIcon class="text-on-surface h-4 w-4 shrink-0" />
+        <AddIcon class="text-on-surface size-icon-sm shrink-0" />
       {/snippet}
     </FloatingActionButton>
 

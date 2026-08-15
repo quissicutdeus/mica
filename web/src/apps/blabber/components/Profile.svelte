@@ -238,7 +238,7 @@
             title="Message @{handle}"
             aria-label="Message @{handle}"
           >
-            <MessageIcon class="h-4 w-4" />
+            <MessageIcon class="size-icon-sm" />
           </button>
         {/if}
         <!-- Somebody else's profile only. An account is the surface a player judges a

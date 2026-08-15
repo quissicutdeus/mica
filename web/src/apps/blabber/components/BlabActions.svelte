@@ -34,7 +34,13 @@
     aria-label="Reply"
     onclick={onreply}
   >
-    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+    <svg
+      class="size-icon-sm"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      stroke-width="1.5"
+    >
       <path
         stroke-linecap="round"
         stroke-linejoin="round"
@@ -52,7 +58,13 @@
     aria-pressed={stats?.mouthedByMe ?? false}
     onclick={onmouth}
   >
-    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+    <svg
+      class="size-icon-sm"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      stroke-width="1.5"
+    >
       <path
         stroke-linecap="round"
         stroke-linejoin="round"
@@ -71,7 +83,7 @@
     onclick={onear}
   >
     <svg
-      class="h-4 w-4"
+      class="size-icon-sm"
       viewBox="0 0 24 24"
       fill={stats?.earedByMe ? 'currentColor' : 'none'}
       stroke="currentColor"

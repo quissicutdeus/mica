@@ -105,7 +105,7 @@
         aria-label="Cancel reply"
         title="Cancel reply"
       >
-        <CloseIcon class="h-4 w-4" />
+        <CloseIcon class="size-icon-sm" />
       </button>
     </div>
   {/if}
@@ -135,7 +135,7 @@
       onclick={() => (showAttachMenu = !showAttachMenu)}
       aria-label="Attachments"
     >
-      <PaperclipIcon class="h-5 w-5" />
+      <PaperclipIcon class="size-icon-md" />
     </button>
 
     <div
@@ -161,7 +161,7 @@
       disabled={busy || (!text.trim() && attachments.length === 0)}
       aria-label="Send"
     >
-      <SendIcon class="text-on-surface h-4 w-4" />
+      <SendIcon class="text-on-surface size-icon-sm" />
     </button>
   </div>
 
@@ -177,7 +177,7 @@
         <div
           class="bg-primary-container text-on-primary-container mb-1 flex h-8 w-8 items-center justify-center rounded-full"
         >
-          <PhotoIcon class="h-5 w-5" />
+          <PhotoIcon class="size-icon-md" />
         </div>
         <span class="text-body-small">Photo</span>
       </button>
@@ -188,7 +188,7 @@
         <div
           class="mb-1 flex h-8 w-8 items-center justify-center rounded-full bg-green-500/20 text-green-400"
         >
-          <LocationIcon class="h-5 w-5" />
+          <LocationIcon class="size-icon-md" />
         </div>
         <span class="text-body-small">Location</span>
       </button>

@@ -120,7 +120,7 @@
             class="hover:bg-surface text-on-surface-variant hover:text-on-surface rounded-full p-1 transition active:scale-95"
             aria-label="Back to Home"
           >
-            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg class="size-icon-md" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
                 stroke-linecap="round"
                 stroke-linejoin="round"

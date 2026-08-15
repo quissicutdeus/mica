@@ -87,7 +87,7 @@
         aria-label="Delete message"
         title="Delete message"
       >
-        <TrashIcon class="h-5 w-5" />
+        <TrashIcon class="size-icon-md" />
       </button>
       <button
         class={`rounded-full p-2 transition-colors ${
@@ -99,7 +99,7 @@
         aria-label={isArchived ? 'Move to Inbox' : 'Archive message'}
         title={isArchived ? 'Move to Inbox' : 'Archive message'}
       >
-        <ArchiveIcon class="h-5 w-5" />
+        <ArchiveIcon class="size-icon-md" />
       </button>
     </div>
   {:else}
@@ -113,7 +113,7 @@
       aria-label={activeTab === 'inbox' ? 'View Archive' : 'View Inbox'}
       title={activeTab === 'inbox' ? 'View Archive' : 'View Inbox'}
     >
-      <ArchiveIcon class="h-5 w-5" />
+      <ArchiveIcon class="size-icon-md" />
     </button>
   {/if}
 {/snippet}

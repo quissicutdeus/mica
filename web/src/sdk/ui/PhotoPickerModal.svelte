@@ -43,7 +43,7 @@
   <!-- Header -->
   <div class="border-outline-variant flex items-center justify-between border-b p-4">
     <h3 class="text-on-surface text-body-large flex items-center gap-2">
-      <PhotoIcon class="text-primary h-5 w-5" />
+      <PhotoIcon class="text-primary size-icon-md" />
       {title}
     </h3>
     <button
@@ -51,7 +51,7 @@
       onclick={onclose}
       aria-label="Close photo picker"
     >
-      <CloseIcon class="h-5 w-5" />
+      <CloseIcon class="size-icon-md" />
     </button>
   </div>
 
@@ -72,7 +72,7 @@
             <div
               class="bg-primary shadow-elevation-2 absolute top-1.5 right-1.5 rounded-full p-0.5"
             >
-              <CheckCircleIcon class="text-on-primary h-4 w-4" />
+              <CheckCircleIcon class="text-on-primary size-icon-sm" />
             </div>
           {/if}
         </button>

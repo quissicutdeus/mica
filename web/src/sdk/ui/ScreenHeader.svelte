@@ -24,7 +24,7 @@
       onclick={onback}
       aria-label="Go back"
     >
-      <ChevronLeftIcon class="h-6 w-6" />
+      <ChevronLeftIcon class="size-icon-lg" />
     </button>
   {/if}
   {#if ontitleclick}

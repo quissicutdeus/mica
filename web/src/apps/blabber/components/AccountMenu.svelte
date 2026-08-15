@@ -85,7 +85,7 @@
         <span class="text-on-surface-variant block truncate text-[11px]">@{account.handle}</span>
       </span>
       {#if active}
-        <CheckIcon class="text-primary h-4 w-4 shrink-0" />
+        <CheckIcon class="text-primary size-icon-sm shrink-0" />
       {/if}
     </button>
   {/each}

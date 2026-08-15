@@ -2,7 +2,7 @@
   interface Props {
     class?: string;
   }
-  let { class: className = 'h-4 w-4' }: Props = $props();
+  let { class: className = 'size-icon-sm' }: Props = $props();
 </script>
 
 <svg

@@ -3,7 +3,7 @@
     class?: string;
     level?: number;
   }
-  let { class: className = 'h-4 w-4', level = 4 }: Props = $props();
+  let { class: className = 'size-icon-sm', level = 4 }: Props = $props();
 </script>
 
 <svg xmlns="http://www.w3.org/2000/svg" class={className} viewBox="0 0 20 20" fill="currentColor">

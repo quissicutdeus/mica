@@ -3,7 +3,7 @@
     class?: string;
     filled?: boolean;
   }
-  let { class: className = 'w-5 h-5 text-yellow-400', filled = true }: Props = $props();
+  let { class: className = 'size-icon-md text-yellow-400', filled = true }: Props = $props();
 </script>
 
 {#if filled}

@@ -61,7 +61,7 @@
           onclick={() => (expanded = false)}
           aria-label="Close emoji picker"
         >
-          <CloseIcon class="h-4 w-4" />
+          <CloseIcon class="size-icon-sm" />
         </button>
       </div>
       {#each EMOJI_CATALOG as category (category.label)}

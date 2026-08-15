@@ -72,7 +72,7 @@
       aria-label="Select photo from gallery"
       title="Select photo from gallery"
     >
-      <EditIcon class="h-4 w-4" />
+      <EditIcon class="size-icon-sm" />
     </button>
   </div>
 
@@ -92,8 +92,8 @@
       <StarIcon
         filled={contact.favorite}
         class={contact.favorite
-          ? 'h-6 w-6 text-yellow-400'
-          : 'text-on-surface-variant h-6 w-6 hover:text-yellow-400'}
+          ? 'size-icon-lg text-yellow-400'
+          : 'text-on-surface-variant size-icon-lg hover:text-yellow-400'}
       />
     </button>
   </div>
@@ -199,7 +199,7 @@
       class="border-outline-variant bg-surface-container flex items-center justify-between border-b px-4 py-3"
     >
       <div class="flex items-center gap-2">
-        <MessageIcon class="text-primary h-4 w-4" />
+        <MessageIcon class="text-primary size-icon-sm" />
         <h4 class="text-on-surface text-body-small tracking-wider uppercase">
           Recent Text Messages
         </h4>
@@ -240,7 +240,7 @@
               </p>
             </div>
             <ChevronRightIcon
-              class="text-outline group-hover:text-on-surface-variant duration-short ease-standard h-4 w-4 shrink-0 transition-colors"
+              class="text-outline group-hover:text-on-surface-variant duration-short ease-standard size-icon-sm shrink-0 transition-colors"
             />
           </button>
         {/each}

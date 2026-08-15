@@ -267,7 +267,7 @@
       title="Search Contacts"
       aria-label="Search Contacts"
     >
-      <SearchIcon class="h-5 w-5" />
+      <SearchIcon class="size-icon-md" />
     </button>
   {/if}
 {/snippet}
@@ -280,7 +280,7 @@
       onclick={() => (isAdding = true)}
     >
       {#snippet icon()}
-        <AddIcon class="text-on-surface h-4 w-4 shrink-0" />
+        <AddIcon class="text-on-surface size-icon-sm shrink-0" />
       {/snippet}
     </FloatingActionButton>
   {/if}

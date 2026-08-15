@@ -214,7 +214,7 @@
         title="Reply to message"
         aria-label="Reply to message"
       >
-        <ReplyIcon class="h-4 w-4" />
+        <ReplyIcon class="size-icon-sm" />
       </button>
     {/if}
   </div>

@@ -41,7 +41,7 @@
       onclick={() => oncancel()}
       aria-label="Close form"
     >
-      <CloseIcon class="h-5 w-5" />
+      <CloseIcon class="size-icon-md" />
     </button>
   </div>
 
@@ -61,7 +61,7 @@
         aria-label="Select photo from gallery"
         title="Select photo from gallery"
       >
-        <EditIcon class="h-4 w-4" />
+        <EditIcon class="size-icon-sm" />
       </button>
     </div>
   </div>

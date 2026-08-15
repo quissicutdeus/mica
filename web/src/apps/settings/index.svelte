@@ -213,7 +213,7 @@
               >Cellular service and Bluetooth proximity</span
             >
           </div>
-          <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
+          <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
         </button>
         <button
           type="button"
@@ -226,7 +226,7 @@
               >Banners, alerts, sounds, and icon badges</span
             >
           </div>
-          <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
+          <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
         </button>
         <button
           type="button"
@@ -239,7 +239,7 @@
               >Storage and uninstall, per app</span
             >
           </div>
-          <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
+          <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
         </button>
         <button
           type="button"
@@ -252,7 +252,7 @@
               >Theme, wallpaper, phone size and clock</span
             >
           </div>
-          <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
+          <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
         </button>
         <button
           type="button"
@@ -265,7 +265,7 @@
               >Volume, mute, and button step size</span
             >
           </div>
-          <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
+          <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
         </button>
         <button
           type="button"
@@ -278,7 +278,7 @@
               >Keyboard shortcuts inside the phone</span
             >
           </div>
-          <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
+          <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
         </button>
         <button
           type="button"
@@ -291,7 +291,7 @@
               >Number, build, and first boot</span
             >
           </div>
-          <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
+          <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
         </button>
         {#if showDevTools}
           <button
@@ -305,7 +305,7 @@
                 >Battery, signal, and event simulation</span
               >
             </div>
-            <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
+            <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
           </button>
         {/if}
       </div>

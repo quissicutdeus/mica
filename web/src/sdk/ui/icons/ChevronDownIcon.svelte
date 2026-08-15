@@ -2,7 +2,7 @@
   interface Props {
     class?: string;
   }
-  let { class: className = 'h-4 w-4 text-gray-400' }: Props = $props();
+  let { class: className = 'size-icon-sm text-gray-400' }: Props = $props();
 </script>
 
 <svg xmlns="http://www.w3.org/2000/svg" class={className} viewBox="0 0 20 20" fill="currentColor">

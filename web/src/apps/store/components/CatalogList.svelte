@@ -41,7 +41,11 @@
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl {app.color} shadow-elevation-1"
           >
             {#if typeof app.icon === 'string' && app.icon.startsWith('http')}
-              <img src={app.icon} alt={app.name} class="h-6 w-6 object-contain invert filter" />
+              <img
+                src={app.icon}
+                alt={app.name}
+                class="size-icon-lg object-contain invert filter"
+              />
             {:else}
               <span class="text-on-surface text-lg font-bold">{app.name.charAt(0)}</span>
             {/if}

@@ -316,7 +316,7 @@
               title="Clear all notifications"
               aria-label="Clear all notifications"
             >
-              <TrashIcon class="h-4 w-4" />
+              <TrashIcon class="size-icon-sm" />
             </button>
           {/if}
 
@@ -327,7 +327,7 @@
             title="Notification Archive"
             aria-label="Notification Archive"
           >
-            <ArchiveIcon class="h-4 w-4" />
+            <ArchiveIcon class="size-icon-sm" />
           </button>
         {:else}
           <button
@@ -337,7 +337,7 @@
             title="Back to Active Notifications"
             aria-label="Back to Active Notifications"
           >
-            <ArchiveIcon class="h-4 w-4" />
+            <ArchiveIcon class="size-icon-sm" />
           </button>
         {/if}
 
@@ -348,7 +348,7 @@
           title="Close"
           aria-label="Close notification shade"
         >
-          <CloseIcon class="h-4 w-4" />
+          <CloseIcon class="size-icon-sm" />
         </button>
       </div>
     </div>
@@ -495,7 +495,7 @@
                               <TrashIcon class="h-3.5 w-3.5" />
                             </button>
                             <ChevronDownIcon
-                              class="text-on-surface-variant duration-medium ease-emphasized h-4 w-4 transition-transform {expandedHistoryGroups[
+                              class="text-on-surface-variant duration-medium ease-emphasized size-icon-sm transition-transform {expandedHistoryGroups[
                                 group.app
                               ]
                                 ? 'text-primary rotate-180'
@@ -702,7 +702,7 @@
                               <TrashIcon class="h-3.5 w-3.5" />
                             </button>
                             <ChevronDownIcon
-                              class="text-on-surface-variant duration-medium ease-emphasized h-4 w-4 transition-transform {expandedGroups[
+                              class="text-on-surface-variant duration-medium ease-emphasized size-icon-sm transition-transform {expandedGroups[
                                 group.app
                               ]
                                 ? 'text-primary rotate-180'

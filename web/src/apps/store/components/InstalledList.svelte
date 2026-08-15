@@ -92,7 +92,7 @@
           class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg {app.color} shadow-elevation-1"
         >
           {#if typeof app.icon === 'string' && app.icon.startsWith('http')}
-            <img src={app.icon} alt={app.name} class="h-5 w-5 object-contain invert filter" />
+            <img src={app.icon} alt={app.name} class="size-icon-md object-contain invert filter" />
           {:else if typeof app.icon === 'function'}
             {@const IconComp = app.icon}
             <IconComp />

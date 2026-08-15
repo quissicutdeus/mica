@@ -230,7 +230,7 @@
 
     <!-- Hole Punch Camera -->
     <div
-      class="absolute top-2 left-1/2 z-30 h-6 w-6 -translate-x-1/2 rounded-full bg-black ring-1 ring-gray-800"
+      class="size-icon-lg absolute top-2 left-1/2 z-30 -translate-x-1/2 rounded-full bg-black ring-1 ring-gray-800"
     ></div>
 
     <!-- Content Area -->

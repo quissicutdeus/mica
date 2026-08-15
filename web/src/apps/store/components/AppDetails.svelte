@@ -40,7 +40,7 @@
       class="text-secondary hover:text-secondary text-body-small flex items-center gap-1 transition"
       aria-label="Back to Store"
     >
-      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg class="size-icon-sm" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
       </svg>
       Back

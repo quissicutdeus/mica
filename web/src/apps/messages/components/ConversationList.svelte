@@ -97,7 +97,7 @@
             {conv.lastMessage || 'No messages'}
           </p>
           <ChevronRightIcon
-            class="text-outline duration-short ease-standard ml-2 h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100"
+            class="text-outline duration-short ease-standard size-icon-sm ml-2 opacity-0 transition-opacity group-hover:opacity-100"
           />
         </div>
       </div>

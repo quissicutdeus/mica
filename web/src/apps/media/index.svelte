@@ -185,7 +185,7 @@
           disabled={$busy}
           onclick={sendNearby}
         >
-          <ShareSquareIcon class="h-6 w-6" />
+          <ShareSquareIcon class="size-icon-lg" />
         </button>
         <ReportButton subject="photo" size="header" onclick={() => (reporting = true)} />
         <button
@@ -193,7 +193,7 @@
           aria-label="Delete photo"
           onclick={() => (showDeleteConfirm = true)}
         >
-          <TrashIcon class="h-6 w-6" />
+          <TrashIcon class="size-icon-lg" />
         </button>
       </div>
 
@@ -247,7 +247,7 @@
                     : 'bg-black/20 backdrop-blur-sm'}"
                 >
                   {#if selectedIds.has(photo.id)}
-                    <CheckIcon class="text-on-surface h-4 w-4" />
+                    <CheckIcon class="text-on-surface size-icon-sm" />
                   {/if}
                 </div>
               {/if}
@@ -268,14 +268,14 @@
               aria-label="Share selected"
               onclick={shareSelected}
             >
-              <ShareSquareIcon class="h-5 w-5" />
+              <ShareSquareIcon class="size-icon-md" />
             </button>
             <button
               class="text-error hover:text-error"
               aria-label="Delete selected"
               onclick={() => (showDeleteConfirm = true)}
             >
-              <TrashIcon class="h-5 w-5" />
+              <TrashIcon class="size-icon-md" />
             </button>
           </div>
         </div>

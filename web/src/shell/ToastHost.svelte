@@ -157,7 +157,7 @@
                     src={typeof manifest.icon === 'string' ? manifest.icon : ''}
                     initials={manifest.name.charAt(0)}
                     bgClass={manifest.color}
-                    size="h-4 w-4"
+                    size="size-icon-sm"
                     textClass="text-[8px]"
                   />
                   <span
@@ -187,7 +187,7 @@
             }}
             aria-label="Dismiss notification"
           >
-            <CloseIcon class="h-4 w-4" />
+            <CloseIcon class="size-icon-sm" />
           </button>
         </div>
 

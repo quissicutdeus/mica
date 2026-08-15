@@ -107,7 +107,7 @@
           onclick={() => (showPicker = true)}
           aria-label="Attach photo"
         >
-          <PhotoIcon class="h-5 w-5" />
+          <PhotoIcon class="size-icon-md" />
         </button>
       {/if}
       <span

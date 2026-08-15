@@ -70,7 +70,7 @@
       onclick={() => select(opt.id)}
     >
       <span class="relative">
-        <Icon class="h-5 w-5" />
+        <Icon class="size-icon-md" />
         {#if opt.badge}
           <span
             class="bg-error text-on-error absolute -top-1.5 -right-2.5 min-w-4 rounded-full px-1 text-[10px] leading-4 font-bold"

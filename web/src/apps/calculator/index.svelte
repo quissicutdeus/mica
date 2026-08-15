@@ -193,7 +193,7 @@
           onclick={() => handleInput(btn)}
         >
           {#if btn === '⌫'}
-            <BackspaceIcon class="text-on-surface h-6 w-6" />
+            <BackspaceIcon class="text-on-surface size-icon-lg" />
           {:else}
             {btn}
           {/if}

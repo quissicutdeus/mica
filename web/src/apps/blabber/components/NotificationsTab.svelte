@@ -86,13 +86,13 @@
                     : 'bg-surface-container-high'}"
               >
                 {#if kind === 'follow'}
-                  <UsersIcon class="text-on-surface h-5 w-5" />
+                  <UsersIcon class="text-on-surface size-icon-md" />
                 {:else if kind === 'mention'}
                   <span class="text-body-medium">@</span>
                 {:else if kind === 'dm'}
-                  <MessageIcon class="text-on-surface h-5 w-5" />
+                  <MessageIcon class="text-on-surface size-icon-md" />
                 {:else}
-                  <BellIcon class="text-on-surface h-5 w-5" />
+                  <BellIcon class="text-on-surface size-icon-md" />
                 {/if}
               </div>
             {/if}

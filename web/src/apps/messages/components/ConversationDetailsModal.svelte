@@ -52,7 +52,7 @@
       onclick={onclose}
       aria-label="Close details"
     >
-      <CloseIcon class="h-5 w-5" />
+      <CloseIcon class="size-icon-md" />
     </button>
   </div>
 
@@ -78,7 +78,7 @@
               (c) => c.phone === currentConv.target || c.citizenid === currentConv.target
             )}
             {#if targetContact?.favorite}
-              <StarIcon filled={true} class="h-5 w-5 shrink-0 text-yellow-400" />
+              <StarIcon filled={true} class="size-icon-md shrink-0 text-yellow-400" />
             {/if}
           {/if}
         </div>
@@ -154,7 +154,7 @@
                 </div>
               </div>
               <ChevronRightIcon
-                class="text-on-surface-variant group-hover:text-on-surface duration-short ease-standard h-4 w-4 transition-colors"
+                class="text-on-surface-variant group-hover:text-on-surface duration-short ease-standard size-icon-sm transition-colors"
               />
             </button>
           {/each}
@@ -180,7 +180,7 @@
           }
         }}
       >
-        <ArchiveIcon class="h-4 w-4" />
+        <ArchiveIcon class="size-icon-sm" />
         {currentConv?.status === 'archived' ? 'Unarchive Conversation' : 'Archive Conversation'}
       </Button>
 
@@ -194,7 +194,7 @@
           }
         }}
       >
-        <TrashIcon class="h-4 w-4" />
+        <TrashIcon class="size-icon-sm" />
         Delete Conversation
       </Button>
     </div>

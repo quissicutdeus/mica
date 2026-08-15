@@ -352,7 +352,7 @@
         title={viewingArchive ? 'View Inbox' : 'View Archive'}
         aria-label="Toggle Archive"
       >
-        <ArchiveIcon class="h-5 w-5" />
+        <ArchiveIcon class="size-icon-md" />
       </button>
       <button
         class="hover:bg-surface-container-high rounded-full p-2 transition-colors {showSearch
@@ -365,7 +365,7 @@
         title="Search Messages"
         aria-label="Search Messages"
       >
-        <SearchIcon class="h-5 w-5" />
+        <SearchIcon class="size-icon-md" />
       </button>
     </div>
   {:else if selectedConversationId && currentConv}
@@ -381,7 +381,7 @@
         title="Delete Conversation"
         aria-label="Delete Conversation"
       >
-        <TrashIcon class="h-5 w-5" />
+        <TrashIcon class="size-icon-md" />
       </button>
       <button
         class="text-on-surface hover:bg-surface-container-high hover:text-primary duration-short ease-standard cursor-pointer rounded-full p-1.5 transition-colors"
@@ -395,7 +395,7 @@
         title={currentConv.status === 'archived' ? 'Unarchive' : 'Archive'}
         aria-label="Archive Conversation"
       >
-        <ArchiveIcon class="h-5 w-5" />
+        <ArchiveIcon class="size-icon-md" />
       </button>
       <button
         class="hover:bg-surface-container-high cursor-pointer rounded-full p-1.5 transition-colors {showInChatSearch
@@ -408,7 +408,7 @@
         title="Search Messages"
         aria-label="Search Messages"
       >
-        <SearchIcon class="h-5 w-5" />
+        <SearchIcon class="size-icon-md" />
       </button>
     </div>
   {/if}
@@ -418,7 +418,7 @@
   {#if !selectedConversationId && !isComposing}
     <FloatingActionButton label="Start Chat" collapsed={isScrolled} onclick={startNewMessage}>
       {#snippet icon()}
-        <MessageIcon class="text-on-surface h-4 w-4 shrink-0" />
+        <MessageIcon class="text-on-surface size-icon-sm shrink-0" />
       {/snippet}
     </FloatingActionButton>
   {/if}
@@ -445,7 +445,7 @@
             onclick={() => (isComposing = false)}
             aria-label="Close form"
           >
-            <CloseIcon class="h-5 w-5" />
+            <CloseIcon class="size-icon-md" />
           </button>
         </div>
 

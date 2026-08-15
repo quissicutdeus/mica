@@ -87,13 +87,13 @@
       class="bg-surface-container-high text-on-surface-variant flex h-full w-full flex-col items-center justify-center gap-1 p-2"
     >
       {#if item.kind === 'audio'}
-        <MicrophoneIcon class="h-6 w-6" />
+        <MicrophoneIcon class="size-icon-lg" />
       {:else if item.kind === 'link'}
-        <LinkIcon class="h-6 w-6" />
+        <LinkIcon class="size-icon-lg" />
       {:else if item.kind === 'location'}
-        <LocationIcon class="h-6 w-6" />
+        <LocationIcon class="size-icon-lg" />
       {:else}
-        <DocumentIcon class="h-6 w-6" />
+        <DocumentIcon class="size-icon-lg" />
       {/if}
       <span class="w-full truncate text-center text-[10px]">{label}</span>
     </div>
@@ -104,7 +104,7 @@
          playback behind it yet — it says "this is a video", not "press to play". -->
     <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
       <div class="bg-media-overlay rounded-full p-2">
-        <PlayIcon class="h-5 w-5 text-white" />
+        <PlayIcon class="size-icon-md text-white" />
       </div>
     </div>
   {/if}

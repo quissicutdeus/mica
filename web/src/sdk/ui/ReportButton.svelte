@@ -27,7 +27,9 @@
 
   let { subject, onclick, size = 'inline', class: className = '' }: Props = $props();
 
-  let glyph = $derived(size === 'header' ? 'h-6 w-6' : size === 'mini' ? 'h-3.5 w-3.5' : 'h-5 w-5');
+  let glyph = $derived(
+    size === 'header' ? 'size-icon-lg' : size === 'mini' ? 'h-3.5 w-3.5' : 'size-icon-md'
+  );
   let pad = $derived(size === 'header' ? 'p-3' : size === 'mini' ? 'p-0.5' : 'p-2');
   let opacity = $derived(size === 'mini' ? 'opacity-40 hover:opacity-100' : '');
 </script>
