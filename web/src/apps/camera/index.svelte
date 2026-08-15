@@ -314,7 +314,7 @@
     >
       <button
         onclick={onback}
-        class="text-on-surface cursor-pointer rounded-full border border-white/10 bg-black/40 p-2.5 shadow-lg backdrop-blur-md transition-colors hover:bg-black/60"
+        class="text-on-surface shadow-elevation-3 cursor-pointer rounded-full border border-white/10 bg-black/40 p-2.5 backdrop-blur-md transition-colors hover:bg-black/60"
         aria-label="Go back"
       >
         <CloseIcon class="h-5 w-5" />
@@ -341,7 +341,7 @@
          in-game photo is a crop of this exact region, so anything still on screen ends
          up inside the picture. -->
     <div
-      class="bg-surface-container border-outline-variant text-on-surface rounded-b-frame-inner relative z-10 mx-[-1rem] mb-[-1rem] flex transform-gpu flex-col items-center gap-4 overflow-hidden border-t px-4 pt-4 pb-10 shadow-2xl backdrop-blur-lg transition-opacity duration-75"
+      class="bg-surface-container border-outline-variant text-on-surface rounded-b-frame-inner shadow-elevation-5 relative z-10 mx-[-1rem] mb-[-1rem] flex transform-gpu flex-col items-center gap-4 overflow-hidden border-t px-4 pt-4 pb-10 backdrop-blur-lg transition-opacity duration-75"
       class:opacity-0={$isTakingPhoto}
     >
       <!-- Mode Toggle Buttons -->
@@ -352,7 +352,7 @@
             onclick={() => (cameraMode = mode as 'PHOTO' | 'VIDEO' | 'LANDSCAPE')}
             class="cursor-pointer rounded-full px-3.5 py-1 text-xs font-semibold tracking-wider uppercase transition-all duration-200 {cameraMode ===
             mode
-              ? 'scale-105 border border-yellow-400/40 bg-black/60 text-yellow-400 shadow-sm'
+              ? 'shadow-elevation-1 scale-105 border border-yellow-400/40 bg-black/60 text-yellow-400'
               : 'text-on-surface hover:text-on-surface'}"
           >
             {mode}
@@ -375,8 +375,8 @@
               openApp('media');
             }
           }}
-          class="group flex h-12 w-12 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-white/30 bg-black/40 shadow-lg transition-all duration-300 {isThumbnailBouncing
-            ? 'scale-110 border-yellow-400 shadow-xl ring-2 shadow-yellow-400/30 ring-yellow-400/60'
+          class="group shadow-elevation-3 flex h-12 w-12 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-white/30 bg-black/40 transition-all duration-300 {isThumbnailBouncing
+            ? 'shadow-elevation-4 scale-110 border-yellow-400 ring-2 shadow-yellow-400/30 ring-yellow-400/60'
             : 'hover:scale-105'}"
           aria-label="Open Media Gallery"
         >
@@ -394,7 +394,7 @@
         <!-- Center: Shutter Button -->
         <button
           onclick={takePhoto}
-          class="flex h-20 w-20 cursor-pointer items-center justify-center rounded-full border-4 border-white p-1 shadow-2xl transition-transform hover:scale-105 active:scale-95"
+          class="shadow-elevation-5 flex h-20 w-20 cursor-pointer items-center justify-center rounded-full border-4 border-white p-1 transition-transform hover:scale-105 active:scale-95"
           aria-label="Take photo"
         >
           <div
@@ -410,7 +410,7 @@
           <button
             type="button"
             onclick={toggleFlipCamera}
-            class="text-on-surface flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-white/20 bg-white/20 shadow-lg backdrop-blur-md transition-transform hover:bg-white/30 active:rotate-180"
+            class="text-on-surface shadow-elevation-3 flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-white/20 bg-white/20 backdrop-blur-md transition-transform hover:bg-white/30 active:rotate-180"
             aria-label="Flip camera"
           >
             <FlipCameraIcon class="h-6 w-6" />
@@ -427,7 +427,7 @@
        A child of the outer container so it can cross into the controls strip. -->
   {#if flyingPhoto}
     <div
-      class="pointer-events-none absolute z-30 origin-center rounded-lg bg-white p-1.5 shadow-2xl"
+      class="shadow-elevation-5 pointer-events-none absolute z-30 origin-center rounded-lg bg-white p-1.5"
       style="transition: transform {FLY_MS}ms cubic-bezier(0.4, 0, 0.2, 1), opacity {FLY_MS}ms ease-in; {flyingPhoto.box} {flyingPhoto.style}"
     >
       <img src={flyingPhoto.src} alt="" class="h-full w-full rounded-xl object-cover" />

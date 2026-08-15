@@ -208,7 +208,7 @@
             disabled={$busy}></textarea>
           <!-- Markdown Toolbar -->
           <div
-            class="border-outline bg-surface-container absolute right-2 bottom-2 left-2 flex justify-evenly gap-1 rounded-lg border p-1 shadow-lg"
+            class="border-outline bg-surface-container shadow-elevation-3 absolute right-2 bottom-2 left-2 flex justify-evenly gap-1 rounded-lg border p-1"
           >
             <button
               class="text-on-surface hover:bg-surface-container-high rounded p-2 font-bold"
@@ -242,7 +242,7 @@
               >
               {#if showHeadingDropdown}
                 <div
-                  class="border-outline-variant bg-surface-container absolute right-0 bottom-full mb-2 flex min-w-[3rem] flex-col overflow-hidden rounded-lg border shadow-xl"
+                  class="border-outline-variant bg-surface-container shadow-elevation-4 absolute right-0 bottom-full mb-2 flex min-w-[3rem] flex-col overflow-hidden rounded-lg border"
                   transition:fade={{ duration: 100 }}
                 >
                   {#each [1, 2, 3, 4, 5, 6] as level}
@@ -337,7 +337,7 @@
               disabled={$busy}></textarea>
             <!-- Markdown Toolbar -->
             <div
-              class="border-outline bg-surface-container-high absolute right-2 bottom-2 left-2 flex justify-evenly gap-1 rounded-lg border p-1 shadow-lg backdrop-blur"
+              class="border-outline bg-surface-container-high shadow-elevation-3 absolute right-2 bottom-2 left-2 flex justify-evenly gap-1 rounded-lg border p-1 backdrop-blur"
             >
               <button
                 class="text-on-surface hover:bg-surface-container-highest rounded p-2 font-bold"
@@ -371,7 +371,7 @@
                 >
                 {#if showHeadingDropdown}
                   <div
-                    class="border-outline-variant bg-surface-container absolute right-0 bottom-full mb-2 flex min-w-[3rem] flex-col overflow-hidden rounded-lg border shadow-xl"
+                    class="border-outline-variant bg-surface-container shadow-elevation-4 absolute right-0 bottom-full mb-2 flex min-w-[3rem] flex-col overflow-hidden rounded-lg border"
                     transition:fade={{ duration: 100 }}
                   >
                     {#each [1, 2, 3, 4, 5, 6] as level}

@@ -55,7 +55,7 @@
 <!-- `top-20` clears the header rather than guessing at it: the header is one row of padding plus a
      40px icon button, so 5rem lands just below with a hairline of gap. -->
 <div
-  class="animate-in fade-in border-outline-variant bg-surface absolute top-20 right-2 z-40 w-56 overflow-hidden rounded-lg border shadow-xl duration-150"
+  class="animate-in fade-in border-outline-variant bg-surface shadow-elevation-4 absolute top-20 right-2 z-40 w-56 overflow-hidden rounded-lg border duration-150"
 >
   <p
     class="text-on-surface-variant px-3 pt-3 pb-1 text-[11px] font-semibold tracking-wide uppercase"

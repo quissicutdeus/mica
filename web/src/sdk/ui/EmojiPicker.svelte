@@ -50,7 +50,7 @@
 
   {#if expanded}
     <div
-      class="border-outline-variant bg-surface-container-high absolute bottom-full left-0 z-10 mb-2 max-h-64 w-72 overflow-y-auto rounded-xl border p-3 shadow-xl"
+      class="border-outline-variant bg-surface-container-high shadow-elevation-4 absolute bottom-full left-0 z-10 mb-2 max-h-64 w-72 overflow-y-auto rounded-xl border p-3"
       transition:fly={{ y: 8, duration: 150 }}
     >
       <div class="mb-2 flex items-center justify-between">

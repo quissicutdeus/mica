@@ -113,7 +113,7 @@
           Group Members ({currentConv.participants?.length || 0})
         </h4>
         <div
-          class="divide-outline-variant border-outline-variant bg-surface-container divide-y overflow-hidden rounded-xl border shadow-lg"
+          class="divide-outline-variant border-outline-variant bg-surface-container shadow-elevation-3 divide-y overflow-hidden rounded-xl border"
         >
           {#each currentConv.participants || [] as member}
             {@const pContact =

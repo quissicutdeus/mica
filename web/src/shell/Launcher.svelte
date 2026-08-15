@@ -127,7 +127,7 @@
           <div use:attachFolderIcon={cell.position} class="flex flex-col items-center gap-2">
             <button
               type="button"
-              class="bg-surface-container h-14 w-14 cursor-pointer rounded-lg p-1.5 shadow-lg"
+              class="bg-surface-container shadow-elevation-3 h-14 w-14 cursor-pointer rounded-lg p-1.5"
               onclick={() => openFolderId.set(folder.folderId)}
               aria-label={folder.name || 'Folder'}
             >

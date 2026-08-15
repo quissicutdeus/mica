@@ -80,7 +80,7 @@
   {#if replyingTo}
     {@const replySender = getSenderInfo(replyingTo)}
     <div
-      class="bg-surface-container-high border-primary mb-2 flex items-center justify-between rounded-xl border-l-4 p-2 text-xs shadow-sm"
+      class="bg-surface-container-high border-primary shadow-elevation-1 mb-2 flex items-center justify-between rounded-xl border-l-4 p-2 text-xs"
       transition:fly={{ y: 10, duration: 150 }}
     >
       <div class="flex min-w-0 flex-1 flex-col pr-2">
@@ -113,7 +113,7 @@
     <div class="no-scrollbar mb-2 flex gap-2 overflow-x-auto p-1">
       {#each attachments as att}
         <div
-          class="border-outline relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border shadow-md"
+          class="border-outline shadow-elevation-2 relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border"
         >
           <MediaThumb item={att.media} alt="Attachment" />
           <button
@@ -156,7 +156,7 @@
 
     <button
       type="button"
-      class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+      class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-elevation-2 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40"
       onclick={onsend}
       disabled={busy || (!text.trim() && attachments.length === 0)}
       aria-label="Send"
@@ -167,7 +167,7 @@
 
   {#if showAttachMenu}
     <div
-      class="border-outline-variant bg-surface-container absolute bottom-16 left-4 grid w-48 grid-cols-2 gap-2 rounded-xl border p-2 shadow-xl"
+      class="border-outline-variant bg-surface-container shadow-elevation-4 absolute bottom-16 left-4 grid w-48 grid-cols-2 gap-2 rounded-xl border p-2"
       transition:fly={{ y: 20, duration: 200 }}
     >
       <button

@@ -435,7 +435,7 @@
     {#if isComposing}
       <!-- New Message Composition Panel (Sticky overlay directly below header) -->
       <div
-        class="animate-in slide-in-from-top border-outline-variant bg-surface sticky top-0 z-20 space-y-3 border-b p-4 shadow-2xl backdrop-blur-md duration-200"
+        class="animate-in slide-in-from-top border-outline-variant bg-surface shadow-elevation-5 sticky top-0 z-20 space-y-3 border-b p-4 backdrop-blur-md duration-200"
       >
         <div class="border-outline-variant flex items-center justify-between border-b pb-1">
           <h3 class="text-on-surface text-base font-semibold">New Conversation</h3>

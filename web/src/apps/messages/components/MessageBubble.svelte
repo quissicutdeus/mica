@@ -123,7 +123,7 @@
   >
     <button
       type="button"
-      class="min-w-0 flex-1 cursor-pointer rounded-lg px-4 py-2.5 text-left shadow-sm transition-all focus:outline-none {msg.sender ===
+      class="shadow-elevation-1 min-w-0 flex-1 cursor-pointer rounded-lg px-4 py-2.5 text-left transition-all focus:outline-none {msg.sender ===
       'me'
         ? 'bg-primary-container text-on-primary-container rounded-tr-xs'
         : 'bg-surface-container text-on-surface rounded-tl-xs'}"
@@ -206,7 +206,7 @@
     {#if showActions}
       <button
         type="button"
-        class="bg-surface-container-high text-on-surface-variant hover:bg-primary-container hover:text-on-primary-container flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full shadow-md transition-all active:scale-95"
+        class="bg-surface-container-high text-on-surface-variant hover:bg-primary-container hover:text-on-primary-container shadow-elevation-2 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all active:scale-95"
         onclick={(e) => {
           e.stopPropagation();
           onreply?.(msg);

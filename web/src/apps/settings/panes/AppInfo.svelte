@@ -74,7 +74,7 @@
 <div class="space-y-6 p-4">
   <div class="flex items-center gap-3">
     <div
-      class="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg {app.color} shadow-lg"
+      class="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg {app.color} shadow-elevation-3"
     >
       {#if typeof app.icon === 'string' && app.icon.startsWith('http')}
         <img src={app.icon} alt="" class="h-7 w-7 object-contain invert filter" />

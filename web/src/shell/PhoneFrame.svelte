@@ -83,7 +83,7 @@
   transition:fly={{ y: 1000, duration: 500 }}
   data-testid="phone-frame"
   style="width: {PHONE_WIDTH}px; height: {PHONE_HEIGHT}px;"
-  class="relative rounded-[3.5rem] border-[8px] border-gray-950 shadow-2xl ring-1 ring-gray-600 transition-colors duration-200"
+  class="shadow-elevation-5 relative rounded-[3.5rem] border-[8px] border-gray-950 ring-1 ring-gray-600 transition-colors duration-200"
   class:bg-gray-950={!transparent || $isBatteryDead}
 >
   <!-- Hardware Side Buttons -->

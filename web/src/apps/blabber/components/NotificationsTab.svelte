@@ -78,7 +78,7 @@
               <Avatar src={item.avatar} size="md" />
             {:else}
               <div
-                class="text-on-surface flex h-10 w-10 items-center justify-center rounded-full font-bold shadow-sm {kind ===
+                class="text-on-surface shadow-elevation-1 flex h-10 w-10 items-center justify-center rounded-full font-bold {kind ===
                 'follow'
                   ? 'bg-secondary'
                   : kind === 'mention'

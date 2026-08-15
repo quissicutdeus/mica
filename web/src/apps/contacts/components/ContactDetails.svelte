@@ -67,7 +67,7 @@
     />
     <button
       type="button"
-      class="border-surface bg-primary-container text-on-primary-container hover:bg-primary-container-hover absolute right-0 bottom-0 flex items-center justify-center rounded-full border-2 p-2 shadow-lg transition-transform active:scale-95"
+      class="border-surface bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-elevation-3 absolute right-0 bottom-0 flex items-center justify-center rounded-full border-2 p-2 transition-transform active:scale-95"
       onclick={() => onpickphoto()}
       aria-label="Select photo from gallery"
       title="Select photo from gallery"
@@ -151,7 +151,7 @@
   </div>
 
   <!-- Details List / Edit Form -->
-  <div class="bg-surface-container w-full space-y-4 rounded-xl p-4 shadow-lg">
+  <div class="bg-surface-container shadow-elevation-3 w-full space-y-4 rounded-xl p-4">
     {#if isEditing}
       <div class="space-y-3">
         <input
@@ -193,7 +193,7 @@
 
   <!-- Recent Text Messages Card -->
   <div
-    class="border-outline-variant bg-surface-container w-full overflow-hidden rounded-xl border shadow-lg"
+    class="border-outline-variant bg-surface-container shadow-elevation-3 w-full overflow-hidden rounded-xl border"
   >
     <div
       class="border-outline-variant bg-surface-container flex items-center justify-between border-b px-4 py-3"

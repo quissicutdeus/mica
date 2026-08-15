@@ -252,7 +252,7 @@
       width={180}
       height={180}
       onpointerdown={handlePointerDown}
-      class="border-outline-variant cursor-crosshair touch-none rounded-full border shadow-md"
+      class="border-outline-variant shadow-elevation-2 cursor-crosshair touch-none rounded-full border"
     ></canvas>
 
     <!-- Pointer-events off so it never intercepts a drag it is only reporting on. -->

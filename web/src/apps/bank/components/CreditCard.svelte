@@ -6,7 +6,7 @@
 </script>
 
 <div
-  class="text-on-surface mb-8 rounded-lg p-6 shadow-lg"
+  class="text-on-surface shadow-elevation-3 mb-8 rounded-lg p-6"
   style="background-image: linear-gradient(to bottom right, var(--color-purple-600), var(--color-blue-600));"
 >
   <div class="mb-8 flex items-start justify-between">

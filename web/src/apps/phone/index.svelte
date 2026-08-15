@@ -78,7 +78,7 @@
                     initials={(fav.firstname[0] || '') + (fav.lastname?.[0] || '')}
                     size="w-12 h-12"
                     textClass="text-lg"
-                    bgClass="bg-yellow-600 shadow-lg"
+                    bgClass="bg-yellow-600 shadow-elevation-3"
                   />
                   <span class="text-on-surface w-full truncate text-center text-xs"
                     >{fav.firstname}</span
@@ -124,7 +124,7 @@
 
           <!-- Call Button -->
           <button
-            class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-500 shadow-lg shadow-green-500/30 transition-colors hover:bg-green-400"
+            class="shadow-elevation-3 mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-500 shadow-green-500/30 transition-colors hover:bg-green-400"
             aria-label="Call"
             onclick={() => startCall(enteredNumber)}
           >
@@ -156,7 +156,7 @@
         initials={$callStore.name?.[0] || '#'}
         size="w-32 h-32"
         textClass="text-4xl text-on-surface-variant"
-        bgClass="bg-surface-container-high shadow-2xl mb-8"
+        bgClass="bg-surface-container-high shadow-elevation-5 mb-8"
       />
 
       <h2 class="mb-2 px-4 text-center text-3xl font-semibold">
@@ -255,7 +255,7 @@
       <div class="mt-12 mb-8 flex justify-center space-x-8">
         {#if $callStore.status === 'incoming'}
           <button
-            class="flex h-16 w-16 items-center justify-center rounded-full bg-green-500 shadow-lg shadow-green-500/30 transition-colors hover:bg-green-400"
+            class="shadow-elevation-3 flex h-16 w-16 items-center justify-center rounded-full bg-green-500 shadow-green-500/30 transition-colors hover:bg-green-400"
             onclick={() => callStore.answerCall()}
             aria-label="Answer Call"
           >
@@ -264,7 +264,7 @@
         {/if}
 
         <button
-          class="bg-error flex h-16 w-16 items-center justify-center rounded-full shadow-lg shadow-red-500/30 transition-colors hover:bg-red-400"
+          class="bg-error shadow-elevation-3 flex h-16 w-16 items-center justify-center rounded-full shadow-red-500/30 transition-colors hover:bg-red-400"
           onclick={() => callStore.endCall()}
           aria-label="End Call"
         >

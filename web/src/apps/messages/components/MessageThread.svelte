@@ -50,7 +50,7 @@
     <div class="my-2 flex justify-center">
       <button
         type="button"
-        class="border-primary bg-surface-container text-primary hover:bg-surface-container flex cursor-pointer items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium shadow-sm transition-colors"
+        class="border-primary bg-surface-container text-primary hover:bg-surface-container shadow-elevation-1 flex cursor-pointer items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors"
         onclick={onloadmore}
       >
         {#if loadingMore}
@@ -73,7 +73,7 @@
       <div id="unread-divider" class="my-4 flex items-center gap-3 py-1">
         <div class="bg-primary h-px flex-1"></div>
         <span
-          class="border-primary text-primary rounded-full border bg-blue-950/90 px-3 py-1 text-[10px] font-bold tracking-wider uppercase shadow-md"
+          class="border-primary text-primary shadow-elevation-2 rounded-full border bg-blue-950/90 px-3 py-1 text-[10px] font-bold tracking-wider uppercase"
         >
           Unread Messages ({unreadCount})
         </span>

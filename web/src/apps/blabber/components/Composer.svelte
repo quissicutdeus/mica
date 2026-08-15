@@ -82,7 +82,7 @@
     <div class="no-scrollbar mt-2 flex gap-2 overflow-x-auto p-1">
       {#each attachments as att (att.photo_id)}
         <div
-          class="border-outline relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border shadow-md"
+          class="border-outline shadow-elevation-2 relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border"
         >
           <MediaThumb item={att.media} alt="Attachment" />
           <button

@@ -6,7 +6,7 @@
 {#if $volumeHudVisible}
   <div
     transition:fly={{ y: -20, duration: 200 }}
-    class="text-on-surface pointer-events-none absolute top-10 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2.5 rounded-full border border-white/15 bg-black/80 px-4 py-2 shadow-2xl backdrop-blur-lg select-none"
+    class="text-on-surface shadow-elevation-5 pointer-events-none absolute top-10 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2.5 rounded-full border border-white/15 bg-black/80 px-4 py-2 backdrop-blur-lg select-none"
   >
     <!-- Speaker Icon -->
     {#if $soundMuted || $soundVolumePercent === 0}

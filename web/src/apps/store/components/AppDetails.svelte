@@ -55,7 +55,9 @@
   <div class="flex-1 space-y-5 overflow-y-auto p-4">
     <!-- Hero Header Box -->
     <div class="flex flex-col items-center space-y-3 pt-2 text-center">
-      <div class="flex h-20 w-20 items-center justify-center rounded-lg {app.color} shadow-lg">
+      <div
+        class="flex h-20 w-20 items-center justify-center rounded-lg {app.color} shadow-elevation-3"
+      >
         {#if typeof app.icon === 'string' && app.icon.startsWith('http')}
           <img src={app.icon} alt={app.name} class="h-10 w-10 object-contain invert filter" />
         {:else if typeof app.icon === 'function'}
@@ -83,7 +85,7 @@
               onclick={() => {
                 if (app) onopen(app.id);
               }}
-              class="w-full rounded-xl bg-emerald-600 py-2.5 text-xs font-semibold text-white shadow-md transition hover:bg-emerald-500 active:scale-95"
+              class="shadow-elevation-2 w-full rounded-xl bg-emerald-600 py-2.5 text-xs font-semibold text-white transition hover:bg-emerald-500 active:scale-95"
             >
               Open Application
             </button>
@@ -99,7 +101,7 @@
               onclick={() => {
                 if (app) onopen(app.id);
               }}
-              class="flex-1 rounded-xl bg-emerald-600 py-2.5 text-xs font-semibold text-white shadow-md transition hover:bg-emerald-500 active:scale-95"
+              class="shadow-elevation-2 flex-1 rounded-xl bg-emerald-600 py-2.5 text-xs font-semibold text-white transition hover:bg-emerald-500 active:scale-95"
             >
               Open
             </button>
@@ -107,7 +109,7 @@
               onclick={() => {
                 if (app) onuninstall(app);
               }}
-              class="bg-error text-on-error hover:bg-error flex-1 rounded-xl py-2.5 text-xs font-semibold shadow-md transition active:scale-95"
+              class="bg-error text-on-error hover:bg-error shadow-elevation-2 flex-1 rounded-xl py-2.5 text-xs font-semibold transition active:scale-95"
             >
               Uninstall
             </button>
@@ -117,7 +119,7 @@
             onclick={() => {
               if (app) oninstall(app);
             }}
-            class="bg-secondary text-on-secondary hover:bg-secondary w-full rounded-xl py-2.5 text-xs font-semibold shadow-md transition active:scale-95"
+            class="bg-secondary text-on-secondary hover:bg-secondary shadow-elevation-2 w-full rounded-xl py-2.5 text-xs font-semibold transition active:scale-95"
           >
             Install Application
           </button>

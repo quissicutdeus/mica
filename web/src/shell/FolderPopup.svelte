@@ -70,7 +70,7 @@
     role="presentation"
   >
     <div
-      class="bg-surface-container w-full rounded-lg p-5 shadow-2xl"
+      class="bg-surface-container shadow-elevation-5 w-full rounded-lg p-5"
       onclick={(e) => e.stopPropagation()}
       role="presentation"
     >

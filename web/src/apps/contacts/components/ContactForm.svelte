@@ -31,7 +31,7 @@
 </script>
 
 <div
-  class="animate-in slide-in-from-top bg-surface-container border-outline-variant sticky top-0 z-20 space-y-3 border-b p-4 shadow-2xl backdrop-blur-md duration-200"
+  class="animate-in slide-in-from-top bg-surface-container border-outline-variant shadow-elevation-5 sticky top-0 z-20 space-y-3 border-b p-4 backdrop-blur-md duration-200"
 >
   <div class="border-outline-variant flex items-center justify-between border-b pb-1">
     <h3 class="text-on-surface text-base font-semibold">New Contact</h3>
@@ -56,7 +56,7 @@
       />
       <button
         type="button"
-        class="border-surface bg-primary-container text-on-primary-container absolute right-0 bottom-0 flex items-center justify-center rounded-full border-2 p-2 shadow-lg transition-transform hover:brightness-110 active:scale-95"
+        class="border-surface bg-primary-container text-on-primary-container shadow-elevation-3 absolute right-0 bottom-0 flex items-center justify-center rounded-full border-2 p-2 transition-transform hover:brightness-110 active:scale-95"
         onclick={() => onpickphoto()}
         aria-label="Select photo from gallery"
         title="Select photo from gallery"

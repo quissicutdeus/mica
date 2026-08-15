@@ -69,7 +69,9 @@
         >
           <MediaThumb item={photo} />
           {#if selected}
-            <div class="bg-primary absolute top-1.5 right-1.5 rounded-full p-0.5 shadow-md">
+            <div
+              class="bg-primary shadow-elevation-2 absolute top-1.5 right-1.5 rounded-full p-0.5"
+            >
               <CheckCircleIcon class="text-on-primary h-4 w-4" />
             </div>
           {/if}
