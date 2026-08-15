@@ -350,7 +350,7 @@
           <button
             type="button"
             onclick={() => (cameraMode = mode as 'PHOTO' | 'VIDEO' | 'LANDSCAPE')}
-            class="cursor-pointer rounded-full px-3.5 py-1 text-xs font-semibold tracking-wider uppercase transition-all duration-200 {cameraMode ===
+            class="text-body-small cursor-pointer rounded-full px-3.5 py-1 tracking-wider uppercase transition-all duration-200 {cameraMode ===
             mode
               ? 'shadow-elevation-1 scale-105 border border-yellow-400/40 bg-black/60 text-yellow-400'
               : 'text-on-surface hover:text-on-surface'}"

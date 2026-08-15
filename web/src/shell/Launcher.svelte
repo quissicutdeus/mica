@@ -148,7 +148,7 @@
                 {/each}
               </div>
             </button>
-            <span class="text-on-surface max-w-[72px] truncate px-1 text-xs font-medium"
+            <span class="text-on-surface text-body-small max-w-[72px] truncate px-1"
               >{folder.name}</span
             >
           </div>

@@ -82,7 +82,7 @@
        letters are shaved flat against the box edge. `max-w` grew by the same 8px so the
        text still gets its old width before truncating. -->
   <span
-    class="text-on-surface max-w-[72px] truncate px-1 text-xs font-medium"
+    class="text-on-surface text-body-small max-w-[72px] truncate px-1"
     class:text-on-wallpaper={$wallpaperNeedsContrast}>{name}</span
   >
 </button>

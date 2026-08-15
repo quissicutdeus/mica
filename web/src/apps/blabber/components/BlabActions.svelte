@@ -27,7 +27,7 @@
   const count = (n?: number) => (n && n > 0 ? String(n) : '');
 </script>
 
-<div class="text-on-surface-variant mt-2 flex items-center gap-5 text-xs">
+<div class="text-on-surface-variant text-body-small mt-2 flex items-center gap-5">
   <button
     type="button"
     class="hover:text-primary duration-short ease-standard flex items-center gap-1.5 transition-colors"

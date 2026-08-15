@@ -29,7 +29,7 @@
   <div class="mb-2 text-3xl font-bold">
     ${formatCurrency(balance)}
   </div>
-  <div class="text-on-surface font-mono text-sm tracking-wider">
+  <div class="text-on-surface text-body-medium font-mono tracking-wider">
     {hashStringToCardNumber(citizenid)}
   </div>
 </div>

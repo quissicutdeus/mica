@@ -50,7 +50,7 @@
     <div class="my-2 flex justify-center">
       <button
         type="button"
-        class="border-primary bg-surface-container text-primary hover:bg-surface-container shadow-elevation-1 duration-short ease-standard flex cursor-pointer items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors"
+        class="border-primary bg-surface-container text-primary hover:bg-surface-container shadow-elevation-1 duration-short ease-standard text-body-small flex cursor-pointer items-center gap-2 rounded-full border px-3.5 py-1.5 transition-colors"
         onclick={onloadmore}
       >
         {#if loadingMore}

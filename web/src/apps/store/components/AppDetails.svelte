@@ -37,7 +37,7 @@
   >
     <button
       onclick={() => onback()}
-      class="text-secondary hover:text-secondary flex items-center gap-1 text-xs font-semibold transition"
+      class="text-secondary hover:text-secondary text-body-small flex items-center gap-1 transition"
       aria-label="Back to Store"
     >
       <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -45,7 +45,7 @@
       </svg>
       Back
     </button>
-    <span class="text-on-surface-variant text-xs font-bold tracking-wider uppercase">
+    <span class="text-on-surface-variant text-body-small tracking-wider uppercase">
       App Details
     </span>
     <div class="w-10"></div>
@@ -70,7 +70,9 @@
 
       <div>
         <h3 class="text-on-surface text-xl font-bold">{app.name}</h3>
-        <div class="text-on-surface-variant mt-0.5 flex items-center justify-center gap-2 text-xs">
+        <div
+          class="text-on-surface-variant text-body-small mt-0.5 flex items-center justify-center gap-2"
+        >
           <span>{app.author}</span>
           <span>•</span>
           <span>v{app.version || '1.0.0'}</span>
@@ -85,7 +87,7 @@
               onclick={() => {
                 if (app) onopen(app.id);
               }}
-              class="shadow-elevation-2 w-full rounded-xl bg-emerald-600 py-2.5 text-xs font-semibold text-white transition hover:bg-emerald-500 active:scale-95"
+              class="shadow-elevation-2 text-body-small w-full rounded-xl bg-emerald-600 py-2.5 text-white transition hover:bg-emerald-500 active:scale-95"
             >
               Open Application
             </button>
@@ -101,7 +103,7 @@
               onclick={() => {
                 if (app) onopen(app.id);
               }}
-              class="shadow-elevation-2 flex-1 rounded-xl bg-emerald-600 py-2.5 text-xs font-semibold text-white transition hover:bg-emerald-500 active:scale-95"
+              class="shadow-elevation-2 text-body-small flex-1 rounded-xl bg-emerald-600 py-2.5 text-white transition hover:bg-emerald-500 active:scale-95"
             >
               Open
             </button>
@@ -109,7 +111,7 @@
               onclick={() => {
                 if (app) onuninstall(app);
               }}
-              class="bg-error text-on-error hover:bg-error shadow-elevation-2 flex-1 rounded-xl py-2.5 text-xs font-semibold transition active:scale-95"
+              class="bg-error text-on-error hover:bg-error shadow-elevation-2 text-body-small flex-1 rounded-xl py-2.5 transition active:scale-95"
             >
               Uninstall
             </button>
@@ -119,7 +121,7 @@
             onclick={() => {
               if (app) oninstall(app);
             }}
-            class="bg-secondary text-on-secondary hover:bg-secondary shadow-elevation-2 w-full rounded-xl py-2.5 text-xs font-semibold transition active:scale-95"
+            class="bg-secondary text-on-secondary hover:bg-secondary shadow-elevation-2 text-body-small w-full rounded-xl py-2.5 transition active:scale-95"
           >
             Install Application
           </button>
@@ -129,9 +131,9 @@
 
     <!-- Description Card -->
     <div class="space-y-1.5">
-      <h4 class="text-on-surface-variant text-xs font-bold tracking-wider uppercase">About</h4>
+      <h4 class="text-on-surface-variant text-body-small tracking-wider uppercase">About</h4>
       <p
-        class="border-outline-variant bg-surface-container text-on-surface rounded-xl border p-3 text-xs leading-relaxed"
+        class="border-outline-variant bg-surface-container text-on-surface text-body-small rounded-xl border p-3 leading-relaxed"
       >
         {app.description || 'No description provided for this application.'}
       </p>
@@ -139,10 +141,8 @@
 
     <!-- Technical Metadata Grid -->
     <div class="space-y-1.5">
-      <h4 class="text-on-surface-variant text-xs font-bold tracking-wider uppercase">
-        Information
-      </h4>
-      <div class="grid grid-cols-2 gap-2 text-xs">
+      <h4 class="text-on-surface-variant text-body-small tracking-wider uppercase">Information</h4>
+      <div class="text-body-small grid grid-cols-2 gap-2">
         <div class="border-outline-variant bg-surface-container rounded-xl border p-3">
           <span class="text-on-surface-variant block text-[10px] font-medium uppercase">Type</span>
           <span class="text-on-surface font-semibold"
@@ -176,7 +176,7 @@
 
     <!-- Permissions Breakdown -->
     <div class="space-y-1.5 pb-4">
-      <h4 class="text-on-surface-variant text-xs font-bold tracking-wider uppercase">
+      <h4 class="text-on-surface-variant text-body-small tracking-wider uppercase">
         Permissions Requested
       </h4>
       {#if app.permissions && app.permissions.length > 0}
@@ -184,7 +184,7 @@
           {#each app.permissions as perm}
             {@const formatted = formatPermission(perm)}
             <div
-              class="border-outline-variant bg-surface-container text-on-surface flex items-center gap-2 rounded-xl border px-3 py-2 text-xs"
+              class="border-outline-variant bg-surface-container text-on-surface text-body-small flex items-center gap-2 rounded-xl border px-3 py-2"
             >
               <span>{formatted.icon}</span>
               <span>{formatted.label}</span>
@@ -193,7 +193,7 @@
         </div>
       {:else}
         <p
-          class="border-outline-variant bg-surface-container text-on-surface-variant rounded-xl border p-3 text-xs italic"
+          class="border-outline-variant bg-surface-container text-on-surface-variant text-body-small rounded-xl border p-3 italic"
         >
           No special permissions requested.
         </p>

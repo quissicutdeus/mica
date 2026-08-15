@@ -83,7 +83,7 @@
   {/if}
 
   <div class="min-w-0 flex-1">
-    <div class="flex items-baseline gap-1.5 text-xs">
+    <div class="text-body-small flex items-baseline gap-1.5">
       <button
         type="button"
         class="text-on-surface truncate font-semibold hover:underline"
@@ -149,7 +149,7 @@
     {#if onopen && (stats?.replies ?? 0) > 0}
       <button
         type="button"
-        class="text-primary mt-1 text-xs hover:underline"
+        class="text-primary text-body-small mt-1 hover:underline"
         onclick={() => onopen?.(blab)}
       >
         View thread
@@ -157,7 +157,7 @@
     {/if}
 
     {#if editable}
-      <div class="mt-2 flex gap-3 text-xs">
+      <div class="text-body-small mt-2 flex gap-3">
         <button type="button" class="text-primary hover:underline" onclick={() => onedit?.(blab)}>
           Edit
         </button>

@@ -438,7 +438,7 @@
         class="animate-in slide-in-from-top border-outline-variant bg-surface shadow-elevation-5 duration-medium ease-emphasized sticky top-0 z-20 space-y-3 border-b p-4 backdrop-blur-md"
       >
         <div class="border-outline-variant flex items-center justify-between border-b pb-1">
-          <h3 class="text-on-surface text-base font-semibold">New Conversation</h3>
+          <h3 class="text-on-surface text-body-large">New Conversation</h3>
           <button
             type="button"
             class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard rounded-full p-1 transition-colors"
@@ -467,24 +467,28 @@
                 <Avatar src={contact.avatar} initials={contact.firstname[0]} size="w-9 h-9" />
               </div>
               <div class="min-w-0 flex-1">
-                <div class="text-on-surface truncate text-sm font-medium">
+                <div class="text-on-surface text-body-medium truncate">
                   {contact.firstname}
                   {contact.lastname || ''}
                 </div>
-                <div class="text-on-surface-variant text-xs">
+                <div class="text-on-surface-variant text-body-small">
                   {contact.phone}
                 </div>
               </div>
             </ListItem>
           {/each}
           {#if filteredContacts.length === 0}
-            <div class="text-on-surface-variant py-6 text-center text-xs">
+            <div class="text-on-surface-variant text-body-small py-6 text-center">
               No matching contacts found.
             </div>
           {/if}
         </div>
 
-        <Button variant="secondary" class="w-full text-xs" onclick={() => (isComposing = false)}>
+        <Button
+          variant="secondary"
+          class="text-body-small w-full"
+          onclick={() => (isComposing = false)}
+        >
           Cancel
         </Button>
       </div>

@@ -75,8 +75,8 @@
             {conv.targetName || conv.target}
           </span>
           <span
-            class="text-xs {conv.unreadCount > 0
-              ? 'text-primary font-semibold'
+            class="text-body-small {conv.unreadCount > 0
+              ? 'text-primary '
               : 'text-on-surface-variant'} ml-2 whitespace-nowrap"
           >
             {formatRelativeTime(conv.lastMessageAt)}
@@ -90,8 +90,8 @@
             />
           {/if}
           <p
-            class="flex-1 truncate text-sm {conv.unreadCount > 0
-              ? 'text-on-surface font-medium'
+            class="text-body-medium flex-1 truncate {conv.unreadCount > 0
+              ? 'text-on-surface '
               : 'text-on-surface-variant'}"
           >
             {conv.lastMessage || 'No messages'}

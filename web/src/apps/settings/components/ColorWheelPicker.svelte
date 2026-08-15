@@ -263,7 +263,7 @@
   </div>
 
   <!-- Lightness & Transparency Sliders -->
-  <div class="text-on-surface w-full space-y-3 px-2 text-xs">
+  <div class="text-on-surface text-body-small w-full space-y-3 px-2">
     <div class="flex flex-col gap-1">
       <div class="flex justify-between">
         <span class="font-medium">Lightness</span>

@@ -98,12 +98,12 @@
           showSilhouette={false}
         />
         <div class="min-w-0 flex-1">
-          <p class="text-on-surface truncate text-sm font-semibold">
+          <p class="text-on-surface text-body-medium truncate">
             {account.display_name || account.handle}
           </p>
-          <p class="text-on-surface-variant truncate text-xs">@{account.handle}</p>
+          <p class="text-on-surface-variant text-body-small truncate">@{account.handle}</p>
           {#if account.bio}
-            <p class="text-on-surface-variant mt-0.5 line-clamp-2 text-xs">{account.bio}</p>
+            <p class="text-on-surface-variant text-body-small mt-0.5 line-clamp-2">{account.bio}</p>
           {/if}
         </div>
       </ListItem>

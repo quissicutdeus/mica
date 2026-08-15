@@ -45,7 +45,7 @@
 >
   <!-- Modal Header -->
   <div class="border-outline-variant flex items-center justify-between border-b p-4">
-    <h3 class="text-on-surface text-base font-semibold">Conversation Details</h3>
+    <h3 class="text-on-surface text-body-large">Conversation Details</h3>
     <button
       type="button"
       class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard cursor-pointer rounded-full p-1 transition-colors"
@@ -82,7 +82,7 @@
             {/if}
           {/if}
         </div>
-        <p class="text-on-surface-variant text-xs">
+        <p class="text-on-surface-variant text-body-small">
           {currentConv.is_group ? 'Group Conversation' : currentConv.target}
         </p>
       </div>
@@ -91,25 +91,25 @@
     <!-- Group Rename & Participants Section -->
     {#if currentConv.is_group}
       <div class="border-outline-variant bg-surface space-y-2 rounded-xl border p-3">
-        <label for="group-name-input" class="text-on-surface text-xs font-semibold"
-          >Group Name</label
-        >
+        <label for="group-name-input" class="text-on-surface text-body-small">Group Name</label>
         <div class="flex gap-2">
           <input
             id="group-name-input"
             type="text"
             maxlength="50"
             bind:value={editNameValue}
-            class="border-outline-variant bg-surface-container text-on-surface focus:border-primary flex-1 rounded-lg border px-3 py-1.5 text-xs focus:outline-none"
+            class="border-outline-variant bg-surface-container text-on-surface focus:border-primary text-body-small flex-1 rounded-lg border px-3 py-1.5 focus:outline-none"
             placeholder="Enter group name"
           />
-          <Button class="shrink-0 px-3 py-1.5 text-xs" onclick={handleSaveGroupName}>Save</Button>
+          <Button class="text-body-small shrink-0 px-3 py-1.5" onclick={handleSaveGroupName}
+            >Save</Button
+          >
         </div>
       </div>
 
       <!-- Group Participants Section -->
       <div class="space-y-2">
-        <h4 class="text-on-surface-variant px-1 text-xs font-bold tracking-wider uppercase">
+        <h4 class="text-on-surface-variant text-body-small px-1 tracking-wider uppercase">
           Group Members ({currentConv.participants?.length || 0})
         </h4>
         <div
@@ -140,7 +140,7 @@
                 />
                 <div>
                   <p
-                    class="text-on-surface group-hover:text-on-surface duration-short ease-standard text-xs font-semibold transition-colors"
+                    class="text-on-surface group-hover:text-on-surface duration-short ease-standard text-body-small transition-colors"
                   >
                     {pContact
                       ? `${pContact.firstname} ${pContact.lastname || ''}`.trim()
@@ -159,7 +159,7 @@
             </button>
           {/each}
           {#if !currentConv.participants || currentConv.participants.length === 0}
-            <div class="text-on-surface-variant p-3 text-center text-xs">
+            <div class="text-on-surface-variant text-body-small p-3 text-center">
               No member details available.
             </div>
           {/if}
@@ -171,7 +171,7 @@
     <div class="space-y-2 pt-2">
       <Button
         variant="secondary"
-        class="flex w-full items-center justify-center gap-2 py-2.5 text-xs"
+        class="text-body-small flex w-full items-center justify-center gap-2 py-2.5"
         onclick={async () => {
           if (currentConv) {
             const isArchived = currentConv.status === 'archived';
@@ -186,7 +186,7 @@
 
       <Button
         variant="danger"
-        class="flex w-full items-center justify-center gap-2 py-2.5 text-xs"
+        class="text-body-small flex w-full items-center justify-center gap-2 py-2.5"
         onclick={async () => {
           if (currentConv) {
             await conversationsStore.deleteConversation(currentConv.id);

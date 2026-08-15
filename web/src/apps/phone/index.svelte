@@ -65,9 +65,7 @@
         <!-- Favorites Bar -->
         {#if $favoriteContacts.length > 0}
           <div class="mt-4 mb-auto w-full">
-            <div class="text-on-surface-variant mb-2 ml-1 text-xs font-bold uppercase">
-              Favorites
-            </div>
+            <div class="text-on-surface-variant text-body-small mb-2 ml-1 uppercase">Favorites</div>
             <div class="no-scrollbar flex space-x-4 overflow-x-auto pb-2">
               {#each $favoriteContacts as fav}
                 <button
@@ -80,7 +78,7 @@
                     textClass="text-lg"
                     bgClass="bg-yellow-600 shadow-elevation-3"
                   />
-                  <span class="text-on-surface w-full truncate text-center text-xs"
+                  <span class="text-on-surface text-body-small w-full truncate text-center"
                     >{fav.firstname}</span
                   >
                 </button>
@@ -186,7 +184,7 @@
           {/each}
         </div>
         {#if dtmfEntered}
-          <p class="text-on-surface-variant mb-4 font-mono text-sm tracking-widest">
+          <p class="text-on-surface-variant text-body-medium mb-4 font-mono tracking-widest">
             {dtmfEntered}
           </p>
         {/if}
@@ -210,7 +208,7 @@
           >
             <MicrophoneIcon />
           </div>
-          <span class="text-xs">{$callStore.muted ? 'Unmute' : 'Mute'}</span>
+          <span class="text-body-small">{$callStore.muted ? 'Unmute' : 'Mute'}</span>
         </button>
 
         <!-- Keypad: purely local, so the in-call DTMF pad needs no plumbing. -->
@@ -229,7 +227,7 @@
           >
             <KeypadIcon />
           </div>
-          <span class="text-xs">Keypad</span>
+          <span class="text-body-small">Keypad</span>
         </button>
 
         <!-- Speaker -->
@@ -247,7 +245,7 @@
           >
             <SpeakerIcon />
           </div>
-          <span class="text-xs">Speaker</span>
+          <span class="text-body-small">Speaker</span>
         </button>
       </div>
 

@@ -88,7 +88,7 @@
                 {#if kind === 'follow'}
                   <UsersIcon class="text-on-surface h-5 w-5" />
                 {:else if kind === 'mention'}
-                  <span class="text-sm">@</span>
+                  <span class="text-body-medium">@</span>
                 {:else if kind === 'dm'}
                   <MessageIcon class="text-on-surface h-5 w-5" />
                 {:else}
@@ -119,13 +119,13 @@
           <!-- Main Notification Body -->
           <div class="min-w-0 flex-1">
             <div class="flex items-baseline justify-between gap-2">
-              <span class="text-on-surface truncate text-sm font-semibold">{item.title}</span>
+              <span class="text-on-surface text-body-medium truncate">{item.title}</span>
               <span class="text-on-surface-variant shrink-0 text-[11px] font-medium">
                 {formatTime(item.created_at)}
               </span>
             </div>
 
-            <p class="text-on-surface mt-1 line-clamp-2 text-xs leading-relaxed">
+            <p class="text-on-surface text-body-small mt-1 line-clamp-2 leading-relaxed">
               {item.body}
             </p>
           </div>

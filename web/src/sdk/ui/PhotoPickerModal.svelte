@@ -42,7 +42,7 @@
 >
   <!-- Header -->
   <div class="border-outline-variant flex items-center justify-between border-b p-4">
-    <h3 class="text-on-surface flex items-center gap-2 text-base font-semibold">
+    <h3 class="text-on-surface text-body-large flex items-center gap-2">
       <PhotoIcon class="text-primary h-5 w-5" />
       {title}
     </h3>
@@ -89,7 +89,7 @@
 
     {#if $media.length === 0}
       <div
-        class="text-on-surface-variant col-span-3 flex flex-col items-center py-12 text-center text-sm"
+        class="text-on-surface-variant text-body-medium col-span-3 flex flex-col items-center py-12 text-center"
       >
         <PhotoIcon class="text-outline mb-2 h-10 w-10" />
         No photos in gallery.
@@ -103,7 +103,7 @@
       {#if selectedCount > 0}
         <Button
           variant="danger"
-          class="flex-1 py-2 text-xs"
+          class="text-body-small flex-1 py-2"
           onclick={() => {
             // Clear all — parent handles resetting the array
             for (const id of [...selectedIds]) {
@@ -115,16 +115,18 @@
           Clear Selection
         </Button>
       {/if}
-      <Button class="flex-1 py-2 text-xs" onclick={onclose}>
+      <Button class="text-body-small flex-1 py-2" onclick={onclose}>
         Done {selectedCount > 0 ? `(${selectedCount})` : ''}
       </Button>
     {:else}
       {#if showRemove}
-        <Button variant="danger" class="flex-1 py-2 text-xs" onclick={() => onselect?.('')}>
+        <Button variant="danger" class="text-body-small flex-1 py-2" onclick={() => onselect?.('')}>
           Remove Photo
         </Button>
       {/if}
-      <Button variant="secondary" class="flex-1 py-2 text-xs" onclick={onclose}>Cancel</Button>
+      <Button variant="secondary" class="text-body-small flex-1 py-2" onclick={onclose}
+        >Cancel</Button
+      >
     {/if}
   </div>
 </div>

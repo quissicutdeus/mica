@@ -314,7 +314,7 @@
 {#if !visible && isBrowser()}
   <button
     onclick={() => (visible = true)}
-    class="shadow-elevation-5 duration-short ease-standard fixed right-4 bottom-4 z-[9999] flex cursor-pointer items-center gap-2 rounded-full border border-gray-700 bg-gray-900/90 px-4 py-2 text-xs font-medium text-white backdrop-blur-md transition-all hover:bg-gray-800"
+    class="shadow-elevation-5 duration-short ease-standard text-body-small fixed right-4 bottom-4 z-[9999] flex cursor-pointer items-center gap-2 rounded-full border border-gray-700 bg-gray-900/90 px-4 py-2 text-white backdrop-blur-md transition-all hover:bg-gray-800"
   >
     <span class="relative flex h-2 w-2">
       <span

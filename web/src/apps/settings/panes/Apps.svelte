@@ -38,11 +38,11 @@
 {#snippet group(heading: string, apps: AppManifest[], note: string)}
   {#if apps.length > 0}
     <div>
-      <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
+      <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
         {heading}
       </h2>
       <div
-        class="divide-outline-variant bg-surface-container divide-y overflow-hidden rounded-xl text-sm"
+        class="divide-outline-variant bg-surface-container text-body-medium divide-y overflow-hidden rounded-xl"
       >
         {#each apps as app (app.id)}
           <button
@@ -59,18 +59,20 @@
                 {@const IconComp = app.icon}
                 <IconComp />
               {:else}
-                <span class="text-on-surface text-sm font-bold">{app.name.charAt(0)}</span>
+                <span class="text-on-surface text-body-medium">{app.name.charAt(0)}</span>
               {/if}
             </div>
             <div class="min-w-0 flex-1">
               <span class="text-on-surface block truncate font-medium">{app.name}</span>
-              <span class="text-on-surface-variant block truncate text-xs">{sizeOf(app)}</span>
+              <span class="text-on-surface-variant text-body-small block truncate"
+                >{sizeOf(app)}</span
+              >
             </div>
             <ChevronRightIcon class="text-on-surface-variant h-4 w-4 shrink-0" />
           </button>
         {/each}
       </div>
-      <p class="text-on-surface-variant mt-1.5 px-2 text-xs">{note}</p>
+      <p class="text-on-surface-variant text-body-small mt-1.5 px-2">{note}</p>
     </div>
   {/if}
 {/snippet}

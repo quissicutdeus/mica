@@ -47,7 +47,7 @@
 
     <span
       data-testid="volume-hud-percent"
-      class="min-w-[28px] text-xs font-semibold tracking-wider text-white/90"
+      class="text-body-small min-w-[28px] tracking-wider text-white/90"
     >
       {$soundVolumePercent}%
     </span>

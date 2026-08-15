@@ -169,11 +169,11 @@
               {/if}
             {/if}
             {#if t.title}
-              <h4 class="text-on-surface mb-0.5 truncate text-xs font-bold tracking-tight">
+              <h4 class="text-on-surface text-body-small mb-0.5 truncate tracking-tight">
                 {t.title}
               </h4>
             {/if}
-            <p class="text-on-surface truncate text-xs leading-snug font-medium">
+            <p class="text-on-surface text-body-small truncate leading-snug">
               {t.message}
             </p>
           </div>
@@ -200,7 +200,7 @@
           >
             <input
               type="text"
-              class="border-outline-variant bg-surface-container-lowest text-on-surface placeholder-on-surface-variant focus:ring-primary flex-1 rounded-xl border px-3 py-1.5 text-xs focus:ring-1 focus:outline-none"
+              class="border-outline-variant bg-surface-container-lowest text-on-surface placeholder-on-surface-variant focus:ring-primary text-body-small flex-1 rounded-xl border px-3 py-1.5 focus:ring-1 focus:outline-none"
               placeholder={t.replyPlaceholder || 'Type a reply...'}
               bind:value={replyInputs[t.id]}
               onfocus={() => toast.pauseDismiss(t.id)}
@@ -234,7 +234,7 @@
             {#each t.actions as act}
               <button
                 type="button"
-                class="shadow-elevation-2 cursor-pointer rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-all {getActionBtnClass(
+                class="shadow-elevation-2 text-body-small cursor-pointer rounded-xl px-3.5 py-1.5 transition-all {getActionBtnClass(
                   act.variant
                 )} duration-short ease-standard"
                 onclick={(e) => handleActionClick(t, act, e)}

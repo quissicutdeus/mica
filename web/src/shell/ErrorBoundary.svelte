@@ -53,7 +53,7 @@
         </svg>
       </div>
       <h2 class="text-on-surface mb-1 text-xl font-bold">App Stopped Working</h2>
-      <p class="text-on-surface-variant mb-6 text-sm">
+      <p class="text-on-surface-variant text-body-medium mb-6">
         The <span class="text-on-surface font-semibold capitalize">{appName}</span> app encountered an
         unexpected error.
       </p>
@@ -80,7 +80,7 @@
 
       {#if import.meta.env.DEV && stackOf(error)}
         <div
-          class="border-error bg-error-container text-on-error-container mt-6 max-h-32 w-full overflow-auto rounded-lg border p-3 text-left font-mono text-xs"
+          class="border-error bg-error-container text-on-error-container text-body-small mt-6 max-h-32 w-full overflow-auto rounded-lg border p-3 text-left font-mono"
         >
           {stackOf(error)}
         </div>

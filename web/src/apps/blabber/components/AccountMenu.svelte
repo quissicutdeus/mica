@@ -81,9 +81,7 @@
         showSilhouette={false}
       />
       <span class="min-w-0 flex-1">
-        <span class="block truncate text-xs font-semibold"
-          >{account.display_name || account.handle}</span
-        >
+        <span class="text-body-small block truncate">{account.display_name || account.handle}</span>
         <span class="text-on-surface-variant block truncate text-[11px]">@{account.handle}</span>
       </span>
       {#if active}
@@ -95,7 +93,7 @@
   <div class="border-outline-variant border-t">
     <button
       type="button"
-      class="text-on-surface hover:bg-surface-container duration-short ease-standard w-full cursor-pointer px-3 py-2.5 text-left text-xs transition-colors"
+      class="text-on-surface hover:bg-surface-container duration-short ease-standard text-body-small w-full cursor-pointer px-3 py-2.5 text-left transition-colors"
       onclick={onedit}
     >
       Edit profile
@@ -103,7 +101,7 @@
     {#if canClaim}
       <button
         type="button"
-        class="text-on-surface hover:bg-surface-container duration-short ease-standard w-full cursor-pointer px-3 py-2.5 text-left text-xs transition-colors"
+        class="text-on-surface hover:bg-surface-container duration-short ease-standard text-body-small w-full cursor-pointer px-3 py-2.5 text-left transition-colors"
         onclick={onclaim}
       >
         Claim another handle

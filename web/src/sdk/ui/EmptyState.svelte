@@ -21,7 +21,7 @@
   {/if}
   <p class="text-lg font-medium">{title}</p>
   {#if description}
-    <p class="text-outline mt-1 max-w-[80%] text-center text-sm leading-relaxed">
+    <p class="text-outline text-body-medium mt-1 max-w-[80%] text-center leading-relaxed">
       {description}
     </p>
   {/if}

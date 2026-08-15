@@ -185,7 +185,7 @@
       </div>
     {:else}
       <div class="flex flex-col">
-        <span class="text-on-surface-variant text-xs tracking-wider uppercase">Phone</span>
+        <span class="text-on-surface-variant text-body-small tracking-wider uppercase">Phone</span>
         <span class="text-lg">{contact.phone}</span>
       </div>
     {/if}
@@ -200,14 +200,14 @@
     >
       <div class="flex items-center gap-2">
         <MessageIcon class="text-primary h-4 w-4" />
-        <h4 class="text-on-surface text-xs font-bold tracking-wider uppercase">
+        <h4 class="text-on-surface text-body-small tracking-wider uppercase">
           Recent Text Messages
         </h4>
       </div>
       {#if messageCount > 0}
         <button
           type="button"
-          class="text-primary hover:text-primary duration-short ease-standard cursor-pointer text-xs font-semibold transition-colors"
+          class="text-primary hover:text-primary duration-short ease-standard text-body-small cursor-pointer transition-colors"
           onclick={onmessage}
         >
           View All ({messageCount})
@@ -226,9 +226,7 @@
             <div class="min-w-0 flex-1">
               <div class="mb-1 flex items-center gap-2">
                 <span
-                  class="text-xs font-bold {msg.sender === 'me'
-                    ? 'text-primary'
-                    : 'text-on-surface'}"
+                  class="text-body-small {msg.sender === 'me' ? 'text-primary' : 'text-on-surface'}"
                 >
                   {msg.sender === 'me' ? 'You' : contact.firstname}
                 </span>
@@ -237,7 +235,7 @@
                   {formatRelativeTime(msg.created_at)}
                 </span>
               </div>
-              <p class="text-on-surface truncate text-xs leading-relaxed">
+              <p class="text-on-surface text-body-small truncate leading-relaxed">
                 {msg.message}
               </p>
             </div>
@@ -248,12 +246,14 @@
         {/each}
       </div>
     {:else}
-      <div class="text-on-surface-variant flex flex-col items-center gap-2 p-6 text-center text-xs">
+      <div
+        class="text-on-surface-variant text-body-small flex flex-col items-center gap-2 p-6 text-center"
+      >
         <MessageIcon class="text-outline mb-1 h-8 w-8" />
         <span>No recent messages with {contact.firstname}.</span>
         <button
           type="button"
-          class="border-primary bg-primary-container text-on-primary-container hover:bg-primary-container-hover duration-short ease-standard mt-1 cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-all"
+          class="border-primary bg-primary-container text-on-primary-container hover:bg-primary-container-hover duration-short ease-standard text-body-small mt-1 cursor-pointer rounded-full border px-3 py-1 transition-all"
           onclick={onmessage}
         >
           Send Text Message

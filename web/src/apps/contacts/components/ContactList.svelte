@@ -45,7 +45,7 @@
           <StarIcon class="ml-1.5 h-4 w-4 shrink-0 text-yellow-400" />
         {/if}
       </div>
-      <span class="text-on-surface-variant text-xs">{contact.phone}</span>
+      <span class="text-on-surface-variant text-body-small">{contact.phone}</span>
     </div>
   </ListItem>
 {/snippet}
@@ -54,7 +54,7 @@
   {#if favorites.length > 0}
     <div>
       <div
-        class="bg-surface-container border-outline-variant text-on-surface-variant sticky top-0 z-10 border-b px-4 py-1 text-xs font-bold tracking-wider uppercase backdrop-blur"
+        class="bg-surface-container border-outline-variant text-on-surface-variant text-body-small sticky top-0 z-10 border-b px-4 py-1 tracking-wider uppercase backdrop-blur"
       >
         Favorites
       </div>
@@ -69,7 +69,7 @@
   {#if others.length > 0}
     <div>
       <div
-        class="bg-surface-container border-outline-variant text-on-surface-variant sticky top-0 z-10 border-b px-4 py-1 text-xs font-bold tracking-wider uppercase backdrop-blur"
+        class="bg-surface-container border-outline-variant text-on-surface-variant text-body-small sticky top-0 z-10 border-b px-4 py-1 tracking-wider uppercase backdrop-blur"
       >
         Contacts
       </div>

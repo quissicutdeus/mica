@@ -35,7 +35,7 @@
     {@const isMine = mine.includes(emoji)}
     <button
       type="button"
-      class="flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors {isMine
+      class="text-body-small flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 transition-colors {isMine
         ? 'bg-primary-container border-primary text-on-primary-container'
         : 'bg-surface-container border-outline-variant text-on-surface-variant hover:border-outline'} duration-short ease-standard"
       onclick={() => toggle(emoji)}

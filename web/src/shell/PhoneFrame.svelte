@@ -174,9 +174,7 @@
             </div>
           </div>
           <div class="flex flex-col items-center gap-1.5 text-center">
-            <span class="text-xs font-semibold tracking-wider text-red-400 uppercase"
-              >Battery Low</span
-            >
+            <span class="text-body-small tracking-wider text-red-400 uppercase">Battery Low</span>
             <span class="text-[11px] font-light text-gray-400">Connect Battery Bank</span>
           </div>
         </div>
@@ -188,7 +186,7 @@
       <button
         bind:this={statusBarRef}
         type="button"
-        class="text-on-surface duration-short ease-standard absolute top-0 z-60 flex w-full cursor-pointer items-center justify-between px-8 pt-3 text-sm font-medium transition-opacity hover:opacity-90 active:opacity-75"
+        class="text-on-surface duration-short ease-standard text-body-medium absolute top-0 z-60 flex w-full cursor-pointer items-center justify-between px-8 pt-3 transition-opacity hover:opacity-90 active:opacity-75"
         onclick={() => ($isShadeOpen ? closeShade() : openShade())}
         aria-label={$isShadeOpen ? 'Close notification shade' : 'Open notification shade'}
       >
@@ -208,7 +206,9 @@
                seeded, so using it here would render "battery getting low" in whatever
                hue the player picked, which is not what a warning color is for. -->
           <div class="flex items-center gap-1.5">
-            <span class="text-xs" class:text-error={$displayCharge <= 20}>{$displayCharge}%</span>
+            <span class="text-body-small" class:text-error={$displayCharge <= 20}
+              >{$displayCharge}%</span
+            >
             <div
               class="border-on-surface-variant relative flex h-2.5 w-5 items-center justify-start rounded-[3px] border p-[1px]"
             >

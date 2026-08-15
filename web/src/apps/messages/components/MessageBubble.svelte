@@ -109,7 +109,7 @@
         textClass="text-[9px]"
         bgClass="bg-surface-container border border-outline-variant"
       />
-      <span class="text-primary text-xs font-semibold group-hover/sender:underline">
+      <span class="text-primary text-body-small group-hover/sender:underline">
         {senderInfo.name}
       </span>
     </button>
@@ -134,7 +134,7 @@
         <div
           role="button"
           tabindex="0"
-          class="border-primary bg-surface-container-high hover:bg-surface-container-highest duration-short ease-standard mb-2 flex w-full flex-col overflow-hidden rounded-lg border-l-4 p-2 text-left text-xs transition-colors select-none"
+          class="border-primary bg-surface-container-high hover:bg-surface-container-highest duration-short ease-standard text-body-small mb-2 flex w-full flex-col overflow-hidden rounded-lg border-l-4 p-2 text-left transition-colors select-none"
           onclick={(e) => {
             e.stopPropagation();
             onscrollto?.(msg.replyToMsg!.id);
@@ -187,7 +187,7 @@
                   <div class="h-24 w-full">
                     <MediaThumb item={media} fit="contain" />
                   </div>
-                  <span class="text-primary px-2 py-1.5 text-xs font-semibold">Add Waypoint</span>
+                  <span class="text-primary text-body-small px-2 py-1.5">Add Waypoint</span>
                 </div>
               {:else}
                 <div class="max-w-full overflow-hidden rounded-lg">
@@ -198,7 +198,7 @@
           {/each}
         </div>
       {/if}
-      <p class="text-sm leading-relaxed whitespace-pre-wrap">
+      <p class="text-body-medium leading-relaxed whitespace-pre-wrap">
         {msg.message}
       </p>
     </button>

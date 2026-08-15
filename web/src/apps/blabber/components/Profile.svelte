@@ -173,19 +173,21 @@
       showSilhouette={false}
     />
     <div class="min-w-0">
-      <p class="text-on-surface truncate text-base font-bold">
+      <p class="text-on-surface text-body-large truncate">
         {account?.display_name || handle}
       </p>
-      <p class="text-on-surface-variant truncate text-xs">@{handle}{mine ? ' · you' : ''}</p>
+      <p class="text-on-surface-variant text-body-small truncate">
+        @{handle}{mine ? ' · you' : ''}
+      </p>
       {#if account?.bio}
-        <p class="text-on-surface mt-1 text-xs">{account.bio}</p>
+        <p class="text-on-surface text-body-small mt-1">{account.bio}</p>
       {/if}
       {#if stats}
         <!-- Buttons now that there is somewhere to go. `onfollows` is optional, so a caller that
              has no list screen still gets the numbers rather than a dead control — and the markup
              says which it is, because a count that looks tappable and is not is the same broken
              promise the other way round. -->
-        <p class="text-on-surface-variant mt-1 flex gap-3 text-xs">
+        <p class="text-on-surface-variant text-body-small mt-1 flex gap-3">
           {#each counts as entry (entry.kind)}
             {#if onfollows && account}
               <button
@@ -213,13 +215,18 @@
         {#if $activeAccount}
           <Button
             variant={stats?.followedByMe ? 'secondary' : 'primary'}
-            class="px-3 py-1.5 text-xs"
+            class="text-body-small px-3 py-1.5"
             disabled={$busy}
             onclick={follow}
           >
             {stats?.followedByMe ? 'Following' : 'Follow'}
           </Button>
-          <Button variant="secondary" class="px-3 py-1.5 text-xs" disabled={$busy} onclick={block}>
+          <Button
+            variant="secondary"
+            class="text-body-small px-3 py-1.5"
+            disabled={$busy}
+            onclick={block}
+          >
             {stats?.blockedByMe ? 'Unblock' : 'Block'}
           </Button>
         {/if}

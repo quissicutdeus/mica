@@ -24,7 +24,7 @@
   const tokens = $derived(tokenizeRichText(body));
 </script>
 
-<p class="text-on-surface text-sm leading-relaxed break-words whitespace-pre-wrap">
+<p class="text-on-surface text-body-medium leading-relaxed break-words whitespace-pre-wrap">
   {#each tokens as token, i (i)}
     {#if token.kind === 'mention'}
       <button

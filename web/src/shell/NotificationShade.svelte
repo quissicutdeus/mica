@@ -301,7 +301,7 @@
     <div class="mb-4 flex items-center justify-between px-6">
       <div class="flex items-baseline gap-2">
         <h2 class="text-on-surface text-lg font-bold tracking-tight">Notifications</h2>
-        <span class="text-primary text-xs font-semibold tracking-wider uppercase">
+        <span class="text-primary text-body-small tracking-wider uppercase">
           {showHistory ? 'Archive' : 'Active'}
         </span>
       </div>
@@ -361,7 +361,7 @@
           <div
             class="text-on-surface-variant flex h-full flex-col items-center justify-center space-y-2"
           >
-            <p class="text-sm">Loading archive...</p>
+            <p class="text-body-medium">Loading archive...</p>
           </div>
         {:else if historyItems.length === 0}
           <div
@@ -373,8 +373,10 @@
               <ArchiveIcon class="text-on-surface-variant h-7 w-7" />
             </div>
             <div>
-              <p class="text-on-surface text-sm font-semibold">No Archive Yet</p>
-              <p class="text-on-surface-variant text-xs">Cleared notifications will appear here</p>
+              <p class="text-on-surface text-body-medium">No Archive Yet</p>
+              <p class="text-on-surface-variant text-body-small">
+                Cleared notifications will appear here
+              </p>
             </div>
           </div>
         {:else}
@@ -410,7 +412,7 @@
                     <!-- Content Area -->
                     <div class="min-w-0 flex-1 space-y-0.5">
                       <div class="flex items-center justify-between gap-2">
-                        <span class="text-primary text-xs font-semibold tracking-wide uppercase">
+                        <span class="text-primary text-body-small tracking-wide uppercase">
                           {item.app}
                         </span>
                         <div class="flex items-center gap-2">
@@ -429,11 +431,11 @@
                         </div>
                       </div>
 
-                      <h3 class="text-on-surface truncate text-sm font-semibold">
+                      <h3 class="text-on-surface text-body-medium truncate">
                         {item.title}
                       </h3>
 
-                      <p class="text-on-surface line-clamp-2 text-xs leading-relaxed">
+                      <p class="text-on-surface text-body-small line-clamp-2 leading-relaxed">
                         {item.body}
                       </p>
                     </div>
@@ -470,7 +472,7 @@
                       <div class="min-w-0 flex-1 space-y-0.5">
                         <div class="flex items-center justify-between gap-2">
                           <div class="flex items-center gap-2">
-                            <span class="text-primary text-xs font-bold tracking-wide uppercase">
+                            <span class="text-primary text-body-small tracking-wide uppercase">
                               {group.app}
                             </span>
                             <span
@@ -502,10 +504,10 @@
                           </div>
                         </div>
 
-                        <h3 class="text-on-surface truncate text-sm font-semibold">
+                        <h3 class="text-on-surface text-body-medium truncate">
                           {group.latest.title}
                         </h3>
-                        <p class="text-on-surface-variant line-clamp-1 text-xs">
+                        <p class="text-on-surface-variant text-body-small line-clamp-1">
                           {group.latest.body}
                         </p>
                       </div>
@@ -534,7 +536,7 @@
                           >
                             <div class="min-w-0 flex-1 space-y-0.5">
                               <div class="flex items-center justify-between gap-2">
-                                <h4 class="text-on-surface truncate text-xs font-semibold">
+                                <h4 class="text-on-surface text-body-small truncate">
                                   {childItem.title}
                                 </h4>
                                 <div class="flex items-center gap-1.5">
@@ -552,7 +554,9 @@
                                   </button>
                                 </div>
                               </div>
-                              <p class="text-on-surface line-clamp-2 text-xs leading-relaxed">
+                              <p
+                                class="text-on-surface text-body-small line-clamp-2 leading-relaxed"
+                              >
                                 {childItem.body}
                               </p>
                             </div>
@@ -579,7 +583,7 @@
               <CheckIcon class="h-8 w-8 text-emerald-400" />
             </div>
             <div>
-              <p class="text-on-surface text-base font-semibold">No New Notifications</p>
+              <p class="text-on-surface text-body-large">No New Notifications</p>
             </div>
           </div>
         {:else}
@@ -615,7 +619,7 @@
                     <!-- Content Area -->
                     <div class="min-w-0 flex-1 space-y-0.5">
                       <div class="flex items-center justify-between gap-2">
-                        <span class="text-primary text-xs font-semibold tracking-wide uppercase">
+                        <span class="text-primary text-body-small tracking-wide uppercase">
                           {item.app}
                         </span>
                         <div class="flex items-center gap-2">
@@ -634,11 +638,11 @@
                         </div>
                       </div>
 
-                      <h3 class="text-on-surface truncate text-sm font-semibold">
+                      <h3 class="text-on-surface text-body-medium truncate">
                         {item.title}
                       </h3>
 
-                      <p class="text-on-surface line-clamp-2 text-xs leading-relaxed">
+                      <p class="text-on-surface text-body-small line-clamp-2 leading-relaxed">
                         {item.body}
                       </p>
                     </div>
@@ -675,7 +679,7 @@
                       <div class="min-w-0 flex-1 space-y-0.5">
                         <div class="flex items-center justify-between gap-2">
                           <div class="flex items-center gap-2">
-                            <span class="text-primary text-xs font-bold tracking-wide uppercase">
+                            <span class="text-primary text-body-small tracking-wide uppercase">
                               {group.app}
                             </span>
                             <span
@@ -707,10 +711,10 @@
                           </div>
                         </div>
 
-                        <h3 class="text-on-surface truncate text-sm font-semibold">
+                        <h3 class="text-on-surface text-body-medium truncate">
                           {group.latest.title}
                         </h3>
-                        <p class="text-on-surface-variant line-clamp-1 text-xs">
+                        <p class="text-on-surface-variant text-body-small line-clamp-1">
                           {group.latest.body}
                         </p>
                       </div>
@@ -739,7 +743,7 @@
                           >
                             <div class="min-w-0 flex-1 space-y-0.5">
                               <div class="flex items-center justify-between gap-2">
-                                <h4 class="text-on-surface truncate text-xs font-semibold">
+                                <h4 class="text-on-surface text-body-small truncate">
                                   {childItem.title}
                                 </h4>
                                 <div class="flex items-center gap-1.5">
@@ -757,7 +761,9 @@
                                   </button>
                                 </div>
                               </div>
-                              <p class="text-on-surface line-clamp-2 text-xs leading-relaxed">
+                              <p
+                                class="text-on-surface text-body-small line-clamp-2 leading-relaxed"
+                              >
                                 {childItem.body}
                               </p>
                             </div>

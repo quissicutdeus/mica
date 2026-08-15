@@ -28,18 +28,18 @@
 
 <div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
   <h2 class="text-on-surface text-lg font-bold">Pick a handle</h2>
-  <p class="text-on-surface-variant text-xs">
+  <p class="text-on-surface-variant text-body-small">
     This is how people find you. Lowercase letters, numbers and underscores, 3–32 characters.
   </p>
 
   <div class="bg-surface-container flex w-full items-center gap-1 rounded-lg px-3">
-    <span class="text-on-surface-variant text-sm">@</span>
+    <span class="text-on-surface-variant text-body-medium">@</span>
     <input
       bind:value={handle}
       maxlength="32"
       placeholder="handle"
       autocapitalize="none"
-      class="text-on-surface placeholder-on-surface-variant w-full bg-transparent py-2.5 text-sm focus:outline-none"
+      class="text-on-surface placeholder-on-surface-variant text-body-medium w-full bg-transparent py-2.5 focus:outline-none"
       oninput={() => (handle = handle.toLowerCase())}
     />
   </div>

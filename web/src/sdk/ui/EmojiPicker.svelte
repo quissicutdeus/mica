@@ -54,7 +54,7 @@
       transition:fly={{ y: 8, duration: 150 }}
     >
       <div class="mb-2 flex items-center justify-between">
-        <span class="text-on-surface-variant text-xs font-semibold">Emoji</span>
+        <span class="text-on-surface-variant text-body-small">Emoji</span>
         <button
           type="button"
           class="text-on-surface-variant hover:text-on-surface cursor-pointer"
@@ -74,7 +74,7 @@
           {#each category.emoji as emoji (emoji)}
             <button
               type="button"
-              class="hover:bg-surface-container flex h-7 w-7 cursor-pointer items-center justify-center rounded text-base"
+              class="hover:bg-surface-container text-body-large flex h-7 w-7 cursor-pointer items-center justify-center rounded"
               onclick={() => pick(emoji)}
               aria-label="React with {emoji}"
             >

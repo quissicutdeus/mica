@@ -59,7 +59,7 @@
         placeholder="Message"
         maxlength={LIMIT}
         rows="1"
-        class="text-on-surface placeholder-on-surface-variant h-[22px] max-h-32 min-h-[22px] w-full resize-none bg-transparent p-0 text-sm leading-normal focus:outline-none"
+        class="text-on-surface placeholder-on-surface-variant text-body-medium h-[22px] max-h-32 min-h-[22px] w-full resize-none bg-transparent p-0 leading-normal focus:outline-none"
         onkeydown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();

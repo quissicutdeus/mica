@@ -80,7 +80,7 @@
   {#if replyingTo}
     {@const replySender = getSenderInfo(replyingTo)}
     <div
-      class="bg-surface-container-high border-primary shadow-elevation-1 mb-2 flex items-center justify-between rounded-xl border-l-4 p-2 text-xs"
+      class="bg-surface-container-high border-primary shadow-elevation-1 text-body-small mb-2 flex items-center justify-between rounded-xl border-l-4 p-2"
       transition:fly={{ y: 10, duration: 150 }}
     >
       <div class="flex min-w-0 flex-1 flex-col pr-2">
@@ -142,7 +142,7 @@
       class="bg-surface-container-high text-on-surface focus-within:border-primary focus-within:ring-primary flex flex-1 items-center rounded-lg border border-transparent px-3.5 py-1.5 focus-within:ring-1"
     >
       <textarea
-        class="no-scrollbar text-on-surface placeholder-on-surface-variant h-[22px] max-h-32 min-h-[22px] w-full resize-none bg-transparent p-0 text-sm leading-normal focus:outline-none"
+        class="no-scrollbar text-on-surface placeholder-on-surface-variant text-body-medium h-[22px] max-h-32 min-h-[22px] w-full resize-none bg-transparent p-0 leading-normal focus:outline-none"
         placeholder="Message"
         rows="1"
         bind:value={text}
@@ -179,7 +179,7 @@
         >
           <PhotoIcon class="h-5 w-5" />
         </div>
-        <span class="text-xs">Photo</span>
+        <span class="text-body-small">Photo</span>
       </button>
       <button
         class="hover:bg-surface-container-high duration-short ease-standard flex flex-col items-center justify-center rounded-lg p-3 transition-colors"
@@ -190,7 +190,7 @@
         >
           <LocationIcon class="h-5 w-5" />
         </div>
-        <span class="text-xs">Location</span>
+        <span class="text-body-small">Location</span>
       </button>
     </div>
   {/if}
