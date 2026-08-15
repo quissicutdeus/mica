@@ -6,13 +6,14 @@
   import AppIcon from '../sdk/ui/AppIcon.svelte';
   import { appRegistryStore } from './state/registry';
   import { isAdmin } from '../services/admin';
+  import { homeGridItems, openFolderId, renameFolder, type HomeGridFolder } from './state/homeGrid';
   import {
-    homeGridItems,
-    openFolderId,
-    renameFolder,
-    type HomeGridFolder
-  } from './state/homeGrid';
-  import { iconDragState, resolveDropAtPoint, resolveIconDrop, startIconDrag, moveIconDrag } from './state/iconDrag';
+    iconDragState,
+    resolveDropAtPoint,
+    resolveIconDrop,
+    startIconDrag,
+    moveIconDrag
+  } from './state/iconDrag';
 
   let { openApp } = $props<{ openApp: (id: string) => void }>();
 
@@ -69,7 +70,7 @@
     role="presentation"
   >
     <div
-      class="bg-surface-container w-full rounded-2xl p-5 shadow-2xl"
+      class="bg-surface-container w-full rounded-lg p-5 shadow-2xl"
       onclick={(e) => e.stopPropagation()}
       role="presentation"
     >

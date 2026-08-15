@@ -44,7 +44,7 @@
   onclick={handleClick}
 >
   <div
-    class="h-14 w-14 rounded-2xl {color} relative flex cursor-pointer items-center justify-center shadow-lg transition-transform group-hover:scale-105 group-active:scale-95"
+    class="h-14 w-14 rounded-lg {color} relative flex cursor-pointer items-center justify-center shadow-lg transition-transform group-hover:scale-105 group-active:scale-95"
   >
     {#if typeof Icon === 'string'}
       <img src={Icon} alt={name} class="pointer-events-none h-8 w-8 object-contain" />

@@ -106,7 +106,7 @@
            both simpler and guaranteed to match what the phone will actually do. Only the
            wallpaper is inline, because it is generated rather than a token. -->
       <div
-        class="border-outline relative flex w-[132px] flex-col overflow-hidden rounded-2xl border-2 shadow-lg"
+        class="border-outline relative flex w-[132px] flex-col overflow-hidden rounded-lg border-2 shadow-lg"
         style={`aspect-ratio: 400 / 850; background: ${background};`}
       >
         <div class="text-on-surface flex items-center justify-between px-2 pt-1.5 text-[7px]">

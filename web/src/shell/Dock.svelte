@@ -78,7 +78,7 @@
           }}
         />
       {:else}
-        <div class="border-outline-variant h-14 w-14 rounded-2xl border border-dashed"></div>
+        <div class="border-outline-variant h-14 w-14 rounded-lg border border-dashed"></div>
       {/if}
     </div>
   {/each}

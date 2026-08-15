@@ -55,7 +55,7 @@
   <div class="flex-1 space-y-5 overflow-y-auto p-4">
     <!-- Hero Header Box -->
     <div class="flex flex-col items-center space-y-3 pt-2 text-center">
-      <div class="flex h-20 w-20 items-center justify-center rounded-2xl {app.color} shadow-lg">
+      <div class="flex h-20 w-20 items-center justify-center rounded-lg {app.color} shadow-lg">
         {#if typeof app.icon === 'string' && app.icon.startsWith('http')}
           <img src={app.icon} alt={app.name} class="h-10 w-10 object-contain invert filter" />
         {:else if typeof app.icon === 'function'}

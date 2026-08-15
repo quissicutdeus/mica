@@ -368,7 +368,7 @@
             class="text-on-surface-variant flex h-full flex-col items-center justify-center space-y-3 text-center"
           >
             <div
-              class="bg-surface ring-outline-variant flex h-14 w-14 items-center justify-center rounded-2xl ring-1"
+              class="bg-surface ring-outline-variant flex h-14 w-14 items-center justify-center rounded-lg ring-1"
             >
               <ArchiveIcon class="text-on-surface-variant h-7 w-7" />
             </div>
@@ -386,7 +386,7 @@
                 <SwipeableRow onCommit={() => restoreSingle(item.id)}>
                   <div
                     transition:fly={{ y: 10, duration: 150 }}
-                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface relative flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 opacity-90 shadow-lg backdrop-blur-md transition-all hover:opacity-100 active:scale-[0.99]"
+                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface relative flex cursor-pointer items-start gap-3 rounded-lg border p-3.5 opacity-90 shadow-lg backdrop-blur-md transition-all hover:opacity-100 active:scale-[0.99]"
                     onclick={() => handleRowClick(item)}
                     role="button"
                     tabindex={0}
@@ -442,7 +442,7 @@
               {:else}
                 <!-- Grouped Collapsible Archive Stack -->
                 <div
-                  class="border-outline-variant bg-surface rounded-2xl border p-3.5 opacity-90 shadow-xl backdrop-blur-md hover:opacity-100"
+                  class="border-outline-variant bg-surface rounded-lg border p-3.5 opacity-90 shadow-xl backdrop-blur-md hover:opacity-100"
                 >
                   <!-- Group Header Card -->
                   <SwipeableRow onCommit={() => restoreGroup(group.app)}>
@@ -574,7 +574,7 @@
             class="flex h-full w-full flex-col items-center justify-center space-y-3.5 text-center select-none"
           >
             <div
-              class="bg-surface ring-outline-variant flex h-16 w-16 items-center justify-center rounded-2xl shadow-md ring-1"
+              class="bg-surface ring-outline-variant flex h-16 w-16 items-center justify-center rounded-lg shadow-md ring-1"
             >
               <CheckIcon class="h-8 w-8 text-emerald-400" />
             </div>
@@ -591,7 +591,7 @@
                 <SwipeableRow onCommit={() => clearSingle(item.id)}>
                   <div
                     transition:fly={{ y: 10, duration: 150 }}
-                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface relative flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 shadow-lg backdrop-blur-md transition-all active:scale-[0.99]"
+                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface relative flex cursor-pointer items-start gap-3 rounded-lg border p-3.5 shadow-lg backdrop-blur-md transition-all active:scale-[0.99]"
                     onclick={() => handleRowClick(item)}
                     role="button"
                     tabindex={0}
@@ -647,7 +647,7 @@
               {:else}
                 <!-- Grouped Collapsible App Stack -->
                 <div
-                  class="border-outline-variant bg-surface rounded-2xl border p-3.5 shadow-xl backdrop-blur-md"
+                  class="border-outline-variant bg-surface rounded-lg border p-3.5 shadow-xl backdrop-blur-md"
                 >
                   <!-- Group Header Card -->
                   <SwipeableRow onCommit={() => clearGroup(group.app)}>

@@ -258,7 +258,7 @@
 
       {#if isSelectionMode && selectedIds.size > 0}
         <div
-          class="border-outline-variant bg-surface-container absolute right-4 bottom-4 left-4 flex items-center justify-between rounded-2xl border p-4 shadow-2xl backdrop-blur-md"
+          class="border-outline-variant bg-surface-container absolute right-4 bottom-4 left-4 flex items-center justify-between rounded-lg border p-4 shadow-2xl backdrop-blur-md"
           transition:fade
         >
           <span class="text-on-surface font-medium">{selectedIds.size} Selected</span>

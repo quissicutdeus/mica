@@ -104,7 +104,7 @@
            forty lines of markup to satisfy a static analysis rather than a user. -->
       <div
         transition:fly={{ y: -20, duration: 250 }}
-        class="pointer-events-auto flex cursor-pointer flex-col space-y-2.5 rounded-2xl border p-3 shadow-2xl backdrop-blur-2xl transition-all hover:scale-[1.01] active:scale-[0.99] {getBgColor(
+        class="pointer-events-auto flex cursor-pointer flex-col space-y-2.5 rounded-lg border p-3 shadow-2xl backdrop-blur-2xl transition-all hover:scale-[1.01] active:scale-[0.99] {getBgColor(
           t.type
         )}"
         onclick={async () => {

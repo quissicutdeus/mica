@@ -167,7 +167,7 @@
           {@const mine = message.to_account === peer}
           <div class="flex px-4 py-1.5" class:justify-end={mine}>
             <div
-              class="max-w-[80%] rounded-2xl px-3 py-2"
+              class="max-w-[80%] rounded-lg px-3 py-2"
               class:bg-primary={mine}
               class:bg-surface-container={!mine}
             >

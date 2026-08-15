@@ -270,14 +270,14 @@
         'ring-2',
         'ring-primary',
         'bg-surface-container-highest',
-        'rounded-2xl'
+        'rounded-lg'
       );
       setTimeout(() => {
         targetEl.classList.remove(
           'ring-2',
           'ring-primary',
           'bg-surface-container-highest',
-          'rounded-2xl'
+          'rounded-lg'
         );
       }, 1500);
     }
