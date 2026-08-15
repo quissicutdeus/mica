@@ -70,7 +70,7 @@
   class="bg-scrim absolute inset-0 z-50 flex items-end backdrop-blur-sm"
   transition:fade={{ duration: 150 }}
 >
-  <div class="bg-surface max-h-full w-full overflow-y-auto rounded-t-3xl p-5">
+  <div class="bg-surface max-h-full w-full overflow-y-auto rounded-t-xl p-5">
     <h3 class="text-on-surface mb-1 text-lg font-bold">Report content</h3>
     <p class="text-on-surface-variant mb-4 text-sm">
       A moderator reviews this. The author is not told.
