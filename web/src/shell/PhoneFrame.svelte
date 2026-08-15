@@ -136,7 +136,7 @@
   <div
     bind:this={screenElement}
     data-testid="phone-screen"
-    class="relative h-full w-full overflow-hidden rounded-[3rem] transition-colors duration-200"
+    class="rounded-frame-inner relative h-full w-full overflow-hidden transition-colors duration-200"
     style={`${!transparent && !$isBatteryDead ? `background: ${wallpaper};` : ''} ${themeStyle}`}
     class:bg-black={$isBatteryDead}
     class:bg-transparent={transparent && !$isBatteryDead}
@@ -160,7 +160,7 @@
         <div class="relative flex animate-pulse flex-col items-center justify-center gap-6">
           <!-- Battery Outer Container -->
           <div
-            class="relative flex h-14 w-28 items-center justify-start rounded-2xl border-4 border-red-500/80 p-1.5 shadow-[0_0_20px_rgba(239,68,68,0.3)]"
+            class="relative flex h-14 w-28 items-center justify-start rounded-lg border-4 border-red-500/80 p-1.5 shadow-[0_0_20px_rgba(239,68,68,0.3)]"
           >
             <!-- Battery Nipple -->
             <div

@@ -261,13 +261,13 @@
      one. -->
 <div
   bind:this={containerRef}
-  class="text-on-surface relative flex h-full flex-col overflow-hidden rounded-[3rem] select-none"
+  class="text-on-surface rounded-frame-inner relative flex h-full flex-col overflow-hidden select-none"
   class:bg-black={isBrowser()}
 >
   <!-- Live Viewfinder / Camera View -->
   <div
     bind:this={viewfinderRef}
-    class="relative flex flex-1 flex-col justify-between overflow-hidden rounded-[3rem] p-4"
+    class="rounded-frame-inner relative flex flex-1 flex-col justify-between overflow-hidden p-4"
     class:bg-black={isBrowser()}
   >
     <!-- Mock Browser Viewfinder Background Image (Displayed in browser mode when FiveM 3D world is not running) -->
@@ -341,7 +341,7 @@
          in-game photo is a crop of this exact region, so anything still on screen ends
          up inside the picture. -->
     <div
-      class="bg-surface-container border-outline-variant text-on-surface relative z-10 mx-[-1rem] mb-[-1rem] flex transform-gpu flex-col items-center gap-4 overflow-hidden rounded-b-[3rem] border-t px-4 pt-4 pb-10 shadow-2xl backdrop-blur-lg transition-opacity duration-75"
+      class="bg-surface-container border-outline-variant text-on-surface rounded-b-frame-inner relative z-10 mx-[-1rem] mb-[-1rem] flex transform-gpu flex-col items-center gap-4 overflow-hidden border-t px-4 pt-4 pb-10 shadow-2xl backdrop-blur-lg transition-opacity duration-75"
       class:opacity-0={$isTakingPhoto}
     >
       <!-- Mode Toggle Buttons -->
@@ -427,7 +427,7 @@
        A child of the outer container so it can cross into the controls strip. -->
   {#if flyingPhoto}
     <div
-      class="pointer-events-none absolute z-30 origin-center rounded-2xl bg-white p-1.5 shadow-2xl"
+      class="pointer-events-none absolute z-30 origin-center rounded-lg bg-white p-1.5 shadow-2xl"
       style="transition: transform {FLY_MS}ms cubic-bezier(0.4, 0, 0.2, 1), opacity {FLY_MS}ms ease-in; {flyingPhoto.box} {flyingPhoto.style}"
     >
       <img src={flyingPhoto.src} alt="" class="h-full w-full rounded-xl object-cover" />
