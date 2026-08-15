@@ -112,7 +112,7 @@
         <div class="text-on-surface text-label-small flex items-center justify-between px-2 pt-1.5">
           <span class:text-on-wallpaper={wallpaper.type === 'image'}>{$formattedTime}</span>
           <span
-            class="border-on-surface h-1.5 w-3 rounded-[2px] border"
+            class="border-on-surface h-1.5 w-3 rounded-xs border"
             class:text-on-wallpaper={wallpaper.type === 'image'}
           ></span>
         </div>
@@ -120,7 +120,7 @@
         <div class="grid flex-1 grid-cols-3 content-start gap-x-2 gap-y-1.5 px-2 pt-3">
           {#each DEMO_TILES as tile (tile)}
             <div class="flex flex-col items-center gap-0.5">
-              <div class="size-icon-lg rounded-[7px] {tile}"></div>
+              <div class="size-icon-lg rounded-sm {tile}"></div>
               <span
                 class="text-on-surface h-0.5 w-4 rounded-full bg-current opacity-70"
                 class:text-on-wallpaper={wallpaper.type === 'image'}

@@ -83,7 +83,7 @@
   transition:fly={{ y: 1000, duration: 500 }}
   data-testid="phone-frame"
   style="width: {PHONE_WIDTH}px; height: {PHONE_HEIGHT}px;"
-  class="shadow-elevation-5 duration-medium ease-emphasized relative rounded-[3.5rem] border-[8px] border-gray-950 ring-1 ring-gray-600 transition-colors"
+  class="shadow-elevation-5 duration-medium ease-emphasized rounded-frame-inner relative border-[8px] border-gray-950 ring-1 ring-gray-600 transition-colors"
   class:bg-gray-950={!transparent || $isBatteryDead}
 >
   <!-- Hardware Side Buttons -->
@@ -210,13 +210,13 @@
               >{$displayCharge}%</span
             >
             <div
-              class="border-on-surface-variant relative flex h-2.5 w-5 items-center justify-start rounded-[3px] border p-[1px]"
+              class="border-on-surface-variant relative flex h-2.5 w-5 items-center justify-start rounded-xs border p-[1px]"
             >
               <div
-                class="bg-on-surface-variant absolute top-1/2 -right-[3px] h-1 w-[2px] -translate-y-1/2 rounded-r-[1px]"
+                class="bg-on-surface-variant absolute top-1/2 -right-[3px] h-1 w-[2px] -translate-y-1/2 rounded-r-none"
               ></div>
               <div
-                class="duration-medium ease-emphasized h-full rounded-[1px] transition-all"
+                class="duration-medium ease-emphasized h-full rounded-none transition-all"
                 class:bg-error={$displayCharge <= 20}
                 class:bg-yellow-400={$displayCharge > 20 && $displayCharge <= 40}
                 class:bg-on-surface={$displayCharge > 40}
