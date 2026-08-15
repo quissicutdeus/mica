@@ -14,6 +14,7 @@
   import LightningWarningIcon from '../sdk/ui/icons/LightningWarningIcon.svelte';
   import SignalIcon from '../sdk/ui/icons/SignalIcon.svelte';
   import BluetoothIcon from '../sdk/ui/icons/BluetoothIcon.svelte';
+  import BatteryIcon from '../sdk/ui/icons/BatteryIcon.svelte';
   import VolumeHud from './VolumeHud.svelte';
   import NotificationShade from './NotificationShade.svelte';
   import DragGhost from './DragGhost.svelte';
@@ -197,32 +198,11 @@
           {/if}
           <SignalIcon level={$clampedSignalLevel} />
 
-          <!-- Battery Status Indicator.
-
-               The fill is a traffic light, so only two thirds of it is themed. Red maps
-               to `error`, which is safe because M3's error palette is fixed rather than
-               generated from the seed — it is red under every theme. Yellow has no role
-               to map to and stays a raw palette class deliberately: `tertiary` *is*
-               seeded, so using it here would render "battery getting low" in whatever
-               hue the player picked, which is not what a warning color is for. -->
           <div class="flex items-center gap-1.5">
             <span class="text-body-small" class:text-error={$displayCharge <= 20}
               >{$displayCharge}%</span
             >
-            <div
-              class="border-on-surface-variant relative flex h-2.5 w-5 items-center justify-start rounded-xs border p-[1px]"
-            >
-              <div
-                class="bg-on-surface-variant absolute top-1/2 -right-[3px] h-1 w-[2px] -translate-y-1/2 rounded-r-none"
-              ></div>
-              <div
-                class="duration-medium ease-emphasized h-full rounded-none transition-all"
-                class:bg-error={$displayCharge <= 20}
-                class:bg-yellow-400={$displayCharge > 20 && $displayCharge <= 40}
-                class:bg-on-surface={$displayCharge > 40}
-                style="width: {Math.max(8, $displayCharge)}%;"
-              ></div>
-            </div>
+            <BatteryIcon class="h-3 w-6" charge={$displayCharge} />
           </div>
         </div>
       </button>

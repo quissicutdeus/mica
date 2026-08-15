@@ -6,6 +6,7 @@
 export { default as AddIcon } from './ui/icons/AddIcon.svelte';
 export { default as ArchiveIcon } from './ui/icons/ArchiveIcon.svelte';
 export { default as BackspaceIcon } from './ui/icons/BackspaceIcon.svelte';
+export { default as BatteryIcon } from './ui/icons/BatteryIcon.svelte';
 export { default as BellIcon } from './ui/icons/BellIcon.svelte';
 export { default as BluetoothIcon } from './ui/icons/BluetoothIcon.svelte';
 export { default as CheckCircleIcon } from './ui/icons/CheckCircleIcon.svelte';
