@@ -44,7 +44,7 @@
   onclick={handleClick}
 >
   <div
-    class="h-14 w-14 rounded-2xl {color} relative flex cursor-pointer items-center justify-center shadow-lg transition-transform group-hover:scale-105 group-active:scale-95"
+    class="h-14 w-14 rounded-lg {color} shadow-elevation-3 duration-short ease-standard relative flex cursor-pointer items-center justify-center transition-transform group-hover:scale-105 group-active:scale-95"
   >
     {#if typeof Icon === 'string'}
       <img src={Icon} alt={name} class="pointer-events-none h-8 w-8 object-contain" />
@@ -61,12 +61,12 @@
            design, so most of that ring sat on the photograph rather than on the icon.
 
            What the ring bought was separation from a same-colored tile, and Admin is the
-           case that shows it: a red badge on a red tile. `shadow-md` is what carries that
+           case that shows it: a red badge on a red tile. `shadow-elevation-2` is what carries that
            now. If it turns out not to be enough, the answer is a ring in a color that
            belongs to the badge rather than to the surface behind it.
            -->
       <div
-        class="bg-error text-on-error absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full px-1 text-[10px] font-bold shadow-md"
+        class="bg-error text-on-error shadow-elevation-2 absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full px-1 text-[10px] font-bold"
       >
         {displayBadge > 99 ? '99+' : displayBadge}
       </div>
@@ -82,7 +82,7 @@
        letters are shaved flat against the box edge. `max-w` grew by the same 8px so the
        text still gets its old width before truncating. -->
   <span
-    class="text-on-surface max-w-[72px] truncate px-1 text-xs font-medium"
+    class="text-on-surface text-body-small max-w-[72px] truncate px-1"
     class:text-on-wallpaper={$wallpaperNeedsContrast}>{name}</span
   >
 </button>

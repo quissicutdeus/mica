@@ -6,7 +6,7 @@
 </script>
 
 <div
-  class="text-on-surface mb-8 rounded-2xl p-6 shadow-lg"
+  class="text-on-surface shadow-elevation-3 mb-8 rounded-lg p-6"
   style="background-image: linear-gradient(to bottom right, var(--color-purple-600), var(--color-blue-600));"
 >
   <div class="mb-8 flex items-start justify-between">
@@ -29,7 +29,7 @@
   <div class="mb-2 text-3xl font-bold">
     ${formatCurrency(balance)}
   </div>
-  <div class="text-on-surface font-mono text-sm tracking-wider">
+  <div class="text-on-surface text-body-medium font-mono tracking-wider">
     {hashStringToCardNumber(citizenid)}
   </div>
 </div>

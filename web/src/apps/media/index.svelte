@@ -160,7 +160,7 @@
 {#snippet headerActions()}
   {#if !selectedPhoto}
     <button
-      class="text-primary hover:bg-surface-container-high ml-auto rounded-full p-2 font-semibold transition-colors"
+      class="text-primary hover:bg-surface-container-high duration-short ease-standard ml-auto rounded-full p-2 font-semibold transition-colors"
       onclick={toggleSelectionMode}
     >
       {isSelectionMode ? 'Cancel' : 'Select'}
@@ -180,7 +180,7 @@
         class="border-outline-variant flex justify-between border-t bg-black/80 p-4 pb-8 backdrop-blur"
       >
         <button
-          class="text-primary hover:text-primary p-2 transition-colors"
+          class="text-primary hover:text-primary duration-short ease-standard p-2 transition-colors"
           aria-label="Send to nearby devices"
           disabled={$busy}
           onclick={sendNearby}
@@ -189,7 +189,7 @@
         </button>
         <ReportButton subject="photo" size="header" onclick={() => (reporting = true)} />
         <button
-          class="text-error hover:text-error p-2 transition-colors"
+          class="text-error hover:text-error duration-short ease-standard p-2 transition-colors"
           aria-label="Delete photo"
           onclick={() => (showDeleteConfirm = true)}
         >
@@ -236,7 +236,7 @@
                 alt="Capture {photo.id}"
                 class="transition-opacity {isSelectionMode && selectedIds.has(photo.id)
                   ? 'opacity-50'
-                  : 'group-hover:opacity-80'}"
+                  : 'group-hover:opacity-80'} duration-short ease-standard"
               />
               {#if isSelectionMode}
                 <div
@@ -258,7 +258,7 @@
 
       {#if isSelectionMode && selectedIds.size > 0}
         <div
-          class="border-outline-variant bg-surface-container absolute right-4 bottom-4 left-4 flex items-center justify-between rounded-2xl border p-4 shadow-2xl backdrop-blur-md"
+          class="border-outline-variant bg-surface-container shadow-elevation-5 absolute right-4 bottom-4 left-4 flex items-center justify-between rounded-lg border p-4 backdrop-blur-md"
           transition:fade
         >
           <span class="text-on-surface font-medium">{selectedIds.size} Selected</span>

@@ -83,13 +83,13 @@
   transition:fly={{ y: 1000, duration: 500 }}
   data-testid="phone-frame"
   style="width: {PHONE_WIDTH}px; height: {PHONE_HEIGHT}px;"
-  class="relative rounded-[3.5rem] border-[8px] border-gray-950 shadow-2xl ring-1 ring-gray-600 transition-colors duration-200"
+  class="shadow-elevation-5 duration-medium ease-emphasized relative rounded-[3.5rem] border-[8px] border-gray-950 ring-1 ring-gray-600 transition-colors"
   class:bg-gray-950={!transparent || $isBatteryDead}
 >
   <!-- Hardware Side Buttons -->
   <!-- Power / Screen Off Button -->
   <button
-    class="absolute top-[180px] -right-[13px] h-12 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600"
+    class="duration-short ease-standard absolute top-[180px] -right-[13px] h-12 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600"
     onclick={onClose}
     title="Power / Screen Off"
     aria-label="Power / Screen Off"
@@ -98,14 +98,14 @@
   <!-- Volume Buttons -->
   <div class="absolute top-[250px] -right-[13px] flex flex-col gap-2">
     <button
-      class="h-10 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-800 disabled:active:bg-gray-800"
+      class="duration-short ease-standard h-10 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-800 disabled:active:bg-gray-800"
       onclick={() => stepVolume(1)}
       disabled={$isBatteryDead}
       title="Volume Up"
       aria-label="Volume Up"
     ></button>
     <button
-      class="h-10 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-800 disabled:active:bg-gray-800"
+      class="duration-short ease-standard h-10 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-800 disabled:active:bg-gray-800"
       onclick={() => stepVolume(-1)}
       disabled={$isBatteryDead}
       title="Volume Down"
@@ -136,7 +136,7 @@
   <div
     bind:this={screenElement}
     data-testid="phone-screen"
-    class="relative h-full w-full overflow-hidden rounded-[3rem] transition-colors duration-200"
+    class="rounded-frame-inner duration-medium ease-emphasized relative h-full w-full overflow-hidden transition-colors"
     style={`${!transparent && !$isBatteryDead ? `background: ${wallpaper};` : ''} ${themeStyle}`}
     class:bg-black={$isBatteryDead}
     class:bg-transparent={transparent && !$isBatteryDead}
@@ -160,7 +160,7 @@
         <div class="relative flex animate-pulse flex-col items-center justify-center gap-6">
           <!-- Battery Outer Container -->
           <div
-            class="relative flex h-14 w-28 items-center justify-start rounded-2xl border-4 border-red-500/80 p-1.5 shadow-[0_0_20px_rgba(239,68,68,0.3)]"
+            class="relative flex h-14 w-28 items-center justify-start rounded-lg border-4 border-red-500/80 p-1.5 shadow-[0_0_20px_rgba(239,68,68,0.3)]"
           >
             <!-- Battery Nipple -->
             <div
@@ -174,9 +174,7 @@
             </div>
           </div>
           <div class="flex flex-col items-center gap-1.5 text-center">
-            <span class="text-xs font-semibold tracking-wider text-red-400 uppercase"
-              >Battery Low</span
-            >
+            <span class="text-body-small tracking-wider text-red-400 uppercase">Battery Low</span>
             <span class="text-[11px] font-light text-gray-400">Connect Battery Bank</span>
           </div>
         </div>
@@ -188,7 +186,7 @@
       <button
         bind:this={statusBarRef}
         type="button"
-        class="text-on-surface absolute top-0 z-60 flex w-full cursor-pointer items-center justify-between px-8 pt-3 text-sm font-medium transition-opacity hover:opacity-90 active:opacity-75"
+        class="text-on-surface duration-short ease-standard text-body-medium absolute top-0 z-60 flex w-full cursor-pointer items-center justify-between px-8 pt-3 transition-opacity hover:opacity-90 active:opacity-75"
         onclick={() => ($isShadeOpen ? closeShade() : openShade())}
         aria-label={$isShadeOpen ? 'Close notification shade' : 'Open notification shade'}
       >
@@ -208,7 +206,9 @@
                seeded, so using it here would render "battery getting low" in whatever
                hue the player picked, which is not what a warning color is for. -->
           <div class="flex items-center gap-1.5">
-            <span class="text-xs" class:text-error={$displayCharge <= 20}>{$displayCharge}%</span>
+            <span class="text-body-small" class:text-error={$displayCharge <= 20}
+              >{$displayCharge}%</span
+            >
             <div
               class="border-on-surface-variant relative flex h-2.5 w-5 items-center justify-start rounded-[3px] border p-[1px]"
             >
@@ -216,7 +216,7 @@
                 class="bg-on-surface-variant absolute top-1/2 -right-[3px] h-1 w-[2px] -translate-y-1/2 rounded-r-[1px]"
               ></div>
               <div
-                class="h-full rounded-[1px] transition-all duration-300"
+                class="duration-medium ease-emphasized h-full rounded-[1px] transition-all"
                 class:bg-error={$displayCharge <= 20}
                 class:bg-yellow-400={$displayCharge > 20 && $displayCharge <= 40}
                 class:bg-on-surface={$displayCharge > 40}
@@ -259,7 +259,7 @@
       aria-label={$isShadeOpen ? 'Collapse notifications' : 'Return to home screen'}
     >
       <div
-        class="h-1 w-1/3 rounded-full bg-white/80 transition-colors duration-200 hover:bg-white"
+        class="duration-medium ease-emphasized h-1 w-1/3 rounded-full bg-white/80 transition-colors hover:bg-white"
       ></div>
     </button>
   </div>

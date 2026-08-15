@@ -91,7 +91,7 @@
           {#each $trendingTags as t (t.tag)}
             <button
               type="button"
-              class="bg-surface-container text-on-surface rounded-full px-3 py-1.5 text-xs font-medium"
+              class="bg-surface-container text-on-surface text-body-small rounded-full px-3 py-1.5"
               onclick={() => ontag?.(t.tag)}
             >
               #{t.tag} · {t.uses}
@@ -111,10 +111,10 @@
             class="hover:bg-surface-container flex w-full items-center gap-3 px-4 py-3 text-left"
             onclick={() => onhandle?.(account.handle)}
           >
-            <span class="text-on-surface text-sm font-semibold">
+            <span class="text-on-surface text-body-medium">
               {account.display_name || account.handle}
             </span>
-            <span class="text-on-surface-variant text-xs">@{account.handle}</span>
+            <span class="text-on-surface-variant text-body-small">@{account.handle}</span>
           </button>
         {/each}
       {/if}
@@ -143,8 +143,8 @@
           class="hover:bg-surface-container flex w-full items-center justify-between px-4 py-3 text-left"
           onclick={() => ontag?.(t.tag)}
         >
-          <span class="text-on-surface text-sm font-semibold">#{t.tag}</span>
-          <span class="text-on-surface-variant text-xs">{t.uses} Blabs</span>
+          <span class="text-on-surface text-body-medium">#{t.tag}</span>
+          <span class="text-on-surface-variant text-body-small">{t.uses} Blabs</span>
         </button>
       {/each}
     {/if}

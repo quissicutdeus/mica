@@ -60,13 +60,13 @@
 
 <div class="p-4">
   <h2
-    class="text-on-surface-variant mb-2 flex items-center justify-between px-2 text-sm font-medium tracking-wider uppercase"
+    class="text-on-surface-variant text-body-medium mb-2 flex items-center justify-between px-2 tracking-wider uppercase"
   >
     <span>Shortcuts</span>
     <button
       type="button"
       onclick={resetBindings}
-      class="text-on-surface-variant hover:text-on-surface cursor-pointer rounded px-1.5 py-0.5 text-[10px] normal-case transition-colors"
+      class="text-on-surface-variant hover:text-on-surface duration-short ease-standard cursor-pointer rounded px-1.5 py-0.5 text-[10px] normal-case transition-colors"
     >
       Reset to defaults
     </button>
@@ -75,31 +75,31 @@
        rebound in the game's own Key Bindings menu — while the phone is open the game
        receives no control input, and a mapping could never fire. -->
   <div
-    class="divide-outline-variant bg-surface-container divide-y overflow-hidden rounded-xl text-sm"
+    class="divide-outline-variant bg-surface-container text-body-medium divide-y overflow-hidden rounded-xl"
   >
     {#each actions as action (action.id)}
       <button
         type="button"
         data-testid="shortcut-{action.id}"
         onclick={() => (capturingId = action.id)}
-        class="hover:bg-surface-container-high flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+        class="hover:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
       >
         <span class="text-on-surface font-medium">{action.label}</span>
         {#if capturingId === action.id}
           <span
-            class="text-secondary animate-pulse rounded border border-indigo-600 bg-indigo-950 px-2 py-0.5 font-mono text-xs"
+            class="text-secondary text-body-small animate-pulse rounded border border-indigo-600 bg-indigo-950 px-2 py-0.5 font-mono"
           >
             Press a key…
           </span>
         {:else}
-          <span class="bg-surface text-on-surface rounded px-2 py-0.5 font-mono text-xs">
+          <span class="bg-surface text-on-surface text-body-small rounded px-2 py-0.5 font-mono">
             {describeKey($bindings[action.id])}
           </span>
         {/if}
       </button>
     {/each}
   </div>
-  <p class="text-on-surface-variant mt-2 px-2 text-xs">
+  <p class="text-on-surface-variant text-body-small mt-2 px-2">
     Open Phone is bound in FiveM's own Key Bindings menu.
   </p>
 </div>

@@ -81,13 +81,13 @@
       {:else}
         <div class="space-y-4">
           {#each $pendingReports as report (report.id)}
-            <div class="bg-surface-container overflow-hidden rounded-xl text-sm">
+            <div class="bg-surface-container text-body-medium overflow-hidden rounded-xl">
               <div class="flex items-start justify-between gap-3 p-4">
                 <div class="min-w-0">
                   <p class="text-error font-medium">
                     {CATEGORY_LABELS[report.category] ?? report.category}
                   </p>
-                  <p class="text-on-surface-variant mt-0.5 text-xs">
+                  <p class="text-on-surface-variant text-body-small mt-0.5">
                     reported {formatRelativeTime(report.created_at)}
                   </p>
                 </div>
@@ -113,7 +113,9 @@
                   </p>
                 {/if}
                 {#if report.note}
-                  <p class="border-outline text-on-surface-variant mt-2 border-l-2 pl-2 text-xs">
+                  <p
+                    class="border-outline text-on-surface-variant text-body-small mt-2 border-l-2 pl-2"
+                  >
                     {report.note}
                   </p>
                 {/if}
@@ -124,7 +126,7 @@
                   type="button"
                   disabled={$busy}
                   onclick={() => (confirming = { report, action: 'dismiss' })}
-                  class="bg-surface-container text-on-surface hover:bg-surface-container-high cursor-pointer py-3 font-medium transition-colors disabled:opacity-50"
+                  class="bg-surface-container text-on-surface hover:bg-surface-container-high duration-short ease-standard cursor-pointer py-3 font-medium transition-colors disabled:opacity-50"
                 >
                   Allow — no action
                 </button>
@@ -132,7 +134,7 @@
                   type="button"
                   disabled={$busy}
                   onclick={() => (confirming = { report, action: 'moderate' })}
-                  class="bg-surface-container text-error hover:bg-surface-container-high cursor-pointer py-3 font-medium transition-colors disabled:opacity-50"
+                  class="bg-surface-container text-error hover:bg-surface-container-high duration-short ease-standard cursor-pointer py-3 font-medium transition-colors disabled:opacity-50"
                 >
                   Remove for everyone
                 </button>
@@ -146,14 +148,14 @@
     {:else}
       <div class="space-y-3">
         {#each $resolvedReports as report (report.id)}
-          <div class="bg-surface-container overflow-hidden rounded-xl text-sm">
+          <div class="bg-surface-container text-body-medium overflow-hidden rounded-xl">
             <div class="flex items-start justify-between gap-3 p-4">
               <div class="min-w-0">
                 <p class="text-on-surface font-medium">
                   {CATEGORY_LABELS[report.category] ?? report.category}
                 </p>
                 <p
-                  class="mt-0.5 text-xs {report.resolution === 'actioned'
+                  class="text-body-small mt-0.5 {report.resolution === 'actioned'
                     ? 'text-error'
                     : 'text-on-surface-variant'}"
                 >
@@ -168,13 +170,13 @@
                   run(() => reopenReport(report.id), {
                     success: 'Reopened — content restored if it was removed'
                   })}
-                class="border-outline text-on-surface hover:bg-surface-container-high shrink-0 cursor-pointer rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+                class="border-outline text-on-surface hover:bg-surface-container-high duration-short ease-standard text-body-small shrink-0 cursor-pointer rounded-lg border px-3 py-1.5 transition-colors disabled:opacity-50"
               >
                 Undo
               </button>
             </div>
             <p
-              class="border-outline-variant text-on-surface-variant truncate border-t px-4 py-2 text-xs"
+              class="border-outline-variant text-on-surface-variant text-body-small truncate border-t px-4 py-2"
             >
               {isImage(report.target_preview) ? '(photo)' : report.target_preview || '—'}
             </p>

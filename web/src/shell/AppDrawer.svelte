@@ -7,8 +7,19 @@
   import { isAdmin } from '../services/admin';
   import { appRegistryStore } from './state/registry';
   import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
-  import { closeDrawer, isDrawerOpen, drawerDragPhase, drawerDragProgress } from './state/appDrawer';
-  import { iconDragState, resolveDropAtPoint, resolveIconDrop, startIconDrag, moveIconDrag } from './state/iconDrag';
+  import {
+    closeDrawer,
+    isDrawerOpen,
+    drawerDragPhase,
+    drawerDragProgress
+  } from './state/appDrawer';
+  import {
+    iconDragState,
+    resolveDropAtPoint,
+    resolveIconDrop,
+    startIconDrag,
+    moveIconDrag
+  } from './state/iconDrag';
 
   let { openApp } = $props<{ openApp: (id: string) => void }>();
 
@@ -81,9 +92,9 @@
 
   <div
     transition:fly={{ y: 850, duration: $drawerDragPhase === 'idle' ? 300 : 0 }}
-    class="bg-surface-container-high text-on-surface absolute inset-0 z-55 flex h-full w-full flex-col pt-14 pb-2 shadow-2xl backdrop-blur-3xl {$drawerDragPhase ===
+    class="bg-surface-container-high text-on-surface shadow-elevation-5 absolute inset-0 z-55 flex h-full w-full flex-col pt-14 pb-2 backdrop-blur-3xl {$drawerDragPhase ===
     'settling'
-      ? 'transition-transform duration-200 ease-out'
+      ? 'duration-medium ease-emphasized transition-transform'
       : ''}"
     style="transform: translateY({(1 - effectiveProgress) * 850}px)"
     ontransitionend={(e) => {
@@ -102,7 +113,7 @@
       <h2 class="text-on-surface text-lg font-bold tracking-tight">Apps</h2>
     </div>
 
-    <div class="scrollbar-none flex-1 overflow-y-auto px-6 pb-10">
+    <div class="flex-1 scrollbar-none overflow-y-auto px-6 pb-10">
       <div class="grid grid-cols-4 gap-y-6">
         {#each visibleApps as app (app.id)}
           <div use:attachIcon={app.id}>
@@ -134,7 +145,7 @@
       tabindex="-1"
     >
       <div
-        class="h-1 w-1/3 rounded-full bg-white opacity-80 transition-opacity duration-200 hover:opacity-100"
+        class="duration-medium ease-emphasized h-1 w-1/3 rounded-full bg-white opacity-80 transition-opacity hover:opacity-100"
       ></div>
     </button>
   </div>

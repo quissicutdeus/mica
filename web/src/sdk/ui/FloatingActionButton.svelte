@@ -28,7 +28,7 @@
 
 <button
   type="button"
-  class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-primary-glow absolute right-5 z-30 flex cursor-pointer items-center justify-center rounded-full text-xs font-medium shadow-xl transition-all duration-300 ease-in-out active:scale-95 {raised
+  class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-primary-glow text-label-large shadow-elevation-3 duration-medium ease-standard absolute right-5 z-30 flex cursor-pointer items-center justify-center rounded-full transition-all active:scale-95 {raised
     ? 'bottom-20'
     : 'bottom-5'} {collapsed ? 'h-11 w-11 p-0' : 'gap-2 px-4 py-2.5'}"
   {onclick}
@@ -37,6 +37,6 @@
 >
   {@render icon()}
   {#if !collapsed}
-    <span class="whitespace-nowrap transition-all duration-300">{label}</span>
+    <span class="duration-medium whitespace-nowrap transition-all">{label}</span>
   {/if}
 </button>

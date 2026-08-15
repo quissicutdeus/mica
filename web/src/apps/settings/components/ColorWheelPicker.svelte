@@ -252,7 +252,7 @@
       width={180}
       height={180}
       onpointerdown={handlePointerDown}
-      class="border-outline-variant cursor-crosshair touch-none rounded-full border shadow-md"
+      class="border-outline-variant shadow-elevation-2 cursor-crosshair touch-none rounded-full border"
     ></canvas>
 
     <!-- Pointer-events off so it never intercepts a drag it is only reporting on. -->
@@ -263,7 +263,7 @@
   </div>
 
   <!-- Lightness & Transparency Sliders -->
-  <div class="text-on-surface w-full space-y-3 px-2 text-xs">
+  <div class="text-on-surface text-body-small w-full space-y-3 px-2">
     <div class="flex flex-col gap-1">
       <div class="flex justify-between">
         <span class="font-medium">Lightness</span>

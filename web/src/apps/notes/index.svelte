@@ -169,7 +169,7 @@
 {#snippet headerActions()}
   {#if !selectedNote && !isAdding}
     <button
-      class="hover:bg-surface-container-high ml-auto rounded-full p-2 transition-colors"
+      class="hover:bg-surface-container-high duration-short ease-standard ml-auto rounded-full p-2 transition-colors"
       onclick={() => (isAdding = true)}
       aria-label="Add note"
     >
@@ -177,7 +177,7 @@
     </button>
   {:else if selectedNote && !isEditing}
     <button
-      class="hover:bg-surface-container-high ml-auto rounded-full p-2 transition-colors"
+      class="hover:bg-surface-container-high duration-short ease-standard ml-auto rounded-full p-2 transition-colors"
       onclick={startEditing}
       aria-label="Edit note"
     >
@@ -208,7 +208,7 @@
             disabled={$busy}></textarea>
           <!-- Markdown Toolbar -->
           <div
-            class="border-outline bg-surface-container absolute right-2 bottom-2 left-2 flex justify-evenly gap-1 rounded-lg border p-1 shadow-lg"
+            class="border-outline bg-surface-container shadow-elevation-3 absolute right-2 bottom-2 left-2 flex justify-evenly gap-1 rounded-lg border p-1"
           >
             <button
               class="text-on-surface hover:bg-surface-container-high rounded p-2 font-bold"
@@ -242,12 +242,12 @@
               >
               {#if showHeadingDropdown}
                 <div
-                  class="border-outline-variant bg-surface-container absolute right-0 bottom-full mb-2 flex min-w-[3rem] flex-col overflow-hidden rounded-lg border shadow-xl"
+                  class="border-outline-variant bg-surface-container shadow-elevation-4 absolute right-0 bottom-full mb-2 flex min-w-[3rem] flex-col overflow-hidden rounded-lg border"
                   transition:fade={{ duration: 100 }}
                 >
                   {#each [1, 2, 3, 4, 5, 6] as level}
                     <button
-                      class="border-outline-variant text-on-surface hover:bg-surface-container-high border-b px-3 py-2 text-left text-sm font-bold last:border-0"
+                      class="border-outline-variant text-on-surface hover:bg-surface-container-high text-body-medium border-b px-3 py-2 text-left last:border-0"
                       onclick={() => {
                         insertMarkdown('#'.repeat(level) + ' ', '', `Heading ${level}`);
                         showHeadingDropdown = false;
@@ -297,10 +297,10 @@
               <h3 class="truncate text-lg font-bold text-yellow-500">
                 {note.title || 'Untitled'}
               </h3>
-              <p class="text-on-surface-variant mt-1 line-clamp-2 text-sm">
+              <p class="text-on-surface-variant text-body-medium mt-1 line-clamp-2">
                 {note.content}
               </p>
-              <span class="text-outline mt-2 block text-xs">
+              <span class="text-outline text-body-small mt-2 block">
                 {formatDate(note.updated_at)}
               </span>
             </div>
@@ -330,14 +330,14 @@
           />
           <div class="relative min-h-0 flex-1">
             <textarea
-              class="no-scrollbar border-outline-variant bg-surface-container placeholder-on-surface-variant h-full w-full resize-none rounded border p-2 pb-12 font-mono text-sm focus:border-yellow-500 focus:outline-none"
+              class="no-scrollbar border-outline-variant bg-surface-container placeholder-on-surface-variant text-body-medium h-full w-full resize-none rounded border p-2 pb-12 font-mono focus:border-yellow-500 focus:outline-none"
               bind:this={textAreaRef}
               bind:value={draftNote.content}
               placeholder="Markdown content..."
               disabled={$busy}></textarea>
             <!-- Markdown Toolbar -->
             <div
-              class="border-outline bg-surface-container-high absolute right-2 bottom-2 left-2 flex justify-evenly gap-1 rounded-lg border p-1 shadow-lg backdrop-blur"
+              class="border-outline bg-surface-container-high shadow-elevation-3 absolute right-2 bottom-2 left-2 flex justify-evenly gap-1 rounded-lg border p-1 backdrop-blur"
             >
               <button
                 class="text-on-surface hover:bg-surface-container-highest rounded p-2 font-bold"
@@ -371,12 +371,12 @@
                 >
                 {#if showHeadingDropdown}
                   <div
-                    class="border-outline-variant bg-surface-container absolute right-0 bottom-full mb-2 flex min-w-[3rem] flex-col overflow-hidden rounded-lg border shadow-xl"
+                    class="border-outline-variant bg-surface-container shadow-elevation-4 absolute right-0 bottom-full mb-2 flex min-w-[3rem] flex-col overflow-hidden rounded-lg border"
                     transition:fade={{ duration: 100 }}
                   >
                     {#each [1, 2, 3, 4, 5, 6] as level}
                       <button
-                        class="border-outline-variant text-on-surface hover:bg-surface-container-high border-b px-3 py-2 text-left text-sm font-bold last:border-0"
+                        class="border-outline-variant text-on-surface hover:bg-surface-container-high text-body-medium border-b px-3 py-2 text-left last:border-0"
                         onclick={() => {
                           insertMarkdown('#'.repeat(level) + ' ', '', `Heading ${level}`);
                           showHeadingDropdown = false;

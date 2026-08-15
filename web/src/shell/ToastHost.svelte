@@ -51,9 +51,9 @@
       case 'success':
         return 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/30';
       case 'danger':
-        return 'bg-error hover:bg-error-hover text-on-error shadow-md';
+        return 'bg-error hover:bg-error-hover text-on-error shadow-elevation-2';
       case 'primary':
-        return 'bg-primary-container hover:bg-primary-container-hover text-on-primary-container shadow-md';
+        return 'bg-primary-container hover:bg-primary-container-hover text-on-primary-container shadow-elevation-2';
       case 'secondary':
       default:
         return 'bg-surface-container-high hover:bg-surface-container-high-hover text-on-surface border border-outline-variant';
@@ -104,9 +104,9 @@
            forty lines of markup to satisfy a static analysis rather than a user. -->
       <div
         transition:fly={{ y: -20, duration: 250 }}
-        class="pointer-events-auto flex cursor-pointer flex-col space-y-2.5 rounded-2xl border p-3 shadow-2xl backdrop-blur-2xl transition-all hover:scale-[1.01] active:scale-[0.99] {getBgColor(
+        class="shadow-elevation-5 pointer-events-auto flex cursor-pointer flex-col space-y-2.5 rounded-lg border p-3 backdrop-blur-2xl transition-all hover:scale-[1.01] active:scale-[0.99] {getBgColor(
           t.type
-        )}"
+        )} duration-short ease-standard"
         onclick={async () => {
           if (t.onClick) {
             await t.onClick();
@@ -169,18 +169,18 @@
               {/if}
             {/if}
             {#if t.title}
-              <h4 class="text-on-surface mb-0.5 truncate text-xs font-bold tracking-tight">
+              <h4 class="text-on-surface text-body-small mb-0.5 truncate tracking-tight">
                 {t.title}
               </h4>
             {/if}
-            <p class="text-on-surface truncate text-xs leading-snug font-medium">
+            <p class="text-on-surface text-body-small truncate leading-snug">
               {t.message}
             </p>
           </div>
 
           <button
             type="button"
-            class="text-on-surface-variant hover:bg-surface-container-high-hover hover:text-on-surface shrink-0 cursor-pointer rounded-full p-1 transition-colors"
+            class="text-on-surface-variant hover:bg-surface-container-high-hover hover:text-on-surface duration-short ease-standard shrink-0 cursor-pointer rounded-full p-1 transition-colors"
             onclick={(e) => {
               e.stopPropagation();
               toast.dismiss(t.id);
@@ -200,7 +200,7 @@
           >
             <input
               type="text"
-              class="border-outline-variant bg-surface-container-lowest text-on-surface placeholder-on-surface-variant focus:ring-primary flex-1 rounded-xl border px-3 py-1.5 text-xs focus:ring-1 focus:outline-none"
+              class="border-outline-variant bg-surface-container-lowest text-on-surface placeholder-on-surface-variant focus:ring-primary text-body-small flex-1 rounded-xl border px-3 py-1.5 focus:ring-1 focus:outline-none"
               placeholder={t.replyPlaceholder || 'Type a reply...'}
               bind:value={replyInputs[t.id]}
               onfocus={() => toast.pauseDismiss(t.id)}
@@ -214,7 +214,7 @@
             />
             <button
               type="button"
-              class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shrink-0 cursor-pointer rounded-xl p-1.5 shadow-md transition-colors disabled:opacity-50"
+              class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-elevation-2 duration-short ease-standard shrink-0 cursor-pointer rounded-xl p-1.5 transition-colors disabled:opacity-50"
               disabled={!replyInputs[t.id]?.trim()}
               onclick={(e) => handleSendReply(t, e)}
               aria-label="Send reply"
@@ -234,9 +234,9 @@
             {#each t.actions as act}
               <button
                 type="button"
-                class="cursor-pointer rounded-xl px-3.5 py-1.5 text-xs font-semibold shadow-md transition-all {getActionBtnClass(
+                class="shadow-elevation-2 text-body-small cursor-pointer rounded-xl px-3.5 py-1.5 transition-all {getActionBtnClass(
                   act.variant
-                )}"
+                )} duration-short ease-standard"
                 onclick={(e) => handleActionClick(t, act, e)}
               >
                 {act.label}

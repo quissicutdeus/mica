@@ -280,9 +280,9 @@
        unobservable. -->
   <div
     transition:fly={{ y: -850, duration: $shadeDragPhase === 'idle' ? 300 : 0 }}
-    class="bg-surface-container-high text-on-surface absolute inset-0 z-55 flex h-full w-full flex-col pt-14 pb-2 shadow-2xl backdrop-blur-3xl {$shadeDragPhase ===
+    class="bg-surface-container-high text-on-surface shadow-elevation-5 absolute inset-0 z-55 flex h-full w-full flex-col pt-14 pb-2 backdrop-blur-3xl {$shadeDragPhase ===
     'settling'
-      ? 'transition-transform duration-200 ease-out'
+      ? 'duration-medium ease-emphasized transition-transform'
       : ''}"
     style="transform: translateY({(1 - effectiveProgress) * -850}px)"
     ontransitionend={(e) => {
@@ -301,7 +301,7 @@
     <div class="mb-4 flex items-center justify-between px-6">
       <div class="flex items-baseline gap-2">
         <h2 class="text-on-surface text-lg font-bold tracking-tight">Notifications</h2>
-        <span class="text-primary text-xs font-semibold tracking-wider uppercase">
+        <span class="text-primary text-body-small tracking-wider uppercase">
           {showHistory ? 'Archive' : 'Active'}
         </span>
       </div>
@@ -311,7 +311,7 @@
           {#if notifications.length > 0}
             <button
               type="button"
-              class="bg-surface text-on-surface-variant hover:bg-surface-container hover:text-error rounded-full p-2 transition-colors"
+              class="bg-surface text-on-surface-variant hover:bg-surface-container hover:text-error duration-short ease-standard rounded-full p-2 transition-colors"
               onclick={handleClearAll}
               title="Clear all notifications"
               aria-label="Clear all notifications"
@@ -322,7 +322,7 @@
 
           <button
             type="button"
-            class="bg-surface text-on-surface-variant hover:bg-surface-container hover:text-primary rounded-full p-2 transition-colors"
+            class="bg-surface text-on-surface-variant hover:bg-surface-container hover:text-primary duration-short ease-standard rounded-full p-2 transition-colors"
             onclick={openHistory}
             title="Notification Archive"
             aria-label="Notification Archive"
@@ -332,7 +332,7 @@
         {:else}
           <button
             type="button"
-            class="bg-surface-container text-primary ring-primary hover:bg-surface-container-high hover:text-primary rounded-full p-2 ring-1 transition-colors"
+            class="bg-surface-container text-primary ring-primary hover:bg-surface-container-high hover:text-primary duration-short ease-standard rounded-full p-2 ring-1 transition-colors"
             onclick={closeHistory}
             title="Back to Active Notifications"
             aria-label="Back to Active Notifications"
@@ -343,7 +343,7 @@
 
         <button
           type="button"
-          class="bg-surface text-on-surface-variant hover:bg-surface-container hover:text-on-surface rounded-full p-2 transition-colors"
+          class="bg-surface text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard rounded-full p-2 transition-colors"
           onclick={closeShade}
           title="Close"
           aria-label="Close notification shade"
@@ -361,20 +361,22 @@
           <div
             class="text-on-surface-variant flex h-full flex-col items-center justify-center space-y-2"
           >
-            <p class="text-sm">Loading archive...</p>
+            <p class="text-body-medium">Loading archive...</p>
           </div>
         {:else if historyItems.length === 0}
           <div
             class="text-on-surface-variant flex h-full flex-col items-center justify-center space-y-3 text-center"
           >
             <div
-              class="bg-surface ring-outline-variant flex h-14 w-14 items-center justify-center rounded-2xl ring-1"
+              class="bg-surface ring-outline-variant flex h-14 w-14 items-center justify-center rounded-lg ring-1"
             >
               <ArchiveIcon class="text-on-surface-variant h-7 w-7" />
             </div>
             <div>
-              <p class="text-on-surface text-sm font-semibold">No Archive Yet</p>
-              <p class="text-on-surface-variant text-xs">Cleared notifications will appear here</p>
+              <p class="text-on-surface text-body-medium">No Archive Yet</p>
+              <p class="text-on-surface-variant text-body-small">
+                Cleared notifications will appear here
+              </p>
             </div>
           </div>
         {:else}
@@ -386,7 +388,7 @@
                 <SwipeableRow onCommit={() => restoreSingle(item.id)}>
                   <div
                     transition:fly={{ y: 10, duration: 150 }}
-                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface relative flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 opacity-90 shadow-lg backdrop-blur-md transition-all hover:opacity-100 active:scale-[0.99]"
+                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface shadow-elevation-3 duration-short ease-standard relative flex cursor-pointer items-start gap-3 rounded-lg border p-3.5 opacity-90 backdrop-blur-md transition-all hover:opacity-100 active:scale-[0.99]"
                     onclick={() => handleRowClick(item)}
                     role="button"
                     tabindex={0}
@@ -410,7 +412,7 @@
                     <!-- Content Area -->
                     <div class="min-w-0 flex-1 space-y-0.5">
                       <div class="flex items-center justify-between gap-2">
-                        <span class="text-primary text-xs font-semibold tracking-wide uppercase">
+                        <span class="text-primary text-body-small tracking-wide uppercase">
                           {item.app}
                         </span>
                         <div class="flex items-center gap-2">
@@ -419,7 +421,7 @@
                           </span>
                           <button
                             type="button"
-                            class="text-error hover:bg-surface-container hover:text-on-surface shrink-0 rounded-full p-1 transition-all"
+                            class="text-error hover:bg-surface-container hover:text-on-surface duration-short ease-standard shrink-0 rounded-full p-1 transition-all"
                             onclick={(e) => handleRestoreSingle(e, item.id)}
                             title="Restore to Active notifications"
                             aria-label="Restore to Active notifications"
@@ -429,11 +431,11 @@
                         </div>
                       </div>
 
-                      <h3 class="text-on-surface truncate text-sm font-semibold">
+                      <h3 class="text-on-surface text-body-medium truncate">
                         {item.title}
                       </h3>
 
-                      <p class="text-on-surface line-clamp-2 text-xs leading-relaxed">
+                      <p class="text-on-surface text-body-small line-clamp-2 leading-relaxed">
                         {item.body}
                       </p>
                     </div>
@@ -442,7 +444,7 @@
               {:else}
                 <!-- Grouped Collapsible Archive Stack -->
                 <div
-                  class="border-outline-variant bg-surface rounded-2xl border p-3.5 opacity-90 shadow-xl backdrop-blur-md hover:opacity-100"
+                  class="border-outline-variant bg-surface shadow-elevation-4 rounded-lg border p-3.5 opacity-90 backdrop-blur-md hover:opacity-100"
                 >
                   <!-- Group Header Card -->
                   <SwipeableRow onCommit={() => restoreGroup(group.app)}>
@@ -470,7 +472,7 @@
                       <div class="min-w-0 flex-1 space-y-0.5">
                         <div class="flex items-center justify-between gap-2">
                           <div class="flex items-center gap-2">
-                            <span class="text-primary text-xs font-bold tracking-wide uppercase">
+                            <span class="text-primary text-body-small tracking-wide uppercase">
                               {group.app}
                             </span>
                             <span
@@ -485,7 +487,7 @@
                             </span>
                             <button
                               type="button"
-                              class="text-error hover:bg-surface-container hover:text-on-surface rounded-full p-1 transition-colors"
+                              class="text-error hover:bg-surface-container hover:text-on-surface duration-short ease-standard rounded-full p-1 transition-colors"
                               onclick={(e) => handleRestoreGroup(e, group.app)}
                               title={`Restore all ${group.app} notifications`}
                               aria-label={`Restore all ${group.app} notifications`}
@@ -493,7 +495,7 @@
                               <TrashIcon class="h-3.5 w-3.5" />
                             </button>
                             <ChevronDownIcon
-                              class="text-on-surface-variant h-4 w-4 transition-transform duration-200 {expandedHistoryGroups[
+                              class="text-on-surface-variant duration-medium ease-emphasized h-4 w-4 transition-transform {expandedHistoryGroups[
                                 group.app
                               ]
                                 ? 'text-primary rotate-180'
@@ -502,10 +504,10 @@
                           </div>
                         </div>
 
-                        <h3 class="text-on-surface truncate text-sm font-semibold">
+                        <h3 class="text-on-surface text-body-medium truncate">
                           {group.latest.title}
                         </h3>
-                        <p class="text-on-surface-variant line-clamp-1 text-xs">
+                        <p class="text-on-surface-variant text-body-small line-clamp-1">
                           {group.latest.body}
                         </p>
                       </div>
@@ -521,7 +523,7 @@
                       {#each group.items as childItem (childItem.id)}
                         <SwipeableRow onCommit={() => restoreSingle(childItem.id)}>
                           <div
-                            class="group/item border-outline-variant bg-surface-container-lowest hover:border-outline-variant hover:bg-surface-container flex cursor-pointer items-start gap-2.5 rounded-xl border p-2.5 transition-colors active:scale-[0.99]"
+                            class="group/item border-outline-variant bg-surface-container-lowest hover:border-outline-variant hover:bg-surface-container duration-short ease-standard flex cursor-pointer items-start gap-2.5 rounded-xl border p-2.5 transition-colors active:scale-[0.99]"
                             onclick={() => handleRowClick(childItem)}
                             role="button"
                             tabindex={0}
@@ -534,7 +536,7 @@
                           >
                             <div class="min-w-0 flex-1 space-y-0.5">
                               <div class="flex items-center justify-between gap-2">
-                                <h4 class="text-on-surface truncate text-xs font-semibold">
+                                <h4 class="text-on-surface text-body-small truncate">
                                   {childItem.title}
                                 </h4>
                                 <div class="flex items-center gap-1.5">
@@ -543,7 +545,7 @@
                                   </span>
                                   <button
                                     type="button"
-                                    class="text-error hover:text-on-surface rounded-full p-0.5 transition-colors"
+                                    class="text-error hover:text-on-surface duration-short ease-standard rounded-full p-0.5 transition-colors"
                                     onclick={(e) => handleRestoreSingle(e, childItem.id)}
                                     title="Restore to Active notifications"
                                     aria-label="Restore to Active notifications"
@@ -552,7 +554,9 @@
                                   </button>
                                 </div>
                               </div>
-                              <p class="text-on-surface line-clamp-2 text-xs leading-relaxed">
+                              <p
+                                class="text-on-surface text-body-small line-clamp-2 leading-relaxed"
+                              >
                                 {childItem.body}
                               </p>
                             </div>
@@ -574,12 +578,12 @@
             class="flex h-full w-full flex-col items-center justify-center space-y-3.5 text-center select-none"
           >
             <div
-              class="bg-surface ring-outline-variant flex h-16 w-16 items-center justify-center rounded-2xl shadow-md ring-1"
+              class="bg-surface ring-outline-variant shadow-elevation-2 flex h-16 w-16 items-center justify-center rounded-lg ring-1"
             >
               <CheckIcon class="h-8 w-8 text-emerald-400" />
             </div>
             <div>
-              <p class="text-on-surface text-base font-semibold">No New Notifications</p>
+              <p class="text-on-surface text-body-large">No New Notifications</p>
             </div>
           </div>
         {:else}
@@ -591,7 +595,7 @@
                 <SwipeableRow onCommit={() => clearSingle(item.id)}>
                   <div
                     transition:fly={{ y: 10, duration: 150 }}
-                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface relative flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 shadow-lg backdrop-blur-md transition-all active:scale-[0.99]"
+                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface shadow-elevation-3 duration-short ease-standard relative flex cursor-pointer items-start gap-3 rounded-lg border p-3.5 backdrop-blur-md transition-all active:scale-[0.99]"
                     onclick={() => handleRowClick(item)}
                     role="button"
                     tabindex={0}
@@ -615,7 +619,7 @@
                     <!-- Content Area -->
                     <div class="min-w-0 flex-1 space-y-0.5">
                       <div class="flex items-center justify-between gap-2">
-                        <span class="text-primary text-xs font-semibold tracking-wide uppercase">
+                        <span class="text-primary text-body-small tracking-wide uppercase">
                           {item.app}
                         </span>
                         <div class="flex items-center gap-2">
@@ -624,7 +628,7 @@
                           </span>
                           <button
                             type="button"
-                            class="text-on-surface-variant hover:bg-surface-container hover:text-error shrink-0 rounded-full p-1 opacity-0 transition-all group-hover:opacity-100"
+                            class="text-on-surface-variant hover:bg-surface-container hover:text-error duration-short ease-standard shrink-0 rounded-full p-1 opacity-0 transition-all group-hover:opacity-100"
                             onclick={(e) => handleClearSingle(e, item.id)}
                             title="Clear notification"
                             aria-label="Clear notification"
@@ -634,11 +638,11 @@
                         </div>
                       </div>
 
-                      <h3 class="text-on-surface truncate text-sm font-semibold">
+                      <h3 class="text-on-surface text-body-medium truncate">
                         {item.title}
                       </h3>
 
-                      <p class="text-on-surface line-clamp-2 text-xs leading-relaxed">
+                      <p class="text-on-surface text-body-small line-clamp-2 leading-relaxed">
                         {item.body}
                       </p>
                     </div>
@@ -647,7 +651,7 @@
               {:else}
                 <!-- Grouped Collapsible App Stack -->
                 <div
-                  class="border-outline-variant bg-surface rounded-2xl border p-3.5 shadow-xl backdrop-blur-md"
+                  class="border-outline-variant bg-surface shadow-elevation-4 rounded-lg border p-3.5 backdrop-blur-md"
                 >
                   <!-- Group Header Card -->
                   <SwipeableRow onCommit={() => clearGroup(group.app)}>
@@ -675,7 +679,7 @@
                       <div class="min-w-0 flex-1 space-y-0.5">
                         <div class="flex items-center justify-between gap-2">
                           <div class="flex items-center gap-2">
-                            <span class="text-primary text-xs font-bold tracking-wide uppercase">
+                            <span class="text-primary text-body-small tracking-wide uppercase">
                               {group.app}
                             </span>
                             <span
@@ -690,7 +694,7 @@
                             </span>
                             <button
                               type="button"
-                              class="text-on-surface-variant hover:bg-surface-container hover:text-error rounded-full p-1 transition-colors"
+                              class="text-on-surface-variant hover:bg-surface-container hover:text-error duration-short ease-standard rounded-full p-1 transition-colors"
                               onclick={(e) => handleClearGroup(e, group.app)}
                               title={`Clear all ${group.app} notifications`}
                               aria-label={`Clear all ${group.app} notifications`}
@@ -698,7 +702,7 @@
                               <TrashIcon class="h-3.5 w-3.5" />
                             </button>
                             <ChevronDownIcon
-                              class="text-on-surface-variant h-4 w-4 transition-transform duration-200 {expandedGroups[
+                              class="text-on-surface-variant duration-medium ease-emphasized h-4 w-4 transition-transform {expandedGroups[
                                 group.app
                               ]
                                 ? 'text-primary rotate-180'
@@ -707,10 +711,10 @@
                           </div>
                         </div>
 
-                        <h3 class="text-on-surface truncate text-sm font-semibold">
+                        <h3 class="text-on-surface text-body-medium truncate">
                           {group.latest.title}
                         </h3>
-                        <p class="text-on-surface-variant line-clamp-1 text-xs">
+                        <p class="text-on-surface-variant text-body-small line-clamp-1">
                           {group.latest.body}
                         </p>
                       </div>
@@ -726,7 +730,7 @@
                       {#each group.items as childItem (childItem.id)}
                         <SwipeableRow onCommit={() => clearSingle(childItem.id)}>
                           <div
-                            class="group/item border-outline-variant bg-surface-container-lowest hover:border-outline-variant hover:bg-surface-container flex cursor-pointer items-start gap-2.5 rounded-xl border p-2.5 transition-colors active:scale-[0.99]"
+                            class="group/item border-outline-variant bg-surface-container-lowest hover:border-outline-variant hover:bg-surface-container duration-short ease-standard flex cursor-pointer items-start gap-2.5 rounded-xl border p-2.5 transition-colors active:scale-[0.99]"
                             onclick={() => handleRowClick(childItem)}
                             role="button"
                             tabindex={0}
@@ -739,7 +743,7 @@
                           >
                             <div class="min-w-0 flex-1 space-y-0.5">
                               <div class="flex items-center justify-between gap-2">
-                                <h4 class="text-on-surface truncate text-xs font-semibold">
+                                <h4 class="text-on-surface text-body-small truncate">
                                   {childItem.title}
                                 </h4>
                                 <div class="flex items-center gap-1.5">
@@ -748,7 +752,7 @@
                                   </span>
                                   <button
                                     type="button"
-                                    class="text-on-surface-variant hover:text-error rounded-full p-0.5 opacity-0 transition-opacity group-hover/item:opacity-100"
+                                    class="text-on-surface-variant hover:text-error duration-short ease-standard rounded-full p-0.5 opacity-0 transition-opacity group-hover/item:opacity-100"
                                     onclick={(e) => handleClearSingle(e, childItem.id)}
                                     title="Clear notification"
                                     aria-label="Clear notification"
@@ -757,7 +761,9 @@
                                   </button>
                                 </div>
                               </div>
-                              <p class="text-on-surface line-clamp-2 text-xs leading-relaxed">
+                              <p
+                                class="text-on-surface text-body-small line-clamp-2 leading-relaxed"
+                              >
                                 {childItem.body}
                               </p>
                             </div>
@@ -791,7 +797,7 @@
       tabindex="-1"
     >
       <div
-        class="h-1 w-1/3 rounded-full bg-white opacity-80 transition-opacity duration-200 hover:opacity-100"
+        class="duration-medium ease-emphasized h-1 w-1/3 rounded-full bg-white opacity-80 transition-opacity hover:opacity-100"
       ></div>
     </button>
   </div>

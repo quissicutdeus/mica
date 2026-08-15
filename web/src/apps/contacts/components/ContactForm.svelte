@@ -31,13 +31,13 @@
 </script>
 
 <div
-  class="animate-in slide-in-from-top bg-surface-container border-outline-variant sticky top-0 z-20 space-y-3 border-b p-4 shadow-2xl backdrop-blur-md duration-200"
+  class="animate-in slide-in-from-top bg-surface-container border-outline-variant shadow-elevation-5 duration-medium ease-emphasized sticky top-0 z-20 space-y-3 border-b p-4 backdrop-blur-md"
 >
   <div class="border-outline-variant flex items-center justify-between border-b pb-1">
-    <h3 class="text-on-surface text-base font-semibold">New Contact</h3>
+    <h3 class="text-on-surface text-body-large">New Contact</h3>
     <button
       type="button"
-      class="text-on-surface-variant hover:bg-surface hover:text-on-surface rounded-full p-1 transition-colors"
+      class="text-on-surface-variant hover:bg-surface hover:text-on-surface duration-short ease-standard rounded-full p-1 transition-colors"
       onclick={() => oncancel()}
       aria-label="Close form"
     >
@@ -56,7 +56,7 @@
       />
       <button
         type="button"
-        class="border-surface bg-primary-container text-on-primary-container absolute right-0 bottom-0 flex items-center justify-center rounded-full border-2 p-2 shadow-lg transition-transform hover:brightness-110 active:scale-95"
+        class="border-surface bg-primary-container text-on-primary-container shadow-elevation-3 duration-short ease-standard absolute right-0 bottom-0 flex items-center justify-center rounded-full border-2 p-2 transition-transform hover:brightness-110 active:scale-95"
         onclick={() => onpickphoto()}
         aria-label="Select photo from gallery"
         title="Select photo from gallery"
@@ -67,24 +67,24 @@
   </div>
 
   <input
-    class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface w-full rounded border p-2 text-sm"
+    class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface text-body-medium w-full rounded border p-2"
     placeholder="First Name *"
     maxlength="50"
     bind:value={draft.firstname}
   />
   <input
-    class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface w-full rounded border p-2 text-sm"
+    class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface text-body-medium w-full rounded border p-2"
     placeholder="Last Name"
     maxlength="50"
     bind:value={draft.lastname}
   />
   <input
-    class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface w-full rounded border p-2 text-sm"
+    class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface text-body-medium w-full rounded border p-2"
     placeholder="Phone Number *"
     maxlength="20"
     bind:value={draft.phone}
   />
-  <label class="text-on-surface-variant flex items-center space-x-2 text-sm">
+  <label class="text-on-surface-variant text-body-medium flex items-center space-x-2">
     <input
       type="checkbox"
       bind:checked={draft.favorite}
@@ -94,9 +94,11 @@
   </label>
 
   <div class="flex space-x-2 pt-1">
-    <Button variant="secondary" class="flex-1 text-xs" onclick={() => oncancel()}>Cancel</Button>
+    <Button variant="secondary" class="text-body-small flex-1" onclick={() => oncancel()}
+      >Cancel</Button
+    >
     <Button
-      class="flex-1 text-xs"
+      class="text-body-small flex-1"
       onclick={onsave}
       disabled={busy || !draft.firstname.trim() || !draft.phone.trim()}
     >

@@ -32,12 +32,12 @@
   <ThemeAndWallpaper />
 
   <div>
-    <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
+    <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
       Size
     </h2>
     <div class="bg-surface-container overflow-hidden rounded-xl">
       <div class="flex flex-col gap-3 p-4">
-        <div class="flex items-center justify-between text-sm">
+        <div class="text-body-medium flex items-center justify-between">
           <span class="text-on-surface font-medium">Phone Size</span>
           <span class="text-on-surface font-mono">{$displaySize}%</span>
         </div>
@@ -51,7 +51,7 @@
           oninput={(e) => setDisplaySize(Number((e.currentTarget as HTMLInputElement).value))}
           class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-blue-500"
         />
-        <div class="text-on-surface-variant flex items-center justify-between text-xs">
+        <div class="text-on-surface-variant text-body-small flex items-center justify-between">
           <span>Smaller</span>
           <span class="font-mono">{rendered}</span>
           <span>Larger</span>
@@ -61,7 +61,7 @@
              so every position moves the phone — but the top of that range is the window's
              to decide, and saying so beats leaving it a mystery. -->
         {#if $isSizeLimited}
-          <p class="text-on-surface-variant text-xs">
+          <p class="text-on-surface-variant text-body-small">
             This window sets how large the phone can go. Make it taller for more range.
           </p>
         {/if}
@@ -71,24 +71,24 @@
           type="button"
           onclick={() => setDisplaySize(displaySizeDefault)}
           disabled={$displaySize === displaySizeDefault}
-          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high disabled:hover:bg-surface w-full cursor-pointer rounded-lg border py-2 text-xs font-semibold transition-colors disabled:cursor-default disabled:opacity-40"
+          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high disabled:hover:bg-surface duration-short ease-standard text-body-small w-full cursor-pointer rounded-lg border py-2 transition-colors disabled:cursor-default disabled:opacity-40"
         >
           Reset to Default
         </button>
       </div>
     </div>
-    <p class="text-on-surface-variant mt-2 px-2 text-xs">
+    <p class="text-on-surface-variant text-body-small mt-2 px-2">
       The phone always keeps its shape; this changes how large it is drawn on screen.
     </p>
   </div>
 
   <div>
-    <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
+    <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
       Home Screen Grid
     </h2>
     <div class="bg-surface-container overflow-hidden rounded-xl p-4">
       <div class="flex flex-col gap-3">
-        <div class="flex items-center justify-between text-sm">
+        <div class="text-body-medium flex items-center justify-between">
           <span class="text-on-surface font-medium">Columns</span>
           <div class="flex items-center gap-3">
             <button
@@ -96,7 +96,7 @@
               aria-label="Fewer columns"
               disabled={$homeGridColumns <= homeGridColumnsMin}
               onclick={() => setHomeGridSize($homeGridColumns - 1, $homeGridRows)}
-              class="bg-surface text-on-surface hover:bg-surface-container-high h-7 w-7 cursor-pointer rounded-full text-sm font-semibold disabled:cursor-default disabled:opacity-40"
+              class="bg-surface text-on-surface hover:bg-surface-container-high text-body-medium h-7 w-7 cursor-pointer rounded-full disabled:cursor-default disabled:opacity-40"
               >−</button
             >
             <span class="text-on-surface w-4 text-center font-mono">{$homeGridColumns}</span>
@@ -105,12 +105,12 @@
               aria-label="More columns"
               disabled={$homeGridColumns >= homeGridColumnsMax}
               onclick={() => setHomeGridSize($homeGridColumns + 1, $homeGridRows)}
-              class="bg-surface text-on-surface hover:bg-surface-container-high h-7 w-7 cursor-pointer rounded-full text-sm font-semibold disabled:cursor-default disabled:opacity-40"
+              class="bg-surface text-on-surface hover:bg-surface-container-high text-body-medium h-7 w-7 cursor-pointer rounded-full disabled:cursor-default disabled:opacity-40"
               >+</button
             >
           </div>
         </div>
-        <div class="flex items-center justify-between text-sm">
+        <div class="text-body-medium flex items-center justify-between">
           <span class="text-on-surface font-medium">Rows</span>
           <div class="flex items-center gap-3">
             <button
@@ -118,7 +118,7 @@
               aria-label="Fewer rows"
               disabled={$homeGridRows <= homeGridRowsMin}
               onclick={() => setHomeGridSize($homeGridColumns, $homeGridRows - 1)}
-              class="bg-surface text-on-surface hover:bg-surface-container-high h-7 w-7 cursor-pointer rounded-full text-sm font-semibold disabled:cursor-default disabled:opacity-40"
+              class="bg-surface text-on-surface hover:bg-surface-container-high text-body-medium h-7 w-7 cursor-pointer rounded-full disabled:cursor-default disabled:opacity-40"
               >−</button
             >
             <span class="text-on-surface w-4 text-center font-mono">{$homeGridRows}</span>
@@ -127,21 +127,21 @@
               aria-label="More rows"
               disabled={$homeGridRows >= homeGridRowsMax}
               onclick={() => setHomeGridSize($homeGridColumns, $homeGridRows + 1)}
-              class="bg-surface text-on-surface hover:bg-surface-container-high h-7 w-7 cursor-pointer rounded-full text-sm font-semibold disabled:cursor-default disabled:opacity-40"
+              class="bg-surface text-on-surface hover:bg-surface-container-high text-body-medium h-7 w-7 cursor-pointer rounded-full disabled:cursor-default disabled:opacity-40"
               >+</button
             >
           </div>
         </div>
       </div>
     </div>
-    <p class="text-on-surface-variant mt-2 px-2 text-xs">
-      Shrinking the grid moves anything it no longer fits to the next open space, rather than
-      hiding it.
+    <p class="text-on-surface-variant text-body-small mt-2 px-2">
+      Shrinking the grid moves anything it no longer fits to the next open space, rather than hiding
+      it.
     </p>
   </div>
 
   <div>
-    <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
+    <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
       Clock
     </h2>
     <div class="bg-surface-container overflow-hidden rounded-xl">

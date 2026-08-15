@@ -63,7 +63,7 @@
 
 <div class="border-outline-variant border-b p-3">
   {#if handle}
-    <p class="text-on-surface-variant mb-1.5 text-xs">
+    <p class="text-on-surface-variant text-body-small mb-1.5">
       Posting as <span class="text-primary">@{handle}</span>
     </p>
   {/if}
@@ -75,14 +75,14 @@
     {placeholder}
     maxlength={LIMIT}
     rows="3"
-    class="bg-surface-container text-on-surface placeholder-on-surface-variant w-full resize-none rounded-lg p-2.5 text-sm focus:outline-none"
+    class="bg-surface-container text-on-surface placeholder-on-surface-variant text-body-medium w-full resize-none rounded-lg p-2.5 focus:outline-none"
   ></textarea>
 
   {#if attachments.length > 0}
     <div class="no-scrollbar mt-2 flex gap-2 overflow-x-auto p-1">
       {#each attachments as att (att.photo_id)}
         <div
-          class="border-outline relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border shadow-md"
+          class="border-outline shadow-elevation-2 relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border"
         >
           <MediaThumb item={att.media} alt="Attachment" />
           <button
@@ -103,7 +103,7 @@
       {#if allowAttachments}
         <button
           type="button"
-          class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors"
+          class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary duration-short ease-standard flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors"
           onclick={() => (showPicker = true)}
           aria-label="Attach photo"
         >
@@ -111,7 +111,7 @@
         </button>
       {/if}
       <span
-        class="text-xs"
+        class="text-body-small"
         class:text-on-surface-variant={remaining > 20}
         class:text-amber-400={remaining <= 20}
       >

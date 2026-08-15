@@ -5,16 +5,16 @@
 
 <div class="space-y-6 p-4">
   <div>
-    <h2 class="text-on-surface-variant mb-2 px-2 text-xs font-semibold tracking-wider uppercase">
+    <h2 class="text-on-surface-variant text-body-small mb-2 px-2 tracking-wider uppercase">
       Banner Toasts & Alerts
     </h2>
     <div
-      class="divide-outline-variant bg-surface-container divide-y overflow-hidden rounded-xl text-sm"
+      class="divide-outline-variant bg-surface-container text-body-medium divide-y overflow-hidden rounded-xl"
     >
       <div class="flex items-center justify-between p-4">
         <div class="flex flex-col pr-4">
           <span class="text-on-surface font-medium">Show Banner Overlay</span>
-          <span class="text-on-surface-variant text-xs"
+          <span class="text-on-surface-variant text-body-small"
             >Display popup banners when notifications arrive</span
           >
         </div>
@@ -24,7 +24,7 @@
       <div class="flex items-center justify-between p-4">
         <div class="flex flex-col pr-4">
           <span class="text-on-surface font-medium">Notification Sounds</span>
-          <span class="text-on-surface-variant text-xs"
+          <span class="text-on-surface-variant text-body-small"
             >Play alert sound on incoming notification</span
           >
         </div>
@@ -37,16 +37,16 @@
   </div>
 
   <div>
-    <h2 class="text-on-surface-variant mb-2 px-2 text-xs font-semibold tracking-wider uppercase">
+    <h2 class="text-on-surface-variant text-body-small mb-2 px-2 tracking-wider uppercase">
       App Badges
     </h2>
     <div
-      class="divide-outline-variant bg-surface-container divide-y overflow-hidden rounded-xl text-sm"
+      class="divide-outline-variant bg-surface-container text-body-medium divide-y overflow-hidden rounded-xl"
     >
       <div class="flex items-center justify-between p-4">
         <div class="flex flex-col pr-4">
           <span class="text-on-surface font-medium">App Icon Badges</span>
-          <span class="text-on-surface-variant text-xs"
+          <span class="text-on-surface-variant text-body-small"
             >Show unread count badges on launcher icons</span
           >
         </div>

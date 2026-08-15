@@ -14,12 +14,12 @@
 
 <div class="space-y-6 p-4">
   <div>
-    <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
+    <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
       Volume
     </h2>
     <div class="bg-surface-container overflow-hidden rounded-xl">
       <div class="flex flex-col gap-3 p-4">
-        <div class="flex items-center justify-between text-sm">
+        <div class="text-body-medium flex items-center justify-between">
           <span class="text-on-surface font-medium">System Volume</span>
           <span class="text-on-surface font-mono">
             {$soundMuted ? 'Muted' : `${Math.round($soundVolume * 100)}%`}
@@ -47,12 +47,12 @@
   </div>
 
   <div>
-    <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
+    <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
       Volume Buttons
     </h2>
     <!-- How far the physical buttons on the side of the phone move the volume per press. -->
     <div class="bg-surface-container overflow-hidden rounded-xl p-4">
-      <div class="mb-3 flex items-center justify-between text-sm">
+      <div class="text-body-medium mb-3 flex items-center justify-between">
         <span class="text-on-surface font-medium">Step Size</span>
         <span class="text-on-surface font-mono">{$volumeStep}%</span>
       </div>
@@ -62,16 +62,16 @@
             type="button"
             onclick={() => setVolumeStep(choice)}
             aria-pressed={$volumeStep === choice}
-            class="cursor-pointer rounded border py-1.5 text-xs font-semibold transition-all {$volumeStep ===
+            class="text-body-small cursor-pointer rounded border py-1.5 transition-all {$volumeStep ===
             choice
               ? 'border-primary bg-primary-container text-on-primary-container'
-              : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'}"
+              : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'} duration-short ease-standard"
           >
             {choice}%
           </button>
         {/each}
       </div>
-      <p class="text-on-surface-variant mt-3 text-xs">
+      <p class="text-on-surface-variant text-body-small mt-3">
         How much each press of the volume buttons on the side of the phone changes the volume.
       </p>
     </div>

@@ -5,6 +5,7 @@ import { Contrast, argbFromHex, lstarFromArgb } from '@material/material-color-u
 import {
   DEFAULT_SEED,
   ROLE_NAMES,
+  STATE_LAYER_BASES,
   STATE_TOKEN_NAMES,
   TOKEN_NAMES,
   buildSchemes,
@@ -35,10 +36,10 @@ const SEEDS = ['#155dfc', '#ff0090', '#00ff00', '#ffffff', '#000000', '#7f7f7f',
 
 describe('M3 color engine', () => {
   describe('token set', () => {
-    it('declares 34 roles and 15 derived tokens', () => {
+    it('declares 34 roles and 25 derived tokens after disabled/selected', () => {
       expect(ROLE_NAMES).toHaveLength(34);
-      expect(STATE_TOKEN_NAMES).toHaveLength(15);
-      expect(TOKEN_NAMES).toHaveLength(49);
+      expect(STATE_TOKEN_NAMES).toHaveLength(25);
+      expect(TOKEN_NAMES).toHaveLength(59);
     });
 
     it('names no token twice', () => {
@@ -115,8 +116,18 @@ describe('M3 color engine', () => {
       // wrong, and no visual review would catch it.
       const { dark } = buildSchemes(DEFAULT_SEED);
       for (const name of STATE_TOKEN_NAMES) {
-        if (name === 'primary-glow') continue;
-        const base = name.replace(/-(hover|pressed)$/, '');
+        // Neither follows the base+suffix shape this check derives its comparison
+        // from — both are composited over `surface`, not over a role named by
+        // stripping a suffix off their own name — and both already have a dedicated
+        // "differs from surface" assertion above.
+        if (
+          name === 'primary-glow' ||
+          name === 'disabled-content' ||
+          name === 'disabled-container' ||
+          name === 'focus-ring'
+        )
+          continue;
+        const base = name.replace(/-(hover|pressed|selected)$/, '');
         expect(dark[name], name).not.toBe(dark[base]);
       }
       expect(dark['surface-hover']).not.toBe(dark['surface-pressed']);
@@ -124,6 +135,31 @@ describe('M3 color engine', () => {
 
     it('bakes the usage alpha into scrim rather than leaving it to an opacity modifier', () => {
       expect(buildSchemes(DEFAULT_SEED).dark['scrim']).toBe('rgba(0, 0, 0, 0.32)');
+    });
+
+    it('composites disabled state to a flat opaque color at M3s real values', () => {
+      const { dark } = buildSchemes(DEFAULT_SEED);
+      expect(dark['disabled-content']).toMatch(OPAQUE_RGB);
+      expect(dark['disabled-container']).toMatch(OPAQUE_RGB);
+      expect(dark['disabled-content']).not.toBe(dark['surface']);
+      expect(dark['disabled-container']).not.toBe(dark['surface']);
+      expect(dark['disabled-content']).not.toBe(dark['disabled-container']);
+    });
+
+    it('composites a selected token for every hover/pressed base', () => {
+      const { dark } = buildSchemes(DEFAULT_SEED);
+      for (const [base] of STATE_LAYER_BASES) {
+        const selected = dark[`${base}-selected`];
+        expect(selected, `${base}-selected`).toMatch(OPAQUE_RGB);
+        expect(selected, `${base}-selected differs from base`).not.toBe(dark[base]);
+      }
+    });
+
+    it('aliases focus-ring to primary rather than composing a new color', () => {
+      for (const seed of SEEDS) {
+        const { dark } = buildSchemes(seed);
+        expect(dark['focus-ring']).toBe(dark['primary']);
+      }
     });
   });
 
@@ -240,6 +276,104 @@ describe('M3 color engine', () => {
         expect(declared.get(name), `--color-${name} in app.css`).toBe(expected[name]);
       }
     });
+  });
+});
+
+describe('shape scale (app.css)', () => {
+  it('declares the M3 shape scale', () => {
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
+    const expected: Record<string, string> = {
+      none: '0',
+      xs: '4px',
+      sm: '8px',
+      md: '12px',
+      lg: '16px',
+      xl: '28px',
+      full: '9999px',
+      'frame-inner': '3rem'
+    };
+    for (const [name, value] of Object.entries(expected)) {
+      const match = css.match(new RegExp(`--radius-${name}:\\s*([^;]+);`));
+      expect(match, `--radius-${name} declared in app.css`).not.toBeNull();
+      expect(match![1].trim(), `--radius-${name} value`).toBe(value);
+    }
+  });
+});
+
+describe('elevation tokens (app.css)', () => {
+  it('declares the five M3 elevation shadows as plain rgba() pairs', () => {
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
+    const expected: Record<string, string> = {
+      1: '0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 1px 3px 1px rgba(0, 0, 0, 0.15)',
+      2: '0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 2px 6px 2px rgba(0, 0, 0, 0.15)',
+      3: '0px 1px 3px 0px rgba(0, 0, 0, 0.3), 0px 4px 8px 3px rgba(0, 0, 0, 0.15)',
+      4: '0px 2px 3px 0px rgba(0, 0, 0, 0.3), 0px 6px 10px 4px rgba(0, 0, 0, 0.15)',
+      5: '0px 4px 4px 0px rgba(0, 0, 0, 0.3), 0px 8px 12px 6px rgba(0, 0, 0, 0.15)'
+    };
+    for (const [level, value] of Object.entries(expected)) {
+      const match = css.match(new RegExp(`--shadow-elevation-${level}:\\s*([^;]+);`));
+      expect(match, `--shadow-elevation-${level} declared in app.css`).not.toBeNull();
+      expect(match![1].trim(), `--shadow-elevation-${level} value`).toBe(value);
+    }
+  });
+
+  it('uses no color function newer than rgba()', () => {
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
+    const block = css.match(/--shadow-elevation-1:[\s\S]*?--shadow-elevation-5:[^;]+;/)![0];
+    for (const banned of ['oklch', 'oklab', 'color-mix', 'lab(', 'lch(', 'hwb(']) {
+      expect(block).not.toContain(banned);
+    }
+  });
+});
+
+describe('typography scale (app.css)', () => {
+  it('declares the trimmed M3 type scale with paired line-height', () => {
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
+    const expected: Record<string, { size: string; lineHeight: string }> = {
+      'title-large': { size: '22px', lineHeight: '28px' },
+      'title-medium': { size: '16px', lineHeight: '24px' },
+      'body-large': { size: '16px', lineHeight: '24px' },
+      'body-medium': { size: '14px', lineHeight: '20px' },
+      'body-small': { size: '12px', lineHeight: '16px' },
+      'label-large': { size: '14px', lineHeight: '20px' },
+      'label-small': { size: '11px', lineHeight: '16px' }
+    };
+    for (const [name, { size, lineHeight }] of Object.entries(expected)) {
+      const sizeMatch = css.match(new RegExp(`--text-${name}:\\s*([^;]+);`));
+      expect(sizeMatch, `--text-${name} declared`).not.toBeNull();
+      expect(sizeMatch![1].trim(), `--text-${name} size`).toBe(size);
+
+      const lineHeightMatch = css.match(new RegExp(`--text-${name}--line-height:\\s*([^;]+);`));
+      expect(lineHeightMatch, `--text-${name}--line-height declared`).not.toBeNull();
+      expect(lineHeightMatch![1].trim(), `--text-${name} line-height`).toBe(lineHeight);
+    }
+  });
+
+  it('does not add a display-tier token', () => {
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
+    expect(css).not.toMatch(/--text-display-/);
+  });
+});
+
+describe('motion tokens (app.css)', () => {
+  it('declares M3 duration and easing tokens', () => {
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
+    expect(css.match(/--duration-short:\s*([^;]+);/)?.[1].trim()).toBe('100ms');
+    expect(css.match(/--duration-medium:\s*([^;]+);/)?.[1].trim()).toBe('250ms');
+    expect(css.match(/--duration-long:\s*([^;]+);/)?.[1].trim()).toBe('400ms');
+    expect(css.match(/--ease-standard:\s*([^;]+);/)?.[1].trim()).toBe('cubic-bezier(0.2, 0, 0, 1)');
+    expect(css.match(/--ease-emphasized:\s*([^;]+);/)?.[1].trim()).toBe(
+      'cubic-bezier(0.05, 0.7, 0.1, 1)'
+    );
+  });
+});
+
+describe('icon size tokens (app.css)', () => {
+  it('declares the M3 icon size scale', () => {
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
+    expect(css.match(/--size-icon-sm:\s*([^;]+);/)?.[1].trim()).toBe('1rem');
+    expect(css.match(/--size-icon-md:\s*([^;]+);/)?.[1].trim()).toBe('1.25rem');
+    expect(css.match(/--size-icon-lg:\s*([^;]+);/)?.[1].trim()).toBe('1.5rem');
   });
 });
 

@@ -55,16 +55,14 @@
 </script>
 
 <div class="p-4">
-  <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
-    About
-  </h2>
+  <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">About</h2>
   <div
-    class="divide-outline-variant bg-surface-container divide-y overflow-hidden rounded-xl text-sm"
+    class="divide-outline-variant bg-surface-container text-body-medium divide-y overflow-hidden rounded-xl"
   >
     <button
       type="button"
       onclick={copyPhoneNumber}
-      class="hover:bg-surface-container-high active:bg-surface-container-high flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+      class="hover:bg-surface-container-high active:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
       aria-label="Copy phone number to clipboard"
     >
       <span class="text-on-surface font-medium">Phone Number</span>
@@ -72,7 +70,8 @@
     </button>
     <div class="flex items-center justify-between p-4">
       <span class="text-on-surface font-medium">First Boot</span>
-      <span class="text-on-surface font-mono text-xs">{formatDate(getFirstBootTime())}</span>
+      <span class="text-on-surface text-body-small font-mono">{formatDate(getFirstBootTime())}</span
+      >
     </div>
     <div class="flex items-center justify-between p-4">
       <span class="text-on-surface font-medium">Software</span>
@@ -84,7 +83,7 @@
     <button
       type="button"
       onclick={ontapbuild}
-      class="hover:bg-surface-container-high active:bg-surface-container-high flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+      class="hover:bg-surface-container-high active:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
     >
       <span class="text-on-surface font-medium">OS Version</span>
       <span class="text-secondary font-mono">{MICA_BUILD_INFO}</span>

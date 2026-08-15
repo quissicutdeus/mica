@@ -469,7 +469,7 @@
     <div class="ml-auto flex items-center gap-1">
       <button
         type="button"
-        class="text-on-surface hover:bg-surface-container-high relative rounded-full p-2 transition-colors"
+        class="text-on-surface hover:bg-surface-container-high duration-short ease-standard relative rounded-full p-2 transition-colors"
         onclick={() => openDms(null)}
         title="Messages"
         aria-label="Messages"
@@ -487,7 +487,7 @@
            opens all of it. -->
       <button
         type="button"
-        class="rounded-full transition-transform hover:scale-105"
+        class="duration-short ease-standard rounded-full transition-transform hover:scale-105"
         onclick={() => (menu = true)}
         title="Posting as @{$activeAccount?.handle ?? ''}"
         aria-label="Posting as @{$activeAccount?.handle ?? ''}"
@@ -508,7 +508,9 @@
   {#if composing || editing}
     <!-- Full screen rather than pinned above the feed: the dominant modal shape in the repo,
          and the composer is now reached from the FAB rather than always mounted. -->
-    <div class="animate-in fade-in bg-surface absolute inset-0 z-30 flex flex-col duration-200">
+    <div
+      class="animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col"
+    >
       <Composer
         handle={$activeAccount?.handle}
         initial={editing?.body ?? ''}
@@ -531,7 +533,9 @@
   {/if}
 
   {#if claiming}
-    <div class="animate-in fade-in bg-surface absolute inset-0 z-30 flex flex-col duration-200">
+    <div
+      class="animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col"
+    >
       <ClaimHandle busy={$busy} onclaim={claim} oncancel={() => (claiming = false)} />
     </div>
   {/if}

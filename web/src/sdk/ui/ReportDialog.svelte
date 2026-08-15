@@ -70,9 +70,9 @@
   class="bg-scrim absolute inset-0 z-50 flex items-end backdrop-blur-sm"
   transition:fade={{ duration: 150 }}
 >
-  <div class="bg-surface max-h-full w-full overflow-y-auto rounded-t-3xl p-5">
+  <div class="bg-surface max-h-full w-full overflow-y-auto rounded-t-xl p-5">
     <h3 class="text-on-surface mb-1 text-lg font-bold">Report content</h3>
-    <p class="text-on-surface-variant mb-4 text-sm">
+    <p class="text-on-surface-variant text-body-medium mb-4">
       A moderator reviews this. The author is not told.
     </p>
 
@@ -82,10 +82,10 @@
           type="button"
           onclick={() => (category = option.id)}
           aria-pressed={category === option.id}
-          class="flex w-full cursor-pointer items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition-colors {category ===
+          class="text-body-medium flex w-full cursor-pointer items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors {category ===
           option.id
             ? 'border-error bg-error-container text-on-error-container'
-            : 'border-outline-variant bg-surface-container text-on-surface hover:bg-surface-container-high'}"
+            : 'border-outline-variant bg-surface-container text-on-surface hover:bg-surface-container-high'} duration-short ease-standard"
         >
           {option.label}
           {#if category === option.id}
@@ -100,7 +100,7 @@
       maxlength={MAX_NOTE}
       rows="3"
       placeholder="Anything else the moderator should know (optional)"
-      class="border-outline-variant bg-surface-container text-on-surface placeholder-on-surface-variant focus:border-error mb-4 w-full resize-none rounded-xl border p-3 text-sm focus:outline-none"
+      class="border-outline-variant bg-surface-container text-on-surface placeholder-on-surface-variant focus:border-error text-body-medium mb-4 w-full resize-none rounded-xl border p-3 focus:outline-none"
     ></textarea>
 
     <div class="flex gap-3">

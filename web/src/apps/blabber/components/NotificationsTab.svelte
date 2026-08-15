@@ -69,7 +69,7 @@
           type="button"
           class="hover:bg-surface-container flex w-full cursor-pointer items-start gap-3.5 px-4 py-3.5 text-left transition-colors {!item.read_at
             ? 'bg-surface'
-            : ''}"
+            : ''} duration-short ease-standard"
           onclick={() => handleItemClick(item)}
         >
           <!-- Left Avatar / Activity Badge -->
@@ -78,7 +78,7 @@
               <Avatar src={item.avatar} size="md" />
             {:else}
               <div
-                class="text-on-surface flex h-10 w-10 items-center justify-center rounded-full font-bold shadow-sm {kind ===
+                class="text-on-surface shadow-elevation-1 flex h-10 w-10 items-center justify-center rounded-full font-bold {kind ===
                 'follow'
                   ? 'bg-secondary'
                   : kind === 'mention'
@@ -88,7 +88,7 @@
                 {#if kind === 'follow'}
                   <UsersIcon class="text-on-surface h-5 w-5" />
                 {:else if kind === 'mention'}
-                  <span class="text-sm">@</span>
+                  <span class="text-body-medium">@</span>
                 {:else if kind === 'dm'}
                   <MessageIcon class="text-on-surface h-5 w-5" />
                 {:else}
@@ -119,13 +119,13 @@
           <!-- Main Notification Body -->
           <div class="min-w-0 flex-1">
             <div class="flex items-baseline justify-between gap-2">
-              <span class="text-on-surface truncate text-sm font-semibold">{item.title}</span>
+              <span class="text-on-surface text-body-medium truncate">{item.title}</span>
               <span class="text-on-surface-variant shrink-0 text-[11px] font-medium">
                 {formatTime(item.created_at)}
               </span>
             </div>
 
-            <p class="text-on-surface mt-1 line-clamp-2 text-xs leading-relaxed">
+            <p class="text-on-surface text-body-small mt-1 line-clamp-2 leading-relaxed">
               {item.body}
             </p>
           </div>

@@ -124,11 +124,32 @@
   --color-error-hover: rgb(243, 166, 158);
   --color-error-pressed: rgb(240, 162, 154);
 
+  /* Selected: the same composite at M3's 12% — between hover and pressed, so a
+     persistent selected state (an active tab, an active segment) reads as "held"
+     rather than "about to be pressed". */
+  --color-surface-selected: rgb(42, 44, 53);
+  --color-surface-container-selected: rgb(53, 54, 65);
+  --color-surface-container-high-selected: rgb(61, 64, 74);
+  --color-primary-selected: rgb(160, 177, 239);
+  --color-primary-container-selected: rgb(26, 79, 185);
+  --color-secondary-container-selected: rgb(88, 86, 119);
+  --color-error-selected: rgb(237, 158, 151);
+
+  /* Disabled: `on-surface` composited over `surface` at M3's 38% (content) / 12%
+     (container). Every disabled control here sits on the neutral `surface` role. */
+  --color-disabled-content: rgb(96, 97, 108);
+  --color-disabled-container: rgb(42, 44, 53);
+
   /* The one token with no M3 role behind it: the FAB's coloured bloom, for a
      `box-shadow`. An elevation effect rather than a semantic role. */
   --color-primary-container-hover: rgb(18, 72, 181);
   --color-primary-container-pressed: rgb(22, 76, 183);
   --color-primary-glow: rgba(182, 196, 255, 0.3);
+
+  /* Keyboard focus outline. Aliased to `primary` rather than a distinct color — this
+     app is mouse-driven inside CEF, so a separate role would be one more value to keep
+     honest for a low-priority accessibility affordance. */
+  --color-focus-ring: rgb(182, 196, 255);
 
   /* Badges drawn over media — a GIF tag, a duration, the video play affordance. Not
      `--color-scrim` (0.32), which is tuned for dimming a whole surface behind a dialog
@@ -139,6 +160,101 @@
   --color-media-overlay: rgba(0, 0, 0, 0.6);
 
   /* --- end generated --- */
+
+  /**
+   * M3 shape scale. Replaces Tailwind's default `--radius-*` scale, so `rounded-*`
+   * utilities are real M3 values rather than Tailwind's un-opinionated defaults.
+   *
+   * Usage map: buttons/chips/pills/avatars -> full. List rows, small icon buttons ->
+   * sm-md. Cards, list-item containers -> md-lg. Dialogs, bottom sheets, PhotoPicker ->
+   * xl. FAB -> lg. Anything flush against the phone's own screen edge -> frame-inner (on
+   * that edge only), which tracks PhoneFrame's own screen radius rather than duplicating
+   * it as a magic number at each call site.
+   */
+  --radius-none: 0;
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 28px;
+  --radius-full: 9999px;
+  --radius-frame-inner: 3rem;
+
+  /**
+   * M3 elevation: real drop-shadow for elements that float above the surface stack
+   * (FAB, a dragged icon, an open dialog/sheet, the dock) rather than sitting at a
+   * higher tone. Ordinary cards and containers use a `surface-container-*` tier and no
+   * shadow instead — see the surface-tier usage map in the M3 foundation spec. Standard
+   * M3 umbra/penumbra pairs, plain rgba(), nothing newer than CSS 2.
+   */
+  --shadow-elevation-1: 0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 1px 3px 1px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-2: 0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 2px 6px 2px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-3: 0px 1px 3px 0px rgba(0, 0, 0, 0.3), 0px 4px 8px 3px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-4: 0px 2px 3px 0px rgba(0, 0, 0, 0.3), 0px 6px 10px 4px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-5: 0px 4px 4px 0px rgba(0, 0, 0, 0.3), 0px 8px 12px 6px rgba(0, 0, 0, 0.15);
+
+  /**
+   * M3 type scale, trimmed to what this 400x850 phone with no hero/marketing text
+   * actually uses — the full spec's `display-*` tier is dropped. Each token pairs
+   * size/line-height/weight/tracking so `text-title-large` etc. sets all of them
+   * together, the same way Tailwind v4 pairs `text-sm`/`--text-sm--line-height` today.
+   */
+  --text-title-large: 22px;
+  --text-title-large--line-height: 28px;
+  --text-title-large--font-weight: 400;
+
+  --text-title-medium: 16px;
+  --text-title-medium--line-height: 24px;
+  --text-title-medium--font-weight: 500;
+  --text-title-medium--letter-spacing: 0.15px;
+
+  --text-body-large: 16px;
+  --text-body-large--line-height: 24px;
+  --text-body-large--font-weight: 400;
+  --text-body-large--letter-spacing: 0.5px;
+
+  --text-body-medium: 14px;
+  --text-body-medium--line-height: 20px;
+  --text-body-medium--font-weight: 400;
+  --text-body-medium--letter-spacing: 0.25px;
+
+  --text-body-small: 12px;
+  --text-body-small--line-height: 16px;
+  --text-body-small--font-weight: 400;
+  --text-body-small--letter-spacing: 0.4px;
+
+  --text-label-large: 14px;
+  --text-label-large--line-height: 20px;
+  --text-label-large--font-weight: 500;
+  --text-label-large--letter-spacing: 0.1px;
+
+  --text-label-small: 11px;
+  --text-label-small--line-height: 16px;
+  --text-label-small--font-weight: 500;
+  --text-label-small--letter-spacing: 0.5px;
+
+  /**
+   * M3 motion, trimmed to the five tokens this UI needs. `emphasized` is M3's spec
+   * curve approximated as a single cubic-bezier (M3's true emphasized curve is a
+   * two-segment spring expressed with the CSS `linear()` easing function, which is
+   * Chrome 113 — years past the CEF 103 floor in AGENTS.md §6). This is M3's own
+   * "emphasized decelerate" half, appropriate for the enter/settle motions
+   * (drawer pull, dragged-icon settle) this token is used for.
+   */
+  --duration-short: 100ms;
+  --duration-medium: 250ms;
+  --duration-long: 400ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.05, 0.7, 0.1, 1);
+
+  /**
+   * Inline glyph icon sizes (status bar, list-item affordances, dialog icons), matching
+   * M3's icon scale. App icons stay the fixed 32px (`h-8 w-8`) mandated by AGENTS.md
+   * §11.1 and are not part of this scale.
+   */
+  --size-icon-sm: 1rem;
+  --size-icon-md: 1.25rem;
+  --size-icon-lg: 1.5rem;
 
   /**
    * The frame's own insets. `PhoneFrame` expressed these as bare `pt-8`/`pb-4` with

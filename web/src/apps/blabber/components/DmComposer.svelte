@@ -50,7 +50,7 @@
          `color-mix()`, which CEF 103 does not have (§6), and one hairline does not earn a theme
          token. It matches the send button, which is the color this app already uses. -->
     <div
-      class="bg-surface-container flex flex-1 items-center rounded-2xl border border-transparent px-3.5 py-1.5 focus-within:border-sky-600"
+      class="bg-surface-container flex flex-1 items-center rounded-lg border border-transparent px-3.5 py-1.5 focus-within:border-sky-600"
     >
       <!-- maxlength as well: the server refuses an over-long body, and meeting the limit while
            typing beats being told after tapping send. -->
@@ -59,7 +59,7 @@
         placeholder="Message"
         maxlength={LIMIT}
         rows="1"
-        class="text-on-surface placeholder-on-surface-variant h-[22px] max-h-32 min-h-[22px] w-full resize-none bg-transparent p-0 text-sm leading-normal focus:outline-none"
+        class="text-on-surface placeholder-on-surface-variant text-body-medium h-[22px] max-h-32 min-h-[22px] w-full resize-none bg-transparent p-0 leading-normal focus:outline-none"
         onkeydown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
@@ -70,7 +70,7 @@
 
     <button
       type="button"
-      class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+      class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover duration-short ease-standard flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40"
       onclick={send}
       disabled={!canSend}
       aria-label="Send"

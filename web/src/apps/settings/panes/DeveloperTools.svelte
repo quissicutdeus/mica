@@ -116,7 +116,7 @@
 
 <div class="p-4">
   <h2
-    class="mb-2 flex items-center justify-between px-2 text-sm font-medium tracking-wider text-emerald-400 uppercase"
+    class="text-body-medium mb-2 flex items-center justify-between px-2 tracking-wider text-emerald-400 uppercase"
   >
     <span>Developer Tools</span>
     <span
@@ -137,7 +137,7 @@
     />
   </div>
 
-  <div class="bg-surface-container space-y-4 overflow-hidden rounded-xl p-4 text-xs">
+  <div class="bg-surface-container text-body-small space-y-4 overflow-hidden rounded-xl p-4">
     <!-- Battery Level -->
     <div class="flex flex-col gap-2">
       <div class="text-on-surface flex items-center justify-between">
@@ -198,7 +198,7 @@
             class="cursor-pointer rounded border py-1.5 text-[11px] font-semibold transition-all {$signalLevel ===
             level
               ? 'border-emerald-500 bg-emerald-600 text-white'
-              : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'}"
+              : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'} duration-short ease-standard"
           >
             {level} Bar{level === 1 ? '' : 's'}
           </button>
@@ -254,7 +254,7 @@
       <button
         type="button"
         onclick={triggerCall}
-        class="w-full cursor-pointer rounded-lg bg-emerald-600 py-2 text-xs font-semibold text-white transition-all hover:bg-emerald-500"
+        class="duration-short ease-standard text-body-small w-full cursor-pointer rounded-lg bg-emerald-600 py-2 text-white transition-all hover:bg-emerald-500"
       >
         Simulate Incoming Call
       </button>

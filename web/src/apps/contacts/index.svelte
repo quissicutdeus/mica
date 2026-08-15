@@ -259,7 +259,7 @@
     <button
       class="hover:bg-surface-container-high ml-auto rounded-full p-2 transition-colors {showSearch
         ? 'bg-surface-container text-primary'
-        : 'text-on-surface'}"
+        : 'text-on-surface'} duration-short ease-standard"
       onclick={() => {
         showSearch = !showSearch;
         if (!showSearch) searchQuery = '';
@@ -300,7 +300,7 @@
 
     {#if showSearch}
       <div
-        class="animate-in slide-in-from-top border-outline-variant bg-surface sticky top-0 z-20 border-b p-3 backdrop-blur-md duration-200"
+        class="animate-in slide-in-from-top border-outline-variant bg-surface duration-medium ease-emphasized sticky top-0 z-20 border-b p-3 backdrop-blur-md"
       >
         <SearchBar bind:value={searchQuery} placeholder="Search contacts..." focus={true} />
       </div>

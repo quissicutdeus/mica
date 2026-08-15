@@ -270,14 +270,14 @@
         'ring-2',
         'ring-primary',
         'bg-surface-container-highest',
-        'rounded-2xl'
+        'rounded-lg'
       );
       setTimeout(() => {
         targetEl.classList.remove(
           'ring-2',
           'ring-primary',
           'bg-surface-container-highest',
-          'rounded-2xl'
+          'rounded-lg'
         );
       }, 1500);
     }
@@ -347,7 +347,7 @@
       <button
         class="hover:bg-surface rounded-full p-2 transition-colors {viewingArchive
           ? 'bg-surface-container-low text-primary'
-          : 'text-on-surface'}"
+          : 'text-on-surface'} duration-short ease-standard"
         onclick={() => (viewingArchive = !viewingArchive)}
         title={viewingArchive ? 'View Inbox' : 'View Archive'}
         aria-label="Toggle Archive"
@@ -357,7 +357,7 @@
       <button
         class="hover:bg-surface-container-high rounded-full p-2 transition-colors {showSearch
           ? 'bg-surface-container text-primary'
-          : 'text-on-surface'}"
+          : 'text-on-surface'} duration-short ease-standard"
         onclick={() => {
           showSearch = !showSearch;
           if (!showSearch) searchQuery = '';
@@ -371,7 +371,7 @@
   {:else if selectedConversationId && currentConv}
     <div class="ml-auto flex items-center gap-1">
       <button
-        class="text-on-surface hover:bg-surface-container-high hover:text-error cursor-pointer rounded-full p-1.5 transition-colors"
+        class="text-on-surface hover:bg-surface-container-high hover:text-error duration-short ease-standard cursor-pointer rounded-full p-1.5 transition-colors"
         onclick={async () => {
           if (currentConv) {
             await conversationsStore.deleteConversation(currentConv.id);
@@ -384,7 +384,7 @@
         <TrashIcon class="h-5 w-5" />
       </button>
       <button
-        class="text-on-surface hover:bg-surface-container-high hover:text-primary cursor-pointer rounded-full p-1.5 transition-colors"
+        class="text-on-surface hover:bg-surface-container-high hover:text-primary duration-short ease-standard cursor-pointer rounded-full p-1.5 transition-colors"
         onclick={async () => {
           if (currentConv) {
             const isArchived = currentConv.status === 'archived';
@@ -400,7 +400,7 @@
       <button
         class="hover:bg-surface-container-high cursor-pointer rounded-full p-1.5 transition-colors {showInChatSearch
           ? 'bg-surface-container text-primary'
-          : 'text-on-surface hover:text-on-surface'}"
+          : 'text-on-surface hover:text-on-surface'} duration-short ease-standard"
         onclick={() => {
           showInChatSearch = !showInChatSearch;
           if (!showInChatSearch) inChatSearchQuery = '';
@@ -435,13 +435,13 @@
     {#if isComposing}
       <!-- New Message Composition Panel (Sticky overlay directly below header) -->
       <div
-        class="animate-in slide-in-from-top border-outline-variant bg-surface sticky top-0 z-20 space-y-3 border-b p-4 shadow-2xl backdrop-blur-md duration-200"
+        class="animate-in slide-in-from-top border-outline-variant bg-surface shadow-elevation-5 duration-medium ease-emphasized sticky top-0 z-20 space-y-3 border-b p-4 backdrop-blur-md"
       >
         <div class="border-outline-variant flex items-center justify-between border-b pb-1">
-          <h3 class="text-on-surface text-base font-semibold">New Conversation</h3>
+          <h3 class="text-on-surface text-body-large">New Conversation</h3>
           <button
             type="button"
-            class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface rounded-full p-1 transition-colors"
+            class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard rounded-full p-1 transition-colors"
             onclick={() => (isComposing = false)}
             aria-label="Close form"
           >
@@ -467,24 +467,28 @@
                 <Avatar src={contact.avatar} initials={contact.firstname[0]} size="w-9 h-9" />
               </div>
               <div class="min-w-0 flex-1">
-                <div class="text-on-surface truncate text-sm font-medium">
+                <div class="text-on-surface text-body-medium truncate">
                   {contact.firstname}
                   {contact.lastname || ''}
                 </div>
-                <div class="text-on-surface-variant text-xs">
+                <div class="text-on-surface-variant text-body-small">
                   {contact.phone}
                 </div>
               </div>
             </ListItem>
           {/each}
           {#if filteredContacts.length === 0}
-            <div class="text-on-surface-variant py-6 text-center text-xs">
+            <div class="text-on-surface-variant text-body-small py-6 text-center">
               No matching contacts found.
             </div>
           {/if}
         </div>
 
-        <Button variant="secondary" class="w-full text-xs" onclick={() => (isComposing = false)}>
+        <Button
+          variant="secondary"
+          class="text-body-small w-full"
+          onclick={() => (isComposing = false)}
+        >
           Cancel
         </Button>
       </div>

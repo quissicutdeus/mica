@@ -53,7 +53,7 @@
         </svg>
       </div>
       <h2 class="text-on-surface mb-1 text-xl font-bold">App Stopped Working</h2>
-      <p class="text-on-surface-variant mb-6 text-sm">
+      <p class="text-on-surface-variant text-body-medium mb-6">
         The <span class="text-on-surface font-semibold capitalize">{appName}</span> app encountered an
         unexpected error.
       </p>
@@ -62,7 +62,7 @@
         <button
           type="button"
           onclick={reset}
-          class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover w-full cursor-pointer rounded-xl px-4 py-2.5 font-medium transition-colors"
+          class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover duration-short ease-standard w-full cursor-pointer rounded-xl px-4 py-2.5 font-medium transition-colors"
         >
           Restart App
         </button>
@@ -72,7 +72,7 @@
             reset();
             goHome();
           }}
-          class="border-outline-variant bg-surface-container text-on-surface hover:bg-surface-container-high w-full cursor-pointer rounded-xl border px-4 py-2.5 font-medium transition-colors"
+          class="border-outline-variant bg-surface-container text-on-surface hover:bg-surface-container-high duration-short ease-standard w-full cursor-pointer rounded-xl border px-4 py-2.5 font-medium transition-colors"
         >
           Return to Home Screen
         </button>
@@ -80,7 +80,7 @@
 
       {#if import.meta.env.DEV && stackOf(error)}
         <div
-          class="border-error bg-error-container text-on-error-container mt-6 max-h-32 w-full overflow-auto rounded-lg border p-3 text-left font-mono text-xs"
+          class="border-error bg-error-container text-on-error-container text-body-small mt-6 max-h-32 w-full overflow-auto rounded-lg border p-3 text-left font-mono"
         >
           {stackOf(error)}
         </div>

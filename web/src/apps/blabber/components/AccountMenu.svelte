@@ -47,7 +47,7 @@
      buttons, and dimming without catching the click leaves a menu only Back can dismiss. -->
 <button
   type="button"
-  class="bg-scrim animate-in fade-in absolute inset-0 z-40 duration-150"
+  class="bg-scrim animate-in fade-in duration-short ease-standard absolute inset-0 z-40"
   aria-label="Close menu"
   onclick={onclose}
 ></button>
@@ -55,7 +55,7 @@
 <!-- `top-20` clears the header rather than guessing at it: the header is one row of padding plus a
      40px icon button, so 5rem lands just below with a hairline of gap. -->
 <div
-  class="animate-in fade-in border-outline-variant bg-surface absolute top-20 right-2 z-40 w-56 overflow-hidden rounded-2xl border shadow-xl duration-150"
+  class="animate-in fade-in border-outline-variant bg-surface shadow-elevation-4 duration-short ease-standard absolute top-20 right-2 z-40 w-56 overflow-hidden rounded-lg border"
 >
   <p
     class="text-on-surface-variant px-3 pt-3 pb-1 text-[11px] font-semibold tracking-wide uppercase"
@@ -70,7 +70,7 @@
       aria-pressed={active}
       class="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left transition-colors {active
         ? 'bg-surface-container text-on-surface'
-        : 'text-on-surface hover:bg-surface-container'}"
+        : 'text-on-surface hover:bg-surface-container'} duration-short ease-standard"
       onclick={() => onswitch(account.id)}
     >
       <Avatar
@@ -81,9 +81,7 @@
         showSilhouette={false}
       />
       <span class="min-w-0 flex-1">
-        <span class="block truncate text-xs font-semibold"
-          >{account.display_name || account.handle}</span
-        >
+        <span class="text-body-small block truncate">{account.display_name || account.handle}</span>
         <span class="text-on-surface-variant block truncate text-[11px]">@{account.handle}</span>
       </span>
       {#if active}
@@ -95,7 +93,7 @@
   <div class="border-outline-variant border-t">
     <button
       type="button"
-      class="text-on-surface hover:bg-surface-container w-full cursor-pointer px-3 py-2.5 text-left text-xs transition-colors"
+      class="text-on-surface hover:bg-surface-container duration-short ease-standard text-body-small w-full cursor-pointer px-3 py-2.5 text-left transition-colors"
       onclick={onedit}
     >
       Edit profile
@@ -103,7 +101,7 @@
     {#if canClaim}
       <button
         type="button"
-        class="text-on-surface hover:bg-surface-container w-full cursor-pointer px-3 py-2.5 text-left text-xs transition-colors"
+        class="text-on-surface hover:bg-surface-container duration-short ease-standard text-body-small w-full cursor-pointer px-3 py-2.5 text-left transition-colors"
         onclick={onclaim}
       >
         Claim another handle

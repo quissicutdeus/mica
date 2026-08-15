@@ -200,16 +200,16 @@
   {:else}
     <div class="p-4">
       <div
-        class="divide-outline-variant bg-surface-container divide-y overflow-hidden rounded-xl text-sm"
+        class="divide-outline-variant bg-surface-container text-body-medium divide-y overflow-hidden rounded-xl"
       >
         <button
           type="button"
           onclick={() => (pane = 'network')}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
             <span class="text-on-surface font-medium">Network</span>
-            <span class="text-on-surface-variant text-xs"
+            <span class="text-on-surface-variant text-body-small"
               >Cellular service and Bluetooth proximity</span
             >
           </div>
@@ -218,11 +218,11 @@
         <button
           type="button"
           onclick={() => (pane = 'notifications')}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
             <span class="text-on-surface font-medium">Notifications</span>
-            <span class="text-on-surface-variant text-xs"
+            <span class="text-on-surface-variant text-body-small"
               >Banners, alerts, sounds, and icon badges</span
             >
           </div>
@@ -231,22 +231,24 @@
         <button
           type="button"
           onclick={() => (pane = 'apps')}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
             <span class="text-on-surface font-medium">Apps</span>
-            <span class="text-on-surface-variant text-xs">Storage and uninstall, per app</span>
+            <span class="text-on-surface-variant text-body-small"
+              >Storage and uninstall, per app</span
+            >
           </div>
           <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
         </button>
         <button
           type="button"
           onclick={() => (pane = 'display')}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
             <span class="text-on-surface font-medium">Display</span>
-            <span class="text-on-surface-variant text-xs"
+            <span class="text-on-surface-variant text-body-small"
               >Theme, wallpaper, phone size and clock</span
             >
           </div>
@@ -255,33 +257,39 @@
         <button
           type="button"
           onclick={() => (pane = 'sound')}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
             <span class="text-on-surface font-medium">Sound</span>
-            <span class="text-on-surface-variant text-xs">Volume, mute, and button step size</span>
+            <span class="text-on-surface-variant text-body-small"
+              >Volume, mute, and button step size</span
+            >
           </div>
           <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
         </button>
         <button
           type="button"
           onclick={() => (pane = 'shortcuts')}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
             <span class="text-on-surface font-medium">Shortcuts</span>
-            <span class="text-on-surface-variant text-xs">Keyboard shortcuts inside the phone</span>
+            <span class="text-on-surface-variant text-body-small"
+              >Keyboard shortcuts inside the phone</span
+            >
           </div>
           <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
         </button>
         <button
           type="button"
           onclick={() => (pane = 'about')}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
             <span class="text-on-surface font-medium">About</span>
-            <span class="text-on-surface-variant text-xs">Number, build, and first boot</span>
+            <span class="text-on-surface-variant text-body-small"
+              >Number, build, and first boot</span
+            >
           </div>
           <ChevronRightIcon class="text-on-surface-variant h-4 w-4" />
         </button>
@@ -289,11 +297,11 @@
           <button
             type="button"
             onclick={() => (pane = 'devtools')}
-            class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+            class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
           >
             <div class="flex flex-col">
               <span class="text-on-surface font-medium">Developer Tools</span>
-              <span class="text-on-surface-variant text-xs"
+              <span class="text-on-surface-variant text-body-small"
                 >Battery, signal, and event simulation</span
               >
             </div>

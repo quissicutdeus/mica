@@ -80,7 +80,7 @@
   {#if replyingTo}
     {@const replySender = getSenderInfo(replyingTo)}
     <div
-      class="bg-surface-container-high border-primary mb-2 flex items-center justify-between rounded-xl border-l-4 p-2 text-xs shadow-sm"
+      class="bg-surface-container-high border-primary shadow-elevation-1 text-body-small mb-2 flex items-center justify-between rounded-xl border-l-4 p-2"
       transition:fly={{ y: 10, duration: 150 }}
     >
       <div class="flex min-w-0 flex-1 flex-col pr-2">
@@ -100,7 +100,7 @@
       </div>
       <button
         type="button"
-        class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface shrink-0 cursor-pointer rounded-full p-1 transition-colors"
+        class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard shrink-0 cursor-pointer rounded-full p-1 transition-colors"
         onclick={oncancelreply}
         aria-label="Cancel reply"
         title="Cancel reply"
@@ -113,7 +113,7 @@
     <div class="no-scrollbar mb-2 flex gap-2 overflow-x-auto p-1">
       {#each attachments as att}
         <div
-          class="border-outline relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border shadow-md"
+          class="border-outline shadow-elevation-2 relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border"
         >
           <MediaThumb item={att.media} alt="Attachment" />
           <button
@@ -131,7 +131,7 @@
   <div class="flex w-full items-center gap-2.5">
     <button
       type="button"
-      class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors"
+      class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary duration-short ease-standard flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors"
       onclick={() => (showAttachMenu = !showAttachMenu)}
       aria-label="Attachments"
     >
@@ -139,10 +139,10 @@
     </button>
 
     <div
-      class="bg-surface-container-high text-on-surface focus-within:border-primary focus-within:ring-primary flex flex-1 items-center rounded-2xl border border-transparent px-3.5 py-1.5 focus-within:ring-1"
+      class="bg-surface-container-high text-on-surface focus-within:border-primary focus-within:ring-primary flex flex-1 items-center rounded-lg border border-transparent px-3.5 py-1.5 focus-within:ring-1"
     >
       <textarea
-        class="no-scrollbar text-on-surface placeholder-on-surface-variant h-[22px] max-h-32 min-h-[22px] w-full resize-none bg-transparent p-0 text-sm leading-normal focus:outline-none"
+        class="no-scrollbar text-on-surface placeholder-on-surface-variant text-body-medium h-[22px] max-h-32 min-h-[22px] w-full resize-none bg-transparent p-0 leading-normal focus:outline-none"
         placeholder="Message"
         rows="1"
         bind:value={text}
@@ -156,7 +156,7 @@
 
     <button
       type="button"
-      class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+      class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-elevation-2 duration-short ease-standard flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40"
       onclick={onsend}
       disabled={busy || (!text.trim() && attachments.length === 0)}
       aria-label="Send"
@@ -167,11 +167,11 @@
 
   {#if showAttachMenu}
     <div
-      class="border-outline-variant bg-surface-container absolute bottom-16 left-4 grid w-48 grid-cols-2 gap-2 rounded-xl border p-2 shadow-xl"
+      class="border-outline-variant bg-surface-container shadow-elevation-4 absolute bottom-16 left-4 grid w-48 grid-cols-2 gap-2 rounded-xl border p-2"
       transition:fly={{ y: 20, duration: 200 }}
     >
       <button
-        class="hover:bg-surface-container-high flex flex-col items-center justify-center rounded-lg p-3 transition-colors"
+        class="hover:bg-surface-container-high duration-short ease-standard flex flex-col items-center justify-center rounded-lg p-3 transition-colors"
         onclick={onopenphotos}
       >
         <div
@@ -179,10 +179,10 @@
         >
           <PhotoIcon class="h-5 w-5" />
         </div>
-        <span class="text-xs">Photo</span>
+        <span class="text-body-small">Photo</span>
       </button>
       <button
-        class="hover:bg-surface-container-high flex flex-col items-center justify-center rounded-lg p-3 transition-colors"
+        class="hover:bg-surface-container-high duration-short ease-standard flex flex-col items-center justify-center rounded-lg p-3 transition-colors"
         onclick={handleShareLocation}
       >
         <div
@@ -190,7 +190,7 @@
         >
           <LocationIcon class="h-5 w-5" />
         </div>
-        <span class="text-xs">Location</span>
+        <span class="text-body-small">Location</span>
       </button>
     </div>
   {/if}

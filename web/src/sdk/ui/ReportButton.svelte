@@ -37,7 +37,7 @@
   {onclick}
   aria-label="Report {subject}"
   title="Report {subject}"
-  class="text-on-surface-variant hover:text-error hover:bg-error-container focus-visible:ring-primary flex cursor-pointer items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none {pad} {opacity} {className}"
+  class="text-on-surface-variant hover:text-error hover:bg-error-container focus-visible:ring-primary flex cursor-pointer items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none {pad} {opacity} {className} duration-short ease-standard"
 >
   <FlagIcon class={glyph} />
 </button>

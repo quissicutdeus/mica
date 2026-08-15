@@ -30,7 +30,7 @@
     {#each EMOJI_PALETTE as emoji (emoji)}
       <button
         type="button"
-        class="hover:bg-surface-container-high flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-lg transition-colors"
+        class="hover:bg-surface-container-high duration-short ease-standard flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-lg transition-colors"
         onclick={() => pick(emoji)}
         aria-label="React with {emoji}"
       >
@@ -39,7 +39,7 @@
     {/each}
     <button
       type="button"
-      class="text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-lg transition-colors"
+      class="text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface duration-short ease-standard flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-lg transition-colors"
       onclick={() => (expanded = !expanded)}
       aria-label={expanded ? 'Close emoji picker' : 'More emoji'}
       aria-expanded={expanded}
@@ -50,11 +50,11 @@
 
   {#if expanded}
     <div
-      class="border-outline-variant bg-surface-container-high absolute bottom-full left-0 z-10 mb-2 max-h-64 w-72 overflow-y-auto rounded-xl border p-3 shadow-xl"
+      class="border-outline-variant bg-surface-container-high shadow-elevation-4 absolute bottom-full left-0 z-10 mb-2 max-h-64 w-72 overflow-y-auto rounded-xl border p-3"
       transition:fly={{ y: 8, duration: 150 }}
     >
       <div class="mb-2 flex items-center justify-between">
-        <span class="text-on-surface-variant text-xs font-semibold">Emoji</span>
+        <span class="text-on-surface-variant text-body-small">Emoji</span>
         <button
           type="button"
           class="text-on-surface-variant hover:text-on-surface cursor-pointer"
@@ -74,7 +74,7 @@
           {#each category.emoji as emoji (emoji)}
             <button
               type="button"
-              class="hover:bg-surface-container flex h-7 w-7 cursor-pointer items-center justify-center rounded text-base"
+              class="hover:bg-surface-container text-body-large flex h-7 w-7 cursor-pointer items-center justify-center rounded"
               onclick={() => pick(emoji)}
               aria-label="React with {emoji}"
             >

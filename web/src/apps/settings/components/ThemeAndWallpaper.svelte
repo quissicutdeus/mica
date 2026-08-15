@@ -96,7 +96,7 @@
 <div class="space-y-6">
   <!-- Appearance -->
   <div>
-    <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
+    <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
       Appearance
     </h2>
     <div class="bg-surface-container flex flex-col items-center gap-3 rounded-xl p-4">
@@ -106,7 +106,7 @@
            both simpler and guaranteed to match what the phone will actually do. Only the
            wallpaper is inline, because it is generated rather than a token. -->
       <div
-        class="border-outline relative flex w-[132px] flex-col overflow-hidden rounded-2xl border-2 shadow-lg"
+        class="border-outline shadow-elevation-3 relative flex w-[132px] flex-col overflow-hidden rounded-lg border-2"
         style={`aspect-ratio: 400 / 850; background: ${background};`}
       >
         <div class="text-on-surface flex items-center justify-between px-2 pt-1.5 text-[7px]">
@@ -150,7 +150,7 @@
 
   <!-- Color -->
   <div>
-    <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
+    <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
       Color
     </h2>
     <div class="bg-surface-container mb-3 flex flex-col items-center gap-3 rounded-xl p-4">
@@ -171,7 +171,7 @@
         <button
           type="button"
           onclick={() => resetWallpaper()}
-          class="text-primary cursor-pointer text-xs hover:underline"
+          class="text-primary text-body-small cursor-pointer hover:underline"
         >
           Reset
         </button>
@@ -187,7 +187,7 @@
 
   <!-- Presets: named colors, nothing more. The swatch is the wallpaper they produce. -->
   <div>
-    <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
+    <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
       Presets
     </h2>
     <div class="grid grid-cols-3 gap-3">
@@ -205,7 +205,7 @@
             class="h-12 w-full rounded-lg"
             style={`background: ${backgroundForSeed(preset.seed, mode)};`}
           ></div>
-          <span class="text-on-surface mt-2 text-xs font-medium">{preset.label}</span>
+          <span class="text-on-surface text-body-small mt-2">{preset.label}</span>
         </button>
       {/each}
     </div>
@@ -213,7 +213,7 @@
 
   <!-- Photos -->
   <div>
-    <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
+    <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
       From a Photo
     </h2>
     <div class="bg-surface-container rounded-xl p-4 text-center">

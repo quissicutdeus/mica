@@ -5,3 +5,8 @@ playwright-report
 
 # Destructive dev-only schema reset, regenerate with: pnpm generate:sql --with-reset
 sql/dev-reset.sql
+
+# Scratch mockups from Claude's visual brainstorming companion
+.superpowers/
+.agent/
+.env*

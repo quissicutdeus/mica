@@ -114,13 +114,15 @@
             showSilhouette={false}
           />
           <div class="min-w-0 flex-1">
-            <p class="flex items-center gap-1.5 text-xs">
+            <p class="text-body-small flex items-center gap-1.5">
               <span class="text-on-surface truncate font-semibold"
                 >{thread.display_name || thread.handle}</span
               >
               <span class="text-on-surface-variant truncate">@{thread.handle}</span>
             </p>
-            <p class="text-on-surface-variant truncate text-xs">{thread.last?.body ?? ''}</p>
+            <p class="text-on-surface-variant text-body-small truncate">
+              {thread.last?.body ?? ''}
+            </p>
           </div>
           {#if thread.unread > 0}
             <span
@@ -147,11 +149,13 @@
         class="min-w-0 text-left hover:underline"
         onclick={() => active?.handle && onhandle?.(active.handle)}
       >
-        <span class="text-on-surface block truncate text-sm font-semibold">
+        <span class="text-on-surface text-body-medium block truncate">
           {active?.display_name || (active?.handle ? `@${active.handle}` : 'Message')}
         </span>
         {#if active?.display_name && active.handle}
-          <span class="text-on-surface-variant block truncate text-xs">@{active.handle}</span>
+          <span class="text-on-surface-variant text-body-small block truncate"
+            >@{active.handle}</span
+          >
         {/if}
       </button>
     </div>
@@ -167,7 +171,7 @@
           {@const mine = message.to_account === peer}
           <div class="flex px-4 py-1.5" class:justify-end={mine}>
             <div
-              class="max-w-[80%] rounded-2xl px-3 py-2"
+              class="max-w-[80%] rounded-lg px-3 py-2"
               class:bg-primary={mine}
               class:bg-surface-container={!mine}
             >

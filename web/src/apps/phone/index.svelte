@@ -65,9 +65,7 @@
         <!-- Favorites Bar -->
         {#if $favoriteContacts.length > 0}
           <div class="mt-4 mb-auto w-full">
-            <div class="text-on-surface-variant mb-2 ml-1 text-xs font-bold uppercase">
-              Favorites
-            </div>
+            <div class="text-on-surface-variant text-body-small mb-2 ml-1 uppercase">Favorites</div>
             <div class="no-scrollbar flex space-x-4 overflow-x-auto pb-2">
               {#each $favoriteContacts as fav}
                 <button
@@ -78,9 +76,9 @@
                     initials={(fav.firstname[0] || '') + (fav.lastname?.[0] || '')}
                     size="w-12 h-12"
                     textClass="text-lg"
-                    bgClass="bg-yellow-600 shadow-lg"
+                    bgClass="bg-yellow-600 shadow-elevation-3"
                   />
-                  <span class="text-on-surface w-full truncate text-center text-xs"
+                  <span class="text-on-surface text-body-small w-full truncate text-center"
                     >{fav.firstname}</span
                   >
                 </button>
@@ -98,22 +96,22 @@
         <div class="grid w-full max-w-[280px] grid-cols-3 gap-6">
           {#each [1, 2, 3, 4, 5, 6, 7, 8, 9] as num}
             <button
-              class="bg-surface-container hover:bg-surface-container-low flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
+              class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
               onclick={() => handleKeypad(num.toString())}
             >
               {num}
             </button>
           {/each}
           <button
-            class="bg-surface-container hover:bg-surface-container-low flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
+            class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
             onclick={() => handleKeypad('*')}>*</button
           >
           <button
-            class="bg-surface-container hover:bg-surface-container-low flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
+            class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
             onclick={() => handleKeypad('0')}>0</button
           >
           <button
-            class="bg-surface-container hover:bg-surface-container-low flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
+            class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
             onclick={() => handleKeypad('#')}>#</button
           >
         </div>
@@ -124,7 +122,7 @@
 
           <!-- Call Button -->
           <button
-            class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-500 shadow-lg shadow-green-500/30 transition-colors hover:bg-green-400"
+            class="shadow-elevation-3 duration-short ease-standard mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-500 shadow-green-500/30 transition-colors hover:bg-green-400"
             aria-label="Call"
             onclick={() => startCall(enteredNumber)}
           >
@@ -135,7 +133,7 @@
           <div class="flex w-16 justify-center">
             {#if enteredNumber}
               <button
-                class="text-on-surface-variant hover:text-on-surface transition-colors"
+                class="text-on-surface-variant hover:text-on-surface duration-short ease-standard transition-colors"
                 onclick={handleBackspace}
                 aria-label="Backspace"
               >
@@ -149,14 +147,14 @@
   {:else}
     <!-- In Call View -->
     <div
-      class="animate-in fade-in flex flex-1 flex-col items-center bg-gradient-to-b from-gray-800 to-gray-900 pt-20 pb-12 duration-300"
+      class="animate-in fade-in duration-medium ease-emphasized flex flex-1 flex-col items-center bg-gradient-to-b from-gray-800 to-gray-900 pt-20 pb-12"
     >
       <!-- Avatar/Icon -->
       <Avatar
         initials={$callStore.name?.[0] || '#'}
         size="w-32 h-32"
         textClass="text-4xl text-on-surface-variant"
-        bgClass="bg-surface-container-high shadow-2xl mb-8"
+        bgClass="bg-surface-container-high shadow-elevation-5 mb-8"
       />
 
       <h2 class="mb-2 px-4 text-center text-3xl font-semibold">
@@ -178,7 +176,7 @@
         <div class="mb-8 grid w-full max-w-[260px] grid-cols-3 gap-4">
           {#each ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'] as key (key)}
             <button
-              class="bg-surface-container hover:bg-surface-container-high flex h-14 w-14 cursor-pointer items-center justify-center justify-self-center rounded-full text-xl transition-colors"
+              class="bg-surface-container hover:bg-surface-container-high duration-short ease-standard flex h-14 w-14 cursor-pointer items-center justify-center justify-self-center rounded-full text-xl transition-colors"
               onclick={() => (dtmfEntered += key)}
             >
               {key}
@@ -186,7 +184,7 @@
           {/each}
         </div>
         {#if dtmfEntered}
-          <p class="text-on-surface-variant mb-4 font-mono text-sm tracking-widest">
+          <p class="text-on-surface-variant text-body-medium mb-4 font-mono tracking-widest">
             {dtmfEntered}
           </p>
         {/if}
@@ -200,7 +198,7 @@
           aria-pressed={$callStore.muted}
           class="flex flex-col items-center space-y-2 transition-colors {$callStore.muted
             ? 'text-on-surface'
-            : 'text-on-surface-variant hover:text-on-surface'}"
+            : 'text-on-surface-variant hover:text-on-surface'} duration-short ease-standard"
           aria-label="Mute"
         >
           <div
@@ -210,7 +208,7 @@
           >
             <MicrophoneIcon />
           </div>
-          <span class="text-xs">{$callStore.muted ? 'Unmute' : 'Mute'}</span>
+          <span class="text-body-small">{$callStore.muted ? 'Unmute' : 'Mute'}</span>
         </button>
 
         <!-- Keypad: purely local, so the in-call DTMF pad needs no plumbing. -->
@@ -219,7 +217,7 @@
           aria-pressed={showInCallKeypad}
           class="flex flex-col items-center space-y-2 transition-colors {showInCallKeypad
             ? 'text-on-surface'
-            : 'text-on-surface-variant hover:text-on-surface'}"
+            : 'text-on-surface-variant hover:text-on-surface'} duration-short ease-standard"
           aria-label="Keypad"
         >
           <div
@@ -229,14 +227,14 @@
           >
             <KeypadIcon />
           </div>
-          <span class="text-xs">Keypad</span>
+          <span class="text-body-small">Keypad</span>
         </button>
 
         <!-- Speaker -->
         <button
           class="flex flex-col items-center space-y-2 transition-colors {$callStore.speaker
             ? 'text-on-surface'
-            : 'text-on-surface-variant'}"
+            : 'text-on-surface-variant'} duration-short ease-standard"
           onclick={callStore.toggleSpeaker}
           aria-label="Speaker"
         >
@@ -247,7 +245,7 @@
           >
             <SpeakerIcon />
           </div>
-          <span class="text-xs">Speaker</span>
+          <span class="text-body-small">Speaker</span>
         </button>
       </div>
 
@@ -255,7 +253,7 @@
       <div class="mt-12 mb-8 flex justify-center space-x-8">
         {#if $callStore.status === 'incoming'}
           <button
-            class="flex h-16 w-16 items-center justify-center rounded-full bg-green-500 shadow-lg shadow-green-500/30 transition-colors hover:bg-green-400"
+            class="shadow-elevation-3 duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full bg-green-500 shadow-green-500/30 transition-colors hover:bg-green-400"
             onclick={() => callStore.answerCall()}
             aria-label="Answer Call"
           >
@@ -264,7 +262,7 @@
         {/if}
 
         <button
-          class="bg-error flex h-16 w-16 items-center justify-center rounded-full shadow-lg shadow-red-500/30 transition-colors hover:bg-red-400"
+          class="bg-error shadow-elevation-3 duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full shadow-red-500/30 transition-colors hover:bg-red-400"
           onclick={() => callStore.endCall()}
           aria-label="End Call"
         >

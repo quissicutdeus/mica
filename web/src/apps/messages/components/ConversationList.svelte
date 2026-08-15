@@ -36,7 +36,7 @@
 {#if showSearch}
   <!-- Search Dropdown Overlay -->
   <div
-    class="animate-in slide-in-from-top border-outline-variant bg-surface sticky top-0 z-20 border-b p-3 backdrop-blur-md duration-200"
+    class="animate-in slide-in-from-top border-outline-variant bg-surface duration-medium ease-emphasized sticky top-0 z-20 border-b p-3 backdrop-blur-md"
   >
     <SearchBar bind:value={query} placeholder="Search chats, names, or messages..." focus={true} />
   </div>
@@ -58,7 +58,7 @@
         />
         {#if conv.unreadCount > 0}
           <div
-            class="border-surface bg-primary absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full border-2 px-1 text-[10px] font-bold shadow-md"
+            class="border-surface bg-primary shadow-elevation-2 absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full border-2 px-1 text-[10px] font-bold"
           >
             {conv.unreadCount}
           </div>
@@ -75,8 +75,8 @@
             {conv.targetName || conv.target}
           </span>
           <span
-            class="text-xs {conv.unreadCount > 0
-              ? 'text-primary font-semibold'
+            class="text-body-small {conv.unreadCount > 0
+              ? 'text-primary '
               : 'text-on-surface-variant'} ml-2 whitespace-nowrap"
           >
             {formatRelativeTime(conv.lastMessageAt)}
@@ -90,14 +90,14 @@
             />
           {/if}
           <p
-            class="flex-1 truncate text-sm {conv.unreadCount > 0
-              ? 'text-on-surface font-medium'
+            class="text-body-medium flex-1 truncate {conv.unreadCount > 0
+              ? 'text-on-surface '
               : 'text-on-surface-variant'}"
           >
             {conv.lastMessage || 'No messages'}
           </p>
           <ChevronRightIcon
-            class="text-outline ml-2 h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100"
+            class="text-outline duration-short ease-standard ml-2 h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100"
           />
         </div>
       </div>

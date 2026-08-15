@@ -29,7 +29,7 @@
   class="bg-scrim absolute inset-0 z-50 flex items-center justify-center p-6 backdrop-blur-sm"
   transition:fade
 >
-  <div class="bg-surface-container w-full rounded-xl p-6 shadow-2xl">
+  <div class="bg-surface-container shadow-elevation-5 w-full rounded-xl p-6">
     <h3 class="text-on-surface mb-2 text-xl font-bold">{title}</h3>
     <p class="text-on-surface-variant mb-6">{message}</p>
     <div class="flex gap-3">

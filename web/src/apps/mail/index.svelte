@@ -82,7 +82,7 @@
     {@const isArchived = selectedMail.status === 'archived'}
     <div class="ml-auto flex items-center space-x-1">
       <button
-        class="text-error hover:bg-error rounded-full p-2 transition-colors"
+        class="text-error hover:bg-error duration-short ease-standard rounded-full p-2 transition-colors"
         onclick={() => handleDelete(selectedMail!.id)}
         aria-label="Delete message"
         title="Delete message"
@@ -127,10 +127,10 @@
           <div>
             <h2 class="text-on-surface text-lg font-bold">{selectedMail.sender}</h2>
             {#if selectedMail.sender_address}
-              <p class="text-on-surface-variant text-xs">{selectedMail.sender_address}</p>
+              <p class="text-on-surface-variant text-body-small">{selectedMail.sender_address}</p>
             {/if}
           </div>
-          <span class="text-on-surface-variant text-xs"
+          <span class="text-on-surface-variant text-body-small"
             >{formatRelativeTime(selectedMail.created_at)}</span
           >
         </div>
@@ -138,7 +138,7 @@
       </div>
 
       <div
-        class="text-on-surface flex-1 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap"
+        class="text-on-surface text-body-medium flex-1 overflow-y-auto leading-relaxed whitespace-pre-wrap"
       >
         {selectedMail.content}
       </div>
@@ -177,7 +177,7 @@
                 >
                   {email.sender}
                 </h3>
-                <span class="text-on-surface-variant ml-2 text-xs whitespace-nowrap">
+                <span class="text-on-surface-variant text-body-small ml-2 whitespace-nowrap">
                   {formatRelativeTime(email.created_at)}
                 </span>
               </div>
@@ -186,7 +186,7 @@
               >
                 {email.subject}
               </h4>
-              <p class="text-on-surface-variant line-clamp-2 text-xs leading-relaxed">
+              <p class="text-on-surface-variant text-body-small line-clamp-2 leading-relaxed">
                 {email.content}
               </p>
             </div>

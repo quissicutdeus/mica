@@ -74,7 +74,7 @@
 <div class="space-y-6 p-4">
   <div class="flex items-center gap-3">
     <div
-      class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl {app.color} shadow-lg"
+      class="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg {app.color} shadow-elevation-3"
     >
       {#if typeof app.icon === 'string' && app.icon.startsWith('http')}
         <img src={app.icon} alt="" class="h-7 w-7 object-contain invert filter" />
@@ -86,26 +86,26 @@
       {/if}
     </div>
     <div class="min-w-0">
-      <p class="text-on-surface truncate text-base font-semibold">{app.name}</p>
-      <p class="text-on-surface-variant truncate text-xs">
+      <p class="text-on-surface text-body-large truncate">{app.name}</p>
+      <p class="text-on-surface-variant text-body-small truncate">
         {app.core ? 'System app' : 'Store add-on'}{app.isRemote ? ' · remote' : ''}
       </p>
       {#if app.description}
-        <p class="text-on-surface mt-1 text-xs">{app.description}</p>
+        <p class="text-on-surface text-body-small mt-1">{app.description}</p>
       {/if}
     </div>
   </div>
 
   <div>
-    <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
+    <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
       Details
     </h2>
     <div
-      class="divide-outline-variant bg-surface-container divide-y overflow-hidden rounded-xl text-sm"
+      class="divide-outline-variant bg-surface-container text-body-medium divide-y overflow-hidden rounded-xl"
     >
       <div class="flex items-center justify-between p-4">
         <span class="text-on-surface-variant">Identifier</span>
-        <span class="text-on-surface font-mono text-xs">{app.id}</span>
+        <span class="text-on-surface text-body-small font-mono">{app.id}</span>
       </div>
       <div class="flex items-center justify-between p-4">
         <span class="text-on-surface-variant">Author</span>
@@ -131,7 +131,7 @@
   </div>
 
   <div>
-    <h2 class="text-on-surface-variant mb-2 px-2 text-sm font-medium tracking-wider uppercase">
+    <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
       Manage
     </h2>
     <div class="space-y-2">
@@ -143,14 +143,14 @@
       >
         Clear storage
       </Button>
-      <p class="text-on-surface-variant px-2 text-xs">
+      <p class="text-on-surface-variant text-body-small px-2">
         {bytes === 0
           ? 'Nothing to clear — this app has stored nothing yet.'
           : 'Returns the app to a freshly installed state. The app stays installed.'}
       </p>
 
       {#if app.core}
-        <p class="text-on-surface-variant px-2 pt-2 text-xs">
+        <p class="text-on-surface-variant text-body-small px-2 pt-2">
           System apps ship with the phone and cannot be uninstalled.
         </p>
       {:else}
@@ -162,7 +162,7 @@
         >
           Uninstall
         </Button>
-        <p class="text-on-surface-variant px-2 text-xs">
+        <p class="text-on-surface-variant text-body-small px-2">
           Removes the app and everything it stored. It can be installed again from the Store.
         </p>
       {/if}

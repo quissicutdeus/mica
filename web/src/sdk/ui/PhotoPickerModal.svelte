@@ -38,16 +38,16 @@
 </script>
 
 <div
-  class="animate-in fade-in bg-surface-container-high absolute inset-0 z-30 flex flex-col backdrop-blur-md duration-200"
+  class="animate-in fade-in bg-surface-container-high duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col backdrop-blur-md"
 >
   <!-- Header -->
   <div class="border-outline-variant flex items-center justify-between border-b p-4">
-    <h3 class="text-on-surface flex items-center gap-2 text-base font-semibold">
+    <h3 class="text-on-surface text-body-large flex items-center gap-2">
       <PhotoIcon class="text-primary h-5 w-5" />
       {title}
     </h3>
     <button
-      class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface rounded-full p-1 transition-colors"
+      class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard rounded-full p-1 transition-colors"
       onclick={onclose}
       aria-label="Close photo picker"
     >
@@ -64,12 +64,14 @@
           type="button"
           class="group bg-surface-container relative aspect-square overflow-hidden rounded-xl border transition-all {selected
             ? 'ring-primary border-primary ring-2'
-            : 'border-outline-variant hover:border-outline'}"
+            : 'border-outline-variant hover:border-outline'} duration-short ease-standard"
           onclick={() => onmultichange?.(photo.id, photo)}
         >
           <MediaThumb item={photo} />
           {#if selected}
-            <div class="bg-primary absolute top-1.5 right-1.5 rounded-full p-0.5 shadow-md">
+            <div
+              class="bg-primary shadow-elevation-2 absolute top-1.5 right-1.5 rounded-full p-0.5"
+            >
               <CheckCircleIcon class="text-on-primary h-4 w-4" />
             </div>
           {/if}
@@ -77,7 +79,7 @@
       {:else}
         <button
           type="button"
-          class="group border-outline-variant bg-surface-container hover:border-primary relative aspect-square overflow-hidden rounded-xl border transition-all"
+          class="group border-outline-variant bg-surface-container hover:border-primary duration-short ease-standard relative aspect-square overflow-hidden rounded-xl border transition-all"
           onclick={() => onselect?.(photo.data)}
         >
           <MediaThumb item={photo} />
@@ -87,7 +89,7 @@
 
     {#if $media.length === 0}
       <div
-        class="text-on-surface-variant col-span-3 flex flex-col items-center py-12 text-center text-sm"
+        class="text-on-surface-variant text-body-medium col-span-3 flex flex-col items-center py-12 text-center"
       >
         <PhotoIcon class="text-outline mb-2 h-10 w-10" />
         No photos in gallery.
@@ -101,7 +103,7 @@
       {#if selectedCount > 0}
         <Button
           variant="danger"
-          class="flex-1 py-2 text-xs"
+          class="text-body-small flex-1 py-2"
           onclick={() => {
             // Clear all — parent handles resetting the array
             for (const id of [...selectedIds]) {
@@ -113,16 +115,18 @@
           Clear Selection
         </Button>
       {/if}
-      <Button class="flex-1 py-2 text-xs" onclick={onclose}>
+      <Button class="text-body-small flex-1 py-2" onclick={onclose}>
         Done {selectedCount > 0 ? `(${selectedCount})` : ''}
       </Button>
     {:else}
       {#if showRemove}
-        <Button variant="danger" class="flex-1 py-2 text-xs" onclick={() => onselect?.('')}>
+        <Button variant="danger" class="text-body-small flex-1 py-2" onclick={() => onselect?.('')}>
           Remove Photo
         </Button>
       {/if}
-      <Button variant="secondary" class="flex-1 py-2 text-xs" onclick={onclose}>Cancel</Button>
+      <Button variant="secondary" class="text-body-small flex-1 py-2" onclick={onclose}
+        >Cancel</Button
+      >
     {/if}
   </div>
 </div>

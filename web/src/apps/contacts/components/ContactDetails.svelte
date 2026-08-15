@@ -54,7 +54,7 @@
 </script>
 
 <div
-  class="animate-in fade-in slide-in-from-right flex flex-col items-center space-y-6 p-6 duration-300"
+  class="animate-in fade-in slide-in-from-right duration-medium ease-emphasized flex flex-col items-center space-y-6 p-6"
 >
   <!-- Avatar & Pencil Overlay -->
   <div class="relative">
@@ -67,7 +67,7 @@
     />
     <button
       type="button"
-      class="border-surface bg-primary-container text-on-primary-container hover:bg-primary-container-hover absolute right-0 bottom-0 flex items-center justify-center rounded-full border-2 p-2 shadow-lg transition-transform active:scale-95"
+      class="border-surface bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-elevation-3 duration-short ease-standard absolute right-0 bottom-0 flex items-center justify-center rounded-full border-2 p-2 transition-transform active:scale-95"
       onclick={() => onpickphoto()}
       aria-label="Select photo from gallery"
       title="Select photo from gallery"
@@ -84,7 +84,7 @@
     </h2>
     <button
       type="button"
-      class="rounded-full p-1 transition-transform hover:scale-110 active:scale-95"
+      class="duration-short ease-standard rounded-full p-1 transition-transform hover:scale-110 active:scale-95"
       onclick={ontogglefavorite}
       aria-label="Toggle favorite"
       title={contact.favorite ? 'Remove from favorites' : 'Add to favorites'}
@@ -151,7 +151,7 @@
   </div>
 
   <!-- Details List / Edit Form -->
-  <div class="bg-surface-container w-full space-y-4 rounded-xl p-4 shadow-lg">
+  <div class="bg-surface-container shadow-elevation-3 w-full space-y-4 rounded-xl p-4">
     {#if isEditing}
       <div class="space-y-3">
         <input
@@ -185,7 +185,7 @@
       </div>
     {:else}
       <div class="flex flex-col">
-        <span class="text-on-surface-variant text-xs tracking-wider uppercase">Phone</span>
+        <span class="text-on-surface-variant text-body-small tracking-wider uppercase">Phone</span>
         <span class="text-lg">{contact.phone}</span>
       </div>
     {/if}
@@ -193,21 +193,21 @@
 
   <!-- Recent Text Messages Card -->
   <div
-    class="border-outline-variant bg-surface-container w-full overflow-hidden rounded-xl border shadow-lg"
+    class="border-outline-variant bg-surface-container shadow-elevation-3 w-full overflow-hidden rounded-xl border"
   >
     <div
       class="border-outline-variant bg-surface-container flex items-center justify-between border-b px-4 py-3"
     >
       <div class="flex items-center gap-2">
         <MessageIcon class="text-primary h-4 w-4" />
-        <h4 class="text-on-surface text-xs font-bold tracking-wider uppercase">
+        <h4 class="text-on-surface text-body-small tracking-wider uppercase">
           Recent Text Messages
         </h4>
       </div>
       {#if messageCount > 0}
         <button
           type="button"
-          class="text-primary hover:text-primary cursor-pointer text-xs font-semibold transition-colors"
+          class="text-primary hover:text-primary duration-short ease-standard text-body-small cursor-pointer transition-colors"
           onclick={onmessage}
         >
           View All ({messageCount})
@@ -220,15 +220,13 @@
         {#each recentMessages as msg}
           <button
             type="button"
-            class="group hover:bg-surface-container-high flex w-full cursor-pointer items-center justify-between gap-3 p-3.5 text-left transition-colors"
+            class="group hover:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between gap-3 p-3.5 text-left transition-colors"
             onclick={onmessage}
           >
             <div class="min-w-0 flex-1">
               <div class="mb-1 flex items-center gap-2">
                 <span
-                  class="text-xs font-bold {msg.sender === 'me'
-                    ? 'text-primary'
-                    : 'text-on-surface'}"
+                  class="text-body-small {msg.sender === 'me' ? 'text-primary' : 'text-on-surface'}"
                 >
                   {msg.sender === 'me' ? 'You' : contact.firstname}
                 </span>
@@ -237,23 +235,25 @@
                   {formatRelativeTime(msg.created_at)}
                 </span>
               </div>
-              <p class="text-on-surface truncate text-xs leading-relaxed">
+              <p class="text-on-surface text-body-small truncate leading-relaxed">
                 {msg.message}
               </p>
             </div>
             <ChevronRightIcon
-              class="text-outline group-hover:text-on-surface-variant h-4 w-4 shrink-0 transition-colors"
+              class="text-outline group-hover:text-on-surface-variant duration-short ease-standard h-4 w-4 shrink-0 transition-colors"
             />
           </button>
         {/each}
       </div>
     {:else}
-      <div class="text-on-surface-variant flex flex-col items-center gap-2 p-6 text-center text-xs">
+      <div
+        class="text-on-surface-variant text-body-small flex flex-col items-center gap-2 p-6 text-center"
+      >
         <MessageIcon class="text-outline mb-1 h-8 w-8" />
         <span>No recent messages with {contact.firstname}.</span>
         <button
           type="button"
-          class="border-primary bg-primary-container text-on-primary-container hover:bg-primary-container-hover mt-1 cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-all"
+          class="border-primary bg-primary-container text-on-primary-container hover:bg-primary-container-hover duration-short ease-standard text-body-small mt-1 cursor-pointer rounded-full border px-3 py-1 transition-all"
           onclick={onmessage}
         >
           Send Text Message

@@ -27,7 +27,7 @@
       <div class="font-medium">
         {transaction.message || transaction.title || 'Transaction'}
       </div>
-      <div class="text-on-surface-variant text-xs">
+      <div class="text-on-surface-variant text-body-small">
         {formatTimestamp(transaction.time)}
       </div>
     </div>
