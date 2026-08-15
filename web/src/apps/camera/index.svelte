@@ -52,7 +52,7 @@
   let flyingPhoto = $state<{ src: string; box: string; style: string } | null>(null);
   let cancelFly: (() => void) | undefined;
 
-  const FLY_MS = 480;
+  const FLY_MS = 400;
 
   /**
    * Send the captured frame to the thumbnail.
@@ -162,10 +162,10 @@
       isFlashing = false;
     });
 
-    // The chrome fades out over `duration-75`, and the screenshot is a crop of this
-    // exact region — so the capture has to wait for the fade to finish or the shutter
-    // bar is still half-visible in the photo. Was 50ms against a 75ms fade.
-    const CHROME_FADE_MS = 75;
+    // The chrome fades out over `duration-short` (100ms), and the screenshot is a crop
+    // of this exact region — so the capture has to wait for the fade to finish or the
+    // shutter bar is still half-visible in the photo.
+    const CHROME_FADE_MS = 100;
 
     after(CHROME_FADE_MS + 30, async () => {
       try {
@@ -275,7 +275,7 @@
       <img
         src={currentViewfinderImage}
         alt="Camera Viewfinder Mock"
-        class="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-85 transition-opacity duration-300"
+        class="duration-medium pointer-events-none absolute inset-0 h-full w-full object-cover opacity-85 transition-opacity"
       />
     {/if}
 
@@ -284,18 +284,18 @@
          abrupt cut rather than a pulse. Peaks below full white — over a live viewfinder
          a solid #fff reads as a bug rather than a shutter. -->
     <div
-      class="pointer-events-none absolute inset-0 z-20 bg-white transition-opacity ease-out"
+      class="ease-standard pointer-events-none absolute inset-0 z-20 bg-white transition-opacity"
       class:opacity-0={!isFlashing}
       class:opacity-80={isFlashing}
-      class:duration-75={isFlashing}
-      class:duration-300={!isFlashing}
+      class:duration-short={isFlashing}
+      class:duration-medium={!isFlashing}
     ></div>
 
     <!-- Keyboard hint. The mouse aims rather than pointing while the camera is open, so
          the on-screen controls cannot be clicked and these keys are the only way in. -->
     {#if !isBrowser()}
       <div
-        class="text-on-surface pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center gap-2 text-[10px] transition-opacity duration-75"
+        class="text-on-surface text-label-small duration-short pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center gap-2 transition-opacity"
         class:opacity-0={$isTakingPhoto}
       >
         {#each [['shutter', 'Shoot'], ['back', 'Close'], ['freelook', 'Cursor']] as [id, label] (id)}
@@ -309,7 +309,7 @@
 
     <!-- Top Controls -->
     <div
-      class="z-10 flex items-center justify-between pt-1 transition-opacity duration-75"
+      class="duration-short z-10 flex items-center justify-between pt-1 transition-opacity"
       class:opacity-0={$isTakingPhoto}
     >
       <button
@@ -323,7 +323,7 @@
 
     <!-- Grid Overlay Guide -->
     <div
-      class="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-20 transition-opacity duration-75"
+      class="duration-short pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-20 transition-opacity"
       class:opacity-0={$isTakingPhoto}
     >
       <div class="border-r border-b border-white"></div>
@@ -341,7 +341,7 @@
          in-game photo is a crop of this exact region, so anything still on screen ends
          up inside the picture. -->
     <div
-      class="bg-surface-container border-outline-variant text-on-surface rounded-b-frame-inner shadow-elevation-5 relative z-10 mx-[-1rem] mb-[-1rem] flex transform-gpu flex-col items-center gap-4 overflow-hidden border-t px-4 pt-4 pb-10 backdrop-blur-lg transition-opacity duration-75"
+      class="bg-surface-container border-outline-variant text-on-surface rounded-b-frame-inner shadow-elevation-5 duration-short relative z-10 mx-[-1rem] mb-[-1rem] flex transform-gpu flex-col items-center gap-4 overflow-hidden border-t px-4 pt-4 pb-10 backdrop-blur-lg transition-opacity"
       class:opacity-0={$isTakingPhoto}
     >
       <!-- Mode Toggle Buttons -->
@@ -350,7 +350,7 @@
           <button
             type="button"
             onclick={() => (cameraMode = mode as 'PHOTO' | 'VIDEO' | 'LANDSCAPE')}
-            class="text-body-small cursor-pointer rounded-full px-3.5 py-1 tracking-wider uppercase transition-all duration-200 {cameraMode ===
+            class="text-body-small duration-medium cursor-pointer rounded-full px-3.5 py-1 tracking-wider uppercase transition-all {cameraMode ===
             mode
               ? 'shadow-elevation-1 scale-105 border border-yellow-400/40 bg-black/60 text-yellow-400'
               : 'text-on-surface hover:text-on-surface'}"
@@ -375,7 +375,7 @@
               openApp('media');
             }
           }}
-          class="group shadow-elevation-3 flex h-12 w-12 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-white/30 bg-black/40 transition-all duration-300 {isThumbnailBouncing
+          class="group shadow-elevation-3 duration-medium flex h-12 w-12 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-white/30 bg-black/40 transition-all {isThumbnailBouncing
             ? 'shadow-elevation-4 scale-110 border-yellow-400 ring-2 shadow-yellow-400/30 ring-yellow-400/60'
             : 'hover:scale-105'}"
           aria-label="Open Media Gallery"
@@ -398,7 +398,7 @@
           aria-label="Take photo"
         >
           <div
-            class="h-full w-full rounded-full transition-all duration-200 {cameraMode === 'VIDEO'
+            class="duration-medium h-full w-full rounded-full transition-all {cameraMode === 'VIDEO'
               ? 'bg-error scale-75 rounded-md'
               : 'bg-white'}"
           ></div>
@@ -428,7 +428,7 @@
   {#if flyingPhoto}
     <div
       class="shadow-elevation-5 pointer-events-none absolute z-30 origin-center rounded-lg bg-white p-1.5"
-      style="transition: transform {FLY_MS}ms cubic-bezier(0.4, 0, 0.2, 1), opacity {FLY_MS}ms ease-in; {flyingPhoto.box} {flyingPhoto.style}"
+      style="transition: transform {FLY_MS}ms var(--ease-standard), opacity {FLY_MS}ms var(--ease-standard); {flyingPhoto.box} {flyingPhoto.style}"
     >
       <img src={flyingPhoto.src} alt="" class="h-full w-full rounded-xl object-cover" />
     </div>
