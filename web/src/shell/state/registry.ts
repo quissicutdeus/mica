@@ -2,6 +2,7 @@ import { get, writable } from 'svelte/store';
 import { type AppComponent, type AppManifest, clearAppStorage, defineApp } from '@gphone/sdk';
 import { messageOf } from '../../lib/errors';
 import { usePersisted } from '../../sdk/hooks/usePersisted';
+import { placeOnHomeGridIfAbsent } from './homeGrid';
 
 export type { AppManifest } from '@gphone/sdk';
 
@@ -256,8 +257,10 @@ function createAppRegistry() {
       }
 
       componentRegistry[validatedManifest.id] = component;
+      let isNewRegistration = false;
       update((apps) => {
         const existingIndex = apps.findIndex((a) => a.id === validatedManifest.id);
+        isNewRegistration = existingIndex < 0;
         const now = new Date().toISOString();
         let updated: AppManifest[];
         if (existingIndex >= 0) {
@@ -290,6 +293,24 @@ function createAppRegistry() {
         if (!get(installedAddOnIds).includes(validatedManifest.id)) {
           installedAddOnIds.update((ids) => [...ids, validatedManifest.id]);
         }
+      }
+
+      /**
+       * A player installing an add-on expects to find it on the home screen without
+       * also having to know the App Drawer exists. Core apps are seeded onto the grid
+       * once at boot (`seedDefaultGridIfEmpty`), so this only has to cover what
+       * `registerApp` itself introduces: a Store install, a remote app, or (in dev) the
+       * harness registering an app the repo does not ship — `error_boundary.spec.ts`'s
+       * crashing fixture, which has always expected to be clickable without opening the
+       * drawer (see `devHarness.ts`).
+       *
+       * Gated on `isNewRegistration`, not on `addOnIds`/`isRemote`/an install-tracking
+       * list: a boot-time re-registration of an add-on the player already positioned —
+       * or deliberately removed — must not move it, and `placeOnHomeGridIfAbsent` is
+       * itself the guard against placing an app that already has a cell.
+       */
+      if (!validatedManifest.core && isNewRegistration) {
+        placeOnHomeGridIfAbsent(validatedManifest.id);
       }
     },
     unregisterApp: (appId: string) => {
