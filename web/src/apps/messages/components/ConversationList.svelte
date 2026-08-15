@@ -36,7 +36,7 @@
 {#if showSearch}
   <!-- Search Dropdown Overlay -->
   <div
-    class="animate-in slide-in-from-top border-outline-variant bg-surface sticky top-0 z-20 border-b p-3 backdrop-blur-md duration-200"
+    class="animate-in slide-in-from-top border-outline-variant bg-surface duration-medium ease-emphasized sticky top-0 z-20 border-b p-3 backdrop-blur-md"
   >
     <SearchBar bind:value={query} placeholder="Search chats, names, or messages..." focus={true} />
   </div>
@@ -97,7 +97,7 @@
             {conv.lastMessage || 'No messages'}
           </p>
           <ChevronRightIcon
-            class="text-outline ml-2 h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100"
+            class="text-outline duration-short ease-standard ml-2 h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100"
           />
         </div>
       </div>

@@ -71,7 +71,7 @@
     aria-label={label}
     {disabled}
     onclick={toggle}
-    class="hover:bg-surface-hover active:bg-surface-pressed disabled:text-disabled-content flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors disabled:cursor-default"
+    class="hover:bg-surface-hover active:bg-surface-pressed disabled:text-disabled-content duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors disabled:cursor-default"
   >
     <span class="flex flex-col">
       <span class="font-medium">{label}</span>

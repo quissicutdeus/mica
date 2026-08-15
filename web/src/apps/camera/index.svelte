@@ -314,7 +314,7 @@
     >
       <button
         onclick={onback}
-        class="text-on-surface shadow-elevation-3 cursor-pointer rounded-full border border-white/10 bg-black/40 p-2.5 backdrop-blur-md transition-colors hover:bg-black/60"
+        class="text-on-surface shadow-elevation-3 duration-short ease-standard cursor-pointer rounded-full border border-white/10 bg-black/40 p-2.5 backdrop-blur-md transition-colors hover:bg-black/60"
         aria-label="Go back"
       >
         <CloseIcon class="h-5 w-5" />
@@ -384,7 +384,7 @@
             <img
               src={$media[0].data}
               alt="Recent capture"
-              class="h-full w-full object-cover transition-opacity group-hover:opacity-90"
+              class="duration-short ease-standard h-full w-full object-cover transition-opacity group-hover:opacity-90"
             />
           {:else}
             <PhotoIcon class="text-on-surface-variant h-6 w-6" />
@@ -394,7 +394,7 @@
         <!-- Center: Shutter Button -->
         <button
           onclick={takePhoto}
-          class="shadow-elevation-5 flex h-20 w-20 cursor-pointer items-center justify-center rounded-full border-4 border-white p-1 transition-transform hover:scale-105 active:scale-95"
+          class="shadow-elevation-5 duration-short ease-standard flex h-20 w-20 cursor-pointer items-center justify-center rounded-full border-4 border-white p-1 transition-transform hover:scale-105 active:scale-95"
           aria-label="Take photo"
         >
           <div
@@ -410,7 +410,7 @@
           <button
             type="button"
             onclick={toggleFlipCamera}
-            class="text-on-surface shadow-elevation-3 flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-white/20 bg-white/20 backdrop-blur-md transition-transform hover:bg-white/30 active:rotate-180"
+            class="text-on-surface shadow-elevation-3 duration-short ease-standard flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-white/20 bg-white/20 backdrop-blur-md transition-transform hover:bg-white/30 active:rotate-180"
             aria-label="Flip camera"
           >
             <FlipCameraIcon class="h-6 w-6" />

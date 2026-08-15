@@ -69,7 +69,7 @@
           type="button"
           class="hover:bg-surface-container flex w-full cursor-pointer items-start gap-3.5 px-4 py-3.5 text-left transition-colors {!item.read_at
             ? 'bg-surface'
-            : ''}"
+            : ''} duration-short ease-standard"
           onclick={() => handleItemClick(item)}
         >
           <!-- Left Avatar / Activity Badge -->

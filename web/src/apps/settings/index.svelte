@@ -205,7 +205,7 @@
         <button
           type="button"
           onclick={() => (pane = 'network')}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
             <span class="text-on-surface font-medium">Network</span>
@@ -218,7 +218,7 @@
         <button
           type="button"
           onclick={() => (pane = 'notifications')}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
             <span class="text-on-surface font-medium">Notifications</span>
@@ -231,7 +231,7 @@
         <button
           type="button"
           onclick={() => (pane = 'apps')}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
             <span class="text-on-surface font-medium">Apps</span>
@@ -242,7 +242,7 @@
         <button
           type="button"
           onclick={() => (pane = 'display')}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
             <span class="text-on-surface font-medium">Display</span>
@@ -255,7 +255,7 @@
         <button
           type="button"
           onclick={() => (pane = 'sound')}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
             <span class="text-on-surface font-medium">Sound</span>
@@ -266,7 +266,7 @@
         <button
           type="button"
           onclick={() => (pane = 'shortcuts')}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
             <span class="text-on-surface font-medium">Shortcuts</span>
@@ -277,7 +277,7 @@
         <button
           type="button"
           onclick={() => (pane = 'about')}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
             <span class="text-on-surface font-medium">About</span>
@@ -289,7 +289,7 @@
           <button
             type="button"
             onclick={() => (pane = 'devtools')}
-            class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+            class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
           >
             <div class="flex flex-col">
               <span class="text-on-surface font-medium">Developer Tools</span>

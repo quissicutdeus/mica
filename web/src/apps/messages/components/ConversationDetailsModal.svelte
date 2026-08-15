@@ -41,14 +41,14 @@
 </script>
 
 <div
-  class="animate-in fade-in bg-surface-container-lowest absolute inset-0 z-40 flex flex-col backdrop-blur-md duration-200"
+  class="animate-in fade-in bg-surface-container-lowest duration-medium ease-emphasized absolute inset-0 z-40 flex flex-col backdrop-blur-md"
 >
   <!-- Modal Header -->
   <div class="border-outline-variant flex items-center justify-between border-b p-4">
     <h3 class="text-on-surface text-base font-semibold">Conversation Details</h3>
     <button
       type="button"
-      class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface cursor-pointer rounded-full p-1 transition-colors"
+      class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard cursor-pointer rounded-full p-1 transition-colors"
       onclick={onclose}
       aria-label="Close details"
     >
@@ -120,7 +120,7 @@
               member.contact || $contacts.find((c) => c.citizenid === member.citizenid)}
             <button
               type="button"
-              class="group hover:bg-surface-container-high flex w-full cursor-pointer items-center justify-between p-3 text-left transition-colors"
+              class="group hover:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-3 text-left transition-colors"
               onclick={() => {
                 onclose();
                 if (pContact) {
@@ -140,7 +140,7 @@
                 />
                 <div>
                   <p
-                    class="text-on-surface group-hover:text-on-surface text-xs font-semibold transition-colors"
+                    class="text-on-surface group-hover:text-on-surface duration-short ease-standard text-xs font-semibold transition-colors"
                   >
                     {pContact
                       ? `${pContact.firstname} ${pContact.lastname || ''}`.trim()
@@ -154,7 +154,7 @@
                 </div>
               </div>
               <ChevronRightIcon
-                class="text-on-surface-variant group-hover:text-on-surface h-4 w-4 transition-colors"
+                class="text-on-surface-variant group-hover:text-on-surface duration-short ease-standard h-4 w-4 transition-colors"
               />
             </button>
           {/each}

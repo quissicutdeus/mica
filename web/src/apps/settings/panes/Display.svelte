@@ -71,7 +71,7 @@
           type="button"
           onclick={() => setDisplaySize(displaySizeDefault)}
           disabled={$displaySize === displaySizeDefault}
-          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high disabled:hover:bg-surface w-full cursor-pointer rounded-lg border py-2 text-xs font-semibold transition-colors disabled:cursor-default disabled:opacity-40"
+          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high disabled:hover:bg-surface duration-short ease-standard w-full cursor-pointer rounded-lg border py-2 text-xs font-semibold transition-colors disabled:cursor-default disabled:opacity-40"
         >
           Reset to Default
         </button>
@@ -135,8 +135,8 @@
       </div>
     </div>
     <p class="text-on-surface-variant mt-2 px-2 text-xs">
-      Shrinking the grid moves anything it no longer fits to the next open space, rather than
-      hiding it.
+      Shrinking the grid moves anything it no longer fits to the next open space, rather than hiding
+      it.
     </p>
   </div>
 

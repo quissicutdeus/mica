@@ -64,7 +64,7 @@
     <button
       type="button"
       onclick={copyPhoneNumber}
-      class="hover:bg-surface-container-high active:bg-surface-container-high flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+      class="hover:bg-surface-container-high active:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
       aria-label="Copy phone number to clipboard"
     >
       <span class="text-on-surface font-medium">Phone Number</span>
@@ -84,7 +84,7 @@
     <button
       type="button"
       onclick={ontapbuild}
-      class="hover:bg-surface-container-high active:bg-surface-container-high flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+      class="hover:bg-surface-container-high active:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
     >
       <span class="text-on-surface font-medium">OS Version</span>
       <span class="text-secondary font-mono">{MICA_BUILD_INFO}</span>

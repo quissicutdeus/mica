@@ -124,7 +124,7 @@
                   type="button"
                   disabled={$busy}
                   onclick={() => (confirming = { report, action: 'dismiss' })}
-                  class="bg-surface-container text-on-surface hover:bg-surface-container-high cursor-pointer py-3 font-medium transition-colors disabled:opacity-50"
+                  class="bg-surface-container text-on-surface hover:bg-surface-container-high duration-short ease-standard cursor-pointer py-3 font-medium transition-colors disabled:opacity-50"
                 >
                   Allow — no action
                 </button>
@@ -132,7 +132,7 @@
                   type="button"
                   disabled={$busy}
                   onclick={() => (confirming = { report, action: 'moderate' })}
-                  class="bg-surface-container text-error hover:bg-surface-container-high cursor-pointer py-3 font-medium transition-colors disabled:opacity-50"
+                  class="bg-surface-container text-error hover:bg-surface-container-high duration-short ease-standard cursor-pointer py-3 font-medium transition-colors disabled:opacity-50"
                 >
                   Remove for everyone
                 </button>
@@ -168,7 +168,7 @@
                   run(() => reopenReport(report.id), {
                     success: 'Reopened — content restored if it was removed'
                   })}
-                class="border-outline text-on-surface hover:bg-surface-container-high shrink-0 cursor-pointer rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+                class="border-outline text-on-surface hover:bg-surface-container-high duration-short ease-standard shrink-0 cursor-pointer rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
               >
                 Undo
               </button>

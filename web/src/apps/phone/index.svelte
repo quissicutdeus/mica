@@ -98,22 +98,22 @@
         <div class="grid w-full max-w-[280px] grid-cols-3 gap-6">
           {#each [1, 2, 3, 4, 5, 6, 7, 8, 9] as num}
             <button
-              class="bg-surface-container hover:bg-surface-container-low flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
+              class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
               onclick={() => handleKeypad(num.toString())}
             >
               {num}
             </button>
           {/each}
           <button
-            class="bg-surface-container hover:bg-surface-container-low flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
+            class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
             onclick={() => handleKeypad('*')}>*</button
           >
           <button
-            class="bg-surface-container hover:bg-surface-container-low flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
+            class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
             onclick={() => handleKeypad('0')}>0</button
           >
           <button
-            class="bg-surface-container hover:bg-surface-container-low flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
+            class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
             onclick={() => handleKeypad('#')}>#</button
           >
         </div>
@@ -124,7 +124,7 @@
 
           <!-- Call Button -->
           <button
-            class="shadow-elevation-3 mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-500 shadow-green-500/30 transition-colors hover:bg-green-400"
+            class="shadow-elevation-3 duration-short ease-standard mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-500 shadow-green-500/30 transition-colors hover:bg-green-400"
             aria-label="Call"
             onclick={() => startCall(enteredNumber)}
           >
@@ -135,7 +135,7 @@
           <div class="flex w-16 justify-center">
             {#if enteredNumber}
               <button
-                class="text-on-surface-variant hover:text-on-surface transition-colors"
+                class="text-on-surface-variant hover:text-on-surface duration-short ease-standard transition-colors"
                 onclick={handleBackspace}
                 aria-label="Backspace"
               >
@@ -149,7 +149,7 @@
   {:else}
     <!-- In Call View -->
     <div
-      class="animate-in fade-in flex flex-1 flex-col items-center bg-gradient-to-b from-gray-800 to-gray-900 pt-20 pb-12 duration-300"
+      class="animate-in fade-in duration-medium ease-emphasized flex flex-1 flex-col items-center bg-gradient-to-b from-gray-800 to-gray-900 pt-20 pb-12"
     >
       <!-- Avatar/Icon -->
       <Avatar
@@ -178,7 +178,7 @@
         <div class="mb-8 grid w-full max-w-[260px] grid-cols-3 gap-4">
           {#each ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'] as key (key)}
             <button
-              class="bg-surface-container hover:bg-surface-container-high flex h-14 w-14 cursor-pointer items-center justify-center justify-self-center rounded-full text-xl transition-colors"
+              class="bg-surface-container hover:bg-surface-container-high duration-short ease-standard flex h-14 w-14 cursor-pointer items-center justify-center justify-self-center rounded-full text-xl transition-colors"
               onclick={() => (dtmfEntered += key)}
             >
               {key}
@@ -200,7 +200,7 @@
           aria-pressed={$callStore.muted}
           class="flex flex-col items-center space-y-2 transition-colors {$callStore.muted
             ? 'text-on-surface'
-            : 'text-on-surface-variant hover:text-on-surface'}"
+            : 'text-on-surface-variant hover:text-on-surface'} duration-short ease-standard"
           aria-label="Mute"
         >
           <div
@@ -219,7 +219,7 @@
           aria-pressed={showInCallKeypad}
           class="flex flex-col items-center space-y-2 transition-colors {showInCallKeypad
             ? 'text-on-surface'
-            : 'text-on-surface-variant hover:text-on-surface'}"
+            : 'text-on-surface-variant hover:text-on-surface'} duration-short ease-standard"
           aria-label="Keypad"
         >
           <div
@@ -236,7 +236,7 @@
         <button
           class="flex flex-col items-center space-y-2 transition-colors {$callStore.speaker
             ? 'text-on-surface'
-            : 'text-on-surface-variant'}"
+            : 'text-on-surface-variant'} duration-short ease-standard"
           onclick={callStore.toggleSpeaker}
           aria-label="Speaker"
         >
@@ -255,7 +255,7 @@
       <div class="mt-12 mb-8 flex justify-center space-x-8">
         {#if $callStore.status === 'incoming'}
           <button
-            class="shadow-elevation-3 flex h-16 w-16 items-center justify-center rounded-full bg-green-500 shadow-green-500/30 transition-colors hover:bg-green-400"
+            class="shadow-elevation-3 duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full bg-green-500 shadow-green-500/30 transition-colors hover:bg-green-400"
             onclick={() => callStore.answerCall()}
             aria-label="Answer Call"
           >
@@ -264,7 +264,7 @@
         {/if}
 
         <button
-          class="bg-error shadow-elevation-3 flex h-16 w-16 items-center justify-center rounded-full shadow-red-500/30 transition-colors hover:bg-red-400"
+          class="bg-error shadow-elevation-3 duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full shadow-red-500/30 transition-colors hover:bg-red-400"
           onclick={() => callStore.endCall()}
           aria-label="End Call"
         >

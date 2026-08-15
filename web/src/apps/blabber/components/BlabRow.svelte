@@ -72,7 +72,7 @@
   {#if onhandle && blab.handle}
     <button
       type="button"
-      class="shrink-0 cursor-pointer rounded-full transition-transform hover:scale-105"
+      class="duration-short ease-standard shrink-0 cursor-pointer rounded-full transition-transform hover:scale-105"
       onclick={() => blab.handle && onhandle(blab.handle)}
       aria-label="{blab.display_name || blab.handle}'s profile"
     >

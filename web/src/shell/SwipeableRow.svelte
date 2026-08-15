@@ -78,7 +78,7 @@
 <div
   bind:this={rowRef}
   data-gesture-drag
-  class="touch-none {phase === 'dragging' ? '' : 'transition-all duration-200 ease-out'}"
+  class="touch-none {phase === 'dragging' ? '' : 'duration-medium ease-emphasized transition-all'}"
   style="transform: translateX({offsetX}px); opacity: {phase === 'exiting' ? 0 : 1}"
   ontransitionend={handleTransitionEnd}
 >

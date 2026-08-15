@@ -30,7 +30,7 @@
     {#each EMOJI_PALETTE as emoji (emoji)}
       <button
         type="button"
-        class="hover:bg-surface-container-high flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-lg transition-colors"
+        class="hover:bg-surface-container-high duration-short ease-standard flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-lg transition-colors"
         onclick={() => pick(emoji)}
         aria-label="React with {emoji}"
       >
@@ -39,7 +39,7 @@
     {/each}
     <button
       type="button"
-      class="text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-lg transition-colors"
+      class="text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface duration-short ease-standard flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-lg transition-colors"
       onclick={() => (expanded = !expanded)}
       aria-label={expanded ? 'Close emoji picker' : 'More emoji'}
       aria-expanded={expanded}

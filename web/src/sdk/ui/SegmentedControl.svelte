@@ -54,7 +54,7 @@
       class="text-label-large flex-1 cursor-pointer rounded-lg py-1.5 text-center transition-all {selected ===
       opt.id
         ? 'bg-surface-container-high-selected text-on-surface shadow-elevation-1'
-        : 'text-on-surface-variant hover:text-on-surface'}"
+        : 'text-on-surface-variant hover:text-on-surface'} duration-short ease-standard"
       onclick={() => select(opt.id)}
     >
       {opt.label}

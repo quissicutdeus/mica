@@ -38,7 +38,7 @@
 </script>
 
 <div
-  class="animate-in fade-in bg-surface-container-high absolute inset-0 z-30 flex flex-col backdrop-blur-md duration-200"
+  class="animate-in fade-in bg-surface-container-high duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col backdrop-blur-md"
 >
   <!-- Header -->
   <div class="border-outline-variant flex items-center justify-between border-b p-4">
@@ -47,7 +47,7 @@
       {title}
     </h3>
     <button
-      class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface rounded-full p-1 transition-colors"
+      class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard rounded-full p-1 transition-colors"
       onclick={onclose}
       aria-label="Close photo picker"
     >
@@ -64,7 +64,7 @@
           type="button"
           class="group bg-surface-container relative aspect-square overflow-hidden rounded-xl border transition-all {selected
             ? 'ring-primary border-primary ring-2'
-            : 'border-outline-variant hover:border-outline'}"
+            : 'border-outline-variant hover:border-outline'} duration-short ease-standard"
           onclick={() => onmultichange?.(photo.id, photo)}
         >
           <MediaThumb item={photo} />
@@ -79,7 +79,7 @@
       {:else}
         <button
           type="button"
-          class="group border-outline-variant bg-surface-container hover:border-primary relative aspect-square overflow-hidden rounded-xl border transition-all"
+          class="group border-outline-variant bg-surface-container hover:border-primary duration-short ease-standard relative aspect-square overflow-hidden rounded-xl border transition-all"
           onclick={() => onselect?.(photo.data)}
         >
           <MediaThumb item={photo} />

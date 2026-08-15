@@ -198,7 +198,7 @@
             class="cursor-pointer rounded border py-1.5 text-[11px] font-semibold transition-all {$signalLevel ===
             level
               ? 'border-emerald-500 bg-emerald-600 text-white'
-              : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'}"
+              : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'} duration-short ease-standard"
           >
             {level} Bar{level === 1 ? '' : 's'}
           </button>
@@ -254,7 +254,7 @@
       <button
         type="button"
         onclick={triggerCall}
-        class="w-full cursor-pointer rounded-lg bg-emerald-600 py-2 text-xs font-semibold text-white transition-all hover:bg-emerald-500"
+        class="duration-short ease-standard w-full cursor-pointer rounded-lg bg-emerald-600 py-2 text-xs font-semibold text-white transition-all hover:bg-emerald-500"
       >
         Simulate Incoming Call
       </button>

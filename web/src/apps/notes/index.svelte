@@ -169,7 +169,7 @@
 {#snippet headerActions()}
   {#if !selectedNote && !isAdding}
     <button
-      class="hover:bg-surface-container-high ml-auto rounded-full p-2 transition-colors"
+      class="hover:bg-surface-container-high duration-short ease-standard ml-auto rounded-full p-2 transition-colors"
       onclick={() => (isAdding = true)}
       aria-label="Add note"
     >
@@ -177,7 +177,7 @@
     </button>
   {:else if selectedNote && !isEditing}
     <button
-      class="hover:bg-surface-container-high ml-auto rounded-full p-2 transition-colors"
+      class="hover:bg-surface-container-high duration-short ease-standard ml-auto rounded-full p-2 transition-colors"
       onclick={startEditing}
       aria-label="Edit note"
     >

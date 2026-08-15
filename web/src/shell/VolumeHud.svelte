@@ -40,7 +40,7 @@
     <!-- Progress bar -->
     <div class="flex h-1.5 w-20 items-center overflow-hidden rounded-full bg-white/20">
       <div
-        class="h-full rounded-full bg-white transition-all duration-150"
+        class="duration-short ease-standard h-full rounded-full bg-white transition-all"
         style="width: {$soundVolumePercent}%;"
       ></div>
     </div>

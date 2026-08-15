@@ -83,13 +83,13 @@
   transition:fly={{ y: 1000, duration: 500 }}
   data-testid="phone-frame"
   style="width: {PHONE_WIDTH}px; height: {PHONE_HEIGHT}px;"
-  class="shadow-elevation-5 relative rounded-[3.5rem] border-[8px] border-gray-950 ring-1 ring-gray-600 transition-colors duration-200"
+  class="shadow-elevation-5 duration-medium ease-emphasized relative rounded-[3.5rem] border-[8px] border-gray-950 ring-1 ring-gray-600 transition-colors"
   class:bg-gray-950={!transparent || $isBatteryDead}
 >
   <!-- Hardware Side Buttons -->
   <!-- Power / Screen Off Button -->
   <button
-    class="absolute top-[180px] -right-[13px] h-12 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600"
+    class="duration-short ease-standard absolute top-[180px] -right-[13px] h-12 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600"
     onclick={onClose}
     title="Power / Screen Off"
     aria-label="Power / Screen Off"
@@ -98,14 +98,14 @@
   <!-- Volume Buttons -->
   <div class="absolute top-[250px] -right-[13px] flex flex-col gap-2">
     <button
-      class="h-10 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-800 disabled:active:bg-gray-800"
+      class="duration-short ease-standard h-10 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-800 disabled:active:bg-gray-800"
       onclick={() => stepVolume(1)}
       disabled={$isBatteryDead}
       title="Volume Up"
       aria-label="Volume Up"
     ></button>
     <button
-      class="h-10 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-800 disabled:active:bg-gray-800"
+      class="duration-short ease-standard h-10 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-800 disabled:active:bg-gray-800"
       onclick={() => stepVolume(-1)}
       disabled={$isBatteryDead}
       title="Volume Down"
@@ -136,7 +136,7 @@
   <div
     bind:this={screenElement}
     data-testid="phone-screen"
-    class="rounded-frame-inner relative h-full w-full overflow-hidden transition-colors duration-200"
+    class="rounded-frame-inner duration-medium ease-emphasized relative h-full w-full overflow-hidden transition-colors"
     style={`${!transparent && !$isBatteryDead ? `background: ${wallpaper};` : ''} ${themeStyle}`}
     class:bg-black={$isBatteryDead}
     class:bg-transparent={transparent && !$isBatteryDead}
@@ -188,7 +188,7 @@
       <button
         bind:this={statusBarRef}
         type="button"
-        class="text-on-surface absolute top-0 z-60 flex w-full cursor-pointer items-center justify-between px-8 pt-3 text-sm font-medium transition-opacity hover:opacity-90 active:opacity-75"
+        class="text-on-surface duration-short ease-standard absolute top-0 z-60 flex w-full cursor-pointer items-center justify-between px-8 pt-3 text-sm font-medium transition-opacity hover:opacity-90 active:opacity-75"
         onclick={() => ($isShadeOpen ? closeShade() : openShade())}
         aria-label={$isShadeOpen ? 'Close notification shade' : 'Open notification shade'}
       >
@@ -216,7 +216,7 @@
                 class="bg-on-surface-variant absolute top-1/2 -right-[3px] h-1 w-[2px] -translate-y-1/2 rounded-r-[1px]"
               ></div>
               <div
-                class="h-full rounded-[1px] transition-all duration-300"
+                class="duration-medium ease-emphasized h-full rounded-[1px] transition-all"
                 class:bg-error={$displayCharge <= 20}
                 class:bg-yellow-400={$displayCharge > 20 && $displayCharge <= 40}
                 class:bg-on-surface={$displayCharge > 40}
@@ -259,7 +259,7 @@
       aria-label={$isShadeOpen ? 'Collapse notifications' : 'Return to home screen'}
     >
       <div
-        class="h-1 w-1/3 rounded-full bg-white/80 transition-colors duration-200 hover:bg-white"
+        class="duration-medium ease-emphasized h-1 w-1/3 rounded-full bg-white/80 transition-colors hover:bg-white"
       ></div>
     </button>
   </div>

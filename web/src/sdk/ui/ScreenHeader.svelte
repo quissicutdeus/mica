@@ -20,7 +20,7 @@
 >
   {#if onback}
     <button
-      class="hover:bg-surface-container-hover active:bg-surface-container-pressed -ml-2 rounded-full p-2 transition-colors"
+      class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard -ml-2 rounded-full p-2 transition-colors"
       onclick={onback}
       aria-label="Go back"
     >
@@ -31,7 +31,7 @@
     <h1 class="ml-2 min-w-0 truncate">
       <button
         type="button"
-        class="group hover:text-primary cursor-pointer truncate text-left text-xl font-semibold transition-colors"
+        class="group hover:text-primary duration-short ease-standard cursor-pointer truncate text-left text-xl font-semibold transition-colors"
         onclick={ontitleclick}
       >
         <span class="truncate">{title}</span>

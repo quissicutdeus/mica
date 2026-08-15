@@ -347,7 +347,7 @@
       <button
         class="hover:bg-surface rounded-full p-2 transition-colors {viewingArchive
           ? 'bg-surface-container-low text-primary'
-          : 'text-on-surface'}"
+          : 'text-on-surface'} duration-short ease-standard"
         onclick={() => (viewingArchive = !viewingArchive)}
         title={viewingArchive ? 'View Inbox' : 'View Archive'}
         aria-label="Toggle Archive"
@@ -357,7 +357,7 @@
       <button
         class="hover:bg-surface-container-high rounded-full p-2 transition-colors {showSearch
           ? 'bg-surface-container text-primary'
-          : 'text-on-surface'}"
+          : 'text-on-surface'} duration-short ease-standard"
         onclick={() => {
           showSearch = !showSearch;
           if (!showSearch) searchQuery = '';
@@ -371,7 +371,7 @@
   {:else if selectedConversationId && currentConv}
     <div class="ml-auto flex items-center gap-1">
       <button
-        class="text-on-surface hover:bg-surface-container-high hover:text-error cursor-pointer rounded-full p-1.5 transition-colors"
+        class="text-on-surface hover:bg-surface-container-high hover:text-error duration-short ease-standard cursor-pointer rounded-full p-1.5 transition-colors"
         onclick={async () => {
           if (currentConv) {
             await conversationsStore.deleteConversation(currentConv.id);
@@ -384,7 +384,7 @@
         <TrashIcon class="h-5 w-5" />
       </button>
       <button
-        class="text-on-surface hover:bg-surface-container-high hover:text-primary cursor-pointer rounded-full p-1.5 transition-colors"
+        class="text-on-surface hover:bg-surface-container-high hover:text-primary duration-short ease-standard cursor-pointer rounded-full p-1.5 transition-colors"
         onclick={async () => {
           if (currentConv) {
             const isArchived = currentConv.status === 'archived';
@@ -400,7 +400,7 @@
       <button
         class="hover:bg-surface-container-high cursor-pointer rounded-full p-1.5 transition-colors {showInChatSearch
           ? 'bg-surface-container text-primary'
-          : 'text-on-surface hover:text-on-surface'}"
+          : 'text-on-surface hover:text-on-surface'} duration-short ease-standard"
         onclick={() => {
           showInChatSearch = !showInChatSearch;
           if (!showInChatSearch) inChatSearchQuery = '';
@@ -435,13 +435,13 @@
     {#if isComposing}
       <!-- New Message Composition Panel (Sticky overlay directly below header) -->
       <div
-        class="animate-in slide-in-from-top border-outline-variant bg-surface shadow-elevation-5 sticky top-0 z-20 space-y-3 border-b p-4 backdrop-blur-md duration-200"
+        class="animate-in slide-in-from-top border-outline-variant bg-surface shadow-elevation-5 duration-medium ease-emphasized sticky top-0 z-20 space-y-3 border-b p-4 backdrop-blur-md"
       >
         <div class="border-outline-variant flex items-center justify-between border-b pb-1">
           <h3 class="text-on-surface text-base font-semibold">New Conversation</h3>
           <button
             type="button"
-            class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface rounded-full p-1 transition-colors"
+            class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard rounded-full p-1 transition-colors"
             onclick={() => (isComposing = false)}
             aria-label="Close form"
           >

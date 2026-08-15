@@ -82,7 +82,7 @@
     {@const isArchived = selectedMail.status === 'archived'}
     <div class="ml-auto flex items-center space-x-1">
       <button
-        class="text-error hover:bg-error rounded-full p-2 transition-colors"
+        class="text-error hover:bg-error duration-short ease-standard rounded-full p-2 transition-colors"
         onclick={() => handleDelete(selectedMail!.id)}
         aria-label="Delete message"
         title="Delete message"

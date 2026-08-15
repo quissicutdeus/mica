@@ -30,7 +30,7 @@
 <div class="text-on-surface-variant mt-2 flex items-center gap-5 text-xs">
   <button
     type="button"
-    class="hover:text-primary flex items-center gap-1.5 transition-colors"
+    class="hover:text-primary duration-short ease-standard flex items-center gap-1.5 transition-colors"
     aria-label="Reply"
     onclick={onreply}
   >
@@ -46,7 +46,7 @@
 
   <button
     type="button"
-    class="flex items-center gap-1.5 transition-colors hover:text-emerald-400"
+    class="duration-short ease-standard flex items-center gap-1.5 transition-colors hover:text-emerald-400"
     class:text-emerald-400={stats?.mouthedByMe}
     aria-label={stats?.mouthedByMe ? 'Mouthed' : 'Mouth'}
     aria-pressed={stats?.mouthedByMe ?? false}
@@ -64,7 +64,7 @@
 
   <button
     type="button"
-    class="hover:text-error flex items-center gap-1.5 transition-colors"
+    class="hover:text-error duration-short ease-standard flex items-center gap-1.5 transition-colors"
     class:text-error={stats?.earedByMe}
     aria-label={stats?.earedByMe ? 'Unear' : 'Ear'}
     aria-pressed={stats?.earedByMe ?? false}

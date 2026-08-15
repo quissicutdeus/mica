@@ -85,7 +85,7 @@
           class="flex w-full cursor-pointer items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition-colors {category ===
           option.id
             ? 'border-error bg-error-container text-on-error-container'
-            : 'border-outline-variant bg-surface-container text-on-surface hover:bg-surface-container-high'}"
+            : 'border-outline-variant bg-surface-container text-on-surface hover:bg-surface-container-high'} duration-short ease-standard"
         >
           {option.label}
           {#if category === option.id}

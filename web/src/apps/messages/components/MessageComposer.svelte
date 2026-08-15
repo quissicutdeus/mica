@@ -100,7 +100,7 @@
       </div>
       <button
         type="button"
-        class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface shrink-0 cursor-pointer rounded-full p-1 transition-colors"
+        class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard shrink-0 cursor-pointer rounded-full p-1 transition-colors"
         onclick={oncancelreply}
         aria-label="Cancel reply"
         title="Cancel reply"
@@ -131,7 +131,7 @@
   <div class="flex w-full items-center gap-2.5">
     <button
       type="button"
-      class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors"
+      class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary duration-short ease-standard flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors"
       onclick={() => (showAttachMenu = !showAttachMenu)}
       aria-label="Attachments"
     >
@@ -156,7 +156,7 @@
 
     <button
       type="button"
-      class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-elevation-2 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+      class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-elevation-2 duration-short ease-standard flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40"
       onclick={onsend}
       disabled={busy || (!text.trim() && attachments.length === 0)}
       aria-label="Send"
@@ -171,7 +171,7 @@
       transition:fly={{ y: 20, duration: 200 }}
     >
       <button
-        class="hover:bg-surface-container-high flex flex-col items-center justify-center rounded-lg p-3 transition-colors"
+        class="hover:bg-surface-container-high duration-short ease-standard flex flex-col items-center justify-center rounded-lg p-3 transition-colors"
         onclick={onopenphotos}
       >
         <div
@@ -182,7 +182,7 @@
         <span class="text-xs">Photo</span>
       </button>
       <button
-        class="hover:bg-surface-container-high flex flex-col items-center justify-center rounded-lg p-3 transition-colors"
+        class="hover:bg-surface-container-high duration-short ease-standard flex flex-col items-center justify-center rounded-lg p-3 transition-colors"
         onclick={handleShareLocation}
       >
         <div

@@ -66,7 +66,7 @@
       class="flex flex-1 cursor-pointer flex-col items-center gap-0.5 py-2 transition-colors {selected ===
       opt.id
         ? 'text-primary'
-        : 'text-on-surface-variant hover:text-on-surface'}"
+        : 'text-on-surface-variant hover:text-on-surface'} duration-short ease-standard"
       onclick={() => select(opt.id)}
     >
       <span class="relative">

@@ -106,7 +106,7 @@
         transition:fly={{ y: -20, duration: 250 }}
         class="shadow-elevation-5 pointer-events-auto flex cursor-pointer flex-col space-y-2.5 rounded-lg border p-3 backdrop-blur-2xl transition-all hover:scale-[1.01] active:scale-[0.99] {getBgColor(
           t.type
-        )}"
+        )} duration-short ease-standard"
         onclick={async () => {
           if (t.onClick) {
             await t.onClick();
@@ -180,7 +180,7 @@
 
           <button
             type="button"
-            class="text-on-surface-variant hover:bg-surface-container-high-hover hover:text-on-surface shrink-0 cursor-pointer rounded-full p-1 transition-colors"
+            class="text-on-surface-variant hover:bg-surface-container-high-hover hover:text-on-surface duration-short ease-standard shrink-0 cursor-pointer rounded-full p-1 transition-colors"
             onclick={(e) => {
               e.stopPropagation();
               toast.dismiss(t.id);
@@ -214,7 +214,7 @@
             />
             <button
               type="button"
-              class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-elevation-2 shrink-0 cursor-pointer rounded-xl p-1.5 transition-colors disabled:opacity-50"
+              class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-elevation-2 duration-short ease-standard shrink-0 cursor-pointer rounded-xl p-1.5 transition-colors disabled:opacity-50"
               disabled={!replyInputs[t.id]?.trim()}
               onclick={(e) => handleSendReply(t, e)}
               aria-label="Send reply"
@@ -236,7 +236,7 @@
                 type="button"
                 class="shadow-elevation-2 cursor-pointer rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-all {getActionBtnClass(
                   act.variant
-                )}"
+                )} duration-short ease-standard"
                 onclick={(e) => handleActionClick(t, act, e)}
               >
                 {act.label}

@@ -48,7 +48,7 @@
           <button
             type="button"
             onclick={() => onselect(app.id)}
-            class="hover:bg-surface-container-hover active:bg-surface-container-pressed flex w-full cursor-pointer items-center gap-3 p-3 text-left transition-colors"
+            class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center gap-3 p-3 text-left transition-colors"
           >
             <div
               class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg {app.color} shadow-elevation-1"

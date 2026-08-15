@@ -91,7 +91,7 @@
 
 <div
   id={`msg-${msg.id}`}
-  class="mb-1.5 flex flex-col transition-all duration-300 {msg.sender === 'me'
+  class="duration-medium ease-emphasized mb-1.5 flex flex-col transition-all {msg.sender === 'me'
     ? 'items-end'
     : 'items-start'}"
 >
@@ -99,7 +99,7 @@
     {@const senderInfo = getSenderInfo()}
     <button
       type="button"
-      class="group/sender mb-1 ml-1 flex cursor-pointer items-center gap-1.5 text-left transition-opacity hover:opacity-80"
+      class="group/sender duration-short ease-standard mb-1 ml-1 flex cursor-pointer items-center gap-1.5 text-left transition-opacity hover:opacity-80"
       onclick={() => handleOpenSenderContact(senderInfo.contact)}
     >
       <Avatar
@@ -126,7 +126,7 @@
       class="shadow-elevation-1 min-w-0 flex-1 cursor-pointer rounded-lg px-4 py-2.5 text-left transition-all focus:outline-none {msg.sender ===
       'me'
         ? 'bg-primary-container text-on-primary-container rounded-tr-xs'
-        : 'bg-surface-container text-on-surface rounded-tl-xs'}"
+        : 'bg-surface-container text-on-surface rounded-tl-xs'} duration-short ease-standard"
       onclick={() => (showActions = !showActions)}
     >
       {#if msg.replyToMsg}
@@ -134,7 +134,7 @@
         <div
           role="button"
           tabindex="0"
-          class="border-primary bg-surface-container-high hover:bg-surface-container-highest mb-2 flex w-full flex-col overflow-hidden rounded-lg border-l-4 p-2 text-left text-xs transition-colors select-none"
+          class="border-primary bg-surface-container-high hover:bg-surface-container-highest duration-short ease-standard mb-2 flex w-full flex-col overflow-hidden rounded-lg border-l-4 p-2 text-left text-xs transition-colors select-none"
           onclick={(e) => {
             e.stopPropagation();
             onscrollto?.(msg.replyToMsg!.id);
@@ -172,7 +172,7 @@
                 <div
                   role="button"
                   tabindex="0"
-                  class="border-outline-variant hover:bg-surface-container-high flex w-full flex-col overflow-hidden rounded-lg border transition-colors"
+                  class="border-outline-variant hover:bg-surface-container-high duration-short ease-standard flex w-full flex-col overflow-hidden rounded-lg border transition-colors"
                   onclick={(e) => {
                     e.stopPropagation();
                     handleAddWaypoint(media);
@@ -206,7 +206,7 @@
     {#if showActions}
       <button
         type="button"
-        class="bg-surface-container-high text-on-surface-variant hover:bg-primary-container hover:text-on-primary-container shadow-elevation-2 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all active:scale-95"
+        class="bg-surface-container-high text-on-surface-variant hover:bg-primary-container hover:text-on-primary-container shadow-elevation-2 duration-short ease-standard flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all active:scale-95"
         onclick={(e) => {
           e.stopPropagation();
           onreply?.(msg);

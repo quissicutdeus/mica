@@ -189,7 +189,7 @@
             ? 'bg-primary hover:brightness-110'
             : ['C', '±', '%', '÷', '×', '-', '+'].includes(btn)
               ? 'bg-surface-container-low hover:bg-surface'
-              : 'bg-surface-container hover:bg-surface-container-low'}"
+              : 'bg-surface-container hover:bg-surface-container-low'} duration-short ease-standard"
           onclick={() => handleInput(btn)}
         >
           {#if btn === '⌫'}

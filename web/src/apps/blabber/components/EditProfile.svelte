@@ -47,7 +47,9 @@
   const save = () => onsave({ display_name: displayName.trim() || null, bio: bio.trim() || null });
 </script>
 
-<div class="animate-in fade-in bg-surface absolute inset-0 z-30 flex flex-col p-5 duration-200">
+<div
+  class="animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col p-5"
+>
   <h3 class="text-on-surface mb-1 text-lg font-bold">Edit profile</h3>
   <p class="text-on-surface-variant mb-4 text-xs">
     @{account.handle} — a handle is claimed once and cannot be changed.

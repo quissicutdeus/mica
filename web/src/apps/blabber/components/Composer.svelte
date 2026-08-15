@@ -103,7 +103,7 @@
       {#if allowAttachments}
         <button
           type="button"
-          class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors"
+          class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary duration-short ease-standard flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors"
           onclick={() => (showPicker = true)}
           aria-label="Attach photo"
         >

@@ -34,7 +34,7 @@
 </script>
 
 <div
-  class="group hover:bg-surface-hover active:bg-surface-pressed flex w-full cursor-pointer items-center p-4 transition-colors {className}"
+  class="group hover:bg-surface-hover active:bg-surface-pressed flex w-full cursor-pointer items-center p-4 transition-colors {className} duration-short ease-standard"
   {onclick}
   {onkeydown}
   role="button"
