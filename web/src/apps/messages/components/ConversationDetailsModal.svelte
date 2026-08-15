@@ -98,7 +98,7 @@
             type="text"
             maxlength="50"
             bind:value={editNameValue}
-            class="border-outline-variant bg-surface-container text-on-surface focus:border-primary text-body-small flex-1 rounded-lg border px-3 py-1.5 focus:outline-none"
+            class="border-outline-variant bg-surface-container text-on-surface focus:border-focus-ring text-body-small flex-1 rounded-lg border px-3 py-1.5 focus:outline-none"
             placeholder="Enter group name"
           />
           <Button class="text-body-small shrink-0 px-3 py-1.5" onclick={handleSaveGroupName}

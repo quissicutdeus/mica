@@ -200,7 +200,7 @@
           >
             <input
               type="text"
-              class="border-outline-variant bg-surface-container-lowest text-on-surface placeholder-on-surface-variant focus:ring-primary text-body-small flex-1 rounded-xl border px-3 py-1.5 focus:ring-1 focus:outline-none"
+              class="border-outline-variant bg-surface-container-lowest text-on-surface placeholder-on-surface-variant focus:ring-focus-ring text-body-small flex-1 rounded-xl border px-3 py-1.5 focus:ring-1 focus:outline-none"
               placeholder={t.replyPlaceholder || 'Type a reply...'}
               bind:value={replyInputs[t.id]}
               onfocus={() => toast.pauseDismiss(t.id)}

@@ -17,7 +17,7 @@
   let {
     value = $bindable(),
     placeholder = 'Search...',
-    focusRingClass = 'focus:ring-primary',
+    focusRingClass = 'focus:ring-focus-ring',
     class: className = 'bg-surface-container text-on-surface',
     focus: autofocus = false
   }: Props = $props();

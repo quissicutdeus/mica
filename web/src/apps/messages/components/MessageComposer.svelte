@@ -139,7 +139,7 @@
     </button>
 
     <div
-      class="bg-surface-container-high text-on-surface focus-within:border-primary focus-within:ring-primary flex flex-1 items-center rounded-lg border border-transparent px-3.5 py-1.5 focus-within:ring-1"
+      class="bg-surface-container-high text-on-surface focus-within:border-focus-ring focus-within:ring-focus-ring flex flex-1 items-center rounded-lg border border-transparent px-3.5 py-1.5 focus-within:ring-1"
     >
       <textarea
         class="no-scrollbar text-on-surface placeholder-on-surface-variant text-body-medium h-[22px] max-h-32 min-h-[22px] w-full resize-none bg-transparent p-0 leading-normal focus:outline-none"
