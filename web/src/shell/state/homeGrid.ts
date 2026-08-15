@@ -1,6 +1,7 @@
 import { get, writable } from 'svelte/store';
 import { usePersisted } from '../../sdk/hooks/usePersisted';
 import { homeGridColumns, homeGridRows } from './homeGridSettings';
+import { DEFAULT_DOCK_APP_IDS } from './dock';
 
 /** Which folder's popup is open, if any — shell-owned UI state, not persisted. */
 export const openFolderId = writable<string | null>(null);
@@ -28,7 +29,8 @@ const gridCapacity = (): number => get(homeGridColumns) * get(homeGridRows);
 const isValidItem = (value: unknown): value is HomeGridItem => {
   if (!value || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
-  if (typeof v.position !== 'number' || !Number.isInteger(v.position) || v.position < 0) return false;
+  if (typeof v.position !== 'number' || !Number.isInteger(v.position) || v.position < 0)
+    return false;
   if (v.kind === 'app') return typeof v.appId === 'string' && v.appId.length > 0;
   if (v.kind === 'folder') {
     return (
@@ -82,6 +84,32 @@ export function sanitizeHomeGridItems(value: unknown): HomeGridItem[] {
 export const homeGridItems = usePersisted<HomeGridItem[]>('settings', 'homeGridItems', [], {
   sanitize: sanitizeHomeGridItems
 });
+
+/**
+ * Every core app that shipped on this build, minus whatever the dock already carries by
+ * default — a player who has never touched the grid should not open a blank home screen
+ * and have to fish every app out of the drawer by hand, and a dock icon showing up a
+ * second time in the grid right next to it would just look like a bug.
+ *
+ * Called from `Shell.svelte`'s `onMount`, not at this module's own top level. `registry.ts`
+ * imports `@gphone/sdk`, whose barrel reaches this module through `useDisplay`'s
+ * `compactGridToCurrentCapacity` import — so importing `registeredApps` here and reading it
+ * at module-eval time closes that cycle mid-evaluation and reads it as `undefined`. By the
+ * time anything mounts, the whole module graph has already settled.
+ *
+ * Reads `registeredApps` rather than the live `appRegistryStore`: this only has to answer
+ * "what did the player start with", and the store's add-on half rehydrates asynchronously
+ * after startup.
+ */
+export async function seedDefaultGridIfEmpty(): Promise<void> {
+  if (get(homeGridItems).length > 0) return;
+  const { registeredApps } = await import('./registry');
+  homeGridItems.set(
+    registeredApps
+      .filter((app) => !DEFAULT_DOCK_APP_IDS.includes(app.id))
+      .map((app, index) => ({ position: index, kind: 'app', appId: app.id }))
+  );
+}
 
 export const isGridCellOccupied = (position: number, items: HomeGridItem[]): boolean =>
   items.some((item) => item.position === position);
@@ -147,6 +175,31 @@ export function placeAppOnGrid(appId: string, position: number): PlacementResult
   return result;
 }
 
+/**
+ * Installing an add-on from the Store puts it on the home screen, at the first free
+ * cell — the same expectation a player already has of a bare app icon, not something
+ * they should have to know the App Drawer exists to satisfy. A no-op if the app is
+ * already placed (an app or inside a folder) or the grid is entirely full; either way
+ * the app stays reachable from the drawer.
+ */
+export function placeOnHomeGridIfAbsent(appId: string): void {
+  const current = get(homeGridItems);
+  const alreadyPlaced = current.some(
+    (item) =>
+      (item.kind === 'app' && item.appId === appId) ||
+      (item.kind === 'folder' && item.appIds.includes(appId))
+  );
+  if (alreadyPlaced) return;
+
+  const capacity = gridCapacity();
+  for (let position = 0; position < capacity; position++) {
+    if (!isGridCellOccupied(position, current)) {
+      homeGridItems.set([...current, { position, kind: 'app', appId }]);
+      return;
+    }
+  }
+}
+
 /** Drag an already-placed app or folder to a new cell. */
 export function moveGridItem(fromPosition: number, toPosition: number): PlacementResult {
   if (fromPosition === toPosition) return 'rejected';
@@ -210,7 +263,9 @@ export function removeFromGrid(position: number): void {
 
 export function renameFolder(folderId: string, name: string): void {
   homeGridItems.update((items) =>
-    items.map((item) => (item.kind === 'folder' && item.folderId === folderId ? { ...item, name } : item))
+    items.map((item) =>
+      item.kind === 'folder' && item.folderId === folderId ? { ...item, name } : item
+    )
   );
 }
 
@@ -260,6 +315,10 @@ export function removeAppFromFolder(folderId: string, appId: string): boolean {
   if (freePosition === -1) return false;
 
   const updatedFolder: HomeGridItem[] = folderStays ? [{ ...folder, appIds: remainingAppIds }] : [];
-  homeGridItems.set([...otherItems, ...updatedFolder, { position: freePosition, kind: 'app', appId }]);
+  homeGridItems.set([
+    ...otherItems,
+    ...updatedFolder,
+    { position: freePosition, kind: 'app', appId }
+  ]);
   return true;
 }
