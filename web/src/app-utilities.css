@@ -1892,6 +1892,12 @@
   line-height: var(--text-title-large--line-height);
   font-weight: var(--text-title-large--font-weight);
 }
+.text-title-medium {
+  font-size: var(--text-title-medium);
+  line-height: var(--text-title-medium--line-height);
+  font-weight: var(--text-title-medium--font-weight);
+  letter-spacing: var(--text-title-medium--letter-spacing);
+}
 .text-white {
   color: #ffffff;
 }
