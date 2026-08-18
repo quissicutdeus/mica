@@ -11,11 +11,12 @@ import Calculator from '../apps/calculator/index.svelte';
 import Camera from '../apps/camera/index.svelte';
 import Contacts from '../apps/contacts/index.svelte';
 import Mail from '../apps/mail/index.svelte';
-import Messages from '../apps/messages/index.svelte';
 import Media from '../apps/media/index.svelte';
+import Messages from '../apps/messages/index.svelte';
 import Notes from '../apps/notes/index.svelte';
 import Phone from '../apps/phone/index.svelte';
 import Settings from '../apps/settings/index.svelte';
+import Snek from '../apps/snek/index.svelte';
 import Store from '../apps/store/index.svelte';
 
 /**
@@ -46,6 +47,7 @@ const APPS: Record<string, AppComponent> = {
   notes: Notes,
   phone: Phone,
   settings: Settings,
+  snek: Snek,
   store: Store
 };
 
