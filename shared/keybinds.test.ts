@@ -39,4 +39,48 @@ describe('conflictsWith', () => {
     const conflict = conflictsWith(restart, 'p', {}, [...PHONE_SCOPE_ACTIONS, pause, restart]);
     expect(conflict?.id).toBe('snek:pause');
   });
+
+  it('flags an app-scoped action rebound onto an unscoped action\'s key', () => {
+    // 'back' is unscoped (eligible everywhere), so an app-scoped action sharing its key
+    // would always shadow 'back' while that app is foreground.
+    const pause: KeybindAction = {
+      id: 'snek:pause',
+      label: 'Pause Game',
+      defaultKey: 'p',
+      scope: 'phone',
+      when: 'app:snek'
+    };
+    const conflict = conflictsWith(pause, 'Backspace', {}, [...PHONE_SCOPE_ACTIONS, pause]);
+    expect(conflict?.id).toBe('back');
+  });
+
+  it('does not flag a call-scoped action sharing a key with an unscoped action', () => {
+    // 'back' and 'endCall' already share Backspace by design (call:any outranks
+    // unscoped by dispatch precedence) — this pairing stays allowed.
+    const back = findAction('back')!;
+    expect(conflictsWith(back, 'Backspace', {})).toBeUndefined();
+  });
+
+  it('does not flag two app-scoped actions for different apps sharing a key', () => {
+    const snekPause: KeybindAction = {
+      id: 'snek:pause',
+      label: 'Pause Game',
+      defaultKey: 'p',
+      scope: 'phone',
+      when: 'app:snek'
+    };
+    const cameraPause: KeybindAction = {
+      id: 'camera:pause',
+      label: 'Pause Preview',
+      defaultKey: 'p',
+      scope: 'phone',
+      when: 'app:camera'
+    };
+    const conflict = conflictsWith(cameraPause, 'p', {}, [
+      ...PHONE_SCOPE_ACTIONS,
+      snekPause,
+      cameraPause
+    ]);
+    expect(conflict).toBeUndefined();
+  });
 });

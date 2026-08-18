@@ -117,14 +117,19 @@ export const findAction = (id: string): KeybindAction | undefined =>
  * `when` contexts are disjoint, so only one is ever eligible. The Shortcuts screen only
  * rejects a duplicate when two actions could fire from the same key at the same time.
  *
- * TODO(MICA-9-followup): strict `when` equality also means an unscoped core action
- * (e.g. `back`) never registers as conflicting with an app-scoped action sharing its key
- * (`when: 'app:<id>'`), even though at dispatch time the scoped action always outranks
- * the unscoped one and would silently shadow it while that app is foreground. What
- * actually prevents a collision there is dispatch precedence, not eligibility — this
- * function has no way to see that. Needs a design decision (an explicit "can these ever
- * be eligible simultaneously" predicate) before it can be fixed here.
+ * An unscoped action (no `when`) is also considered eligible alongside any `app:<id>`
+ * context, since it's eligible everywhere including while that app is foreground — an
+ * app-scoped action would always shadow it there by dispatch precedence. `call:*`
+ * contexts are exempt from that: `back` and `endCall` deliberately share Backspace
+ * (call:any outranks unscoped), and that pairing stays allowed.
  */
+function canCoexist(a: KeybindContext | undefined, b: KeybindContext | undefined): boolean {
+  if (a === b) return false;
+  const isApp = (w: KeybindContext | undefined) => typeof w === 'string' && w.startsWith('app:');
+  if ((a === undefined && isApp(b)) || (b === undefined && isApp(a))) return false;
+  return true;
+}
+
 export function conflictsWith(
   action: KeybindAction,
   key: string,
@@ -134,7 +139,6 @@ export function conflictsWith(
   return candidates.find((other) => {
     if (other.id === action.id) return false;
     if ((bindings[other.id] ?? other.defaultKey) !== key) return false;
-    // Different contexts can never be eligible together; the same context can.
-    return other.when === action.when;
+    return !canCoexist(other.when, action.when);
   });
 }
