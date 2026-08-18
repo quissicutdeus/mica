@@ -116,6 +116,14 @@ export const findAction = (id: string): KeybindAction | undefined =>
  * Note `answerCall` and `shutter` share `Enter`. That is fine and deliberate — their
  * `when` contexts are disjoint, so only one is ever eligible. The Shortcuts screen only
  * rejects a duplicate when two actions could fire from the same key at the same time.
+ *
+ * TODO(MICA-9-followup): strict `when` equality also means an unscoped core action
+ * (e.g. `back`) never registers as conflicting with an app-scoped action sharing its key
+ * (`when: 'app:<id>'`), even though at dispatch time the scoped action always outranks
+ * the unscoped one and would silently shadow it while that app is foreground. What
+ * actually prevents a collision there is dispatch precedence, not eligibility — this
+ * function has no way to see that. Needs a design decision (an explicit "can these ever
+ * be eligible simultaneously" predicate) before it can be fixed here.
  */
 export function conflictsWith(
   action: KeybindAction,

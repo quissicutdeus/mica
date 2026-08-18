@@ -70,7 +70,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    include: ['src/**/*.test.ts', 'src/**/*.spec.ts'],
+    include: ['src/**/*.test.ts', 'src/**/*.spec.ts', '../shared/**/*.test.ts'],
     server: {
       deps: {
         // `@material/material-color-utilities@0.4.0` ships extensionless relative

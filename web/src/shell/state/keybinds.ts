@@ -54,7 +54,13 @@ export const allPhoneActions = derived(appActions, ($appActions): ResolvedKeybin
   ...$appActions
 ]);
 
-/** actionId -> the key currently bound to it. */
+/**
+ * actionId -> the key currently bound to it.
+ *
+ * Phone-scope (core + app-declared) only — game-scope action ids (e.g. `openPhone`) are
+ * never keys here. Those defaults live in `GAME_SCOPE_ACTIONS` and are rebound through
+ * FiveM's own Key Bindings menu, not this store.
+ */
 export const bindings = derived([overrides, allPhoneActions], ([$overrides, $actions]) => {
   const resolved: Record<string, string> = {};
   for (const action of $actions) {

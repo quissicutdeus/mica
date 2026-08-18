@@ -10,7 +10,7 @@ import { messageOf } from '../../lib/errors';
 import { usePersisted } from '../../sdk/hooks/usePersisted';
 import { placeOnHomeGridIfAbsent } from './homeGrid';
 
-export type { AppManifest } from '@gphone/sdk';
+export type { AppManifest } from '../../sdk/manifest';
 
 /**
  * Manifests eagerly, components lazily, and the split is the point.

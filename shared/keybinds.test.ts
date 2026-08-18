@@ -15,18 +15,28 @@ describe('conflictsWith', () => {
   });
 
   it('checks against an explicit candidate list instead of the core default', () => {
-    const back = findAction('back')!;
-    const appAction: KeybindAction = {
+    // Two app-declared actions sharing the same `when` — a real collision, since both
+    // are eligible together whenever that app is foreground.
+    const pause: KeybindAction = {
       id: 'snek:pause',
       label: 'Pause Game',
-      defaultKey: 'k',
+      defaultKey: 'p',
       scope: 'phone',
       when: 'app:snek'
     };
-    // Not a conflict against the core list (nothing core uses 'k')...
-    expect(conflictsWith(back, 'k', {})).toBeUndefined();
-    // ...but is one once the app-declared action is passed in as a candidate.
-    const conflict = conflictsWith(back, 'k', {}, [...PHONE_SCOPE_ACTIONS, appAction]);
+    const restart: KeybindAction = {
+      id: 'snek:restart',
+      label: 'Restart',
+      defaultKey: 'r',
+      scope: 'phone',
+      when: 'app:snek'
+    };
+    // Not a conflict against the default core candidate list — nothing core uses 'p',
+    // and the app-declared action isn't even in that list.
+    expect(conflictsWith(restart, 'p', {})).toBeUndefined();
+    // ...but is one once the colliding app-declared action is passed in explicitly,
+    // since both share `when: 'app:snek'`.
+    const conflict = conflictsWith(restart, 'p', {}, [...PHONE_SCOPE_ACTIONS, pause, restart]);
     expect(conflict?.id).toBe('snek:pause');
   });
 });
