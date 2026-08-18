@@ -71,15 +71,30 @@ describe('useKeybinds groups', () => {
   });
 
   it('findConflict resolves an app-declared action id, not just core ones', () => {
-    appRegistryStore.registerApp(fakeManifest as any, (() => {}) as any);
+    const twoActionManifest = {
+      id: 'snek_two_actions',
+      name: 'Snek Two Actions',
+      color: 'bg-green-600',
+      icon: null,
+      core: false,
+      keybinds: [
+        { id: 'pause', label: 'Pause Game', defaultKey: 'p' },
+        { id: 'restart', label: 'Restart', defaultKey: 'r' }
+      ]
+    } as const;
+    appRegistryStore.registerApp(twoActionManifest as any, (() => {}) as any);
     const { findConflict } = useKeybinds();
 
-    // 'p' isn't used by anything else yet, so no conflict...
-    expect(findConflict('snek_hook_test:pause', 'p')).toBeUndefined();
+    // Rebinding restart onto its own key is a no-op, not a conflict.
+    expect(findConflict('snek_two_actions:restart', 'r')).toBeUndefined();
 
-    // ...but 'back' defaults to Backspace, and rebinding the app action onto Backspace
-    // must be caught even though 'back' is a core action, not an app-declared one.
-    const conflict = findConflict('snek_hook_test:pause', 'Backspace');
-    expect(conflict?.id).toBe('back');
+    // Both binds share the same `when` (`app:snek_two_actions`), so rebinding restart
+    // onto pause's key is a real conflict — and finding it proves findConflict resolves
+    // an app-declared action id (not just a core one) via the get(allPhoneActions)
+    // fallback.
+    const conflict = findConflict('snek_two_actions:restart', 'p');
+    expect(conflict?.id).toBe('snek_two_actions:pause');
+
+    appRegistryStore.unregisterApp('snek_two_actions');
   });
 });
