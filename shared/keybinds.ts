@@ -126,7 +126,10 @@ export function conflictsWith(
   return candidates.find((other) => {
     if (other.id === action.id) return false;
     if ((bindings[other.id] ?? other.defaultKey) !== key) return false;
-    // Different contexts can never be eligible together; the same context can.
+    // Different contexts can never be eligible together; the same context can. An
+    // unscoped action (`when` omitted) is eligible in every context, so it overlaps
+    // with a scoped one too — only two *distinct* scoped contexts are ever disjoint.
+    if (action.when === undefined || other.when === undefined) return true;
     return other.when === action.when;
   });
 }

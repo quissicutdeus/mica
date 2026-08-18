@@ -1,12 +1,24 @@
 import { onDestroy } from 'svelte';
+import { derived, get } from 'svelte/store';
 import {
+  allPhoneActions,
   bindings,
   registerHandler,
   resetBindings,
   setBinding,
-  currentOverrides
+  currentOverrides,
+  type ResolvedKeybindAction
 } from '../../shell/state/keybinds';
-import { PHONE_SCOPE_ACTIONS, conflictsWith, findAction } from '@shared/keybinds';
+import { conflictsWith, findAction } from '@shared/keybinds';
+
+export interface KeybindGroup {
+  ownerId: string;
+  ownerLabel: string;
+  actions: ResolvedKeybindAction[];
+}
+
+/** Core's group renders without picking it out of the pack — it's the phone's own list. */
+const CORE_OWNER_ID = 'core';
 
 /**
  * OS Service Hook for keyboard shortcuts.
@@ -44,8 +56,31 @@ export function useKeybinds() {
     /** Live map of actionId -> bound key. */
     bindings,
 
-    /** Everything configurable from gPhone's own Shortcuts screen. */
-    actions: PHONE_SCOPE_ACTIONS,
+    /**
+     * Everything configurable from gPhone's own Shortcuts screen, grouped by owner.
+     *
+     * Core first (`ownerId: 'core'`), then one group per installed app that declares its
+     * own `keybinds`, sorted alphabetically by `ownerLabel`. An app with no declared
+     * keybinds contributes no group at all, rather than an empty one.
+     */
+    groups: derived(allPhoneActions, ($actions): KeybindGroup[] => {
+      const byOwner = new Map<string, KeybindGroup>();
+      for (const action of $actions) {
+        let group = byOwner.get(action.ownerId);
+        if (!group) {
+          group = { ownerId: action.ownerId, ownerLabel: action.ownerLabel, actions: [] };
+          byOwner.set(action.ownerId, group);
+        }
+        group.actions.push(action);
+      }
+
+      const core = byOwner.get(CORE_OWNER_ID);
+      const appGroups = [...byOwner.values()]
+        .filter((g) => g.ownerId !== CORE_OWNER_ID)
+        .sort((a, b) => a.ownerLabel.localeCompare(b.ownerLabel));
+
+      return core ? [core, ...appGroups] : appGroups;
+    }),
 
     setBinding,
     resetBindings,
@@ -56,9 +91,10 @@ export function useKeybinds() {
      * camera shutter, and only one is ever eligible.
      */
     findConflict: (actionId: string, key: string) => {
-      const action = findAction(actionId);
+      const action =
+        findAction(actionId) ?? get(allPhoneActions).find((a) => a.id === actionId);
       if (!action) return undefined;
-      return conflictsWith(action, key, currentOverrides());
+      return conflictsWith(action, key, currentOverrides(), get(allPhoneActions));
     }
   };
 }
