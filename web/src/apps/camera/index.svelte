@@ -275,7 +275,7 @@
       <img
         src={currentViewfinderImage}
         alt="Camera Viewfinder Mock"
-        class="duration-medium pointer-events-none absolute inset-0 h-full w-full object-cover opacity-85 transition-opacity"
+        class="duration-medium ease-standard pointer-events-none absolute inset-0 h-full w-full object-cover opacity-85 transition-opacity"
       />
     {/if}
 
@@ -295,7 +295,7 @@
          the on-screen controls cannot be clicked and these keys are the only way in. -->
     {#if !isBrowser()}
       <div
-        class="text-on-surface text-label-small duration-short pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center gap-2 transition-opacity"
+        class="text-on-surface text-label-small duration-short ease-standard pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center gap-2 transition-opacity"
         class:opacity-0={$isTakingPhoto}
       >
         {#each [['shutter', 'Shoot'], ['back', 'Close'], ['freelook', 'Cursor']] as [id, label] (id)}
@@ -309,7 +309,7 @@
 
     <!-- Top Controls -->
     <div
-      class="duration-short z-10 flex items-center justify-between pt-1 transition-opacity"
+      class="duration-short ease-standard z-10 flex items-center justify-between pt-1 transition-opacity"
       class:opacity-0={$isTakingPhoto}
     >
       <button
@@ -323,7 +323,7 @@
 
     <!-- Grid Overlay Guide -->
     <div
-      class="duration-short pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-20 transition-opacity"
+      class="duration-short ease-standard pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-20 transition-opacity"
       class:opacity-0={$isTakingPhoto}
     >
       <div class="border-r border-b border-white"></div>
@@ -341,7 +341,7 @@
          in-game photo is a crop of this exact region, so anything still on screen ends
          up inside the picture. -->
     <div
-      class="bg-surface-container border-outline-variant text-on-surface rounded-b-frame-inner shadow-elevation-5 duration-short relative z-10 mx-[-1rem] mb-[-1rem] flex transform-gpu flex-col items-center gap-4 overflow-hidden border-t px-4 pt-4 pb-10 backdrop-blur-lg transition-opacity"
+      class="bg-surface-container border-outline-variant text-on-surface rounded-b-frame-inner shadow-elevation-5 duration-short ease-standard relative z-10 mx-[-1rem] mb-[-1rem] flex transform-gpu flex-col items-center gap-4 overflow-hidden border-t px-4 pt-4 pb-10 backdrop-blur-lg transition-opacity"
       class:opacity-0={$isTakingPhoto}
     >
       <!-- Mode Toggle Buttons -->
@@ -350,7 +350,7 @@
           <button
             type="button"
             onclick={() => (cameraMode = mode as 'PHOTO' | 'VIDEO' | 'LANDSCAPE')}
-            class="text-body-small duration-medium cursor-pointer rounded-full px-3.5 py-1 tracking-wider uppercase transition-all {cameraMode ===
+            class="text-body-small duration-medium ease-standard cursor-pointer rounded-full px-3.5 py-1 tracking-wider uppercase transition-all {cameraMode ===
             mode
               ? 'shadow-elevation-1 scale-105 border border-yellow-400/40 bg-black/60 text-yellow-400'
               : 'text-on-surface hover:text-on-surface'}"
@@ -375,7 +375,7 @@
               openApp('media');
             }
           }}
-          class="group shadow-elevation-3 duration-medium flex h-12 w-12 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-white/30 bg-black/40 transition-all {isThumbnailBouncing
+          class="group shadow-elevation-3 duration-medium ease-standard flex h-12 w-12 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-white/30 bg-black/40 transition-all {isThumbnailBouncing
             ? 'shadow-elevation-4 scale-110 border-yellow-400 ring-2 shadow-yellow-400/30 ring-yellow-400/60'
             : 'hover:scale-105'}"
           aria-label="Open Media Gallery"
@@ -398,7 +398,8 @@
           aria-label="Take photo"
         >
           <div
-            class="duration-medium h-full w-full rounded-full transition-all {cameraMode === 'VIDEO'
+            class="duration-medium ease-standard h-full w-full rounded-full transition-all {cameraMode ===
+            'VIDEO'
               ? 'bg-error scale-75 rounded-md'
               : 'bg-white'}"
           ></div>
