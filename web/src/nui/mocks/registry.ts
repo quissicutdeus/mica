@@ -1430,6 +1430,14 @@ const mockRegistry: Record<string, MockHandler> = {
     return { ok: true, resolution: 'pending' };
   },
 
+  // Highscores — shared leaderboard. Stateless mock: `pnpm dev` cannot stand in for a real
+  // server per docs/writing-an-app.md, so this is just enough to exercise the UI.
+  submitHighscore: async () => ({ ok: true }),
+  getHighscoreLeaderboard: async () => [
+    { citizenid: 'MOCK1', score: 42, displayName: 'Ada' },
+    { citizenid: 'MOCK2', score: 17, displayName: 'Dez' }
+  ],
+
   /**
    * Settings — the server-backed store, standing in for a real table.
    *

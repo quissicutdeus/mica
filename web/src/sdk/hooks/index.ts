@@ -15,6 +15,7 @@ export * from './useContacts';
 export * from './useDeepLink.svelte';
 export * from './useDevTools';
 export * from './useDisplay';
+export * from './useHighscores';
 export * from './useKeybinds';
 export * from './useLocation';
 export * from './useMail';
