@@ -1381,6 +1381,12 @@
 .pt-4 {
   padding-top: 1rem;
 }
+.pt-8 {
+  padding-top: 2rem;
+}
+.pt-12 {
+  padding-top: 3rem;
+}
 .pt-safe-top {
   padding-top: var(--spacing-safe-top);
 }
@@ -1712,6 +1718,11 @@
     margin-bottom: 0.5rem;
   }
 }
+.space-y-2\.5 {
+  & > :not(:last-child) {
+    margin-bottom: 0.625rem;
+  }
+}
 .space-y-3 {
   & > :not(:last-child) {
     margin-bottom: 0.75rem;
@@ -1880,6 +1891,17 @@
 }
 .text-sm {
   font-size: 0.875rem;
+}
+.text-title-large {
+  font-size: var(--text-title-large);
+  line-height: var(--text-title-large--line-height);
+  font-weight: var(--text-title-large--font-weight);
+}
+.text-title-medium {
+  font-size: var(--text-title-medium);
+  line-height: var(--text-title-medium--line-height);
+  font-weight: var(--text-title-medium--font-weight);
+  letter-spacing: var(--text-title-medium--letter-spacing);
 }
 .text-white {
   color: #ffffff;

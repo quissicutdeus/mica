@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import { hydrateSettings } from '../sdk/hooks/useStorage';
   import { appRegistryStore } from './state/registry';
-  import { seedDefaultGridIfEmpty } from './state/homeGrid';
   import { createNuiMessageRouter } from './nuiMessages';
   import { installDevHarness, seedBrowserPhone } from './devHarness';
   import { isBrowser } from '../lib/isBrowser';
@@ -203,7 +202,6 @@
    */
   onMount(() => {
     void hydrateSettings();
-    void seedDefaultGridIfEmpty();
   });
 
   onMount(() => {

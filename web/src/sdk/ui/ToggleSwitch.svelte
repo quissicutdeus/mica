@@ -55,7 +55,7 @@
          the roles rather than pinning it to white is what makes a light scheme work
          later without touching this file. -->
     <span
-      class="shadow-elevation-1 duration-short ease-standard pointer-events-none inline-block h-5 w-5 transform rounded-full ring-0 transition {checked
+      class="shadow-elevation-1 duration-short ease-standard pointer-events-none inline-block h-5 w-5 rounded-full ring-0 transition {checked
         ? 'bg-on-primary translate-x-5'
         : 'bg-outline translate-x-0'}"
     ></span>

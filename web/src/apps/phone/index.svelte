@@ -266,7 +266,7 @@
           onclick={() => callStore.endCall()}
           aria-label="End Call"
         >
-          <PhoneIcon class="text-on-surface h-8 w-8 rotate-135 transform" />
+          <PhoneIcon class="text-on-surface h-8 w-8 rotate-135" />
         </button>
       </div>
     </div>

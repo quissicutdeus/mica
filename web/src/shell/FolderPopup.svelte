@@ -70,7 +70,7 @@
     role="presentation"
   >
     <div
-      class="bg-surface-container shadow-elevation-5 w-full rounded-lg p-5"
+      class="bg-surface-container shadow-elevation-5 w-full rounded-xl p-5"
       onclick={(e) => e.stopPropagation()}
       role="presentation"
     >
@@ -79,7 +79,7 @@
         placeholder="Unnamed"
         value={folder.name}
         onblur={(e) => folder && renameFolder(folder.folderId, e.currentTarget.value)}
-        class="text-on-surface placeholder:text-on-surface-variant mb-4 w-full bg-transparent text-center text-lg font-semibold outline-none"
+        class="text-on-surface placeholder:text-on-surface-variant text-title-medium mb-4 w-full bg-transparent text-center outline-none"
       />
 
       <div class="grid grid-cols-4 gap-y-5">

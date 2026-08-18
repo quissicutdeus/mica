@@ -1,7 +1,6 @@
 import { get, writable } from 'svelte/store';
 import { usePersisted } from '../../sdk/hooks/usePersisted';
 import { homeGridColumns, homeGridRows } from './homeGridSettings';
-import { DEFAULT_DOCK_APP_IDS } from './dock';
 
 /** Which folder's popup is open, if any — shell-owned UI state, not persisted. */
 export const openFolderId = writable<string | null>(null);
@@ -84,32 +83,6 @@ export function sanitizeHomeGridItems(value: unknown): HomeGridItem[] {
 export const homeGridItems = usePersisted<HomeGridItem[]>('settings', 'homeGridItems', [], {
   sanitize: sanitizeHomeGridItems
 });
-
-/**
- * Every core app that shipped on this build, minus whatever the dock already carries by
- * default — a player who has never touched the grid should not open a blank home screen
- * and have to fish every app out of the drawer by hand, and a dock icon showing up a
- * second time in the grid right next to it would just look like a bug.
- *
- * Called from `Shell.svelte`'s `onMount`, not at this module's own top level. `registry.ts`
- * imports `@gphone/sdk`, whose barrel reaches this module through `useDisplay`'s
- * `compactGridToCurrentCapacity` import — so importing `registeredApps` here and reading it
- * at module-eval time closes that cycle mid-evaluation and reads it as `undefined`. By the
- * time anything mounts, the whole module graph has already settled.
- *
- * Reads `registeredApps` rather than the live `appRegistryStore`: this only has to answer
- * "what did the player start with", and the store's add-on half rehydrates asynchronously
- * after startup.
- */
-export async function seedDefaultGridIfEmpty(): Promise<void> {
-  if (get(homeGridItems).length > 0) return;
-  const { registeredApps } = await import('./registry');
-  homeGridItems.set(
-    registeredApps
-      .filter((app) => !DEFAULT_DOCK_APP_IDS.includes(app.id))
-      .map((app, index) => ({ position: index, kind: 'app', appId: app.id }))
-  );
-}
 
 export const isGridCellOccupied = (position: number, items: HomeGridItem[]): boolean =>
   items.some((item) => item.position === position);
