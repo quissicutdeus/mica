@@ -39,7 +39,7 @@
     "@citizenfx/client": "2.0.34410-1",
     "@citizenfx/server": "2.0.34410-1",
     "@types/node": "^26.2.0",
-    "concurrently": "^10.0.4",
+    "concurrently": "^10.0.5",
     "cross-env": "^10.1.0",
     "esbuild": "^0.28.2",
     "prettier": "^3.9.6",
