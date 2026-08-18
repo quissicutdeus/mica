@@ -1,6 +1,9 @@
+import { get } from 'svelte/store';
 import { debugData } from '../lib/debug';
-import { appRegistryStore } from './state/registry';
+import { appRegistryStore, registeredApps } from './state/registry';
 import { openApp } from './state/navigation';
+import { DEFAULT_DOCK_APP_IDS } from './state/dock';
+import { homeGridItems } from './state/homeGrid';
 
 /**
  * Browser-only scaffolding: seed the phone, and expose a console helper for firing
@@ -101,6 +104,27 @@ function openDeepLinkedApp(): void {
   openApp(id);
 }
 
+/**
+ * Dev/e2e only: put every shipped, non-dock app on the home grid if it's still empty.
+ *
+ * A real player's home grid starts empty by design (MICA-5) — the dock and drawer are
+ * the only way in until they drag something out. But most of `e2e/` predates that change
+ * and opens an app by clicking its home-screen icon directly, the way `pnpm dev` used to
+ * seed it too (`seedDefaultGridIfEmpty`, removed in the same change). Restoring that
+ * seeding here rather than in `state/homeGrid.ts` keeps it out of the path a real player
+ * hits — this only runs under `installDevHarness`'s `import.meta.env.DEV` guard, which
+ * `pnpm dev` (and so every e2e run, since they drive that same dev server) satisfies and
+ * a production build never does.
+ */
+function seedHomeGridIfEmpty(): void {
+  if (get(homeGridItems).length > 0) return;
+  homeGridItems.set(
+    registeredApps
+      .filter((app) => !DEFAULT_DOCK_APP_IDS.includes(app.id))
+      .map((app, index) => ({ position: index, kind: 'app', appId: app.id }))
+  );
+}
+
 /** `window.triggerTestToast('call')` from the console. Dev builds only. */
 export function installDevHarness(): void {
   /**
@@ -134,5 +158,6 @@ export function installDevHarness(): void {
   // property; nothing ever assigned it, so its assertions never ran.
   window.appRegistryStore = appRegistryStore;
 
+  seedHomeGridIfEmpty();
   openDeepLinkedApp();
 }
