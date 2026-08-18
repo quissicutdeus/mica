@@ -1,5 +1,5 @@
 import Icon from './Icon.svelte';
-import { defineApp } from '@gphone/sdk';
+import { defineApp } from '@gphone/sdk/app';
 
 export default defineApp({
   id: 'snek',
