@@ -11,3 +11,4 @@ sql/dev-reset.sql
 .agent/
 .env*
 .claude/
+.worktrees/
