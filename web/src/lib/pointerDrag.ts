@@ -112,6 +112,12 @@ export interface DragGestureConfig {
   onEnd: (delta: number, velocityPerMs: number) => void;
   /** Fired once if movement locks to the *other* axis — the gesture never captures the pointer or calls `onMove`/`onEnd`. */
   onCancel?: () => void;
+  /**
+   * Checked on every `pointerdown`, before any tracking starts. Returning `false` lets the
+   * event fall through untouched — e.g. a container-wide close-swipe that must not steal a
+   * scroll gesture already in progress inside a nested scrollable list.
+   */
+  shouldStart?: (e: PointerEvent) => boolean;
 }
 
 /**
@@ -134,7 +140,8 @@ export function attachDragGesture(element: HTMLElement, config: DragGestureConfi
     suppressClickAfterDrag = true,
     onMove,
     onEnd,
-    onCancel
+    onCancel,
+    shouldStart
   } = config;
 
   let activePointerId: number | null = null;
@@ -153,6 +160,7 @@ export function attachDragGesture(element: HTMLElement, config: DragGestureConfi
   function handlePointerDown(e: PointerEvent) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (activePointerId !== null) return;
+    if (shouldStart && !shouldStart(e)) return;
 
     activePointerId = e.pointerId;
     committed = false;

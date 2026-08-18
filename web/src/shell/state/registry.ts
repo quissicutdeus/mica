@@ -303,12 +303,12 @@ function createAppRegistry() {
 
       /**
        * A player installing an add-on expects to find it on the home screen without
-       * also having to know the App Drawer exists. Core apps are seeded onto the grid
-       * once at boot (`seedDefaultGridIfEmpty`), so this only has to cover what
-       * `registerApp` itself introduces: a Store install, a remote app, or (in dev) the
-       * harness registering an app the repo does not ship — `error_boundary.spec.ts`'s
-       * crashing fixture, which has always expected to be clickable without opening the
-       * drawer (see `devHarness.ts`).
+       * also having to know the App Drawer exists — unlike a core app, which starts in
+       * the drawer only and stays there until dragged out (the home screen has no
+       * default placements at all). This covers what `registerApp` itself introduces: a
+       * Store install, a remote app, or (in dev) the harness registering an app the repo
+       * does not ship — `error_boundary.spec.ts`'s crashing fixture, which has always
+       * expected to be clickable without opening the drawer (see `devHarness.ts`).
        *
        * Gated on `isNewRegistration`, not on `addOnIds`/`isRemote`/an install-tracking
        * list: a boot-time re-registration of an add-on the player already positioned —

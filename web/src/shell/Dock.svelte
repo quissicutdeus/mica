@@ -66,7 +66,7 @@
   bind:this={dockElement}
   role="toolbar"
   aria-label="Dock"
-  class="absolute inset-x-0 bottom-10 z-20 flex justify-around px-6 select-none"
+  class="bg-surface-container shadow-elevation-3 rounded-t-xl rounded-b-frame-inner absolute inset-x-0 bottom-10 z-20 flex justify-around px-6 py-2 select-none"
 >
   {#each slots as slot (slot.index)}
     <div data-dock-index={slot.index} class="flex h-16 w-16 items-center justify-center">
@@ -82,7 +82,7 @@
           }}
         />
       {:else}
-        <div class="border-outline-variant h-14 w-14 rounded-lg border border-dashed"></div>
+        <div class="border-outline-variant h-14 w-14 rounded-sm border border-dashed"></div>
       {/if}
     </div>
   {/each}
