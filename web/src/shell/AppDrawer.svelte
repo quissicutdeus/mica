@@ -134,10 +134,17 @@
     role="presentation"
   ></div>
 
+  <!-- `top-10` rather than full-bleed (`inset-0`, what this used to be): unlike
+       NotificationShade, which is meant to read as the status bar's own surface extended
+       down, the drawer is a bottom sheet — it should stop short of the status bar and hole-
+       punch camera rather than climb all the way to the top of the phone. Mirrors Dock's own
+       `bottom-10` clearance from the opposite edge. `rounded-t-xl` follows from the same
+       change: a sheet with a real top edge gets the M3 dialog/bottom-sheet radius there,
+       where `inset-0` had no exposed corner to round. -->
   <div
     bind:this={drawerElement}
     transition:fly={{ y: 850, duration: $drawerDragPhase === 'idle' ? 300 : 0 }}
-    class="bg-surface-container-high text-on-surface shadow-elevation-5 absolute inset-0 z-55 flex h-full w-full flex-col pt-14 pb-2 backdrop-blur-3xl {$drawerDragPhase ===
+    class="bg-surface-container-high text-on-surface shadow-elevation-5 rounded-t-xl absolute inset-x-0 top-10 bottom-0 z-55 flex flex-col pt-8 pb-2 backdrop-blur-3xl {$drawerDragPhase ===
     'settling'
       ? 'duration-medium ease-emphasized transition-transform'
       : ''}"
@@ -172,7 +179,7 @@
       ></div>
     </button>
 
-    <div class="mb-4 flex items-baseline gap-2 px-6 pt-4">
+    <div class="mb-4 flex items-baseline gap-2 px-6">
       <h2 class="text-on-surface text-title-large">Apps</h2>
       <span class="text-primary text-body-small tracking-wider uppercase">
         {visibleApps.length}
