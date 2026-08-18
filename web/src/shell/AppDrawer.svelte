@@ -144,7 +144,7 @@
   <div
     bind:this={drawerElement}
     transition:fly={{ y: 850, duration: $drawerDragPhase === 'idle' ? 300 : 0 }}
-    class="bg-surface-container-high text-on-surface shadow-elevation-5 rounded-t-xl absolute inset-x-0 top-10 bottom-0 z-55 flex flex-col pt-8 pb-2 backdrop-blur-3xl {$drawerDragPhase ===
+    class="bg-surface-container-high text-on-surface shadow-elevation-5 rounded-t-xl absolute inset-x-0 top-10 bottom-0 z-55 flex flex-col pt-12 pb-2 backdrop-blur-3xl {$drawerDragPhase ===
     'settling'
       ? 'duration-medium ease-emphasized transition-transform'
       : ''}"
@@ -179,7 +179,7 @@
       ></div>
     </button>
 
-    <div class="mb-4 flex items-baseline gap-2 px-6">
+    <div class="mb-6 flex items-baseline gap-2 px-6">
       <h2 class="text-on-surface text-title-large">Apps</h2>
       <span class="text-primary text-body-small tracking-wider uppercase">
         {visibleApps.length}
