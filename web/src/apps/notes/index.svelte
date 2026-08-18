@@ -408,7 +408,7 @@
         </div>
       {:else}
         <div class="no-scrollbar flex-1 overflow-y-auto p-4">
-          <div class="prose prose-invert prose-sm max-w-none">
+          <div class="prose max-w-none">
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html renderMarkdown(selectedNote.content)}
           </div>

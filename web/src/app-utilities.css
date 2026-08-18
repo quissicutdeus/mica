@@ -1718,6 +1718,11 @@
     margin-bottom: 0.5rem;
   }
 }
+.space-y-2\.5 {
+  & > :not(:last-child) {
+    margin-bottom: 0.625rem;
+  }
+}
 .space-y-3 {
   & > :not(:last-child) {
     margin-bottom: 0.75rem;
