@@ -55,6 +55,22 @@ export type AppComponent = Component<AppProps>;
  */
 export type AppManifestInput = Omit<AppManifest, 'name'> & { name?: string };
 
+/**
+ * A default hotkey an app declares for itself.
+ *
+ * Deliberately no `scope` or `when` here — an app-declared bind is always phone-scope
+ * and eligible only while that app is foreground. Both are derived by the runtime
+ * aggregator in `shell/state/keybinds.ts` as `scope: 'phone'` and `when: 'app:${appId}'`,
+ * which is what stops an app claiming an unscoped action or another app's context.
+ */
+export interface AppKeybindInput {
+  /** Unique within this app's own list. Namespaced automatically to `${appId}:${id}`. */
+  id: string;
+  /** Shown in Settings > Shortcuts. */
+  label: string;
+  defaultKey: string;
+}
+
 export interface AppManifest {
   /**
    * Unique id — `contacts`, `crypto_tracker`. lower_snake_case.
@@ -121,6 +137,11 @@ export interface AppManifest {
    * finds is allowed — `network` and `location` have no hook to infer them from.
    */
   permissions?: AppPermission[];
+  /**
+   * Default hotkeys this app wants, shown grouped under it in Settings > Shortcuts.
+   * Only apps for which this is set contribute app-scoped keybinds; most apps omit it.
+   */
+  keybinds?: AppKeybindInput[];
   /** Default props passed when launching app component */
   defaultProps?: Record<string, unknown>;
   /** Flag indicating whether app was dynamically loaded from a remote bundle */

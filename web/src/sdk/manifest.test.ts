@@ -204,3 +204,28 @@ describe('defineApp: core', () => {
     expect(app.core).toBe(false);
   });
 });
+
+describe('defineApp: keybinds', () => {
+  it('passes through an optional keybinds array unchanged', () => {
+    const manifest = defineApp({
+      id: 'snek',
+      color: 'bg-green-600',
+      icon: null,
+      core: false,
+      keybinds: [{ id: 'pause', label: 'Pause Game', defaultKey: 'p' }]
+    });
+
+    expect(manifest.keybinds).toEqual([{ id: 'pause', label: 'Pause Game', defaultKey: 'p' }]);
+  });
+
+  it('leaves keybinds undefined when the manifest declares none', () => {
+    const manifest = defineApp({
+      id: 'notes',
+      color: 'bg-yellow-600',
+      icon: null,
+      core: false
+    });
+
+    expect(manifest.keybinds).toBeUndefined();
+  });
+});
