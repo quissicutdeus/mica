@@ -214,12 +214,15 @@
       </div>
     </div>
 
-    <!-- Grab Handle, styled and positioned to match NotificationShade's own — a single
-         white pill at the bottom of the screen regardless of which overlay is open. -->
+    <!-- Grab Handle. Unlike NotificationShade's own — which sits flush at `bottom-0` to
+         read as one pill with PhoneFrame's real home indicator underneath — this drawer's
+         opaque sheet already hides that indicator behind its own background, so there's no
+         alignment to preserve here. `pb-3` instead of `pb-1.5` lifts it clear of the
+         drawer's own bottom edge, mirroring the top pill's own clearance. -->
     <button
       type="button"
       bind:this={handleRef}
-      class="absolute bottom-0 left-0 z-10 flex h-6 w-full cursor-pointer touch-none items-end justify-center pb-1.5"
+      class="absolute bottom-0 left-0 z-10 flex h-6 w-full cursor-pointer touch-none items-end justify-center pb-3"
       data-gesture-drag
       data-testid="drawer-grab-handle"
       onclick={closeDrawer}
