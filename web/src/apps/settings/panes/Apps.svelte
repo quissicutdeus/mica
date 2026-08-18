@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { appStorageBytes, ChevronRightIcon, useAppRegistry, type AppManifest } from '@gphone/sdk';
+  import {
+    appStorageBytes,
+    ChevronRightIcon,
+    SettingsSection,
+    useAppRegistry,
+    type AppManifest
+  } from '@gphone/sdk';
 
   /**
    * Everything installed, system apps and Store add-ons together.
@@ -37,13 +43,8 @@
 
 {#snippet group(heading: string, apps: AppManifest[], note: string)}
   {#if apps.length > 0}
-    <div>
-      <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
-        {heading}
-      </h2>
-      <div
-        class="divide-outline-variant bg-surface-container text-body-medium divide-y overflow-hidden rounded-xl"
-      >
+    <SettingsSection title={heading} footer={note}>
+      <div class="divide-outline-variant text-body-medium divide-y">
         {#each apps as app (app.id)}
           <button
             type="button"
@@ -72,8 +73,7 @@
           </button>
         {/each}
       </div>
-      <p class="text-on-surface-variant text-body-small mt-1.5 px-2">{note}</p>
-    </div>
+    </SettingsSection>
   {/if}
 {/snippet}
 

@@ -5,11 +5,6 @@
   "editor.formatOnSave": true,
   "[svelte]": { "editor.defaultFormatter": "svelte.svelte-vscode" },
 
-  // Tailwind 4 keeps its configuration in `app.css` rather than a config file, so the
-  // extension has to be pointed at it or class completion is silently absent.
-  "tailwindCSS.experimental.configFile": "web/src/app.css",
-  "tailwindCSS.includeLanguages": { "svelte": "html" },
-
   // The class strings in this codebase are long and conditional. Wrapping them makes
   // the ternaries readable instead of a horizontal scroll.
   "editor.wordWrap": "on",

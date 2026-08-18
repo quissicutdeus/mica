@@ -55,14 +55,18 @@
 </script>
 
 <!-- Fixed 4-slot dock, always at the bottom of the home screen, above the phone frame's
-     own home-indicator gesture bar (h-6 / 24px). Never collapses to fewer than 4 cells —
-     an unconfigured or unresolvable slot renders an empty placeholder rather than shrinking
-     the row, since the dock's whole value is that a slot is always in the same place. -->
+     own home-indicator gesture bar. `bottom-10` rather than the `bottom-6` this used to
+     share with the gesture bar's own height token — the two were sized off the same
+     number coincidentally, not because a dock label's true bottom edge and the gesture
+     bar's clear band actually lined up, and at `bottom-6` the label crowded the bar with
+     only a few px between them. Never collapses to fewer than 4 cells — an unconfigured
+     or unresolvable slot renders an empty placeholder rather than shrinking the row,
+     since the dock's whole value is that a slot is always in the same place. -->
 <div
   bind:this={dockElement}
   role="toolbar"
   aria-label="Dock"
-  class="absolute inset-x-0 bottom-6 z-20 flex justify-around px-6 select-none"
+  class="absolute inset-x-0 bottom-10 z-20 flex justify-around px-6 select-none"
 >
   {#each slots as slot (slot.index)}
     <div data-dock-index={slot.index} class="flex h-16 w-16 items-center justify-center">

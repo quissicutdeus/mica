@@ -178,9 +178,9 @@ const GLOW_ALPHA = 0.3;
 /**
  * M3 specifies `scrim` as a *role* of tone 0 — opaque black — and applies it at 32%
  * where it is used. That split cannot survive here: an opacity modifier on a themed
- * token is the one thing `cef.test.ts` now forbids outright, because Tailwind computes
- * its unguarded fallback from the build-time literal and would render the default
- * seed's color under any other seed.
+ * token is the one thing `cef.test.ts` now forbids outright, because the utility layer
+ * has no rule for a role name plus an opacity modifier at all — it would render with no
+ * background rather than the wrong seed's color, but still wrong.
  *
  * A scrim is also the one role that genuinely cannot be composited in advance, since it
  * lies over whatever screen happens to be behind the dialog. So the usage alpha is

@@ -26,6 +26,11 @@ export const homeGridColumns = usePersisted<number>(
   { sanitize: clampColumns }
 );
 
-export const homeGridRows = usePersisted<number>('settings', 'homeGridRows', HOME_GRID_ROWS_DEFAULT, {
-  sanitize: clampRows
-});
+export const homeGridRows = usePersisted<number>(
+  'settings',
+  'homeGridRows',
+  HOME_GRID_ROWS_DEFAULT,
+  {
+    sanitize: clampRows
+  }
+);

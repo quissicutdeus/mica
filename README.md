@@ -2,7 +2,7 @@
 
 <p align="center">
   <b>A modern, open-source custom phone resource for FiveM</b> — <a href="https://gphone.site/">Live Demo</a><br/>
-  Powered by TypeScript, Svelte 5, Vite, Tailwind CSS v4, and esbuild.
+  Powered by TypeScript, Svelte 5, Vite, and esbuild.
 </p>
 
 ---
@@ -54,7 +54,7 @@
 
 ## Tech Stack
 
-- **Frontend**: [Svelte 5](https://svelte.dev/), [Vite](https://vitejs.dev/), [Tailwind CSS v4](https://tailwindcss.com/), [TypeScript 6](https://www.typescriptlang.org/)
+- **Frontend**: [Svelte 5](https://svelte.dev/), [Vite](https://vitejs.dev/), hand-written CSS (Material 3 tokens + a utility layer), [TypeScript 6](https://www.typescriptlang.org/)
 - **Backend (Client/Server)**: TypeScript 7 compiled via high-performance `esbuild` pipeline (8–12x typecheck speedup)
 - **Database**: MySQL / MariaDB via `oxmysql` with foreign keys, compound indexes, and status moderation
 - **Package Manager**: `pnpm` Workspaces
@@ -242,7 +242,7 @@ gphone/
 ├── client/                       # Client-side systems (Animation, Battery, Camera, Call, Relay, etc.)
 ├── server/                       # Server-side services, FrameworkBridge, AuditLogger, & Database access
 ├── shared/                       # Shared types, interfaces, and constants
-├── web/                          # Svelte 5 + Vite + Tailwind CSS v4 frontend application
+├── web/                          # Svelte 5 + Vite frontend application (hand-written CSS)
 │   └── src/
 │       ├── apps/                 # One directory per app — the registry discovers them, nothing registers them
 │       ├── sdk/                  # @gphone/sdk: the only thing an app may import

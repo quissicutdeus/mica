@@ -51,14 +51,18 @@ export function endIconDrag(): void {
   iconDragState.set({ ...idle });
 }
 
-export type DropTarget = { kind: 'grid'; position: number } | { kind: 'dock'; index: number } | { kind: 'none' };
+export type DropTarget =
+  { kind: 'grid'; position: number } | { kind: 'dock'; index: number } | { kind: 'none' };
 
 /**
  * The whole drag/drop decision matrix in one place, rather than duplicated hit-testing
  * logic in Dock/Launcher/FolderPopup. Each caller only has to compute *where* the pointer
  * landed (grid cell / dock slot / neither) and hand that plus the current drag state here.
  */
-export function resolveIconDrop(state: IconDragState, target: DropTarget): PlacementResult | 'no-op' {
+export function resolveIconDrop(
+  state: IconDragState,
+  target: DropTarget
+): PlacementResult | 'no-op' {
   if (!state.appId || !state.origin) return 'no-op';
   const { appId, origin } = state;
 

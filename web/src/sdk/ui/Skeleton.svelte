@@ -25,7 +25,7 @@
     class: className = ''
   }: {
     count?: number;
-    /** A Tailwind height class — rows are taller than lines of text. */
+    /** A utility height class — rows are taller than lines of text. */
     height?: string;
     rounded?: string;
     class?: string;

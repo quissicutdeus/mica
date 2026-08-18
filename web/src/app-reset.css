@@ -1,0 +1,88 @@
+/**
+ * Reset — the equivalent of Tailwind's preflight, hand-written. Every class-based
+ * utility in `app-utilities.css` assumes it starts from a blank box, not the UA
+ * stylesheet's opinion on what a `<button>` or an `<h1>` looks like; without this, every
+ * button in the phone carries its platform's native padding, border, and background
+ * *underneath* whatever utility classes are applied — the light rectangular corners
+ * behind the status bar and dock buttons are exactly that.
+ *
+ * Imported before `app-utilities.css` (see `app.css`) on purpose: a utility like
+ * `.border-\[8px\]` has to win the cascade over this file's `border-width: 0`, which
+ * only happens if this file's rules come first.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  /* M3's recommended typeface (material.io/styles/typography/fonts), self-hosted via
+     `@fontsource/roboto` and imported in `main.ts` — not a Google Fonts `<link>`, which
+     would need a network request CEF may not have in-game. The fallback stack only
+     matters for the instant before the font file loads. */
+  font-family:
+    'Roboto',
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+body,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+blockquote,
+figure {
+  margin: 0;
+}
+
+button,
+input,
+optgroup,
+select,
+textarea {
+  font-family: inherit;
+  font-size: 100%;
+  font-weight: inherit;
+  line-height: inherit;
+  color: inherit;
+  margin: 0;
+  padding: 0;
+}
+
+button,
+select {
+  text-transform: none;
+}
+
+button,
+[type='button'] {
+  -webkit-appearance: button;
+  background-color: transparent;
+  background-image: none;
+}
+
+img,
+svg,
+video,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+ul,
+ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}

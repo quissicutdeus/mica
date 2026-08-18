@@ -290,7 +290,8 @@ describe('shape scale (app.css)', () => {
       lg: '16px',
       xl: '28px',
       full: '9999px',
-      'frame-inner': '3rem'
+      'frame-outer': '3rem',
+      'frame-inner': 'calc(var(--radius-frame-outer) - 8px)'
     };
     for (const [name, value] of Object.entries(expected)) {
       const match = css.match(new RegExp(`--radius-${name}:\\s*([^;]+);`));

@@ -35,8 +35,28 @@
   import AppCapabilityProvider from '../sdk/AppCapabilityProvider.svelte';
   import { clampedSignalLevel } from './state/signal';
   import { audio } from './state/audio';
+  import { isLightMode } from './state/theme';
 
   let visible = $state(isBrowser());
+
+  /**
+   * The page behind the phone, in a dev browser only — never in CEF.
+   *
+   * In game this stays fully transparent (§5/§6): the phone overlays the game world, and
+   * any background here would paint over it. In a browser there is no game world behind
+   * it, just the tab's default white, which `isBrowser()` is exactly the right guard to
+   * distinguish. Follows the player's own light/dark choice (`isLightMode`) rather than
+   * `prefers-color-scheme` — matching the phone rather than the OS is more useful here,
+   * since the point is comparing the two.
+   *
+   * Neutral grays, not the phone's own surface tokens: the bezel is a fixed near-black
+   * (`border-gray-950`) regardless of theme, so the canvas has to stay lighter than that
+   * in both modes or the frame disappears into it.
+   */
+  $effect(() => {
+    if (!isBrowser()) return;
+    document.documentElement.dataset.previewTheme = $isLightMode ? 'light' : 'dark';
+  });
 
   $effect(() => {
     if (visible) audio.warm();

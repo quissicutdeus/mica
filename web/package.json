@@ -20,8 +20,6 @@
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
-    "@tailwindcss/typography": "^0.5.20",
-    "@tailwindcss/vite": "^4.3.3",
     "@testing-library/svelte": "^5.4.2",
     "@tsconfig/svelte": "^5.0.8",
     "@types/node": "^26.2.0",
@@ -32,13 +30,12 @@
     "postcss-preset-env": "^11.3.2",
     "svelte": "^5.56.9",
     "svelte-check": "^4.7.6",
-    "tailwindcss": "^4.3.3",
-    "tailwindcss-animate": "^1.0.7",
     "typescript": "~6.0.3",
     "vite": "^8.2.1",
     "vitest": "^4.1.10"
   },
   "dependencies": {
+    "@fontsource/roboto": "^5.3.0",
     "@material/material-color-utilities": "0.4.0",
     "dompurify": "^3.4.13"
   }

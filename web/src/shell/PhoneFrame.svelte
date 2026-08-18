@@ -84,7 +84,7 @@
   transition:fly={{ y: 1000, duration: 500 }}
   data-testid="phone-frame"
   style="width: {PHONE_WIDTH}px; height: {PHONE_HEIGHT}px;"
-  class="shadow-elevation-5 duration-medium ease-emphasized rounded-frame-inner relative border-[8px] border-gray-950 ring-1 ring-gray-600 transition-colors"
+  class="shadow-elevation-5 duration-medium ease-emphasized rounded-frame-outer relative border-[8px] border-gray-950 ring-1 ring-gray-600 transition-colors"
   class:bg-gray-950={!transparent || $isBatteryDead}
 >
   <!-- Hardware Side Buttons -->
@@ -226,9 +226,13 @@
          listing both. It briefly read "Return to home screen or collapse notifications",
          which is worse on both counts: a screen reader hears a disjunction it has to
          resolve itself, and four e2e specs match this attribute exactly and silently
-         stopped finding the button. Same shape as the status bar above. -->
+         stopped finding the button. Same shape as the status bar above.
+
+         `h-6` centered gives the pill even clearance from the screen edge below and
+         `Dock` above, now that `Dock` sits at `bottom-10` rather than crowding this
+         bar at `bottom-6`. -->
     <button
-      class="absolute bottom-0 left-0 z-50 flex h-6 w-full cursor-pointer items-end justify-center pb-1.5"
+      class="absolute bottom-0 left-0 z-50 flex h-6 w-full cursor-pointer items-center justify-center"
       onclick={() => {
         if ($isShadeOpen) {
           closeShade();

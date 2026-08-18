@@ -6,17 +6,13 @@ import { ROLE_NAMES } from '../lib/m3';
 /**
  * The CEF capability baseline, enforced.
  *
- * FiveM's release CEF is Chromium 103. Tailwind 4's baseline is Chromium 111. Anything
- * in that gap renders correctly in `pnpm dev`, passes Playwright — which drives a modern
- * Chromium — and is broken in game. AGENTS.md §6 has said so in prose the whole time,
- * and the prose did not stop 146 opacity modifiers landing.
- *
- * One correction to §6, from reading the built CSS rather than the docs: Tailwind emits
- * an unguarded hex fallback alongside the `@supports`-guarded `color-mix()`, so an
- * opacity modifier on a *palette* color does survive CEF 103. It is only where Tailwind
- * cannot resolve the color at build time — an arbitrary `var()`-based color — that the
- * fallback is absent and the utility breaks outright. The budget below is therefore a
- * consistency ratchet with a real but narrow correctness edge, not a bug count.
+ * FiveM's release CEF is Chromium 103. This scans markup for the Tailwind-shaped class
+ * *syntax* the app still uses in `class=` attributes (`bg-black/40`, `hover:bg-x`, …) —
+ * `app-utilities.css` implements each one as a hand-written literal `rgba()` rule, never
+ * `color-mix()`, so an opacity modifier on a *palette* color is CEF 103-safe outright.
+ * AGENTS.md §6 has said so in prose the whole time, and the prose did not stop 146
+ * opacity modifiers landing before the token migration; the budget below is what keeps
+ * that count from creeping back up.
  *
  * The `:has()` and container-query rules have no such fallback and are absolute.
  *
@@ -106,8 +102,9 @@ describe('CEF capability baseline (AGENTS.md §6)', () => {
   });
 
   it('adds no new opacity modifier', () => {
-    // They compile to `color-mix()`, which needs Chromium 111. Define a token with a
-    // pre-resolved `rgb(... / ...)` value in `app.css` instead.
+    // Palette-color opacity modifiers are fine now (see the file header) — this ratchet
+    // is about keeping the class surface consistent, not a CEF-safety requirement. On a
+    // themed role, though, prefer a pre-resolved `rgb(... / ...)` token in `app.css`.
     const added = FILES.map(({ path, text }) => ({
       path,
       found: countOf(text, OPACITY_MODIFIER),
@@ -140,15 +137,14 @@ describe('CEF capability baseline (AGENTS.md §6)', () => {
   it('puts no opacity modifier on a themed role token', () => {
     // A hard zero, not a budget, and the reasoning is different from the rule above.
     //
-    // For a *palette* color Tailwind emits an unguarded hex fallback beside the
-    // `@supports`-guarded `color-mix()`, so `bg-gray-800/50` does render in CEF 103 —
-    // that is why the rule above is a consistency ratchet rather than a bug count.
+    // A *palette* color like `bg-gray-800/50` is a literal `rgba()` in `app-utilities.css`
+    // — that is why the rule above is a consistency ratchet rather than a CEF-safety one.
     //
     // A role token is themed at runtime: `PhoneFrame` writes all 47 as inline custom
-    // properties from the player's seed. Tailwind still computes its fallback from the
-    // literal in `app.css`, which is the *default* seed — so `bg-surface/50` renders the
-    // shipped theme's color for anybody who changed theirs. It fails silently, only for
-    // some players, and only for the color they explicitly picked.
+    // properties from the player's seed. `app-utilities.css` does not even generate a
+    // class for a role name with an opacity modifier (`bg-surface/50` matches no rule),
+    // so the safe failure mode is "renders with no background" — still worth catching
+    // here before it ships, rather than debugging a class with nothing behind it.
     //
     // State layers are the sanctioned alternative and are already flattened to opaque
     // values by `lib/m3.ts`: write `hover:bg-surface-container-hover`, not

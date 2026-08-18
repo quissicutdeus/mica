@@ -1,7 +1,6 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
-import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 import { execSync } from 'child_process';
 import pkg from '../package.json' with { type: 'json' };
@@ -29,7 +28,7 @@ const buildInfo = `v${version} (${gitInfo.branch}@${gitInfo.commit})`;
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [svelte(), tailwindcss()],
+  plugins: [svelte()],
   base: './',
   define: {
     __MICA_VERSION__: JSON.stringify(version),

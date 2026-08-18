@@ -27,7 +27,14 @@ export interface LongPressDragConfig {
 }
 
 export function attachLongPressDrag(element: HTMLElement, config: LongPressDragConfig): () => void {
-  const { holdMs = 500, moveTolerance = 8, onLongPress, onDragMove, onDragEnd, onDragCancel } = config;
+  const {
+    holdMs = 500,
+    moveTolerance = 8,
+    onLongPress,
+    onDragMove,
+    onDragEnd,
+    onDragCancel
+  } = config;
 
   let activePointerId: number | null = null;
   let armed = false;

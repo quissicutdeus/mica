@@ -15,12 +15,10 @@
   } = $props();
 </script>
 
-<div
-  class="bg-surface-container pt-safe-top border-outline-variant flex items-center border-b px-4 pb-3 backdrop-blur-md"
->
+<div class="pt-safe-top mt-2 flex items-center px-4 pb-3">
   {#if onback}
     <button
-      class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard -ml-2 rounded-full p-2 transition-colors"
+      class="bg-surface-container-high hover:bg-surface-container-high-hover active:bg-surface-container-high-pressed duration-short ease-standard -ml-2 rounded-full p-2 transition-colors"
       onclick={onback}
       aria-label="Go back"
     >

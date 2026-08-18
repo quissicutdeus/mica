@@ -4,7 +4,6 @@
   // `pnpm typecheck` reports show up while you type.
   "recommendations": [
     "svelte.svelte-vscode",
-    "bradlc.vscode-tailwindcss",
     "esbenp.prettier-vscode",
     "vitest.explorer",
     "ms-playwright.playwright"

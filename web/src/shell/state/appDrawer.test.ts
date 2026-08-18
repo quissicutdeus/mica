@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
-import { isDrawerOpen, openDrawer, closeDrawer, toggleDrawer, drawerDragProgress, drawerDragPhase } from './appDrawer';
+import {
+  isDrawerOpen,
+  openDrawer,
+  closeDrawer,
+  toggleDrawer,
+  drawerDragProgress,
+  drawerDragPhase
+} from './appDrawer';
 import { activeHandlerFor } from './keybinds';
 import { iconDragState, startIconDrag } from './iconDrag';
 

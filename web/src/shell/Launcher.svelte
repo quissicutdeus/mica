@@ -98,8 +98,15 @@
 >
   <!-- The "we are home" signal a large number of e2e specs already key off — kept as a
        real heading rather than folded into an aria-label, since dropping it would cascade
-       into rewriting assertions in files this ticket has no reason to touch. -->
-  <h1 class="mb-8 text-4xl font-bold tracking-tight">gPhone</h1>
+       into rewriting assertions in files this ticket has no reason to touch.
+
+       Centered on both axes in its own band, rather than left-aligned text with a bottom
+       margin: `h-16` gives the text equal breathing room above and below, between the
+       status bar above and the first icon row below, instead of sitting flush against
+       whichever edge it happens to be closest to. -->
+  <div class="mb-4 flex h-16 items-center justify-center">
+    <h1 class="text-4xl font-bold tracking-tight">gPhone</h1>
+  </div>
 
   <div
     class="grid flex-1 content-start gap-y-6"

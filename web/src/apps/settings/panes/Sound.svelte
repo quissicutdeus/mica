@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ToggleSwitch, useSystemHardware } from '@gphone/sdk';
+  import { SettingsSection, ToggleSwitch, useSystemHardware } from '@gphone/sdk';
 
   const {
     soundVolume,
@@ -13,45 +13,37 @@
 </script>
 
 <div class="space-y-6 p-4">
-  <div>
-    <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
-      Volume
-    </h2>
-    <div class="bg-surface-container overflow-hidden rounded-xl">
-      <div class="flex flex-col gap-3 p-4">
-        <div class="text-body-medium flex items-center justify-between">
-          <span class="text-on-surface font-medium">System Volume</span>
-          <span class="text-on-surface font-mono">
-            {$soundMuted ? 'Muted' : `${Math.round($soundVolume * 100)}%`}
-          </span>
-        </div>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={Math.round($soundVolume * 100)}
-          aria-label="System volume"
-          oninput={(e) => setVolume(Number((e.currentTarget as HTMLInputElement).value) / 100)}
-          class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-blue-500"
-        />
+  <SettingsSection title="Volume">
+    <div class="flex flex-col gap-3 p-4">
+      <div class="text-body-medium flex items-center justify-between">
+        <span class="text-on-surface font-medium">System Volume</span>
+        <span class="text-on-surface font-mono">
+          {$soundMuted ? 'Muted' : `${Math.round($soundVolume * 100)}%`}
+        </span>
       </div>
-      <div class="border-outline-variant border-t">
-        <ToggleSwitch
-          label="Mute"
-          description="Silence all phone sounds"
-          checked={$soundMuted}
-          onchange={toggleMute}
-        />
-      </div>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        value={Math.round($soundVolume * 100)}
+        aria-label="System volume"
+        oninput={(e) => setVolume(Number((e.currentTarget as HTMLInputElement).value) / 100)}
+        class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-blue-500"
+      />
     </div>
-  </div>
+    <div class="border-outline-variant border-t">
+      <ToggleSwitch
+        label="Mute"
+        description="Silence all phone sounds"
+        checked={$soundMuted}
+        onchange={toggleMute}
+      />
+    </div>
+  </SettingsSection>
 
-  <div>
-    <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
-      Volume Buttons
-    </h2>
-    <!-- How far the physical buttons on the side of the phone move the volume per press. -->
-    <div class="bg-surface-container overflow-hidden rounded-xl p-4">
+  <!-- How far the physical buttons on the side of the phone move the volume per press. -->
+  <SettingsSection title="Volume Buttons">
+    <div class="px-4 pb-4">
       <div class="text-body-medium mb-3 flex items-center justify-between">
         <span class="text-on-surface font-medium">Step Size</span>
         <span class="text-on-surface font-mono">{$volumeStep}%</span>
@@ -75,5 +67,5 @@
         How much each press of the volume buttons on the side of the phone changes the volume.
       </p>
     </div>
-  </div>
+  </SettingsSection>
 </div>

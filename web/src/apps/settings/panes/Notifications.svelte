@@ -1,16 +1,11 @@
 <script lang="ts">
-  import { ToggleSwitch, useNotificationSettings } from '@gphone/sdk';
+  import { SettingsSection, ToggleSwitch, useNotificationSettings } from '@gphone/sdk';
   const { toastsEnabled, notificationSoundEnabled, badgesEnabled } = useNotificationSettings();
 </script>
 
 <div class="space-y-6 p-4">
-  <div>
-    <h2 class="text-on-surface-variant text-body-small mb-2 px-2 tracking-wider uppercase">
-      Banner Toasts & Alerts
-    </h2>
-    <div
-      class="divide-outline-variant bg-surface-container text-body-medium divide-y overflow-hidden rounded-xl"
-    >
+  <SettingsSection title="Banner Toasts & Alerts">
+    <div class="divide-outline-variant text-body-medium divide-y">
       <div class="flex items-center justify-between p-4">
         <div class="flex flex-col pr-4">
           <span class="text-on-surface font-medium">Show Banner Overlay</span>
@@ -34,24 +29,17 @@
         />
       </div>
     </div>
-  </div>
+  </SettingsSection>
 
-  <div>
-    <h2 class="text-on-surface-variant text-body-small mb-2 px-2 tracking-wider uppercase">
-      App Badges
-    </h2>
-    <div
-      class="divide-outline-variant bg-surface-container text-body-medium divide-y overflow-hidden rounded-xl"
-    >
-      <div class="flex items-center justify-between p-4">
-        <div class="flex flex-col pr-4">
-          <span class="text-on-surface font-medium">App Icon Badges</span>
-          <span class="text-on-surface-variant text-body-small"
-            >Show unread count badges on launcher icons</span
-          >
-        </div>
-        <ToggleSwitch checked={$badgesEnabled} onchange={(val) => badgesEnabled.set(val)} />
+  <SettingsSection title="App Badges">
+    <div class="flex items-center justify-between p-4">
+      <div class="flex flex-col pr-4">
+        <span class="text-on-surface font-medium">App Icon Badges</span>
+        <span class="text-on-surface-variant text-body-small"
+          >Show unread count badges on launcher icons</span
+        >
       </div>
+      <ToggleSwitch checked={$badgesEnabled} onchange={(val) => badgesEnabled.set(val)} />
     </div>
-  </div>
+  </SettingsSection>
 </div>

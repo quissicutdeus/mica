@@ -10,7 +10,7 @@ pnpm workspace, three build targets:
 | Game server | `server/` | esbuild via `build/build-bundle.js` | FiveM server                         |
 | UI          | `web/`    | Vite                                | CEF **and** a plain browser — see §6 |
 
-Node 26 · Svelte **5** · Tailwind **4** · Vite 8 · Vitest 4 · Playwright 1.x
+Node 26 · Svelte **5** · Vite 8 · Vitest 4 · Playwright 1.x
 TypeScript is **split by package** — see §3. Exact versions: `pnpm list`.
 `@citizenfx/client` and `@citizenfx/server` are **pinned exactly, no caret** — leave them that way.
 
@@ -92,7 +92,7 @@ Commands the **user** runs, not you — suggest, don't invoke:
 - `pnpm test:e2e:report` — HTML report
 - `pnpm test:e2e:headed` — live visual run, single worker
 
-**Formatting**: Prettier is configured root-wide with `prettier-plugin-svelte` and `prettier-plugin-tailwindcss`. Run `pnpm format` to format code across the workspace.
+**Formatting**: Prettier is configured root-wide with `prettier-plugin-svelte`. Run `pnpm format` to format code across the workspace.
 
 ---
 
@@ -105,8 +105,9 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
 2. **Never edit `fxmanifest.lua` or anything in `dist/`.** Both are generated — the manifest by
    `scripts/generate-barrels.js`, `dist/` by the build. Edits are erased by the next `clearbuild`.
    Change the generator instead.
-3. **Never delete or "simplify" `web/postcss.config.js`.** It looks redundant next to Tailwind 4.
-   It is not. See §6 — removing it breaks every color in-game while the dev browser looks perfect.
+3. **Never delete or "simplify" `web/postcss.config.js`.** It looks redundant — plain CSS, no
+   framework. It is not. See §6 — removing it breaks CSS nesting (and any `oklab()`/`oklch()`) in
+   game while the dev browser looks perfect.
 4. **Never pass unsanitized user content to `{@html}`.** See §7.
 5. **No new dependencies** without asking.
 6. **Do not change** TypeScript versions in either package, Vite `build.outDir`, or
@@ -151,7 +152,7 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
      `citizenid` in the `WHERE`; a row id alone is never authorization. For rows shared between
      players (conversations, messages), check membership via `Repository.isMember` (§10) instead.
      Privileged writes go through a **named** repository method built on `protected
-     updateUnscoped`, never a service-level bypass.
+updateUnscoped`, never a service-level bypass.
 
    Client-writable fields are declared per table via `clientWritable`; `ServiceEndpoint` reduces
    the payload to that set before it reaches SQL. `id`, `citizenid`, `created_at`, `updated_at`
@@ -253,17 +254,23 @@ No external state libraries — no Redux, Zustand, XState, Nanostores.
 
 ## 5. Styling
 
-Tailwind 4 via `@tailwindcss/vite`. **There is no `tailwind.config.js` and you must not create
-one** — a JS config in a v4 CSS-first project is ignored, so the symptom is "my theme change did
-nothing," with no error anywhere. Theme customization goes in CSS: `@import "tailwindcss"` plus
-`@theme { ... }`.
+Plain, hand-written CSS — no Tailwind, no CSS framework. Two files carry the whole system:
 
-- Utility classes only. A `<style>` block is acceptable _only_ for keyframes and pseudo-element
-  cases Tailwind cannot express. No CSS modules, no styled-components.
-- Prefer scale tokens over arbitrary values (`p-4`, not `p-[17px]`) unless matching a fixed design.
+- `web/src/app.css` — Material 3 design tokens (`--color-*`, `--radius-*`, `--text-*`,
+  `--shadow-elevation-*`, `--duration-*`, `--ease-*`) as custom properties on `:root`, plus the
+  handful of rules (`.no-scrollbar`, `.text-on-wallpaper`) that don't fit the utility model.
+- `web/src/app-utilities.css` — a flat utility layer (`.flex`, `.px-4`, `.bg-surface`,
+  `.rounded-full`, …) authored by hand, one class per call site, each resolving to a token above.
+  **Reach for an existing class here before inventing a new one** — check it before writing a
+  bespoke rule. Modern CSS nesting is fine (`postcss-preset-env` transpiles it for CEF — see §6),
+  but this file is deliberately flat utilities, not per-component semantic CSS.
+- A `<style>` block on a component is acceptable for something a utility genuinely can't express
+  (keyframes tied to one component, a pseudo-element). No CSS modules, no styled-components.
+- Prefer the scale already in `app-utilities.css` over inventing an arbitrary value; add a class
+  there rather than reaching for an inline `style=` attribute.
 - **No visible scrollbars.** Scrollbars must never be visible anywhere inside the phone interface. Global CSS rules in `web/src/app.css` (`scrollbar-width: none` / `::-webkit-scrollbar { display: none }`) enforce this across all scrollable containers.
-- **Read §6 before writing any color, layout, or variant utility.** Tailwind 4 targets a browser
-  several years newer than the one this UI actually runs in.
+- **Read §6 before writing any color, layout, or variant utility** — CEF's baseline is several
+  years behind a dev browser, and it's easy to reach for a CSS feature it doesn't have.
 - **The screen is always 400x850, and an app must not try to be responsive.** Those numbers live
   in `shell/state/display.ts` and nowhere else. Settings > Display resizes the phone, but it does
   it with one `transform: scale()` on a wrapper in `Shell.svelte` — a zoom, so the layout inside is
@@ -279,26 +286,31 @@ nothing," with no error anywhere. Theme customization goes in CSS: `@import "tai
 Every line of `web/` code must run in a plain browser with mock data **and** in FiveM's CEF. The two
 are not equivalent, and the gap is wider than it looks:
 
-**FiveM's release CEF is Chromium 103. Tailwind 4's baseline is Chromium 111.**
+**FiveM's release CEF is Chromium 103.**
 
-Your dev browser is current. The game is eight major versions below Tailwind's floor. Anything in
-that gap renders correctly in `pnpm dev`, passes Playwright, and is broken in-game.
+Your dev browser is current. Anything newer than Chromium 103 renders correctly in `pnpm dev`,
+passes Playwright, and is broken in-game.
 
 ### Why `web/postcss.config.js` exists
 
-It transforms `oklab()`/`oklch()` — Tailwind 4's entire default palette — to a supported fallback,
-with `preserve: true` so modern engines still get the original. It is the only reason colors render
-in-game. Load-bearing infrastructure, not leftover Tailwind 3 config. `autoprefixer` alongside it is
-mostly redundant under Tailwind 4 but harmless; leave it.
+Two jobs, both load-bearing:
+
+- Transpiles native CSS nesting (used throughout `app.css` / `app-utilities.css`, e.g. `.prose`'s
+  `& h1 { ... }`) down to flat selectors via `postcss-preset-env`'s `nesting-rules` feature —
+  native nesting is Chrome 112, past the CEF 103 floor.
+- Transforms `oklab()`/`oklch()` to a supported fallback, with `preserve: true` so modern engines
+  still get the original, for the rare spot that uses one.
+
+`autoprefixer` alongside it is largely redundant against this target but harmless; leave it.
 
 ### Known gaps the postcss config does _not_ cover
 
-| Feature           | Needs      | Tailwind 4 uses it for                             |
-| ----------------- | ---------- | -------------------------------------------------- |
-| `color-mix()`     | Chrome 111 | Opacity modifiers — `bg-white/10`, `text-black/70` |
-| `:has()`          | Chrome 105 | `has-*`, `group-has-*` variants                    |
-| Container queries | Chrome 105 | `@container`, `@min-*`, `@max-*` variants          |
-| `dvh` / `svh`     | Chrome 108 | `h-dvh`, `min-h-dvh` — sizing to a mobile viewport |
+| Feature           | Needs      | Used for                            |
+| ----------------- | ---------- | ----------------------------------- |
+| `color-mix()`     | Chrome 111 | Not used — see below                |
+| `:has()`          | Chrome 105 | Nothing in this codebase — avoid it |
+| Container queries | Chrome 105 | Nothing in this codebase — avoid it |
+| `dvh` / `svh`     | Chrome 108 | Nothing in this codebase — avoid it |
 
 `:has()` and container queries have no fallback. They are absolute — use Svelte state instead.
 
@@ -307,14 +319,15 @@ browser is the viewport with the URL bar retracted, so the phone hung below the 
 is a measured pixel value — `shell/state/display.ts` tracks `window.innerHeight` and `Shell.svelte`
 sizes from it, which is correct in CEF and in a browser without needing the unit at all.
 
-**Opacity modifiers are usually fine, but not always.** Tailwind emits a static hex fallback
-alongside `color-mix()` whenever it can resolve the color at build time (`bg-gray-900/95` works in
-CEF 103), so most opacity utilities render correctly. What still breaks is a color Tailwind
-**cannot** resolve at build time — an arbitrary `var()`-based color with a `/` modifier — where
-only the unsupported `color-mix()` form is emitted. Prefer an explicit `@theme` token with a
-pre-resolved `rgb(... / ...)` value for translucency (`src/app.css` holds the set;
-`src/sdk/cef.test.ts` ratchets remaining `/` modifiers downward), but treat an existing one as
-untidy rather than broken — don't rewrite working screens on this rule alone.
+**Opacity is a literal `rgba()`, never `color-mix()`.** `app-utilities.css`'s color-opacity
+classes (`bg-black/40`, …) and `app.css`'s translucent tokens (`--color-scrim`, …) are hand-written
+`rgba()` values, which is CEF 103-safe outright — there is no fallback to reason about. **Don't
+introduce `color-mix()`** to express a new translucent color; add a literal `rgba()` utility or
+token instead. A themed **role** token additionally must never take an opacity modifier at all
+(`bg-surface/50`) — `sdk/cef.test.ts` enforces this against `ROLE_NAMES`, because a role's alpha
+value would have to be derived from one seed's literal, silently wrong under any other seed. Use
+the pre-composited state-layer tokens (`--color-surface-container-hover`, …) instead — see the
+rationale at the top of `app.css`.
 
 ### Verifying in-game
 
@@ -621,7 +634,7 @@ The rules that matter most when writing one:
 - `ColumnDef.private: true` withholds a column from a public read's projection; `citizenid` is
   withheld automatically from every public projection.
 - `paging` is always keyset on `id DESC` (never offset, never configurable) — `{ cursor?, limit?
-  }` in, `{ rows, nextCursor }` out, `nextCursor: null` meaning end-of-list.
+}` in, `{ rows, nextCursor }` out, `nextCursor: null` meaning end-of-list.
 - `childTables` declares join/attachment tables (DDL-only, no repository or events derived) —
   declare every column explicitly.
 - `repositoryFactory` lets you subclass `SchemaRepository` for custom read behavior without

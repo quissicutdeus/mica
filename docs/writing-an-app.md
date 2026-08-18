@@ -64,9 +64,10 @@ becomes "Crypto Tracker". Pass `name` explicitly only when the id cannot express
 ("GPS"). Keep it under about eight characters or it truncates under the icon; that is why
 "Administration" is called "Admin".
 
-`color` is a Tailwind **class**, not a color. It is interpolated into a `class` attribute,
-so a hex string renders an icon with no background at all. `defineApp` warns about that in
-dev, along with a capitalised id and an id another app has already claimed.
+`color` is a utility **class** from `web/src/app-utilities.css` (e.g. `bg-blue-500`), not a color.
+It is interpolated into a `class` attribute, so a hex string renders an icon with no background at
+all. `defineApp` warns about that in dev, along with a capitalised id and an id another app has
+already claimed.
 
 ## The app
 
@@ -283,5 +284,5 @@ Then run it in game. A green suite is not evidence a NUI feature works — see A
   keyset paging, membership, child tables, and the identity/accounts model social apps share.
 - [`security.md`](security.md) — the full trust model behind AGENTS.md §2's security rules.
 - `AGENTS.md` §2 — the hard constraints. Worth reading once even if you never write an agent.
-- `AGENTS.md` §6 — the CEF baseline. FiveM's release CEF is Chromium 103 and Tailwind 4 targets
-  111. Read it before touching CSS.
+- `AGENTS.md` §6 — the CEF baseline. FiveM's release CEF is Chromium 103. Read it before touching
+  CSS.

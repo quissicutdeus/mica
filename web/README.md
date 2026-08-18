@@ -8,7 +8,7 @@ This directory contains the Svelte 5 frontend application and NUI bridge for **[
 
 - **Framework**: [Svelte 5](https://svelte.dev/) — runes (`$state`, `$derived`, `$effect`) for component-local state only. Global state is `writable`/`derived` **stores** in `src/services/` and `src/shell/state/`, one file per domain. This split is a policy rather than a leftover: see [`AGENTS.md` §4](../AGENTS.md), which is the authority, and do not introduce `.svelte.ts` rune-based state modules or convert existing stores.
 - **Build Tool**: [Vite](https://vitejs.dev/)
-- **Styling**: [Tailwind CSS v4](https://tailwindcss.com/)
+- **Styling**: Hand-written CSS — Material 3 design tokens in `src/app.css`, a flat utility layer in `src/app-utilities.css`
 - **Language**: [TypeScript](https://www.typescriptlang.org/)
 - **Testing**: [Playwright](https://playwright.dev/) (E2E) & [Vitest](https://vitest.dev/) (Unit)
 

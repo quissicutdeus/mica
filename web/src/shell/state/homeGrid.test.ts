@@ -143,7 +143,8 @@ describe('Home grid state', () => {
       placeAppOnGrid('notes', 0);
       placeAppOnGrid('mail', 0);
       placeAppOnGrid('bank', 1);
-      const folderId = (get(homeGridItems).find((i) => i.kind === 'folder') as HomeGridFolder).folderId;
+      const folderId = (get(homeGridItems).find((i) => i.kind === 'folder') as HomeGridFolder)
+        .folderId;
       expect(removeAppFromFolder(folderId, 'mail')).toBe(true);
       const items = get(homeGridItems);
       expect(items.find((i) => i.kind === 'app' && i.appId === 'mail')?.position).toBe(2);
@@ -155,7 +156,8 @@ describe('Home grid state', () => {
       placeAppOnGrid('notes', 0);
       placeAppOnGrid('mail', 0);
       for (let p = 1; p < 12; p++) placeAppOnGrid(`app${p}`, p);
-      const folderId = (get(homeGridItems).find((i) => i.kind === 'folder') as HomeGridFolder).folderId;
+      const folderId = (get(homeGridItems).find((i) => i.kind === 'folder') as HomeGridFolder)
+        .folderId;
       expect(removeAppFromFolder(folderId, 'mail')).toBe(false);
       // Nothing changed — the app is still in the folder.
       const folder = get(homeGridItems).find((i) => i.kind === 'folder') as HomeGridFolder;
@@ -196,7 +198,9 @@ describe('Home grid state', () => {
 
       compactGridToCurrentCapacity();
 
-      expect(get(homeGridItems).some((i) => i.kind === 'app' && i.appId === 'overflow')).toBe(false);
+      expect(get(homeGridItems).some((i) => i.kind === 'app' && i.appId === 'overflow')).toBe(
+        false
+      );
       expect(get(homeGridItems)).toHaveLength(12);
     });
   });

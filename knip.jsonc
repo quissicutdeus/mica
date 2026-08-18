@@ -16,10 +16,6 @@
   // before. Only what someone has deliberately labelled public is exempt, and the label
   // sits next to the code rather than in this file.
   "tags": ["-public"],
-  // Tailwind and its two plugins are pulled in by `@import` / `@plugin` in
-  // `src/app.css`, and knip does not follow CSS. They are load-bearing — see AGENTS §6
-  // on what happens in game when the Tailwind setup is "tidied up".
-  "ignoreDependencies": ["tailwindcss", "tailwindcss-animate", "@tailwindcss/typography"],
   "workspaces": {
     ".": {
       // esbuild builds these two directly (`build/build-bundle.js`), so nothing in the

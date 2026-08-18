@@ -1,6 +1,5 @@
-@import 'tailwindcss';
-@plugin 'tailwindcss-animate';
-@plugin '@tailwindcss/typography';
+@import 'app-reset.css';
+@import 'app-utilities.css';
 
 /**
  * The phone's palette: Material 3 colour roles.
@@ -11,31 +10,29 @@
  * `DEFAULT_SEED`. When that test fails, the diff is the fix — paste the expected values
  * in. Do not hand-tune a value here; change the seed or the engine.
  *
- * ## Why these are literals, and why `@theme` rather than `@theme inline`
+ * ## Why these are literals, on `:root`
  *
  * The live theme is computed in JS and written as custom properties onto the phone
- * screen element (`shell/PhoneFrame.svelte`), so it follows the wallpaper. Plain
- * `@theme` emits `:root { --color-x: … }` and compiles each utility to
- * `var(--color-x)`, which is what makes that override possible. **`@theme inline` would
- * compile the literal into every utility and the runtime theme would do nothing** — it
- * is the reflex when a theme value looks static, and it is wrong here.
+ * screen element (`shell/PhoneFrame.svelte`), so it follows the wallpaper. Every colour
+ * utility in `app-utilities.css` compiles to `var(--color-x)` rather than the literal
+ * itself, which is what makes that runtime override possible — inlining the literal
+ * into each utility would make the runtime theme do nothing.
  *
  * The literals still matter: they are the shipped dark scheme, so first paint before
  * `PhoneFrame` mounts, and every jsdom render in the unit suite, is already correct
  * without JS.
  *
- * ## The rule that replaced the old opacity-modifier guidance
+ * ## The rule against opacity modifiers on role tokens
  *
- * The previous version of this comment explained that `bg-gray-900/95` survives CEF 103
- * because Tailwind emits an unguarded hex fallback beside the `@supports`-guarded
- * `color-mix()`. That is still true of a *palette* colour. It is now actively dangerous
- * on a **role** token: the fallback Tailwind computes is derived from the literal below,
- * i.e. the default seed — so `bg-surface/50` renders the default theme's colour under
- * any other seed. Silently, and only for players who changed it.
+ * An opacity modifier (`bg-surface/50`) on a **role** token is forbidden outright:
+ * unlike a raw palette colour (`bg-black/40`, a literal `rgba()` — see
+ * `app-utilities.css`), a role's alpha-blended fallback would have to be computed from
+ * the literal below, i.e. the default seed — so it would render the default theme's
+ * colour under any other seed. Silently, and only for players who changed it.
  *
- * So there is no budget for that case. `sdk/cef.test.ts` fails outright on an opacity
- * modifier applied to any name in `ROLE_NAMES`, and builds its regex from that array so
- * the rule cannot drift from the token set.
+ * `sdk/cef.test.ts` fails outright on an opacity modifier applied to any name in
+ * `ROLE_NAMES`, and builds its regex from that array so the rule cannot drift from the
+ * token set.
  *
  * What replaces it: state layers are real tokens. M3 expresses hover as `on-surface` at
  * 8% over the container, which is `color-mix()` and therefore Chromium 111. The engine
@@ -56,7 +53,7 @@
  * yellow and Bank's money-in green stay raw palette classes: they are signal colours, and
  * `tertiary` *is* seeded, so a blue seed would produce a blue warning.
  */
-@theme {
+:root {
   /* --- generated: dark scheme, seed #155dfc, SchemeVibrant. See src/lib/m3.ts --- */
 
   /* Primary */
@@ -162,8 +159,8 @@
   /* --- end generated --- */
 
   /**
-   * M3 shape scale. Replaces Tailwind's default `--radius-*` scale, so `rounded-*`
-   * utilities are real M3 values rather than Tailwind's un-opinionated defaults.
+   * M3 shape scale, so `rounded-*` utilities are real M3 values rather than an
+   * un-opinionated default scale.
    *
    * Usage map: buttons/chips/pills/avatars -> full. List rows, small icon buttons ->
    * sm-md. Cards, list-item containers -> md-lg. Dialogs, bottom sheets, PhotoPicker ->
@@ -178,7 +175,14 @@
   --radius-lg: 16px;
   --radius-xl: 28px;
   --radius-full: 9999px;
-  --radius-frame-inner: 3rem;
+  /* The bezel's own outer curve — `PhoneFrame`'s outer element only. */
+  --radius-frame-outer: 3rem;
+  /* Anything flush against the screen's *inner* edge (the screen div itself, and any
+     app content butted up against it) needs a tighter radius than the bezel: it sits
+     `border-[8px]` inset from the outer curve, and concentric rounded rects only look
+     concentric when the inner radius is the outer radius minus that inset — using the
+     same radius for both leaves a visible sliver of gap at each corner. */
+  --radius-frame-inner: calc(var(--radius-frame-outer) - 8px);
 
   /**
    * M3 elevation: real drop-shadow for elements that float above the surface stack
@@ -197,7 +201,7 @@
    * M3 type scale, trimmed to what this 400x850 phone with no hero/marketing text
    * actually uses — the full spec's `display-*` tier is dropped. Each token pairs
    * size/line-height/weight/tracking so `text-title-large` etc. sets all of them
-   * together, the same way Tailwind v4 pairs `text-sm`/`--text-sm--line-height` today.
+   * together — see the `.text-title-large` rule in `app-utilities.css`.
    */
   --text-title-large: 22px;
   --text-title-large--line-height: 28px;
@@ -269,6 +273,19 @@ body {
   user-select: none;
 }
 
+/**
+ * The dev-browser page background — see the `$effect` in `Shell.svelte` for why this is
+ * safe in game. `html` rather than `body` so it paints under the phone's `fly` transition
+ * with no flash: `body` is the mount point's parent and `body`'s background can lag one
+ * frame behind on first paint, `html`'s cannot.
+ */
+html[data-preview-theme='light'] {
+  background: #e4e4e7;
+}
+html[data-preview-theme='dark'] {
+  background: #3f3f46;
+}
+
 button,
 a {
   cursor: pointer;
@@ -320,10 +337,10 @@ a {
  * mush. With it the stroke sits behind and only the outer half shows, which thickens the
  * letter's edge instead of thinning its middle.
  *
- * A class here rather than Tailwind utilities because `-webkit-text-stroke` and
- * `paint-order` have none, and this file already carries `.no-scrollbar` for the same
- * reason. CEF-wise both are comfortable: `-webkit-text-stroke` predates the baseline by
- * years and `paint-order` on text is Chrome 79, against the Chromium 103 floor in §6.
+ * A one-off class here, alongside `.no-scrollbar`, rather than a composable utility in
+ * `app-utilities.css` — nothing else needs `-webkit-text-stroke` or `paint-order`.
+ * CEF-wise both are comfortable: `-webkit-text-stroke` predates the baseline by years
+ * and `paint-order` on text is Chrome 79, against the Chromium 103 floor in §6.
  *
  * The alternative is a scrim pill behind every label, which is more certain and visibly
  * changes the home screen. Worth reaching for only if this is still not enough in game.

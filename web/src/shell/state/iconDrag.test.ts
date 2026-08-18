@@ -74,7 +74,9 @@ describe('Icon drag session', () => {
         { position: 7, kind: 'app', appId: 'mail' }
       ]);
       startIconDrag('notes', { kind: 'grid', position: 3 }, 0, 0);
-      expect(resolveIconDrop(get(iconDragState), { kind: 'grid', position: 7 })).toBe('folder-created');
+      expect(resolveIconDrop(get(iconDragState), { kind: 'grid', position: 7 })).toBe(
+        'folder-created'
+      );
       const items = get(homeGridItems);
       expect(items).toHaveLength(1);
       expect((items[0] as HomeGridFolder).appIds).toEqual(['mail', 'notes']);

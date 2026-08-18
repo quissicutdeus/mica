@@ -76,7 +76,7 @@ export interface AppManifest {
    */
   name: string;
   /**
-   * Tailwind background class for the launcher icon — `bg-indigo-600`.
+   * Utility class for the launcher icon (from app-utilities.css) — `bg-indigo-600`.
    *
    * A **class**, not a color value. `AppIcon` interpolates this straight into a `class`
    * attribute, so a hex string becomes a class name matching no rule and the icon renders
@@ -230,7 +230,7 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
       console.warn(
         `gPhone App Manifest: color '${manifest.color}' on '${id}' is a hex value, and ` +
           `AppIcon interpolates it into a class attribute — the icon will have no ` +
-          `background. Use a Tailwind class such as 'bg-indigo-600'.`
+          `background. Use a utility class such as 'bg-indigo-600'.`
       );
     }
   }

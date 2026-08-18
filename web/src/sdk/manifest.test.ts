@@ -109,7 +109,7 @@ describe('defineApp: name', () => {
 
 describe('defineApp: color', () => {
   it('warns that a hex string produces an invisible icon', () => {
-    // The docstring promised "Tailwind class or hex string" and `AppIcon` interpolates the
+    // The docstring promised "utility class or hex string" and `AppIcon` interpolates the
     // value straight into a `class` attribute, so `#f59e0b` becomes a class name that
     // matches no rule — an icon with no background at all. One manifest in the repo's own
     // test fixtures does this.
@@ -120,7 +120,7 @@ describe('defineApp: color', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('#f59e0b'));
   });
 
-  it('accepts a Tailwind class without complaint', () => {
+  it('accepts a utility class without complaint', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     defineApp({ id: 'classy', name: 'Classy', color: 'bg-indigo-600', icon: null, core: false });

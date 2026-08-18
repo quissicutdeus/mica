@@ -5,6 +5,7 @@
     Button,
     ConfirmDialog,
     formatDate,
+    SettingsSection,
     useAppAction,
     useAppRegistry,
     type AppManifest
@@ -96,13 +97,8 @@
     </div>
   </div>
 
-  <div>
-    <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
-      Details
-    </h2>
-    <div
-      class="divide-outline-variant bg-surface-container text-body-medium divide-y overflow-hidden rounded-xl"
-    >
+  <SettingsSection title="Details">
+    <div class="divide-outline-variant text-body-medium divide-y">
       <div class="flex items-center justify-between p-4">
         <span class="text-on-surface-variant">Identifier</span>
         <span class="text-on-surface text-body-small font-mono">{app.id}</span>
@@ -128,7 +124,7 @@
         <span class="text-on-surface">{storageLabel}</span>
       </div>
     </div>
-  </div>
+  </SettingsSection>
 
   <div>
     <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
