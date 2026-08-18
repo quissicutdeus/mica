@@ -62,7 +62,13 @@ describe('useKeybinds groups', () => {
 
   it('omits an app entirely from groups when it declares no keybinds', () => {
     appRegistryStore.registerApp(
-      { id: 'no_binds_app', name: 'No Binds', color: 'bg-gray-600', icon: null, core: false } as any,
+      {
+        id: 'no_binds_app',
+        name: 'No Binds',
+        color: 'bg-gray-600',
+        icon: null,
+        core: false
+      } as any,
       (() => {}) as any
     );
     const { groups } = useKeybinds();

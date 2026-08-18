@@ -144,9 +144,7 @@ describe('app-utilities.css coverage', () => {
     const missing = usages.filter((u) => !defined.has(u.token));
 
     if (missing.length > 0) {
-      const report = missing
-        .map((u) => `  ${u.file}:${u.line} — "${u.token}"`)
-        .join('\n');
+      const report = missing.map((u) => `  ${u.file}:${u.line} — "${u.token}"`).join('\n');
       expect.fail(
         `${missing.length} class token(s) with no matching rule in app.css / ` +
           `app-utilities.css / app-reset.css — this repo has no Tailwind build, so an ` +

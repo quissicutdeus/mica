@@ -91,8 +91,7 @@ export function useKeybinds() {
      * camera shutter, and only one is ever eligible.
      */
     findConflict: (actionId: string, key: string) => {
-      const action =
-        findAction(actionId) ?? get(allPhoneActions).find((a) => a.id === actionId);
+      const action = findAction(actionId) ?? get(allPhoneActions).find((a) => a.id === actionId);
       if (!action) return undefined;
       return conflictsWith(action, key, currentOverrides(), get(allPhoneActions));
     }
