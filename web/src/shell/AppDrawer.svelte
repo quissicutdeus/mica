@@ -167,7 +167,7 @@
     <button
       type="button"
       bind:this={topHandleRef}
-      class="absolute top-0 left-0 z-10 flex h-6 w-full cursor-pointer touch-none items-start justify-center pt-1.5"
+      class="absolute top-0 left-0 z-10 flex h-6 w-full cursor-pointer touch-none items-start justify-center pt-3"
       data-gesture-drag
       data-testid="drawer-top-handle"
       onclick={closeDrawer}
@@ -175,7 +175,7 @@
       tabindex="-1"
     >
       <div
-        class="duration-medium ease-emphasized h-1 w-1/3 rounded-full bg-white opacity-80 transition-opacity hover:opacity-100"
+        class="duration-medium ease-emphasized h-1 w-8 rounded-full bg-white opacity-80 transition-opacity hover:opacity-100"
       ></div>
     </button>
 
