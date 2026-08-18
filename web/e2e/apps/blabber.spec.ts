@@ -15,7 +15,7 @@ test.describe('Blabber', () => {
       .locator('div.rounded-xl', { hasText: 'Blabber' })
       .locator('button', { hasText: 'Install' })
       .click();
-    await page.locator("button[aria-label='Back to Home']").click();
+    await page.locator("button[aria-label='Return to home screen']").click();
     await page.getByRole('button', { name: /Blabber/ }).click();
   });
 
@@ -73,7 +73,7 @@ test.describe('Blabber', () => {
 
     await storeRow().getByRole('button', { name: 'Install', exact: true }).click();
 
-    await page.locator("button[aria-label='Back to Home']").click();
+    await page.locator("button[aria-label='Return to home screen']").click();
     await page.getByRole('button', { name: /Blabber/ }).click();
 
     await expect(page.locator('text=Not part of this build')).toHaveCount(0);

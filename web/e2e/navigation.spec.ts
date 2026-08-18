@@ -39,7 +39,7 @@ test.describe('Phone Navigation & Home Screen', () => {
       .locator('div.rounded-xl', { hasText: 'Notes' })
       .locator('button', { hasText: 'Install' })
       .click();
-    await page.locator("button[aria-label='Back to Home']").click();
+    await page.locator("button[aria-label='Return to home screen']").click();
 
     // 2. Verify the Notes icon appears on the home screen.
     // Role-based: apps stay resident once opened, so the Store's own catalog row is still
@@ -56,7 +56,7 @@ test.describe('Phone Navigation & Home Screen', () => {
     await page.locator('button', { hasText: 'Uninstall' }).last().click();
 
     // 4. Return Home and verify Notes is uninstalled
-    await page.locator("button[aria-label='Back to Home']").click();
+    await page.locator("button[aria-label='Return to home screen']").click();
     await expect(page.getByRole('button', { name: /Notes/ })).toHaveCount(0);
   });
 });

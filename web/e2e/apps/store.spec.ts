@@ -46,7 +46,7 @@ test.describe('Store E2E', () => {
     await expect(page.locator('text=installed successfully')).toBeVisible();
 
     // Go back home
-    await page.locator("button[aria-label='Back to Home']").click();
+    await page.locator("button[aria-label='Return to home screen']").click();
 
     // Verify the new Notes icon exists on the home screen. Role-based, because apps stay
     // resident once opened: the Store's own catalog row is still in the DOM behind this

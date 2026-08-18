@@ -213,7 +213,7 @@ test.describe('Settings App E2E', () => {
         .locator('div.rounded-xl', { hasText: 'Blabber' })
         .getByRole('button', { name: 'Install', exact: true })
         .click();
-      await page.locator("button[aria-label='Back to Home']").click();
+      await page.locator("button[aria-label='Return to home screen']").click();
 
       await page.locator('button', { hasText: 'Settings' }).first().click();
       await openApps(page);

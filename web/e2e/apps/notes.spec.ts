@@ -15,7 +15,7 @@ test.describe('Notes App E2E', () => {
       .locator('div.rounded-xl', { hasText: 'Notes' })
       .locator('button', { hasText: 'Install' })
       .click();
-    await page.locator("button[aria-label='Back to Home']").click();
+    await page.locator("button[aria-label='Return to home screen']").click();
 
     // Role-based, so the backgrounded Store's own catalog row — still in the DOM, but
     // `inert` — is not what gets clicked.
