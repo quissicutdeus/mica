@@ -13,5 +13,5 @@
     }
   },
   "include": ["./**/*", "../shared/**/*"],
-  "exclude": ["**/node_modules", "**/__tests__/*"]
+  "exclude": ["**/node_modules", "**/__tests__/*", "**/*.test.ts", "../shared/**/*.test.ts"]
 }

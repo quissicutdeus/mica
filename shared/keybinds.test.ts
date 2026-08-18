@@ -40,7 +40,7 @@ describe('conflictsWith', () => {
     expect(conflict?.id).toBe('snek:pause');
   });
 
-  it('flags an app-scoped action rebound onto an unscoped action\'s key', () => {
+  it("flags an app-scoped action rebound onto an unscoped action's key", () => {
     // 'back' is unscoped (eligible everywhere), so an app-scoped action sharing its key
     // would always shadow 'back' while that app is foreground.
     const pause: KeybindAction = {
