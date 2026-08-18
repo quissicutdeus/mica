@@ -1,7 +1,7 @@
 <script lang="ts">
   import { SettingsSection, useKeybinds, usePhoneNotification } from '@gphone/sdk';
 
-  const { bindings, actions, setBinding, resetBindings, findConflict } = useKeybinds();
+  const { bindings, groups, setBinding, resetBindings, findConflict } = useKeybinds();
   const { toast } = usePhoneNotification();
 
   /** The action currently waiting for a key, if any. */
@@ -77,28 +77,39 @@
     headerAction={resetAction}
     footer="Open Phone is bound in FiveM's own Key Bindings menu."
   >
-    <div class="divide-outline-variant text-body-medium divide-y">
-      {#each actions as action (action.id)}
-        <button
-          type="button"
-          data-testid="shortcut-{action.id}"
-          onclick={() => (capturingId = action.id)}
-          class="hover:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+    {#each $groups as group (group.ownerId)}
+      {#if group.ownerId !== 'core'}
+        <h3
+          class="text-on-surface-variant text-label-small px-4 pt-3 pb-1 tracking-wider uppercase"
         >
-          <span class="text-on-surface font-medium">{action.label}</span>
-          {#if capturingId === action.id}
-            <span
-              class="text-secondary text-body-small animate-pulse rounded border border-indigo-600 bg-indigo-950 px-2 py-0.5 font-mono"
-            >
-              Press a key…
-            </span>
-          {:else}
-            <span class="bg-surface text-on-surface text-body-small rounded px-2 py-0.5 font-mono">
-              {describeKey($bindings[action.id])}
-            </span>
-          {/if}
-        </button>
-      {/each}
-    </div>
+          {group.ownerLabel}
+        </h3>
+      {/if}
+      <div class="divide-outline-variant text-body-medium divide-y">
+        {#each group.actions as action (action.id)}
+          <button
+            type="button"
+            data-testid="shortcut-{action.id}"
+            onclick={() => (capturingId = action.id)}
+            class="hover:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+          >
+            <span class="text-on-surface font-medium">{action.label}</span>
+            {#if capturingId === action.id}
+              <span
+                class="text-secondary text-body-small animate-pulse rounded border border-indigo-600 bg-indigo-950 px-2 py-0.5 font-mono"
+              >
+                Press a key…
+              </span>
+            {:else}
+              <span
+                class="bg-surface text-on-surface text-body-small rounded px-2 py-0.5 font-mono"
+              >
+                {describeKey($bindings[action.id])}
+              </span>
+            {/if}
+          </button>
+        {/each}
+      </div>
+    {/each}
   </SettingsSection>
 </div>
