@@ -104,7 +104,10 @@ export function tick(
   const newHead: Point = { x: head.x + DELTA[direction].x, y: head.y + DELTA[direction].y };
 
   const outOfBounds =
-    newHead.x < 0 || newHead.y < 0 || newHead.x >= state.grid.width || newHead.y >= state.grid.height;
+    newHead.x < 0 ||
+    newHead.y < 0 ||
+    newHead.x >= state.grid.width ||
+    newHead.y >= state.grid.height;
   if (outOfBounds) {
     return { ...state, direction, gameOver: true };
   }
