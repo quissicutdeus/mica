@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
+import { chromium } from '@playwright/test';
 
 /**
  * Every gate, one command, in the order that fails soonest.
@@ -36,7 +37,7 @@ const portInUse = () =>
       .listen(PORT);
   });
 
-const waitForServer = async (timeoutMs = 60_000) => {
+const waitForHtml = async (timeoutMs = 60_000) => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -48,6 +49,33 @@ const waitForServer = async (timeoutMs = 60_000) => {
     await new Promise((r) => setTimeout(r, 250));
   }
   return false;
+};
+
+/**
+ * A raw fetch of `/` only proves index.html is served — Vite transforms a module the
+ * first time something actually imports it, which for a Svelte app means walking the
+ * whole component graph, and only a real module-executing client does that. Skipping
+ * this used to let the e2e gate start against a dev server that was up but still cold:
+ * Playwright's ~16 parallel workers would then all hit that cold server at once, each
+ * transform request queuing behind the others, and dozens of unrelated specs would time
+ * out at 30s not because anything was broken but because the server hadn't finished
+ * compiling by the time they asked. A real navigation forces the whole graph the app's
+ * first screen needs to compile before any test worker starts.
+ */
+const warmServer = async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle', timeout: 60_000 });
+  } finally {
+    await browser.close();
+  }
+};
+
+const waitForServer = async (timeoutMs = 60_000) => {
+  if (!(await waitForHtml(timeoutMs))) return false;
+  await warmServer();
+  return true;
 };
 
 const results = [];
