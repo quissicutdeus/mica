@@ -71,6 +71,13 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     include: ['src/**/*.test.ts', 'src/**/*.spec.ts', '../shared/**/*.test.ts'],
+    // `registry.ts` eagerly globs every app manifest, which transitively pulls in the
+    // whole `sdk/components.ts` barrel (every UI primitive). Under Vitest's parallel
+    // file/worker model, one test file's jsdom environment can tear down while that
+    // module graph is still resolving for another file in the same worker, throwing
+    // an EnvironmentTeardownError that Vitest counts as an unhandled failure even
+    // though every assertion passed. Serializing test files removes the race.
+    fileParallelism: false,
     server: {
       deps: {
         // `@material/material-color-utilities@0.4.0` ships extensionless relative
