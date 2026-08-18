@@ -187,7 +187,15 @@
       </span>
     </div>
 
-    <div bind:this={scrollContainerRef} class="flex-1 scrollbar-none overflow-y-auto px-6 pb-10">
+    <!-- `pt-2`: `AppIcon`'s unread badge overhangs `-top-1` above the icon tile itself, and
+         this container clips via `overflow-y-auto` right at its own top edge — with no
+         padding there, the first row's badges got their tips cut off flush against that
+         boundary, which read as the header text overlapping them but was really the
+         scroll clip. -->
+    <div
+      bind:this={scrollContainerRef}
+      class="flex-1 scrollbar-none overflow-y-auto px-6 pt-2 pb-10"
+    >
       <div class="grid grid-cols-4 gap-y-6">
         {#each visibleApps as app (app.id)}
           <div use:attachIcon={app.id}>
