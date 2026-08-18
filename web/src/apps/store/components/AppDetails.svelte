@@ -67,7 +67,7 @@
       </div>
 
       <div>
-        <h3 class="text-on-surface text-xl font-bold">{app.name}</h3>
+        <h3 class="text-on-surface text-xl font-semibold">{app.name}</h3>
         <div
           class="text-on-surface-variant text-body-small mt-0.5 flex items-center justify-center gap-2"
         >

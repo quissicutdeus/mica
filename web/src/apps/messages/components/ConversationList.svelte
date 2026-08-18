@@ -68,7 +68,7 @@
       <div class="min-w-0 flex-1">
         <div class="mb-1 flex items-baseline justify-between">
           <span
-            class="truncate text-[15px] font-semibold {conv.unreadCount > 0
+            class="text-body-medium truncate font-semibold {conv.unreadCount > 0
               ? 'text-on-surface font-bold'
               : 'text-on-surface'}"
           >
