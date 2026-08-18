@@ -6,7 +6,8 @@
   import { installDevHarness, seedBrowserPhone } from './devHarness';
   import { isBrowser } from '../lib/isBrowser';
   import { currentApp, runningApps, openApp, goHome, closePhone } from './state/navigation';
-  import { bindings, dispatchKey, isTypingTarget, registerHandler } from './state/keybinds';
+  import { dispatchKey, isTypingTarget, registerHandler } from './state/keybinds';
+  import { findAction } from '@shared/keybinds';
   import { lockDevTools } from './state/devtools';
   import {
     frameMargin,
@@ -221,9 +222,14 @@
        * Checked before `dispatchKey` because a collapsed phone has no meaningful
        * phone-scope action, and after the typing guard so it cannot fire out from under
        * a focused field.
+       *
+       * Reads the default straight off `KEYBIND_ACTIONS` rather than the `bindings`
+       * store: `bindings` only resolves phone-scope actions (see keybinds.ts), and
+       * `openPhone` is game-scope — its rebind path is FiveM's own Key Bindings menu,
+       * never this store, so there is no override to look up here.
        */
       if (isBrowser() && !isTypingTarget(event.target)) {
-        const openKey = $bindings.openPhone;
+        const openKey = findAction('openPhone')?.defaultKey;
         if (openKey && event.key.toLowerCase() === openKey.toLowerCase()) {
           event.preventDefault();
           if (visible) {
