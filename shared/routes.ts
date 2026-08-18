@@ -111,6 +111,11 @@ export const ROUTES: readonly Route[] = [
   route('getReportHistory', 'reports', 'history'),
   route('reopenReport', 'reports', 'reopen'),
 
+  // Highscores — shared leaderboard table, one row per (citizenid, app). Core, not
+  // owned by any one game, so a future game reuses it instead of shipping its own table.
+  route('submitHighscore', 'highscores', 'submit'),
+  route('getHighscoreLeaderboard', 'highscores', 'top'),
+
   // Media — no `updateMedia`: a stored row has no mutable fields, and the server does
   // not register the endpoint.
   route('getMedia', 'media', 'get'),

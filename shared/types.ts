@@ -159,6 +159,22 @@ export interface Report {
   updated_at: Date | string;
 }
 
+export interface Highscore {
+  id: number;
+  citizenid: string;
+  app: string;
+  score: number;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+/** A leaderboard row — a `Highscore` with the citizenid's name resolved server-side. */
+export interface LeaderboardEntry {
+  citizenid: string;
+  score: number;
+  displayName: string | null;
+}
+
 /**
  * One social identity a player posts under.
  *
