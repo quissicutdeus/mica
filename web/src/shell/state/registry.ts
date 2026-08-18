@@ -1,5 +1,11 @@
 import { get, writable } from 'svelte/store';
-import { type AppComponent, type AppManifest, clearAppStorage, defineApp } from '@gphone/sdk';
+// Imported from their own files rather than the `@gphone/sdk` barrel: that barrel
+// re-exports every hook, including `useAppLevels`/`useKeybinds`, which import
+// `./keybinds.ts`, which imports `appRegistryStore` from this file — going through the
+// barrel here would close that cycle and leave `appRegistryStore` unset when `keybinds.ts`
+// evaluates its module-level `derived(appRegistryStore, ...)`.
+import { type AppComponent, type AppManifest, defineApp } from '../../sdk/manifest';
+import { clearAppStorage } from '../../sdk/hooks/useStorage';
 import { messageOf } from '../../lib/errors';
 import { usePersisted } from '../../sdk/hooks/usePersisted';
 import { placeOnHomeGridIfAbsent } from './homeGrid';

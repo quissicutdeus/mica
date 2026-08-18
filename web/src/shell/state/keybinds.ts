@@ -1,6 +1,7 @@
 import { derived, get } from 'svelte/store';
-import { KEYBIND_ACTIONS, PHONE_SCOPE_ACTIONS, type KeybindAction } from '@shared/keybinds';
+import { PHONE_SCOPE_ACTIONS, type KeybindAction } from '@shared/keybinds';
 import { usePersisted } from '../../sdk/hooks/usePersisted';
+import { appRegistryStore } from './registry';
 
 /**
  * Resolved key bindings, plus the registry the dispatcher routes through.
@@ -17,10 +18,46 @@ type Overrides = Record<string, string>;
 
 const overrides = usePersisted<Overrides>('settings', OVERRIDES_KEY, {});
 
+/**
+ * A `KeybindAction` tagged with who owns it, for grouping in Settings > Shortcuts.
+ * `ownerId: 'core'` for the static list; otherwise the declaring app's id.
+ */
+export interface ResolvedKeybindAction extends KeybindAction {
+  ownerId: string;
+  ownerLabel: string;
+}
+
+/**
+ * App-declared actions, live off the installed-app registry.
+ *
+ * Only installed apps: an uninstalled add-on's binds must not occupy a key slot or show
+ * in Shortcuts. Namespaced to `${appId}:${kb.id}` so two apps can each declare an action
+ * called e.g. `pause` without colliding — and so an app can never collide with a core id.
+ */
+const appActions = derived(appRegistryStore, ($apps) =>
+  $apps.flatMap((app): ResolvedKeybindAction[] =>
+    (app.keybinds ?? []).map((kb) => ({
+      id: `${app.id}:${kb.id}`,
+      label: kb.label,
+      defaultKey: kb.defaultKey,
+      scope: 'phone' as const,
+      when: `app:${app.id}` as const,
+      ownerId: app.id,
+      ownerLabel: app.name
+    }))
+  )
+);
+
+/** Every phone-scope action the dispatcher and Shortcuts screen know about, core first. */
+export const allPhoneActions = derived(appActions, ($appActions): ResolvedKeybindAction[] => [
+  ...PHONE_SCOPE_ACTIONS.map((a) => ({ ...a, ownerId: 'core', ownerLabel: 'Phone' })),
+  ...$appActions
+]);
+
 /** actionId -> the key currently bound to it. */
-export const bindings = derived(overrides, ($overrides) => {
+export const bindings = derived([overrides, allPhoneActions], ([$overrides, $actions]) => {
   const resolved: Record<string, string> = {};
-  for (const action of KEYBIND_ACTIONS) {
+  for (const action of $actions) {
     resolved[action.id] = $overrides[action.id] ?? action.defaultKey;
   }
   return resolved;
@@ -151,9 +188,10 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 export function resolveAction(
   key: string,
   env: KeybindEnvironment,
-  resolvedBindings: Record<string, string>
+  resolvedBindings: Record<string, string>,
+  actions: readonly KeybindAction[] = get(allPhoneActions)
 ): KeybindAction | null {
-  const matches = PHONE_SCOPE_ACTIONS.filter(
+  const matches = actions.filter(
     (action) => resolvedBindings[action.id] === key && isEligible(action, env)
   );
   if (matches.length === 0) return null;

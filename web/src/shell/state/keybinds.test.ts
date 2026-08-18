@@ -1,6 +1,7 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 import {
+  allPhoneActions,
   bindings,
   dispatchKey,
   isEligible,
@@ -11,6 +12,7 @@ import {
   setBinding,
   type KeybindEnvironment
 } from './keybinds';
+import { appRegistryStore } from './registry';
 import { findAction } from '@shared/keybinds';
 import { useStorage } from '../../sdk/hooks/useStorage';
 
@@ -319,5 +321,60 @@ describe('handler ownership under residency', () => {
     expect(event.defaultPrevented).toBe(false);
 
     release();
+  });
+});
+
+describe('app-declared keybinds', () => {
+  const fakeManifest = {
+    id: 'snek_test_app',
+    name: 'Snek Test App',
+    color: 'bg-green-600',
+    icon: null,
+    core: false,
+    keybinds: [{ id: 'pause', label: 'Pause Game', defaultKey: 'p' }]
+  } as const;
+
+  afterEach(() => {
+    // registerApp has no unregister for non-core, non-installed-tracked test fixtures
+    // beyond unregisterApp itself — clean up so later tests see a clean registry.
+    try {
+      appRegistryStore.unregisterApp(fakeManifest.id);
+    } catch {
+      // not registered; nothing to clean up
+    }
+  });
+
+  it('namespaces an app-declared action id to `${appId}:${kb.id}`', () => {
+    appRegistryStore.registerApp(fakeManifest as any, (() => {}) as any);
+    const found = get(allPhoneActions).find((a) => a.ownerId === 'snek_test_app');
+    expect(found?.id).toBe('snek_test_app:pause');
+    expect(found?.label).toBe('Pause Game');
+    expect(found?.defaultKey).toBe('p');
+    expect(found?.when).toBe('app:snek_test_app');
+    expect(found?.scope).toBe('phone');
+    expect(found?.ownerLabel).toBe('Snek Test App');
+  });
+
+  it('resolves the app-declared action only while that app is foreground', () => {
+    appRegistryStore.registerApp(fakeManifest as any, (() => {}) as any);
+    const handler = vi.fn();
+    const release = registerHandler('snek_test_app:pause', handler, 'snek_test_app');
+
+    expect(
+      resolveAction('p', { currentApp: 'snek_test_app', callStatus: 'idle' }, get(bindings))?.id
+    ).toBe('snek_test_app:pause');
+    expect(
+      resolveAction('p', { currentApp: 'home', callStatus: 'idle' }, get(bindings))
+    ).toBeNull();
+
+    release();
+  });
+
+  it('drops an app-declared action once the app is uninstalled', () => {
+    appRegistryStore.registerApp(fakeManifest as any, (() => {}) as any);
+    expect(get(allPhoneActions).some((a) => a.id === 'snek_test_app:pause')).toBe(true);
+
+    appRegistryStore.unregisterApp('snek_test_app');
+    expect(get(allPhoneActions).some((a) => a.id === 'snek_test_app:pause')).toBe(false);
   });
 });
