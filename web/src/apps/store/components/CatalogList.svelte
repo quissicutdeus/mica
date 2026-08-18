@@ -31,7 +31,7 @@
     {#each apps as app (app.id)}
       {@const installed = isInstalled(app.id)}
       <div
-        class="bg-surface-container border-outline-variant hover:bg-surface flex w-full min-w-0 items-center justify-between gap-3 rounded-xl border p-3 transition"
+        class="bg-surface-container border-outline-variant hover:bg-surface duration-short ease-standard flex w-full min-w-0 items-center justify-between gap-3 rounded-xl border p-3 transition"
       >
         <button
           onclick={() => onselect(app)}
@@ -71,14 +71,14 @@
                  Tapping the row itself still opens the details view. -->
           <button
             onclick={() => onuninstall(app)}
-            class="bg-error text-on-error hover:bg-error text-body-small shrink-0 rounded-lg px-3 py-1.5 transition active:scale-95"
+            class="bg-error text-on-error hover:bg-error text-body-small duration-short ease-standard shrink-0 rounded-lg px-3 py-1.5 transition active:scale-95"
           >
             Uninstall
           </button>
         {:else}
           <button
             onclick={() => oninstall(app)}
-            class="bg-secondary text-on-secondary hover:bg-secondary text-body-small shrink-0 rounded-lg px-3 py-1.5 transition active:scale-95"
+            class="bg-secondary text-on-secondary hover:bg-secondary text-body-small duration-short ease-standard shrink-0 rounded-lg px-3 py-1.5 transition active:scale-95"
           >
             Install
           </button>

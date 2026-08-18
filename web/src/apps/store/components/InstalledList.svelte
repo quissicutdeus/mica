@@ -34,7 +34,7 @@
       <button
         onclick={() => (filter = 'all')}
         aria-pressed={filter === 'all'}
-        class="rounded px-2 py-0.5 transition {filter === 'all'
+        class="duration-short ease-standard rounded px-2 py-0.5 transition {filter === 'all'
           ? 'bg-primary-container text-on-primary-container'
           : 'bg-surface-container text-on-surface-variant'}"
       >
@@ -43,7 +43,7 @@
       <button
         onclick={() => (filter = 'system')}
         aria-pressed={filter === 'system'}
-        class="rounded px-2 py-0.5 transition {filter === 'system'
+        class="duration-short ease-standard rounded px-2 py-0.5 transition {filter === 'system'
           ? 'bg-primary-container text-on-primary-container'
           : 'bg-surface-container text-on-surface-variant'}"
       >
@@ -52,7 +52,7 @@
       <button
         onclick={() => (filter = 'addon')}
         aria-pressed={filter === 'addon'}
-        class="rounded px-2 py-0.5 transition {filter === 'addon'
+        class="duration-short ease-standard rounded px-2 py-0.5 transition {filter === 'addon'
           ? 'bg-primary-container text-on-primary-container'
           : 'bg-surface-container text-on-surface-variant'}"
       >
@@ -82,7 +82,7 @@
 <div class="grid w-full gap-2">
   {#each apps as app (app.id)}
     <div
-      class="bg-surface-container border-outline-variant hover:bg-surface flex w-full min-w-0 items-center justify-between gap-3 rounded-xl border p-3 transition"
+      class="bg-surface-container border-outline-variant hover:bg-surface duration-short ease-standard flex w-full min-w-0 items-center justify-between gap-3 rounded-xl border p-3 transition"
     >
       <button
         onclick={() => onselect(app)}
@@ -114,7 +114,7 @@
 
       <button
         onclick={() => onopen(app.id)}
-        class="text-body-small shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-white transition hover:bg-emerald-500 active:scale-95"
+        class="text-body-small duration-short ease-standard shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-white transition hover:bg-emerald-500 active:scale-95"
       >
         Open
       </button>

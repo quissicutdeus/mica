@@ -37,7 +37,7 @@
   >
     <button
       onclick={() => onback()}
-      class="text-secondary hover:text-secondary text-body-small flex items-center gap-1 transition"
+      class="text-secondary hover:text-secondary text-body-small duration-short ease-standard flex items-center gap-1 transition"
       aria-label="Back to Store"
     >
       <svg class="size-icon-sm" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -85,7 +85,7 @@
               onclick={() => {
                 if (app) onopen(app.id);
               }}
-              class="shadow-elevation-2 text-body-small w-full rounded-xl bg-emerald-600 py-2.5 text-white transition hover:bg-emerald-500 active:scale-95"
+              class="shadow-elevation-2 text-body-small duration-short ease-standard w-full rounded-xl bg-emerald-600 py-2.5 text-white transition hover:bg-emerald-500 active:scale-95"
             >
               Open Application
             </button>
@@ -101,7 +101,7 @@
               onclick={() => {
                 if (app) onopen(app.id);
               }}
-              class="shadow-elevation-2 text-body-small flex-1 rounded-xl bg-emerald-600 py-2.5 text-white transition hover:bg-emerald-500 active:scale-95"
+              class="shadow-elevation-2 text-body-small duration-short ease-standard flex-1 rounded-xl bg-emerald-600 py-2.5 text-white transition hover:bg-emerald-500 active:scale-95"
             >
               Open
             </button>
@@ -109,7 +109,7 @@
               onclick={() => {
                 if (app) onuninstall(app);
               }}
-              class="bg-error text-on-error hover:bg-error shadow-elevation-2 text-body-small flex-1 rounded-xl py-2.5 transition active:scale-95"
+              class="bg-error text-on-error hover:bg-error shadow-elevation-2 text-body-small duration-short ease-standard flex-1 rounded-xl py-2.5 transition active:scale-95"
             >
               Uninstall
             </button>
@@ -119,7 +119,7 @@
             onclick={() => {
               if (app) oninstall(app);
             }}
-            class="bg-secondary text-on-secondary hover:bg-secondary shadow-elevation-2 text-body-small w-full rounded-xl py-2.5 transition active:scale-95"
+            class="bg-secondary text-on-secondary hover:bg-secondary shadow-elevation-2 text-body-small duration-short ease-standard w-full rounded-xl py-2.5 transition active:scale-95"
           >
             Install Application
           </button>
