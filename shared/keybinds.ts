@@ -120,9 +120,10 @@ export const findAction = (id: string): KeybindAction | undefined =>
 export function conflictsWith(
   action: KeybindAction,
   key: string,
-  bindings: Record<string, string>
+  bindings: Record<string, string>,
+  candidates: readonly KeybindAction[] = PHONE_SCOPE_ACTIONS
 ): KeybindAction | undefined {
-  return PHONE_SCOPE_ACTIONS.find((other) => {
+  return candidates.find((other) => {
     if (other.id === action.id) return false;
     if ((bindings[other.id] ?? other.defaultKey) !== key) return false;
     // Different contexts can never be eligible together; the same context can.
