@@ -111,106 +111,65 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
 5. **No new dependencies** without asking.
 6. **Do not change** TypeScript versions in either package, Vite `build.outDir`, or
    `scripts/generate-barrels.js` output paths without asking.
-7. **SDK First.** Everything in `web/src/apps/`, and every external add-on, consumes the OS strictly through `@gphone/sdk` hooks — data (`useContacts`, `useMedia`, `useMail`, `useMessages`, `useAccount`, `useCall`, `useReports`), OS services (`useNavigation`, `usePhoneNotification`, `useKeybinds`, `useClock`, `useDisplay`, `useSystemHardware`, `useAppRegistry`, `useNuiBridge`, `useService`, `useAppEvents`, `useStorage`, `useCamera`, `useAdmin`, `useDevTools`), and the four an app is built out of: `useAppLevels` for its internal levels, `useAppAction` for a write, `useDeepLink` for the props it was opened with, and `onAppForeground` for loading. Relative imports out of an app — into `shell/`, `services/`, `nui/`, `lib/`, or `sdk/` by path — are prohibited and enforced by `web/src/sdk/boundary.test.ts`. An add-on installed from the Store resolves `@gphone/sdk` and nothing else, so a relative import is a thing a third-party app cannot do. UI primitives (`Screen`, `ListItem`, `Button`, `Avatar`, `SearchBar`, `EmptyState`, `ConfirmDialog`, `FloatingActionButton`, `PhotoPickerModal`, `ReportDialog`, `SegmentedControl`, `ToggleSwitch`, `Skeleton`) live in `web/src/sdk/ui/` and are re-exported from `web/src/sdk/components.ts`. The shell's own pieces — `PhoneFrame`, `Launcher`, `ToastHost`, `VolumeHud`, `ErrorBoundary` — are deliberately **not** exported, because an app rendering its own phone frame or toast host is a bug.
+7. **SDK First.** Everything in `web/src/apps/`, and every external add-on, consumes the OS strictly through `@gphone/sdk` hooks — data (`useContacts`, `useMedia`, `useMail`, `useMessages`, `useAccount`, `useCall`, `useReports`), OS services (`useNavigation`, `usePhoneNotification`, `useKeybinds`, `useClock`, `useDisplay`, `useSystemHardware`, `useAppRegistry`, `useNuiBridge`, `useService`, `useAppEvents`, `useStorage`, `useCamera`, `useAdmin`, `useDevTools`), and the four an app is built out of: `useAppLevels` for its internal levels, `useAppAction` for a write, `useDeepLink` for the props it was opened with, and `onAppForeground` for loading. Relative imports out of an app — into `shell/`, `services/`, `nui/`, `lib/`, or `sdk/` by path — are prohibited and enforced by `web/src/sdk/boundary.test.ts`. UI primitives (`Screen`, `ListItem`, `Button`, `Avatar`, `SearchBar`, `EmptyState`, `ConfirmDialog`, `FloatingActionButton`, `PhotoPickerModal`, `ReportDialog`, `SegmentedControl`, `ToggleSwitch`, `Skeleton`) live in `web/src/sdk/ui/`, re-exported from `web/src/sdk/components.ts`. The shell's own pieces — `PhoneFrame`, `Launcher`, `ToastHost`, `VolumeHud`, `ErrorBoundary` — are deliberately **not** exported; an app rendering its own phone frame or toast host is a bug. See [`docs/writing-an-app.md`](docs/writing-an-app.md) for the full walkthrough.
 
-   **Keyboard shortcuts specifically.** Never add a raw `keydown` listener or a
-   `<svelte:window on:keydown>` for a phone-level action; declare the action in
-   `shared/keybinds.ts` and claim it with `useKeybinds().onKeybind`. Two reasons the
-   shell has to own dispatch: an app that listens directly cannot be rebound from
-   Settings > Shortcuts, and it will double-fire against the shell's own handler
-   (`Escape` did exactly this in the calculator). An app that genuinely needs raw keys —
-   the calculator's digits and operators — must early-return on `event.defaultPrevented`,
-   which is how it yields any press the dispatcher already claimed.
+   **Keyboard shortcuts.** Never add a raw `keydown` listener or `<svelte:window on:keydown>` for
+   a phone-level action; declare it in `shared/keybinds.ts` and claim it with
+   `useKeybinds().onKeybind`. An app that listens directly cannot be rebound from
+   Settings > Shortcuts and will double-fire against the shell's own handler. An app that needs
+   raw keys (the calculator's digits) must early-return on `event.defaultPrevented`.
 
-   Handlers are a **stack per action**, not a slot. A mounted app overrides the shell and
-   hands the action back on unmount — which is how Settings makes `back` step up one pane
-   before leaving the app. A single slot would work until the first unmount, then delete
-   the shell's `back` and kill Escape for the rest of the session, because the shell
-   registers once at startup and never again.
+   Handlers are a **stack per action, not a slot** — a mounted app overrides the shell and hands
+   the action back on unmount (a single slot would delete the shell's `back` on first unmount and
+   kill Escape for the rest of the session). Apps are resident and reuse their component on
+   re-open without re-registering, so `useAppLevels` requires an `appId` and the dispatcher runs
+   only the topmost handler that is unscoped or owned by the **foreground** app — otherwise
+   reopening Notes after Contacts would run Contacts' stale `back` handler. Shell handlers pass no
+   id and are the fallback.
 
-   **A handler names the app that owns it, and the top of the stack is not enough.** Apps
-   are resident, so an app is destroyed only on LRU eviction, and `Shell.svelte` renders
-   them from a _keyed_ each-block — re-opening a resident app reuses the component and
-   never re-registers. The stack therefore records first-mount order and never learns what
-   is on screen. Open Notes, then Contacts, then re-open Notes, and Backspace ran
-   **Contacts'** handler: it closed an invisible detail view in a backgrounded app while
-   the app in front of you did nothing. `useAppLevels` takes a required `appId` and
-   `onKeybind` an optional one; the dispatcher runs the topmost handler that is either
-   unscoped or owned by the foreground app, and skips one owned by any other. Shell
-   handlers pass no id, which is what makes them the fallback for home and for an app that
-   never claimed the action.
-
-   `back` is the action this bit, because it is the only one apps claim that has no `when`
-   — `shutter` is `app:camera`, so `isEligible` already scoped it. Scoping at the handler
-   is still the right layer: the _action_ is global, since the shell needs `back` too, and
-   only the _handler_ belongs to one app.
-
-   The scope split is forced by FiveM, not by taste: opening the phone calls
-   `SetNuiFocus(true, true)` with no keep-input, so the game receives no control input
-   and a `RegisterKeyMapping` cannot fire in-phone. `scope: 'game'` actions are therefore
-   rebound in FiveM's own Key Bindings menu, `scope: 'phone'` actions in gPhone's
-   Shortcuts screen. Both halves must refuse to fire while a text field has focus — the
-   web checks the event target, the client checks `PhoneState.isTyping()`, which the web
-   pushes over on `focusin`/`focusout` because the client cannot see DOM focus.
+   `scope: 'game'` actions rebind in FiveM's Key Bindings menu (the phone holds `SetNuiFocus`, so
+   `RegisterKeyMapping` cannot fire in-phone); `scope: 'phone'` actions rebind in gPhone's
+   Shortcuts screen. Both must refuse to fire while a text field has focus.
 
 8. **Never report work complete without running the §9 checklist.**
 9. **Trust no NUI payload on the server.** The full model — every entry point, what is
    deliberately client-authoritative and why, and the accepted risks — is
    [`docs/security.md`](docs/security.md). The rules below are the enforceable half.
 
-   **A registered net event is reachable.** Not "reachable if a NUI route points at it": a modified
-   client emits `gphone:server:<service>:<action>` directly and never touches NUI, so the route table
-   bounds CEF XSS and nothing else. Do not register a generic action the app does not use —
-   `server/__tests__/reachability.test.ts` keeps that honest.
+   **A registered net event is reachable**, regardless of whether any NUI route points at it — a
+   modified client emits `gphone:server:<service>:<action>` directly. Do not register a generic
+   action the app does not use — `server/__tests__/reachability.test.ts` keeps that honest.
 
-   Every field, and every row id, in a
-   `gphone:server:*` payload is attacker-controlled — CEF XSS can `fetch` any registered callback
-   (§7), so a NUI request is not proof of intent. Two rules follow, both enforced in
+   Every field and row id in a `gphone:server:*` payload is attacker-controlled (CEF XSS can
+   `fetch` any registered callback, §7), so a NUI request is not proof of intent. Enforced in
    `server/lib/Repository.ts`:
 
-- **Never interpolate a payload key into SQL.** Column lists are built from object keys and MySQL
-  cannot parameterize an identifier. Every key is checked against the repository's `columns`
-  allowlist first. New apps get this from their `defineService` schema (§10); a hand-written
-  repository must declare `columns` itself.
-- **Never mutate a row without an ownership predicate.** `update` and `delete` require a
-  `citizenid` and put it in the `WHERE`; a row id alone is never authorization. For rows shared
-  between players (conversations, messages) ownership is the wrong question — check membership,
-  e.g. the derived `Repository.isMember` (§10). Privileged writes go through a **named** repository
-  method built on the `protected updateUnscoped`, never a service-level bypass.
+   - **Never interpolate a payload key into SQL.** MySQL cannot parameterize an identifier, so
+     every key is checked against the repository's `columns` allowlist first — derived from
+     `defineService` (§10) for declared apps, hand-written otherwise.
+   - **Never mutate a row without an ownership predicate.** `update`/`delete` require a
+     `citizenid` in the `WHERE`; a row id alone is never authorization. For rows shared between
+     players (conversations, messages), check membership via `Repository.isMember` (§10) instead.
+     Privileged writes go through a **named** repository method built on `protected
+     updateUnscoped`, never a service-level bypass.
 
-Client-writable fields are declared per table via `clientWritable` — derived from the schema for
-declared apps (§10), hand-written otherwise; `ServiceEndpoint` reduces the payload to that set before it
-reaches SQL. `id`, `citizenid`, `created_at`, `updated_at` are never
-client-writable, and `status` is deliberately excluded everywhere — moderation and soft-delete
-state is not the client's to set.
+   Client-writable fields are declared per table via `clientWritable`; `ServiceEndpoint` reduces
+   the payload to that set before it reaches SQL. `id`, `citizenid`, `created_at`, `updated_at`
+   are never client-writable, and `status` (moderation/soft-delete) is excluded everywhere.
 
-**The rate and the size are attacker-controlled too**, and neither was checked.
+   **Rate and payload size are attacker-controlled too, and both are checked:**
 
-Both were absent: `ServiceEndpoint` authenticated the caller and reduced the payload to an
-allowlist, then answered as many requests of any size as arrived.
-
-- The limiter sits at the **transport boundary** in `registerEvent`, not inside the generic
-  CRUD handlers, so it covers custom actions too — `messages:send`, `conversations:create`,
-  `reports:resolve` are the expensive ones and a limiter on the generic path only would miss
-  every one. Keyed on `(source, service, action)`, fixed 60-second window,
-  `gphone_rate_limit` requests per window (default 60). Checked **before**
-  `FrameworkBridge.getPlayer`, since that walks the framework's player table and a flood
-  should not get to make the server pay for it. Cleared on `playerDropped`, because FiveM
-  reuses server ids and the next player would inherit a partly-spent window.
-- Values are checked against `columnRules`, derived from the schema. `length: 50` and
-  `values: [...]` used to reach the DDL and stop there, so the write path handed MySQL a
-  10,000-character value for a `varchar(50)` — which in non-strict mode **silently
-  truncates**: row written, success reported, data quietly wrong. Per column rather than one
-  payload-wide number, because `photos.image` is `mediumtext` and legitimately carries a
-  base64 screenshot.
-- **`assertWritableValue`'s messages reach players.** `ServiceEndpoint` puts `error.message`
-  on the wire, `fetchNui` throws it and `useAppAction` toasts it, and an ordinary long
-  contact name gets there — so no `[Repository]` prefix and no table name. Every other throw
-  in that class is a programming error a player cannot trigger; these are not.
-- **There is no blanket read cap, deliberately.** A public read is bounded by the
-  `paging`-is-required rule (§10); an owner-scoped read is bounded by its citizenid
-  predicate. An unconditional `LIMIT` would silently truncate a player's own notes list,
-  which is a worse failure than the one it prevents.
+   - A rate limiter sits at the transport boundary in `registerEvent` (covers custom actions,
+     not just generic CRUD), keyed on `(source, service, action)`, fixed 60s window,
+     `gphone_rate_limit` requests/window (default 60), checked before `FrameworkBridge.getPlayer`.
+     Cleared on `playerDropped` — FiveM reuses server ids.
+   - Values are checked against `columnRules` (`length`, `values`) derived from the schema, so a
+     write can't silently truncate a `varchar` column in non-strict mode.
+   - `assertWritableValue`'s error messages reach players via `fetchNui`/`useAppAction` toasts, so
+     they carry no `[Repository]` prefix and no table name.
+   - **No blanket read cap, deliberately** — a public read is bounded by mandatory `paging` (§10),
+     an owner-scoped read by its citizenid predicate. A global `LIMIT` would silently truncate a
+     player's own list.
 
 10. **Never write AI attribution into anything that reaches GitHub.** No `Co-Authored-By:` naming an
     assistant, no `Assisted-By:`, no "Generated with" footer, no 🤖 — in commit messages, PR bodies,
@@ -232,29 +191,12 @@ allowlist, then answered as many requests of any size as arrived.
     **before** running git, not after.
 
 11. **One planning system of record, the Jira project `MICA`, and do not create a second.**
-
-    It is a pure backlog — what is proposed but unbuilt, and the app ideas after that. Nothing in it
-    describes code that exists: when a proposal ships, its issue is closed rather than staying open
-    relabeled as done. This file previously kept that backlog as `docs/roadmap.md`, itself the
-    successor to an earlier split into a shipped half and a proposed half, kept apart because
-    description and intent were merged once and the document undid itself as you read down — a
-    reader could not tell which half they were in. Removing the shipped half removed the seam instead
-    of just labeling it, and the same reasoning is why a closed issue stays closed rather than
-    growing a "done" essay: there is no wrong state to be in. Git history is the record of what
-    shipped and why; Jira only ever tracks what is still ahead.
-
-    A second planning system goes stale in a way one cannot: two places can end up disagreeing about
-    the same proposal, which is worse than either alone. Do not restart `docs/roadmap.md` or any
-    other committed planning file as a shadow copy of the Jira backlog.
-
-    An **untracked** plan is worse still: no history, one reader, and the system of record ends up
-    deferring to a file nobody else has. Blabber's phase plan lived in a local TODO before it moved
-    into the roadmap, which is the failure this rule still guards against even though the backlog
-    itself moved to Jira — a plan worth writing down is worth putting where every contributor with
-    project access can read it, which is also why this rule is here rather than only in a gitignored
-    assistant file. A proposal being evaluated in this repo (a design doc, a phased plan under
-    `docs/superpowers/`) should link the Jira issue it corresponds to, the same way those documents
-    used to cite a `docs/roadmap.md` entry.
+    It is a pure backlog — proposed-but-unbuilt work and app ideas. Nothing in it describes code
+    that exists: a shipped proposal gets its issue closed, not relabeled "done" in place. Do not
+    restart `docs/roadmap.md` (its predecessor) or any other committed file as a shadow backlog,
+    and do not keep an untracked local plan either — a plan worth writing down goes where every
+    contributor can read it. A design doc or phased plan in this repo should link the Jira issue
+    it corresponds to.
 
 ---
 
@@ -365,21 +307,14 @@ browser is the viewport with the URL bar retracted, so the phone hung below the 
 is a measured pixel value — `shell/state/display.ts` tracks `window.innerHeight` and `Shell.svelte`
 sizes from it, which is correct in CEF and in a browser without needing the unit at all.
 
-**Opacity modifiers are the qualified case.** This section used to call them the highest-risk
-utility class here, on the reasoning that `postcss-preset-env` computes only static fallbacks and
-Tailwind hands it unresolvable `var(--color-*)` arguments. Reading the built CSS says otherwise:
-`bg-gray-900/95` emits three rules — an unguarded `#101828f2`, then `lab()` and `color-mix()` _both_
-behind `@supports (color: color-mix(...))`. CEF 103 fails that test and takes the plain hex, so the
-utility renders. Tailwind emits that fallback whenever it can resolve the color at build time.
-
-What still breaks is a color it **cannot** resolve at build time — an arbitrary `var()`-based color
-with a `/` modifier. There the `color-mix()` form is all that is emitted.
-
-So for translucency, still prefer an explicit `@theme` token with a pre-resolved `rgb(... / ...)`
-value: one declaration whose in-game behavior does not depend on cascade error-recovery, and one
-value per role rather than a family per call site. `src/app.css` holds the set, and
-`src/sdk/cef.test.ts` ratchets the remaining `/` modifiers downward. But treat an existing one as
-untidy rather than broken — do not rewrite working screens on the strength of this rule alone.
+**Opacity modifiers are usually fine, but not always.** Tailwind emits a static hex fallback
+alongside `color-mix()` whenever it can resolve the color at build time (`bg-gray-900/95` works in
+CEF 103), so most opacity utilities render correctly. What still breaks is a color Tailwind
+**cannot** resolve at build time — an arbitrary `var()`-based color with a `/` modifier — where
+only the unsupported `color-mix()` form is emitted. Prefer an explicit `@theme` token with a
+pre-resolved `rgb(... / ...)` value for translucency (`src/app.css` holds the set;
+`src/sdk/cef.test.ts` ratchets remaining `/` modifiers downward), but treat an existing one as
+untidy rather than broken — don't rewrite working screens on this rule alone.
 
 ### Verifying in-game
 
@@ -483,31 +418,9 @@ come _after_ the typecheck gate. The migrations one is the odd member: an ordere
 than re-exports, because the runner iterates it in apply order and a module imported for its side
 effects would give it nothing to iterate.
 
-**`client/` splits by what a file talks to.** `client/services/` is the client half of a
-service and speaks NUI and net events; `client/game/` speaks to GTA and knows nothing about
-the phone's data. They were one `systems/` directory, which was itself a rename of
-`controllers/` — and renaming it did not fix the thing wrong with it, which was that two
-unrelated kinds of file shared a name that described neither.
-
-**`services/` appears on two sides on purpose.** `server/services/Notes.ts` and
-`web/src/services/notes.ts` are the two ends of the one `notes` service, so they carry the
-same name deliberately — it is not a collision to tidy up.
-
-A tempting alternative is to move each store into the app that uses it
-(`apps/notes/store.ts`), and it does not work: `contacts` is read by Contacts, Messages and
-Phone, and `photos` by four apps. A store inside one app's directory is a boundary
-violation (§2.7) for every other app that needs it. Stores are shared by nature; apps are
-not. That is why they live outside `apps/`.
-
-**Casing in `server/lib/` is a rule, not an accident.** PascalCase is a class or a
-singleton object (`Repository`, `ServiceEndpoint`, `Database`, `SchemaMigrator`); camelCase
-is a module of plain functions (`defineService`, `migrate`, `schemaSql`, `moderation`,
-`seed`, `shell`, `payload`, `services`). The filename tells you which you are importing.
-
-**Why `web/src/services/` and not a store inside each app.** Every one of these is read by
-more than its own app — Messages resolves names through `contacts`, the shell raises a toast
-from `mail`. They are not app state; they are the client half of a service, which is why they
-sit beside the SDK hooks that expose them rather than inside `apps/`.
+Why the split looks this way — `client/services/` vs. `client/game/`, why `services/` names
+repeat across client and server, why stores live outside `apps/`, the `server/lib/` casing
+convention — is in [`docs/architecture.md`](docs/architecture.md).
 
 ### A NUI round trip touches three files
 
@@ -539,110 +452,27 @@ actions accept `conversation_id`, `id`, or a bare id via `conversationIdFrom` in
 #### Schema changes
 
 **A schema change is written once, in the declaration.** Change the `defineService` schema and
-run `pnpm generate:sql`: that regenerates `gphone.sql`, which is what a fresh install imports and
-is always the whole truth. Nothing happens to a live database on its own — not at import, not at
-resource start. An install that already has data is brought up to date by **`gphoneschema apply`**
-from the server console, the only thing in this resource that changes a live schema.
+run `pnpm generate:sql` to regenerate `gphone.sql` (committed, imported by hand on a fresh
+install — nothing happens to a live database on its own). An install that already has data is
+brought up to date by **`gphoneschema apply`** from the server console — console-only, the only
+thing in this resource that changes a live schema. It runs versioned migrations
+(`server/migrations/`, oldest-first) then an additive `ADD COLUMN`/`ADD KEY` pass, in that order —
+migrations first is a correctness requirement, not a preference (an additive pass run first can
+strand a rename). Both halves stop at the first failure rather than retrying blind.
 
-`apply` runs two halves in one pass, in this order and not the other:
+A rename, retype, widened enum, or drop needs a **versioned migration** — one TypeScript file per
+breaking change in `server/migrations/`, named `NNNN_snake_case_description.ts` where the filename
+stem is the id (`server/__tests__/migrationsSeed.test.ts` enforces it), exporting a `migration:
+Migration` with `up`. Forward-only: fixing a bad migration is a new migration. **Re-run `pnpm
+generate:sql` after adding one**, or a fresh install runs a migration against a table that never
+needed it.
 
-1. **Versioned migrations** — every file in `server/migrations/` the `gphone_schema_migrations`
-   ledger has no row for, oldest id first. `server/lib/migrations.ts`.
-2. **The additive pass** — `SchemaMigrator.apply()` executing the `ADD COLUMN` / `ADD KEY`
-   statements `plan()` derives from the difference between `information_schema` and the
-   declarations. `server/lib/SchemaMigrator.ts` over `server/lib/migrate.ts`.
+In development, `pnpm generate:sql:reset` writes a file that drops and rebuilds every `gphone_`
+table against a database you don't mind losing — no migration to write.
 
-One command rather than two, because an operator thinks "bring my database up to date", not
-"apply the two kinds of change separately".
-
-**Migrations first is a correctness constraint, not a preference.** The additive planner compares
-the live table against the declaration, and the declaration already describes the shape the
-migration is about to produce. Run the additive pass first and a migration renaming `image` to
-`data` never gets its chance: the planner sees `data` declared, finds no such column live, adds an
-empty one, and the rename then dies on a duplicate column with the real data stranded under a name
-nothing reads. A failed migration aborts the command before the additive pass runs at all, for the
-same reason — a half-migrated table is the one shape the planner cannot reason about.
-
-**Versioned migration files, not a smarter planner.** A rename, a retype, a widened enum or a drop
-is not inferable from a diff: a renamed column is indistinguishable from one dropped and another
-added. The planner reports those as `drift` and never touches them, `defineService` stays purely
-declarative — it describes the schema's current shape and carries no history — and the history
-lives in `server/migrations/`, one file per breaking change. TypeScript rather than `.sql`, because
-`server/` is typechecked and because this codebase already moved away from hand-written per-app SQL
-files once (the old `sql/apps/`); a directory of hand-written SQL migrations would be a step back
-toward it. Forward-only: fixing a bad migration is a new migration, not a reversed old one, and a
-`down` for a narrowed varchar or a dropped column cannot be written honestly anyway.
-
-**MySQL DDL is not transactional, and neither half pretends otherwise.** `ALTER TABLE` and
-`RENAME TABLE` auto-commit in InnoDB regardless of any surrounding transaction, so a migration of
-three statements is not all-or-nothing the way a row-data transaction is. Both halves therefore
-**stop at the first failure** — retrying blind would re-run whatever already succeeded before it —
-and both return `{ applied, failed, remaining }` rather than rejecting, deliberately the same shape
-in `runMigrations` and `SchemaMigrator.apply()`. Throwing away the list of what already ran is not
-an option in the one command that changes a live database. A migration reaches the ledger only
-after its `up()` returns; a ledger write that fails _after_ a successful `up()` says exactly that,
-because it is the one failure where retrying without looking at the table first is unsafe.
-
-**A fresh install never runs inherited migrations.** `gphone.sql` declares every table in its final
-shape already, so a migration renaming a column would meet a table that never had the old name on
-this install. `pnpm generate:sql` scans `server/migrations/` and pre-seeds the ledger with every id
-that exists as of that generation, via `INSERT IGNORE` — the way Rails' `schema.rb` does. A new
-install's ledger reads "already applied" for all of history without ever calling `up()`, and only a
-database upgrading from an older `gphone.sql` has gaps for the runner to fill.
-
-**`apply` is console-only**, and the check is `source === 0` inside `runApply` itself rather than
-only at the command dispatch. That is the trust tier §1 already draws, and it is the one caller
-that can take a backup first, which an in-game admin typically cannot. `gphoneschema` with no
-subcommand still only reports, and so does the report at resource start: neither creates a table,
-the migrations ledger included. Worth stating because it was broken once — the boot report created
-the ledger, which is real DDL from a function whose docstring promised it applied nothing.
-
-The expected shape of a table comes from `expectedShape()` in `server/lib/schemaSql.ts`,
-which both the `CREATE TABLE` generator and the migration planner read. Do not restate a
-table's columns anywhere else: a fresh install and an upgraded one must not be able to
-disagree.
-
-**In development none of this is the fast path.** Against a database you do not mind losing,
-`pnpm generate:sql:reset` writes the file that drops every `gphone_` table and rebuilds the schema
-— one import, no migration to write and review.
-
-#### Writing a migration
-
-One file in `server/migrations/`, named `NNNN_snake_case_description.ts`, and **the filename is the
-id**. The directory is empty today — nothing has needed a breaking change since the runner shipped —
-so the example below is the one rename this codebase did make, `gphone_media.image` to `.data`, back
-when wipe-and-reimport was the only way to do it:
-
-```ts
-import { Database } from '../lib/Database';
-import type { Migration } from '../lib/migrations';
-
-export const migration: Migration = {
-  id: '0001_rename_media_image_to_data',
-  description: 'gphone_media.image becomes gphone_media.data',
-  up: async () => {
-    await Database.query(
-      'ALTER TABLE `gphone_media` CHANGE COLUMN `image` `data` mediumtext DEFAULT NULL',
-      []
-    );
-  }
-};
-```
-
-- The export is named `migration`, exactly. `scripts/generate-barrels.js` imports that name from
-  every file in the directory to build the ordered array in `index.ts`.
-- `id` must equal the filename stem — `server/__tests__/migrationsSeed.test.ts` fails otherwise —
-  and the number is apply order. Ids sort as strings, so keep the width.
-- **Re-run `pnpm generate:sql` after adding one.** Without it the ledger seed in `gphone.sql` does
-  not name the new migration, and every fresh install runs it against a table that never needed it.
-  Same test catches this.
-- `server/migrations/` holds migration files and the generated `index.ts`, nothing else. The barrel
-  imports `migration` from every `.ts` in there that is not `index.ts` or a `.test.ts`, so a helper
-  module parked beside them breaks the generated file.
-- `up` calls `Database.query` directly, the same convention as the rest of `server/lib`. It is not
-  reached by a repository: a migration is about the shape of a table, not about rows a player owns.
-- `Migration` comes in as `import type`. A value import of `server/lib/migrations.ts` would close a
-  runtime cycle — that module imports the barrel, which imports this file.
+Full detail — the two-pass ordering rationale, DDL non-transactionality, the ledger-seeding
+mechanism, a worked migration example — lives in
+[`docs/schema-and-services.md`](docs/schema-and-services.md).
 
 #### Event names
 
@@ -657,7 +487,7 @@ Two scopes are not apps:
   the word this codebase already uses for the layer that owns navigation, key dispatch, and
   anything above an individual app. Not `core`: `web/src/nui/` is the transport directory and
   every other use of "core" in the tree means QBCore / qbx_core — and `core` is now also a
-  manifest field (§11.1), which would make it the third meaning of one word.
+  manifest field (§11), which would make it the third meaning of one word.
 - **`admin`** — the privileged surface, grouped by who may call it rather than by subject.
 
 Names drifted before this was enforced. Fifteen events omitted the app segment and
@@ -714,7 +544,7 @@ per-app buffer on mount. Residency is a subscription-lifetime question, not a de
 
 **At-most-once, ordered within a session, best-effort across sessions.** Nothing is queued
 server-side: the row that occasioned the push is already written, so an offline player gets it
-from the ordinary fetch. §11.6 still applies — a push does not excuse `onAppForeground`, and the
+from the ordinary fetch. §11's `onAppForeground` rule still applies — a push does not excuse it, and the
 contract test enforces that for any app that subscribes. `push` returns a discriminated
 `PushOutcome` precisely so `offline` cannot be read as delivered.
 
@@ -760,11 +590,9 @@ Then, before saying it works:
 
 ## 10. Declaring a service
 
-A service is a named group of server actions, usually backed by a table. Most apps have one;
-some services (`shell`, `phone`) have no app, and some apps (Calculator) have no service.
-
-Declare it once instead of hand-writing a repository and an endpoint.
-`server/lib/defineService.ts` derives everything from one schema:
+A service is a named group of server actions backed by a table, declared once via
+`server/lib/defineService.ts` rather than hand-writing a repository and an endpoint. It derives
+the repository, the write allowlist (§2.9), the CRUD net events, and the DDL from one schema:
 
 ```ts
 export const notes = defineService<Note>({
@@ -779,508 +607,63 @@ export const notes = defineService<Note>({
 });
 ```
 
-**Why one declaration and not two lists.** The `columns` allowlist from §2.9 is only _safe_ if it
-matches the real table. Keeping `gphone.sql` and a hand-written `columns` array in sync by hand means
-a silent divergence breaks either security or writes. One schema drives both, plus the generated DDL.
+The rules that matter most when writing one:
 
-- `id, citizenid, status, created_at, updated_at` are **supplied by the framework**. Declaring any of
+- `id, citizenid, status, created_at, updated_at` are **supplied by the framework** — declaring
   them in `schema` is an error.
-- Declared fields are client-writable by default; opt out with `clientWritable: false`. Filtering is
-  opt-in via `clientFilterable: true`.
-- **`access` is two axes, not one.** It replaced a single `scope`, which conflated them — the thing
-  Conversations' own header had been complaining about: the row genuinely has an owner, and what is
-  shared is _visibility_. A table can need ownership-scoped writes and membership-scoped reads at the
-  same time, and one value could not say that. Defaults to `{ read: 'owner', write: 'owner' }`.
-  - **`read: 'owner'`** forces the caller's citizenid into the WHERE.
-  - **`read: 'public'`** drops the ownership predicate: any authenticated player reads every
-    active row. **It requires `paging`, and `defineService` throws without it** — which is the
-    highest-value rule in the file. `Repository.findAll` returns every matching row, and until
-    a public table existed the only thing bounding that was the citizenid predicate. A public
-    read has no per-player bound, so an unpaged one is the whole table.
-  - **`read: 'members'`** does not register the generic `get` at all. A membership read needs the
-    parent id, and the generic filter path has no way to require one — so the endpoint the old
-    `shared` scope left registered could only ever have answered by ownership.
-  - **`write: 'owner'`** scopes create/update/delete by the row's citizenid.
-  - **`write: 'server'`** means rows arrive from the server, never the phone's owner — mail from a
-    job, a dispatch, a bank alert. Nothing becomes client-writable and create/update are not
-    registered. Delete stays, because the row still belongs to exactly one citizenid.
-  - **`write: 'members'`** registers no generic mutation at all, for the same reason as the read.
-- **`access.editWindow` (seconds) time-boxes the ownership-scoped update.** For "fix a typo",
-  not "rewrite history". A predicate in the same `UPDATE` rather than a check before it, so
-  there is no gap between deciding and writing; both sides of the comparison are the database's
-  clock, so it is immune to server/client skew. **It never applies to `delete`** — removing your
-  own post stays possible forever, and the first version of this shared one code path and
-  silently made an expired post undeletable. Declaring it on anything but `write: 'owner'`
-  throws, since nothing else goes through the update it constrains.
-- **An owner cannot write over a `moderated` row.** The ownership-scoped update carries
-  `status != 'moderated'`. The row is already out of every read, so it is not a visibility hole
-  alone — but without it an author keeps rewriting a moderated post, and a moderator who later
-  reinstates it reinstates text nobody reviewed. Only `moderated`: excluding `deleted` would
-  make deleting an already-deleted row report failure, and excluding an app's own away-state
-  (Notes and Conversations both declare `archived`) would break editing a row merely put away.
-  `updateUnscoped` is exempt, because moderating and un-moderating are the writes that must
-  reach those rows.
-- **`ColumnDef.private: true` withholds a column from a public read's projection**, and
-  `citizenid` is withheld from every public projection automatically without being declared.
-  That is not hygiene: a public table returns rows the reader does not own, and once a player
-  can hold several accounts in one app, the owner's citizenid correlates two
-  deliberately-separate identities back to one person — which is the entire thing an alt
-  account exists to prevent. Enforced in the `SELECT`, not by dropping keys from the returned
-  rows, so a `repositoryFactory` override cannot re-add a column the query never named. A
-  client establishes "this is mine" from ids it already holds; the server authorizes writes
-  from the session regardless.
-- **`paging` is keyset, on `id DESC`, and the order is not configurable.** Four reasons, and
-  they all come from `id` being the primary key: in InnoDB it _is_ the clustered index, so the
-  scan needs no sort step; every primary table already emits `KEY status (status)` and InnoDB
-  appends the PK to every secondary index, so that key is physically `(status, id)` and the feed
-  query is a plain range scan on something already shipped; the cursor is one column and needs no
-  tie-break, where a `created_at` cursor needs `(created_at < ? OR (created_at = ? AND id < ?))`
-  because the column is second-resolution and the naive form silently drops a row at every page
-  boundary; and `id` never changes, so editing a row cannot reorder a feed under a reader.
-  Not offset paging either — a feed takes inserts at the head, so `OFFSET N` skips and duplicates
-  across pages, and nothing in the phone has a jump-to-page control to pay for that with.
-  - Wire shape is a payload concern, so `get` stays `get` and `shared/routes.ts` needs nothing:
-    `{ cursor?, limit? }` in, `{ rows, nextCursor }` out. `nextCursor: null` means the end, and
-    a client must be able to tell that from "ask again" or the scroll never terminates.
-  - The cursor is a **bare row id**, validated by `requirePositiveInt`. It needs no signing — it
-    names a position in a result set the caller is already authorized to read — but it must never
-    name a _column_: the sort column comes from the declaration, and a payload offering one is
-    ignored rather than honored.
-  - An over-large `limit` is clamped to `maxPageSize` rather than rejected. The request is
-    legitimate; only the number is not.
-  - **A custom action pages itself, so it clamps itself** — `ServiceEndpoint` only wraps the generic
-    `get`. Use `pageBounds(data, service.resolved.paging)` from `server/lib/payload.ts` rather than
-    writing the four lines again, and pass the resolved declaration rather than retyping the numbers:
-    that is what stops a change to a `paging` block from silently missing that service's own actions.
-    `id DESC` still, and the cursor is still the row id of whichever table the query walks — for a
-    join that is the **driving** table, not the one being joined on. Blabber's `profile` and
-    `following` and the accounts service's `followers` and `following` are the four worked examples.
-- **`access.membership` declares how membership is decided, as data.** Never a SQL fragment: §2.9's
-  identifier allowlist has to extend across the join, and a caller-supplied `where` is the exact hole
-  it exists to close. `{ table, foreignKey, localKey?, citizenColumn?, liveWhileNull? }` derives the
-  inherited `Repository.isMember`, which is what a custom action calls.
-  - `localKey` is what makes it general rather than a Conversations special case. A conversation's
-    membership is keyed on its own `id`; a _message_'s on its `conversation_id`. Same join table,
-    different local column — without it, Messages was inexpressible.
-  - Declaring `membership` with neither axis set to `members` is **allowed**, and Conversations is
-    why: its generic writes really are owner-scoped, while `read`/`archive`/`delete` are custom
-    actions that check participation. Rejecting that would push it back to a hand-written predicate.
-  - `liveWhileNull: 'left_at'` is the liveness rule. It used to be re-typed into every participants
-    query by hand; omitting it means a player who left a thread can still act on it.
-- `indexes` takes full ordered column lists, either bare (`['citizenid', 'status']`, named by joining)
-  or explicit (`{ name: 'citizenid_status_updated', columns: [...] }`). Prefer explicit: the derived
-  name is what appears in EXPLAIN output, and MySQL caps index names at 64 characters. A name that
-  collides with one the primary table already emits (`status`, `citizenid_status`) is rejected at
-  declaration time — it would otherwise be MySQL error 1061 at apply time.
-- `default` on a field emits a SQL default. Set it when migrating an existing table —
-  `favorite tinyint(1) DEFAULT 0` behaves differently from `DEFAULT NULL` once anything aggregates.
-- **`table` overrides the table name; the default is `gphone_<id>`.** Two apps may not declare the
-  same table, and the check is on the resolved name rather than the id.
-- **`options` passes through to `ServiceEndpoint` to turn a generic action off** —
-  `{ disableGet, disableCreate, disableUpdate, disableDelete }`. Reach for it when the generic
-  shape is not merely incomplete but wrong: Blabber disables `create` because a post has to prove
-  the account it claims belongs to the caller, and Blabber DMs additionally disables `update`
-  because a sent message is not editable, so there is nothing for it to do. Some of these are set
-  for you — `read: 'members'` implies `disableGet`, `write: 'server'` implies no create or update
-  (§10 above) — and declaring one that is already implied is harmless.
-- **An index may be `unique: true`.** Either form takes it: `{ name, columns, unique: true }`.
-  It is a constraint, not an optimisation, and it is the right tool where the alternative is
-  find-then-insert with a race two rapid taps will find — Blabber's one-mouth-per-account and one
-  like per account per post are both enforced this way, and both translate the driver's duplicate
-  error into something a player can read. A unique index over a nullable column constrains only
-  the non-null rows, which is what makes `(account_id, mouth_of)` safe on a table where ordinary
-  posts have no `mouth_of` at all.
-- Per-column `index: true` is shorthand for an index paired with `citizenid`. Right for an
-  owner-scoped table, dead weight on a public one that never filters by owner — declare those
-  explicitly instead.
-- The generic filter now understands null: `{ reply_to: null }` emits `IS NULL`. There is still no
-  equality meaning "has a parent", which is why Blabber's profile tabs are a custom action.
+- `access` is two independent axes, `read` and `write`, each `'owner'` (default), `'public'`, or
+  `'members'` (`'server'` also valid for `write`). **`read: 'public'` requires `paging`** —
+  `defineService` throws without it, since an unpaged public read returns the whole table.
+  `'members'`/`'public'` reads register no generic `get`; membership needs
+  `access.membership: { table, foreignKey, localKey?, citizenColumn?, liveWhileNull? }`, which
+  derives `Repository.isMember`.
+- `access.editWindow` (seconds) time-boxes an ownership-scoped update only — never `delete`.
+- `ColumnDef.private: true` withholds a column from a public read's projection; `citizenid` is
+  withheld automatically from every public projection.
+- `paging` is always keyset on `id DESC` (never offset, never configurable) — `{ cursor?, limit?
+  }` in, `{ rows, nextCursor }` out, `nextCursor: null` meaning end-of-list.
+- `childTables` declares join/attachment tables (DDL-only, no repository or events derived) —
+  declare every column explicitly.
+- `repositoryFactory` lets you subclass `SchemaRepository` for custom read behavior without
+  losing the identifier allowlist or ownership scoping.
+- `table` overrides the default `gphone_<id>` table name; `options` (`disableGet`,
+  `disableCreate`, etc.) turns off a generic action the declared shape doesn't fit.
 
-### Identity: one accounts table, shared
-
-`gphone_accounts` (`server/services/Accounts.ts`) is the identity every social app posts under — a
-handle, a display name, an avatar, a bio — with `app` as a column rather than one table per app,
-because those fields do not differ between a Twitter-alike and an Instagram-alike. An app-specific
-_presentation_ field, if one ever genuinely exists, goes in its own table keyed on `account_id`.
-
-Two consequences worth knowing before building on it:
-
-- **A player may hold several accounts per app**, so nothing keyed on identity here is
-  one-per-citizenid. `citizenid` stays the ownership anchor and never leaves the server; the
-  display identity is `account_id`. This is the concrete reason `private`/`publicColumns` exists
-  above — a public read that carried the citizenid would correlate two deliberately-separate
-  identities back to one person.
-- **A payload naming an account is not proof of owning it.** `ownedAccount(id, citizenid, app)` is
-  the check, and every action that writes as an account calls it first (§2.9). Without it a player
-  posts under anyone's handle by guessing an id.
-- **But a _read_ about an account is usually nobody's to own.** `followers` and `following` have no
-  ownership check on purpose: requiring one would mean you could only see your own followers, which
-  is not what the count on a stranger's profile is counting. What has to hold instead is the
-  projection — `publicColumns`, so `citizenid` is withheld. A follower list is the single screen that
-  would otherwise correlate every alt in the graph back to one person, so the rule to carry over from
-  a write is "check the projection", not "check the owner".
-
-`handle` is `clientWritable: false` and claimed once: renaming it would silently break every
-mention of it, and there is nothing to un-break it with.
-
-### Blabber is the worked example of a public read
-
-`server/services/Blabber.ts` is the first table in this codebase whose rows are readable by players
-who do not own them, so it is the first real consumer of nearly everything in this section:
-`read: 'public'` with mandatory keyset paging, `access.editWindow`, `publicColumns` withholding
-`citizenid`, and the accounts table above. Read it before writing another public service — the
-comments there record which decisions were forced and which were free.
-
-A reply and a **mouth** (a repeat; with a body, a quote) are both self-references on the same
-table rather than tables of their own, because a reply is a Blab and a mouth is a Blab: they
-inherit the feed, the paging, the edit window and the moderation predicate instead of duplicating
-them. Counts are read in one batched `engagement` action rather than three per row, and are
-deliberately **not** denormalised onto the Blab row — a `like_count` column is a second copy of a
-fact the likes table already holds, and it drifts the first time a like is removed by a path that
-forgets to decrement.
-
-`server/services/BlabberDms.ts` is one-to-one **by construction**: two account columns and no
-participants table, so there is no shape a third person could be added to. Contrast Conversations,
-which needs a join table precisely because a thread there can grow, and pays for it with `left_at`,
-roles, and a membership predicate in every query. Reach for `access.membership` when a thread can
-grow; reach for two columns when it cannot.
-
-### Apps that own more than one table
-
-The primary `schema` describes a table in the standard gPhone shape: `id`, `citizenid`, `status`,
-`created_at`, `updated_at` supplied by the framework. Join and attachment tables do not fit that —
-`gphone_messages_participants` carries `role`, its own status enum and two nullable timestamps;
-`gphone_messages_attachments` carries neither `status` nor timestamps. Declare them as `childTables`:
-
-```ts
-childTables: [
-  {
-    name: 'gphone_messages_attachments',
-    columns: {
-      message_id: {
-        type: 'int',
-        notNull: true,
-        references: { table: 'gphone_messages', column: 'id' }
-      },
-      photo_id: { type: 'int', notNull: true, references: { table: 'gphone_media', column: 'id' } }
-    },
-    indexes: [['message_id']]
-  }
-];
-```
-
-- **DDL-only.** No repository is derived and no events are registered — a child table is reached
-  through named methods on the primary repository. Its point is that `pnpm generate:sql` emits a
-  **complete** schema; without it the generated file looks authoritative while leaving dangling
-  foreign keys, which is worse than no file.
-- **Nothing is implicit.** Declare every column. `autoIncrementId: false` drops even the `id`.
-- Child tables are emitted after the primary table so foreign keys resolve.
-
-Use the full column vocabulary when mirroring an existing table, or the generated DDL is quietly
-weaker than the real one: `type: 'enum'` with `values` (a varchar stand-in drops the database-level
-constraint), `defaultNow` and `onUpdateNow` for timestamps (omitting `onUpdateNow` on an `updated_at`
-produces a column that never moves), and `references` for any FK that is not `citizenid`.
-
-### When an app needs custom repository behavior
-
-`repositoryFactory` receives the resolved schema; subclass the exported `SchemaRepository` so the
-result still inherits the identifier allowlist and the ownership scoping. Overriding a read is
-additive — it is not a way around §2.9, and there are tests asserting that.
-
-```ts
-repositoryFactory: (resolved) =>
-  new (class extends SchemaRepository<Photo> {
-    async findAll(where: Partial<Photo> = {}) {
-      return (await super.findAll(where)).map(coerceImage);
-    }
-  })(resolved);
-```
-
-Media uses this because `image` can come back as a Buffer depending on driver and column type, which
-would cross NUI as `{type:'Buffer',data:[...]}` and render as nothing.
-
-### Generating `gphone.sql`
-
-**`gphone.sql` is generated in full and must not be hand-edited.** It holds the framework half — the
-audit ledger, which has no owning module and does not fit the app-table shape, and which lives in
-`scripts/framework-schema.sql` — followed by every app table in dependency order. Editing the output
-reintroduces exactly the drift the generator removes, and a stale copy silently breaks the `columns`
-allowlist's safety property (§2.9): that allowlist is only sound while it matches the real table.
-
-It used to be `gphone.sql` plus one numbered file per service in `sql/apps/`, imported in filename
-order because foreign keys cross app boundaries. That worked and cost three things: a rule every
-server owner had to be told, a numeric prefix that renumbered existing files whenever an app was
-added, and two places to look for one schema. One file in the order the generator already computed
-removes all three.
-
-#### The dev reset
-
-`pnpm generate:sql:reset` additionally writes `sql/dev-reset.sql`: a single file that **drops every
-`gphone_`-prefixed table in the schema it is run against** — audit ledger included — then recreates the
-whole schema. Development only.
-
-- It discovers tables at apply time from `information_schema` rather than listing the declared ones,
-  because the point is to clear orphans left by a renamed or deleted declaration.
-- Scoped by `table_schema = DATABASE()`, so it cannot reach another schema, and it no-ops if no
-  database is selected.
-- **Gitignored on purpose.** A committed "wipe everything" file is a footgun for anyone who clones the
-  repo. Regenerate it when you need it.
-- Never emitted by plain `pnpm generate:sql` — the flag is required.
-- Nothing in this repo connects to a database. Apply the file yourself in a DB client; it uses
-  `PREPARE`/`EXECUTE`, so it will not run through oxmysql.
-
-`pnpm generate:sql` writes `gphone.sql`, which is **committed and imported by hand**. No app table
-is ever created at runtime: `CREATE TABLE IF NOT EXISTS` silently does nothing against an existing
-table, so a schema change applied that way would be a no-op with no error — the same silent-failure
-shape as a missing NUI layer (§8). Regenerate and review the diff.
-
-What a running server _can_ do is bring an existing table up to date, and only when an operator asks
-it to by name: `gphoneschema apply` runs the versioned migrations and then the additive plan (§8).
-Its one `CREATE TABLE IF NOT EXISTS` is the `gphone_schema_migrations` ledger, which is exempt from
-the objection above because it has a single fixed shape and will never gain a column — "already
-there" really is nothing to do, rather than a change quietly skipped.
-
-**The numeric prefix is apply order, and alphabetical would be wrong.** Foreign keys cross app
-boundaries — `gphone_messages_attachments` references `gphone_media`, and `messages` sorts before
-`photos`; `gphone_blabber` references `gphone_accounts`. `orderAppsByDependency` in
-`scripts/generate-sql.js` topologically sorts the declared services and numbers the files, so
-globbing the directory or importing it in name order is correct by default rather than correct if
-you happen to read the DDL first. Targets nothing owns (`players`) are external and do not
-constrain the order. The prefix is positional, so **adding an app can renumber existing files** —
-that is a real diff, not a spurious one, and stale output is deleted rather than left to orphan.
-
-Every gPhone-owned table is now declared. `server/repositories/` holds `SchemaRepository` subclasses
-for the two apps with multi-table queries — the declaration owns the schema, the subclass owns the
-joins the single-table generic path cannot express.
-
-### Never read another resource's tables
-
-Some data gPhone displays belongs to a different resource — bank transactions to the banking script,
-character data to the core. **Go through that resource's exports, behind a `*Bridge` in `server/lib/`.**
-Querying their tables directly couples gPhone to a schema it does not own, breaks on their migrations,
-and can read stale data: Renewed-Banking keeps transactions in an in-memory cache that
-`player_transactions` lags behind, so the export is both correct and fresher than the table.
-
-A bridge's other job is to **normalize**, because these resources disagree in ways that fail silently.
-Renewed stores `amount` as a positive magnitude with the direction in `trans_type`; anything inferring
-direction from a negative amount renders every withdrawal as a credit. Normalize onto the
-`shared/types.ts` shape at the boundary, keep the pure mapping in an exported function so it is
-testable without a running server, and make the mock emit the same normalized shape — otherwise `pnpm
-dev` disagrees with production and hides the bug (§8).
-
-Such an app has **no table and no declaration**: pass `null` as the repository to `ServiceEndpoint` and
-disable every generic CRUD action. `Bank` is the worked example.
+Full detail — every field, the accounts/identity model shared social apps build on, Blabber as
+the worked public-read example, and the `gphone.sql` generation/dev-reset mechanics — lives in
+[`docs/schema-and-services.md`](docs/schema-and-services.md). Read it before declaring a
+`read: 'public'` or `access.membership` service for the first time.
 
 ---
 
 ## 11. Adding an app
 
-The shortest path, and the order that catches mistakes soonest. Notes is the smallest complete
-example to copy from; Bank is the example with no table.
+The full walkthrough — directory scaffold, manifest fields, the service/route/store/mock layers,
+`core: true` vs `false`, wiring rules (`onAppForeground`, `useAppLevels`, `useAppAction`,
+`useDeepLink`, `usePagedList`), and the pre-verify checklist — lives in
+[`docs/writing-an-app.md`](docs/writing-an-app.md). Notes is the smallest complete example to
+copy from; Bank is the example with no table.
 
-### 1. The app directory
+The shortest version: `pnpm new:app <id>` (or `--service` to scaffold the data half too) writes
+`web/src/apps/<id>/` — `manifest.ts`, `index.svelte`, `Icon.svelte`. Nothing else registers it;
+`shell/state/registry.ts` discovers apps via `import.meta.glob`. The id is lowercase and a
+**key** — directory name, storage namespace, event segment, keybind claim, deep-link — so
+renaming it later is a data migration.
 
-`pnpm new:app <id>` writes it, or `pnpm new:app <id> --service` writes the data half too and
-prints the `routes.ts` and mock-registry entries to paste. Everything below is what it generates
-and why — worth reading once, then let the generator do it.
+Three things worth knowing before you open the doc:
 
-`web/src/apps/<id>/`, with three files. The id is lowercase, matches the manifest, and becomes the
-`<service>` segment of every event the app's service uses.
+- **`core` is required** and has teeth: `true` ships with the phone and can't be uninstalled;
+  `false` is a Store add-on. Read `manifest.core` and nothing else — never infer it.
+- **A NUI round trip touches three files** and fails silently if one is missing: `web/`
+  (`fetchNui`), `shared/routes.ts` (a `route()` entry — **core apps only**; an add-on goes
+  through the generic `useService(id).call(...)` instead and needs no row here), and
+  `server/services/` (`registerEvent` or generic CRUD). `server/__tests__/routes.test.ts`
+  cross-references all three plus the browser mock.
+- **Load with `onAppForeground`, never `onMount`/`$effect`.** Apps are resident and mount once
+  per session, so anything fetched in `onMount` goes stale the moment the app backgrounds. The
+  one exception is a manifest `preload`, required if the app ships a `badgeStore`
+  (`sdk/appContract.test.ts` enforces the pairing) — a badge has to be right before the launcher
+  paints, which is before the app has ever been opened.
 
-```
-web/src/apps/journal/
-├── manifest.ts     defineApp({ id: 'journal', ... })  — name is derived from the id
-├── index.svelte    the app itself; receives `onback`
-└── Icon.svelte     32x32, sized `h-8 w-8` like every other icon
-```
-
-Nothing registers these. `shell/state/registry.ts` discovers them with `import.meta.glob`, so
-creating the directory is the whole installation step.
-
-**Name it for the launcher.** The display name is derived from the id — `journal` becomes
-"Journal", `crypto_tracker` becomes "Crypto Tracker" — so the id is what has to read well. Pass
-`name` explicitly only when the id cannot express it ("GPS"). Anything past about eight characters
-truncates under the icon; "Administration" became "Admin" for exactly this reason.
-
-The id is a key rather than a label: the directory, the `gphone:<id>:` storage namespace, the
-`<app>` event segment, the keybind claim and the `?app=` deep link all use it, so renaming one is a
-data migration. `defineApp` lowercases it and warns, because an id with a capital in it used to
-produce a launcher icon whose tap rendered nothing at all.
-
-**`core` is required, and it is the one field with teeth.** `core: true` ships with the phone and
-cannot be uninstalled; `core: false` is an add-on — kept out of the launcher, offered by the Store,
-removable. `defineApp` throws if it is absent, deliberately: it used to be `isSystem`, defaulted
-from `author`, so a **display string** decided whether an app could be removed and naming yourself
-`'gPhone'` was enough to make one permanent. The derivation was also circular, and the Store grew a
-second, subtly different copy of it — so the registry and the uninstall button could disagree, and
-the button threw. Read `manifest.core` and nothing else. A remote app is never core: `defineApp`
-forces `false` when `isRemote` is set and throws on an explicit `core: true` beside it.
-
-Blabber is the first app that is genuinely `core: false` — the add-on path's first real consumer,
-and the Store's first genuine listing rather than a manifest with nothing behind it. The Store's
-catalog must never again carry an installable manifest with no code behind it: an unbuilt app
-belongs in a document, because an idea recorded in prose is honest and the same idea rendered as an
-Install button is not.
-
-**A `badgeStore` requires a `preload`, and `sdk/appContract.test.ts` enforces the pair.** A badge
-count has to be right _before_ the launcher paints, and `onAppForeground` is too late by
-definition — it does not run until the app is opened, so an unread count fed only from there reads
-zero until you visit the thing it was supposed to tell you about. `preload` is the one sanctioned
-exception to §11.6's fetch rule. Feed the store itself from a **module-scope** subscription, not a
-component one (§8): a subscription inside a component lives as long as the component, and a badge
-whose feed dies when the app closes is a badge that stops counting.
-
-A human-facing version of this section lives in [`docs/writing-an-app.md`](docs/writing-an-app.md).
-It links back here rather than repeating it; keep it that way.
-
-### 2. The service, if it needs one
-
-One declaration in `server/services/<Name>.ts` (§10). Repository, write allowlist, CRUD events and
-DDL are all derived from it. Then `pnpm generate:sql` and apply the file.
-
-An app with no gPhone-owned table skips this entirely — Calculator has no service at all, and Bank
-has a service with `null` for its repository because the data belongs to another resource.
-
-### 3. The route
-
-Every **named** NUI action needs a `route()` entry in `shared/routes.ts`. `client/services/Relay.ts`
-registers all of them, so there is no per-app client file to write.
-
-**An add-on needs no row here, and cannot add one.** `shared/routes.ts` ships inside gPhone, so a
-`core: false` app reaches its service through the one generic route instead —
-`useService(id).call(action, data)`, relayed by the single `svc` callback to
-`gphone:server:<id>:<action>`. Notes and Blabber are the two worked examples and neither appears in
-the table. Reach for a named route only when the app is `core: true`.
-
-This is the layer that goes missing. `readConversation`, `renameConversation`,
-`archiveConversation`, `rejectCall`, `flipCamera` and all four mail actions have each shipped as a
-silent no-op. `server/__tests__/routes.test.ts` cross-references the table against the `fetchNui`
-calls in `web/`, the events the server registers, and the browser mock — a missing layer fails there
-rather than in game.
-
-### 4. The store
-
-A list the server owns is one `createCrudStore` declaration. **Where it goes depends on whether the
-app is `core: true`.**
-
-A core app puts it in `web/src/services/<name>.ts` and names its NUI routes:
-
-```ts
-export const contacts = createCrudStore<Contact, Omit<Contact, 'id' | 'citizenid'>>(
-  'Contacts',
-  {
-    list: 'getContacts',
-    create: 'createContact',
-    update: 'updateContact',
-    remove: 'deleteContact'
-  },
-  { sort: byNewest<Contact>('updated_at') }
-);
-```
-
-An **add-on** puts it in its own directory and passes `service`, so `events` become _server_ action
-names and no row in `shared/routes.ts` is needed — see `web/src/apps/notes/store.ts`:
-
-```ts
-const build = () =>
-  createCrudStore<Note, Omit<Note, 'id' | 'citizenid'>>(
-    'Notes',
-    { list: 'get', create: 'create', update: 'update', remove: 'delete' },
-    { service: 'notes', sort: byNewest<Note>('updated_at') }
-  );
-```
-
-That split is not stylistic. `shared/routes.ts` and `web/src/services/` both ship inside gPhone, so
-an app installed from the Store cannot add to either — the generic route is the only path open to
-it, and `sdk/coreBoundary.test.ts` measures how much of each `core: false` app still depends on
-being first-party.
-
-**Build the store on first use, not at module scope.** The `build()` indirection above is the point
-of the example. `createCrudStore(...)` at the top level runs whenever anything imports the file, and
-if that happens while the `@gphone/sdk` barrel is still initialising, the imports come back
-`undefined` — the symptom is `byNewest is not a function`, from a line that plainly imports it.
-`lazyBadge` exists for the same reason, and a manifest is the usual trigger, since the registry globs
-every manifest eagerly. A manifest that needs the store should `import('./store')` inside `preload`
-rather than at the top.
-
-`sort` is what keeps one order however the list changed — the hand-written stores disagreed about
-append vs prepend and sorted on load but not after a write. `validate` refuses a write before it
-leaves the phone. Anything that is not list/create/update/delete stays a named method on the store,
-as Mail's `archive` does; do not stretch the factory to cover it.
-
-**A paged read gets `createPagedStore` instead** (`web/src/services/createPagedStore.ts`), which
-holds the keyset cursor and knows that `nextCursor: null` is the end rather than "ask again". Pair
-it with `usePagedList`'s `loadOlder` in the app. Do not page a `createCrudStore`: that factory
-fetches a whole list and re-sorts it, which is the opposite of a cursor walking backwards through
-one, and §10's whole reason for keyset paging is that a feed takes inserts at the head.
-
-It takes the same `service` option, so an add-on's paged feed goes through the generic route too —
-Blabber's `feed` and `followingFeed` are the worked examples. Deliberately the same word in both
-factories: an app should not have to learn two ways to say the same thing depending on whether its
-list is paged.
-
-Then expose it through a hook. **A core app's goes in `web/src/sdk/hooks/`; an add-on exports its
-own from its own directory**, beside the store, because `sdk/hooks/` ships inside gPhone and an app
-installed from the Store cannot add to it — `apps/notes/store.ts` exports `useNotes` and
-`apps/blabber/store.ts` exports `useBlabber`. Either way the store itself is never reached by path
-from another app; the hook is the only handle.
-
-### 5. The browser mock
-
-Add it to `web/src/nui/mocks/registry.ts`. Without a mock the app is dead in `pnpm dev` and in
-Playwright, and — worse — a mock that returns plausible data while doing nothing makes an e2e test
-pass with the feature broken.
-
-`defineMockCrud(fixtures, events, options)` covers the CRUD half and mutates the fixtures for you,
-which is the part that kept being forgotten: a created note used to vanish on reload while photos
-and mail behaved. Say whether the server deletes `'hard'` or `'soft'` — matching it matters, because
-a mock that disagrees with the server is a bug you cannot see in the browser.
-
-### 6. Wiring inside the app
-
-- Import from `@gphone/sdk`. Nothing else. `sdk/boundary.test.ts` enforces it.
-- Data comes from a hook (`useNotes`, `useContacts`, …), never from `services/` by path.
-- Load with `onAppForeground`, never `onMount` and never an `$effect`. Apps are resident, so mount
-  runs once per session and an app whose data changed while it sat in the background would show
-  the old answer for the rest of the session; an `$effect` that reads `$state` becomes a refetch
-  loop. Every app that fetches uses `onAppForeground` — there is no second rule to weigh, and a
-  push channel does not exempt one, because a push only covers what arrives while you are looking.
-  `onAppMount` and `onAppUnmount` remain for setup and teardown that is not a fetch. The single
-  exception is a manifest `preload`, which exists because a launcher badge has to be right before
-  the app is ever opened (§11.1).
-- Show `Skeleton` until the store's `loaded` says the first fetch has come back, and only then the
-  `EmptyState`. An empty list is not the same statement as "you have nothing"; every list in the
-  phone used to make the second one while still waiting for the first.
-- Declare internal levels with `useAppLevels`, deepest first, and pass your `appId`. That one call
-  supplies `onback`, the header title, **and** the `back` keybind — the shell owns Backspace and
-  pre-empts a ladder that was written but never registered, which is how Notes and Contacts both
-  shipped sending the player home from a detail view. `appId` is required because the claim outlives
-  the app being on screen (§2.7); without it Back reaches whichever app registered last.
-- Wrap a user-initiated write in `useAppAction`'s `run`, which gives you the busy flag, the success
-  toast and the error toast together. Written by hand they come apart: Contacts' delete had neither
-  toast, so a refused delete looked exactly like a real one.
-- Act on deep-link props with `useDeepLink`. Return `false` while the data it names has not arrived
-  and it will ask again; returning `true` consumes the props, which is what makes back work.
-- Filter a list with `filterByQuery`, and use the shared primitives — `SegmentedControl` for tabs,
-  `ToggleSwitch` for a setting, `Skeleton` while a fetch is in flight.
-- Page a long list with `usePagedList`. Set `olderAt: 'start'` for a chat, where older rows are
-  above and revealing them must not move the reader, and `'end'` for a feed, where they are below
-  and it cannot. Use its `offset` for anything positional — a divider, a highlight — because the
-  index inside the window is not the index in the list.
-- Give the empty state an `<EmptyState>`, and do not show it until the fetch has returned. A list
-  that is merely still loading is not a list with nothing in it.
-
-### 7. Before you call it done
-
-`pnpm verify`. It runs format, typecheck, unit, e2e, build and the dead-code scan in that order —
-cheapest first, stopping at the first failure — and prints a per-gate summary. CI runs the same
-command, so the two cannot drift.
-
-`--quick` skips e2e and build for a tight edit loop. Do not finish on it: `build` and `e2e` are the
-only steps that catch a broken import inside a `.svelte` file or a stale mock.
-
-**Keep `pnpm dev` running while you work.** Playwright reuses a server that is already up; when it
-has to start its own, the suite takes about two and a half minutes instead of twenty-seven seconds.
-`pnpm verify` starts one for you and shuts it down after.
-
-Then run it in game. A green suite is not evidence a NUI feature works (§8).
+`pnpm verify` (format → typecheck → unit → e2e → build → dead-code) before calling it done; see
+§9. Then run it in game — a green suite is not evidence a NUI feature works (§6, §8).

@@ -1,8 +1,8 @@
 # Writing a gPhone app
 
-The five-minute version. [`AGENTS.md` §11](../AGENTS.md) is the long one and stays the
-authority — this links into it rather than repeating it, because two copies of the same
-instructions drift and only one of them gets updated.
+The five-minute version, followed by the rest of what "adding an app" involves.
+[`AGENTS.md`](../AGENTS.md) keeps only the rules that apply every session; this is the
+authority for everything else about building one, so it doesn't get re-read on every turn.
 
 ## Start it
 
@@ -169,12 +169,119 @@ your app silently never fetches — and supplies `onback` as a spy. It cannot mo
 `fetchNui` for you (`vi.mock` is hoisted to the top of the test file) or reset your
 module-scoped stores between tests.
 
+## `core: true` vs `core: false`, and why it forks almost everything below
+
+`core: true` ships with the phone and cannot be uninstalled; `core: false` is an add-on — kept
+out of the launcher, offered by the Store, removable. `defineApp` throws if `core` is absent,
+deliberately: it used to be `isSystem`, defaulted from `author`, so a **display string** decided
+whether an app could be removed, and naming yourself `'gPhone'` was enough to make one permanent.
+The derivation was also circular, and the Store grew a second, subtly different copy of it — so
+the registry and the uninstall button could disagree, and the button threw. Read `manifest.core`
+and nothing else. A remote app is never core: `defineApp` forces `false` when `isRemote` is set
+and throws on an explicit `core: true` beside it.
+
+Blabber is the first app that is genuinely `core: false` — the add-on path's first real consumer,
+and the Store's first genuine listing rather than a manifest with nothing behind it. The Store's
+catalog must never again carry an installable manifest with no code behind it: an unbuilt app
+belongs in a document, because an idea recorded in prose is honest and the same idea rendered as
+an Install button is not.
+
+The fork shows up in three places:
+
+**The route.** Every **named** NUI action needs a `route()` entry in `shared/routes.ts`.
+`client/services/Relay.ts` registers all of them, so there is no per-app client file to write.
+**An add-on needs no row here, and cannot add one** — `shared/routes.ts` ships inside gPhone, so
+a `core: false` app reaches its service through the one generic route instead —
+`useService(id).call(action, data)`, relayed by the single `svc` callback to
+`gphone:server:<id>:<action>`. Notes and Blabber are the two worked examples and neither appears
+in the table. Reach for a named route only when the app is `core: true`.
+
+This is the layer that goes missing most often. `readConversation`, `renameConversation`,
+`archiveConversation`, `rejectCall`, `flipCamera` and all four mail actions have each shipped as
+a silent no-op. `server/__tests__/routes.test.ts` cross-references the table against the
+`fetchNui` calls in `web/`, the events the server registers, and the browser mock — a missing
+layer fails there rather than in game.
+
+**The store.** A core app puts its `createCrudStore` in `web/src/services/<name>.ts` and names
+its NUI routes (`list: 'getContacts'`, etc.). An add-on puts it in its own directory and passes
+`service` instead, so `events` become _server_ action names and no row in `shared/routes.ts` is
+needed — see `web/src/apps/notes/store.ts` (the example under "If your app has a server half"
+above). That split is not stylistic: `shared/routes.ts` and `web/src/services/` both ship inside
+gPhone, so an app installed from the Store cannot add to either. `sdk/coreBoundary.test.ts`
+measures how much of each `core: false` app still depends on being first-party.
+
+A paged read gets `createPagedStore` (`web/src/services/createPagedStore.ts`) instead of
+`createCrudStore` — it holds the keyset cursor and knows `nextCursor: null` is the end rather than
+"ask again". Pair it with `usePagedList`'s `loadOlder`. Do not page a `createCrudStore`: that
+factory fetches a whole list and re-sorts it, which is the opposite of a cursor walking backwards
+through one. It takes the same `service` option, so an add-on's paged feed goes through the
+generic route too — Blabber's `feed` and `followingFeed` are the worked examples.
+
+**The hook.** A core app's hook goes in `web/src/sdk/hooks/`; an add-on exports its own from its
+own directory, beside the store, because `sdk/hooks/` ships inside gPhone — `apps/notes/store.ts`
+exports `useNotes`, `apps/blabber/store.ts` exports `useBlabber`. Either way the store itself is
+never reached by path from another app; the hook is the only handle.
+
+## More wiring rules inside the app
+
+- `sort` on `createCrudStore` is what keeps one order however the list changed — the hand-written
+  stores this replaced disagreed about append vs. prepend and sorted on load but not after a
+  write. `validate` refuses a write before it leaves the phone. Anything that is not
+  list/create/update/delete stays a named method on the store, as Mail's `archive` does; do not
+  stretch the factory to cover it.
+- Wrap a user-initiated write in `useAppAction`'s `run`, which gives you the busy flag, the
+  success toast and the error toast together. Written by hand they come apart: Contacts' delete
+  once had neither toast, so a refused delete looked exactly like a real one.
+- Act on deep-link props with `useDeepLink`. Return `false` while the data it names has not
+  arrived and it will ask again; returning `true` consumes the props, which is what makes back
+  work.
+- Declare internal levels with `useAppLevels`, deepest first, and pass your `appId`. That one
+  call supplies `onback`, the header title, **and** the `back` keybind — the shell owns Backspace
+  and pre-empts a ladder that was written but never registered, which is how Notes and Contacts
+  both shipped sending the player home from a detail view. `appId` is required because the claim
+  outlives the app being on screen (AGENTS.md §2); without it Back reaches whichever app
+  registered last.
+- Filter a list with `filterByQuery`, and use the shared primitives — `SegmentedControl` for
+  tabs, `ToggleSwitch` for a setting, `Skeleton` while a fetch is in flight.
+- Page a long list with `usePagedList`. Set `olderAt: 'start'` for a chat, where older rows are
+  above and revealing them must not move the reader, and `'end'` for a feed, where they are below
+  and it cannot. Use its `offset` for anything positional — a divider, a highlight — because the
+  index inside the window is not the index in the list.
+- Show `Skeleton` until the store's `loaded` says the first fetch has come back, and only then
+  the `EmptyState`. An empty list is not the same statement as "you have nothing"; every list in
+  the phone used to make the second one while still waiting for the first.
+
+## The browser mock
+
+Add your app's fixtures to `web/src/nui/mocks/registry.ts`. Without a mock the app is dead in
+`pnpm dev` and in Playwright, and — worse — a mock that returns plausible data while doing
+nothing makes an e2e test pass with the feature broken.
+
+`defineMockCrud(fixtures, events, options)` covers the CRUD half and mutates the fixtures for
+you, which is the part that kept being forgotten: a created note used to vanish on reload while
+photos and mail behaved. Say whether the server deletes `'hard'` or `'soft'` — matching it
+matters, because a mock that disagrees with the server is a bug you cannot see in the browser.
+
+## Before you call it done
+
+`pnpm verify`. It runs format, typecheck, unit, e2e, build and the dead-code scan in that
+order — cheapest first, stopping at the first failure — and prints a per-gate summary. CI runs
+the same command, so the two cannot drift.
+
+`--quick` skips e2e and build for a tight edit loop. Do not finish on it: `build` and `e2e` are
+the only steps that catch a broken import inside a `.svelte` file or a stale mock.
+
+**Keep `pnpm dev` running while you work.** Playwright reuses a server that is already up; when
+it has to start its own, the suite takes about two and a half minutes instead of twenty-seven
+seconds. `pnpm verify` starts one for you and shuts it down after.
+
+Then run it in game. A green suite is not evidence a NUI feature works — see AGENTS.md §6 and §8.
+
 ## Where to read further
 
-Everything below is in [`AGENTS.md`](../AGENTS.md); the section numbers are stable.
-
-- **§6** — the CEF baseline. FiveM's release CEF is Chromium 103 and Tailwind 4 targets 111. Read it before touching CSS.
-- **§10** — `defineService`, which derives the repository, the write allowlist, the CRUD
-  events and the DDL from one declaration.
-- **§11** — adding an app, in full: the service, the route, the store, the mock registry.
-- **§2** — the hard constraints. Worth reading once even if you never write an agent.
+- [`schema-and-services.md`](schema-and-services.md) — `defineService` in full: access control,
+  keyset paging, membership, child tables, and the identity/accounts model social apps share.
+- [`security.md`](security.md) — the full trust model behind AGENTS.md §2's security rules.
+- `AGENTS.md` §2 — the hard constraints. Worth reading once even if you never write an agent.
+- `AGENTS.md` §6 — the CEF baseline. FiveM's release CEF is Chromium 103 and Tailwind 4 targets
+  111. Read it before touching CSS.
