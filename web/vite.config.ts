@@ -67,6 +67,14 @@ export default defineConfig({
       }
     }
   },
+  // Pinned rather than left to resolve 'localhost': in the CI container, Node's fetch
+  // and Vite's own bind can pick different address families for that name, so the dev
+  // server comes up but `scripts/verify.js`'s readiness probe (and Playwright's
+  // `webServer.url`) connects to the wrong one and times out. 127.0.0.1 everywhere
+  // removes the ambiguity.
+  server: {
+    host: '127.0.0.1'
+  },
   test: {
     globals: true,
     environment: 'jsdom',

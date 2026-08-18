@@ -11,7 +11,7 @@ export default defineConfig({
   reporter: process.env.CI ? [['github'], ['html']] : [['list'], ['html', { open: 'on-failure' }]],
   use: {
     headless: !process.env.HEADED,
-    baseURL: `http://localhost:${PORT}`,
+    baseURL: `http://127.0.0.1:${PORT}`,
     trace: 'on-first-retry',
     viewport: { width: 1280, height: 960 }
   },
@@ -46,7 +46,7 @@ export default defineConfig({
           cookies: [],
           origins: [
             {
-              origin: `http://localhost:${PORT}`,
+              origin: `http://127.0.0.1:${PORT}`,
               localStorage: [
                 {
                   name: 'gphone:settings:theme',
@@ -61,7 +61,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'pnpm dev',
-    url: `http://localhost:${PORT}`,
+    url: `http://127.0.0.1:${PORT}`,
     /**
      * Always reuse, including in CI.
      *

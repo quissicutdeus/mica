@@ -41,7 +41,7 @@ const waitForHtml = async (timeoutMs = 60_000) => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`http://localhost:${PORT}/`);
+      const response = await fetch(`http://127.0.0.1:${PORT}/`);
       if (response.ok) return true;
     } catch {
       // not up yet
@@ -66,7 +66,7 @@ const warmServer = async () => {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle', timeout: 60_000 });
+    await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle', timeout: 60_000 });
   } finally {
     await browser.close();
   }
