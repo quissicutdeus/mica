@@ -5,6 +5,12 @@ jobs:
   verify:
     name: Verify
     runs-on: ubuntu-latest
+    # Pinned to the @playwright/test version in pnpm-lock.yaml (currently 1.62.1). This
+    # image ships Chromium and its OS deps preinstalled, replacing what `--with-deps`
+    # used to spend a minute-plus on every run downloading/apt-installing. Bump this tag
+    # whenever the lockfile's playwright version changes, or the run fails on a missing
+    # browser instead of a stale-but-working one.
+    container: mcr.microsoft.com/playwright:v1.62.1-noble
     strategy:
       matrix:
         node-version: [24]
@@ -23,9 +29,20 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
-        working-directory: web
+
+      # tsc's incremental .tsbuildinfo and Vite's dep-optimization cache both key off
+      # content hashes, so restoring last run's cache lets typecheck/build skip work for
+      # anything unchanged instead of starting cold every run.
+      - name: Cache TypeScript/Vite build state
+        uses: actions/cache@v4
+        with:
+          path: |
+            **/*.tsbuildinfo
+            web/node_modules/.vite
+          key: build-state-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            build-state-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            build-state-${{ runner.os }}-
 
       # The same command a developer runs, so the two cannot drift. This used to be
       # `test:unit` and `build` only, which left the e2e suite and the formatter

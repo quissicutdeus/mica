@@ -1,6 +1,8 @@
 {
   "compilerOptions": {
     "target": "es2021",
+    "incremental": true,
+    "tsBuildInfoFile": "../node_modules/.tmp/client.tsbuildinfo",
     "strict": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
