@@ -24,6 +24,21 @@ const CRASHING_APP = `
   }
 `;
 
+/**
+ * A second, non-crashing harness app. Also `core: false`, so — like `CRASHING_APP` —
+ * `registerApp` places it on the home grid immediately (see `registry.ts`): the home
+ * screen no longer pre-seeds core apps like Calculator, so a real core app is no longer a
+ * safe stand-in for "some other, unrelated app" here.
+ */
+const SAFE_APP = `
+  (id, name) => {
+    window.appRegistryStore.registerApp(
+      { id, name, color: 'bg-blue-500', icon: null, core: false },
+      () => {}
+    );
+  }
+`;
+
 test.describe('App Isolation & Error Boundaries', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
@@ -63,6 +78,7 @@ test.describe('App Isolation & Error Boundaries', () => {
 
   test('the rest of the phone still works after an app crashes', async ({ page }) => {
     await page.evaluate(`(${CRASHING_APP})('broken_app', 'Broken App')`);
+    await page.evaluate(`(${SAFE_APP})('safe_app', 'Safe App')`);
 
     await page.locator('button', { hasText: 'Broken App' }).click();
     await expect(page.getByText('App Stopped Working')).toBeVisible();
@@ -70,8 +86,7 @@ test.describe('App Isolation & Error Boundaries', () => {
     await page.getByRole('button', { name: 'Return to Home Screen', exact: true }).click();
 
     // The point of per-app isolation: one app's crash must leave the others openable.
-    await page.locator('button', { hasText: 'Calculator' }).click();
+    await page.locator('button', { hasText: 'Safe App' }).click();
     await expect(page.getByText('App Stopped Working')).toBeHidden();
-    await expect(page.getByRole('button', { name: '7' })).toBeVisible();
   });
 });
