@@ -10,3 +10,4 @@ sql/dev-reset.sql
 .superpowers/
 .agent/
 .env*
+.claude/
