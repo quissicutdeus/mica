@@ -4,6 +4,7 @@
     useNavigation,
     type AppManifest,
     ConfirmDialog,
+    Screen,
     SegmentedControl,
     useAppAction,
     type AppComponent,
@@ -111,62 +112,37 @@
       onopen={openPhoneApp}
     />
   {:else}
-    <!-- Top Navigation Header -->
-    <div class="pt-safe-top border-border bg-surface-container shrink-0 border-b px-4 pb-3">
-      <div class="flex items-center gap-3">
-        {#if onback}
-          <button
-            onclick={onback}
-            class="hover:bg-surface text-on-surface-variant hover:text-on-surface rounded-full p-1 transition active:scale-95"
-            aria-label="Back to Home"
-          >
-            <svg class="size-icon-md" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-          </button>
+    <Screen title="Store" {onback}>
+      <div class="space-y-4 p-4">
+        <SegmentedControl
+          aria-label="Store sections"
+          selected={activeTab}
+          onchange={(id) => (activeTab = id as 'catalog' | 'installed')}
+          options={[
+            { id: 'catalog', label: 'Store Catalog' },
+            { id: 'installed', label: `Installed (${$registryStore.length})` }
+          ]}
+        />
+
+        {#if activeTab === 'catalog'}
+          <CatalogList
+            apps={catalogApps()}
+            {isInstalled}
+            onselect={(app) => (selectedApp = app)}
+            oninstall={handleInstall}
+            onuninstall={requestUninstall}
+          />
+        {:else}
+          <InstalledList
+            apps={filteredInstalledApps}
+            bind:filter={installedFilter}
+            bind:sortOrder={installedSortOrder}
+            onselect={(app) => (selectedApp = app)}
+            onopen={openPhoneApp}
+          />
         {/if}
-        <h1 class="text-lg font-bold tracking-wide">Store</h1>
       </div>
-    </div>
-
-    <!-- Tab Switcher Bar -->
-    <div class="border-border bg-surface-container-low shrink-0 border-b p-1">
-      <SegmentedControl
-        aria-label="Store sections"
-        selected={activeTab}
-        onchange={(id) => (activeTab = id as 'catalog' | 'installed')}
-        options={[
-          { id: 'catalog', label: 'Store Catalog' },
-          { id: 'installed', label: `Installed (${$registryStore.length})` }
-        ]}
-      />
-    </div>
-
-    <!-- Main Body Content Area -->
-    <div class="flex-1 space-y-4 overflow-y-auto p-4">
-      {#if activeTab === 'catalog'}
-        <CatalogList
-          apps={catalogApps()}
-          {isInstalled}
-          onselect={(app) => (selectedApp = app)}
-          oninstall={handleInstall}
-          onuninstall={requestUninstall}
-        />
-      {:else}
-        <InstalledList
-          apps={filteredInstalledApps}
-          bind:filter={installedFilter}
-          bind:sortOrder={installedSortOrder}
-          onselect={(app) => (selectedApp = app)}
-          onopen={openPhoneApp}
-        />
-      {/if}
-    </div>
+    </Screen>
   {/if}
 
   <!-- Confirm Uninstall Modal -->

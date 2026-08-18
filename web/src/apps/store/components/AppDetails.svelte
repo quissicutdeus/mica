@@ -58,13 +58,11 @@
       <div
         class="flex h-20 w-20 items-center justify-center rounded-lg {app.color} shadow-elevation-3"
       >
-        {#if typeof app.icon === 'string' && app.icon.startsWith('http')}
+        {#if typeof app.icon === 'string'}
           <img src={app.icon} alt={app.name} class="h-10 w-10 object-contain invert filter" />
-        {:else if typeof app.icon === 'function'}
+        {:else if app.icon}
           {@const IconComp = app.icon}
           <IconComp />
-        {:else}
-          <span class="text-on-surface text-3xl font-bold">{app.name.charAt(0)}</span>
         {/if}
       </div>
 

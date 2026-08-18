@@ -83,11 +83,9 @@ describe('Store, rendered', () => {
 
   it('leaves when back is pressed', () => {
     // `onback` is the one prop every app takes, and the easiest to wire backwards.
-    // Note the label: Store hand-rolls its header rather than using `ScreenHeader`, so
-    // its button reads "Back to Home" where every other app's reads "Go back".
     const { getByLabelText, onback } = renderApp(Store, { id: 'store' });
 
-    getByLabelText('Back to Home').click();
+    getByLabelText('Go back').click();
 
     expect(onback).toHaveBeenCalled();
   });
