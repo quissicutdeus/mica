@@ -290,7 +290,7 @@
 
         {#each filteredNotes as note (note.id)}
           <ListItem
-            class="bg-surface-container mb-2 rounded-lg p-4 shadow"
+            class="bg-surface-container mb-2 rounded-lg p-4"
             onclick={() => (selectedNote = note)}
           >
             <div class="flex w-full flex-col">
