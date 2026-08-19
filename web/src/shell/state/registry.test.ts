@@ -12,7 +12,7 @@ vi.mock('../../services/settings', () => serviceMock);
 
 import { appRegistryStore, getFirstBootTime, type AppManifest } from './registry';
 import { hydrateSettings, useStorage } from '../../sdk/hooks/useStorage';
-import { setTrustedRemoteAppHosts } from './remoteAppSecurity';
+import { setTrustedRemoteAppHosts, sha256Hex } from './remoteAppSecurity';
 
 describe('App Registry Store', () => {
   it('does not warn when installing a bundled add-on, but warns when replacing an already installed app', () => {
@@ -371,6 +371,64 @@ describe('remote app persistence and rehydration', () => {
     await appRegistryStore.rehydrateSavedRemoteApps();
 
     expect(appRegistryStore.getComponent('remote_rehydrate_app')).toBeDefined();
+  });
+
+  it('upgrades a hash-less loadRemoteApp record to a pinned hash on a later catalog install', async () => {
+    // `loadRemoteApp`'s direct-import attempt on a real https URL fails in this test
+    // environment (no such module to import), so it falls back to `fetch` — which is
+    // mocked below — exactly like the CEF fallback path it is meant to cover.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode));
+
+    await appRegistryStore.loadRemoteApp(bundleUrl);
+    expect(
+      JSON.parse(localStorage.getItem('gphone_installed_remote_apps') ?? '[]')
+    ).toEqual([{ url: bundleUrl }]);
+
+    await appRegistryStore.installFromCatalog({
+      id: 'remote_rehydrate_app',
+      name: 'Rehydrate App',
+      version: '1.0.0',
+      description: 'desc',
+      bundleUrl,
+      sha256: bundleSha256,
+      color: 'bg-purple-600'
+    });
+
+    const stored = JSON.parse(localStorage.getItem('gphone_installed_remote_apps') ?? '[]');
+    expect(stored).toEqual([{ url: bundleUrl, sha256: bundleSha256 }]);
+  });
+
+  it('replaces a stale pinned hash when the same bundleUrl is reinstalled with a new one', async () => {
+    const updatedCode = bundleCode.replace('Rehydrate App', 'Rehydrate App v2');
+    const updatedSha256 = await sha256Hex(updatedCode);
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    fetchSpy.mockResolvedValueOnce(fetchResponse(bundleCode));
+
+    await appRegistryStore.installFromCatalog({
+      id: 'remote_rehydrate_app',
+      name: 'Rehydrate App',
+      version: '1.0.0',
+      description: 'desc',
+      bundleUrl,
+      sha256: bundleSha256,
+      color: 'bg-purple-600'
+    });
+
+    fetchSpy.mockResolvedValueOnce(fetchResponse(updatedCode));
+
+    await appRegistryStore.installFromCatalog({
+      id: 'remote_rehydrate_app',
+      name: 'Rehydrate App v2',
+      version: '1.0.1',
+      description: 'desc',
+      bundleUrl,
+      sha256: updatedSha256,
+      color: 'bg-purple-600'
+    });
+
+    const stored = JSON.parse(localStorage.getItem('gphone_installed_remote_apps') ?? '[]');
+    expect(stored).toEqual([{ url: bundleUrl, sha256: updatedSha256 }]);
   });
 
   it('still rehydrates a pre-existing plain-string-array install from before this change', async () => {

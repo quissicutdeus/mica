@@ -213,12 +213,20 @@ function getSavedRemoteApps(): SavedRemoteApp[] {
   }
 }
 
+/**
+ * Upsert by `url`. A later install of the same URL always wins, because a later record is
+ * always at least as informed as the earlier one: a hash-less `loadRemoteApp` record
+ * replaced by a `installFromCatalog` record gains a hash it did not have, and a catalog
+ * reinstall with a fresh hash (the operator republished the bundle) replaces a now-stale
+ * one — without an upsert, rehydration would keep re-verifying against whichever hash
+ * happened to be saved first, forever.
+ */
 function saveRemoteApp(entry: SavedRemoteApp) {
   if (typeof localStorage === 'undefined') return;
   try {
     const current = getSavedRemoteApps();
-    if (current.some((e) => e.url === entry.url)) return;
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([...current, entry]));
+    const withoutExisting = current.filter((e) => e.url !== entry.url);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([...withoutExisting, entry]));
   } catch {
     // Ignore localStorage quota/access errors
   }
