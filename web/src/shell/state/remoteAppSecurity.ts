@@ -31,6 +31,10 @@ export function getTrustedRemoteAppHosts(): readonly string[] {
  * embedded in the string rather than fetched over the network. What makes a `data:`-sourced
  * install safe is that nothing produces one from untrusted input — `installFromCatalog`
  * only ever builds one internally, from bytes it has already hash-verified.
+ *
+ * That means this predicate is only safe to hand untrusted external input (an NUI message,
+ * for instance) if the caller applies its own `data:` rejection first — see
+ * `nuiMessages.ts`'s `installApp` handler. This function does not do it for you.
  */
 export function isTrustedRemoteUrl(url: string): boolean {
   if (typeof url !== 'string' || !url) return false;

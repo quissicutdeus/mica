@@ -41,6 +41,23 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
   const installApp = (data: unknown) => {
     const payload = parseInstallApp(data);
     if (!payload) return;
+
+    // `isTrustedRemoteUrl` (which `loadRemoteApp` checks) exempts `data:` URLs on the
+    // assumption that nothing produces one from untrusted input. An NUI message is
+    // untrusted input, and `data:text/javascript,<code>` would run arbitrary JS in the
+    // shell's own context with no host check and no hash verification — there is no
+    // legitimate reason a FiveM resource would push inline source over NUI instead of an
+    // https:// URL. Reject it here, at the boundary, rather than widening the allowlist
+    // check itself (which other, genuinely trusted, internal callers rely on).
+    if (payload.url.startsWith('data:')) {
+      toast.show({
+        type: 'error',
+        app: 'store',
+        message: 'Failed to install remote app: data: URLs are not allowed over NUI'
+      });
+      return;
+    }
+
     appRegistryStore
       .loadRemoteApp(payload.url)
       .then(({ manifest }) => {

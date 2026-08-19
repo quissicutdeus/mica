@@ -9,6 +9,7 @@ import { time } from './state/time';
 import { charge } from './state/charge';
 import { signalLevel } from './state/signal';
 import { contacts } from '../services/contacts';
+import { appRegistryStore } from './state/registry';
 
 /**
  * These twelve branches previously lived inside `App.svelte` and had no unit tests at
@@ -109,6 +110,30 @@ describe('notification click-through', () => {
     route(message('receiveMessage', { conversation_id: 4, senderPhone: '999' }));
     lastToast()?.onClick?.();
     expect(opened[0].props).toMatchObject({ phone: '999' });
+  });
+});
+
+describe('installApp', () => {
+  it('rejects a data: URL before it ever reaches loadRemoteApp', () => {
+    const loadRemoteApp = vi.spyOn(appRegistryStore, 'loadRemoteApp');
+
+    route(message('installApp', { url: 'data:text/javascript,alert(1)' }));
+
+    expect(loadRemoteApp).not.toHaveBeenCalled();
+    expect(lastToast()).toMatchObject({
+      type: 'error',
+      message: expect.stringContaining('data:')
+    });
+  });
+
+  it('still forwards a normal https URL to loadRemoteApp', () => {
+    const loadRemoteApp = vi
+      .spyOn(appRegistryStore, 'loadRemoteApp')
+      .mockRejectedValue(new Error('not trusted'));
+
+    route(message('installApp', { url: 'https://example.com/app.js' }));
+
+    expect(loadRemoteApp).toHaveBeenCalledWith('https://example.com/app.js');
   });
 });
 
