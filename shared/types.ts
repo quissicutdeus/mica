@@ -400,6 +400,15 @@ export interface Mail {
   updated_at: Date | string;
 }
 
+export interface CryptoHolding {
+  id: number;
+  citizenid: string;
+  symbol: string;
+  amount: string;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
 export interface NotificationItem {
   id: number;
   citizenid: string;

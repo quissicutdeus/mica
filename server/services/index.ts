@@ -8,6 +8,7 @@ import './Blabber';
 import './BlabberDms';
 import './Contacts';
 import './Conversations';
+import './CryptoTracker';
 import './Highscores';
 import './Mail';
 import './Marketplace';
