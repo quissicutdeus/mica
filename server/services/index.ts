@@ -10,6 +10,7 @@ import './Contacts';
 import './Conversations';
 import './Highscores';
 import './Mail';
+import './Marketplace';
 import './Media';
 import './Messages';
 import './Notes';

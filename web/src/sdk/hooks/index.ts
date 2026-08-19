@@ -19,6 +19,7 @@ export * from './useHighscores';
 export * from './useKeybinds';
 export * from './useLocation';
 export * from './useMail';
+export * from './useMarketplace';
 export * from './useMedia';
 export * from './useMessages';
 export * from './useNavigation';

@@ -373,6 +373,42 @@ CREATE TABLE IF NOT EXISTS `gphone_blabber_attachments` (
         REFERENCES `gphone_media` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+-- Generated from the 'marketplace' defineService declaration.
+-- Do not edit by hand; change the declaration and regenerate.
+
+CREATE TABLE IF NOT EXISTS `gphone_marketplace` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `citizenid` varchar(50) NOT NULL,
+    `title` varchar(100) NOT NULL,
+    `price` int(11) NOT NULL,
+    `description` text NOT NULL,
+    `status` ENUM('active', 'sold', 'removed', 'moderated', 'deleted') NOT NULL DEFAULT 'active',
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `status` (`status`),
+    KEY `citizenid_status` (`citizenid`, `status`),
+    CONSTRAINT `fk_marketplace_citizenid` FOREIGN KEY (`citizenid`)
+        REFERENCES `players` (`citizenid`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `gphone_marketplace_attachments` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `listing_id` int(11) NOT NULL,
+    `citizenid` varchar(50) NOT NULL,
+    `media_id` int(11) NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `listing_id` (`listing_id`),
+    KEY `citizenid` (`citizenid`),
+    KEY `media_id` (`media_id`),
+    CONSTRAINT `fk_gphone_marketplace_attachments_listing_id` FOREIGN KEY (`listing_id`)
+        REFERENCES `gphone_marketplace` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_gphone_marketplace_attachments_citizenid` FOREIGN KEY (`citizenid`)
+        REFERENCES `players` (`citizenid`) ON DELETE CASCADE,
+    CONSTRAINT `fk_gphone_marketplace_attachments_media_id` FOREIGN KEY (`media_id`)
+        REFERENCES `gphone_media` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 -- Generated from the 'messages' defineService declaration.
 -- Do not edit by hand; change the declaration and regenerate.
 
