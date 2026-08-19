@@ -242,6 +242,26 @@ export interface Blab {
   attachments?: { id?: number; photo_id?: number; media?: MediaPreview }[];
 }
 
+/**
+ * A row in `gphone_marketplace`. Semi-anonymous by construction: `citizenid` is the
+ * owner for write authority, and is never part of a public projection — see
+ * `publicColumns` in `server/lib/defineService.ts`. There is no display-identity
+ * column at all, unlike `Blab`'s `account_id`: a listing has no persona to switch
+ * between, it just has no name attached, full stop.
+ */
+export interface Listing {
+  id: number;
+  citizenid: string;
+  title: string;
+  price: number;
+  description: string;
+  status: 'active' | 'sold' | 'removed' | 'moderated';
+  created_at: Date | string;
+  updated_at: Date | string;
+  /** Hydrated in, never written through the generic path — see `MarketplaceRepository`. */
+  attachments?: { id: number; media: MediaPreview }[];
+}
+
 /** Counts for one Blab, plus what the asking player has already done to it. */
 export interface BlabEngagement {
   replies: number;
