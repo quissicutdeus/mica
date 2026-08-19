@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { AppComponent } from '@gphone/sdk';
 import { get } from 'svelte/store';
 
@@ -12,6 +12,7 @@ vi.mock('../../services/settings', () => serviceMock);
 
 import { appRegistryStore, getFirstBootTime, type AppManifest } from './registry';
 import { hydrateSettings, useStorage } from '../../sdk/hooks/useStorage';
+import { setTrustedRemoteAppHosts } from './remoteAppSecurity';
 
 describe('App Registry Store', () => {
   it('does not warn when installing a bundled add-on, but warns when replacing an already installed app', () => {
@@ -187,6 +188,91 @@ describe('App Registry Store', () => {
     await expect(appRegistryStore.loadRemoteApp('')).rejects.toThrow(
       'gPhone App Loader error: Remote app URL must be a valid string.'
     );
+  });
+
+  it('rejects a remote app host that is not on the allowlist', async () => {
+    setTrustedRemoteAppHosts([]);
+    await expect(
+      appRegistryStore.loadRemoteApp('https://not-trusted.example.com/app.js')
+    ).rejects.toThrow(
+      "'https://not-trusted.example.com/app.js' is not on the trusted remote-app host allowlist"
+    );
+  });
+});
+
+describe('installFromCatalog', () => {
+  const bundleCode = `
+      export const manifest = {
+        id: 'remote_catalog_app',
+        name: 'Catalog App',
+        color: 'bg-emerald-600',
+        icon: null,
+      };
+      export const component = { type: 'MockRemoteComponent' };
+    `;
+  // sha256 of `bundleCode` above, byte-for-byte — do not reformat the template literal
+  // without recomputing this.
+  const bundleSha256 = '4f86f544a3b1aac2670fed9693990f135ebf9a134305917ccd0bbd0e805048fe';
+  const bundleUrl = 'https://store.example.com/apps/catalog_app.js';
+
+  const catalogEntry = {
+    id: 'remote_catalog_app',
+    name: 'Catalog App',
+    version: '1.0.0',
+    description: 'A catalog-installed app.',
+    bundleUrl,
+    sha256: bundleSha256,
+    color: 'bg-emerald-600'
+  };
+
+  const fetchResponse = (text: string, ok = true, status = 200): Response =>
+    ({ ok, status, text: () => Promise.resolve(text) }) as Response;
+
+  beforeEach(() => {
+    setTrustedRemoteAppHosts(['store.example.com']);
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    if (appRegistryStore.getComponent('remote_catalog_app')) {
+      appRegistryStore.unregisterApp('remote_catalog_app');
+    }
+  });
+
+  it('installs a bundle whose hash matches the catalog entry', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode));
+
+    const result = await appRegistryStore.installFromCatalog(catalogEntry);
+
+    expect(result.manifest.id).toBe('remote_catalog_app');
+    expect(result.manifest.isRemote).toBe(true);
+    expect(result.manifest.bundleUrl).toBe(bundleUrl);
+    expect(appRegistryStore.getComponent('remote_catalog_app')).toBeDefined();
+  });
+
+  it('refuses to import a bundle whose hash does not match', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode + '// tampered'));
+
+    await expect(appRegistryStore.installFromCatalog(catalogEntry)).rejects.toThrow(
+      'did not match its published checksum'
+    );
+    expect(appRegistryStore.getComponent('remote_catalog_app')).toBeUndefined();
+  });
+
+  it('refuses a bundleUrl that is not on the trusted host allowlist', async () => {
+    setTrustedRemoteAppHosts(['a-different-host.example.com']);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    await expect(appRegistryStore.installFromCatalog(catalogEntry)).rejects.toThrow(
+      "is not on the trusted remote-app host allowlist"
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('refuses on a non-ok HTTP response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse('', false, 404));
+
+    await expect(appRegistryStore.installFromCatalog(catalogEntry)).rejects.toThrow('HTTP 404');
   });
 });
 

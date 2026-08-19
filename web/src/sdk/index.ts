@@ -18,6 +18,7 @@ export {
   setTrustedRemoteAppHosts,
   getTrustedRemoteAppHosts
 } from '../shell/state/remoteAppSecurity';
+export type { CatalogEntry } from '../shell/state/catalog';
 export * from './capability';
 export * from './types';
 export * from './version';

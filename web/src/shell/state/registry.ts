@@ -9,6 +9,8 @@ import { clearAppStorage } from '../../sdk/hooks/useStorage';
 import { messageOf } from '../../lib/errors';
 import { usePersisted } from '../../sdk/hooks/usePersisted';
 import { placeOnHomeGridIfAbsent } from './homeGrid';
+import { isTrustedRemoteUrl, matchesHash } from './remoteAppSecurity';
+import type { CatalogEntry } from './catalog';
 
 export type { AppManifest } from '../../sdk/manifest';
 
@@ -235,6 +237,49 @@ const installedAddOnIds = usePersisted<string[]>('store', 'installedAddOns', [],
   sanitize: sanitizeInstalledAddOnIds
 });
 
+/** Import already-fetched module text via a `data:` URL — the reliable path in CEF. */
+function importModuleText(code: string): Promise<any> {
+  const dataUrl = `data:text/javascript;charset=utf-8,${encodeURIComponent(code)}`;
+  return import(/* @vite-ignore */ dataUrl);
+}
+
+/**
+ * Pull `manifest`/`component` out of a loaded remote module, the same way for every path
+ * that can produce one: `loadRemoteApp`, `installFromCatalog`, and boot-time rehydration.
+ */
+function manifestAndComponentFromModule(
+  loadedModule: any,
+  url: string
+): { rawManifest: any; component: any } {
+  const rawManifest =
+    loadedModule.manifest ||
+    loadedModule.default?.manifest ||
+    (loadedModule.default &&
+    typeof loadedModule.default === 'object' &&
+    'id' in loadedModule.default
+      ? loadedModule.default
+      : null);
+
+  const component =
+    loadedModule.component ||
+    loadedModule.default?.component ||
+    (typeof loadedModule.default === 'function' || typeof loadedModule.default === 'object'
+      ? loadedModule.default
+      : null);
+
+  if (!rawManifest) {
+    throw new Error(
+      `gPhone Remote App Loader error: Module at '${url}' does not export a valid 'manifest'.`
+    );
+  }
+  if (!component) {
+    throw new Error(
+      `gPhone Remote App Loader error: Module at '${url}' does not export a valid Svelte 'component'.`
+    );
+  }
+  return { rawManifest, component };
+}
+
 // Reactive App Registry Store for Dynamic Community App Installation
 function createAppRegistry() {
   const installed = writable<AppManifest[]>(loadedApps);
@@ -368,6 +413,11 @@ function createAppRegistry() {
       if (!url || typeof url !== 'string') {
         throw new Error('gPhone App Loader error: Remote app URL must be a valid string.');
       }
+      if (!isTrustedRemoteUrl(url)) {
+        throw new Error(
+          `gPhone App Loader error: '${url}' is not on the trusted remote-app host allowlist.`
+        );
+      }
 
       let loadedModule: any;
       try {
@@ -381,54 +431,66 @@ function createAppRegistry() {
             throw new Error(`HTTP ${response.status} ${response.statusText}`);
           }
           const code = await response.text();
-          const dataUrl = `data:text/javascript;charset=utf-8,${encodeURIComponent(code)}`;
-          loadedModule = await import(/* @vite-ignore */ dataUrl);
+          loadedModule = await importModuleText(code);
         } catch (fallbackError) {
           const why = messageOf(directImportError, '') || messageOf(fallbackError, 'unknown error');
           throw new Error(`gPhone Remote App Loader failed to load bundle from '${url}': ${why}`);
         }
       }
 
-      const rawManifest =
-        loadedModule.manifest ||
-        loadedModule.default?.manifest ||
-        (loadedModule.default &&
-        typeof loadedModule.default === 'object' &&
-        'id' in loadedModule.default
-          ? loadedModule.default
-          : null);
-
-      const component =
-        loadedModule.component ||
-        loadedModule.default?.component ||
-        (typeof loadedModule.default === 'function' || typeof loadedModule.default === 'object'
-          ? loadedModule.default
-          : null);
-
-      if (!rawManifest) {
-        throw new Error(
-          `gPhone Remote App Loader error: Module at '${url}' does not export a valid 'manifest'.`
-        );
-      }
-
-      if (!component) {
-        throw new Error(
-          `gPhone Remote App Loader error: Module at '${url}' does not export a valid Svelte 'component'.`
-        );
-      }
-
-      const validatedManifest = defineApp({
-        ...rawManifest,
-        isRemote: true,
-        bundleUrl: url
-      });
+      const { rawManifest, component } = manifestAndComponentFromModule(loadedModule, url);
+      const validatedManifest = defineApp({ ...rawManifest, isRemote: true, bundleUrl: url });
 
       store.registerApp(validatedManifest, component);
-      saveRemoteAppUrl(url);
+      saveRemoteAppUrl(url); // in loadRemoteApp, unchanged from before
 
       return { manifest: validatedManifest, component };
-    }
+    },
+    installFromCatalog: (
+      entry: CatalogEntry
+    ): Promise<{ manifest: AppManifest; component: any }> =>
+      installVerified(entry.bundleUrl, entry.sha256)
   };
+
+  /**
+   * Fetch, hash-verify, and import a remote bundle — the one path both `installFromCatalog`
+   * and hash-pinned boot rehydration use. Never uses the "try direct import first" shortcut
+   * `loadRemoteApp` does: that can execute the module before there is any text to hash, and
+   * seeing the bytes before running them is the entire point of this function existing.
+   */
+  async function installVerified(
+    bundleUrl: string,
+    sha256: string
+  ): Promise<{ manifest: AppManifest; component: any }> {
+    if (!isTrustedRemoteUrl(bundleUrl)) {
+      throw new Error(
+        `gPhone App Loader error: '${bundleUrl}' is not on the trusted remote-app host allowlist.`
+      );
+    }
+
+    const response = await fetch(bundleUrl);
+    if (!response.ok) {
+      throw new Error(`gPhone App Loader error: HTTP ${response.status} fetching '${bundleUrl}'.`);
+    }
+    const code = await response.text();
+
+    const verified = await matchesHash(code, sha256);
+    if (!verified) {
+      throw new Error(
+        `gPhone App Loader error: '${bundleUrl}' did not match its published checksum. ` +
+          'Refusing to run it.'
+      );
+    }
+
+    const loadedModule = await importModuleText(code);
+    const { rawManifest, component } = manifestAndComponentFromModule(loadedModule, bundleUrl);
+    const validatedManifest = defineApp({ ...rawManifest, isRemote: true, bundleUrl });
+
+    store.registerApp(validatedManifest, component);
+    saveRemoteAppUrl(bundleUrl); // in installVerified, for this task only
+
+    return { manifest: validatedManifest, component };
+  }
 
   // Rehydrate saved remote apps on startup if running in browser/client environment
   if (typeof window !== 'undefined') {
