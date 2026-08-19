@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { hydrateSettings } from '../sdk/hooks/useStorage';
+  import { migrateAppDrawerHintForExistingSaves } from './state/onboarding';
   import { appRegistryStore } from './state/registry';
   import { createNuiMessageRouter } from './nuiMessages';
   import { installDevHarness, seedBrowserPhone } from './devHarness';
@@ -202,7 +203,7 @@
    * way and re-reads itself when the answer lands.
    */
   onMount(() => {
-    void hydrateSettings();
+    void hydrateSettings().then(() => migrateAppDrawerHintForExistingSaves());
   });
 
   onMount(() => {

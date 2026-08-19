@@ -1,6 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { registerHandler } from './keybinds';
 import { cancelIconDrag } from './iconDrag';
+import { markAppDrawerHintSeen } from './onboarding';
 
 export const isDrawerOpen = writable<boolean>(false);
 
@@ -15,6 +16,7 @@ let unregisterBack: (() => void) | null = null;
 export function openDrawer(): void {
   if (get(isDrawerOpen)) return;
   isDrawerOpen.set(true);
+  markAppDrawerHintSeen();
 
   if (!unregisterBack) {
     unregisterBack = registerHandler('back', () => {

@@ -10,12 +10,14 @@ import {
 } from './appDrawer';
 import { activeHandlerFor } from './keybinds';
 import { iconDragState, startIconDrag } from './iconDrag';
+import { appDrawerHintSeen } from './onboarding';
 
 describe('App Drawer state', () => {
   beforeEach(() => {
     closeDrawer();
     drawerDragProgress.set(0);
     drawerDragPhase.set('idle');
+    appDrawerHintSeen.set(false);
   });
 
   it('defaults to closed', () => {
@@ -27,6 +29,15 @@ describe('App Drawer state', () => {
     expect(get(isDrawerOpen)).toBe(true);
     closeDrawer();
     expect(get(isDrawerOpen)).toBe(false);
+  });
+
+  it('marks the swipe-up hint seen on first open, and stays seen after close/reopen', () => {
+    expect(get(appDrawerHintSeen)).toBe(false);
+    openDrawer();
+    expect(get(appDrawerHintSeen)).toBe(true);
+    closeDrawer();
+    openDrawer();
+    expect(get(appDrawerHintSeen)).toBe(true);
   });
 
   it('toggles', () => {

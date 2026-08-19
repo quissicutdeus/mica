@@ -12,6 +12,7 @@
     closeDrawer
   } from './state/appDrawer';
   import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
+  import { appDrawerHintSeen } from './state/onboarding';
 
   let { openApp } = $props<{ openApp: (id: string) => void }>();
 
@@ -87,3 +88,16 @@
     </div>
   {/each}
 </div>
+
+{#if !$appDrawerHintSeen}
+  <!-- Fresh home grid ships empty by default (apps live in the drawer until dragged
+       out), which otherwise leaves a first-time player looking at wallpaper and a dock
+       with nothing telling them to swipe up. Gone for good the moment the drawer opens
+       once — `openDrawer` marks it seen — so this only ever shows on a truly first run;
+       `pointer-events-none` keeps it from stealing the dock's own swipe-up gesture. -->
+  <p
+    class="text-on-surface-variant text-label-small pointer-events-none absolute inset-x-0 bottom-32 z-20 text-center select-none"
+  >
+    Swipe up for apps
+  </p>
+{/if}
