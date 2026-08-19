@@ -63,16 +63,15 @@ export function createPagedStore<T extends { id: number }>(
   let inFlight = false;
 
   /**
-   * `defaultValue` supplied, so a transport failure yields an empty page rather than throwing.
-   * A feed that cannot reach the server should render as empty, not tear down the app —
-   * `fetchNui`'s contract hinges on exactly this distinction.
+   * No `defaultValue`, so a transport failure or a server error throws instead of being
+   * masked into a fake empty page — `load`/`loadMore` decide what a failure should do to
+   * the window they're already holding, which "return an empty page" cannot express.
    */
   const fetchPage = async (from: number | null): Promise<PagedReply<T>> => {
     const payload = { ...filter, cursor: from ?? undefined, limit: options.pageSize };
     const reply = await fetchNui<PagedReply<T>>(
       options.service ? GENERIC_SERVICE_ACTION : action,
-      options.service ? { service: options.service, action, data: payload } : payload,
-      { defaultValue: { rows: [], nextCursor: null } }
+      options.service ? { service: options.service, action, data: payload } : payload
     );
     // A mock or an older server could answer with a bare array; treat it as one full page
     // rather than rendering nothing and looking like an empty feed.
@@ -94,6 +93,8 @@ export function createPagedStore<T extends { id: number }>(
         rows.set(page.rows);
         cursor = page.nextCursor;
         hasMore.set(page.nextCursor !== null);
+      } catch (e) {
+        console.warn(`Paged store '${action}' failed to load; keeping the last known page.`, e);
       } finally {
         inFlight = false;
         loaded.set(true);
@@ -112,6 +113,9 @@ export function createPagedStore<T extends { id: number }>(
         // at the tail.
         rows.update((current) => [...current, ...page.rows]);
         return true;
+      } catch (e) {
+        console.warn(`Paged store '${action}' failed to load more; leaving the cursor as-is.`, e);
+        return false;
       } finally {
         inFlight = false;
       }

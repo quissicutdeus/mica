@@ -70,8 +70,11 @@ export const byNewest =
  * - **Bad data** — three stores logged and emptied the list on a non-array reply, one
  *   let it through.
  *
- * Writes deliberately have no `defaultValue`, so `fetchNui` throws and the caller can
- * tell that nothing happened. Reads pass `[]`, because an empty list beats an exception.
+ * Neither reads nor writes pass a `defaultValue`, so `fetchNui` throws on failure instead
+ * of masking it. Writes propagate the throw to the caller, which already had a value to
+ * fall back to. `load` catches it itself and keeps the store's last known list — the
+ * store has nothing better to show, and a background refresh that failed should not wipe
+ * out what the player was already looking at.
  */
 export function createCrudStore<T extends { id: number }, TDraft = Omit<T, 'id'>>(
   name: string,
@@ -126,13 +129,15 @@ export function createCrudStore<T extends { id: number }, TDraft = Omit<T, 'id'>
 
     load: async (): Promise<void> => {
       try {
-        const data = await request<T[]>(events.list, null, { defaultValue: [] as T[] });
+        const data = await request<T[]>(events.list, null);
         if (!Array.isArray(data)) {
           console.error(`${name} store received invalid data:`, data);
           set([]);
           return;
         }
         set(ordered(data));
+      } catch (e) {
+        console.warn(`${name} store failed to load; keeping the last known list.`, e);
       } finally {
         loaded.set(true);
       }

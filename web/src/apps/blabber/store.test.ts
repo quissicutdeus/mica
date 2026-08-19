@@ -512,17 +512,14 @@ describe('blabber service', () => {
 
       await searchAccounts('ad');
 
-      // `cursor`/`limit` and the wrapped `defaultValue` are `createPagedStore`'s own
-      // `fetchPage`, not something this call adds — every paged read carries them.
-      expect(spy).toHaveBeenCalledWith(
-        'svc',
-        {
-          service: 'accounts',
-          action: 'search',
-          data: { app: 'blabber', q: 'ad', cursor: undefined, limit: undefined }
-        },
-        { defaultValue: { rows: [], nextCursor: null } }
-      );
+      // `cursor`/`limit` are `createPagedStore`'s own `fetchPage`, not something this
+      // call adds — every paged read carries them. No `defaultValue`: `fetchPage` lets a
+      // failure throw so `load`/`loadMore` can decide whether to keep the existing page.
+      expect(spy).toHaveBeenCalledWith('svc', {
+        service: 'accounts',
+        action: 'search',
+        data: { app: 'blabber', q: 'ad', cursor: undefined, limit: undefined }
+      });
       expect(get(accountResults)).toHaveLength(1);
     });
 
@@ -566,15 +563,11 @@ describe('blabber service', () => {
 
       await loadTaggedBlabs('losangeles');
 
-      expect(spy).toHaveBeenCalledWith(
-        'svc',
-        {
-          service: 'blabber',
-          action: 'by_tag',
-          data: { tag: 'losangeles', cursor: undefined, limit: undefined }
-        },
-        { defaultValue: { rows: [], nextCursor: null } }
-      );
+      expect(spy).toHaveBeenCalledWith('svc', {
+        service: 'blabber',
+        action: 'by_tag',
+        data: { tag: 'losangeles', cursor: undefined, limit: undefined }
+      });
       expect(get(taggedBlabs)).toHaveLength(1);
     });
   });

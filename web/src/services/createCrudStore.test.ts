@@ -119,6 +119,28 @@ describe('createCrudStore', () => {
     expect(get(store)).toEqual([{ id: 2, label: 'B' }]);
   });
 
+  it('keeps the existing list when a background refresh fails', async () => {
+    // fetchNui's real contract: throw when no `defaultValue` was given, return the
+    // default when one was — a store that still passes `defaultValue: []` for reads
+    // gets a silent empty reply here, exactly as it would in production from a
+    // transport failure or a 15s ServiceProxy timeout.
+    const store = createCrudStore<Row>('Rows', events);
+    const spy = vi.spyOn(fetchNuiModule, 'fetchNui');
+
+    spy.mockResolvedValueOnce([{ id: 1, label: 'a' }] as any);
+    await store.load();
+    expect(get(store)).toEqual([{ id: 1, label: 'a' }]);
+
+    spy.mockImplementationOnce(async (_event, _payload, opts) => {
+      if (opts && 'defaultValue' in opts) return opts.defaultValue;
+      throw new Error('Request timed out');
+    });
+    await store.load();
+
+    expect(get(store)).toEqual([{ id: 1, label: 'a' }]);
+    expect(get(store.loaded)).toBe(true);
+  });
+
   it('sorts rows that have no timestamp without throwing them away', async () => {
     const store = createCrudStore<Row>('Rows', events, { sort: byNewest<Row>('created_at') });
     vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue([
