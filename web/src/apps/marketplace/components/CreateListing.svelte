@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { Button, PhotoPickerModal } from '@gphone/sdk';
-  import { useMarketplace } from '../../../sdk/hooks/useMarketplace';
+  import { Button, PhotoPickerModal, useMarketplace } from '@gphone/sdk';
   import type { MediaPreview } from '@shared/types';
 
   let { onposted, oncancel }: { onposted: (id: number) => void; oncancel: () => void } = $props();
@@ -58,13 +57,12 @@
   <textarea
     placeholder="Description"
     bind:value={description}
-    class="bg-surface-container text-on-surface rounded-lg px-3 py-2"
-  ></textarea>
+    class="bg-surface-container text-on-surface rounded-lg px-3 py-2"></textarea>
 
   <button
     type="button"
     onclick={() => (showPicker = true)}
-    class="text-primary text-label-medium self-start"
+    class="text-primary text-label-large self-start"
   >
     Add photos ({attachments.length}/{MAX_ATTACHMENTS})
   </button>

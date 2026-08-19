@@ -3,7 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, screen } from '@testing-library/svelte';
 
 const marketplaceMock = vi.hoisted(() => ({ postListing: vi.fn() }));
-vi.mock('../../../sdk/hooks/useMarketplace', () => ({ useMarketplace: () => marketplaceMock }));
+vi.mock('@gphone/sdk', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useMarketplace: () => marketplaceMock
+}));
 
 import CreateListing from './CreateListing.svelte';
 

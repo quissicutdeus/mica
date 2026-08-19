@@ -795,7 +795,9 @@ const mockRegistry: Record<string, MockHandler> = {
   'marketplace:mine': () => ({ rows: mockListings, nextCursor: null }),
   'marketplace:view': ({ id }: { id: number }) => {
     const listing = mockListings.find((l) => l.id === id);
-    return listing ? { ...listing, contactPhone: '555-0100', isOwn: listing.citizenid === 'MOCK1' } : null;
+    return listing
+      ? { ...listing, contactPhone: '555-0100', isOwn: listing.citizenid === 'MOCK1' }
+      : null;
   },
   'marketplace:create': ({
     title,

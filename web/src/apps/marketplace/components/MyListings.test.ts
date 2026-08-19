@@ -29,7 +29,10 @@ const marketplaceMock = vi.hoisted(() => {
     removeListing: vi.fn().mockResolvedValue(true)
   };
 });
-vi.mock('../../../sdk/hooks/useMarketplace', () => ({ useMarketplace: () => marketplaceMock }));
+vi.mock('@gphone/sdk', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useMarketplace: () => marketplaceMock
+}));
 
 import MyListings from './MyListings.svelte';
 

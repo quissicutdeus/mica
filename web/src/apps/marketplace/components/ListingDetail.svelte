@@ -1,9 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { useMarketplace } from '../../../sdk/hooks/useMarketplace';
-  import { useCall } from '../../../sdk/hooks/useCall';
-  import { useNavigation } from '../../../sdk/hooks/useNavigation';
-  import { Button, MediaThumb, ReportButton, ReportDialog, Skeleton } from '@gphone/sdk';
+  import {
+    Button,
+    MediaThumb,
+    ReportButton,
+    ReportDialog,
+    Skeleton,
+    useCall,
+    useMarketplace,
+    useNavigation
+  } from '@gphone/sdk';
   import type { Contact, Listing } from '@shared/types';
 
   let { id, onback }: { id: number; onback: () => void } = $props();
@@ -56,7 +62,8 @@
         <Button onclick={() => startCall(listing!.contactPhone!)}>Call</Button>
         <Button
           variant="secondary"
-          onclick={() => openApp('messages', { initialContact: contactFor(listing!.contactPhone!) })}
+          onclick={() =>
+            openApp('messages', { initialContact: contactFor(listing!.contactPhone!) })}
         >
           Text
         </Button>

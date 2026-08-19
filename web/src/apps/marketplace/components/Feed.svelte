@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { useMarketplace } from '../../../sdk/hooks/useMarketplace';
-  import { EmptyState, Skeleton, MediaThumb } from '@gphone/sdk';
+  import { EmptyState, Skeleton, MediaThumb, useMarketplace } from '@gphone/sdk';
   import type { Listing } from '@shared/types';
 
   let {
@@ -52,7 +51,7 @@
   <button
     type="button"
     onclick={onMyListings}
-    class="text-on-surface-variant hover:text-primary text-label-medium"
+    class="text-on-surface-variant hover:text-primary text-label-large"
   >
     My Listings
   </button>

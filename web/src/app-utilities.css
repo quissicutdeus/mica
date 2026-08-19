@@ -737,6 +737,9 @@
 .h-24 {
   height: 6rem;
 }
+.h-40 {
+  height: 10rem;
+}
 .h-2\.5 {
   height: 0.625rem;
 }
@@ -974,6 +977,9 @@
 }
 .justify-self-center {
   justify-self: center;
+}
+.self-start {
+  align-self: flex-start;
 }
 .justify-start {
   justify-content: flex-start;
@@ -2054,6 +2060,9 @@
 }
 .w-16 {
   width: 4rem;
+}
+.w-40 {
+  width: 10rem;
 }
 .w-2 {
   width: 0.5rem;

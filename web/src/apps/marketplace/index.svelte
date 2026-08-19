@@ -8,10 +8,7 @@
   let { onback }: AppProps = $props();
 
   type MarketplaceScreen =
-    | { name: 'feed' }
-    | { name: 'detail'; id: number }
-    | { name: 'create' }
-    | { name: 'mine' };
+    { name: 'feed' } | { name: 'detail'; id: number } | { name: 'create' } | { name: 'mine' };
 
   let screen = $state<MarketplaceScreen>({ name: 'feed' });
 

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { useMarketplace } from '../../../sdk/hooks/useMarketplace';
-  import { EmptyState, Skeleton } from '@gphone/sdk';
+  import { EmptyState, Skeleton, useMarketplace } from '@gphone/sdk';
 
   let { onback }: { onback: () => void } = $props();
 
@@ -39,7 +38,7 @@
               type="button"
               aria-label="Mark Sold"
               onclick={() => markSold(row.id)}
-              class="text-primary text-label-medium"
+              class="text-primary text-label-large"
             >
               Mark Sold
             </button>
@@ -47,7 +46,7 @@
               type="button"
               aria-label="Remove"
               onclick={() => removeListing(row.id)}
-              class="text-error text-label-medium"
+              class="text-error text-label-large"
             >
               Remove
             </button>

@@ -213,9 +213,7 @@ describe('Marketplace service', () => {
       dbMock.update.mockResolvedValue(true);
       const reply = await call('remove', { id: 1 }, 'CIT_A');
       expect(reply.error).toBeUndefined();
-      expect(dbMock.update).toHaveBeenCalledWith(expect.stringMatching(/UPDATE.*'removed'/is), [
-        1
-      ]);
+      expect(dbMock.update).toHaveBeenCalledWith(expect.stringMatching(/UPDATE.*'removed'/is), [1]);
     });
   });
 });

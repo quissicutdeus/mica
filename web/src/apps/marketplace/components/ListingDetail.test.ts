@@ -3,13 +3,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 
 const marketplaceMock = vi.hoisted(() => ({ viewListing: vi.fn() }));
-vi.mock('../../../sdk/hooks/useMarketplace', () => ({ useMarketplace: () => marketplaceMock }));
-
 const callMock = vi.hoisted(() => ({ startCall: vi.fn() }));
-vi.mock('../../../sdk/hooks/useCall', () => ({ useCall: () => callMock }));
-
 const navMock = vi.hoisted(() => ({ openApp: vi.fn() }));
-vi.mock('../../../sdk/hooks/useNavigation', () => ({ useNavigation: () => navMock }));
+
+vi.mock('@gphone/sdk', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useMarketplace: () => marketplaceMock,
+  useCall: () => callMock,
+  useNavigation: () => navMock
+}));
 
 import ListingDetail from './ListingDetail.svelte';
 
