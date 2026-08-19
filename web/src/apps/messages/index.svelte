@@ -44,8 +44,14 @@
     onback,
     initialContact,
     conversationId,
-    phone
-  }: AppProps & { initialContact?: Contact; conversationId?: number; phone?: string } = $props();
+    phone,
+    startNew
+  }: AppProps & {
+    initialContact?: Contact;
+    conversationId?: number;
+    phone?: string;
+    startNew?: boolean;
+  } = $props();
 
   // Local state for UI
   let selectedConversationId: number | null = $state(null);
@@ -237,9 +243,9 @@
     recipientQuery = '';
   };
 
-  const handleSelectContactRaw = async (contact: Contact) => {
+  const handleStartTextRaw = async (phone: string) => {
     // Check if conversation already exists
-    const existing = $conversationsStore.find((c) => c.target === contact.phone);
+    const existing = $conversationsStore.find((c) => c.target === phone);
     if (existing) {
       handleSelectConversation(existing.id);
       isComposing = false;
@@ -247,7 +253,7 @@
       // Start new conversation via store
       let newConv: Awaited<ReturnType<typeof conversationsStore.startConversation>> | undefined;
       const started = await run(async () => {
-        newConv = await conversationsStore.startConversation(contact.phone);
+        newConv = await conversationsStore.startConversation(phone);
       });
       if (started && newConv) {
         selectedConversationId = newConv.id;
@@ -255,6 +261,8 @@
       }
     }
   };
+
+  const handleSelectContactRaw = (contact: Contact) => handleStartTextRaw(contact.phone);
 
   const openPhotoPicker = async () => {
     await media.load();
@@ -327,9 +335,15 @@
     }
     if (phone && (!currentConv || currentConv.target !== phone)) {
       const existing = $conversationsStore.find((c) => c.target === phone);
-      if (!existing) return false;
-      handleSelectConversation(existing.id);
-      return true;
+      if (existing) {
+        handleSelectConversation(existing.id);
+        return true;
+      }
+      if (startNew && !isComposing) {
+        void handleStartTextRaw(phone);
+        return true;
+      }
+      return false;
     }
     if (initialContact && !selectedConversationId && !isComposing) {
       handleSelectContactRaw(initialContact);

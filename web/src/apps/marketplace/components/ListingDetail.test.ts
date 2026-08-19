@@ -4,13 +4,13 @@ import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 
 const marketplaceMock = vi.hoisted(() => ({ viewListing: vi.fn() }));
 const callMock = vi.hoisted(() => ({ startCall: vi.fn() }));
-const navMock = vi.hoisted(() => ({ openApp: vi.fn() }));
+const messagesMock = vi.hoisted(() => ({ startText: vi.fn() }));
 
 vi.mock('@gphone/sdk', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useMarketplace: () => marketplaceMock,
   useCall: () => callMock,
-  useNavigation: () => navMock
+  useMessages: () => messagesMock
 }));
 
 import ListingDetail from './ListingDetail.svelte';
@@ -46,15 +46,12 @@ describe('ListingDetail', () => {
     expect(callMock.startCall).toHaveBeenCalledWith('555-0100');
   });
 
-  it('Text button opens Messages with a synthetic contact for the resolved number', async () => {
+  it('Text button starts a text to the resolved contactPhone', async () => {
     marketplaceMock.viewListing.mockResolvedValue(listing);
     render(ListingDetail, { props: { id: 1, onback: () => {} } });
     await waitFor(() => screen.getByText('Text'));
     await fireEvent.click(screen.getByText('Text'));
-    expect(navMock.openApp).toHaveBeenCalledWith(
-      'messages',
-      expect.objectContaining({ initialContact: expect.objectContaining({ phone: '555-0100' }) })
-    );
+    expect(messagesMock.startText).toHaveBeenCalledWith('555-0100');
   });
 
   it("hides Report when the listing is the viewer's own", async () => {

@@ -218,6 +218,16 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       expect(get(msgStore).length).toBeGreaterThan(0);
     });
 
+    it('useMessages.startText opens Messages with a bare phone number, no Contact required', () => {
+      const { startText } = useMessages();
+      const { currentApp } = useNavigation();
+
+      startText('555-0100');
+
+      expect(get(currentApp).id).toBe('messages');
+      expect(get(currentApp).props).toEqual({ phone: '555-0100', startNew: true });
+    });
+
     it('useNotifications provides notification stores and management methods', () => {
       const { notificationsStore, unreadCount, markRead, clear, clearAll } =
         useNotifications('blabber');

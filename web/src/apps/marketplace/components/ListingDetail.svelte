@@ -8,31 +8,21 @@
     Skeleton,
     useCall,
     useMarketplace,
-    useNavigation
+    useMessages
   } from '@gphone/sdk';
-  import type { Contact, Listing } from '@shared/types';
+  import type { Listing } from '@shared/types';
 
   let { id, onback }: { id: number; onback: () => void } = $props();
 
   const { viewListing } = useMarketplace();
   const { startCall } = useCall();
-  const { openApp } = useNavigation();
+  const { startText } = useMessages();
 
   let listing = $state<(Listing & { contactPhone: string | null; isOwn: boolean }) | null>(null);
   let reporting = $state(false);
 
   onMount(async () => {
     listing = await viewListing(id);
-  });
-
-  const contactFor = (phone: string): Contact => ({
-    id: 0,
-    citizenid: '',
-    firstname: phone,
-    phone,
-    favorite: false,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
   });
 </script>
 
@@ -60,11 +50,7 @@
     <div class="mt-2 flex items-center gap-2">
       {#if listing.contactPhone}
         <Button onclick={() => startCall(listing!.contactPhone!)}>Call</Button>
-        <Button
-          variant="secondary"
-          onclick={() =>
-            openApp('messages', { initialContact: contactFor(listing!.contactPhone!) })}
-        >
+        <Button variant="secondary" onclick={() => startText(listing!.contactPhone!)}>
           Text
         </Button>
       {/if}
