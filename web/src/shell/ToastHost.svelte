@@ -214,7 +214,7 @@
             />
             <button
               type="button"
-              class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-elevation-2 duration-short ease-standard shrink-0 cursor-pointer rounded-xl p-1.5 transition-colors disabled:opacity-50"
+              class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-elevation-2 duration-short ease-standard shrink-0 cursor-pointer rounded-xl p-1.5 transition-colors disabled:bg-disabled-container disabled:text-disabled-content"
               disabled={!replyInputs[t.id]?.trim()}
               onclick={(e) => handleSendReply(t, e)}
               aria-label="Send reply"
