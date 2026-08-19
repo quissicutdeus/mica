@@ -29,11 +29,19 @@ const APPS = join(ROOT, 'src', 'apps');
 const FORBIDDEN = ['shell', 'services', 'sdk', 'nui', 'lib'];
 
 /**
+ * Matches both `import ... from '...'` and a dynamic `import('...')` — a static-only
+ * pattern let a dynamic relative import escape every rule below undetected. Verified by
+ * injecting `() => import('../../shell/Shell.svelte')` into a manifest: every check in
+ * this file passed clean until this prefix covered the call form too.
+ */
+const IMPORT_PREFIX = String.raw`(?:from\s+|import\()`;
+
+/**
  * `../../sdk` is a violation too, and the directory pattern above missed it: it requires
  * a `/` after the directory name, and the SDK barrel is imported as the bare directory.
  * Media had both forms in one file and only the tidy one was caught.
  */
-const BARE_SDK_IMPORT = /from\s+['"](?:\.\.\/)+sdk['"]/g;
+const BARE_SDK_IMPORT = new RegExp(String.raw`${IMPORT_PREFIX}['"](?:\.\.\/)+sdk['"]`, 'g');
 
 const walk = (dir: string): string[] => {
   const out: string[] = [];
@@ -45,9 +53,9 @@ const walk = (dir: string): string[] => {
   return out;
 };
 
-/** `import ... from '../../<forbidden dir>/...'`, at any depth. */
+/** `import ... from '../../<forbidden dir>/...'` or `import('../../<forbidden dir>/...')`, at any depth. */
 const ESCAPING_IMPORT = new RegExp(
-  String.raw`from\s+['"](?:\.\./)+(${FORBIDDEN.join('|')})/[^'"]*['"]`,
+  String.raw`${IMPORT_PREFIX}['"](?:\.\./)+(${FORBIDDEN.join('|')})/[^'"]*['"]`,
   'g'
 );
 
@@ -65,7 +73,7 @@ describe('app boundary', () => {
     for (const file of FILES) {
       const text = readFileSync(file, 'utf8');
       for (const match of [...text.matchAll(ESCAPING_IMPORT), ...text.matchAll(BARE_SDK_IMPORT)]) {
-        offenders.push(`${relative(ROOT, file)}  ->  ${match[0].replace(/^from\s+/, '')}`);
+        offenders.push(`${relative(ROOT, file)}  ->  ${match[0].replace(/^(?:from\s+|import\()/, '')}`);
       }
     }
 
@@ -145,7 +153,7 @@ describe('apps do not reach into each other', () => {
    * Store cannot resolve a sibling app it wasn't shipped with, exactly like it can't
    * resolve a relative `shell/` path.
    */
-  const RELATIVE_IMPORT = /from\s+['"](\.[^'"]*)['"]/g;
+  const RELATIVE_IMPORT = new RegExp(String.raw`${IMPORT_PREFIX}['"](\.[^'"]*)['"]`, 'g');
 
   it('no app imports another app by relative path', () => {
     const offenders: string[] = [];
@@ -161,7 +169,9 @@ describe('apps do not reach into each other', () => {
 
         const targetApp = rel.split(sep)[0];
         if (targetApp && targetApp !== ownApp) {
-          offenders.push(`${relative(ROOT, file)}  ->  ${match[0].replace(/^from\s+/, '')}`);
+          offenders.push(
+            `${relative(ROOT, file)}  ->  ${match[0].replace(/^(?:from\s+|import\()/, '')}`
+          );
         }
       }
     }
