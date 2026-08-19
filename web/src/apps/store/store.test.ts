@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import manifest from './manifest';
 import { useAppRegistry, setTrustedRemoteAppHosts } from '@gphone/sdk';
 import { renderApp } from '@gphone/sdk/testing';
@@ -91,6 +91,42 @@ describe('Store, rendered', () => {
   });
 });
 
+describe('handleInstall routing', () => {
+  /**
+   * `handleInstall` in `index.svelte` branches on `app.isRemote && app.bundleUrl` to pick
+   * `installFromCatalog` over the bundled-add-on `registerApp` path. Only the bundled
+   * branch is reachable through a real render: `REMOTE_CATALOG_URL` is hard-coded to
+   * `undefined` in `index.svelte` (a deliberate non-goal — no operator configuration for
+   * the remote catalog URL yet), so `mergedCatalogApps` never returns a remote entry for
+   * `CatalogList` to render an Install button for, and there is no other exported seam to
+   * reach `handleInstall`'s remote branch directly. That branch stays untested until
+   * either an operator-configurable catalog URL or a test seam exists for it.
+   */
+  afterEach(() => {
+    if (get(appRegistryStore).some((a) => a.id === 'notes')) {
+      appRegistryStore.unregisterApp('notes');
+    }
+  });
+
+  it('installs a bundled add-on via registerApp, not installFromCatalog', async () => {
+    const registerApp = vi.spyOn(appRegistryStore, 'registerApp');
+    const installFromCatalog = vi.spyOn(appRegistryStore, 'installFromCatalog');
+
+    const { getByText } = renderApp(Store, { id: 'store' });
+    await vi.waitFor(() => expect(getByText('Notes')).toBeTruthy());
+
+    const row = getByText('Notes').closest('.justify-between') as HTMLElement;
+    expect(row).toBeTruthy();
+    const buttons = row.querySelectorAll('button');
+    // Second button in the row is Install/Uninstall; the first opens the details view.
+    (buttons[1] as HTMLButtonElement).click();
+
+    await vi.waitFor(() => expect(registerApp).toHaveBeenCalled());
+    expect(registerApp.mock.calls[0][0]).toMatchObject({ id: 'notes' });
+    expect(installFromCatalog).not.toHaveBeenCalled();
+  });
+});
+
 describe('remote catalog', () => {
   const remoteEntry = {
     id: 'remote_weather',
@@ -147,5 +183,26 @@ describe('remote catalog', () => {
 
     expect(merged.some((a) => a.id === 'remote_weather')).toBe(true);
     expect(merged.find((a) => a.id === 'remote_weather')?.isRemote).toBe(true);
+  });
+
+  it('falls back to an empty list, not a rejection, when the remote catalog fetch fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await expect(
+      remoteCatalogApps('https://store.example.com/catalog.json')
+    ).resolves.toEqual([]);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('still returns the bundled add-ons when the remote catalog fetch fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const merged = await mergedCatalogApps('https://store.example.com/catalog.json');
+
+    expect(merged.length).toBeGreaterThan(0);
+    expect(merged.some((a) => a.id === 'notes')).toBe(true);
+    expect(merged.some((a) => a.id === 'remote_weather')).toBe(false);
   });
 });

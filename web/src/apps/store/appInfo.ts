@@ -63,8 +63,16 @@ const toAppManifest = (entry: CatalogEntry): AppManifest => ({
  */
 export async function remoteCatalogApps(catalogUrl: string | undefined): Promise<AppManifest[]> {
   if (!catalogUrl) return [];
-  const entries = await fetchCatalog(catalogUrl);
-  return entries.map(toAppManifest);
+  try {
+    const entries = await fetchCatalog(catalogUrl);
+    return entries.map(toAppManifest);
+  } catch (err) {
+    // The remote catalog is additive — the bundled add-ons above have nothing to do with
+    // it. A down server, a bad host, or malformed JSON here must degrade to "no remote
+    // apps this boot," not take the Store's own bundled list down with it.
+    console.warn(`gPhone Store: failed to fetch remote catalog from '${catalogUrl}':`, err);
+    return [];
+  }
 }
 
 /** Bundled add-ons, then whatever a configured remote catalog offers. */
