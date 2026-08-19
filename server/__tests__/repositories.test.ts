@@ -22,6 +22,7 @@ import { notes } from '../services/Notes';
 import { media } from '../services/Media';
 import { reports } from '../services/Reports';
 import { batteryApp } from '../services/Battery';
+import { crypto_tracker } from '../services/CryptoTracker';
 
 /**
  * The shipped write policy, table by table.
@@ -41,7 +42,8 @@ const ALL = [
   // unused export: this file was the only thing that ever imported a declaration, so
   // one absent from it looked like one nobody used.
   { name: 'reports', repo: reports.repo },
-  { name: 'battery', repo: batteryApp.repo }
+  { name: 'battery', repo: batteryApp.repo },
+  { name: 'crypto_tracker', repo: crypto_tracker.repo }
 ] satisfies { name: string; repo: Repository<any> }[];
 
 describe('shipped repositories — declared client write policy', () => {
@@ -57,7 +59,8 @@ describe('shipped repositories — declared client write policy', () => {
     ['mail', []],
     ['messages', []],
     ['reports', []],
-    ['battery', []]
+    ['battery', []],
+    ['crypto_tracker', ['symbol', 'amount']]
   ])('%s exposes exactly the expected writable columns', (name, expected) => {
     const entry = ALL.find((candidate) => candidate.name === name)!;
     expect(entry.repo.writableColumns).toEqual(expected);

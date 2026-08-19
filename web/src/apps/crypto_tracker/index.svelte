@@ -97,7 +97,12 @@
         disabled={$busy}
       />
       <div class="flex gap-2">
-        <Button class="flex-1" variant="secondary" onclick={() => (isAdding = false)} disabled={$busy}>
+        <Button
+          class="flex-1"
+          variant="secondary"
+          onclick={() => (isAdding = false)}
+          disabled={$busy}
+        >
           Cancel
         </Button>
         <Button class="flex-1" onclick={submit} disabled={$busy}>
@@ -110,10 +115,7 @@
       {#if !$loaded}
         <Skeleton count={4} height="h-14" />
       {:else if $cryptoTracker.length === 0}
-        <EmptyState
-          title="No holdings yet"
-          description="Tap + to add the coins you're tracking."
-        />
+        <EmptyState title="No holdings yet" description="Tap + to add the coins you're tracking." />
       {:else}
         {#each $cryptoTracker as holding (holding.id)}
           <ListItem

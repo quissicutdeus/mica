@@ -12,7 +12,10 @@ import type { CryptoHolding } from '@shared/types';
  * statically (it would drag the still-initialising `@gphone/sdk` barrel in behind it),
  * so `preload` reaches it with `import('./store')` instead.
  */
-export const cryptoTracker = createCrudStore<CryptoHolding, Pick<CryptoHolding, 'symbol' | 'amount'>>(
+export const cryptoTracker = createCrudStore<
+  CryptoHolding,
+  Pick<CryptoHolding, 'symbol' | 'amount'>
+>(
   'Crypto Tracker',
   { list: 'get', create: 'create', update: 'update', remove: 'delete' },
   {
