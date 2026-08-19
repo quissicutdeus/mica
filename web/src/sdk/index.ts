@@ -14,6 +14,10 @@ export * from './hooks/index';
  */
 export { createCrudStore, byNewest } from '../services/createCrudStore';
 export { createPagedStore } from '../services/createPagedStore';
+export {
+  setTrustedRemoteAppHosts,
+  getTrustedRemoteAppHosts
+} from '../shell/state/remoteAppSecurity';
 export * from './capability';
 export * from './types';
 export * from './version';
