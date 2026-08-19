@@ -69,7 +69,7 @@ const write = (relative, contents) => {
 write(
   `web/src/apps/${id}/manifest.ts`,
   `import Icon from './Icon.svelte';
-import { defineApp } from '@gphone/sdk';
+import { defineApp } from '@gphone/sdk/app';
 
 export default defineApp({
   id: '${id}',
