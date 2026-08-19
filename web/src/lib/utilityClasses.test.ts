@@ -18,11 +18,15 @@ import { fileURLToPath } from 'node:url';
  *   `${...}` interpolation is skipped entirely, including string literals inside it
  *   (`{cond ? 'a-class' : ''}`). Distinguishing a class-producing branch from an
  *   unrelated comparison value (`x === 'settling'`) needs real parsing to do safely.
- * - A fully dynamic `class={someVar}` binding (an icon's `class` prop, a manifest's
- *   `color` field used as a class elsewhere) isn't checked — there's no literal text to
- *   check statically, by construction.
- * - Only `.svelte` files are scanned. `.ts` files that hand a class *string* to a
- *   component (`sdk/manifest.ts`'s `color`) are out of scope for the same reason.
+ * - A fully dynamic `class={someVar}` binding (an icon's `class` prop) isn't checked —
+ *   there's no literal text to check statically, by construction.
+ * - `.svelte` markup is scanned in full. `.ts` files are scanned only for the one
+ *   concrete, already-known pattern that hands a class *string* straight to a
+ *   component: an app manifest's `color` field (`AppIcon` interpolates it directly into
+ *   a `class`, per `sdk/manifest.ts`). Arbitrary string-tracking across `.ts` is not the
+ *   goal — that would mean a real parser to avoid flagging every unrelated string
+ *   literal that happens to look class-shaped — so this stays narrow and deliberate
+ *   rather than growing into a second, noisier scanner.
  *
  * Static tokens are exactly what bit us, so this still catches the real bug class
  * without needing a real parser.
@@ -135,11 +139,45 @@ function findClassUsages(files: string[]): ClassUsage[] {
   return usages;
 }
 
+/**
+ * Every statically-known class token from an app manifest's `color` field.
+ *
+ * `AppIcon` interpolates `manifest.color` directly into a `class` (see `sdk/manifest.ts`),
+ * so a stale or typo'd token there is exactly the same silent-no-op failure a `.svelte`
+ * `class="..."` typo is — it just lives one file away from where it renders. Narrow and
+ * literal on purpose: only a plain single- or double-quoted string literal assigned to
+ * `color:` is read. A template literal or any other expression is skipped rather than
+ * guessed at — there is nothing statically knowable to check in that case, the same
+ * reasoning `stripInterpolations` applies to a Svelte `{expr}`.
+ */
+function findManifestColorUsages(files: string[]): ClassUsage[] {
+  const usages: ClassUsage[] = [];
+  const colorFieldRe = /\bcolor:\s*(['"])((?:(?!\1)[^\\]|\\.)*)\1/g;
+
+  for (const file of files) {
+    const source = fs.readFileSync(file, 'utf8');
+    const rel = path.relative(WEB_SRC, file);
+
+    colorFieldRe.lastIndex = 0;
+    for (const match of source.matchAll(colorFieldRe)) {
+      const line = lineOf(source, match.index ?? 0);
+      for (const token of match[2].split(/\s+/).filter(Boolean)) {
+        usages.push({ file: rel, line, token });
+      }
+    }
+  }
+
+  return usages;
+}
+
 describe('app-utilities.css coverage', () => {
-  it('has a rule for every statically-known class token used in .svelte markup', () => {
+  it('has a rule for every statically-known class token used in .svelte markup and app manifest colors', () => {
     const defined = loadDefinedClasses();
     const svelteFiles = walk(WEB_SRC, ['.svelte']);
-    const usages = findClassUsages(svelteFiles);
+    const manifestFiles = walk(path.join(WEB_SRC, 'apps'), ['.ts']).filter((f) =>
+      f.endsWith('manifest.ts')
+    );
+    const usages = [...findClassUsages(svelteFiles), ...findManifestColorUsages(manifestFiles)];
 
     const missing = usages.filter((u) => !defined.has(u.token));
 
