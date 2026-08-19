@@ -308,9 +308,6 @@
   border-bottom-width: 1px;
   border-bottom-style: solid;
 }
-.border-border {
-  border-color: var(--color-outline-variant);
-}
 .border-dashed {
   border-style: dashed;
 }
@@ -1390,9 +1387,6 @@
 .pt-4 {
   padding-top: 1rem;
 }
-.pt-8 {
-  padding-top: 2rem;
-}
 .pt-12 {
   padding-top: 3rem;
 }
@@ -1773,9 +1767,6 @@
 }
 .text-\[11px\] {
   font-size: 11px;
-}
-.text-\[15px\] {
-  font-size: 15px;
 }
 .text-2xl {
   font-size: 1.5rem;
