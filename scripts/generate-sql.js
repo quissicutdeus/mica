@@ -290,7 +290,12 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error('generate-sql failed:', error);
-  process.exit(1);
-});
+main()
+  // Loading server/services/index.ts to read the declarations also runs it, and some
+  // services (Battery) start a real setInterval as a side effect. A one-shot CLI script
+  // has to exit itself rather than wait for an event loop those timers keep alive.
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error('generate-sql failed:', error);
+    process.exit(1);
+  });
