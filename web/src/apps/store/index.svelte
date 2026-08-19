@@ -8,9 +8,10 @@
     SegmentedControl,
     useAppAction,
     type AppComponent,
-    type AppProps
+    type AppProps,
+    fetchCatalog
   } from '@gphone/sdk';
-  import { catalogApps } from './appInfo';
+  import { mergedCatalogApps } from './appInfo';
   import AppDetails from './components/AppDetails.svelte';
   import UnavailableApp from './components/UnavailableApp.svelte';
   import CatalogList from './components/CatalogList.svelte';
@@ -18,7 +19,23 @@
 
   let { onback }: AppProps = $props();
 
-  const { registryStore, unregisterApp, registerApp } = useAppRegistry();
+  /**
+   * The operator's own catalog server, if they have one. Unset by default: `remoteCatalogApps`
+   * already returns an empty list for `undefined`, so the Store shows exactly what it showed
+   * before this shipped until an operator points this at a real, allowlisted host.
+   */
+  const REMOTE_CATALOG_URL: string | undefined = undefined;
+
+  // Starts empty; `mergedCatalogApps` (bundled add-ons + whatever the configured catalog
+  // returns) fills it in once the effect below resolves. `catalogApps()` is not called
+  // directly here any more — `mergedCatalogApps` already calls it internally.
+  let catalogAppsList = $state<AppManifest[]>([]);
+
+  $effect(() => {
+    mergedCatalogApps(REMOTE_CATALOG_URL).then((apps) => (catalogAppsList = apps));
+  });
+
+  const { registryStore, unregisterApp, registerApp, installFromCatalog } = useAppRegistry();
   const { openApp: openPhoneApp } = useNavigation();
   const { run } = useAppAction('store');
 
@@ -68,6 +85,20 @@
   const placeholderComponent = (): AppComponent => UnavailableApp;
 
   function handleInstall(app: AppManifest) {
+    if (app.isRemote && app.bundleUrl) {
+      const target = app;
+      void run(
+        async () => {
+          const entries = await fetchCatalog(REMOTE_CATALOG_URL as string);
+          const entry = entries.find((e) => e.id === target.id);
+          if (!entry) throw new Error(`'${target.name}' is no longer in the catalog.`);
+          await installFromCatalog(entry);
+        },
+        { title: 'Store', success: `${app.name} installed successfully!` }
+      );
+      return;
+    }
+
     void run(
       async () => {
         // Awaited, because components load on demand: `getComponent` answers from a cache
@@ -126,7 +157,7 @@
 
         {#if activeTab === 'catalog'}
           <CatalogList
-            apps={catalogApps()}
+            apps={catalogAppsList}
             {isInstalled}
             onselect={(app) => (selectedApp = app)}
             oninstall={handleInstall}

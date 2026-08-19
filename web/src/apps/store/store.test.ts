@@ -1,8 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import manifest from './manifest';
-import { useAppRegistry } from '@gphone/sdk';
+import { useAppRegistry, setTrustedRemoteAppHosts } from '@gphone/sdk';
 import { renderApp } from '@gphone/sdk/testing';
-import { catalogApps } from './appInfo';
+import { catalogApps, remoteCatalogApps, mergedCatalogApps } from './appInfo';
 import type { AppComponent } from '@gphone/sdk';
 import { get } from 'svelte/store';
 
@@ -88,5 +88,64 @@ describe('Store, rendered', () => {
     getByLabelText('Go back').click();
 
     expect(onback).toHaveBeenCalled();
+  });
+});
+
+describe('remote catalog', () => {
+  const remoteEntry = {
+    id: 'remote_weather',
+    name: 'Weather',
+    version: '2.0.0',
+    description: 'Live weather from a remote catalog.',
+    bundleUrl: 'https://store.example.com/apps/weather.js',
+    sha256: 'b'.repeat(64),
+    color: 'bg-blue-500',
+    icon: 'https://store.example.com/icons/weather.svg'
+  };
+
+  beforeEach(() => {
+    setTrustedRemoteAppHosts(['store.example.com']);
+    vi.restoreAllMocks();
+  });
+
+  it('fetches nothing and returns an empty list when no catalog URL is configured', async () => {
+    expect(await remoteCatalogApps(undefined)).toEqual([]);
+  });
+
+  it('maps a fetched catalog entry onto the same shape CatalogList already renders', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([remoteEntry])
+    } as Response);
+
+    const apps = await remoteCatalogApps('https://store.example.com/catalog.json');
+
+    expect(apps).toEqual([
+      {
+        id: 'remote_weather',
+        name: 'Weather',
+        version: '2.0.0',
+        description: 'Live weather from a remote catalog.',
+        icon: 'https://store.example.com/icons/weather.svg',
+        color: 'bg-blue-500',
+        core: false,
+        isRemote: true,
+        bundleUrl: 'https://store.example.com/apps/weather.js'
+      }
+    ]);
+  });
+
+  it('merges bundled and remote apps, bundled first', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([remoteEntry])
+    } as Response);
+
+    const merged = await mergedCatalogApps('https://store.example.com/catalog.json');
+
+    expect(merged.some((a) => a.id === 'remote_weather')).toBe(true);
+    expect(merged.find((a) => a.id === 'remote_weather')?.isRemote).toBe(true);
   });
 });

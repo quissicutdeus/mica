@@ -1,4 +1,11 @@
-import { appStorageBytes, useAppRegistry, type AppManifest, type AppPermission } from '@gphone/sdk';
+import {
+  appStorageBytes,
+  useAppRegistry,
+  fetchCatalog,
+  type AppManifest,
+  type AppPermission,
+  type CatalogEntry
+} from '@gphone/sdk';
 
 /**
  * What the Store knows about an app before anyone taps it.
@@ -29,6 +36,42 @@ import { appStorageBytes, useAppRegistry, type AppManifest, type AppPermission }
  */
 export const catalogApps = (): AppManifest[] =>
   [...useAppRegistry().bundledAddOns].sort((a, b) => a.name.localeCompare(b.name));
+
+/**
+ * A remote catalog entry, shaped exactly like `CatalogList.svelte` already expects.
+ *
+ * No new list component: `CatalogList` only ever reads `id`/`name`/`version`/`description`/
+ * `icon`/`color`, every one of which a `CatalogEntry` already carries. `isRemote`/`bundleUrl`
+ * ride along so `handleInstall` in `index.svelte` can tell which install path to call.
+ */
+const toAppManifest = (entry: CatalogEntry): AppManifest => ({
+  id: entry.id,
+  name: entry.name,
+  version: entry.version,
+  description: entry.description,
+  icon: entry.icon ?? null,
+  color: entry.color,
+  core: false,
+  isRemote: true,
+  bundleUrl: entry.bundleUrl
+});
+
+/**
+ * Every app a configured remote catalog offers, or an empty list with no catalog
+ * configured — a server that hasn't set one up yet sees exactly what it saw before this
+ * shipped.
+ */
+export async function remoteCatalogApps(catalogUrl: string | undefined): Promise<AppManifest[]> {
+  if (!catalogUrl) return [];
+  const entries = await fetchCatalog(catalogUrl);
+  return entries.map(toAppManifest);
+}
+
+/** Bundled add-ons, then whatever a configured remote catalog offers. */
+export async function mergedCatalogApps(catalogUrl: string | undefined): Promise<AppManifest[]> {
+  const remote = await remoteCatalogApps(catalogUrl);
+  return [...catalogApps(), ...remote];
+}
 
 /**
  * There is no `isSystemApp()` here any more, and its absence is the point.
