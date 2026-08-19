@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 
 /**
  * Apps may not reach past the SDK.
@@ -135,6 +135,42 @@ describe('app boundary', () => {
       expect(sdk, `@gphone/sdk should not expose ${shellOnly}`).not.toHaveProperty(shellOnly);
     }
   }, 30_000);
+});
+
+describe('apps do not reach into each other', () => {
+  /**
+   * `ESCAPING_IMPORT` above only forbids the shared directories in `FORBIDDEN` — it has
+   * nothing to say about `apps/messages` importing `apps/marketplace` by relative path,
+   * which is just as much a third-party-add-on violation: an app installed through the
+   * Store cannot resolve a sibling app it wasn't shipped with, exactly like it can't
+   * resolve a relative `shell/` path.
+   */
+  const RELATIVE_IMPORT = /from\s+['"](\.[^'"]*)['"]/g;
+
+  it('no app imports another app by relative path', () => {
+    const offenders: string[] = [];
+
+    for (const file of FILES) {
+      const ownApp = relative(APPS, file).split(sep)[0];
+      const text = readFileSync(file, 'utf8');
+
+      for (const match of text.matchAll(RELATIVE_IMPORT)) {
+        const resolved = resolve(dirname(file), match[1]);
+        const rel = relative(APPS, resolved);
+        if (rel.startsWith('..')) continue; // escapes apps/ entirely — the rule above covers it
+
+        const targetApp = rel.split(sep)[0];
+        if (targetApp && targetApp !== ownApp) {
+          offenders.push(`${relative(ROOT, file)}  ->  ${match[0].replace(/^from\s+/, '')}`);
+        }
+      }
+    }
+
+    expect(
+      offenders.sort(),
+      'an app cannot resolve a sibling app it was not shipped with — share via @gphone/sdk instead'
+    ).toEqual([]);
+  });
 });
 
 describe('manifests import the leaf, never the barrel', () => {
