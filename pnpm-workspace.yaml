@@ -3,6 +3,7 @@ packages:
 
 allowBuilds:
   esbuild: false
+  simple-git-hooks: true
 
 onlyBuiltDependencies:
   - esbuild
