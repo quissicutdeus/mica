@@ -1,6 +1,7 @@
 import type {
   Contact,
   Conversation,
+  Listing,
   Mail,
   Message,
   Note,
@@ -134,6 +135,29 @@ const mockOtherMedia: MediaItem[] = [
 ];
 
 export const mockMedia: MediaItem[] = [...mockOtherMedia, ...mockCaptures];
+
+export const mockListings: Listing[] = [
+  {
+    id: 1,
+    citizenid: 'MOCK1',
+    title: 'Dirt Bike',
+    price: 4500,
+    description: 'Runs great, needs a new chain.',
+    status: 'active',
+    ...ts(3 * 3600_000),
+    attachments: []
+  },
+  {
+    id: 2,
+    citizenid: 'MOCK2',
+    title: 'Burner Phone',
+    price: 150,
+    description: 'Clean, no questions.',
+    status: 'active',
+    ...ts(6 * 3600_000),
+    attachments: []
+  }
+];
 
 export const mockNotes: Note[] = [
   {
