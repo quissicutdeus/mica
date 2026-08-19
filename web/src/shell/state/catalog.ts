@@ -41,9 +41,7 @@ function isCatalogEntry(value: unknown): value is CatalogEntry {
  */
 export async function fetchCatalog(catalogUrl: string): Promise<CatalogEntry[]> {
   if (!isTrustedRemoteUrl(catalogUrl)) {
-    throw new Error(
-      `gPhone Catalog error: '${catalogUrl}' is not on the trusted host allowlist.`
-    );
+    throw new Error(`gPhone Catalog error: '${catalogUrl}' is not on the trusted host allowlist.`);
   }
 
   const response = await fetch(catalogUrl);

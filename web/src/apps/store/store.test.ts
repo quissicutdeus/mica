@@ -189,9 +189,7 @@ describe('remote catalog', () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    await expect(
-      remoteCatalogApps('https://store.example.com/catalog.json')
-    ).resolves.toEqual([]);
+    await expect(remoteCatalogApps('https://store.example.com/catalog.json')).resolves.toEqual([]);
     expect(warn).toHaveBeenCalled();
   });
 

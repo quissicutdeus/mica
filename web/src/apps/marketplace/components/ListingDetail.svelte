@@ -50,9 +50,7 @@
     <div class="mt-2 flex items-center gap-2">
       {#if listing.contactPhone}
         <Button onclick={() => startCall(listing!.contactPhone!)}>Call</Button>
-        <Button variant="secondary" onclick={() => startText(listing!.contactPhone!)}>
-          Text
-        </Button>
+        <Button variant="secondary" onclick={() => startText(listing!.contactPhone!)}>Text</Button>
       {/if}
       {#if !listing.isOwn}
         <ReportButton subject="listing" size="header" onclick={() => (reporting = true)} />

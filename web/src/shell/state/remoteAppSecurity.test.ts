@@ -46,9 +46,7 @@ describe('remote-app host allowlist', () => {
   });
 
   it('always trusts a data: URL — there is no remote host to check', () => {
-    expect(isTrustedRemoteUrl('data:text/javascript;charset=utf-8,export const x = 1;')).toBe(
-      true
-    );
+    expect(isTrustedRemoteUrl('data:text/javascript;charset=utf-8,export const x = 1;')).toBe(true);
   });
 });
 

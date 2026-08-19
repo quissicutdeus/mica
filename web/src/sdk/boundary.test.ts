@@ -73,7 +73,9 @@ describe('app boundary', () => {
     for (const file of FILES) {
       const text = readFileSync(file, 'utf8');
       for (const match of [...text.matchAll(ESCAPING_IMPORT), ...text.matchAll(BARE_SDK_IMPORT)]) {
-        offenders.push(`${relative(ROOT, file)}  ->  ${match[0].replace(/^(?:from\s+|import\()/, '')}`);
+        offenders.push(
+          `${relative(ROOT, file)}  ->  ${match[0].replace(/^(?:from\s+|import\()/, '')}`
+        );
       }
     }
 

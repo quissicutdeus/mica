@@ -236,10 +236,7 @@ function removeSavedRemoteApp(url: string) {
   if (typeof localStorage === 'undefined') return;
   try {
     const current = getSavedRemoteApps();
-    localStorage.setItem(
-      LOCAL_STORAGE_KEY,
-      JSON.stringify(current.filter((e) => e.url !== url))
-    );
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(current.filter((e) => e.url !== url)));
   } catch {
     // Ignore errors
   }
@@ -477,9 +474,7 @@ function createAppRegistry() {
 
       return { manifest: validatedManifest, component };
     },
-    installFromCatalog: (
-      entry: CatalogEntry
-    ): Promise<{ manifest: AppManifest; component: any }> =>
+    installFromCatalog: (entry: CatalogEntry): Promise<{ manifest: AppManifest; component: any }> =>
       installVerified(entry.bundleUrl, entry.sha256),
     rehydrateSavedRemoteApps: async (): Promise<void> => {
       const savedRemoteApps = getSavedRemoteApps();

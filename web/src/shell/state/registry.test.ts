@@ -264,7 +264,7 @@ describe('installFromCatalog', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
 
     await expect(appRegistryStore.installFromCatalog(catalogEntry)).rejects.toThrow(
-      "is not on the trusted remote-app host allowlist"
+      'is not on the trusted remote-app host allowlist'
     );
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -380,9 +380,9 @@ describe('remote app persistence and rehydration', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode));
 
     await appRegistryStore.loadRemoteApp(bundleUrl);
-    expect(
-      JSON.parse(localStorage.getItem('gphone_installed_remote_apps') ?? '[]')
-    ).toEqual([{ url: bundleUrl }]);
+    expect(JSON.parse(localStorage.getItem('gphone_installed_remote_apps') ?? '[]')).toEqual([
+      { url: bundleUrl }
+    ]);
 
     await appRegistryStore.installFromCatalog({
       id: 'remote_rehydrate_app',
