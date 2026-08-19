@@ -1,42 +1,48 @@
 <script lang="ts">
-  import { EmptyState, Screen, useAppLevels, type AppProps,
-  Skeleton,
-  onAppForeground,
-  useMarketplace } from '@gphone/sdk';
+  import { Screen, useAppLevels, type AppProps } from '@gphone/sdk';
+  import Feed from './components/Feed.svelte';
+  import ListingDetail from './components/ListingDetail.svelte';
+  import CreateListing from './components/CreateListing.svelte';
+  import MyListings from './components/MyListings.svelte';
 
-  // The annotation, not `$props<AppProps>()` — that form only works for an inline object
-  // literal and reports "Expected 0 type arguments" for a named type.
   let { onback }: AppProps = $props();
 
-  const { marketplace } = useMarketplace();
-  const loaded = marketplace.loaded;
+  type MarketplaceScreen =
+    | { name: 'feed' }
+    | { name: 'detail'; id: number }
+    | { name: 'create' }
+    | { name: 'mine' };
 
-  // Every visit, not once per session — apps stay resident (AGENTS.md §11).
-  onAppForeground('marketplace', () => {
-    void marketplace.load();
-  });
+  let screen = $state<MarketplaceScreen>({ name: 'feed' });
 
-  // Declaring the levels is what claims the Back key. Add a rung per screen, deepest
-  // first; with none, Back simply leaves the app. `appId` is what keeps the claim
-  // pointed at this app while it sits resident in the background.
   const app = useAppLevels({
     appId: 'marketplace',
     title: 'Marketplace',
     onback: () => onback(),
-    levels: []
+    levels: [
+      {
+        open: () => screen.name !== 'feed',
+        close: () => (screen = { name: 'feed' })
+      }
+    ]
   });
 </script>
 
 <Screen title={app.title} onback={app.back}>
-  <div class="p-4">
-    {#if !$loaded}
-      <Skeleton count={4} height="h-14" />
-    {:else if $marketplace.length === 0}
-      <EmptyState title="Nothing here yet" description="TODO: say what will appear." />
-    {:else}
-      {#each $marketplace as row (row.id)}
-        <p class="text-sm text-gray-300">{row.id}</p>
-      {/each}
-    {/if}
-  </div>
+  {#if screen.name === 'feed'}
+    <Feed
+      onselect={(id) => (screen = { name: 'detail', id })}
+      onCreate={() => (screen = { name: 'create' })}
+      onMyListings={() => (screen = { name: 'mine' })}
+    />
+  {:else if screen.name === 'detail'}
+    <ListingDetail id={screen.id} onback={() => (screen = { name: 'feed' })} />
+  {:else if screen.name === 'create'}
+    <CreateListing
+      onposted={(id) => (screen = { name: 'detail', id })}
+      oncancel={() => (screen = { name: 'feed' })}
+    />
+  {:else if screen.name === 'mine'}
+    <MyListings onback={() => (screen = { name: 'feed' })} />
+  {/if}
 </Screen>
