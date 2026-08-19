@@ -182,33 +182,56 @@ export const bundledAddOns = [...addOns].sort((a, b) => a.name.localeCompare(b.n
 const CORE_APP_IDS = new Set(loadedApps.filter((a) => a.core).map((a) => a.id));
 const LOCAL_STORAGE_KEY = 'gphone_installed_remote_apps';
 
-function getSavedRemoteAppUrls(): string[] {
+interface SavedRemoteApp {
+  url: string;
+  /** Present only for a catalog install — `loadRemoteApp`'s push path never has one. */
+  sha256?: string;
+}
+
+function getSavedRemoteApps(): SavedRemoteApp[] {
   if (typeof localStorage === 'undefined') return [];
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Pre-existing installs saved the old shape: a bare array of URL strings.
+    return parsed
+      .map((entry): SavedRemoteApp | null => {
+        if (typeof entry === 'string') return { url: entry };
+        if (entry && typeof entry === 'object' && typeof entry.url === 'string') {
+          return {
+            url: entry.url,
+            sha256: typeof entry.sha256 === 'string' ? entry.sha256 : undefined
+          };
+        }
+        return null;
+      })
+      .filter((entry): entry is SavedRemoteApp => entry !== null);
   } catch {
     return [];
   }
 }
 
-function saveRemoteAppUrl(url: string) {
+function saveRemoteApp(entry: SavedRemoteApp) {
   if (typeof localStorage === 'undefined') return;
   try {
-    const current = getSavedRemoteAppUrls();
-    if (!current.includes(url)) {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([...current, url]));
-    }
+    const current = getSavedRemoteApps();
+    if (current.some((e) => e.url === entry.url)) return;
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([...current, entry]));
   } catch {
     // Ignore localStorage quota/access errors
   }
 }
 
-function removeSavedRemoteAppUrl(url: string) {
+function removeSavedRemoteApp(url: string) {
   if (typeof localStorage === 'undefined') return;
   try {
-    const current = getSavedRemoteAppUrls();
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(current.filter((u) => u !== url)));
+    const current = getSavedRemoteApps();
+    localStorage.setItem(
+      LOCAL_STORAGE_KEY,
+      JSON.stringify(current.filter((e) => e.url !== url))
+    );
   } catch {
     // Ignore errors
   }
@@ -382,7 +405,7 @@ function createAppRegistry() {
         );
       }
       if (targetApp?.bundleUrl) {
-        removeSavedRemoteAppUrl(targetApp.bundleUrl);
+        removeSavedRemoteApp(targetApp.bundleUrl);
       } else {
         installedAddOnIds.update((ids) => ids.filter((id) => id !== appId));
       }
@@ -442,14 +465,32 @@ function createAppRegistry() {
       const validatedManifest = defineApp({ ...rawManifest, isRemote: true, bundleUrl: url });
 
       store.registerApp(validatedManifest, component);
-      saveRemoteAppUrl(url); // in loadRemoteApp, unchanged from before
+      saveRemoteApp({ url }); // in loadRemoteApp, unchanged from before
 
       return { manifest: validatedManifest, component };
     },
     installFromCatalog: (
       entry: CatalogEntry
     ): Promise<{ manifest: AppManifest; component: any }> =>
-      installVerified(entry.bundleUrl, entry.sha256)
+      installVerified(entry.bundleUrl, entry.sha256),
+    rehydrateSavedRemoteApps: async (): Promise<void> => {
+      const savedRemoteApps = getSavedRemoteApps();
+      await Promise.all(
+        savedRemoteApps.map((saved) => {
+          // A pinned hash re-verifies on every boot, not only at install time — a bundle
+          // swapped out after install must be refused, not silently re-run.
+          const rehydrate = saved.sha256
+            ? installVerified(saved.url, saved.sha256)
+            : store.loadRemoteApp(saved.url);
+          return rehydrate.catch((err) => {
+            console.warn(
+              `gPhone Registry failed to re-hydrate remote app from '${saved.url}':`,
+              err
+            );
+          });
+        })
+      );
+    }
   };
 
   /**
@@ -487,19 +528,14 @@ function createAppRegistry() {
     const validatedManifest = defineApp({ ...rawManifest, isRemote: true, bundleUrl });
 
     store.registerApp(validatedManifest, component);
-    saveRemoteAppUrl(bundleUrl); // in installVerified, for this task only
+    saveRemoteApp({ url: bundleUrl, sha256 }); // in installVerified, for this task only
 
     return { manifest: validatedManifest, component };
   }
 
   // Rehydrate saved remote apps on startup if running in browser/client environment
   if (typeof window !== 'undefined') {
-    const savedUrls = getSavedRemoteAppUrls();
-    for (const url of savedUrls) {
-      store.loadRemoteApp(url).catch((err) => {
-        console.warn(`gPhone Registry failed to re-hydrate remote app from '${url}':`, err);
-      });
-    }
+    void store.rehydrateSavedRemoteApps();
 
     /**
      * Re-register every previously installed bundled add-on.

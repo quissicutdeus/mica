@@ -276,6 +276,115 @@ describe('installFromCatalog', () => {
   });
 });
 
+describe('remote app persistence and rehydration', () => {
+  /**
+   * This jsdom test environment has no real `localStorage` (see `storage.test.ts`'s note on
+   * the same fact) — `typeof localStorage`/`window.localStorage` are both `undefined` here,
+   * even though the shell's actual runtime (browser/CEF) always has one. `registry.ts`'s
+   * persistence functions read the bare `localStorage` global directly (not through
+   * `useStorage`'s in-memory fallback), so these tests — which assert on what actually landed
+   * in storage, and on rehydration reading it back — need a real-shaped one to exist. A
+   * minimal in-memory polyfill, installed only around this describe block's tests and removed
+   * after, is the least-invasive way to give them that without changing the shared jsdom
+   * environment for every other test file.
+   */
+  let localStorageBacking: Map<string, string>;
+
+  const bundleCode = `
+      export const manifest = {
+        id: 'remote_rehydrate_app',
+        name: 'Rehydrate App',
+        color: 'bg-purple-600',
+        icon: null,
+      };
+      export const component = { type: 'MockRemoteComponent' };
+    `;
+  // sha256 of `bundleCode` above, byte-for-byte — do not reformat the template literal
+  // without recomputing this.
+  const bundleSha256 = '984cedc40b8f071ffca1e5cc648a75a8de167d148666991bc428bb953ffdebdc';
+  const bundleUrl = 'https://store.example.com/apps/rehydrate_app.js';
+
+  const fetchResponse = (text: string, ok = true, status = 200): Response =>
+    ({ ok, status, text: () => Promise.resolve(text) }) as Response;
+
+  beforeEach(() => {
+    setTrustedRemoteAppHosts(['store.example.com']);
+    vi.restoreAllMocks();
+    localStorageBacking = new Map<string, string>();
+    (globalThis as any).localStorage = {
+      getItem: (key: string) => localStorageBacking.get(key) ?? null,
+      setItem: (key: string, value: string) => localStorageBacking.set(key, String(value)),
+      removeItem: (key: string) => localStorageBacking.delete(key)
+    };
+  });
+
+  afterEach(() => {
+    if (appRegistryStore.getComponent('remote_rehydrate_app')) {
+      appRegistryStore.unregisterApp('remote_rehydrate_app');
+    }
+    delete (globalThis as any).localStorage;
+  });
+
+  it('persists the pinned sha256 for a catalog install, not just the URL', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode));
+
+    await appRegistryStore.installFromCatalog({
+      id: 'remote_rehydrate_app',
+      name: 'Rehydrate App',
+      version: '1.0.0',
+      description: 'desc',
+      bundleUrl,
+      sha256: bundleSha256,
+      color: 'bg-purple-600'
+    });
+
+    const stored = JSON.parse(localStorage.getItem('gphone_installed_remote_apps') ?? '[]');
+    expect(stored).toEqual([{ url: bundleUrl, sha256: bundleSha256 }]);
+  });
+
+  it('re-verifies a hash-pinned install on rehydration and refuses a tampered bundle', async () => {
+    // Storage holds the hash pinned at install time; the server now serves something else —
+    // exactly what "swapped out after install" looks like.
+    localStorage.setItem(
+      'gphone_installed_remote_apps',
+      JSON.stringify([{ url: bundleUrl, sha256: bundleSha256 }])
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode + '// tampered'));
+
+    await appRegistryStore.rehydrateSavedRemoteApps();
+
+    expect(appRegistryStore.getComponent('remote_rehydrate_app')).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(`re-hydrate remote app from '${bundleUrl}'`),
+      expect.any(Error)
+    );
+  });
+
+  it('rehydrates a hash-pinned install whose bundle still matches', async () => {
+    localStorage.setItem(
+      'gphone_installed_remote_apps',
+      JSON.stringify([{ url: bundleUrl, sha256: bundleSha256 }])
+    );
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode));
+
+    await appRegistryStore.rehydrateSavedRemoteApps();
+
+    expect(appRegistryStore.getComponent('remote_rehydrate_app')).toBeDefined();
+  });
+
+  it('still rehydrates a pre-existing plain-string-array install from before this change', async () => {
+    const legacyUrl = `data:text/javascript;charset=utf-8,${encodeURIComponent(bundleCode)}`;
+    localStorage.setItem('gphone_installed_remote_apps', JSON.stringify([legacyUrl]));
+
+    await appRegistryStore.rehydrateSavedRemoteApps();
+
+    // No `sha256` in the old shape, so this goes through `loadRemoteApp`, unverified —
+    // exactly the behavior this install had before this task shipped.
+    expect(appRegistryStore.getComponent('remote_rehydrate_app')).toBeDefined();
+  });
+});
+
 describe('installed add-on persistence', () => {
   it('persists a bundled add-on install and removes it on uninstall', async () => {
     const blabberComponent = (await appRegistryStore.loadComponent('blabber')) as AppComponent;
