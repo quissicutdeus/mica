@@ -1472,6 +1472,10 @@
   padding-top: 0.875rem;
   padding-bottom: 0.875rem;
 }
+.py-4 {
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+}
 .py-6 {
   padding-top: 1.5rem;
   padding-bottom: 1.5rem;
@@ -2147,6 +2151,9 @@
 }
 .z-70 {
   z-index: 70;
+}
+.z-80 {
+  z-index: 80;
 }
 .z-\[9999\] {
   z-index: 9999;

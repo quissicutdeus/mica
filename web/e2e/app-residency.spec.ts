@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { seedHomeGrid } from './support/homeGrid';
 
 /**
  * Apps stay mounted once opened, so leaving one and coming back finds it as you left it.
@@ -37,6 +38,9 @@ const goHome = async (page: import('@playwright/test').Page) => {
 
 test.describe('App residency', () => {
   test.beforeEach(async ({ page }) => {
+    // The real home grid starts empty (MICA-5); every non-dock app this suite opens by
+    // name has to already be placed there.
+    await seedHomeGrid(page, ['calculator', 'contacts', 'settings', 'store', 'bank', 'mail']);
     await page.goto('/');
   });
 
@@ -180,6 +184,9 @@ test.describe('App residency', () => {
 
 test.describe('Not Network gate', () => {
   test.beforeEach(async ({ page }) => {
+    // Calculator, the local (non-network) app this describe opens by name, has to
+    // already be on the home grid (MICA-5).
+    await seedHomeGrid(page, ['calculator']);
     await page.goto('/');
   });
 

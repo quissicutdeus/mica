@@ -1,7 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { seedHomeGrid } from '../support/homeGrid';
 
 test.describe('Notes App E2E', () => {
   test.beforeEach(async ({ page }) => {
+    // The real home grid starts empty (MICA-5); Store has to already be placed there
+    // to reach the install path below.
+    await seedHomeGrid(page, ['store']);
     await page.goto('/');
     // Install Notes from the Store.
     //

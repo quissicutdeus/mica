@@ -38,7 +38,7 @@
   // pointed at this app while it sits resident in the background.
   const app = useAppLevels({
     appId: 'crypto_tracker',
-    title: 'Crypto Tracker',
+    title: 'Hodlr',
     onback: () => onback(),
     levels: [
       {

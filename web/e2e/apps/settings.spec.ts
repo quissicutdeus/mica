@@ -1,7 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { seedHomeGrid } from '../support/homeGrid';
 
 test.describe('Settings App E2E', () => {
   test.beforeEach(async ({ page }) => {
+    // The real home grid starts empty (MICA-5); every non-dock app this file opens by
+    // name from the home screen has to already be placed there.
+    await seedHomeGrid(page, ['settings', 'calculator', 'store']);
     await page.goto('/');
     await page.locator('button', { hasText: 'Settings' }).first().click();
     await expect(page.locator('h1', { hasText: 'Settings' })).toBeVisible();

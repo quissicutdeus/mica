@@ -195,31 +195,76 @@
   };
 
   let handleRef = $state<HTMLElement | null>(null);
+  let shadeElement = $state<HTMLElement | null>(null);
+  let scrollContainerRef = $state<HTMLElement | null>(null);
+
+  /**
+   * Shared close-drag behavior, wired to both the bottom grab handle and the shade body
+   * itself — mirrors `AppDrawer.svelte`'s own `onCloseDragMove`/`onCloseDragEnd`, which
+   * documented the same conflict this used to sidestep by only ever wiring the handle:
+   * a body-wide swipe competes with `enableDragScroll`'s drag-to-scroll on the same
+   * axis. `bodyDragShouldStart` below is what resolves it, the same way the drawer's own
+   * `scrollTop <= 0` gate does — just mirrored, since this list scrolls opposite the
+   * drawer's (closing here is a pull *up*).
+   */
+  function onCloseDragMove(deltaY: number) {
+    shadeDragPhase.set('dragging');
+    // Dragging up closes: deltaY goes negative as the finger pulls up, so progress
+    // (1 = open) counts back down toward 0 (closed) as the pull continues.
+    shadeDragProgress.set(clampProgress(1 + deltaY / SHADE_DRAG_REVEAL_DISTANCE));
+  }
+
+  function onCloseDragEnd(_deltaY: number, velocity: number) {
+    shadeDragPhase.set('settling');
+    // Reuse the open-drag commit heuristic, mirrored: "closing progress" is how far
+    // back toward 0 the pull got, and a fast upward flick reads as positive closing
+    // velocity even though the raw axis delta is negative while dragging up.
+    const closingProgress = 1 - get(shadeDragProgress);
+    const closingVelocity = -velocity;
+    if (shouldCommitDrag(closingProgress, closingVelocity)) {
+      shadeDragProgress.set(0);
+      closeShade();
+    } else {
+      shadeDragProgress.set(1);
+    }
+  }
+
+  /**
+   * A drag closing the shade reads as a pull *up*, which is the same direction as
+   * scrolling further *down* through the notification list (dragging a finger up moves
+   * content up, i.e. `scrollTop` increasing). The two only stop competing once the list
+   * has nothing further to reveal — at its scroll bottom — the mirror image of the
+   * drawer's own `scrollTop <= 0` check for its top.
+   */
+  function bodyDragShouldStart(e: PointerEvent): boolean {
+    // Also refuses to arm on top of a `<button>` — clear/archive/restore, per row — the
+    // same reasoning `AppDrawer.svelte`'s own body gesture gates on: this axis-locks on
+    // ~4px of movement, well before a tap-with-a-little-wobble would read as anything
+    // but a click, and once it captures the pointer the click never lands.
+    if ((e.target as HTMLElement).closest('button')) return false;
+    if (!scrollContainerRef) return true;
+    return (
+      scrollContainerRef.scrollTop + scrollContainerRef.clientHeight >=
+      scrollContainerRef.scrollHeight - 1
+    );
+  }
 
   $effect(() => {
     if (!handleRef) return;
     return attachDragGesture(handleRef, {
       axis: 'y',
-      onMove: (deltaY) => {
-        shadeDragPhase.set('dragging');
-        // Dragging up closes: deltaY goes negative as the finger pulls up, so progress
-        // (1 = open) counts back down toward 0 (closed) as the pull continues.
-        shadeDragProgress.set(clampProgress(1 + deltaY / SHADE_DRAG_REVEAL_DISTANCE));
-      },
-      onEnd: (_deltaY, velocity) => {
-        shadeDragPhase.set('settling');
-        // Reuse the open-drag commit heuristic, mirrored: "closing progress" is how far
-        // back toward 0 the pull got, and a fast upward flick reads as positive closing
-        // velocity even though the raw axis delta is negative while dragging up.
-        const closingProgress = 1 - get(shadeDragProgress);
-        const closingVelocity = -velocity;
-        if (shouldCommitDrag(closingProgress, closingVelocity)) {
-          shadeDragProgress.set(0);
-          closeShade();
-        } else {
-          shadeDragProgress.set(1);
-        }
-      }
+      onMove: onCloseDragMove,
+      onEnd: onCloseDragEnd
+    });
+  });
+
+  $effect(() => {
+    if (!shadeElement) return;
+    return attachDragGesture(shadeElement, {
+      axis: 'y',
+      shouldStart: bodyDragShouldStart,
+      onMove: onCloseDragMove,
+      onEnd: onCloseDragEnd
     });
   });
 
@@ -279,6 +324,7 @@
        the drawer fully off-screen, so an extra invisible flight on top of that is
        unobservable. -->
   <div
+    bind:this={shadeElement}
     transition:fly={{ y: -850, duration: $shadeDragPhase === 'idle' ? 300 : 0 }}
     class="bg-surface-container-high text-on-surface shadow-elevation-5 absolute inset-0 z-55 flex h-full w-full flex-col pt-14 pb-2 backdrop-blur-3xl {$shadeDragPhase ===
     'settling'
@@ -354,7 +400,7 @@
     </div>
 
     <!-- Notification List Area -->
-    <div class="flex-1 scrollbar-none overflow-y-auto px-5 pb-8">
+    <div bind:this={scrollContainerRef} class="flex-1 scrollbar-none overflow-y-auto px-5 pb-8">
       {#if showHistory}
         <!-- History List View -->
         {#if loadingHistory}

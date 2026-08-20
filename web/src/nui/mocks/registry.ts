@@ -6,6 +6,7 @@ import type {
   BlabberDm,
   Contact,
   Conversation,
+  CryptoHolding,
   Listing,
   Mail,
   MediaItem,
@@ -18,6 +19,7 @@ import type {
 import {
   mockContacts,
   mockConversations,
+  mockCryptoHoldings,
   mockEmails,
   mockListings,
   mockLocationShare,
@@ -1226,6 +1228,14 @@ const mockRegistry: Record<string, MockHandler> = {
     remove: 'notes:delete'
   }),
 
+  // Crypto Tracker — same generic-service route as Notes, action names to match.
+  ...defineMockCrud<CryptoHolding>(mockCryptoHoldings, {
+    list: 'crypto_tracker:get',
+    create: 'crypto_tracker:create',
+    update: 'crypto_tracker:update',
+    remove: 'crypto_tracker:delete'
+  }),
+
   // Messages
   getConversations: () => mockConversations,
   getMessages: ({ conversation_id }: { conversation_id: number }) => {
@@ -1624,6 +1634,9 @@ function resolveGeneric(data?: unknown): { key: string; payload: unknown } | nul
 async function getMockData(eventName: string, data?: unknown): Promise<unknown> {
   if (eventName === GENERIC_SERVICE_ACTION) {
     const resolved = resolveGeneric(data);
+    // Malformed shape (not even `{ service, action }`) is a caller bug, not a missing
+    // mock — the real `ServiceEndpoint` answers a bad request rather than crashing the
+    // page over it, so this stays a graceful `null` rather than joining the throw below.
     if (!resolved) {
       console.warn('[MockRegistry] Malformed generic service request', data);
       return null;
@@ -1635,8 +1648,11 @@ async function getMockData(eventName: string, data?: unknown): Promise<unknown> 
   if (handler) {
     return handler(data);
   }
-  console.warn(`[MockRegistry] No handler found for event: ${eventName}`);
-  return null;
+  // A missing mock used to warn and answer `null`, which reads to the caller as "the
+  // server sent nothing" rather than "nobody wired this up" — the exact failure this
+  // registry exists to make visible instead of hidden. Throwing surfaces it the same
+  // way a real unhandled route would.
+  throw new Error(`[MockRegistry] No handler found for event: ${eventName}`);
 }
 
 export const MockRegistry = {

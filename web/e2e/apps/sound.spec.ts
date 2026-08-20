@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { seedHomeGrid } from '../support/homeGrid';
 
 /**
  * The percentage the volume HUD is showing.
@@ -15,6 +16,9 @@ const hudPercent = async (page: import('@playwright/test').Page): Promise<number
 
 test.describe('Volume Buttons E2E', () => {
   test.beforeEach(async ({ page }) => {
+    // The real home grid starts empty (MICA-5); two of the three tests below reach
+    // Settings > Sound by clicking Settings on the home screen by name.
+    await seedHomeGrid(page, ['settings']);
     await page.goto('/');
   });
 

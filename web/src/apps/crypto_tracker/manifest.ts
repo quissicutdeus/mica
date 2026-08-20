@@ -3,6 +3,7 @@ import { defineApp } from '@gphone/sdk/app';
 
 export default defineApp({
   id: 'crypto_tracker',
+  name: 'Hodlr',
   color: 'bg-emerald-600',
   icon: Icon,
   // Imported lazily, not at module scope — see `apps/notes/manifest.ts` for why.

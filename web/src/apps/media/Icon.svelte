@@ -1,10 +1,10 @@
 <script lang="ts">
-  let { className = '' } = $props<{ className?: string }>();
+  let { class: className = 'h-8 w-8' }: { class?: string } = $props();
 </script>
 
 <svg
   xmlns="http://www.w3.org/2000/svg"
-  class="h-8 w-8 {className}"
+  class={className}
   viewBox="0 0 24 24"
   fill="none"
   stroke="currentColor"

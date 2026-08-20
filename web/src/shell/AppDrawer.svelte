@@ -34,16 +34,15 @@
       .sort((a, b) => a.name.localeCompare(b.name))
   );
 
-  let handleRef = $state<HTMLElement | null>(null);
   let topHandleRef = $state<HTMLElement | null>(null);
   let scrollContainerRef = $state<HTMLElement | null>(null);
   let drawerElement = $state<HTMLElement | null>(null);
 
   /**
-   * Shared close-drag behavior, wired to three surfaces below: the bottom grab handle, a
-   * mirrored top pill, and the drawer body itself. The body attach is gated by
-   * `bodyDragShouldStart` so it never steals a scroll in progress inside the icon grid —
-   * see that function for why.
+   * Shared close-drag behavior, wired to two surfaces below: the top pill and the
+   * drawer body itself — no bottom handle (see the note by the body's closing tag for
+   * why). The body attach is gated by `bodyDragShouldStart` so it never steals a scroll
+   * in progress inside the icon grid — see that function for why.
    */
   function onCloseDragMove(deltaY: number) {
     drawerDragPhase.set('dragging');
@@ -71,19 +70,21 @@
    * Gating on `scrollTop <= 0` lets a downward drag close only when there's nothing left
    * to scroll up into; an upward drag while already at the top just harmlessly re-commits
    * to progress 1 (still open), since there's no further scrolling for it to compete with.
+   *
+   * Also refuses to arm on top of a `<button>` — every icon is one, and without this an
+   * icon's own long-press-to-pick-up (`attachLongPressDrag`, wired to the icon itself)
+   * and this whole-body close-swipe (wired to `drawerElement`, which the icon sits
+   * inside) both start tracking the *same* pointerdown via bubbling. Dragging an icon
+   * out is `axis: 'y'` movement too, so this gesture's own axis-lock could commit before
+   * the long-press timer ever fires, steal pointer capture, and then spring the drawer
+   * back open on release — undoing the `closeDrawer()` the long-press had already
+   * called. A drag genuinely meant to close still works from any empty space between or
+   * below the icons.
    */
-  function bodyDragShouldStart() {
+  function bodyDragShouldStart(e: PointerEvent) {
+    if ((e.target as HTMLElement).closest('button')) return false;
     return !scrollContainerRef || scrollContainerRef.scrollTop <= 0;
   }
-
-  $effect(() => {
-    if (!handleRef) return;
-    return attachDragGesture(handleRef, {
-      axis: 'y',
-      onMove: onCloseDragMove,
-      onEnd: onCloseDragEnd
-    });
-  });
 
   $effect(() => {
     if (!topHandleRef) return;
@@ -161,9 +162,10 @@
     role="dialog"
     aria-label="App Drawer"
   >
-    <!-- Top pill, mirroring the bottom grab handle below the same way this drawer's own
-         entrance (slides up from the dock) mirrors NotificationShade's (slides down from
-         the status bar) — a grab point at the edge the drawer travels away from on close. -->
+    <!-- Top pill — the one grab handle this drawer has, at the edge it travels away
+         from on close. There is no matching one at the bottom; see the note by the
+         body's closing tag for why a second pill there is the wrong move here even
+         though `NotificationShade.svelte` mirrors this same idea at its own far edge. -->
     <button
       type="button"
       bind:this={topHandleRef}
@@ -194,11 +196,17 @@
          scroll clip. -->
     <div
       bind:this={scrollContainerRef}
-      class="flex-1 scrollbar-none overflow-y-auto px-6 pt-2 pb-10"
+      class="flex-1 scrollbar-none overflow-y-auto px-4 pt-2 pb-10"
     >
+      <!-- `px-4`, not `px-6` — matches `Launcher.svelte`'s own outer padding (and, through
+           it, `Dock.svelte`'s), so an icon opened from the drawer lands under the same
+           column it would occupy on the home grid rather than a few px to the right of it.
+           Each cell centers its icon explicitly (`flex items-center justify-center`), the
+           same as `Launcher.svelte`'s own grid cells — without it an icon narrower than its
+           1fr track sits flush against the track's left edge instead of centered in it. -->
       <div class="grid grid-cols-4 gap-y-6">
         {#each visibleApps as app (app.id)}
-          <div use:attachIcon={app.id}>
+          <div use:attachIcon={app.id} class="flex items-center justify-center">
             <AppIcon
               name={app.name}
               color={app.color}
@@ -214,24 +222,12 @@
       </div>
     </div>
 
-    <!-- Grab Handle. Unlike NotificationShade's own — which sits flush at `bottom-0` to
-         read as one pill with PhoneFrame's real home indicator underneath — this drawer's
-         opaque sheet already hides that indicator behind its own background, so there's no
-         alignment to preserve here. `pb-3` instead of `pb-1.5` lifts it clear of the
-         drawer's own bottom edge, mirroring the top pill's own clearance. -->
-    <button
-      type="button"
-      bind:this={handleRef}
-      class="absolute bottom-0 left-0 z-10 flex h-6 w-full cursor-pointer touch-none items-end justify-center pb-3"
-      data-gesture-drag
-      data-testid="drawer-grab-handle"
-      onclick={closeDrawer}
-      aria-hidden="true"
-      tabindex="-1"
-    >
-      <div
-        class="duration-medium ease-emphasized h-1 w-1/3 rounded-full bg-white opacity-80 transition-opacity hover:opacity-100"
-      ></div>
-    </button>
+    <!-- No bottom grab handle here, deliberately. This sheet's `bottom-0` edge lands on
+         the exact same pixels as `PhoneFrame.svelte`'s real "Return to home screen"
+         indicator underneath, and a second pill sliding in there on open/close read as
+         that real, permanently-fixed control moving — it never does; the drawer's own
+         opaque sheet was just covering it and animating a look-alike on top. Closing is
+         still reachable three other ways: the top pill below, a swipe down starting
+         anywhere on the body (gated by `bodyDragShouldStart`), and a tap on the scrim. -->
   </div>
 {/if}

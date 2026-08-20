@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { seedHomeGrid } from '../support/homeGrid';
 
 /**
  * The Admin app is hidden from players without an admin ace.
@@ -14,6 +15,9 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Admin app', () => {
   test.beforeEach(async ({ page }) => {
+    // The real home grid starts empty (MICA-5); Admin has to already be placed there
+    // for this spec's own click-by-name pattern to have anything to click.
+    await seedHomeGrid(page, ['admin']);
     await page.goto('/');
   });
 

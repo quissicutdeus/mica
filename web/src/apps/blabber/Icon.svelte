@@ -2,23 +2,26 @@
   let { class: className = 'h-8 w-8' }: { class?: string } = $props();
 </script>
 
-<!-- A megaphone, angled up-right, with two arcs for the sound.
-     Stroke-only at 1.5 like every other icon in the set (§6): a silhouette reads cleanly at
-     32px without a filled interior, which is why this shape suits an outline set where an open
-     mouth would have needed either teeth or a convention break. -->
-<svg
-  class={className}
-  fill="none"
-  viewBox="0 0 24 24"
-  stroke="currentColor"
-  stroke-width="1.5"
-  aria-hidden="true"
->
+<!-- A bullhorn: narrow mouthpiece with a handle on the left, flaring to a wide bell on
+     the right, with sound arcs past the bell. Sized h-8 w-8 like every other launcher
+     icon, `currentColor` like the other stroke-based icons so it follows the tile's own
+     foreground rather than carrying a fixed color. -->
+<svg class={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
   <path
     stroke-linecap="round"
     stroke-linejoin="round"
-    d="M3.75 12.75v-1.5a1.5 1.5 0 0 1 1.05-1.43l9.45-2.9a.75.75 0 0 1 .97.71v8.74a.75.75 0 0 1-.97.71l-9.45-2.9a1.5 1.5 0 0 1-1.05-1.43Z"
+    stroke-width="2"
+    d="M4 10.5v3L18 19V5L4 10.5z"
   />
-  <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 15v3.75a1.5 1.5 0 0 0 3 0V15.9" />
-  <path stroke-linecap="round" d="M17.5 9.75a3.75 3.75 0 0 1 0 4.5M20 7.5a7 7 0 0 1 0 9" />
+  <path
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="2"
+    d="M4 13.5h-1a1.5 1.5 0 01-1.5-1.5v0A1.5 1.5 0 014 10.5"
+  />
+  <path
+    stroke-linecap="round"
+    stroke-width="1.5"
+    d="M20 8.5a5.5 5.5 0 010 7M21 6a8.5 8.5 0 010 12"
+  />
 </svg>

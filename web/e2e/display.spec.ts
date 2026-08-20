@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { seedHomeGrid } from './support/homeGrid';
 
 /**
  * The phone is one shape drawn at many sizes.
@@ -58,6 +59,7 @@ test('every slider position changes the size, even when the window caps the rang
   // has roughly 950px of viewport, where the old fixed 0.6-1.4 range was clamped from
   // about the midpoint up — so 50, 75 and 100 all drew the same phone.
   await page.setViewportSize({ width: 1280, height: 950 });
+  await seedHomeGrid(page, ['settings']);
   await page.goto('/');
   await openDisplayPane(page);
 
@@ -114,6 +116,7 @@ test('nothing overflows the document at a phone-sized window', async ({ page }) 
 test('the Display setting resizes the phone, keeps its shape, and survives a reload', async ({
   page
 }) => {
+  await seedHomeGrid(page, ['settings']);
   await page.goto('/');
   await openDisplayPane(page);
 
@@ -153,6 +156,7 @@ test('the Display setting resizes the phone, keeps its shape, and survives a rel
 
 test('dragging a list tracks the cursor at a reduced size', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 664 });
+  await seedHomeGrid(page, ['contacts']);
   await page.goto('/');
   // Contacts, because the list has to be longer than the screen for there to be anything
   // to drag: the phone's *layout* is still 850px tall however small it is drawn.

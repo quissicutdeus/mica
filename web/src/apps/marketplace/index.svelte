@@ -14,7 +14,7 @@
 
   const app = useAppLevels({
     appId: 'marketplace',
-    title: 'Marketplace',
+    title: 'Snatchr',
     onback: () => onback(),
     levels: [
       {

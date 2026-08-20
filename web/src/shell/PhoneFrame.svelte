@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
-  import { fly } from 'svelte/transition';
-  import { formattedTime } from './state/time';
+  import { fly, fade } from 'svelte/transition';
+  import { formattedTime, formattedDate } from './state/time';
   import { goHome } from './state/navigation';
   import { displayCharge, isBatteryDead } from './state/charge';
   import { clampedSignalLevel } from './state/signal';
@@ -25,6 +25,8 @@
     shadeDragProgress,
     shadeDragPhase
   } from './state/shade';
+  import { unreadCounts } from '../services/notifications';
+  import { appRegistryStore } from './state/registry';
   import { wallpaperBackground } from './state/wallpaper';
   import { themeStyleStore } from './state/theme';
 
@@ -33,6 +35,35 @@
   let statusBarRef = $state<HTMLElement | null>(null);
   const wallpaper = $derived($wallpaperBackground);
   const themeStyle = $derived($themeStyleStore);
+
+  /**
+   * Which apps' icons show in the status bar as a "you have something waiting" row —
+   * one per app with an unread notification, not one per notification, and capped at 5
+   * so a busy phone can't push the clock into the hole-punch camera. Dereferences
+   * `$appRegistryStore` directly rather than `.getManifest()` — see `Launcher.svelte`'s
+   * own fix for why a one-shot `get()` read is the wrong tool here.
+   */
+  const pendingNotificationApps = $derived(
+    Object.entries($unreadCounts)
+      .filter(([, count]) => count > 0)
+      .map(([appId]) => $appRegistryStore.find((app) => app.id === appId))
+      .filter((app): app is NonNullable<typeof app> => Boolean(app))
+      .slice(0, 5)
+  );
+
+  /**
+   * Live pull-down progress, whether the shade is settled or mid-drag — mirrors
+   * `NotificationShade.svelte`'s own `effectiveProgress`, which drives the sheet's
+   * `translateY` the same way. Drives the notification-icon row's fade below: those
+   * icons exist to say "something is waiting" before the shade is open, so they have
+   * nothing left to say once the real notifications are the thing on screen, and fading
+   * across the first half of the pull (rather than snapping at the end) reads as making
+   * room for them rather than a checkbox flipping.
+   */
+  const shadeProgress = $derived(
+    $shadeDragPhase === 'idle' ? ($isShadeOpen ? 1 : 0) : $shadeDragProgress
+  );
+  const pendingIconsOpacity = $derived(clampProgress(1 - shadeProgress * 2));
 
   onMount(() => {
     if (screenElement) {
@@ -191,7 +222,50 @@
         onclick={() => ($isShadeOpen ? closeShade() : openShade())}
         aria-label={$isShadeOpen ? 'Close notification shade' : 'Open notification shade'}
       >
-        <span>{$formattedTime}</span>
+        <div class="flex items-center gap-2">
+          <span>{$formattedTime}</span>
+          {#if $isShadeOpen}
+            <!-- Only once fully open, not mid-drag — a half-open bar reading "1:12 AM
+                 Thu, Aug 20" while the icons are also mid-fade would be two things
+                 changing size and content at once. -->
+            <span class="text-body-small opacity-80" transition:fade={{ duration: 150 }}
+              >{$formattedDate}</span
+            >
+          {/if}
+          {#if pendingNotificationApps.length > 0}
+            <!-- Monochrome, matching the status bar's own `text-on-surface` — an app's
+                 own tile color (`AppIcon`'s `bg-*` background) would be too busy at this
+                 size and would drift from the rest of the bar the moment a wallpaper
+                 forced light-on-dark text. Icons using `currentColor` (most of them)
+                 pick this up for free; one hardcoded to a fixed color — Snek — will not,
+                 the same tradeoff its own launcher tile already made deliberately.
+
+                 `class="h-3.5 w-3.5"` on the icon itself, matching `BluetoothIcon` —
+                 every app icon component now accepts and honors `class` (they didn't
+                 all used to; a couple were a bare `<svg class="h-8 w-8">` with nothing
+                 plumbed through, which is what this repo has instead of Tailwind, so a
+                 mismatched class token is not a build error, just silently inert — the
+                 real fix was making every icon component take the prop, not papering
+                 over the ones that didn't with a wrapper trick this hand-written
+                 utility layer doesn't support in the first place).
+
+                 Opacity tracks the shade's own pull progress rather than just its open/
+                 closed state — these icons exist to say "something is waiting" before
+                 the shade is open, so they fade out across the first half of the pull,
+                 clear of the way by the point the real notifications start being
+                 legible underneath. -->
+            <div class="flex items-center gap-1" style="opacity: {pendingIconsOpacity}">
+              {#each pendingNotificationApps as app (app.id)}
+                {#if typeof app.icon === 'string'}
+                  <img src={app.icon} alt="" class="h-3.5 w-3.5 object-contain" />
+                {:else if app.icon}
+                  {@const Icon = app.icon}
+                  <Icon class="h-3.5 w-3.5" />
+                {/if}
+              {/each}
+            </div>
+          {/if}
+        </div>
         <div class="flex items-center gap-2">
           {#if $bluetoothEnabled}
             <BluetoothIcon class="h-3.5 w-3.5 opacity-90" />
@@ -208,9 +282,21 @@
       </button>
     {/if}
 
-    <!-- Hole Punch Camera -->
+    <!-- Hole Punch Camera. `z-80` — above every other layer in the shell, including the
+         shade/drawer sheets (`z-55`) and the drag ghost (`z-70`), the current highest.
+         It stands for a hole physically cut in the screen: nothing in the UI can ever
+         cover a real one, so nothing here should be able to either — it used to sit at
+         `z-30`, under the shade, and visibly vanished under its sheet as the shade was
+         dragged down.
+
+         `pointer-events-none` is what a real cutout gets for free and this one has to be
+         told: it sits dead center of the status bar, exactly where a tap or the start of
+         a drag-down-to-open-the-shade is likely to land, and once it was stacked above
+         that button (rather than below it, as `z-30` left it) a plain `<div>` there
+         would otherwise silently absorb the touch instead of letting it reach the
+         button underneath. -->
     <div
-      class="size-icon-lg absolute top-2 left-1/2 z-30 -translate-x-1/2 rounded-full bg-black ring-1 ring-gray-800"
+      class="size-icon-lg pointer-events-none absolute top-2 left-1/2 z-80 -translate-x-1/2 rounded-full bg-black ring-1 ring-gray-800"
     ></div>
 
     <!-- Content Area -->

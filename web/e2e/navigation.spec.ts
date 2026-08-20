@@ -1,26 +1,30 @@
 import { test, expect } from '@playwright/test';
+import { seedHomeGrid } from './support/homeGrid';
 
 test.describe('Phone Navigation & Home Screen', () => {
   test.beforeEach(async ({ page }) => {
+    // The real home grid starts empty (MICA-5); Calculator and Store, both opened by
+    // name below, have to already be placed there.
+    await seedHomeGrid(page, ['calculator', 'store']);
     await page.goto('/');
   });
 
   test('displays gPhone header and app icons grid on home screen', async ({ page }) => {
     await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
-    const appGrid = page.locator('.grid');
+    // Scoped to the home screen region, not a bare `.grid` — `Dock.svelte`'s own icon
+    // row is a CSS grid too now (aligned to the home grid's own columns), so an
+    // unscoped `.grid` match is ambiguous between the two.
+    const appGrid = page.getByRole('region', { name: 'Home Screen' }).locator('.grid');
     await expect(appGrid).toBeVisible();
   });
 
   test('opens Calculator app and returns home using Backspace', async ({ page }) => {
-    const calcButton = page.locator('button', { hasText: 'Calculator' });
-    if ((await calcButton.count()) > 0) {
-      await calcButton.click();
-      await expect(page.locator('h1', { hasText: 'Calculator' })).toBeVisible();
+    await page.locator('button', { hasText: 'Calculator' }).click();
+    await expect(page.locator('h1', { hasText: 'Calculator' })).toBeVisible();
 
-      // Press Escape to return Home
-      await page.keyboard.press('Backspace');
-      await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
-    }
+    // Press Escape to return Home
+    await page.keyboard.press('Backspace');
+    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
   });
 
   /**

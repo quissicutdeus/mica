@@ -16,7 +16,7 @@ export const cryptoTracker = createCrudStore<
   CryptoHolding,
   Pick<CryptoHolding, 'symbol' | 'amount'>
 >(
-  'Crypto Tracker',
+  'Hodlr',
   { list: 'get', create: 'create', update: 'update', remove: 'delete' },
   {
     service: 'crypto_tracker',

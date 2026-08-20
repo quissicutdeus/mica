@@ -1,6 +1,7 @@
 import type {
   Contact,
   Conversation,
+  CryptoHolding,
   Listing,
   Mail,
   Message,
@@ -176,6 +177,11 @@ export const mockNotes: Note[] = [
       '# Los Santos Jobs\n\n## Pacific Standard Heist\n### Diamond Casino Robbery\n#### Cayo Perico Freight',
     ...ts()
   }
+];
+
+export const mockCryptoHoldings: CryptoHolding[] = [
+  { id: 1, citizenid: '1', symbol: 'BTC', amount: '0.42', ...ts(2 * 3600_000) },
+  { id: 2, citizenid: '1', symbol: 'ETH', amount: '3.1', ...ts(24 * 3600_000) }
 ];
 
 // GTA V / FiveM Core Characters

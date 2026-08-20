@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { seedHomeGrid } from '../support/homeGrid';
 
 /**
  * Proximity contact sharing, end to end against the mock.
@@ -18,6 +19,9 @@ test.describe('Bluetooth proximity contact share', () => {
   };
 
   test('says so when nobody is Bluetooth-visible nearby', async ({ page }) => {
+    // Contacts has to already be on the home grid for `openUrsula`'s click-by-name to work
+    // — the real grid starts empty (MICA-5).
+    await seedHomeGrid(page, ['contacts']);
     await page.goto('/');
     await openUrsula(page);
 
@@ -29,6 +33,7 @@ test.describe('Bluetooth proximity contact share', () => {
   });
 
   test('reports how many nearby phones received the contact', async ({ page }) => {
+    await seedHomeGrid(page, ['contacts']);
     await page.goto('/?bluetoothNearby=2');
     await openUrsula(page);
 

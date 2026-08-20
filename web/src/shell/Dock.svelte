@@ -62,15 +62,38 @@
      bar's clear band actually lined up, and at `bottom-6` the label crowded the bar with
      only a few px between them. Never collapses to fewer than 4 cells — an unconfigured
      or unresolvable slot renders an empty placeholder rather than shrinking the row,
-     since the dock's whole value is that a slot is always in the same place. -->
+     since the dock's whole value is that a slot is always in the same place.
+
+     No card background — a dock slot is a home-grid icon that happens to be pinned, not
+     a visually distinct control, so it should look identical to one instead of sitting
+     inside its own surface/shadow/rounded pill. `py-4` (not `py-2`) is deliberate too:
+     the swipe-up-to-open-the-drawer gesture is attached to this whole element, and at
+     `py-2` its hit area barely cleared the icons themselves — a drag starting just above
+     or below an icon glyph had nothing to grab. The extra padding is graspable margin,
+     not a layout change the icons themselves need.
+
+     `px-4` and a 4-column CSS grid, not `px-6` and `flex justify-around` — that mismatch
+     used to put the dock's own slot centers a few px off from the home grid's column
+     centers directly above them, which read as sloppy the moment an app sat in the
+     bottom row of the grid on top of a dock slot. Matching `Launcher.svelte`'s own
+     padding and grid mechanics (rather than flexbox's different distribution math) is
+     what makes slot 0 land under column 0 exactly — true whenever the home grid itself
+     is at its default 4 columns; the dock is always 4 slots, so a grid resized to 3 or 5
+     columns necessarily drifts, the same way it would against any other fixed-width
+     neighbor.
+
+     `cursor-pointer` on the whole element, matching the status bar's own pull-down
+     handle (`PhoneFrame.svelte`): the swipe-up gesture is attached here, not to a
+     `<button>`, so without it the cursor gave no hint this whole band was grabbable. -->
 <div
   bind:this={dockElement}
   role="toolbar"
   aria-label="Dock"
-  class="bg-surface-container shadow-elevation-3 rounded-t-xl rounded-b-frame-inner absolute inset-x-0 bottom-10 z-20 flex justify-around px-6 py-2 select-none"
+  class="absolute inset-x-0 bottom-10 z-20 grid cursor-pointer px-4 py-4 select-none"
+  style="grid-template-columns: repeat({DOCK_SLOT_COUNT}, 1fr);"
 >
   {#each slots as slot (slot.index)}
-    <div data-dock-index={slot.index} class="flex h-16 w-16 items-center justify-center">
+    <div data-dock-index={slot.index} class="flex items-center justify-center">
       {#if slot.manifest}
         <AppIcon
           name={slot.manifest.name}

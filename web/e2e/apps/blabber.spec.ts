@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { seedHomeGrid } from '../support/homeGrid';
 
 /**
  * Blabber, end to end against the browser mock.
@@ -9,6 +10,10 @@ import { test, expect } from '@playwright/test';
  */
 test.describe('Blabber', () => {
   test.beforeEach(async ({ page }) => {
+    // The real home grid starts empty (MICA-5); Store has to already be placed there
+    // to reach the install path below. `addInitScript` re-applies on every navigation
+    // within this page, so it also covers this describe's own mid-test `page.goto`.
+    await seedHomeGrid(page, ['store']);
     await page.goto('/');
     await page.locator('button', { hasText: 'Store' }).first().click();
     await page

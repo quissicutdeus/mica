@@ -3,6 +3,7 @@
   import { isAdmin } from '../services/admin';
   import AppIcon from '../sdk/ui/AppIcon.svelte';
   import { attachLongPressDrag } from '../lib/longPressDrag';
+  import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
   import { appRegistryStore } from './state/registry';
   import { homeGridColumns, homeGridRows } from './state/homeGridSettings';
   import { homeGridItems, openFolderId, type HomeGridItem } from './state/homeGrid';
@@ -13,6 +14,9 @@
     startIconDrag,
     moveIconDrag
   } from './state/iconDrag';
+  import { openDrawer, isDrawerOpen, drawerDragProgress, drawerDragPhase } from './state/appDrawer';
+  import { openShade, isShadeOpen, shadeDragProgress, shadeDragPhase } from './state/shade';
+  import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
   import FolderPopup from './FolderPopup.svelte';
 
   let { openApp } = $props<{ openApp: (id: string) => void }>();
@@ -37,19 +41,30 @@
   });
 
   /**
+   * `appRegistryStore.getManifest` reads the registry with a one-shot `get()`, which is
+   * exactly wrong for the template: a bundled add-on already on the grid re-registers
+   * asynchronously on every boot (`registry.ts`'s `installedAddOnIds.subscribe`), so the
+   * cell for it rendered empty and stayed empty — nothing here ever re-ran once that
+   * promise resolved, because nothing it read was reactive. `AppDrawer.svelte` never had
+   * this bug; it dereferences `$appRegistryStore` directly. This does the same, once, so
+   * `visible` and the template's own lookups all track it.
+   */
+  let manifestById = $derived(new Map($appRegistryStore.map((m) => [m.id, m])));
+
+  /**
    * Apps flagged `requiresAdmin` are absent for everyone else, rather than present and
    * refusing — same rule the launcher has always applied, now scoped to whatever a player
    * actually placed on the grid instead of every installed app.
    */
   const visible = (appId: string): boolean => {
-    const manifest = appRegistryStore.getManifest(appId);
-    return Boolean(manifest) && (!manifest!.requiresAdmin || get(isAdmin));
+    const manifest = manifestById.get(appId);
+    return Boolean(manifest) && (!manifest!.requiresAdmin || $isAdmin);
   };
 
   function folderPreviewManifests(appIds: string[]) {
     return appIds
       .slice(0, 4)
-      .map((id) => appRegistryStore.getManifest(id))
+      .map((id) => manifestById.get(id))
       .filter((m): m is NonNullable<typeof m> => Boolean(m));
   }
 
@@ -89,9 +104,87 @@
     });
     return { destroy: detach };
   }
+
+  let homeScreenRef = $state<HTMLElement | null>(null);
+
+  /**
+   * A swipe anywhere on the empty home screen is a shortcut for the same two gestures
+   * that already exist elsewhere — dragging the status bar down (`PhoneFrame.svelte`)
+   * or the dock up (`Dock.svelte`) — rather than a third, independent action. Which one
+   * it drives is decided once, by whichever direction the first committed move is in,
+   * and stays that way for the rest of the gesture: reversing direction mid-drag moves
+   * `deltaY` back toward (or past) zero, and since progress is recomputed from the raw
+   * delta on every move rather than accumulated, that reads as the same drag rewinding
+   * rather than switching to the other target.
+   *
+   * `shouldStart` refuses to arm on top of a `<button>` — an app icon, a folder, the
+   * header — so this never competes with a tap-to-open or `attachLongPressDrag`'s own
+   * pick-up-to-reposition gesture. It only ever sees pointerdown on genuinely empty grid
+   * cells or the header band.
+   */
+  let swipeTarget: 'shade' | 'drawer' | null = null;
+
+  function driveSwipeShortcut(deltaY: number): void {
+    if (swipeTarget === null) {
+      if (get(isShadeOpen) || get(isDrawerOpen)) return;
+      swipeTarget = deltaY > 0 ? 'shade' : 'drawer';
+    }
+    if (swipeTarget === 'shade') {
+      if (get(isShadeOpen)) return;
+      shadeDragPhase.set('dragging');
+      shadeDragProgress.set(clampProgress(deltaY / SHADE_DRAG_REVEAL_DISTANCE));
+    } else {
+      if (get(isDrawerOpen)) return;
+      drawerDragPhase.set('dragging');
+      drawerDragProgress.set(clampProgress(-deltaY / SHADE_DRAG_REVEAL_DISTANCE));
+    }
+  }
+
+  $effect(() => {
+    if (!homeScreenRef) return;
+    return attachDragGesture(homeScreenRef, {
+      axis: 'y',
+      // Also refuses to arm while either overlay is already open — the home screen
+      // stays mounted underneath both, and without this a swipe meant for the shade's
+      // own close handle (or the drawer's) got captured and silently swallowed here
+      // instead of ever reaching it, since `driveSwipeShortcut` no-ops once it sees
+      // `isShadeOpen`/`isDrawerOpen` but only *after* this had already claimed the
+      // pointer.
+      shouldStart: (e) =>
+        !get(isShadeOpen) && !get(isDrawerOpen) && !(e.target as HTMLElement).closest('button'),
+      onMove: driveSwipeShortcut,
+      onEnd: (deltaY, velocity) => {
+        const target = swipeTarget;
+        swipeTarget = null;
+        if (target === 'shade') {
+          if (get(isShadeOpen)) return;
+          shadeDragPhase.set('settling');
+          if (shouldCommitDrag(get(shadeDragProgress), velocity)) {
+            shadeDragProgress.set(1);
+            openShade();
+          } else {
+            shadeDragProgress.set(0);
+          }
+        } else if (target === 'drawer') {
+          if (get(isDrawerOpen)) return;
+          drawerDragPhase.set('settling');
+          if (shouldCommitDrag(get(drawerDragProgress), -velocity)) {
+            drawerDragProgress.set(1);
+            openDrawer();
+          } else {
+            drawerDragProgress.set(0);
+          }
+        }
+      },
+      onCancel: () => {
+        swipeTarget = null;
+      }
+    });
+  });
 </script>
 
 <div
+  bind:this={homeScreenRef}
   role="region"
   aria-label="Home Screen"
   class="pt-safe-top text-on-surface flex h-full flex-col bg-transparent px-4 select-none"
@@ -108,15 +201,22 @@
     <h1 class="text-4xl font-bold tracking-tight">gPhone</h1>
   </div>
 
+  <!-- `grid-auto-rows` keeps a row of entirely empty cells the same height as one with an
+       icon in it (roughly an `AppIcon` tile plus its label). Without it, a row nothing has
+       been dropped into yet collapses to 0px — every `data-position` cell in it still
+       exists in the DOM at that row's x-position, but with no height, so it occupies no
+       actual screen area and there is nothing there for a drag-drop (or a tap) to land on.
+       A brand-new player's home grid starts entirely empty (MICA-5), so this was not an
+       edge case — it was the very first row anyone would ever try to drop an app onto. -->
   <div
     class="grid flex-1 content-start gap-y-6"
-    style="grid-template-columns: repeat({$homeGridColumns}, 1fr);"
+    style="grid-template-columns: repeat({$homeGridColumns}, 1fr); grid-auto-rows: minmax(5.5rem, auto);"
   >
     {#each cells as cell (cell.position)}
       <div data-position={cell.position} class="flex items-center justify-center">
         {#if cell.item?.kind === 'app' && visible(cell.item.appId)}
           {@const appId = cell.item.appId}
-          {@const manifest = appRegistryStore.getManifest(appId)}
+          {@const manifest = manifestById.get(appId)}
           {#if manifest}
             <div use:attachAppIcon={cell.position}>
               <AppIcon

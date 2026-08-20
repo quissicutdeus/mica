@@ -1,7 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { seedHomeGrid } from './support/homeGrid';
 
 test.describe('Keyboard Shortcuts E2E', () => {
   test.beforeEach(async ({ page }) => {
+    // The real home grid starts empty (MICA-5); Calculator and Settings, opened by
+    // name below, have to already be placed there.
+    await seedHomeGrid(page, ['calculator', 'settings']);
     await page.goto('/');
   });
 

@@ -55,6 +55,9 @@ test('a stored preference survives hydration finding nothing', async ({ page }, 
 });
 
 test('a preference changed in Settings is still there after a reload', async ({ page }) => {
+  // The real home grid starts empty (MICA-5); Settings has to already be placed there
+  // for the click-by-name below to have anything to click.
+  await seed(page, 'homeGridItems', [{ position: 0, kind: 'app', appId: 'settings' }]);
   await page.goto('/');
 
   await page.locator('button', { hasText: 'Settings' }).first().click();

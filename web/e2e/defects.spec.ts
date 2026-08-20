@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { seedHomeGrid } from './support/homeGrid';
 
 /**
  * Regressions for defects found in the pre-app-phase survey.
@@ -30,6 +31,9 @@ const goHome = async (page: import('@playwright/test').Page) => {
 };
 
 test.beforeEach(async ({ page }) => {
+  // The real home grid starts empty (MICA-5); every non-dock app this file opens by
+  // name has to already be placed there.
+  await seedHomeGrid(page, ['contacts', 'store', 'mail']);
   await page.goto('/');
 });
 

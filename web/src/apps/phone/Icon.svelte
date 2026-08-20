@@ -1,6 +1,10 @@
+<script lang="ts">
+  let { class: className = 'text-on-surface h-8 w-8' }: { class?: string } = $props();
+</script>
+
 <svg
   xmlns="http://www.w3.org/2000/svg"
-  class="text-on-surface h-8 w-8"
+  class={className}
   fill="none"
   viewBox="0 0 24 24"
   stroke="currentColor"

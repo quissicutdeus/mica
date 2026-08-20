@@ -33,6 +33,24 @@ if (isBrowser()) {
   }, 1000);
 }
 
+/**
+ * Today's real calendar date — independent of `time`, which the NUI's own `setTime`
+ * overrides with hours/minutes alone (a game clock, not a calendar). Shown in the status
+ * bar only once the shade is fully open (`PhoneFrame.svelte`), so it never competes with
+ * the compact clock-only reading the collapsed bar needs.
+ */
+const getRealDate = (): string =>
+  new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+
+export const formattedDate = writable<string>(getRealDate());
+
+if (isBrowser()) {
+  setInterval(() => {
+    const real = getRealDate();
+    formattedDate.update((current) => (current !== real ? real : current));
+  }, 1000);
+}
+
 export const formattedTime = derived([time, is24Hour], ([$time, $is24Hour]) => {
   const { hours, minutes } = $time;
   const paddedMinutes = minutes < 10 ? '0' + minutes : minutes;

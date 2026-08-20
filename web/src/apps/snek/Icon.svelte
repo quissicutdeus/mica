@@ -1,11 +1,28 @@
 <!--
-  "No Step on Snek" — a bold, hand-drawn coiled-snake silhouette. Deliberately no text: the
-  yellow comes from the launcher tile (manifest `color: 'bg-yellow-500'`, Gadsden-flag range,
-  #eab308), and the snake here is solid black regardless of theme so it reads the same way the
-  meme does — not tied to `text-on-surface`, which would fade the shape in dark mode.
+  Gadsden flag pose, after the reference: an open-mouthed head with a forked tongue,
+  raised on a rising neck off a coiled loop — not just "a snake shape" but this specific
+  silhouette. The tongue is the one deliberate color accent; the rest of the mark is solid
+  black regardless of theme, same reasoning as before: the yellow comes from the launcher
+  tile (manifest `color: 'bg-yellow-500'`), and the body should read the same in both modes
+  rather than fading via `text-on-surface`.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" viewBox="0 0 24 24" fill="black">
+<script lang="ts">
+  let { class: className = 'h-8 w-8' }: { class?: string } = $props();
+</script>
+
+<svg xmlns="http://www.w3.org/2000/svg" class={className} viewBox="0 0 24 24" fill="none">
+  <!-- Open jaw, upper and lower, meeting at the back of the head. -->
+  <path d="M3 6 L10 3 L11 7 Z" fill="black" />
+  <path d="M3 6 L10 10 L11 7 Z" fill="black" />
+  <circle cx="9" cy="5" r="0.6" fill="white" />
+  <!-- Forked tongue, flicking out of the open mouth. -->
+  <path d="M3 6 0.6 5M3 6 0.8 7.6" stroke="#dc2626" stroke-width="1.1" stroke-linecap="round" />
+  <!-- Neck rising off the coil into the head, then the coiled loop itself. -->
   <path
-    d="M12.4 3.2c-1.6-.3-3.1.4-3.8 1.8-.5 1-.3 2.1.5 3-1.4.1-2.7.9-3.3 2.2-.7 1.5-.3 3.2 1 4.2-1 .5-1.7 1.5-1.8 2.7-.2 2 1.3 3.7 3.3 3.8 1.5.1 2.8-.7 3.4-2 .9.9 2.2 1.3 3.5 1 2-.5 3.2-2.4 2.8-4.4-.3-1.4-1.3-2.4-2.6-2.8 1.1-.6 1.8-1.8 1.8-3.1 0-2-1.6-3.6-3.6-3.6-.3 0-.6 0-.9.1.4-.8.3-1.8-.2-2.5-.3-.4-.7-.6-1.1-.4zm-1 3.4c.5 0 .9.4.9.9s-.4.9-.9.9-.9-.4-.9-.9.4-.9.9-.9zm3.6 3.9c.5 0 .9.4.9.9s-.4.9-.9.9-.9-.4-.9-.9.4-.9.9-.9zm-4.8 3.6c.5 0 .9.4.9.9s-.4.9-.9.9-.9-.4-.9-.9.4-.9.9-.9z"
+    d="M11 7 C 14 8, 15 11, 14 14 C 13 17, 9 17, 9 19 C 9 21, 13 22, 16 20 C 18 18.5, 18 15.5, 15.5 14"
+    stroke="black"
+    stroke-width="2.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
   />
 </svg>
