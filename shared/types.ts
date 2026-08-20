@@ -400,11 +400,22 @@ export interface Mail {
   updated_at: Date | string;
 }
 
-export interface CryptoHolding {
+/** One price snapshot, as recorded by `server/services/HodlrMarket.ts`. */
+export interface PricePoint {
+  price: number;
+  recorded_at: Date | string;
+}
+
+/**
+ * One player's Hodlr holding — one row per citizenid, enforced by a unique index.
+ * `quantity` is a whole number of the single simulated coin; the game has no
+ * fractional currency or fractional coin.
+ */
+export interface HodlrHolding {
   id: number;
   citizenid: string;
-  symbol: string;
-  amount: string;
+  quantity: number;
+  status?: 'active' | 'deleted';
   created_at: Date | string;
   updated_at: Date | string;
 }

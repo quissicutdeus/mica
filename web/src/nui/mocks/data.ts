@@ -1,13 +1,13 @@
 import type {
   Contact,
   Conversation,
-  CryptoHolding,
   Listing,
   Mail,
   Message,
   Note,
   MediaItem,
-  MediaPreview
+  MediaPreview,
+  PricePoint
 } from '@shared/types';
 
 /** Inject created_at / updated_at timestamps into a mock object. Accepts an optional offset (ms before now). */
@@ -179,10 +179,13 @@ export const mockNotes: Note[] = [
   }
 ];
 
-export const mockCryptoHoldings: CryptoHolding[] = [
-  { id: 1, citizenid: '1', symbol: 'BTC', amount: '0.42', ...ts(2 * 3600_000) },
-  { id: 2, citizenid: '1', symbol: 'ETH', amount: '3.1', ...ts(24 * 3600_000) }
+export const mockHodlrPrice = 500;
+export const mockHodlrPriceHistory: PricePoint[] = [
+  { price: 480, recorded_at: new Date(Date.now() - 3600_000).toISOString() },
+  { price: 495, recorded_at: new Date(Date.now() - 1800_000).toISOString() },
+  { price: 500, recorded_at: new Date().toISOString() }
 ];
+export const mockHodlrHolding = { quantity: 3 };
 
 // GTA V / FiveM Core Characters
 const gtaCoreContacts: Contact[] = [

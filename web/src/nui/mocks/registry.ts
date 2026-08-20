@@ -6,7 +6,6 @@ import type {
   BlabberDm,
   Contact,
   Conversation,
-  CryptoHolding,
   Listing,
   Mail,
   MediaItem,
@@ -19,8 +18,10 @@ import type {
 import {
   mockContacts,
   mockConversations,
-  mockCryptoHoldings,
   mockEmails,
+  mockHodlrHolding,
+  mockHodlrPrice,
+  mockHodlrPriceHistory,
   mockListings,
   mockLocationShare,
   mockMedia,
@@ -1228,13 +1229,39 @@ const mockRegistry: Record<string, MockHandler> = {
     remove: 'notes:delete'
   }),
 
-  // Crypto Tracker — same generic-service route as Notes, action names to match.
-  ...defineMockCrud<CryptoHolding>(mockCryptoHoldings, {
-    list: 'crypto_tracker:get',
-    create: 'crypto_tracker:create',
-    update: 'crypto_tracker:update',
-    remove: 'crypto_tracker:delete'
+  // Hodlr — also routes through the generic service path, but custom actions rather
+  // than the generic CRUD helper: portfolio/price are reads, buy/sell mutate state
+  // that the generic four-verb shape (get/create/update/delete) cannot express.
+  'hodlr:price': () => ({
+    current: mockHodlrPrice,
+    history: mockHodlrPriceHistory
   }),
+  'hodlr:portfolio': () => ({
+    quantity: mockHodlrHolding.quantity,
+    currentPrice: mockHodlrPrice,
+    currentValue: mockHodlrHolding.quantity * mockHodlrPrice
+  }),
+  'hodlr:buy': ({ quantity }: { quantity: number }) => {
+    mockHodlrHolding.quantity += quantity;
+    return {
+      ok: true,
+      quantity: mockHodlrHolding.quantity,
+      price: mockHodlrPrice,
+      cost: quantity * mockHodlrPrice
+    };
+  },
+  'hodlr:sell': ({ quantity }: { quantity: number }) => {
+    if (mockHodlrHolding.quantity < quantity) {
+      return { ok: false, reason: 'insufficient_holdings' };
+    }
+    mockHodlrHolding.quantity -= quantity;
+    return {
+      ok: true,
+      quantity: mockHodlrHolding.quantity,
+      price: mockHodlrPrice,
+      proceeds: quantity * mockHodlrPrice
+    };
+  },
 
   // Messages
   getConversations: () => mockConversations,

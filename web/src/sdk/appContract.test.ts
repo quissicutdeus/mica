@@ -10,7 +10,7 @@ import Blabber from '../apps/blabber/index.svelte';
 import Calculator from '../apps/calculator/index.svelte';
 import Camera from '../apps/camera/index.svelte';
 import Contacts from '../apps/contacts/index.svelte';
-import CryptoTracker from '../apps/crypto_tracker/index.svelte';
+import Hodlr from '../apps/hodlr/index.svelte';
 import Mail from '../apps/mail/index.svelte';
 import Marketplace from '../apps/marketplace/index.svelte';
 import Media from '../apps/media/index.svelte';
@@ -43,7 +43,7 @@ const APPS: Record<string, AppComponent> = {
   calculator: Calculator,
   camera: Camera,
   contacts: Contacts,
-  crypto_tracker: CryptoTracker,
+  hodlr: Hodlr,
   mail: Mail,
   marketplace: Marketplace,
   media: Media,
