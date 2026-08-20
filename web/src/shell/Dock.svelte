@@ -66,11 +66,21 @@
 
      No card background — a dock slot is a home-grid icon that happens to be pinned, not
      a visually distinct control, so it should look identical to one instead of sitting
-     inside its own surface/shadow/rounded pill. `py-4` (not `py-2`) is deliberate too:
+     inside its own surface/shadow/rounded pill. `pt-4` (not `pt-2`) is deliberate too:
      the swipe-up-to-open-the-drawer gesture is attached to this whole element, and at
      `py-2` its hit area barely cleared the icons themselves — a drag starting just above
-     or below an icon glyph had nothing to grab. The extra padding is graspable margin,
-     not a layout change the icons themselves need.
+     the icon glyph had nothing to grab. The extra padding is graspable margin, not a
+     layout change the icons themselves need.
+
+     `pb-0` rather than matching that same generous padding below: with `pb-4` the icon
+     block's own top edge sat at 140px from the screen bottom, inside the first-run
+     "Swipe up for apps" hint's box (`bottom-32`/128px to 144px) — the hint was drawn
+     directly over the icons on every fresh install, not just over blank padding above
+     them (MICA hint/dock overlap defect). Dropping the bottom padding pulls the icon
+     block down by the same 16px without touching the hint or the dock's own `bottom-10`
+     anchor (already tuned against the gesture bar below, see above): grab room below an
+     icon is still there, it is just the dock's own bottom edge now rather than a padded
+     margin inside it.
 
      `px-4` and a 4-column CSS grid, not `px-6` and `flex justify-around` — that mismatch
      used to put the dock's own slot centers a few px off from the home grid's column
@@ -89,7 +99,7 @@
   bind:this={dockElement}
   role="toolbar"
   aria-label="Dock"
-  class="absolute inset-x-0 bottom-10 z-20 grid cursor-pointer px-4 py-4 select-none"
+  class="absolute inset-x-0 bottom-10 z-20 grid cursor-pointer px-4 pt-4 pb-0 select-none"
   style="grid-template-columns: repeat({DOCK_SLOT_COUNT}, 1fr);"
 >
   {#each slots as slot (slot.index)}
