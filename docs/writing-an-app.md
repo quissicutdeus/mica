@@ -59,8 +59,8 @@ label: the directory name, the `gphone:journal:` storage namespace, the `<app>` 
 every net event, the keybind claim, and the `?app=` link. Renaming it is a data migration,
 so pick it once.
 
-The display name is derived from it — `journal` becomes "Journal", `crypto_tracker`
-becomes "Crypto Tracker". Pass `name` explicitly only when the id cannot express it
+The display name is derived from it — `journal` becomes "Journal", `police_scanner`
+becomes "Police Scanner". Pass `name` explicitly only when the id cannot express it
 ("GPS"). Keep it under about eight characters or it truncates under the icon; that is why
 "Administration" is called "Admin".
 

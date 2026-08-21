@@ -27,10 +27,15 @@
 - **Bluetooth Proximity Sharing**: Share a contact or drop a photo to every nearby, Bluetooth-visible player — computed server-side from live in-game position, no external player list ever reaches the client. Range defaults to 15 meters, configurable via `gphone_bluetooth_range`. A player turns discoverability off in Settings > Network; while off, they are invisible to a scan and receive nothing unsolicited.
 - **Calculator**: Full mathematical calculator with an optimized touchscreen keypad layout.
 - **Blabber** _(add-on)_: Short public posts under an `@handle`. Replies, **mouths** (a repeat, or a quote when you add your own words), likes, `@mention` notifications, and strictly one-to-one direct messages. Follow an account and its posts turn up in a Following feed of their own; the counts on a profile open the lists behind them. An author can fix a typo for 15 minutes — `gphone_blabber_edit_window` — and then the post freezes. A player may hold several accounts and switch between them, and the owning `citizenid` never reaches another reader, so alts stay uncorrelated. Not on the home screen out of the box: it is the first genuinely non-core app and installs from the Store.
+- **Marketplace**: Peer-to-peer classified listings — a feed with debounced search, a detail screen that can Call, Text or Report the seller, a create form capped at four photos, and a My Listings screen to mark sold or remove. Ships with the phone.
+- **Hodlr** _(add-on)_: Trade **gCoin**, the one simulated coin. A single global price the server walks every 30 seconds within a $50–$5000 band, a 24-hour chart, and buy/sell settling against the player's bank balance. Both trades are atomic conditional SQL, so two concurrent taps cannot double-spend or lose an update.
+- **Snek** _(add-on)_: The phone's game, with a leaderboard on the shared `highscores` service.
 - **Store Application**: Built-in app marketplace to browse, install, and manage community add-on apps. Features Installed tab sorting (`newest`, `oldest`, `updated`, `name`), installation date metrics (`installedAt`, `updatedAt`), permissions inspector, and app storage footprint metrics.
 - **Admin**: Review and moderate player reports. Hidden from the home screen for anyone without an admin ace; the server gates the queue and every moderation action independently of what the UI shows.
 - **Settings & Status**: Settings application with an **About** section (phone number, OS version, first boot timestamp, and smart git build/commit info), 24-hour time toggles, embedded Developer Tools, dynamic battery drain lifecycle, and hardware controls.
 - **Home Screen Edit Mode**: Right-click icon gesture to trigger Edit Mode, swapping unread notification badges for gray minus action buttons on removable add-on apps with automatic Edit Mode exit when no add-on apps remain.
+- **Home Screen Layout**: Drag-and-drop icon arrangement across the grid, a pinned dock, a slide-up app drawer, and a first-run hint for the (empty by default) home screen.
+- **Search**: One live search from the home screen across apps, contacts and messages.
 
 ### 🛠️ Backend & Core Architecture
 
@@ -65,8 +70,8 @@
 
 Before installing, ensure your server environment meets the following requirements:
 
-- **Node.js**: >= 20.x
-- **pnpm**: >= 9.x
+- **Node.js**: 26.x — what CI builds on and what the development machine runs
+- **pnpm**: 11.x
 - **FiveM Artifacts**: Recommended recent server build
 - **Dependencies**:
   - `oxmysql`
@@ -270,6 +275,10 @@ gphone/
 - [AGENTS.md](AGENTS.md) — the full engineering guide: hard constraints (§2), the CEF capability
   baseline (§6), the service layer (§10), and adding an app end to end (§11). Written for AI
   agents working in this repo, and the most complete description of how it fits together.
+
+Planning lives in the Jira project **MICA**, and nowhere else — there is no roadmap file in this
+repo and re-adding one is explicitly out of bounds (AGENTS.md §2.11). A design doc or phased plan
+here should link the issue it corresponds to.
 
 `pnpm verify` is the gate for any change, and CI runs the same command.
 

@@ -27,6 +27,8 @@ web/
 │   ├── display.spec.ts
 │   ├── defects.spec.ts
 │   ├── error_boundary.spec.ts
+│   ├── home-grid.spec.ts        # icon drag/drop, dock, drawer
+│   ├── home-search.spec.ts
 │   ├── keybinds.spec.ts
 │   ├── navigation.spec.ts
 │   ├── notifications.spec.ts
@@ -34,21 +36,24 @@ web/
 │   ├── settings-persistence.spec.ts
 │   └── theme-modes.spec.ts
 ├── src/
-│   ├── apps/           # One directory per app (admin, bank, blabber, calculator, camera, contacts, mail, media,
-│   │                   # messages, notes, phone, settings, store)
+│   ├── apps/           # One directory per app (admin, bank, blabber, calculator, camera, contacts, hodlr, mail,
+│   │                   # marketplace, media, messages, notes, phone, settings, snek, store)
 │   ├── shell/          # The OS itself: Shell.svelte, PhoneFrame, Launcher, ToastHost, VolumeHud, ErrorBoundary
-│   │   └── state/      # State the phone owns (appEvents, audio, bluetooth, bootstrap, charge, devtools, display,
-│   │                   # keybinds, navigation, notificationSettings, registry, seedFromImage, shade, signal,
-│   │                   # theme, time, toast, wallpaper)
+│   │   └── state/      # State the phone owns (appDrawer, appEvents, audio, bluetooth, bootstrap, catalog, charge,
+│   │                   # devtools, display, dock, homeGrid, homeGridSettings, iconDrag, keybinds, navigation,
+│   │                   # notificationSettings, onboarding, registry, remoteAppSecurity, search, searchResults,
+│   │                   # seedFromImage, shade, signal, theme, time, toast, wallpaper)
 │   ├── services/       # Client-side cache of each core service (account, admin, call, camera, contacts,
-│   │                   # conversations, mail, media, notifications, reports, settings) plus the two factories
-│   │                   # they are built from: createCrudStore, createPagedStore. An add-on's store — Notes,
-│   │                   # Blabber — lives beside its app in src/apps/ instead; see AGENTS.md §8/§11.
+│   │                   # conversations, highscores, mail, marketplace, media, notifications, reports, settings)
+│   │                   # plus the two factories they are built from: createCrudStore, createPagedStore. An
+│   │                   # add-on's store — Notes, Blabber, Hodlr — lives beside its app in src/apps/ instead;
+│   │                   # see AGENTS.md §8/§11.
 │   ├── sdk/            # @gphone/sdk — the only thing apps may import
 │   │   └── ui/         # UI primitives and icons apps build with
 │   ├── nui/            # The bridge: transport adapters, fetchNui, useNuiEvent, browser mocks
 │   ├── lib/            # Helpers with no gPhone state and no I/O (debug, dragRatio, dragScroll, errors,
-│   │                   # filterByQuery, formatters, isBrowser, m3, markdown, pointerDrag, useScrollDetect)
+│   │                   # filterByQuery, formatters, isBrowser, longPressDrag, m3, markdown, pointerDrag,
+│   │                   # useScrollDetect)
 │   └── main.ts         # Mounts shell/Shell.svelte
 ├── package.json
 └── playwright.config.ts
@@ -62,7 +67,7 @@ gPhone includes a full suite of automated unit (Vitest) and Playwright End-to-En
 
 ### Running Unit Tests
 
-Run unit test suites covering the core service caches (`account`, `admin`, `call`, `camera`, `contacts`, `conversations`, `mail`, `media`, `notifications`, `reports`, `settings`) and the `createCrudStore`/`createPagedStore` factories behind them, shell state (`appEvents`, `audio`, `bluetooth`, `bootstrap`, `charge`, `display`, `keybinds`, `navigation`, `registry`, `shade`, `signal`, `theme`, `time`, `toast`, `wallpaper`), transport adapters, SDK helpers and boundaries, and the pure helpers in `lib/`:
+Run unit test suites covering the core service caches (`account`, `admin`, `call`, `camera`, `contacts`, `conversations`, `highscores`, `mail`, `marketplace`, `media`, `notifications`, `reports`, `settings`) and the `createCrudStore`/`createPagedStore` factories behind them, shell state (`appDrawer`, `appEvents`, `audio`, `bluetooth`, `bootstrap`, `catalog`, `charge`, `display`, `dock`, `homeGrid`, `homeGridSettings`, `iconDrag`, `keybinds`, `navigation`, `onboarding`, `registry`, `remoteAppSecurity`, `searchResults`, `shade`, `signal`, `theme`, `time`, `toast`, `wallpaper`), transport adapters, SDK helpers and boundaries, and the pure helpers in `lib/`:
 
 ```sh
 pnpm test:unit

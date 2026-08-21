@@ -13,11 +13,22 @@ described neither.
 `web/src/services/notes.ts` are the two ends of the one `notes` service, so they carry the same
 name deliberately — it is not a collision to tidy up.
 
-**Stores live outside `apps/`, not inside the app that uses them.** A tempting alternative is to
-move each store into the app that uses it (`apps/notes/store.ts`), and it does not work:
-`contacts` is read by Contacts, Messages and Phone, and `photos` by four apps. A store inside one
-app's directory is a boundary violation (AGENTS.md §2.7) for every other app that needs it. Stores
-are shared by nature; apps are not.
+**A core service's store lives outside `apps/`, not inside the app that uses it.** A tempting
+alternative is to move each store into the app that uses it (`apps/notes/store.ts`), and for a
+core service it does not work: `contacts` is read by Contacts, Messages and Phone, and `photos` by
+four apps. A store inside one app's directory is a boundary violation (AGENTS.md §2.7) for every
+other app that needs it. Core services are shared by nature; apps are not.
+
+**An add-on is the deliberate exception, and its store lives beside it.** Notes, Blabber and Hodlr
+each keep a `store.ts` inside `web/src/apps/<id>/`, because an add-on ships as one self-contained
+bundle — a store of its own sitting in core `web/src/services/` would be a piece of the app that
+the app cannot carry with it. The test is ownership, not location: if exactly one app reads it and
+that app is `core: false`, it belongs in the app directory.
+
+Snek is `core: false` and has no `store.ts`, which is not a counter-example: its leaderboard is
+`web/src/services/highscores.ts`, a core service any app may post a score to, so it lives where a
+shared thing lives. Marketplace is the mirror image — `core: true` with its store in
+`web/src/services/marketplace.ts`, exactly where the rule puts it.
 
 **Casing in `server/lib/` is a rule, not an accident.** PascalCase is a class or a singleton
 object (`Repository`, `ServiceEndpoint`, `Database`, `SchemaMigrator`); camelCase is a module of

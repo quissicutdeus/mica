@@ -372,14 +372,14 @@ does not treat a NUI request as proof of intent.
 
 It used to be decorative in a worse sense than unused. Nothing read it beyond the Store's renderer
 and a storage-size figure invented from `permissions.length`, so an app declaring `permissions: []`
-had exactly the access of one declaring all seven — and half the manifests understated what they
+had exactly the access of one declaring all eight — and half the manifests understated what they
 touched. Settings declared nothing and used ten hooks.
 
 `web/src/sdk/permissions.test.ts` reads each app's `@gphone/sdk` imports and fails the build where
 the manifest understates them. The mapping is deliberately narrow — `useContacts`, `useMedia`,
 `useCamera`, `usePhoneNotification`, `useStorage`/`usePersisted` — because those are the ones a
 player would want disclosed. `network` and `location` stay hand-declared: every app talks to its own
-service, so inferring `network` would mark all thirteen and tell nobody anything.
+service, so inferring `network` would mark all sixteen and tell nobody anything.
 
 Declaring more than the scan finds is fine. Declaring less is a lie to the person reading it.
 
