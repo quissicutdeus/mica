@@ -3,6 +3,7 @@
 export * from './lifecycle';
 export * from './settingsSync';
 export * from './useAccount';
+export * from './useAccounts';
 export * from './useAdmin';
 export * from './useAppAction';
 export * from './useAppEvents';
@@ -25,7 +26,6 @@ export * from './useMessages';
 export * from './useNavigation';
 export * from './useNotificationSettings';
 export * from './useNotifications';
-export * from './useNuiBridge';
 export * from './usePersisted';
 export * from './usePhoneNotification';
 export * from './useReport';

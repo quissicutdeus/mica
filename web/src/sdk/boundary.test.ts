@@ -217,3 +217,36 @@ describe('manifests import the leaf, never the barrel', () => {
     ).toEqual([]);
   });
 });
+
+describe('only core apps may import @gphone/sdk/core', () => {
+  /**
+   * `useNuiBridge` reaches any registered NUI callback, which makes every permission an
+   * add-on declares meaningless — it can fetch what `useContacts` would have fetched
+   * without importing `useContacts`. It stays for the two core apps that genuinely drive
+   * the transport (Camera's capture events, Settings' developer tools) and is refused to
+   * anything `core: false`. An add-on installed from the Store cannot resolve this entry
+   * at all; this test is what makes the in-tree add-ons honest about it. MICA-16.
+   */
+  const CORE_ENTRY = new RegExp(String.raw`${IMPORT_PREFIX}['"]@gphone/sdk/core['"]`);
+
+  it('no add-on imports @gphone/sdk/core', () => {
+    const offenders: string[] = [];
+    for (const file of FILES) {
+      const appId = relative(APPS, file).split(sep)[0];
+      const manifest = readFileSync(join(APPS, appId, 'manifest.ts'), 'utf8');
+      const isCore = /\bcore:\s*true\b/.test(manifest);
+      if (isCore) continue;
+      if (CORE_ENTRY.test(readFileSync(file, 'utf8'))) {
+        offenders.push(relative(ROOT, file));
+      }
+    }
+    expect(offenders.sort(), 'an add-on talks to its own service through useService(id)').toEqual(
+      []
+    );
+  });
+
+  it('the main barrel does not export useNuiBridge', async () => {
+    const sdk = await import('./index');
+    expect(sdk).not.toHaveProperty('useNuiBridge');
+  }, 30_000);
+});

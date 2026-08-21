@@ -4,13 +4,13 @@
     useMail,
     useMessages,
     useNavigation,
-    useNuiBridge,
     usePhoneNotification,
     useSystemHardware,
     useAppAction,
     ToggleSwitch,
     isBrowser
   } from '@gphone/sdk';
+  import { useNuiBridge } from '@gphone/sdk/core';
 
   let { onhide } = $props<{ onhide: () => void }>();
 

@@ -45,6 +45,8 @@ export default defineConfig({
       // is in `src/sdk/app.ts`: a manifest that imports the full barrel closes a cycle,
       // because the barrel reaches the registry and the registry globs every manifest.
       '@gphone/sdk/app': path.resolve(import.meta.dirname, './src/sdk/app.ts'),
+      // Core-only surface. Same ordering rule as `/testing` above.
+      '@gphone/sdk/core': path.resolve(import.meta.dirname, './src/sdk/core.ts'),
       '@gphone/sdk': path.resolve(import.meta.dirname, './src/sdk/index.ts')
     },
     conditions: ['browser']

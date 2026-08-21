@@ -5,7 +5,6 @@ import {
   usePhoneNotification,
   useContacts,
   useMedia,
-  useNuiBridge,
   useNavigation,
   useStorage,
   useSystemHardware,
@@ -19,6 +18,7 @@ import {
   onAppUnmount,
   type AppManifest
 } from './index';
+import { useNuiBridge } from './core';
 import { toast } from '../shell/state/toast';
 import { contacts } from '../services/contacts';
 import { media } from '../services/media';

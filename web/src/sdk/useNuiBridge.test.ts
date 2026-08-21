@@ -2,8 +2,8 @@
 import { describe, it, expect, vi } from 'vitest';
 
 const transport = vi.hoisted(() => ({ fetchNui: vi.fn(), useNuiEvent: vi.fn() }));
-vi.mock('../../nui/fetchNui', () => ({ fetchNui: transport.fetchNui }));
-vi.mock('../../nui/useNuiEvent', () => ({ useNuiEvent: transport.useNuiEvent }));
+vi.mock('../nui/fetchNui', () => ({ fetchNui: transport.fetchNui }));
+vi.mock('../nui/useNuiEvent', () => ({ useNuiEvent: transport.useNuiEvent }));
 
 import { useNuiBridge } from './useNuiBridge';
 

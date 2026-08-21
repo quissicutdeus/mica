@@ -5,7 +5,6 @@
     useMedia,
     useKeybinds,
     useNavigation,
-    useNuiBridge,
     useAppAction,
     usePhoneNotification,
     useTimer,
@@ -16,6 +15,7 @@
     isBrowser,
     type AppProps
   } from '@gphone/sdk';
+  import { useNuiBridge } from '@gphone/sdk/core';
 
   const { isTakingPhoto, isPreviewingPhoto } = useCamera();
   const { capturePhoto, media } = useMedia();

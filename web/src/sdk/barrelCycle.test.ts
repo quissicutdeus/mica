@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { useService, usePersisted, useAppEvents, useNuiBridge } from '@gphone/sdk';
+import { useService, usePersisted, useAppEvents } from '@gphone/sdk';
+import { useNuiBridge } from '@gphone/sdk/core';
 
 /**
  * The SDK barrel must be importable from a module that runs early.

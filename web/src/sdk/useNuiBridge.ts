@@ -1,5 +1,5 @@
-import { fetchNui } from '../../nui/fetchNui';
-import { useNuiEvent } from '../../nui/useNuiEvent';
+import { fetchNui } from '../nui/fetchNui';
+import { useNuiEvent } from '../nui/useNuiEvent';
 
 /**
  * OS Service Hook for the FiveM NUI transport.

@@ -8,13 +8,7 @@ import type {
   FollowStats,
   ReactionSummary
 } from '@shared/types';
-import {
-  createPagedStore,
-  useAppEvents,
-  useNuiBridge,
-  usePersisted,
-  useService
-} from '@gphone/sdk';
+import { createPagedStore, useAccounts, useAppEvents, usePersisted, useService } from '@gphone/sdk';
 
 /**
  * Blabber's own data layer, inside the app.
@@ -29,23 +23,15 @@ import {
  * is the shared identity service every social app posts under, so it is core, and its
  * routes are core's to declare.
  */
-// Resolved per call for the same reason as `fetchNui` below: a handle captured at module
+// Resolved per call for the same reason as `accounts` below: a handle captured at module
 // scope closes over the transport as it was at import time.
 const blabberService = () => useService('blabber');
 const dmService = () => useService('blabber_dms');
 /**
- * Resolved per call, not destructured once.
- *
- * Holding the function from module scope captures whatever `useNuiBridge` returned at
- * import time — which is the real transport, before any test has installed a spy on it.
- * The store then talks to the live mock registry while the test asserts against its own
- * stubs, and the failure reads as wrong fixture data rather than as a stale binding.
+ * Resolved per call, not destructured once — same reasoning as `blabberService`/`dmService`
+ * above: a handle captured at module scope closes over the transport as it was at import time.
  */
-const fetchNui = <T = unknown>(
-  action: string,
-  data?: unknown,
-  options?: { defaultValue: T }
-): Promise<T> => useNuiBridge().fetchNui<T>(action, data, options);
+const accounts = () => useAccounts();
 const { on: onBlabberKind } = useAppEvents('blabber');
 
 /**
@@ -132,11 +118,7 @@ export const canClaimAnother = derived(
 
 export const loadMyAccounts = async (): Promise<void> => {
   try {
-    const reply = await fetchNui<{ rows: Account[]; limit: number }>(
-      'getMyAccounts',
-      { app: 'blabber' },
-      { defaultValue: { rows: [], limit: 3 } }
-    );
+    const reply = await accounts().getMyAccounts('blabber');
     const rows = reply.rows ?? [];
     myAccounts.set(rows);
     if (typeof reply.limit === 'number') accountLimit.set(reply.limit);
@@ -159,7 +141,7 @@ export const updateAccount = async (
   id: number,
   patch: Pick<Partial<Account>, 'display_name' | 'avatar' | 'bio'>
 ): Promise<void> => {
-  await fetchNui('updateAccount', { id, ...patch });
+  await accounts().updateAccount({ id, ...patch });
   myAccounts.update((current) =>
     current.map((account) => (account.id === id ? { ...account, ...patch } : account))
   );
@@ -167,7 +149,7 @@ export const updateAccount = async (
 
 /** Claim a handle. Throws with a readable message when it is taken or malformed. */
 export const claimAccount = async (handle: string, displayName?: string): Promise<Account> => {
-  const created = await fetchNui<Account>('createAccount', {
+  const created = await accounts().createAccount({
     app: 'blabber',
     handle,
     display_name: displayName
@@ -300,11 +282,11 @@ const NO_FOLLOWS: FollowStats = {
 };
 
 export const loadFollowStats = async (accountId: number): Promise<void> => {
-  const reply = await fetchNui<FollowStats>(
-    'getFollowStats',
-    { app: 'blabber', account_id: accountId, viewer_account_id: getActiveAccountId() ?? undefined },
-    { defaultValue: NO_FOLLOWS }
-  );
+  const reply = await accounts().getFollowStats({
+    app: 'blabber',
+    account_id: accountId,
+    viewer_account_id: getActiveAccountId() ?? undefined
+  });
   followStats.update((current) => ({ ...current, [accountId]: reply }));
 };
 
@@ -368,13 +350,13 @@ export const toggleFollow = async (accountId: number): Promise<void> => {
     // Two literal calls rather than one with a computed action name, which `routes.test.ts`
     // cannot see — and a route it cannot see is reported as dead weight.
     if (wasFollowing) {
-      await fetchNui('unfollowAccount', {
+      await accounts().unfollowAccount({
         app: 'blabber',
         follower_account_id: follower,
         followee_account_id: accountId
       });
     } else {
-      await fetchNui('followAccount', {
+      await accounts().followAccount({
         app: 'blabber',
         follower_account_id: follower,
         followee_account_id: accountId
@@ -408,13 +390,13 @@ export const toggleBlock = async (accountId: number): Promise<void> => {
     // Two literal calls, matching `toggleFollow`'s reasoning: a computed action name is
     // invisible to `routes.test.ts`.
     if (wasBlocked) {
-      await fetchNui('unblockAccount', {
+      await accounts().unblockAccount({
         app: 'blabber',
         blocker_account_id: blocker,
         blocked_account_id: accountId
       });
     } else {
-      await fetchNui('blockAccount', {
+      await accounts().blockAccount({
         app: 'blabber',
         blocker_account_id: blocker,
         blocked_account_id: accountId
@@ -551,11 +533,11 @@ const NO_REACTIONS: ReactionSummary = { counts: {}, mine: [] };
 
 export const loadDmReactions = async (ids: number[]): Promise<void> => {
   if (ids.length === 0) return;
-  const reply = await fetchNui<Record<number, ReactionSummary>>(
-    'getReactionsFor',
-    { app: 'blabber', target_table: 'gphone_blabber_dms', target_ids: ids },
-    { defaultValue: {} }
-  );
+  const reply = await accounts().getReactionsFor({
+    app: 'blabber',
+    target_table: 'gphone_blabber_dms',
+    target_ids: ids
+  });
   dmReactions.update((current) => ({ ...current, ...reply }));
 };
 
@@ -591,9 +573,9 @@ export const toggleDmReaction = async (messageId: number, emoji: string): Promis
     // Two literal calls, matching every other toggle here: a computed action name is
     // invisible to `routes.test.ts`.
     if (hadIt) {
-      await fetchNui('unreactToTarget', payload);
+      await accounts().unreactToTarget(payload);
     } else {
-      await fetchNui('reactToTarget', payload);
+      await accounts().reactToTarget(payload);
     }
   } catch (error) {
     await loadDmReactions([messageId]);

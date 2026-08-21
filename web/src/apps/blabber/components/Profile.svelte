@@ -8,8 +8,8 @@
     ReportDialog,
     SegmentedControl,
     Skeleton,
+    useAccounts,
     useAppAction,
-    useNuiBridge,
     useService
   } from '@gphone/sdk';
   import { useBlabber } from '../store';
@@ -48,7 +48,7 @@
 
   const { myAccounts, followStats, loadFollowStats, toggleFollow, toggleBlock, activeAccount } =
     useBlabber();
-  const { fetchNui } = useNuiBridge();
+  const { getAccounts } = useAccounts();
   const { run, busy } = useAppAction('blabber');
 
   let account = $state<Account | null>(null);
@@ -68,11 +68,7 @@
    * whoever owns it.
    */
   const loadAccount = async () => {
-    const reply = await fetchNui<{ rows: Account[] }>(
-      'getAccounts',
-      { app: 'blabber', handle, limit: 1 },
-      { defaultValue: { rows: [] } }
-    );
+    const reply = await getAccounts({ app: 'blabber', handle, limit: 1 });
     account = reply.rows?.[0] ?? null;
     // Counts come from the graph rather than from a column on the account: a stored
     // `follower_count` is a second copy of a fact `gphone_account_follows` already holds.
