@@ -5,7 +5,7 @@ import { facets, hostFor, registerHost } from '../current';
 /**
  * Build the `Host` an in-process app (every app in this repo today; a Store add-on later)
  * gets. `require` is where a manifest's declared `permissions` become an actual refusal
- * instead of `capability.ts`'s dev-only warning.
+ * instead of the old dev-only warning (capability.ts, deleted in MICA-16 step 3).
  *
  * `facets` is the shared registry from `current.ts` — a `Proxy` that resolves each facet
  * lazily from whichever hook files have been imported so far, not a per-host object this

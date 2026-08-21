@@ -5,7 +5,7 @@ import type { Facets } from './inProcess/facets';
 export const HOST_CONTEXT_KEY = 'gphone_host';
 
 /**
- * Moved verbatim from `sdk/capability.ts` (MICA-16 step 3): the host protocol is where
+ * Moved verbatim from the old sdk/capability.ts, deleted in MICA-16 step 3: the host protocol is where
  * this now gets thrown for real, rather than only constructed and never raised.
  */
 export class AppPermissionError extends Error {

@@ -13,7 +13,7 @@ import { installSystemHost } from './inProcess/system';
  * including every hook today, since nothing is wired to `HostProvider` yet).
  *
  * `require()` on the resolved host is what turns a missing permission into a thrown
- * `AppPermissionError` rather than `capability.ts`'s dev-only warning.
+ * `AppPermissionError` rather than the old dev-only warning (capability.ts, deleted in MICA-16 step 3).
  */
 function guarded(hookName: keyof typeof PERMISSION_OF, appId?: string): Host {
   let host: Host | undefined;

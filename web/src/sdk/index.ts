@@ -21,6 +21,8 @@ export {
 } from '../shell/state/remoteAppSecurity';
 export { fetchCatalog } from '../shell/state/catalog';
 export type { CatalogEntry } from '../shell/state/catalog';
-export * from './capability';
+export { AppPermissionError } from './host/protocol';
+/** @public */
+export type { Host } from './host/protocol';
 export * from './types';
 export * from './version';

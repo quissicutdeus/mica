@@ -12,7 +12,7 @@ import type { AppPermission } from './manifest';
  * - every host hook has a row (file → table)
  * - every non-kit row names a symbol that actually exists under `sdk/host` (table → file,
  *   catches a stale or renamed entry)
- * - every non-null row's located export calls `assertCapability` with that row's exact
+ * - every non-null row's located export calls `guarded()` with that row's exact
  *   name, as its own statement — not a call belonging to some other export in the same file
  * - every app's manifest declares what its `@gphone/sdk` imports need
  *
@@ -23,13 +23,8 @@ import type { AppPermission } from './manifest';
  * one — where every other row names exactly one, because a host hook asserts exactly one
  * capability.
  *
- * `assertCapability` is a no-op outside component init — `checkCapability` returns
- * `allowed: true` whenever `getContext` throws — so a hook called from store scope (outside
- * `onMount`/setup) never warns at runtime. This table and `permissions.test.ts` are what
- * cover those call sites; they are static, not a runtime check.
- *
- * The host protocol (MICA-16, step 3) reads the same table to refuse a call rather than
- * warn about it.
+ * The host protocol (MICA-16, step 3) reads this same table in `guard.ts` to refuse a
+ * call outright rather than merely warn about it.
  */
 export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermission[] | null> = {
   // implicit — what an app is made of
