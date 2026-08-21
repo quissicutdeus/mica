@@ -9,21 +9,10 @@ export interface AppCapabilityContext {
 }
 
 /**
- * Kept for callers written against the earlier runtime-enforcement version of this module.
- * Nothing in this file throws it anymore — see `assertCapability` below.
+ * Moved to `host/protocol.ts` (MICA-16 step 3) — that's where it's actually thrown now.
+ * Re-exported here so nothing that imports it from `capability.ts` breaks.
  */
-export class AppPermissionError extends Error {
-  constructor(
-    public readonly appId: string,
-    public readonly permission: AppPermission,
-    public readonly hookName: string
-  ) {
-    super(
-      `App '${appId}' denied access to '${hookName}': missing declared permission '${permission}'.`
-    );
-    this.name = 'AppPermissionError';
-  }
-}
+export { AppPermissionError } from './host/protocol';
 
 /**
  * Check if the currently executing app context has declared a specific capability permission.

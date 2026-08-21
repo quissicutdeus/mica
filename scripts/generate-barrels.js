@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const generateIndex = (dir, mode = 'import') => {
+const generateIndex = (dir, mode = 'import', exclude = []) => {
   const fullDir = path.resolve(__dirname, '..', dir);
 
   if (!fs.existsSync(fullDir)) {
@@ -18,6 +18,10 @@ const generateIndex = (dir, mode = 'import') => {
   // `@gphone/sdk` and pulled vitest into the shipped bundle. The same applies to the
   // server and client barrels, which import for side effects — a test file there would
   // register its own describe blocks at runtime.
+  //
+  // `exclude` is a second, narrower reason: a handful of files are meant to be imported
+  // by path within the repo but never re-exported through this barrel (and so never
+  // through `@gphone/sdk`). Named by module basename, no extension.
   const files = fs
     .readdirSync(fullDir)
     .filter(
@@ -25,7 +29,8 @@ const generateIndex = (dir, mode = 'import') => {
         file.endsWith('.ts') &&
         file !== 'index.ts' &&
         !file.endsWith('.test.ts') &&
-        !file.endsWith('.d.ts')
+        !file.endsWith('.d.ts') &&
+        !exclude.includes(file.replace(/\.ts$/, ''))
     );
 
   const lines = files
@@ -129,7 +134,10 @@ generateIndex('server/services', 'import');
 // Two barrels, and the split is the point (MICA-16): `kit/` is what an add-on
 // bundles and reaches nothing in the shell; `host/` is what an add-on asks the shell
 // for. `sdk/seam.test.ts` keeps them apart.
-generateIndex('web/src/sdk/host', 'export');
+// `protocol`/`current`/`guard` are the host protocol's own plumbing, not SDK surface: the
+// shell and `sdk/index.ts` import them by path, and an app reaches `AppPermissionError`/
+// `Host` only through `sdk/index.ts`'s own re-export (MICA-16 step 3).
+generateIndex('web/src/sdk/host', 'export', ['protocol', 'current', 'guard']);
 generateIndex('web/src/sdk/kit', 'export');
 generateIconIndex();
 generateMigrationsIndex();
