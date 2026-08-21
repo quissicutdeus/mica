@@ -67,9 +67,14 @@ describe('declared permissions', () => {
     const understated = APPS.flatMap((app) => {
       const declared = new Set(app.permissions ?? []);
       const imported = sdkImportsOf(app.id);
-      return [...imported]
-        .filter((name) => PERMISSION_OF[name] && !declared.has(PERMISSION_OF[name]!))
-        .map((name) => `${app.id}: uses ${name}, does not declare '${PERMISSION_OF[name]}'`);
+      return [...imported].flatMap((name) => {
+        const row = PERMISSION_OF[name];
+        if (!row) return [];
+        const perms = Array.isArray(row) ? row : [row];
+        return perms
+          .filter((p) => !declared.has(p))
+          .map((p) => `${app.id}: uses ${name}, does not declare '${p}'`);
+      });
     });
     expect([...new Set(understated)].sort()).toEqual([]);
   });
@@ -153,6 +158,10 @@ describe('the permission table is total', () => {
     for (const [name, expected] of Object.entries(PERMISSION_OF)) {
       if (!expected) continue; // implicit — no call required
       if (KIT_COMPONENTS.has(name)) continue; // disclosed via the hook it calls, not its own assert
+      if (Array.isArray(expected)) {
+        wrong.push(`${name}: row is an array but a host hook must assert exactly one name`);
+        continue;
+      }
       const def = findDefinition(name);
       if (!def) {
         wrong.push(`${name}: no export found under sdk/host`);

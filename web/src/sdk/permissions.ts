@@ -18,12 +18,20 @@ import type { AppPermission } from './manifest';
  *
  * The two kit-component rows (`PhotoPickerModal`, `ReportDialog`) are exempt from the
  * assert check: they live under `sdk/ui`, not `sdk/host`, and disclose through the host
- * hook they call internally rather than asserting themselves.
+ * hook they call internally rather than asserting themselves. A kit-component row may list
+ * more than one permission — a component can call several host hooks at init, not just
+ * one — where every other row names exactly one, because a host hook asserts exactly one
+ * capability.
+ *
+ * `assertCapability` is a no-op outside component init — `checkCapability` returns
+ * `allowed: true` whenever `getContext` throws — so a hook called from store scope (outside
+ * `onMount`/setup) never warns at runtime. This table and `permissions.test.ts` are what
+ * cover those call sites; they are static, not a runtime check.
  *
  * The host protocol (MICA-16, step 3) reads the same table to refuse a call rather than
  * warn about it.
  */
-export const PERMISSION_OF: Record<string, AppPermission | null> = {
+export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermission[] | null> = {
   // implicit — what an app is made of
   useAppLevels: null,
   useAppAction: null,
@@ -68,5 +76,5 @@ export const PERMISSION_OF: Record<string, AppPermission | null> = {
   useWallpaper: 'wallpaper',
   // kit components that call a host hook on the app's behalf
   PhotoPickerModal: 'media',
-  ReportDialog: 'reports'
+  ReportDialog: ['reports', 'notifications']
 };

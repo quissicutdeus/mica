@@ -11,7 +11,8 @@
 
   // Generated. Editing one is erased by the next build — AGENTS.md §2.2.
   "files.readonlyInclude": {
-    "**/sdk/hooks/index.ts": true,
+    "**/sdk/host/index.ts": true,
+    "**/sdk/kit/index.ts": true,
     "**/sdk/icons.ts": true,
     "client/services/index.ts": true,
     "client/game/index.ts": true,

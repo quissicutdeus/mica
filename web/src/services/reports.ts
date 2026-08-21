@@ -1,6 +1,6 @@
 import { derived, writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
-import type { Report } from '@shared/types';
+import type { Report, ReportCategory } from '@shared/types';
 
 /**
  * The moderation queue, and the badge that counts it.
@@ -47,7 +47,7 @@ export const reopenReport = async (id: number): Promise<void> => {
 export interface SubmitReportInput {
   targetTable: string;
   targetId: number;
-  category: string;
+  category: ReportCategory;
   note?: string;
 }
 

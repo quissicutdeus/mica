@@ -13,7 +13,7 @@ import { createPagedStore, useAccounts, useAppEvents, usePersisted, useService }
 /**
  * Blabber's own data layer, inside the app.
  *
- * It used to be `web/src/services/blabber.ts` plus `sdk/hooks/useBlabber.ts` — a store in
+ * It used to be `web/src/services/blabber.ts` plus `sdk/host/useBlabber.ts` — a store in
  * core and a hook in the SDK, for an app declaring `core: false`. Neither is something an
  * app installed from the Store can add, which made the label aspirational;
  * `sdk/coreBoundary.test.ts` counted the references saying so.
@@ -630,7 +630,7 @@ export const taggedBlabs = createPagedStore<Blab>('by_tag', { service: 'blabber'
 export const loadTaggedBlabs = (tag: string): Promise<void> => taggedBlabs.load({ tag });
 
 /**
- * What the app's components call. Was `sdk/hooks/useBlabber.ts`; an add-on cannot put a
+ * What the app's components call. Was `sdk/host/useBlabber.ts`; an add-on cannot put a
  * hook in the SDK, which is the whole reason this moved.
  */
 export function useBlabber() {

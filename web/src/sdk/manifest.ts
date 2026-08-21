@@ -12,40 +12,10 @@ import type { Readable } from 'svelte/store';
  * `useService` in its own namespace). Listing those on every manifest would tell a
  * player nothing. See `sdk/permissions.ts`.
  */
-export type AppPermission =
+export const ALL_PERMISSIONS = [
   // Player data — a service behind each
-  | 'account' // own phone number, bank balance, citizenid
-  | 'admin' // moderation queue and admin actions
-  | 'call'
-  | 'camera'
-  | 'contacts'
-  | 'highscores'
-  | 'location'
-  | 'mail'
-  | 'marketplace'
-  | 'media'
-  | 'messages'
-  | 'notifications' // read the shade, or raise a toast
-  | 'reports' // file a report
-  | 'social' // @handles, follows, blocks, reactions
-  | 'storage'
-  // The phone itself
-  | 'app-events'
-  | 'app-registry'
-  | 'clock'
-  | 'devtools'
-  | 'display'
-  | 'keybinds'
-  | 'navigation'
-  | 'notification-settings'
-  | 'sound'
-  | 'system-hardware' // battery, signal, bluetooth, volume
-  | 'theme'
-  | 'wallpaper';
-
-export const ALL_PERMISSIONS: readonly AppPermission[] = [
-  'account',
-  'admin',
+  'account', // own phone number, bank balance, citizenid
+  'admin', // moderation queue and admin actions
   'call',
   'camera',
   'contacts',
@@ -55,10 +25,11 @@ export const ALL_PERMISSIONS: readonly AppPermission[] = [
   'marketplace',
   'media',
   'messages',
-  'notifications',
-  'reports',
-  'social',
+  'notifications', // read the shade, or raise a toast
+  'reports', // file a report
+  'social', // @handles, follows, blocks, reactions
   'storage',
+  // The phone itself
   'app-events',
   'app-registry',
   'clock',
@@ -68,10 +39,12 @@ export const ALL_PERMISSIONS: readonly AppPermission[] = [
   'navigation',
   'notification-settings',
   'sound',
-  'system-hardware',
+  'system-hardware', // battery, signal, bluetooth, volume
   'theme',
   'wallpaper'
-];
+] as const;
+
+export type AppPermission = (typeof ALL_PERMISSIONS)[number];
 
 /**
  * What the shell hands an app component.

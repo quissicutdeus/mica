@@ -4,7 +4,7 @@ import type { Note } from '@shared/types';
 /**
  * Notes' own data layer, inside the app.
  *
- * It used to be `web/src/services/notes.ts` plus `sdk/hooks/useNotes.ts` — a store in core
+ * It used to be `web/src/services/notes.ts` plus `sdk/host/useNotes.ts` — a store in core
  * and a hook in the SDK, for an app declaring `core: false`. Neither is something an app
  * installed from the Store can add, so Notes was an add-on in name and a first-party app
  * in structure.

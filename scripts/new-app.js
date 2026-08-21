@@ -270,8 +270,11 @@ if (WITH_SERVICE) {
   // `web/src/sdk/host/index.ts` is generated and committed, and until now only `build`
   // and `watch` regenerated it. `pnpm verify` typechecks long before it builds, so the
   // app this script had just written failed its own closing instruction — on the one
-  // import the script itself generated. Doing it here means the tree is coherent the
-  // moment the scaffold finishes.
+  // import the script itself generated. Doing it here fixes the barrel, but the tree is
+  // not coherent the moment the scaffold finishes: `permissions.ts`, `manifest.ts`, and
+  // the app's own `permissions` array are hand-curated and still missing. The third
+  // printed block below says so; `permissions.test.ts` is what will name the gap if it's
+  // skipped.
   await import('./generate-barrels.js');
 }
 
@@ -308,6 +311,28 @@ if (WITH_SERVICE) {
       `there — routes.test.ts cross-references every layer.\x1b[0m`
   );
   console.log(`\nThen: \x1b[1mpnpm generate:sql\x1b[0m and re-import \`gphone.sql\`.`);
+
+  console.log(`\n\x1b[1mThe permission table is also hand-curated. Update it:\x1b[0m\n`);
+  console.log(
+    `  \x1b[2mweb/src/sdk/permissions.ts\x1b[0m — add a row \`use${Pascal}: '${id}'\`, unless the\n` +
+      `  new hook is only ever called by ${title}'s own store through \`useService\`, in\n` +
+      `  which case no hook file and no row are needed at all.`
+  );
+  console.log(
+    `\n  \x1b[2mweb/src/sdk/manifest.ts\x1b[0m — add '${id}' to \`ALL_PERMISSIONS\` (and so to the\n` +
+      `  \`AppPermission\` union it derives).`
+  );
+  console.log(
+    `\n  \x1b[2mweb/src/apps/store/appInfo.ts\x1b[0m — a label for '${id}' in \`LABELS\`.`
+  );
+  console.log(
+    `\n  \x1b[2mweb/src/apps/${id}/manifest.ts\x1b[0m — declare '${id}' in \`permissions\`.`
+  );
+  console.log(
+    `\n\x1b[2mThis script does not write any of those for you. Skip a step and \`pnpm verify\`\n` +
+      `will still pass the barrel/typecheck gates — \`permissions.test.ts\` is what catches\n` +
+      `it, naming the exact app and hook that's undeclared.\x1b[0m`
+  );
 } else {
   console.log(
     `Then: \x1b[1mpnpm dev\x1b[0m and open \x1b[1mlocalhost:5173/?app=${id}\x1b[0m.\n` +
