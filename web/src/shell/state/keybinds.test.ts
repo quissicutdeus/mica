@@ -14,7 +14,7 @@ import {
 } from './keybinds';
 import { appRegistryStore } from './registry';
 import { findAction } from '@shared/keybinds';
-import { useStorage } from '../../sdk/hooks/useStorage';
+import { useStorage } from '../../sdk/host/useStorage';
 
 const IDLE: KeybindEnvironment = { currentApp: 'home', callStatus: 'idle' };
 

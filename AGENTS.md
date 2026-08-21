@@ -194,8 +194,8 @@ updateUnscoped`, never a service-level bypass.
     that exists: a shipped proposal gets its issue closed, not relabeled "done" in place. Do not
     restart `docs/roadmap.md` (its predecessor) or any other committed file as a shadow backlog,
     and do not keep an untracked local plan either — a plan worth writing down goes where every
-    contributor can read it. A design doc or phased plan in this repo should link the Jira issue
-    it corresponds to.
+    contributor can read it. A design doc or phased plan in this repo names the Jira issue key it
+    corresponds to (`MICA-16`) — the key only, never the site URL, which identifies the owner.
 
 ---
 
@@ -368,7 +368,9 @@ effects. XSS here is privilege escalation, not just defacement.
 `permissions` on a manifest is what the Store shows a player. It is **not** access control and
 cannot become it: every app runs in the shell's own JS context, so any check the browser makes is
 one an add-on can walk around. §2.9 stays the boundary — the server gates privileged actions and
-does not treat a NUI request as proof of intent.
+does not treat a NUI request as proof of intent. Turning this into a real boundary — a host
+protocol the add-on reaches the shell through, enforced there — is tracked as `MICA-16`; until
+it lands, do not add a runtime check here and call it security.
 
 It used to be decorative in a worse sense than unused. Nothing read it beyond the Store's renderer
 and a storage-size figure invented from `permissions.length`, so an app declaring `permissions: []`
@@ -421,7 +423,7 @@ Four words carry the structure, and they mean exactly one thing each:
 | `web/src/lib/`                 | CEF+browser  | Helpers with no gPhone state and no I/O — formatters, markdown               |
 
 `client/services/index.ts`, `client/game/index.ts`, `server/services/index.ts`,
-`server/migrations/index.ts`, `web/src/sdk/hooks/index.ts` and `web/src/sdk/icons.ts` are
+`server/migrations/index.ts`, `web/src/sdk/host/index.ts`, `web/src/sdk/kit/index.ts` and `web/src/sdk/icons.ts` are
 **generated** by `scripts/generate-barrels.js`. Add a file to the directory; do not edit the index.
 They are committed, and `pnpm verify` regenerates them as its first step, so a hand-added hook is
 picked up without a build — the generator used to run only inside `build` and `watch`, both of which

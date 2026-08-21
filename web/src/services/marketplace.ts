@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { useService } from '../sdk/hooks/useService';
+import { useService } from '../sdk/host/useService';
 import type { Listing } from '@shared/types';
 
 const service = () => useService('marketplace');

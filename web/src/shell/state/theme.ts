@@ -1,5 +1,5 @@
 import { derived } from 'svelte/store';
-import { usePersisted } from '../../sdk/hooks/usePersisted';
+import { usePersisted } from '../../sdk/host/usePersisted';
 import { DEFAULT_SEED, buildSchemes, cssVarBlock, sanitizeSeed, type M3Tokens } from '../../lib/m3';
 
 /**

@@ -1,5 +1,5 @@
 import { get, writable } from 'svelte/store';
-import { usePersisted } from '../../sdk/hooks/usePersisted';
+import { usePersisted } from '../../sdk/host/usePersisted';
 import { homeGridColumns, homeGridRows } from './homeGridSettings';
 
 /** Which folder's popup is open, if any — shell-owned UI state, not persisted. */

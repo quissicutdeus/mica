@@ -1,6 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import { isBrowser } from '../../lib/isBrowser';
-import { usePersisted } from '../../sdk/hooks/usePersisted';
+import { usePersisted } from '../../sdk/host/usePersisted';
 
 export interface TimeState {
   hours: number;

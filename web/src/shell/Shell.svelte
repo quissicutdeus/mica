@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { hydrateSettings } from '../sdk/hooks/useStorage';
+  import { hydrateSettings } from '../sdk/host/useStorage';
   import { migrateAppDrawerHintForExistingSaves } from './state/onboarding';
   import { appRegistryStore } from './state/registry';
   import { createNuiMessageRouter } from './nuiMessages';

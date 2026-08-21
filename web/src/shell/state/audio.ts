@@ -1,5 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
-import { usePersisted } from '../../sdk/hooks/usePersisted';
+import { usePersisted } from '../../sdk/host/usePersisted';
 import { isBatteryDead } from './charge';
 
 export type SoundEffect = 'click' | 'pop' | 'camera' | 'notification' | 'ringtone';

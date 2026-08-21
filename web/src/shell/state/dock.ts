@@ -1,4 +1,4 @@
-import { usePersisted } from '../../sdk/hooks/usePersisted';
+import { usePersisted } from '../../sdk/host/usePersisted';
 
 export const DOCK_SLOT_COUNT = 4;
 

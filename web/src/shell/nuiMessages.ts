@@ -5,7 +5,7 @@ import { conversationsStore } from '../services/conversations';
 import { appRegistryStore } from './state/registry';
 import { setSignal } from './state/signal';
 import { time } from './state/time';
-import { hydrateSettings } from '../sdk/hooks/useStorage';
+import { hydrateSettings } from '../sdk/host/useStorage';
 import { bootstrapStores, resetBootstrapState } from './state/bootstrap';
 import { toast } from './state/toast';
 import { messageOf } from '../lib/errors';

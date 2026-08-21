@@ -14,7 +14,7 @@ import {
   VOLUME_STEP_DEFAULT
 } from './audio';
 import { get } from 'svelte/store';
-import { useStorage } from '../../sdk/hooks/useStorage';
+import { useStorage } from '../../sdk/host/useStorage';
 import { charge } from './charge';
 
 describe('audio', () => {

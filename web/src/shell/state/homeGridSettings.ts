@@ -1,4 +1,4 @@
-import { usePersisted } from '../../sdk/hooks/usePersisted';
+import { usePersisted } from '../../sdk/host/usePersisted';
 
 export const HOME_GRID_COLUMNS_DEFAULT = 4;
 export const HOME_GRID_ROWS_DEFAULT = 5;

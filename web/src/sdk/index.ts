@@ -2,7 +2,8 @@ export * from './manifest';
 export * from './components';
 export * from './icons';
 export * from './utils';
-export * from './hooks/index';
+export * from './host/index';
+export * from './kit/index';
 /**
  * The list-store factory, so an add-on can have one.
  *

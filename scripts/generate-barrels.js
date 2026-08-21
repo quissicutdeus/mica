@@ -126,7 +126,11 @@ console.log('Generating barrels...');
 generateIndex('client/services', 'import');
 generateIndex('client/game', 'import');
 generateIndex('server/services', 'import');
-generateIndex('web/src/sdk/hooks', 'export');
+// Two barrels, and the split is the point (MICA-16): `kit/` is what an add-on
+// bundles and reaches nothing in the shell; `host/` is what an add-on asks the shell
+// for. `sdk/seam.test.ts` keeps them apart.
+generateIndex('web/src/sdk/host', 'export');
+generateIndex('web/src/sdk/kit', 'export');
 generateIconIndex();
 generateMigrationsIndex();
 console.log('Done.');

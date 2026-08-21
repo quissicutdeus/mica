@@ -1,6 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import { isBrowser } from '../../lib/isBrowser';
-import { usePersisted } from '../../sdk/hooks/usePersisted';
+import { usePersisted } from '../../sdk/host/usePersisted';
 
 /**
  * Cellular network service state. Defaults to ON (true) and persists across reloads.

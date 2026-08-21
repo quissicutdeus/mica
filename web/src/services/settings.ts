@@ -9,7 +9,7 @@ import type { PhoneSetting } from '@shared/types';
  * values is the drift this codebase keeps paying for. What the phone needs from the server is
  * a hydrate at boot and a write on change, which is what these three functions are.
  *
- * Reached from `sdk/hooks/settingsSync.ts`, not from an app. Apps see `useStorage`.
+ * Reached from `sdk/host/settingsSync.ts`, not from an app. Apps see `useStorage`.
  */
 
 /**

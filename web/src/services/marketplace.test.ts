@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 
 const serviceMock = vi.hoisted(() => ({ call: vi.fn() }));
-vi.mock('../sdk/hooks/useService', () => ({ useService: () => serviceMock }));
+vi.mock('../sdk/host/useService', () => ({ useService: () => serviceMock }));
 
 import {
   feedStore,

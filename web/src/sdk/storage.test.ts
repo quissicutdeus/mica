@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { get } from 'svelte/store';
-import { appStorageBytes, clearAppStorage } from './hooks/useStorage';
-import { usePersisted } from './hooks/usePersisted';
+import { appStorageBytes, clearAppStorage } from './host/useStorage';
+import { usePersisted } from './host/usePersisted';
 
 /**
  * App storage, and what "clear it" has to mean.

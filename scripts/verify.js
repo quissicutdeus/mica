@@ -129,7 +129,7 @@ const report = ({ bailed = false, skipped = [] } = {}) => {
 const main = async () => {
   // The generated barrels, before anything reads them.
   //
-  // `pnpm new:app <id> --service` writes `web/src/sdk/hooks/use<Name>.ts`, and that
+  // `pnpm new:app <id> --service` writes `web/src/sdk/host/use<Name>.ts`, and that
   // directory's `index.ts` is generated — previously only by `build` and `watch`, which
   // run *after* typecheck here. So a freshly scaffolded app died at the typecheck gate on
   // an import that was perfectly correct, and the remedy was a command nothing mentioned.

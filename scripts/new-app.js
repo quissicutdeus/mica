@@ -253,7 +253,7 @@ export const ${id} = createCrudStore<${Pascal}Row, Pick<${Pascal}Row, 'title'>>(
   );
 
   write(
-    `web/src/sdk/hooks/use${Pascal}.ts`,
+    `web/src/sdk/host/use${Pascal}.ts`,
     `import { ${id} } from '../../services/${id}';
 
 /** OS Service Hook for ${title}. */
@@ -267,7 +267,7 @@ export function use${Pascal}() {
 // --- the generated barrel ------------------------------------------------------------
 
 if (WITH_SERVICE) {
-  // `web/src/sdk/hooks/index.ts` is generated and committed, and until now only `build`
+  // `web/src/sdk/host/index.ts` is generated and committed, and until now only `build`
   // and `watch` regenerated it. `pnpm verify` typechecks long before it builds, so the
   // app this script had just written failed its own closing instruction — on the one
   // import the script itself generated. Doing it here means the tree is coherent the

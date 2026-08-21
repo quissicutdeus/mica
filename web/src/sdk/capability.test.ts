@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 import AppCapabilityProvider from './AppCapabilityProvider.svelte';
-import { useContacts } from './hooks/useContacts';
-import { useCamera } from './hooks/useCamera';
-import { useMedia } from './hooks/useMedia';
-import { useLocation } from './hooks/useLocation';
-import { usePhoneNotification } from './hooks/usePhoneNotification';
-import { useStorage } from './hooks/useStorage';
+import { useContacts } from './host/useContacts';
+import { useCamera } from './host/useCamera';
+import { useMedia } from './host/useMedia';
+import { useLocation } from './host/useLocation';
+import { usePhoneNotification } from './host/usePhoneNotification';
+import { useStorage } from './host/useStorage';
 import { assertCapability, checkCapability } from './capability';
 import { defineApp } from './manifest';
 import { createRawSnippet } from 'svelte';

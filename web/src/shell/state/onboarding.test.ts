@@ -10,7 +10,7 @@ const serviceMock = vi.hoisted(() => ({
 }));
 vi.mock('../../services/settings', () => serviceMock);
 
-import { clearAppStorage } from '../../sdk/hooks/useStorage';
+import { clearAppStorage } from '../../sdk/host/useStorage';
 import { appDrawerHintSeen, migrateAppDrawerHintForExistingSaves } from './onboarding';
 
 describe('App Drawer first-run hint migration', () => {

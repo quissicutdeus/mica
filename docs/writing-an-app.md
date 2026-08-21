@@ -218,8 +218,8 @@ factory fetches a whole list and re-sorts it, which is the opposite of a cursor 
 through one. It takes the same `service` option, so an add-on's paged feed goes through the
 generic route too — Blabber's `feed` and `followingFeed` are the worked examples.
 
-**The hook.** A core app's hook goes in `web/src/sdk/hooks/`; an add-on exports its own from its
-own directory, beside the store, because `sdk/hooks/` ships inside gPhone — `apps/notes/store.ts`
+**The hook.** A core app's hook goes in `web/src/sdk/host/`; an add-on exports its own from its
+own directory, beside the store, because `sdk/host/` ships inside gPhone — `apps/notes/store.ts`
 exports `useNotes`, `apps/blabber/store.ts` exports `useBlabber`. Either way the store itself is
 never reached by path from another app; the hook is the only handle.
 

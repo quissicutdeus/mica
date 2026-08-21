@@ -1,5 +1,5 @@
 import { derived } from 'svelte/store';
-import { usePersisted } from '../../sdk/hooks/usePersisted';
+import { usePersisted } from '../../sdk/host/usePersisted';
 
 /**
  * Bluetooth state management and anti-doxxing privacy controls.

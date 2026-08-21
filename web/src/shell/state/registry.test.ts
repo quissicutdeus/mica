@@ -11,7 +11,7 @@ const serviceMock = vi.hoisted(() => ({
 vi.mock('../../services/settings', () => serviceMock);
 
 import { appRegistryStore, getFirstBootTime, type AppManifest } from './registry';
-import { hydrateSettings, useStorage } from '../../sdk/hooks/useStorage';
+import { hydrateSettings, useStorage } from '../../sdk/host/useStorage';
 import { setTrustedRemoteAppHosts, sha256Hex } from './remoteAppSecurity';
 
 describe('App Registry Store', () => {

@@ -59,8 +59,8 @@ describe('app-space is open', () => {
   it('the SDK re-exports the hook, so no app reaches into shell/ by path', () => {
     // Without this the first add-on writes `../../shell/state/appEvents`, which is the drift
     // `sdk/boundary.test.ts` exists to prevent.
-    expect(read('web/src/sdk/hooks/useAppEvents.ts')).toContain('subscribeAppEvent');
-    expect(read('web/src/sdk/hooks/index.ts')).toContain('useAppEvents');
+    expect(read('web/src/sdk/host/useAppEvents.ts')).toContain('subscribeAppEvent');
+    expect(read('web/src/sdk/host/index.ts')).toContain('useAppEvents');
   });
 });
 

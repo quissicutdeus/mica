@@ -4,7 +4,7 @@
  * ## Why this exists
  *
  * A manifest has to be loadable before the SDK is. `shell/state/registry.ts` globs every
- * manifest eagerly to build the launcher, and `sdk/hooks/useAppRegistry.ts` reads that
+ * manifest eagerly to build the launcher, and `sdk/host/useAppRegistry.ts` reads that
  * registry — so importing `@gphone/sdk` loads every app, and every app imports the barrel
  * back while it is still evaluating. Every binding comes out `undefined`, and the symptom
  * is `useService is not a function` on a line that plainly imports it.

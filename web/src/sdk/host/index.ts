@@ -26,7 +26,6 @@ export * from './useNavigation';
 export * from './useNotificationSettings';
 export * from './useNotifications';
 export * from './useNuiBridge';
-export * from './usePagedList.svelte';
 export * from './usePersisted';
 export * from './usePhoneNotification';
 export * from './useReports';

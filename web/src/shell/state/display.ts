@@ -1,5 +1,5 @@
 import { derived, get, writable } from 'svelte/store';
-import { usePersisted } from '../../sdk/hooks/usePersisted';
+import { usePersisted } from '../../sdk/host/usePersisted';
 import { isTypingTarget } from './keybinds';
 
 /**

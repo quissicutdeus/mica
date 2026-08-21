@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { usePersisted } from '../../sdk/hooks/usePersisted';
+import { usePersisted } from '../../sdk/host/usePersisted';
 import { fetchSettings } from '../../services/settings';
 
 /** Shown near the dock until the App Drawer has been opened once, then gone for good. */

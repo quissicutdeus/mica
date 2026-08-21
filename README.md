@@ -278,7 +278,7 @@ gphone/
 
 Planning lives in the Jira project **MICA**, and nowhere else — there is no roadmap file in this
 repo and re-adding one is explicitly out of bounds (AGENTS.md §2.11). A design doc or phased plan
-here should link the issue it corresponds to.
+here should name the issue key it corresponds to (`MICA-16`) — the key, never the site URL.
 
 `pnpm verify` is the gate for any change, and CI runs the same command.
 

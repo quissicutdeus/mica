@@ -1,6 +1,6 @@
 import { derived, get } from 'svelte/store';
 import { PHONE_SCOPE_ACTIONS, type KeybindAction } from '@shared/keybinds';
-import { usePersisted } from '../../sdk/hooks/usePersisted';
+import { usePersisted } from '../../sdk/host/usePersisted';
 import { appRegistryStore } from './registry';
 
 /**

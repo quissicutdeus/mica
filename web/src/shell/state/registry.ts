@@ -5,9 +5,9 @@ import { get, writable } from 'svelte/store';
 // barrel here would close that cycle and leave `appRegistryStore` unset when `keybinds.ts`
 // evaluates its module-level `derived(appRegistryStore, ...)`.
 import { type AppComponent, type AppManifest, defineApp } from '../../sdk/manifest';
-import { clearAppStorage } from '../../sdk/hooks/useStorage';
+import { clearAppStorage } from '../../sdk/host/useStorage';
 import { messageOf } from '../../lib/errors';
-import { usePersisted } from '../../sdk/hooks/usePersisted';
+import { usePersisted } from '../../sdk/host/usePersisted';
 import { placeOnHomeGridIfAbsent } from './homeGrid';
 import { isTrustedRemoteUrl, matchesHash } from './remoteAppSecurity';
 import type { CatalogEntry } from './catalog';
