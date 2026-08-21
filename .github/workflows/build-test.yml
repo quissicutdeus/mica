@@ -11,10 +11,20 @@ jobs:
     # whenever the lockfile's playwright version changes, or the run fails on a missing
     # browser instead of a stale-but-working one.
     container: mcr.microsoft.com/playwright:v1.62.1-noble
+    # Matched to the development machine on purpose, rather than to whatever is LTS.
+    #
+    # pnpm is the half that matters most: it is what writes pnpm-lock.yaml, and `pnpm
+    # install --frozen-lockfile` below is the first thing that runs. A CI pnpm older than
+    # the one a developer commits with is a CI failure waiting on the next lockfile format
+    # bump, and it would surface here and nowhere else.
+    #
+    # Node 26 is Current, not LTS, until 2026-10-28. That is the trade accepted here: this
+    # repo is built on 26, so 26 is what gets tested. Nothing about the shipped resource
+    # depends on it — FiveM runs its own JS runtime, and this version only ever builds.
     strategy:
       matrix:
-        node-version: [24]
-        pnpm-version: [10]
+        node-version: [26]
+        pnpm-version: [11]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
