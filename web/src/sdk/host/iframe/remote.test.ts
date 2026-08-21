@@ -1,36 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { get } from 'svelte/store';
-import { setClientTransport, type ClientTransport } from './transport';
 import { remoteCall, remoteStore, remoteFn, encodeArgs } from './remote';
 import { AppPermissionError } from '../protocol';
-import type { ToShell, ToFrame } from './messages';
-
-/** A transport whose "shell" is the test: records sends, lets the test answer. */
-function fakeTransport() {
-  const sent: ToShell[] = [];
-  const replies = new Map<number, (m: Extract<ToFrame, { kind: 'reply' }>) => void>();
-  const pushes = new Map<number, (v: unknown) => void>();
-  const callbacks = new Map<number, (...a: unknown[]) => unknown>();
-  let nextCb = 1;
-  const t: ClientTransport = {
-    send: (m) => sent.push(m),
-    hydrated: () => Promise.reject(new Error('not in this test')),
-    onReply: (id, cb) => replies.set(id, cb),
-    onPush: (id, cb) => {
-      pushes.set(id, cb);
-      return () => pushes.delete(id);
-    },
-    registerCallback: (fn) => {
-      const id = nextCb++;
-      callbacks.set(id, fn);
-      return id;
-    },
-    onTheme: () => {},
-    onStorage: () => {}
-  };
-  setClientTransport(t);
-  return { sent, replies, pushes, callbacks };
-}
+import type { ToShell } from './messages';
+import { fakeTransport } from './__fixtures__/fakeTransport';
 
 describe('remoteCall', () => {
   it('sends a call and resolves with the reply value', async () => {
