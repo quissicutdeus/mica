@@ -1,0 +1,83 @@
+import { mount } from 'svelte';
+import { createClientTransport, setClientTransport } from './transport';
+import { createInProcessHost } from '../inProcess/createInProcessHost';
+import { registerHost, setSystemHost } from '../current';
+import { HOST_CONTEXT_KEY } from '../protocol';
+import { hydrateStorage } from './storageCache';
+import { setConstants } from './constants';
+import { remoteCall } from './remote';
+import type { AppComponent, AppManifest } from '../../manifest';
+
+// MICA-16 step 4: the add-on's entry point, called by the bundle every add-on ships
+// instead of the shell mounting it in-process. Wires the transport, waits for hydrate,
+// then mounts the app with the same host protocol it would get inside the shell.
+
+const TYPING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+const isTyping = (t: EventTarget | null) =>
+  t instanceof HTMLElement && (TYPING_TAGS.has(t.tagName) || t.isContentEditable);
+
+function applyTheme(css: string) {
+  // The same `--color-*:` block PhoneFrame puts on the screen element, on this document's root.
+  document.documentElement.setAttribute('style', css);
+}
+
+export async function bootAddOn(manifest: AppManifest, App: AppComponent): Promise<void> {
+  const transport = createClientTransport();
+  setClientTransport(transport);
+
+  window.addEventListener('error', (e) =>
+    transport.send({
+      kind: 'error',
+      message: e.message,
+      stack: e.error instanceof Error ? (e.error.stack ?? null) : null
+    })
+  );
+  window.addEventListener('unhandledrejection', (e) =>
+    transport.send({
+      kind: 'error',
+      message: e.reason instanceof Error ? e.reason.message : String(e.reason),
+      stack: e.reason instanceof Error ? (e.reason.stack ?? null) : null
+    })
+  );
+  window.addEventListener('keydown', (e) =>
+    transport.send({
+      kind: 'key',
+      key: e.key,
+      code: e.code,
+      ctrlKey: e.ctrlKey,
+      shiftKey: e.shiftKey,
+      altKey: e.altKey,
+      metaKey: e.metaKey,
+      typing: isTyping(e.target)
+    })
+  );
+  window.addEventListener('focusin', (e) => {
+    if (isTyping(e.target)) transport.send({ kind: 'typing', typing: true });
+  });
+  window.addEventListener('focusout', (e) => {
+    if (isTyping(e.target)) transport.send({ kind: 'typing', typing: false });
+  });
+
+  transport.send({ kind: 'hello', manifest });
+  const payload = await transport.hydrated();
+
+  applyTheme(payload.theme);
+  transport.onTheme(applyTheme);
+  hydrateStorage(payload.storage);
+  transport.onStorage(hydrateStorage);
+  setConstants(payload.constants);
+
+  // Inside the frame the app *is* the system: store-scope hooks (blabber/store.ts) fall back to
+  // this host, and the context lookup finds the same one. Permissions here are a courtesy
+  // fail-fast; the shell's server re-checks every call.
+  const host = createInProcessHost(payload.appId, payload.permissions);
+  registerHost(host);
+  setSystemHost(host);
+
+  const target = document.getElementById('app') ?? document.body;
+  mount(App, {
+    target,
+    props: { onback: () => void remoteCall('navigation', [], 'goHome'), ...payload.props },
+    context: new Map([[HOST_CONTEXT_KEY, host]])
+  });
+}

@@ -183,3 +183,46 @@ describe('core may not name an app', () => {
     }
   });
 });
+
+/**
+ * Core may not *import* an add-on either.
+ *
+ * The rule above catches a literal like `'blabber'` dropped into a string or comparison.
+ * This one catches the sharper version: an actual `import ... from` statement reaching
+ * into an add-on's own directory. `registry.ts` glob-loads every app's index component
+ * through a bundler API call whose first argument is a string literal, not an import
+ * statement, so it does not match and is not what this guards against — the point is
+ * nothing *else* under `shell/` or `sdk/` may resolve an add-on's module at build time,
+ * since an add-on the Store installs is not in this repository to resolve against.
+ */
+
+const IMPORT_BOUNDARY_DIRS = [join(SRC, 'shell'), join(SRC, 'sdk')];
+
+const importBoundaryFiles = IMPORT_BOUNDARY_DIRS.flatMap(walk).filter(
+  (path) => !path.endsWith(join('sdk', 'testing.ts'))
+);
+
+describe('core may not import an add-on', () => {
+  it('finds files to check', () => {
+    expect(importBoundaryFiles.length).toBeGreaterThan(30);
+  });
+
+  it('no file under shell/ or sdk/ (except *.test.ts and testing.ts) value-imports apps/<id>/ for a core:false id', () => {
+    const ids = addOnIds();
+    const APP_IMPORT = new RegExp(
+      String.raw`^\s*import\s+(?!type\s)[^;]*?from\s+['"](?:\.\./)+apps/(${ids.join('|')})/[^'"]*['"]`,
+      'gm'
+    );
+    const offenders: string[] = [];
+    for (const path of importBoundaryFiles) {
+      const text = readFileSync(path, 'utf8');
+      for (const match of text.matchAll(APP_IMPORT)) {
+        offenders.push(`${relative(REPO, path).replace(/\\/g, '/')}  ->  ${match[0].trim()}`);
+      }
+    }
+    expect(
+      offenders.sort(),
+      'have the add-on declare into a registry instead of core naming its path'
+    ).toEqual([]);
+  });
+});
