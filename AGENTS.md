@@ -25,7 +25,7 @@ Run from the **repo root** unless noted.
 | Task                         | Command                                      | Pre-approved?            |
 | ---------------------------- | -------------------------------------------- | ------------------------ |
 | **Every gate, in order**     | **`pnpm verify`**                            | Yes                      |
-| Gates minus e2e and build    | `pnpm verify --quick`                        | Yes                      |
+| Every gate except e2e        | `pnpm verify --quick`                        | Yes                      |
 | Scaffold an app              | `pnpm new:app <id> [--service]`              | Yes                      |
 | Install                      | `pnpm install --frozen-lockfile`             | Yes                      |
 | Format (write)               | `pnpm format`                                | Yes                      |

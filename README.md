@@ -129,13 +129,20 @@ This runs watch scripts for client/server bundles (`pnpm watch`) and the Vite we
 ### Every Gate, One Command
 
 `pnpm verify` runs the full pipeline in order — barrels, format, typecheck, unit, e2e, build,
-dead-code — and stops at the first failure. CI runs the same command, so a green local run means
-a green CI run.
+dead-code. Every gate runs even after one fails, and the summary names all of them, so one bad
+gate cannot hide the state of the rest. CI runs the same command, so a green local run means a
+green CI run.
 
 ```sh
-pnpm verify         # everything
-pnpm verify:quick   # skips e2e and build, for a fast inner loop
+pnpm verify         # every gate, every failure reported
+pnpm verify:quick   # skips e2e only — what the pre-push hook runs
+pnpm verify --bail  # stop at the first failing gate, for a fast inner loop
 ```
+
+`--quick` drops e2e and nothing else. It used to drop `build` and `dead-code` too, which meant
+the only place they ran was CI: a dead-code failure sat on `main` for four commits because
+`dead-code` runs after `e2e`, and `e2e` is flaky on some machines under full-suite load. Between
+them those two gates cost about fifteen seconds, which is worth paying before a push.
 
 Check its exit code rather than eyeballing the output: piping it through `tail` reports `tail`'s
 status, not the suite's.

@@ -266,11 +266,12 @@ matters, because a mock that disagrees with the server is a bug you cannot see i
 ## Before you call it done
 
 `pnpm verify`. It runs format, typecheck, unit, e2e, build and the dead-code scan in that
-order — cheapest first, stopping at the first failure — and prints a per-gate summary. CI runs
-the same command, so the two cannot drift.
+order — cheapest first — and prints a per-gate summary naming every gate that failed and every
+gate that did not run. CI runs the same command, so the two cannot drift.
 
-`--quick` skips e2e and build for a tight edit loop. Do not finish on it: `build` and `e2e` are
-the only steps that catch a broken import inside a `.svelte` file or a stale mock.
+`--quick` skips e2e, and only e2e. Do not finish on it: e2e is the only step that catches a
+stale mock or a gesture that stopped working. `--bail` stops at the first failure for a tight
+edit loop; the default keeps going so a late gate is never hidden behind an early one.
 
 **Keep `pnpm dev` running while you work.** Playwright reuses a server that is already up; when
 it has to start its own, the suite takes about two and a half minutes instead of twenty-seven
