@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { ALL_PERMISSIONS } from './manifest';
-import { PERMISSION_OF } from './permissions';
+import { HOOK_OF_FACET, PERMISSION_OF, permissionOfFacet } from './permissions';
 import { bundledAddOns, registeredApps } from '../shell/state/registry';
 
 /**
@@ -180,6 +180,32 @@ describe('the permission table is total', () => {
         wrong.push(`${name}: guarded('${call[1]}'), expected guarded('${name}')`);
     }
     expect(wrong).toEqual([]);
+  });
+});
+
+describe('HOOK_OF_FACET', () => {
+  it('names a hook for every facet, and that hook exists in PERMISSION_OF', () => {
+    // The Facets interface is type-only; read the facet names from the facets directory.
+    const dir = join(__dirname, 'host/inProcess/facets');
+    const names = readdirSync(dir)
+      .filter((f) => f !== 'index.ts' && f.endsWith('.ts'))
+      .map((f) => f.replace(/\.svelte\.ts$|\.ts$/, ''));
+    // storage.ts exports three facets; lifecycle.ts exports two.
+    const expected = new Set([
+      ...names.filter((n) => !['storage', 'lifecycle'].includes(n)),
+      'storage',
+      'appStorageBytes',
+      'clearAppStorage',
+      'onAppForeground',
+      'onAppUnmount'
+    ]);
+    expect(new Set(Object.keys(HOOK_OF_FACET))).toEqual(expected);
+    for (const hook of Object.values(HOOK_OF_FACET)) expect(hook in PERMISSION_OF).toBe(true);
+  });
+
+  it('permissionOfFacet resolves through the table', () => {
+    expect(permissionOfFacet('contacts')).toEqual({ hook: 'useContacts', needed: 'contacts' });
+    expect(permissionOfFacet('nope')).toBeUndefined();
   });
 });
 

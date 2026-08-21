@@ -79,3 +79,56 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   PhotoPickerModal: 'media',
   ReportDialog: ['reports', 'notifications']
 };
+
+/**
+ * Facet name → the hook that owns it. The iframe server (MICA-16 step 4) receives
+ * *facet* names over the wire and has to re-check the permission on the shell side —
+ * the frame's own `require` runs in untrusted code. `PERMISSION_OF` is keyed by hook, so
+ * this is the join. `permissions.test.ts` proves it is total.
+ */
+export const HOOK_OF_FACET = {
+  account: 'useAccount',
+  accounts: 'useAccounts',
+  admin: 'useAdmin',
+  call: 'useCall',
+  camera: 'useCamera',
+  contacts: 'useContacts',
+  highscores: 'useHighscores',
+  location: 'useLocation',
+  mail: 'useMail',
+  marketplace: 'useMarketplace',
+  media: 'useMedia',
+  messages: 'useMessages',
+  notifications: 'useNotifications',
+  reports: 'useReports',
+  report: 'useReport',
+  appAction: 'useAppAction',
+  appEvents: 'useAppEvents',
+  appLevels: 'useAppLevels',
+  appRegistry: 'useAppRegistry',
+  clock: 'useClock',
+  deepLink: 'useDeepLink',
+  devTools: 'useDevTools',
+  display: 'useDisplay',
+  keybinds: 'useKeybinds',
+  navigation: 'useNavigation',
+  notificationSettings: 'useNotificationSettings',
+  phoneNotification: 'usePhoneNotification',
+  sound: 'useSound',
+  systemHardware: 'useSystemHardware',
+  theme: 'useTheme',
+  wallpaper: 'useWallpaper',
+  storage: 'useStorage',
+  appStorageBytes: 'appStorageBytes',
+  clearAppStorage: 'clearAppStorage',
+  persisted: 'usePersisted',
+  service: 'useService',
+  timer: 'useTimer',
+  onAppForeground: 'onAppForeground',
+  onAppUnmount: 'onAppUnmount'
+} as const satisfies Record<string, keyof typeof PERMISSION_OF>;
+
+export function permissionOfFacet(facet: string) {
+  const hook = (HOOK_OF_FACET as Record<string, keyof typeof PERMISSION_OF>)[facet];
+  return hook ? { hook, needed: PERMISSION_OF[hook] } : undefined;
+}
