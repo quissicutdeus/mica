@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { audio } from '../../shell/state/audio';
+  import { useSound } from '../host/useSound';
 
   /**
    * A row of mutually exclusive choices — the tab bar at the top of a list.
@@ -34,7 +34,7 @@
   const select = (id: string) => {
     if (selected === id) return;
     selected = id;
-    audio.play('click');
+    useSound().play('click');
     onchange?.(id);
   };
 </script>

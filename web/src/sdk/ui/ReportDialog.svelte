@@ -1,8 +1,8 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
   import Button from './Button.svelte';
-  import { fetchNui } from '../../nui/fetchNui';
-  import { toast } from '../../shell/state/toast';
+  import { useReport } from '../host/useReport';
+  import { usePhoneNotification } from '../host/usePhoneNotification';
   import type { ReportCategory } from '@shared/types';
   import { messageOf } from '../../lib/errors';
 
@@ -30,6 +30,9 @@
 
   let { targetTable, targetId, appId, onclose }: Props = $props();
 
+  const { submit: submitReport } = useReport();
+  const { toast } = usePhoneNotification();
+
   const CATEGORIES: { id: ReportCategory; label: string }[] = [
     { id: 'harassment', label: 'Harassment' },
     { id: 'threats', label: 'Threats or violence' },
@@ -49,13 +52,7 @@
   const submit = async () => {
     sending = true;
     try {
-      const res = await fetchNui<{ ok?: boolean; error?: string }>('createReport', {
-        targetTable,
-        targetId,
-        category,
-        note: note.trim() || undefined
-      });
-      if (res?.error) throw new Error(res.error);
+      await submitReport({ targetTable, targetId, category, note: note.trim() || undefined });
       toast.show({ type: 'success', app: appId, message: 'Report sent for review' });
       onclose();
     } catch (e) {

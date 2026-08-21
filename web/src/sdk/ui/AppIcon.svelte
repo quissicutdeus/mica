@@ -1,8 +1,10 @@
 <script lang="ts">
   import type { Component, Snippet } from 'svelte';
   import type { Readable } from 'svelte/store';
-  import { audio } from '../../shell/state/audio';
-  import { wallpaperNeedsContrast } from '../../shell/state/wallpaper';
+  import { useSound } from '../host/useSound';
+  import { useWallpaper } from '../host/useWallpaper';
+
+  const { wallpaperNeedsContrast } = useWallpaper();
 
   let {
     name,
@@ -34,7 +36,7 @@
   let displayBadge = $derived(badgeStore ? storeBadge : badge);
 
   const handleClick = () => {
-    audio.play('click');
+    useSound().play('click');
     onclick();
   };
 </script>

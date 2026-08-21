@@ -1,7 +1,7 @@
 <script lang="ts">
   import MediaThumb from './MediaThumb.svelte';
   import type { MediaPreview } from '@shared/types';
-  import { media } from '../../services/media';
+  import { useMedia } from '../host/useMedia';
   import PhotoIcon from './icons/PhotoIcon.svelte';
   import CloseIcon from './icons/CloseIcon.svelte';
   import CheckCircleIcon from './icons/CheckCircleIcon.svelte';
@@ -32,6 +32,8 @@
     onmultichange?: (photoId: number, media: MediaPreview) => void;
     onclose: () => void;
   }>();
+
+  const { media } = useMedia();
 
   const isSelected = (id: number) => selectedIds.includes(id);
   const selectedCount = $derived(selectedIds.length);

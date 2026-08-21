@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Component } from 'svelte';
-  import { audio } from '../../shell/state/audio';
+  import { useSound } from '../host/useSound';
 
   /**
    * A bottom navigation bar: a small set of top-level destinations, exactly one of which is
@@ -49,7 +49,7 @@
   const select = (id: string) => {
     if (selected === id) return;
     selected = id;
-    audio.play('click');
+    useSound().play('click');
     onchange?.(id);
   };
 </script>

@@ -28,6 +28,7 @@ export * from './useNotifications';
 export * from './useNuiBridge';
 export * from './usePersisted';
 export * from './usePhoneNotification';
+export * from './useReport';
 export * from './useReports';
 export * from './useService';
 export * from './useSound';

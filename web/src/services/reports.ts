@@ -43,3 +43,19 @@ export const reopenReport = async (id: number): Promise<void> => {
   if (res?.error) throw new Error(res.error);
   await Promise.all([loadPendingReports(), loadReportHistory()]);
 };
+
+export interface SubmitReportInput {
+  targetTable: string;
+  targetId: number;
+  category: string;
+  note?: string;
+}
+
+/**
+ * File a report against a row. Anyone may call it; the queue that reads it is admin-only.
+ * Throws with the server's message so the caller can toast it.
+ */
+export const submitReport = async (input: SubmitReportInput): Promise<void> => {
+  const res = await fetchNui<{ ok?: boolean; error?: string }>('createReport', input);
+  if (res?.error) throw new Error(res.error);
+};

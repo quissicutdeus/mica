@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { audio } from '../../shell/state/audio';
+  import { useSound } from '../host/useSound';
 
   /**
    * An on/off switch, optionally as a full settings row.
@@ -39,7 +39,7 @@
   const toggle = () => {
     if (disabled) return;
     checked = !checked;
-    audio.play('click');
+    useSound().play('click');
     onchange?.(checked);
   };
 </script>

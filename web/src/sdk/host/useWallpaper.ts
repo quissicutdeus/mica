@@ -1,6 +1,7 @@
 import {
   wallpaperStore,
   wallpaperBackground,
+  wallpaperNeedsContrast,
   setWallpaperSeed,
   setPresetWallpaper,
   setWallpaperImage,
@@ -30,6 +31,8 @@ export function useWallpaper() {
   return {
     wallpaperStore,
     wallpaperBackground,
+    /** Whether text drawn over the wallpaper needs the `.text-on-wallpaper` treatment. */
+    wallpaperNeedsContrast,
     activeSeed,
     backgroundForSeed,
     setWallpaperSeed,
