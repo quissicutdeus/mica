@@ -41,7 +41,13 @@ export function appAction(appId?: string) {
     }
   };
 
-  return { busy, run };
+  return {
+    busy,
+    run,
+    /** The toast half of `run`, for a caller whose `work` cannot cross a process boundary (MICA-16 step 4). */
+    notify: (n: { type: 'success' | 'error'; title?: string; message: string }) =>
+      toast.show({ type: n.type, app: appId, title: n.title, message: n.message })
+  };
 }
 
 registerFacet('appAction', appAction);
