@@ -2,7 +2,10 @@ import { vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 import type { Component } from 'svelte';
 import { currentApp } from '../shell/state/navigation';
-import type { AppComponent, AppProps } from './manifest';
+import { ALL_PERMISSIONS, type AppComponent, type AppPermission, type AppProps } from './manifest';
+import { HOST_CONTEXT_KEY } from './host/protocol';
+import { createInProcessHost } from './host/inProcess/createInProcessHost';
+import { registerHost } from './host/current';
 
 /**
  * Test-only SDK surface. **Not exported from `@gphone/sdk`** — importing this pulls in
@@ -24,6 +27,13 @@ export interface RenderAppOptions<Props> {
   id: string;
   /** Props for the component. `onback` is supplied unless you override it. */
   props?: Partial<Props>;
+  /**
+   * What the app's `Host` declares. Defaults to `ALL_PERMISSIONS` — every existing test
+   * that doesn't pass this keeps working unchanged. `permissions: []` is how a test sees
+   * a refusal: it renders the app with a host that grants nothing, so any hook it calls
+   * without the matching permission throws `AppPermissionError`.
+   */
+  permissions?: readonly AppPermission[];
 }
 
 /**
@@ -44,11 +54,15 @@ export interface RenderAppOptions<Props> {
  */
 export function renderApp<Props extends AppProps>(
   App: Component<Props>,
-  { id, props }: RenderAppOptions<Props>
+  { id, props, permissions }: RenderAppOptions<Props>
 ) {
   // Before `render`, not after: the component subscribes on init, and the transition it
   // is watching for has to have happened by then.
-  currentApp.set({ id: id.toLowerCase(), props: {} });
+  const appId = id.toLowerCase();
+  currentApp.set({ id: appId, props: {} });
+
+  const host = createInProcessHost(appId, permissions ?? ALL_PERMISSIONS);
+  registerHost(host);
 
   const onback = vi.fn();
 
@@ -56,7 +70,10 @@ export function renderApp<Props extends AppProps>(
   // `{ onback, ...props }` covers whatever an individual app added on top of `AppProps`.
   // The bound above is what carries the guarantee — a component that does not accept
   // `onback` is no longer something this function will take.
-  const result = render(App as AppComponent, { props: { onback, ...props } as AppProps });
+  const result = render(App as AppComponent, {
+    props: { onback, ...props } as AppProps,
+    context: new Map([[HOST_CONTEXT_KEY, host]])
+  });
 
   // Returned so a test can assert the app leaves when asked, which is the one prop every
   // app takes and the easiest to wire backwards.
