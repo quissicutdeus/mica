@@ -315,8 +315,9 @@
          stopped finding the button. Same shape as the status bar above.
 
          `h-6` centered gives the pill even clearance from the screen edge below and
-         `Dock` above, now that `Dock` sits at `bottom-10` rather than crowding this
-         bar at `bottom-6`. -->
+         whatever sits above it — originally `Dock` once it moved off the `bottom-6` that
+         crowded this bar, and now `Search.svelte`'s collapsed bar at `bottom-8`, with the
+         Dock pushed up to `bottom-20` behind it. -->
     <button
       class="absolute bottom-0 left-0 z-50 flex h-6 w-full cursor-pointer items-center justify-center"
       onclick={() => {

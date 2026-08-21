@@ -18,6 +18,7 @@
     filterByQuery,
     useScrollDetect,
     useAppLevels,
+    useDeepLink,
     type AppProps
   } from '@gphone/sdk';
   import ContactDetails from './components/ContactDetails.svelte';
@@ -28,7 +29,14 @@
   const { callStore } = useCall();
   const { conversationsStore } = useMessages();
 
-  let { onback }: AppProps = $props();
+  /**
+   * `initialContact` opens straight to that contact's details instead of the list.
+   *
+   * Three callers already passed it — `MessageBubble`, `ConversationDetailsModal` and now
+   * the home-screen search — but nothing here declared it, so the prop was accepted by
+   * Svelte and silently dropped: every one of those deep links landed on the plain list.
+   */
+  let { onback, initialContact }: AppProps & { initialContact?: Contact } = $props();
 
   const { contactsStore } = useContacts();
   const { media } = useMedia();
@@ -128,6 +136,17 @@
         }
       }
     ]
+  });
+
+  // Same shape as Messages' own deep-link handler: re-run on every foreground so a second
+  // arrival at an already-resident app still navigates, and return false once the details
+  // for that contact are already showing so a back-out doesn't immediately re-open them.
+  useDeepLink('contacts', () => {
+    if (initialContact && selectedContact?.id !== initialContact.id) {
+      selectedContact = initialContact;
+      return true;
+    }
+    return false;
   });
 
   const handleMessage = async () => {

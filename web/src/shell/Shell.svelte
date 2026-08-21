@@ -27,6 +27,7 @@
   import Home from './Launcher.svelte';
   import Dock from './Dock.svelte';
   import AppDrawer from './AppDrawer.svelte';
+  import Search from './Search.svelte';
   import { fetchNui } from '../nui/fetchNui';
   import { toast } from './state/toast';
   import { bootstrapStores } from './state/bootstrap';
@@ -418,6 +419,7 @@
             {#if $currentApp.id === 'home'}
               <Home {openApp} />
               <Dock {openApp} />
+              <Search {openApp} />
               <AppDrawer {openApp} />
             {/if}
 

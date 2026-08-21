@@ -56,11 +56,18 @@
 </script>
 
 <!-- Fixed 4-slot dock, always at the bottom of the home screen, above the phone frame's
-     own home-indicator gesture bar. `bottom-10` rather than the `bottom-6` this used to
-     share with the gesture bar's own height token — the two were sized off the same
-     number coincidentally, not because a dock label's true bottom edge and the gesture
-     bar's clear band actually lined up, and at `bottom-6` the label crowded the bar with
-     only a few px between them. Never collapses to fewer than 4 cells — an unconfigured
+     own home-indicator gesture bar and the collapsed home-screen search bar.
+
+     `bottom-20`. It was `bottom-10`, itself raised from a `bottom-6` that shared the
+     gesture bar's own height token — the two were sized off the same number
+     coincidentally, not because a dock label's true bottom edge and the gesture bar's
+     clear band actually lined up, and at `bottom-6` the label crowded the bar with only a
+     few px between them. The further 40px came from `Search.svelte`'s collapsed bar
+     claiming the band at `bottom-8`; the first-run hint below moved by that same 40px
+     (`bottom-32` to `bottom-44`) so the gap between hint and icons — the thing the
+     overlap regression in `e2e/defects.spec.ts` actually guards — is unchanged.
+
+     Never collapses to fewer than 4 cells — an unconfigured
      or unresolvable slot renders an empty placeholder rather than shrinking the row,
      since the dock's whole value is that a slot is always in the same place.
 
@@ -72,9 +79,10 @@
      the icon glyph had nothing to grab. The extra padding is graspable margin, not a
      layout change the icons themselves need.
 
-     `pb-0` rather than matching that same generous padding below: with `pb-4` the icon
-     block's own top edge sat at 140px from the screen bottom, inside the first-run
-     "Swipe up for apps" hint's box (`bottom-32`/128px to 144px) — the hint was drawn
+     `pb-0` rather than matching that same generous padding below: back when the dock sat
+     at `bottom-10`, `pb-4` put the icon block's own top edge at 140px from the screen
+     bottom, inside the first-run "Swipe up for apps" hint's box (then `bottom-32`, 128px
+     to 144px) — the hint was drawn
      directly over the icons on every fresh install, not just over blank padding above
      them (MICA hint/dock overlap defect). Dropping the bottom padding pulls the icon
      block down by the same 16px without touching the hint or the dock's own `bottom-10`
@@ -99,7 +107,7 @@
   bind:this={dockElement}
   role="toolbar"
   aria-label="Dock"
-  class="absolute inset-x-0 bottom-10 z-20 grid cursor-pointer px-4 pt-4 pb-0 select-none"
+  class="absolute inset-x-0 bottom-20 z-20 grid cursor-pointer px-4 pt-4 pb-0 select-none"
   style="grid-template-columns: repeat({DOCK_SLOT_COUNT}, 1fr);"
 >
   {#each slots as slot (slot.index)}
@@ -129,7 +137,7 @@
        once — `openDrawer` marks it seen — so this only ever shows on a truly first run;
        `pointer-events-none` keeps it from stealing the dock's own swipe-up gesture. -->
   <p
-    class="text-on-surface-variant text-label-small pointer-events-none absolute inset-x-0 bottom-32 z-20 text-center select-none"
+    class="text-on-surface-variant text-label-small pointer-events-none absolute inset-x-0 bottom-44 z-20 text-center select-none"
   >
     Swipe up for apps
   </p>
