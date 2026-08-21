@@ -9,9 +9,11 @@ import {
   markSold,
   removeListing
 } from '../../services/marketplace';
+import { assertCapability } from '../capability';
 
 /** OS Service Hook for Marketplace. */
 export function useMarketplace() {
+  assertCapability('marketplace', 'useMarketplace');
   return {
     feedStore,
     mineStore,

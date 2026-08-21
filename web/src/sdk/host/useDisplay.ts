@@ -18,6 +18,7 @@ import {
   HOME_GRID_ROWS_MAX
 } from '../../shell/state/homeGridSettings';
 import { compactGridToCurrentCapacity } from '../../shell/state/homeGrid';
+import { assertCapability } from '../capability';
 
 /**
  * How big the phone is drawn on screen.
@@ -28,6 +29,7 @@ import { compactGridToCurrentCapacity } from '../../shell/state/homeGrid';
  * with a reason to touch it is Settings.
  */
 export function useDisplay() {
+  assertCapability('display', 'useDisplay');
   return {
     /** The Display > Phone Size setting, 0-100. Writable: Settings moves it. */
     displaySize,

@@ -160,8 +160,8 @@ version of dead-zone degradation exploitable and fixing it afterwards.
   uses, which is now tested.
 - **`permissions` on a manifest is a disclosure, not a sandbox** (§7). Every app runs in the shell's
   own JS context, so any check the browser makes is one an add-on can walk around.
-  `sdk/permissions.test.ts` fails the build where a manifest understates what its imports touch —
-  that keeps the disclosure honest; it does not make it enforcement.
+  `sdk/permissions.ts` maps every host hook to a permission; `permissions.test.ts` fails the build
+  where a manifest understates its imports.
 - **An add-on's code is trusted once installed.** The Store installs a bundle that runs in the same
   context as the shell. §2.9 is what stands behind it: the server does not care which app is asking.
 

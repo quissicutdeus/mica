@@ -6,6 +6,7 @@ export default defineApp({
   color: 'bg-purple-600',
   icon: Icon,
   description: 'Manage bank accounts and transfer funds',
-  permissions: ['network'],
+  permissions: ['account'],
+  requiresNetwork: true,
   core: true
 });

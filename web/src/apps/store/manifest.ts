@@ -7,6 +7,7 @@ export default defineApp({
   icon: Icon,
   author: 'gPhone',
   description: 'Browse, install, and manage gPhone community apps and permissions',
-  permissions: ['storage', 'network'],
+  permissions: ['app-registry', 'navigation', 'storage'],
+  requiresNetwork: true,
   core: true
 });

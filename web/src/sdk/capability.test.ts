@@ -3,13 +3,11 @@ import { render } from '@testing-library/svelte';
 import AppCapabilityProvider from './AppCapabilityProvider.svelte';
 import { useContacts } from './host/useContacts';
 import { useCamera } from './host/useCamera';
-import { useMedia } from './host/useMedia';
-import { useLocation } from './host/useLocation';
-import { usePhoneNotification } from './host/usePhoneNotification';
-import { useStorage } from './host/useStorage';
 import { assertCapability, checkCapability } from './capability';
 import { defineApp } from './manifest';
 import { createRawSnippet } from 'svelte';
+import { PERMISSION_OF } from './permissions';
+import * as host from './host/index';
 
 describe('App capability disclosure', () => {
   afterEach(() => {
@@ -100,13 +98,22 @@ describe('App capability disclosure', () => {
   it('never throws across any protected SDK hook, regardless of declared permissions', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    const hooksToTest = [
-      { hook: () => useCamera(), perm: 'camera' },
-      { hook: () => useMedia(), perm: 'media' },
-      { hook: () => useLocation(), perm: 'location' },
-      { hook: () => usePhoneNotification(), perm: 'notifications' },
-      { hook: () => useStorage('test'), perm: 'storage' }
-    ] as const;
+    // Hooks that need arguments beyond the appId every restricted app already provides
+    // through context. Everything else is called with no arguments.
+    const ARGS: Record<string, unknown[]> = {
+      useAppEvents: ['restricted_app'],
+      usePersisted: ['restricted_app', 'testKey', 0]
+    };
+
+    const hooksToTest = Object.entries(PERMISSION_OF)
+      .filter(([name, perm]) => perm && name.startsWith('use'))
+      .map(([name, perm]) => ({
+        hook: () =>
+          (host as unknown as Record<string, (...args: unknown[]) => unknown>)[name](
+            ...(ARGS[name] ?? [])
+          ),
+        perm: perm as string
+      }));
 
     for (const item of hooksToTest) {
       const manifest = defineApp({

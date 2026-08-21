@@ -10,6 +10,7 @@ import {
   type ThemeMode
 } from '../../shell/state/theme';
 import { seedFromRgbString, sanitizeSeed } from '../../lib/m3';
+import { assertCapability } from '../capability';
 
 /**
  * Read and change the phone's color theme.
@@ -24,6 +25,7 @@ import { seedFromRgbString, sanitizeSeed } from '../../lib/m3';
  * utility class first; those are what the theme is actually delivered through.
  */
 export function useTheme() {
+  assertCapability('theme', 'useTheme');
   return {
     themeStore,
     schemeStore,

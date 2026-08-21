@@ -10,6 +10,6 @@ export default defineApp({
     return useMedia().media.load();
   },
   description: 'View your photo gallery and shared media',
-  permissions: ['media', 'notifications', 'storage'],
+  permissions: ['app-events', 'media', 'notifications', 'reports', 'storage'],
   core: true
 });

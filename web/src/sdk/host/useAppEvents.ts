@@ -1,5 +1,6 @@
 import { onDestroy } from 'svelte';
 import { clearAppEvents, subscribeAppEvent, type AppEvent } from '../../shell/state/appEvents';
+import { assertCapability } from '../capability';
 
 /**
  * OS Service Hook for events the server pushes to this app.
@@ -16,6 +17,7 @@ import { clearAppEvents, subscribeAppEvent, type AppEvent } from '../../shell/st
  * One direction only. Apps write through `useAppAction` and a declared route, unchanged.
  */
 export function useAppEvents(appId: string) {
+  assertCapability('app-events', 'useAppEvents');
   const app = appId.toLowerCase();
 
   const listen = (event: string, handler: (e: AppEvent) => void): (() => void) => {

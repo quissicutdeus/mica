@@ -1,15 +1,77 @@
 import type { Component, Snippet } from 'svelte';
 import type { Readable } from 'svelte/store';
 
+/**
+ * What an app may ask the shell for, one name per thing reached.
+ *
+ * Was eight names of which six were checked and two (`network`, `bluetooth`) checked by
+ * nothing. Now one per host hook, so a manifest can be complete — which is what lets the
+ * host refuse an undeclared call once add-ons leave the shell's context (MICA-16).
+ * A handful of hooks are *implicit* and never declared: the ones every app is built out
+ * of (`useAppLevels`, `useAppAction`, `useDeepLink`, `onAppForeground`/`useTimer`,
+ * `useService` in its own namespace). Listing those on every manifest would tell a
+ * player nothing. See `sdk/permissions.ts`.
+ */
 export type AppPermission =
-  | 'notifications'
-  | 'contacts'
+  // Player data — a service behind each
+  | 'account' // own phone number, bank balance, citizenid
+  | 'admin' // moderation queue and admin actions
+  | 'call'
   | 'camera'
-  | 'media'
-  | 'storage'
+  | 'contacts'
+  | 'highscores'
   | 'location'
-  | 'network'
-  | 'bluetooth';
+  | 'mail'
+  | 'marketplace'
+  | 'media'
+  | 'messages'
+  | 'notifications' // read the shade, or raise a toast
+  | 'reports' // file a report
+  | 'social' // @handles, follows, blocks, reactions
+  | 'storage'
+  // The phone itself
+  | 'app-events'
+  | 'app-registry'
+  | 'clock'
+  | 'devtools'
+  | 'display'
+  | 'keybinds'
+  | 'navigation'
+  | 'notification-settings'
+  | 'sound'
+  | 'system-hardware' // battery, signal, bluetooth, volume
+  | 'theme'
+  | 'wallpaper';
+
+export const ALL_PERMISSIONS: readonly AppPermission[] = [
+  'account',
+  'admin',
+  'call',
+  'camera',
+  'contacts',
+  'highscores',
+  'location',
+  'mail',
+  'marketplace',
+  'media',
+  'messages',
+  'notifications',
+  'reports',
+  'social',
+  'storage',
+  'app-events',
+  'app-registry',
+  'clock',
+  'devtools',
+  'display',
+  'keybinds',
+  'navigation',
+  'notification-settings',
+  'sound',
+  'system-hardware',
+  'theme',
+  'wallpaper'
+];
 
 /**
  * What the shell hands an app component.
@@ -172,6 +234,17 @@ export interface AppManifest {
    * exposes; this only stops the icon appearing for everyone else.
    */
   requiresAdmin?: boolean;
+  /**
+   * Does this app need the NUI bridge to work at all?
+   *
+   * Used to be inferred from `permissions.includes('network')` — but `network` disclosed
+   * nothing (every app talks to its own service, so marking it on everyone would mean
+   * marking it on no one) and conflated two different questions: what a player should be
+   * told an app reaches for, and whether the phone should block the app while signal is
+   * out. This is the second question, stated on its own rather than smuggled through the
+   * permission list. `Shell.svelte`'s "Not Network" gate reads this, not `permissions`.
+   */
+  requiresNetwork?: boolean;
   /** ISO date string when app was installed */
   installedAt?: string;
   /** ISO date string when app was last updated */

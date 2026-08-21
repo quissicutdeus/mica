@@ -10,6 +10,14 @@ export default defineApp({
     return useContacts().contactsStore.load();
   },
   description: 'Manage phone address book and saved contacts',
-  permissions: ['contacts', 'media', 'notifications', 'bluetooth'],
+  permissions: [
+    'call',
+    'contacts',
+    'media',
+    'messages',
+    'navigation',
+    'notifications',
+    'system-hardware'
+  ],
   core: true
 });

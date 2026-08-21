@@ -14,6 +14,7 @@ import {
   type WallpaperPreset
 } from '../../shell/state/wallpaper';
 import { seedFromImage } from '../../shell/state/seedFromImage';
+import { assertCapability } from '../capability';
 
 /**
  * The phone's home screen background.
@@ -28,6 +29,7 @@ import { seedFromImage } from '../../shell/state/seedFromImage';
  * means keep the current seed, not "use black".
  */
 export function useWallpaper() {
+  assertCapability('wallpaper', 'useWallpaper');
   return {
     wallpaperStore,
     wallpaperBackground,

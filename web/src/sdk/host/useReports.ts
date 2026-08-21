@@ -7,6 +7,7 @@ import {
   reopenReport,
   resolveReport
 } from '../../services/reports';
+import { assertCapability } from '../capability';
 
 /**
  * OS Service Hook for the moderation queue.
@@ -22,6 +23,7 @@ import {
 export { pendingReportCount };
 
 export function useReports() {
+  assertCapability('admin', 'useReports');
   return {
     pendingReports,
     resolvedReports,

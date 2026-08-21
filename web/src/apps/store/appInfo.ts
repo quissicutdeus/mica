@@ -107,24 +107,37 @@ export function getAppStorageSize(app: AppManifest): string {
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
+const LABELS: Record<AppPermission, { label: string; icon: string }> = {
+  account: { label: 'Phone Number & Bank Balance', icon: '\u{1F4B3}' },
+  admin: { label: 'Moderation Tools', icon: '\u{1F6E1}\u{FE0F}' },
+  call: { label: 'Phone Calls', icon: '\u{1F4DE}' },
+  camera: { label: 'Camera Access', icon: '\u{1F4F7}' },
+  contacts: { label: 'Contacts Access', icon: '\u{1F4C7}' },
+  highscores: { label: 'Leaderboards', icon: '\u{1F3C6}' },
+  location: { label: 'Location Services', icon: '\u{1F4CD}' },
+  mail: { label: 'Mail', icon: '\u{2709}\u{FE0F}' },
+  marketplace: { label: 'Marketplace Listings', icon: '\u{1F6D2}' },
+  media: { label: 'Photos & Media', icon: '\u{1F5BC}\u{FE0F}' },
+  messages: { label: 'Messages', icon: '\u{1F4AC}' },
+  notifications: { label: 'Notifications', icon: '\u{1F514}' },
+  reports: { label: 'Report Content', icon: '\u{1F6A9}' },
+  social: { label: 'Social Profiles', icon: '\u{1F465}' },
+  storage: { label: 'Local Storage', icon: '\u{1F4BE}' },
+  'app-events': { label: 'Background Updates', icon: '\u{1F4E1}' },
+  'app-registry': { label: 'Install & Remove Apps', icon: '\u{1F4E6}' },
+  clock: { label: 'Clock Settings', icon: '\u{1F552}' },
+  devtools: { label: 'Developer Tools', icon: '\u{1F6E0}\u{FE0F}' },
+  display: { label: 'Display Settings', icon: '\u{1F4F1}' },
+  keybinds: { label: 'Keyboard Shortcuts', icon: '\u{2328}\u{FE0F}' },
+  navigation: { label: 'Open Other Apps', icon: '\u{21AA}\u{FE0F}' },
+  'notification-settings': { label: 'Notification Settings', icon: '\u{1F515}' },
+  sound: { label: 'Sound Effects', icon: '\u{1F50A}' },
+  'system-hardware': { label: 'Battery, Signal & Bluetooth', icon: '\u{1F50B}' },
+  theme: { label: 'Theme', icon: '\u{1F3A8}' },
+  wallpaper: { label: 'Wallpaper', icon: '\u{1F5BC}\u{FE0F}' }
+};
+
 /** A permission as a player should read it. */
 export function formatPermission(perm: AppPermission): { label: string; icon: string } {
-  switch (perm) {
-    case 'notifications':
-      return { label: 'Notifications', icon: '\u{1F514}' };
-    case 'contacts':
-      return { label: 'Contacts Access', icon: '\u{1F4C7}' };
-    case 'camera':
-      return { label: 'Camera Access', icon: '\u{1F4F7}' };
-    case 'media':
-      return { label: 'Photos & Media', icon: '\u{1F5BC}\u{FE0F}' };
-    case 'storage':
-      return { label: 'Local Storage', icon: '\u{1F4BE}' };
-    case 'location':
-      return { label: 'Location Services', icon: '\u{1F4CD}' };
-    case 'network':
-      return { label: 'Network Access', icon: '\u{1F310}' };
-    default:
-      return { label: perm, icon: '\u{2699}\u{FE0F}' };
-  }
+  return LABELS[perm] ?? { label: perm, icon: '\u{2699}\u{FE0F}' };
 }

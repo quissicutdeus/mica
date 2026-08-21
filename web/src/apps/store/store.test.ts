@@ -25,7 +25,7 @@ describe('Store Module', () => {
     expect(manifest.name).toBe('Store');
     expect(manifest.author).toBe('gPhone');
     expect(manifest.permissions).toContain('storage');
-    expect(manifest.permissions).toContain('network');
+    expect(manifest.requiresNetwork).toBe(true);
   });
 
   it('is registered in appRegistryStore automatically', () => {

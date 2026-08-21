@@ -1,4 +1,5 @@
 import { isAdmin, refreshAdmin } from '../../services/admin';
+import { assertCapability } from '../capability';
 
 /**
  * OS Service Hook for the player's admin status.
@@ -8,5 +9,6 @@ import { isAdmin, refreshAdmin } from '../../services/admin';
  * capability — the privileged action itself is checked again server-side.
  */
 export function useAdmin() {
+  assertCapability('admin', 'useAdmin');
   return { isAdmin, refreshAdmin };
 }

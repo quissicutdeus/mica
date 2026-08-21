@@ -1,4 +1,5 @@
 import { devToolsUnlocked, lockDevTools } from '../../shell/state/devtools';
+import { assertCapability } from '../capability';
 
 /**
  * OS Service Hook for the Developer Tools reveal.
@@ -10,6 +11,7 @@ import { devToolsUnlocked, lockDevTools } from '../../shell/state/devtools';
  * The flag is session-scoped and not persisted; see `store/devtools.ts` for why.
  */
 export function useDevTools() {
+  assertCapability('devtools', 'useDevTools');
   return {
     /** Whether the Developer Tools group is currently revealed. */
     devToolsUnlocked,

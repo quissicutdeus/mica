@@ -19,11 +19,13 @@ import {
   setVolumeStep,
   VOLUME_STEP_CHOICES
 } from '../../shell/state/audio';
+import { assertCapability } from '../capability';
 
 /**
  * The phone's hardware: battery, cellular signal, cell service, bluetooth, and volume controls.
  */
 export function useSystemHardware() {
+  assertCapability('system-hardware', 'useSystemHardware');
   return {
     charge,
     signalLevel,

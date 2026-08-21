@@ -17,6 +17,7 @@ export default defineApp({
     return useReports().loadPendingReports();
   },
   description: 'Review player reports and moderate content',
+  permissions: ['admin'],
   author: 'gPhone',
   // Installed like any other core app, but the home screen hides it from players
   // without an admin ace. The server gates the queue and every action independently.

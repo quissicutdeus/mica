@@ -1,4 +1,5 @@
 import { audio, type SoundEffect } from '../../shell/state/audio';
+import { assertCapability } from '../capability';
 
 /**
  * The phone's sound effects.
@@ -12,6 +13,7 @@ import { audio, type SoundEffect } from '../../shell/state/audio';
  * barrel. The volume *controls* live in `useSystemHardware` — this is playback.
  */
 export function useSound() {
+  assertCapability('sound', 'useSound');
   return {
     /** Play one of the phone's built-in effects. Silent while muted. */
     play: (effect: SoundEffect) => audio.play(effect)

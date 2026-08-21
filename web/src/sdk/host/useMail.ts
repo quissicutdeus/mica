@@ -1,11 +1,13 @@
 import type { Mail } from '@shared/types';
 import { mailStore, unreadMailCount } from '../../services/mail';
+import { assertCapability } from '../capability';
 export { unreadMailCount };
 
 /**
  * OS Service Hook for email messaging.
  */
 export function useMail() {
+  assertCapability('mail', 'useMail');
   return {
     mailStore,
     unreadMailCount,

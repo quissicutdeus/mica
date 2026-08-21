@@ -14,6 +14,7 @@ export default defineApp({
     return useMail().mailStore.load();
   },
   description: 'Read and manage incoming email messages',
-  permissions: ['notifications', 'network'],
+  permissions: ['mail', 'notifications'],
+  requiresNetwork: true,
   core: true
 });

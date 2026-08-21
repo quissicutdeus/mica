@@ -5,11 +5,13 @@ import {
   closePhone,
   consumeAppProps
 } from '../../shell/state/navigation';
+import { assertCapability } from '../capability';
 
 /**
  * OS Service Hook for phone navigation (opening apps, returning home, closing phone shell).
  */
 export function useNavigation() {
+  assertCapability('navigation', 'useNavigation');
   return {
     currentApp,
     openApp: (appName: string, props: Record<string, unknown> = {}) => openApp(appName, props),

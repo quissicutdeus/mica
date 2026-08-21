@@ -428,7 +428,7 @@
               {@const isActive = $currentApp.id === instance.id}
               {@const manifest = appRegistryStore.getManifest(instance.id)}
               {@const isNetworkBlocked =
-                (manifest?.permissions?.includes('network') ?? false) && $clampedSignalLevel === 0}
+                (manifest?.requiresNetwork ?? false) && $clampedSignalLevel === 0}
               <div class="absolute inset-0" class:hidden={!isActive} inert={!isActive}>
                 {#if AppComponent}
                   <ErrorBoundary appName={manifest?.name ?? instance.id}>

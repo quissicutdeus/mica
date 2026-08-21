@@ -1,4 +1,5 @@
 import { submitScore, getLeaderboard } from '../../services/highscores';
+import { assertCapability } from '../capability';
 
 /**
  * OS Service Hook for the shared, cross-game leaderboard table.
@@ -8,6 +9,7 @@ import { submitScore, getLeaderboard } from '../../services/highscores';
  * than adding a table.
  */
 export function useHighscores() {
+  assertCapability('highscores', 'useHighscores');
   return {
     submitScore,
     getLeaderboard

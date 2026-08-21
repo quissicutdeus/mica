@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AppPermission } from './manifest';
+import { ALL_PERMISSIONS } from './manifest';
+import { PERMISSION_OF } from './permissions';
 import { bundledAddOns, registeredApps } from '../shell/state/registry';
 
 /**
@@ -22,42 +23,6 @@ import { bundledAddOns, registeredApps } from '../shell/state/registry';
  *
  * So: the code is the source of truth, and the manifest has to keep up with it.
  */
-
-/**
- * Hooks whose use is a capability a player would want disclosed, and the permission that
- * discloses it.
- *
- * Deliberately narrow. Only hooks that touch player data or device hardware are here, because
- * those are what a permission means to the person reading it. `network` is absent on purpose:
- * every app talks to its own service over the NUI bridge, so deriving it from that would mark
- * all twelve and disclose nothing. It stays hand-declared. `location` used to be hand-declared
- * for the same reason — nothing inferred it — until `useLocation` gave it a real, specific hook.
- */
-const REQUIRED_BY: Record<string, AppPermission> = {
-  useContacts: 'contacts',
-  useMedia: 'media',
-  useCamera: 'camera',
-  useLocation: 'location',
-  usePhoneNotification: 'notifications',
-  useStorage: 'storage',
-  usePersisted: 'storage',
-  /**
-   * The cross-app half of storage, and the sharper one.
-   *
-   * `useStorage` reaches one namespace — the app's own. These two take an id, so they read and
-   * delete anything any app has stored, which is more worth disclosing rather than less. They
-   * were absent, so Settings' Apps pane could clear every app's data while declaring nothing.
-   */
-  appStorageBytes: 'storage',
-  clearAppStorage: 'storage',
-  /**
-   * Both persist a preference through `usePersisted`, so they carry its disclosure. The
-   * theme and the wallpaper are the phone's own appearance rather than anybody's data —
-   * but an app that sets them writes to storage, and that is what `storage` says.
-   */
-  useTheme: 'storage',
-  useWallpaper: 'storage'
-};
 
 const APPS_DIR = join(__dirname, '..', 'apps');
 
@@ -99,37 +64,106 @@ describe('declared permissions', () => {
   });
 
   it('covers every capability the app actually reaches for', () => {
-    // Under-declaring is the lie that matters: the app touches a player's photos or contacts
-    // and the Store says it does not.
     const understated = APPS.flatMap((app) => {
       const declared = new Set(app.permissions ?? []);
       const imported = sdkImportsOf(app.id);
       return [...imported]
-        .filter((hook) => REQUIRED_BY[hook] && !declared.has(REQUIRED_BY[hook]))
-        .map((hook) => `${app.id}: uses ${hook}, does not declare '${REQUIRED_BY[hook]}'`);
+        .filter((name) => PERMISSION_OF[name] && !declared.has(PERMISSION_OF[name]!))
+        .map((name) => `${app.id}: uses ${name}, does not declare '${PERMISSION_OF[name]}'`);
     });
-
     expect([...new Set(understated)].sort()).toEqual([]);
   });
 
-  it('declares nothing that is not one of the seven', () => {
-    // `defineApp` types this, but a remote manifest arrives as plain JSON and is not checked
-    // by anything the compiler can see.
-    const valid: AppPermission[] = [
-      'notifications',
-      'contacts',
-      'camera',
-      'media',
-      'storage',
-      'location',
-      'network',
-      'bluetooth'
-    ];
+  it('declares only names in the vocabulary', () => {
     const unknown = APPS.flatMap((app) =>
-      (app.permissions ?? []).filter((p) => !valid.includes(p)).map((p) => `${app.id}: '${p}'`)
+      (app.permissions ?? [])
+        .filter((p) => !ALL_PERMISSIONS.includes(p))
+        .map((p) => `${app.id}: '${p}'`)
     );
-
     expect(unknown).toEqual([]);
+  });
+});
+
+describe('the permission table is total', () => {
+  const HOST = join(__dirname, 'host');
+  const hostFiles = readdirSync(HOST).filter(
+    (f) => /^use[A-Z].*\.ts$/.test(f) && !f.endsWith('.test.ts')
+  );
+  const hookNames = hostFiles.map((f) => f.replace(/\.svelte\.ts$|\.ts$/, ''));
+
+  // Every non-test .ts file under sdk/host, read once. `assertCapability`'s row for a
+  // symbol is not necessarily in the file named after it — `useStorage.ts` alone defines
+  // `useStorage`, `appStorageBytes` and `clearAppStorage` — so the table's coverage has to
+  // be proved per *export*, not per *file*. The earlier version of this test iterated
+  // `hostFiles` and so only ever looked at hooks whose file is named after them; it went
+  // green on `appStorageBytes`/`clearAppStorage` never asserting, because nothing looked.
+  const hostSourceFiles = readdirSync(HOST).filter(
+    (f) => f.endsWith('.ts') && !f.endsWith('.test.ts')
+  );
+  const hostSources = hostSourceFiles.map((file) => ({
+    file,
+    text: readFileSync(join(HOST, file), 'utf8')
+  }));
+
+  // Kit components (`sdk/ui`, not `sdk/host`) are not exported from `sdk/host` at all —
+  // their disclosure comes from the host hook they call internally, not from an
+  // `assertCapability` call of their own. They stay in `PERMISSION_OF` for
+  // `sdkImportsOf`/manifest checking above, but have no host-side symbol to locate here.
+  const KIT_COMPONENTS = new Set(['PhotoPickerModal', 'ReportDialog']);
+
+  /**
+   * Find where `name` is exported from `sdk/host`, and the slice of source from that
+   * export up to (but not including) the next top-level `export`. Bounding the slice
+   * matters: `useStorage.ts` defines three exports, and an unbounded search for
+   * `assertCapability` after `export function clearAppStorage` would happily match the
+   * call inside `useStorage`, two exports later, and call `clearAppStorage` covered when
+   * it is not.
+   */
+  const findDefinition = (name: string): { file: string; body: string } | undefined => {
+    const re = new RegExp(String.raw`export (?:function|const) ${name}\b`);
+    for (const { file, text } of hostSources) {
+      const match = re.exec(text);
+      if (!match) continue;
+      const afterStart = match.index + match[0].length;
+      const nextExport = text.slice(afterStart).search(/\n\s*export /);
+      const body =
+        nextExport === -1
+          ? text.slice(match.index)
+          : text.slice(match.index, afterStart + nextExport);
+      return { file, body };
+    }
+    return undefined;
+  };
+
+  it('every host hook has a row', () => {
+    const missing = hookNames.filter((name) => !(name in PERMISSION_OF));
+    expect(missing, 'add it to sdk/permissions.ts').toEqual([]);
+  });
+
+  it('every non-kit row names a symbol that is actually exported from sdk/host', () => {
+    const stale = Object.keys(PERMISSION_OF)
+      .filter((name) => !KIT_COMPONENTS.has(name))
+      .filter((name) => !findDefinition(name))
+      .map((name) => `${name}: no export found under sdk/host`);
+    expect(stale, 'remove it from sdk/permissions.ts, or fix the name').toEqual([]);
+  });
+
+  it('every declared hook calls assertCapability with its own name', () => {
+    const wrong: string[] = [];
+    for (const [name, expected] of Object.entries(PERMISSION_OF)) {
+      if (!expected) continue; // implicit — no call required
+      if (KIT_COMPONENTS.has(name)) continue; // disclosed via the hook it calls, not its own assert
+      const def = findDefinition(name);
+      if (!def) {
+        wrong.push(`${name}: no export found under sdk/host`);
+        continue;
+      }
+      const call = def.body.match(/assertCapability\(\s*'([a-z-]+)'/);
+      if (!call) wrong.push(`${name}: no assertCapability call`);
+      else if (call[1] !== expected)
+        wrong.push(`${name}: asserts '${call[1]}', table says '${expected}'`);
+    }
+    expect(wrong).toEqual([]);
   });
 });
 

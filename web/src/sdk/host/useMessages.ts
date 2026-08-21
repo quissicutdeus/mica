@@ -1,11 +1,13 @@
 import { conversationsStore, unreadMessagesCount } from '../../services/conversations';
 import { openApp } from '../../shell/state/navigation';
+import { assertCapability } from '../capability';
 export { unreadMessagesCount };
 
 /**
  * OS Service Hook for accessing SMS messaging.
  */
 export function useMessages() {
+  assertCapability('messages', 'useMessages');
   return {
     conversationsStore,
     unreadMessagesCount,

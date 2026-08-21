@@ -10,11 +10,13 @@ import {
   clearNotifications,
   clearAllNotifications
 } from '../../services/notifications';
+import { assertCapability } from '../capability';
 
 /**
  * SDK Hook providing OS persistent notifications, unread counts, and management actions.
  */
 export function useNotifications(appId?: string) {
+  assertCapability('notifications', 'useNotifications');
   const notificationsStore = derived(shadeNotifications, ($items) =>
     appId ? $items.filter((item) => item.app === appId) : $items
   );

@@ -12,6 +12,7 @@ import {
   unreactToTarget,
   updateAccount
 } from '../../services/accounts';
+import { assertCapability } from '../capability';
 
 export type { ReactionTarget } from '../../services/accounts';
 
@@ -23,6 +24,7 @@ export type { ReactionTarget } from '../../services/accounts';
  * example; any app that posts under a handle uses it rather than naming the routes.
  */
 export function useAccounts() {
+  assertCapability('social', 'useAccounts');
   return {
     getMyAccounts,
     getAccounts,

@@ -7,7 +7,7 @@ export default defineApp({
   color: 'bg-amber-600',
   icon: Icon,
   description: 'Buy and sell, no names attached.',
-  permissions: [],
+  permissions: ['call', 'marketplace', 'media', 'messages', 'reports'],
   author: 'gPhone',
   core: true
 });

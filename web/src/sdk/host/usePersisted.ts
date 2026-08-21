@@ -1,6 +1,7 @@
 import { writable, type Writable } from 'svelte/store';
 import { registerPersistedRehydrate, registerPersistedReset, useStorage } from './useStorage';
 import { markUnsynced } from './settingsSync';
+import { assertCapability } from '../capability';
 
 export interface PersistedOptions<T> {
   /**
@@ -47,6 +48,7 @@ export function usePersisted<T>(
   initial: T,
   options: PersistedOptions<T> = {}
 ): Writable<T> {
+  assertCapability('storage', 'usePersisted');
   const storage = useStorage(appId);
   const sanitize = options.sanitize ?? ((value: unknown) => value as T);
 

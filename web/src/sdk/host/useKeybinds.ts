@@ -10,6 +10,7 @@ import {
   type ResolvedKeybindAction
 } from '../../shell/state/keybinds';
 import { conflictsWith, findAction } from '@shared/keybinds';
+import { assertCapability } from '../capability';
 
 export interface KeybindGroup {
   ownerId: string;
@@ -33,6 +34,7 @@ const CORE_OWNER_ID = 'core';
  * ```
  */
 export function useKeybinds() {
+  assertCapability('keybinds', 'useKeybinds');
   return {
     /**
      * Claim an action for as long as this component is mounted.

@@ -72,6 +72,7 @@ export function registerPersistedRehydrate(rehydrate: () => void): void {
  * the sweep alone leaves the app looking untouched.
  */
 export function clearAppStorage(appId: string): void {
+  assertCapability('storage', 'clearAppStorage');
   const prefix = namespaceOf(appId);
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
@@ -143,6 +144,7 @@ export async function hydrateSettings(): Promise<void> {
  * entries is not free.
  */
 export function appStorageBytes(appId: string): number {
+  assertCapability('storage', 'appStorageBytes');
   const prefix = namespaceOf(appId);
   try {
     const entries =

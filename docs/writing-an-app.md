@@ -48,6 +48,9 @@ export default defineApp({
 });
 ```
 
+Declare what you use. `pnpm test:unit:web` tells you exactly which names are missing; the full
+list is `AppPermission` in `sdk/manifest.ts`.
+
 `core` is required and `defineApp` throws without it. `false` is what you want almost always: an
 add-on, kept out of the launcher, offered by the Store, uninstallable. `true` is for something that
 ships with the phone and must not be removable. It is stated rather than inferred because it used

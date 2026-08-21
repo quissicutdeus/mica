@@ -1,4 +1,5 @@
 import { time, is24Hour, formattedTime } from '../../shell/state/time';
+import { assertCapability } from '../capability';
 
 /**
  * The phone's clock, and how it is displayed.
@@ -9,6 +10,7 @@ import { time, is24Hour, formattedTime } from '../../shell/state/time';
  * through battery and signal to find it.
  */
 export function useClock() {
+  assertCapability('clock', 'useClock');
   return {
     /** The current time, updated by the shell. */
     time,

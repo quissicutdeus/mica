@@ -1,4 +1,5 @@
 import { submitReport, type SubmitReportInput } from '../../services/reports';
+import { assertCapability } from '../capability';
 
 export type { SubmitReportInput };
 
@@ -10,6 +11,7 @@ export type { SubmitReportInput };
  * `ReportDialog` is the usual caller; an app that files reports from its own UI uses this.
  */
 export function useReport() {
+  assertCapability('reports', 'useReport');
   return {
     submit: (input: SubmitReportInput) => submitReport(input)
   };

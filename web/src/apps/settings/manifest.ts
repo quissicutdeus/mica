@@ -8,6 +8,25 @@ export default defineApp({
   description: 'Configure phone settings and preferences',
   // `storage` because the Apps pane reads and clears what other apps have stored, and `media`
   // because Display/Wallpaper accesses photos for wallpaper previews.
-  permissions: ['notifications', 'storage', 'media'],
+  permissions: [
+    'account',
+    'admin',
+    'app-registry',
+    'call',
+    'clock',
+    'devtools',
+    'display',
+    'keybinds',
+    'mail',
+    'media',
+    'messages',
+    'navigation',
+    'notifications',
+    'notification-settings',
+    'storage',
+    'system-hardware',
+    'theme',
+    'wallpaper'
+  ],
   core: true
 });
