@@ -132,3 +132,33 @@ describe('declared permissions', () => {
     expect(unknown).toEqual([]);
   });
 });
+
+describe("useService stays in the app's own namespace", () => {
+  /**
+   * `useService(id)` is the generic door to a server service, and the id is the caller's
+   * to choose — which made it the second hatch: nothing stopped `useService('contacts')`.
+   * An app's services are its own id and anything under `<id>_` (Blabber's `blabber_dms`).
+   * Enforced by reading the source, because the hook is called from stores outside
+   * component init where there is no context to read the app id from; the runtime half of
+   * this rule arrives with the host protocol (MICA-16, step 3). A non-literal argument is
+   * refused too — a computed id is an id this test cannot see.
+   */
+  const CALL = /useService\(\s*([^)]*?)\s*\)/g;
+  const LITERAL = /^['"]([a-z0-9_]+)['"]$/;
+
+  it('every app calls useService with a literal id in its own namespace', () => {
+    const offenders: string[] = [];
+    for (const app of APPS) {
+      for (const file of walk(join(APPS_DIR, app.id))) {
+        const source = readFileSync(file, 'utf8');
+        for (const [, arg] of source.matchAll(CALL)) {
+          const literal = arg.match(LITERAL)?.[1];
+          const ok =
+            literal !== undefined && (literal === app.id || literal.startsWith(`${app.id}_`));
+          if (!ok) offenders.push(`${app.id}: useService(${arg}) in ${file.replace(APPS_DIR, '')}`);
+        }
+      }
+    }
+    expect(offenders.sort()).toEqual([]);
+  });
+});

@@ -29,6 +29,9 @@ import { GENERIC_SERVICE_ACTION } from '@shared/rpc';
  * request was never proof of intent and is not now (§2.9) — this widens who can *ask*,
  * not what the server agrees to.
  *
+ * **Whose service.** The id is your own app id, or `<appId>_<anything>` for a second
+ * table of yours. `sdk/permissions.test.ts` fails any other literal and any non-literal.
+ *
  * **The named routes.** They stay, and `routes.test.ts` keeps cross-referencing them
  * against `fetchNui` calls, server registrations and the browser mock. That check catches
  * the missing-layer bug that silently does nothing in game, and it is worth keeping for

@@ -124,7 +124,7 @@ definition.
 
 The hooks above — `useNotes`, `useContacts` — are core code, and so are the rows in
 `shared/routes.ts` behind them. You cannot add to either: they ship inside gPhone, and your
-app does not. `useService` is the door that does not require it.
+app does not. `useService` is the door that does not require it. The id must be your own app id or `<id>_something` — `permissions.test.ts` refuses anything else, because a service you can name is a service you can read.
 
 ```ts
 const journal = useService('journal');
