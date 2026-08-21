@@ -52,7 +52,10 @@ describe('searchEverything', () => {
     expect(byText).toEqual([
       expect.objectContaining({ kind: 'message', conversationId: 11, title: 'Dwight' })
     ]);
-    expect(searchEverything('dwight', sources).map((r) => r.conversationId)).toEqual([11]);
+    // Narrowed rather than reaching straight for `conversationId`: `SearchResult` is a
+    // union, and only the message arm carries one.
+    const byName = searchEverything('dwight', sources);
+    expect(byName.filter((r) => r.kind === 'message').map((r) => r.conversationId)).toEqual([11]);
   });
 
   it('orders apps first, then contacts, then messages', () => {

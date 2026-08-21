@@ -17,7 +17,6 @@ const mocks = vi.hoisted(() => ({
     favorite: false
   } as Contact
 }));
-const { jim } = mocks;
 
 vi.mock('@gphone/sdk', async (importOriginal) => {
   const original = await importOriginal<object>();
