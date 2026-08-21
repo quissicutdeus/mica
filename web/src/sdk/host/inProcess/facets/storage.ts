@@ -1,6 +1,6 @@
 import { registerFacet } from '../../current';
 import { fetchSettings } from '../../../../services/settings';
-import { isUnsynced, queueClearApp, queueRemove, queueWrite } from '../settingsSync';
+import { isUnsynced, markUnsynced, queueClearApp, queueRemove, queueWrite } from '../settingsSync';
 
 const memoryStore = new Map<string, string>();
 
@@ -187,7 +187,19 @@ export function storage(appId: string) {
         console.error(`Failed to remove storage item for ${appId}:${key}`, e);
       }
       queueRemove(appId, key);
-    }
+    },
+    /**
+     * Serves the iframe `persisted` twin's `markUnsynced` (MICA-16 step 4): an add-on
+     * cannot import `settingsSync` directly, so this is the one member of the facet that
+     * reaches it on the add-on's behalf.
+     */
+    markUnsynced: (key: string): void => markUnsynced(appId, key),
+    /**
+     * The wall-side route for `clearAppStorage` (MICA-16 step 4): that facet is a bare
+     * function, not a factory, so a `remoteCall` naming it has no member to call. This
+     * member is what the iframe twin's `clearAppStorage(appId)` actually reaches.
+     */
+    clear: () => clearAppStorage(appId)
   };
 }
 

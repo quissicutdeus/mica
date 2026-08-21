@@ -6,6 +6,9 @@ import {
   redFromArgb,
   SchemeVibrant
 } from '@material/material-color-utilities';
+import { DEFAULT_SEED, sanitizeSeed, seedFromRgbString } from './seed';
+
+export { DEFAULT_SEED, sanitizeSeed, seedFromRgbString };
 
 /**
  * The phone's color system: Material 3 roles, generated from one seed color.
@@ -39,12 +42,6 @@ import {
  * 0.4 and deprecated the statics on the way; a caret range means every color in the
  * phone can move on an unrelated `pnpm install`.
  */
-
-/**
- * The seed the shipped theme is built from — today's `--color-accent`, blue-600, so a
- * fresh install looks like the phone always has.
- */
-export const DEFAULT_SEED = '#155dfc';
 
 /**
  * The 34 M3 color roles, kebab-case, in declaration order.
@@ -331,35 +328,5 @@ export function backgroundForScheme(tokens: M3Tokens): string {
   return `linear-gradient(140deg, ${tokens['primary-container']} 0%, ${tokens['surface-dim']} 55%, ${tokens['surface-container-lowest']} 100%)`;
 }
 
-/**
- * A seed is a six-digit hex color and nothing else.
- *
- * Narrow on purpose: this runs on a value read back from storage, which a player can
- * edit, and it is the only thing standing between that and `argbFromHex`. Three-digit
- * shorthand is rejected rather than expanded — the picker never produces it, so
- * accepting it would only widen what has to stay correct.
- */
-export function sanitizeSeed(value: unknown): string {
-  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)
-    ? value.toLowerCase()
-    : DEFAULT_SEED;
-}
-
-/**
- * A seed from the `rgba(r, g, b, a)` string `ColorWheelPicker` emits.
- *
- * The alpha is dropped rather than honored: a seed names a hue for the generator to
- * build tones from, and a translucent one has no meaning there. The wallpaper keeps the
- * alpha; the theme does not.
- */
-export function seedFromRgbString(value: string): string | null {
-  const match = value.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
-  if (!match) return null;
-
-  const hex = match
-    .slice(1, 4)
-    .map((n) => Math.min(255, Number(n)).toString(16).padStart(2, '0'))
-    .join('');
-
-  return `#${hex}`;
-}
+// `sanitizeSeed`/`seedFromRgbString` moved to `./seed.ts` (MICA-16 step 4), re-exported
+// above, so the iframe theme twin can use them without pulling in the color engine.
