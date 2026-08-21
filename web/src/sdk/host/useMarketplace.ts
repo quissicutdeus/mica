@@ -1,28 +1,7 @@
-import {
-  feedStore,
-  mineStore,
-  loadFeed,
-  searchListings,
-  loadMine,
-  viewListing,
-  postListing,
-  markSold,
-  removeListing
-} from '../../services/marketplace';
-import { assertCapability } from '../capability';
+import './inProcess/facets/marketplace';
+import { guarded } from './guard';
 
 /** OS Service Hook for Marketplace. */
 export function useMarketplace() {
-  assertCapability('marketplace', 'useMarketplace');
-  return {
-    feedStore,
-    mineStore,
-    loadFeed,
-    searchListings,
-    loadMine,
-    viewListing,
-    postListing,
-    markSold,
-    removeListing
-  };
+  return guarded('useMarketplace').facets.marketplace();
 }

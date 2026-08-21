@@ -1,14 +1,9 @@
-import { isAdmin, refreshAdmin } from '../../services/admin';
-import { assertCapability } from '../capability';
+import './inProcess/facets/admin';
+import { guarded } from './guard';
 
 /**
  * OS Service Hook for the player's admin status.
- *
- * Read-only as far as apps are concerned: this reflects what the server said, and
- * nothing an app does can change it. Gating a screen on it hides a button, never a
- * capability — the privileged action itself is checked again server-side.
  */
 export function useAdmin() {
-  assertCapability('admin', 'useAdmin');
-  return { isAdmin, refreshAdmin };
+  return guarded('useAdmin').facets.admin();
 }

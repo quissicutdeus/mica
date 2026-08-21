@@ -153,13 +153,19 @@ describe('the permission table is total', () => {
     expect(stale, 'remove it from sdk/permissions.ts, or fix the name').toEqual([]);
   });
 
-  it('every declared hook calls assertCapability with its own name', () => {
+  it('every declared hook goes through guarded() with its own name', () => {
+    // The host protocol (MICA-16 step 3) is what turns a declared permission into a
+    // refusal now — `guard.ts` looks `hookName` up in `PERMISSION_OF` itself and throws
+    // `AppPermissionError` when it is missing. So the per-hook check that mattered when
+    // `assertCapability` took the permission literal directly is now: does this hook's own
+    // body actually call `guarded('<its own name>')` rather than skip the gate (call its
+    // facet directly, or call `guarded` with a different hook's name by copy-paste)?
     const wrong: string[] = [];
     for (const [name, expected] of Object.entries(PERMISSION_OF)) {
-      if (!expected) continue; // implicit — no call required
-      if (KIT_COMPONENTS.has(name)) continue; // disclosed via the hook it calls, not its own assert
+      if (!expected) continue; // implicit — no gate required
+      if (KIT_COMPONENTS.has(name)) continue; // disclosed via the hook it calls, not its own gate
       if (Array.isArray(expected)) {
-        wrong.push(`${name}: row is an array but a host hook must assert exactly one name`);
+        wrong.push(`${name}: row is an array but a host hook must gate exactly one name`);
         continue;
       }
       const def = findDefinition(name);
@@ -167,10 +173,10 @@ describe('the permission table is total', () => {
         wrong.push(`${name}: no export found under sdk/host`);
         continue;
       }
-      const call = def.body.match(/assertCapability\(\s*'([a-z-]+)'/);
-      if (!call) wrong.push(`${name}: no assertCapability call`);
-      else if (call[1] !== expected)
-        wrong.push(`${name}: asserts '${call[1]}', table says '${expected}'`);
+      const call = def.body.match(/guarded\(\s*'([a-zA-Z]+)'/);
+      if (!call) wrong.push(`${name}: no guarded() call`);
+      else if (call[1] !== name)
+        wrong.push(`${name}: guarded('${call[1]}'), expected guarded('${name}')`);
     }
     expect(wrong).toEqual([]);
   });

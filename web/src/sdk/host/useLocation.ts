@@ -1,15 +1,10 @@
-import { media } from '../../services/media';
-import { assertCapability } from '../capability';
+import './inProcess/facets/location';
+import { guarded } from './guard';
 
 /**
  * Share the caller's current in-game position, and set a GPS waypoint from a location a
- * message already carries. An action pair rather than a data subscription — closer in
- * shape to `useCamera` than to `useContacts` — so there is no store here to read.
+ * message already carries.
  */
 export function useLocation() {
-  assertCapability('location', 'useLocation');
-  return {
-    shareLocation: media.shareLocation,
-    setWaypoint: media.setWaypoint
-  };
+  return guarded('useLocation').facets.location();
 }

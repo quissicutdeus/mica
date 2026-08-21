@@ -58,8 +58,12 @@ describe('app-space is open', () => {
 
   it('the SDK re-exports the hook, so no app reaches into shell/ by path', () => {
     // Without this the first add-on writes `../../shell/state/appEvents`, which is the drift
-    // `sdk/boundary.test.ts` exists to prevent.
-    expect(read('web/src/sdk/host/useAppEvents.ts')).toContain('subscribeAppEvent');
+    // `sdk/boundary.test.ts` exists to prevent. The body moved behind the host protocol
+    // (MICA-16 step 3): `useAppEvents.ts` is now a one-liner through `guarded()`, and the
+    // actual `subscribeAppEvent` call lives in its facet module — assert both halves of that
+    // wiring rather than the string that used to sit in one file.
+    expect(read('web/src/sdk/host/useAppEvents.ts')).toContain("guarded('useAppEvents'");
+    expect(read('web/src/sdk/host/inProcess/facets/appEvents.ts')).toContain('subscribeAppEvent');
     expect(read('web/src/sdk/host/index.ts')).toContain('useAppEvents');
   });
 });

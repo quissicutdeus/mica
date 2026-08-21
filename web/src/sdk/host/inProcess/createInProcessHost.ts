@@ -1,13 +1,16 @@
 import type { AppPermission } from '../../manifest';
-import { AppPermissionError, type Host, type HostFacets } from '../protocol';
+import { AppPermissionError, type Host } from '../protocol';
+import { facets } from '../current';
 
 /**
  * Build the `Host` an in-process app (every app in this repo today; a Store add-on later)
  * gets. `require` is where a manifest's declared `permissions` become an actual refusal
  * instead of `capability.ts`'s dev-only warning.
  *
- * `facets` is `{}` cast — no hook is rewired to reach through it yet (Task 2 of MICA-16
- * step 3 builds the real facet object).
+ * `facets` is the shared registry from `current.ts` — a `Proxy` that resolves each facet
+ * lazily from whichever hook files have been imported so far, not a per-host object this
+ * file builds. This file therefore imports only `../../manifest`, `../protocol` and
+ * `../current` — no facet module, and nothing that reaches `shell/`, `services/` or `nui/`.
  */
 export function createInProcessHost(appId: string, permissions: readonly AppPermission[]): Host {
   function require(
@@ -26,6 +29,6 @@ export function createInProcessHost(appId: string, permissions: readonly AppPerm
     appId,
     permissions,
     require,
-    facets: {} as HostFacets
+    facets
   };
 }

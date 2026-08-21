@@ -8,6 +8,7 @@ import { defineApp } from './manifest';
 import { createRawSnippet } from 'svelte';
 import { PERMISSION_OF } from './permissions';
 import * as host from './host/index';
+import { resetHostsForTest } from './host/current';
 
 describe('App capability disclosure', () => {
   afterEach(() => {
@@ -55,13 +56,20 @@ describe('App capability disclosure', () => {
   });
 
   /**
-   * `permissions` is a Store disclosure, not access control (`AGENTS.md` §7) — every app
-   * shares the shell's own JS context, so a hook calling `assertCapability` can only warn,
-   * never refuse. A throw here would crash a Store-installed add-on the moment it under-
-   * declares a permission, which `web/src/sdk/permissions.test.ts` cannot catch for a remote
-   * manifest the way it can for a first-party one.
+   * `AppCapabilityProvider` sets only the legacy `checkCapability` context, not the host
+   * protocol's `HOST_CONTEXT_KEY` (that wiring is `HostProvider`/Task 3's job — see
+   * `guard.ts`'s own docstring: "nothing is wired to `HostProvider` yet"). So a hook called
+   * under it today has no app-scoped `Host` to find and, same as any hook called from store
+   * scope, falls back to the system host — permissive, and warning once per hook in dev
+   * rather than refusing. `permissions` stays a Store disclosure, not access control
+   * (`AGENTS.md` §7): every app shares the shell's own JS context, and a throw here would
+   * crash a Store-installed add-on the moment it under-declares a permission, which
+   * `web/src/sdk/permissions.test.ts` cannot catch for a remote manifest the way it can for
+   * a first-party one. Once `HostProvider` wires an app-scoped `Host` into context (Task 3),
+   * this same call refuses via `AppPermissionError` instead.
    */
-  it('does not throw when an app calls a hook without declaring the permission, but warns in dev', () => {
+  it('without a HostProvider in context, a hook falls back to the system host and warns in dev instead of throwing', () => {
+    resetHostsForTest();
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     const manifest = defineApp({
@@ -91,7 +99,7 @@ describe('App capability disclosure', () => {
 
     expect(contactsRes).toBeDefined();
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("App 'unauthorized_app' called 'useContacts'")
+      expect.stringContaining("'useContacts' fell back to the system host")
     );
   });
 

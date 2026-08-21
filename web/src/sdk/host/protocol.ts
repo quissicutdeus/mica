@@ -1,4 +1,5 @@
 import type { AppPermission } from '../manifest';
+import type { Facets } from './inProcess/facets';
 
 /** Svelte context key an app-scoped `Host` is set/read under. */
 export const HOST_CONTEXT_KEY = 'gphone_host';
@@ -23,11 +24,8 @@ export class AppPermissionError extends Error {
 /**
  * Facets a `Host` exposes beyond `require`/`appId`/`permissions` — the actual data/service
  * surface a hook reaches through the host rather than importing `shell/`/`client/` directly.
- *
- * Empty placeholder: no hook is rewired to use a facet yet (Task 1 of MICA-16 step 3).
- * Task 2 replaces this with a type import from `inProcess/facets`.
  */
-export interface HostFacets {}
+export type HostFacets = Facets;
 
 /**
  * What every SDK host hook goes through once rewired (MICA-16 step 3). One `Host` per

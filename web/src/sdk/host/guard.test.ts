@@ -19,7 +19,7 @@ function fakeHost(appId: string, permissions: readonly string[] = []): Host {
         }
       }
     },
-    facets: {}
+    facets: {} as Host['facets']
   };
 }
 
@@ -84,5 +84,13 @@ describe('guarded()', () => {
 
     expect(first).toBe(second);
     expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('with no system host installed yet, installs it lazily and returns it rather than throwing', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(() => guarded('usePersisted')).not.toThrow();
+    const host = guarded('usePersisted');
+    expect(host.appId).toBe('system');
   });
 });
