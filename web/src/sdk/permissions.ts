@@ -12,8 +12,10 @@ import type { AppPermission } from './manifest';
  * - every host hook has a row (file → table)
  * - every non-kit row names a symbol that actually exists under `sdk/host` (table → file,
  *   catches a stale or renamed entry)
- * - every non-null row's located export calls `guarded()` with that row's exact
- *   name, as its own statement — not a call belonging to some other export in the same file
+ * - every row's located export calls `guarded()` with that row's exact name, as its own
+ *   statement — not a call belonging to some other export in the same file — including
+ *   the implicit (`null`) rows, which still resolve through `guarded()` even though they
+ *   carry no permission to check
  * - every app's manifest declares what its `@gphone/sdk` imports need
  *
  * The two kit-component rows (`PhotoPickerModal`, `ReportDialog`) are exempt from the
@@ -24,7 +26,11 @@ import type { AppPermission } from './manifest';
  * capability.
  *
  * The host protocol (MICA-16, step 3) reads this same table in `guard.ts` to refuse a
- * call outright rather than merely warn about it.
+ * call outright rather than merely warn about it. `guarded()` attributes a call in this
+ * order: the Svelte-context host (an app rendered under `HostProvider`) → the registered
+ * host for an explicit app id (store/service scope) → the `system` host, which grants
+ * every permission and only exists in-process — it is not a stand-in for a real app's host
+ * once add-ons stop sharing the shell's JS context.
  */
 export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermission[] | null> = {
   // implicit — what an app is made of

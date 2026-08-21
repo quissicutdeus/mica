@@ -48,8 +48,9 @@ export default defineApp({
 });
 ```
 
-Declare what you use. `pnpm test:unit:web` tells you exactly which names are missing; the full
-list is `AppPermission` in `sdk/manifest.ts`.
+Declare what you use — an undeclared hook now crashes your app with `AppPermissionError`;
+`renderApp(App, { permissions: [] })` is how to see it in a test. `pnpm test:unit:web` tells you
+exactly which names are missing; the full list is `AppPermission` in `sdk/manifest.ts`.
 
 `core` is required and `defineApp` throws without it. `false` is what you want almost always: an
 add-on, kept out of the launcher, offered by the Store, uninstallable. `true` is for something that

@@ -1,4 +1,4 @@
-import { saveSetting, removeSetting, clearAppSettings } from '../../services/settings';
+import { saveSetting, removeSetting, clearAppSettings } from '../../../services/settings';
 
 /**
  * Server-backed storage, without making `useStorage` async.

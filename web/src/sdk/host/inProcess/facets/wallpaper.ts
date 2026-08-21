@@ -18,18 +18,7 @@ import { seedFromImage } from '../../../../shell/state/seedFromImage';
 
 export type { WallpaperState, WallpaperPreset };
 
-/**
- * The phone's home screen background.
- *
- * A background is a color or a picture, and a color *is* the theme seed — the gradient
- * is generated from the scheme that seed produces, so a preset and a color dragged off a
- * wheel travel the identical path. There is nothing to keep in sync because there is only
- * one input.
- *
- * `seedFromImage` is how a photo becomes a theme: it quantizes the image and returns its
- * dominant color, or `null` if it cannot (a non-`data:` source, a failed decode). `null`
- * means keep the current seed, not "use black".
- */
+/** Implementation of the `useWallpaper` facet — see the `useWallpaper` hook doc for the usage contract. */
 export function wallpaper() {
   return {
     wallpaperStore,

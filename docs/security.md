@@ -158,10 +158,12 @@ version of dead-zone degradation exploitable and fixing it afterwards.
   registered action against its own rows. Closing that entirely would mean an allowlist per action
   on top of the access axes that already express it. The mitigation is to register only what the app
   uses, which is now tested.
-- **`permissions` on a manifest is a disclosure, not a sandbox** (§7). Every app runs in the shell's
-  own JS context, so any check the browser makes is one an add-on can walk around.
-  `sdk/permissions.ts` maps every host hook to a permission; `permissions.test.ts` fails the build
-  where a manifest understates its imports.
+- **`permissions` on a manifest refuse in-process; they are still not a sandbox** (§7). An
+  undeclared hook throws `AppPermissionError` at component init; store-scope calls resolve by
+  explicit app id or fall back to the in-process-only `system` host. But every app still runs in
+  the shell's own JS context, so an add-on can `import` its way around all of it — Step 4 of
+  `MICA-16` is what closes that. `sdk/permissions.ts` maps every host hook to a permission;
+  `permissions.test.ts` fails the build where a manifest understates its imports.
 - **An add-on's code is trusted once installed.** The Store installs a bundle that runs in the same
   context as the shell. §2.9 is what stands behind it: the server does not care which app is asking.
 

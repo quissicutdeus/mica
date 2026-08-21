@@ -75,3 +75,43 @@ describe('the kit does not reach the shell', () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * The host hooks themselves may not reach the shell either.
+ *
+ * `sdk/host/*.ts` and `sdk/host/*.svelte.ts` (excluding `sdk/host/inProcess/**`) are the
+ * thin `guarded('useX').facets.x(...)` wrappers (MICA-16 step 3) — they resolve a `Host`
+ * and delegate. The old bodies that actually reach `shell/`, `services/` and `nui/` now
+ * live under `sdk/host/inProcess/facets/`, which is the one place in the host API allowed
+ * to import them. A hook file that kept a shell import instead of moving it into its facet
+ * would defeat the whole point of the protocol: there would be nothing to swap out when
+ * add-ons stop sharing the shell's JS context.
+ */
+
+const HOST_DIR = join(SDK, 'host');
+const HOST_IN_PROCESS = join(HOST_DIR, 'inProcess');
+
+const hostFiles = walk(HOST_DIR).filter(
+  (f) =>
+    /\.(svelte\.ts|ts)$/.test(f) && !f.endsWith('.test.ts') && !f.startsWith(HOST_IN_PROCESS + '/')
+);
+
+describe('the host hooks do not reach the shell', () => {
+  it('finds host hook files to check', () => {
+    expect(hostFiles.length).toBeGreaterThan(20);
+  });
+
+  it('no sdk/host file (outside inProcess/) value-imports shell/, services/ or nui/', () => {
+    const offenders: string[] = [];
+    for (const file of hostFiles) {
+      const text = readFileSync(file, 'utf8');
+      for (const match of text.matchAll(VALUE_IMPORT)) {
+        offenders.push(`${relative(ROOT, file)}  ->  ${match[0].trim()}`);
+      }
+    }
+    expect(
+      offenders.sort(),
+      'move the import into sdk/host/inProcess/facets/ — a hook file only resolves a Host and delegates'
+    ).toEqual([]);
+  });
+});

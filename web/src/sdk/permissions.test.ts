@@ -153,7 +153,7 @@ describe('the permission table is total', () => {
     expect(stale, 'remove it from sdk/permissions.ts, or fix the name').toEqual([]);
   });
 
-  it('every declared hook goes through guarded() with its own name', () => {
+  it('every hook, implicit rows included, goes through guarded() with its own name', () => {
     // The host protocol (MICA-16 step 3) is what turns a declared permission into a
     // refusal now — `guard.ts` looks `hookName` up in `PERMISSION_OF` itself and throws
     // `AppPermissionError` when it is missing. So the per-hook check that mattered when
@@ -162,7 +162,8 @@ describe('the permission table is total', () => {
     // facet directly, or call `guarded` with a different hook's name by copy-paste)?
     const wrong: string[] = [];
     for (const [name, expected] of Object.entries(PERMISSION_OF)) {
-      if (!expected) continue; // implicit — no gate required
+      // implicit (null) rows still resolve through guarded() — they just carry no
+      // permission to check — so they are covered here too, not skipped.
       if (KIT_COMPONENTS.has(name)) continue; // disclosed via the hook it calls, not its own gate
       if (Array.isArray(expected)) {
         wrong.push(`${name}: row is an array but a host hook must gate exactly one name`);

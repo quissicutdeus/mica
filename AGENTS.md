@@ -363,14 +363,16 @@ Why this is sharper in CEF than on the web: injected script can `fetch` against
 `https://<resource>/<event>` and invoke any registered NUI callback, including ones with server-side
 effects. XSS here is privilege escalation, not just defacement.
 
-### App permissions are a disclosure, not a sandbox
+### App permissions refuse in-process; they are still not a sandbox
 
-`permissions` on a manifest is what the Store shows a player. It is **not** access control and
-cannot become it: every app runs in the shell's own JS context, so any check the browser makes is
-one an add-on can walk around. §2.9 stays the boundary — the server gates privileged actions and
-does not treat a NUI request as proof of intent. Turning this into a real boundary — a host
-protocol the add-on reaches the shell through, enforced there — is tracked as `MICA-16`; until
-it lands, do not add a runtime check here and call it security.
+`permissions` on a manifest is enforced now. A component-init call to a hook the manifest did not
+declare throws `AppPermissionError` into the app's own `ErrorBoundary`; a store-scope call
+resolves by explicit app id or falls back to `system`, which grants everything and only exists
+in-process. That refusal is not a sandbox, and cannot be one on its own: every app still runs in
+the shell's own JS context, so an add-on that wanted around it can `import` its way there directly
+— which is exactly the hatch Step 4 of `MICA-16` closes, by moving add-ons out of that context
+entirely. §2.9 stays the boundary in the meantime — the server gates privileged actions and does
+not treat a NUI request as proof of intent.
 
 It used to be decorative in a worse sense than unused. Nothing read it beyond the Store's renderer
 and a storage-size figure invented from `permissions.length`, so an app declaring `permissions: []`

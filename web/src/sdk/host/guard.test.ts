@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 import { guarded } from './guard';
-import { HOST_CONTEXT_KEY, type Host } from './protocol';
+import { AppPermissionError, HOST_CONTEXT_KEY, type Host } from './protocol';
 import { registerHost, resetHostsForTest } from './current';
 import { createInProcessHost } from './inProcess/createInProcessHost';
 import GuardProbe from './__fixtures__/GuardProbe.svelte';
@@ -10,12 +10,12 @@ function fakeHost(appId: string, permissions: readonly string[] = []): Host {
   return {
     appId,
     permissions: permissions as Host['permissions'],
-    require: (needed) => {
+    require: (needed, hookName) => {
       if (needed === null) return;
       const list = Array.isArray(needed) ? needed : [needed];
       for (const p of list) {
         if (!permissions.includes(p)) {
-          throw new Error(`missing ${p}`);
+          throw new AppPermissionError(appId, p, hookName);
         }
       }
     },
@@ -47,7 +47,8 @@ describe('guarded()', () => {
     });
 
     expect(outcome.host).toBeUndefined();
-    expect(outcome.error).toBeDefined();
+    expect(outcome.error).toBeInstanceOf(AppPermissionError);
+    expect((outcome.error as AppPermissionError).hookName).toBe('useContacts');
   });
 
   it('inside a component, returns the context host when it declares the permission', () => {
