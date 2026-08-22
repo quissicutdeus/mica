@@ -1,9 +1,11 @@
 import { registerFacet } from '../../current';
+import type { Facets } from '../../inProcess/facets';
+import type { AsTwin } from './_shared';
 import { remoteCall } from '../remote';
 import { clientTransport } from '../transport';
 import { readKey, writeKey, removeKey, allKeys, hydrateStorage } from '../storageCache';
 
-type Twin = ReturnType<typeof import('../../inProcess/facets/storage').storage>;
+type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/storage').storage>>;
 
 const namespaceOf = (appId: string) => `gphone:${appId}:`;
 
@@ -94,7 +96,7 @@ export function storage(appId: string): Twin {
     markUnsynced: (key: string): void => markUnsynced(appId, key),
     /** Mirrors the inProcess twin's `clear` member — the wall-side route for `clearAppStorage`. */
     clear: () => clearAppStorage(appId)
-  } as unknown as Twin;
+  };
 }
 
 /** `appStorageBytes` — computed locally: the cache already holds everything it needs. */
@@ -118,6 +120,10 @@ export function clearAppStorage(appId: string): void {
   void remoteCall('storage', [appId], 'clear');
 }
 
-registerFacet('storage', storage);
+// The Twin above is what an iframe can honestly offer (MICA-26) -- Readable in place of
+// Writable, and (for the handful of members noted above) async where the wire makes
+// something inProcess exposes synchronously. This is the one place that gap is bridged,
+// once per facet, rather than a blanket cast hiding the whole object from the checker.
+registerFacet('storage', storage as unknown as Facets['storage']);
 registerFacet('appStorageBytes', appStorageBytes);
 registerFacet('clearAppStorage', clearAppStorage);

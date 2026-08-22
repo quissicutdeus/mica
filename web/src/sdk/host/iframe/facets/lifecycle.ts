@@ -1,8 +1,9 @@
 import { registerFacet } from '../../current';
+import type { Facets } from '../../inProcess/facets';
 import { onDestroy } from 'svelte';
-import { fn, store } from './_shared';
+import { fn, store, type AsTwin } from './_shared';
 
-type Twin = ReturnType<typeof import('../../inProcess/facets/lifecycle').lifecycle>;
+type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/lifecycle').lifecycle>>;
 
 /** Executes a cleanup callback when the application component is unmounted or closed. */
 export function onAppUnmount(handler: () => void): void {
@@ -50,10 +51,18 @@ registerFacet('onAppUnmount', onAppUnmount);
 export function lifecycle(appId: string): Twin {
   return {
     currentApp: store('lifecycle', [appId], 'currentApp', { id: '', props: {} }),
-    onBack: (handler: () => void) => fn('lifecycle', [appId], 'onBack')(handler),
+    // The inProcess twin's onBack returns the release function synchronously; over the
+    // wire it can only promise one eventually (see appLevels.ts's own direct remoteCall,
+    // which is why nothing here actually awaits this).
+    onBack: (handler: () => void) =>
+      fn('lifecycle', [appId], 'onBack')(handler) as unknown as ReturnType<Twin['onBack']>,
     goHome: () => fn('lifecycle', [appId], 'goHome')(),
     consumeDeepLink: () => fn('lifecycle', [appId], 'consumeDeepLink')()
-  } as unknown as Twin;
+  };
 }
 
-registerFacet('lifecycle', lifecycle);
+// The Twin above is what an iframe can honestly offer (MICA-26) -- Readable in place of
+// Writable, and (for the handful of members noted above) async where the wire makes
+// something inProcess exposes synchronously. This is the one place that gap is bridged,
+// once per facet, rather than a blanket cast hiding the whole object from the checker.
+registerFacet('lifecycle', lifecycle as unknown as Facets['lifecycle']);

@@ -1,8 +1,11 @@
 import { registerFacet } from '../../current';
-import { fn, store } from './_shared';
+import type { Facets } from '../../inProcess/facets';
+import { fn, store, type AsTwin } from './_shared';
 import { constants } from '../constants';
 
-type Twin = ReturnType<typeof import('../../inProcess/facets/systemHardware').systemHardware>;
+type Twin = AsTwin<
+  ReturnType<typeof import('../../inProcess/facets/systemHardware').systemHardware>
+>;
 
 export function systemHardware(): Twin {
   const c = constants().systemHardware;
@@ -22,8 +25,14 @@ export function systemHardware(): Twin {
     toggleMute: fn('systemHardware', [], 'toggleMute'),
     volumeStep: store('systemHardware', [], 'volumeStep', 5),
     setVolumeStep: fn('systemHardware', [], 'setVolumeStep'),
-    volumeStepChoices: c.volumeStepChoices
-  } as unknown as Twin;
+    // Carried over the wire as `unknown` (`AddOnConstants`) — the shell can only promise
+    // it hydrated whatever the inProcess side actually sent, not its literal shape.
+    volumeStepChoices: c.volumeStepChoices as Twin['volumeStepChoices']
+  };
 }
 
-registerFacet('systemHardware', systemHardware);
+// The Twin above is what an iframe can honestly offer (MICA-26) -- Readable in place of
+// Writable, and (for the handful of members noted above) async where the wire makes
+// something inProcess exposes synchronously. This is the one place that gap is bridged,
+// once per facet, rather than a blanket cast hiding the whole object from the checker.
+registerFacet('systemHardware', systemHardware as unknown as Facets['systemHardware']);

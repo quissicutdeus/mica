@@ -1,9 +1,11 @@
 import { registerFacet } from '../../current';
+import type { Facets } from '../../inProcess/facets';
+import type { AsTwin } from './_shared';
 import { onDestroy } from 'svelte';
 import { remoteCall } from '../remote';
 import { clientTransport } from '../transport';
 
-type Twin = ReturnType<typeof import('../../inProcess/facets/appLevels').appLevels>;
+type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/appLevels').appLevels>>;
 
 interface AppLevel {
   open: () => boolean;
@@ -51,7 +53,11 @@ export function appLevels(config: AppLevelsConfig): Twin {
       const level = config.levels.find((l) => l.open() && l.title !== undefined);
       return level ? resolve(level.title) : resolve(config.title);
     }
-  } as unknown as Twin;
+  };
 }
 
-registerFacet('appLevels', appLevels);
+// The Twin above is what an iframe can honestly offer (MICA-26) -- Readable in place of
+// Writable, and (for the handful of members noted above) async where the wire makes
+// something inProcess exposes synchronously. This is the one place that gap is bridged,
+// once per facet, rather than a blanket cast hiding the whole object from the checker.
+registerFacet('appLevels', appLevels as unknown as Facets['appLevels']);

@@ -1,9 +1,10 @@
 import { registerFacet } from '../../current';
-import { fn } from './_shared';
+import type { Facets } from '../../inProcess/facets';
+import { fn, type AsTwin } from './_shared';
 
 export type { ReactionTarget } from '../../inProcess/facets/accounts';
 
-type Twin = ReturnType<typeof import('../../inProcess/facets/accounts').accounts>;
+type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/accounts').accounts>>;
 
 export function accounts(): Twin {
   return {
@@ -22,6 +23,10 @@ export function accounts(): Twin {
     getReactionsFor: fn('accounts', [], 'getReactionsFor'),
     reactToTarget: fn('accounts', [], 'reactToTarget'),
     unreactToTarget: fn('accounts', [], 'unreactToTarget')
-  } as unknown as Twin;
+  };
 }
-registerFacet('accounts', accounts);
+// The Twin above is what an iframe can honestly offer (MICA-26) -- Readable in place of
+// Writable, and (for the handful of members noted above) async where the wire makes
+// something inProcess exposes synchronously. This is the one place that gap is bridged,
+// once per facet, rather than a blanket cast hiding the whole object from the checker.
+registerFacet('accounts', accounts as unknown as Facets['accounts']);
