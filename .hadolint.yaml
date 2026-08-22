@@ -1,0 +1,17 @@
+# Dockerfile linting. Run with `pnpm lint:container`, enforced in CI.
+
+ignored:
+  # DL3018 — "pin versions in apk add".
+  #
+  # Ignored deliberately, and only for this file. The two packages involved
+  # (brotli, upx) exist solely in discarded builder stages and touch nothing in
+  # the shipped image, so a version drift cannot reach a user. Alpine's repos
+  # drop non-current versions quickly, so pinning them converts a stable build
+  # into one that breaks on Alpine's schedule rather than ours — paying real
+  # maintenance for a reproducibility guarantee that stops at the stage boundary.
+  #
+  # The pins that DO reach the image are the ones that matter, and they are
+  # already explicit: the base image tags, and pnpm@11 matched to CI.
+  - DL3018
+
+failure-threshold: warning

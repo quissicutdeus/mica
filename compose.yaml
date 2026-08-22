@@ -1,0 +1,75 @@
+# The gPhone web demo: the NUI bundle in mock mode, served standalone.
+#
+# `compose.yaml` and not `docker-compose.yml` -- the former is the name the Compose
+# Specification looks for first, and the latter is the v1 spelling kept working for
+# compatibility. Nothing here needs v1.
+#
+#   docker compose up --build          build and serve on http://127.0.0.1:8080
+#   docker compose up -d               same, detached
+#   docker compose down                stop and remove
+#
+# There is deliberately no `volumes:` mapping the source in for live reload. This
+# composes the *shipped* artifact, and `pnpm dev` already does live reload far better
+# than a container round-trip could -- see docs/dev-loop.md.
+
+services:
+  demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # web/vite.config.ts stamps these into the Settings > About screen. It reads them
+        # only when BOTH are non-empty, otherwise it shells out to `git rev-parse` -- and
+        # .git is excluded from the build context precisely so that fallback cannot
+        # produce a stale-but-plausible answer inside a container.
+        #
+        # Written with no value on purpose. That is Compose's "pass this through from the
+        # environment, and only if it is set there" form -- `GIT_SHA: ${GIT_SHA:-}` would
+        # instead hand the build an *empty* arg, overriding the Dockerfile's own default
+        # rather than falling back to it.
+        #
+        # To stamp a real build:
+        #   GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD) \
+        #   GIT_SHA=$(git rev-parse HEAD) docker compose up --build
+        GIT_BRANCH:
+        GIT_SHA:
+        # Set to 0 to skip UPX and ship the binary plain -- ~0.5MB larger, ~165ms faster
+        # to start, and legible to `strings`/`nm` if you are debugging or scanning it.
+        COMPRESS_BINARY: ${COMPRESS_BINARY:-1}
+
+    image: gphone-demo:local
+
+    # Host side only. The container always listens on 8080 (`ENV PORT` in the Dockerfile);
+    # changing where that is published does not change what the server binds.
+    #
+    # Bound to 127.0.0.1 rather than 0.0.0.0: `ports: "8080:8080"` would publish this to
+    # every interface on the machine, and Docker writes those rules into DNAT chains that
+    # a host firewall's INPUT rules never see. That surprise belongs to a deliberate
+    # deployment, not to `docker compose up` on a laptop.
+    ports:
+      - '127.0.0.1:${MICA_PORT:-8080}:8080'
+
+    # Moves the server's log timestamps and nothing else -- the phone's clock and every
+    # message timestamp are rendered in the browser from the *viewer's* system zone. The
+    # zone database is compiled into the binary, so any IANA name works with no tzdata
+    # package present. To follow the host, pass its zone explicitly:
+    #   TZ=$(readlink /etc/localtime | sed 's#.*/zoneinfo/##') docker compose up
+    environment:
+      TZ: ${TZ:-America/Los_Angeles}
+
+    # The image is one static binary and one directory of static files. It never writes,
+    # never execs, never needs a capability, and drops to an unprivileged uid in the
+    # Dockerfile -- so every one of these is free to assert, and each one is a thing that
+    # cannot go wrong later without someone noticing here first.
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+    # No `healthcheck:` block: the image already declares one (`/gphone-serve -health`,
+    # the same binary in a second mode, because a scratch image has no shell and no
+    # curl for the usual `wget -q` line). Compose inherits it. Repeating it here would
+    # be a second copy to keep in step with the first.
+
+    restart: unless-stopped

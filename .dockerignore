@@ -1,0 +1,24 @@
+# Deny everything, then re-admit only what `vite build` and `go build` read.
+# `*` matches dotfiles, so this is also what keeps .git out of the context --
+# which is the point: with no .git, getGitInfo() in web/vite.config.ts cannot
+# fall back to `git rev-parse`, so the version stamp comes from the build args
+# or is honestly wrong rather than quietly stale.
+*
+
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!shared
+!web
+!docker
+
+# ...minus the parts of those that are not build inputs. A re-admitted directory
+# re-admits its whole subtree, so these have to be named explicitly.
+web/node_modules
+web/dist
+web/e2e
+web/playwright.config.ts
+web/playwright-report
+web/test-results
+web/README.md
+docker/serve/gphone-serve
