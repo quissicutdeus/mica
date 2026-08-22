@@ -1,6 +1,7 @@
 import { registerFacet } from '../../current';
 import { onDestroy } from 'svelte';
 import { remoteCall } from '../remote';
+import { clientTransport } from '../transport';
 
 type Twin = ReturnType<typeof import('../../inProcess/facets/appLevels').appLevels>;
 
@@ -32,7 +33,11 @@ export function appLevels(config: AppLevelsConfig): Twin {
   // `onBack` is cast to the inProcess (synchronous) return shape, but the value crossing
   // the wall really is a promise, and `release` below needs to `.then()` it.
   const releasePromise = remoteCall<() => void>('lifecycle', [config.appId], 'onBack', back);
-  const release = () => void releasePromise.then((off) => off());
+  // MICA-23: `back` also still lives in this frame's own callback map until dropped here.
+  const release = () => {
+    void releasePromise.then((off) => off());
+    clientTransport().releaseCallback(back);
+  };
   try {
     onDestroy(release);
   } catch {

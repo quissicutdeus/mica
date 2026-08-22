@@ -209,6 +209,13 @@ describe('IframeHostServer', () => {
     expect(reply.value).toEqual({ __fn: expect.any(Number) });
     from({ kind: 'invoke', handle: reply.value.__fn, args: [] });
     expect(posted[posted.length - 1]).toEqual({ kind: 'callback', cb: 3, args: [-1] });
+
+    // MICA-23: the handle is a documented one-shot release (messages.ts) — invoking it
+    // again must not still be able to fire the underlying function a second time, which
+    // is what an un-freed `handles` entry would let a malicious or buggy frame do.
+    const postedBefore = posted.length;
+    from({ kind: 'invoke', handle: reply.value.__fn, args: [] });
+    expect(posted).toHaveLength(postedBefore);
   });
   /**
    * The app id in `factoryArgs[0]` is stated by the server, never taken from the frame.

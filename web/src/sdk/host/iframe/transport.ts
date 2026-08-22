@@ -10,6 +10,8 @@ export interface ClientTransport {
   onReply(id: number, cb: (msg: Extract<ToFrame, { kind: 'reply' }>) => void): void;
   onPush(id: number, cb: (value: unknown) => void): () => void;
   registerCallback(fn: (...args: unknown[]) => unknown): number;
+  /** Drop a registered callback by the same function reference `registerCallback` was given. */
+  releaseCallback(fn: (...args: unknown[]) => unknown): void;
   onTheme(cb: (css: string) => void): void;
   onStorage(cb: (snapshot: Record<string, string>) => void): void;
   /** A deep link into an already-running add-on — see `liveProps.svelte.ts`. */
@@ -21,6 +23,11 @@ export function createClientTransport(win: Window = window): ClientTransport {
   const replies = new Map<number, (m: Extract<ToFrame, { kind: 'reply' }>) => void>();
   const pushes = new Map<number, (v: unknown) => void>();
   const callbacks = new Map<number, (...a: unknown[]) => unknown>();
+  // MICA-23: lets `releaseCallback` find a registration by the same function reference
+  // the caller already holds (the handler passed to onBack/onKeybind/appEvents.on), rather
+  // than threading the id back out through `encodeArgs`. Weak so a callback that is simply
+  // dropped without ever calling `releaseCallback` (a bug elsewhere) can't itself pin memory.
+  const callbackIds = new WeakMap<(...a: unknown[]) => unknown, number>();
   const themeCbs = new Set<(css: string) => void>();
   const storageCbs = new Set<(s: Record<string, string>) => void>();
   const propsCbs = new Set<(p: Record<string, unknown>) => void>();
@@ -73,7 +80,14 @@ export function createClientTransport(win: Window = window): ClientTransport {
     registerCallback: (fn) => {
       const id = nextCb++;
       callbacks.set(id, fn);
+      callbackIds.set(fn, id);
       return id;
+    },
+    releaseCallback: (fn) => {
+      const id = callbackIds.get(fn);
+      if (id === undefined) return;
+      callbacks.delete(id);
+      callbackIds.delete(fn);
     },
     onTheme: (cb) => {
       themeCbs.add(cb);

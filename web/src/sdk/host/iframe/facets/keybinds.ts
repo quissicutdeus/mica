@@ -2,6 +2,7 @@ import { registerFacet } from '../../current';
 import { onDestroy } from 'svelte';
 import { fn, store } from './_shared';
 import { remoteCall } from '../remote';
+import { clientTransport } from '../transport';
 
 type Twin = ReturnType<typeof import('../../inProcess/facets/keybinds').keybinds>;
 
@@ -17,7 +18,13 @@ export function keybinds(): Twin {
         handler,
         appId
       );
-      const release = () => void releasePromise.then((off) => off());
+      // MICA-23: releasing the server's handle (`off()`) is only half of it — `handler`
+      // is still sitting in this frame's own callback map (`registerCallback`, called
+      // inside `remoteCall`'s `encodeArgs`) until this drops it too.
+      const release = () => {
+        void releasePromise.then((off) => off());
+        clientTransport().releaseCallback(handler);
+      };
       try {
         onDestroy(release);
       } catch {

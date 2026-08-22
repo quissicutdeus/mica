@@ -338,7 +338,12 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
           subscriptions.delete(msg.id);
           break;
         case 'invoke':
+          // MICA-23: every handle `encodeResult` hands out is documented (messages.ts)
+          // as a one-shot unsubscribe/release — nothing in this codebase invokes one
+          // twice — so this is the one place that call/subscription "ends", and the
+          // entry can go rather than living until the whole frame tears down.
           handles.get(msg.handle)?.(...msg.args);
+          handles.delete(msg.handle);
           break;
         case 'error':
           opts.onError(msg.message, msg.stack);

@@ -2,6 +2,7 @@ import { registerFacet } from '../../current';
 import { onDestroy } from 'svelte';
 import { fn } from './_shared';
 import { remoteCall } from '../remote';
+import { clientTransport } from '../transport';
 import type { AppEvent } from '../../../../shell/state/appEvents';
 
 type Twin = ReturnType<typeof import('../../inProcess/facets/appEvents').appEvents>;
@@ -11,8 +12,14 @@ export function appEvents(appId: string): Twin {
   const factoryArgs = [appId];
 
   const subscribe = (member: 'on' | 'onAny', args: unknown[]): (() => void) => {
+    const handler = args[args.length - 1] as (...a: unknown[]) => unknown;
     const refPromise = remoteCall<() => void>('appEvents', factoryArgs, member, ...args);
-    const off = () => void refPromise.then((release) => release());
+    // MICA-23: `handler` also still lives in this frame's own callback map until
+    // dropped here, alongside releasing the server's own subscription handle.
+    const off = () => {
+      void refPromise.then((release) => release());
+      clientTransport().releaseCallback(handler);
+    };
     try {
       onDestroy(off);
     } catch {

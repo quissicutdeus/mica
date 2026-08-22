@@ -22,6 +22,14 @@ export function fakeTransport() {
       callbacks.set(id, fn);
       return id;
     },
+    releaseCallback: (fn) => {
+      for (const [id, registered] of callbacks) {
+        if (registered === fn) {
+          callbacks.delete(id);
+          return;
+        }
+      }
+    },
     onTheme: () => {},
     onStorage: () => {},
     onProps: () => {}
