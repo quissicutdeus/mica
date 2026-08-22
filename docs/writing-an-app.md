@@ -232,20 +232,29 @@ never reached by path from another app; the hook is the only handle.
 If `core: false`, your compiled bundle does not run in the shell's window — it boots inside a
 sandboxed `<iframe sandbox="allow-scripts" srcdoc>` with an opaque origin. Practically:
 
-- No `window.parent`, no shell DOM, no shell `localStorage`, no cookies. There is nothing to
-  reach even if you tried — `allow-same-origin` is not on the sandbox.
+- Nothing on `window.parent` is reachable except `postMessage` — no shell DOM, no shell
+  `localStorage`, no cookies. `allow-same-origin` is not on the sandbox, so the origin is
+  opaque and every property access across the wall throws; the one channel is the message
+  port the SDK already speaks over for you.
 - `fetchNui` does not exist in the bundle. All host access goes through `@gphone/sdk` hooks,
   which route over `postMessage` to the shell; `useService` is the only way to reach your own
   server actions.
 - Storage reads (`useStorage`) are synchronous against a cache the shell hydrates in at boot.
   Data stores (`useContacts`, `useMail`, …) arrive asynchronously after your first paint — render
   an empty/loading state rather than assuming a store is populated on mount.
+- Those service stores are **read-only** through the wall. `$contactsStore`, `$mailStore` and
+  the rest are a feed of what the shell holds; assigning to one changes nothing outside your
+  frame and is silently discarded on the next push. Call the facet's own functions to write —
+  `useContacts().addContact(...)`, `useMail().archiveMail(...)` — and the updated store comes
+  back to you.
 - An uncaught error or unhandled rejection inside the frame shows the shell's crash screen (the
   message is visible in DEV) instead of taking down the shell.
 - `pnpm --filter web build:addons` builds your app's self-contained bundle to
   `web/public/addons/<id>.js` — check it after changes that touch imports; anything that pulls in
-  a relative import out of `web/src/` or references `shell/state` will fail there even if
-  `pnpm dev` looks fine, since dev serves the app in-process for iteration speed.
+  a relative import out of `web/src/` or references `shell/state` will fail in that bundle.
+  `pnpm dev` runs the same bundle (its `addons` half is `build-addons.mjs --watch`) and serves
+  it in the same frame, so a break shows up there too — but only once the watch rebuild lands,
+  so read its output rather than the shell's.
 
 ## More wiring rules inside the app
 
