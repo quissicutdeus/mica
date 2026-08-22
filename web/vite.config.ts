@@ -1,6 +1,7 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import type { Plugin } from 'vite';
 import path from 'path';
 import { execSync } from 'child_process';
 import pkg from '../package.json' with { type: 'json' };
@@ -22,13 +23,97 @@ function getGitInfo() {
   }
 }
 
+/**
+ * The subsets of a webfont this phone actually renders.
+ *
+ * `@fontsource/roboto`'s per-weight stylesheet declares nine `@font-face` blocks —
+ * cyrillic, cyrillic-ext, greek, greek-ext, math, symbols, vietnamese, latin-ext and
+ * latin — and four of those weights are imported in `main.ts`, so the untrimmed build
+ * emits 72 font files and 895KB. `math` and `symbols` alone are most of it.
+ *
+ * Note what this deliberately does NOT do: import the package's per-subset entrypoints
+ * (`@fontsource/roboto/latin-400.css`) instead. Those ship the same `@font-face` with
+ * its `unicode-range` line REMOVED, because each is meant to be the only face for its
+ * family/weight. Import two of them and you have declared two faces with identical
+ * family, style and weight and no ranges to separate them — by CSS Fonts §5.2 the last
+ * declaration wins for the whole family, and a glyph missing from it falls out of the
+ * family to the next entry in the `font-family` stack rather than across to its sibling
+ * face. Importing `latin-ext` second would therefore render ordinary ASCII body text in
+ * whatever CEF picks as a fallback, everywhere, silently.
+ *
+ * Filtering the full stylesheet keeps every `unicode-range` intact, which is what makes
+ * more than one subset safe to ship at all.
+ *
+ * Adding a subset back is one entry here. A player whose name uses a glyph outside these
+ * still reads it — the browser falls back to a system font for that run of characters —
+ * so this is a typeface question, not a mojibake one, and it is independent of the
+ * database being utf8mb4.
+ */
+const FONT_SUBSETS = ['latin', 'latin-ext'];
+
+/**
+ * Drop the font subsets this phone does not render, and the legacy `.woff` fallback.
+ *
+ * Both halves are byte-for-byte invisible in the product: Vite emits a font file only
+ * because some `url()` names it, so deleting the reference is what deletes the file.
+ *
+ *   72 files / 895KB  ->  16 files / 289KB   (subsets)
+ *                     ->   8 files / 149KB   (dropping .woff)
+ *
+ * The `.woff` fallback goes because `build.target` here is `chrome92` and woff2 has been
+ * supported since Chrome 36 — in FiveM the runtime is CEF, which is Chromium, and in the
+ * browser demo it is whatever the visitor has. Neither can reach the fallback, so it is
+ * ~140KB that exists only to be ignored.
+ *
+ * `enforce: 'pre'` is load-bearing rather than tidiness: Vite's own `vite:css` plugin
+ * resolves each `url()` and registers the file for emission during ITS transform. A
+ * normal-stage plugin runs after that, so the references would already have been turned
+ * into emitted assets and pruning the text here would leave the files in `dist/` with
+ * nothing pointing at them.
+ */
+function trimFonts(subsets: string[] = FONT_SUBSETS): Plugin {
+  // Every filename in this package is `roboto-<subset>-<weight>-<style>.woff2`, and the
+  // subset itself contains hyphens (`latin-ext`, `cyrillic-ext`), so the weight is the
+  // anchor: it is the only all-digits segment.
+  const FACE = /\/\*[^*]*\*\/\s*@font-face\s*\{[^}]*\}/g;
+  const SUBSET_OF = /roboto-(.+)-\d+-(?:normal|italic)\.woff2/;
+
+  return {
+    name: 'gphone:trim-fonts',
+    enforce: 'pre',
+    transform(code: string, id: string) {
+      if (!id.includes('@fontsource') || !id.endsWith('.css')) return null;
+
+      let kept = 0;
+      const out = code.replace(FACE, (face: string) => {
+        const subset = face.match(SUBSET_OF)?.[1];
+        if (subset === undefined || !subsets.includes(subset)) return '';
+        kept++;
+        // `url(a.woff2) format('woff2'), url(a.woff) format('woff')` -> just the woff2.
+        return face.replace(/,\s*url\([^)]*\.woff\)\s*format\((['"])woff\1\)/g, '');
+      });
+
+      // A silent zero here would ship a phone with no webfont at all, looking merely a
+      // little off rather than broken, so it fails the build instead. The way this
+      // breaks is an upstream change to the filename convention the regex above reads.
+      if (kept === 0) {
+        this.error(
+          `gphone:trim-fonts matched no @font-face in ${id} for subsets [${subsets.join(', ')}]. ` +
+            `If @fontsource changed its filename convention, SUBSET_OF needs updating.`
+        );
+      }
+      return { code: out, map: null };
+    }
+  };
+}
+
 const gitInfo = getGitInfo();
 const version = pkg.version || '1.0.0';
 const buildInfo = `v${version} (${gitInfo.branch}@${gitInfo.commit})`;
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [trimFonts(), svelte()],
   base: './',
   define: {
     __MICA_VERSION__: JSON.stringify(version),
