@@ -111,6 +111,9 @@ test.describe('Settings App E2E', () => {
   });
 
   test('the unlock is not persisted — a fresh session hides it again', async ({ page }) => {
+    // Ten taps, two navigations and a full reload — legitimately past the suite's 10s
+    // default (playwright.config.ts), not a flake.
+    test.setTimeout(20_000);
     await page.locator('button', { hasText: 'About' }).first().click();
     const buildRow = page.locator('button', { hasText: 'OS Version' });
     for (let i = 0; i < 10; i++) await buildRow.click();
