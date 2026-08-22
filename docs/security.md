@@ -158,14 +158,19 @@ version of dead-zone degradation exploitable and fixing it afterwards.
   registered action against its own rows. Closing that entirely would mean an allowlist per action
   on top of the access axes that already express it. The mitigation is to register only what the app
   uses, which is now tested.
-- **`permissions` on a manifest refuse in-process; they are still not a sandbox** (§7). An
-  undeclared hook throws `AppPermissionError` at component init; store-scope calls resolve by
-  explicit app id or fall back to the in-process-only `system` host. But every app still runs in
-  the shell's own JS context, so an add-on can `import` its way around all of it — Step 4 of
-  `MICA-16` is what closes that. `sdk/permissions.ts` maps every host hook to a permission;
-  `permissions.test.ts` fails the build where a manifest understates its imports.
-- **An add-on's code is trusted once installed.** The Store installs a bundle that runs in the same
-  context as the shell. §2.9 is what stands behind it: the server does not care which app is asking.
+- **`permissions` on a manifest refuse in-process; a `core: true` app is still not sandboxed
+  from the shell** (§7). An undeclared hook throws `AppPermissionError` at component init;
+  store-scope calls resolve by explicit app id or fall back to the in-process-only `system`
+  host. A `core: false` add-on is different since `MICA-16` Step 4: it runs in a sandboxed
+  `<iframe sandbox="allow-scripts" srcdoc>` with an opaque origin, no `allow-same-origin`, and no
+  route to the shell but `postMessage`. The **shell** re-checks every permission against
+  `HOOK_OF_FACET` before answering a call — the frame's own check is a courtesy, not the
+  boundary. `sdk/permissions.ts` maps every host hook to a permission; `permissions.test.ts`
+  fails the build where a manifest understates its imports.
+- **An add-on's code is trusted at build time, not at run time.** The Store installs a bundle
+  that runs in that sandboxed frame, not in the shell's own context; the shell hash-verifies the
+  bundle text it was handed before booting it. §2.9 is what stands behind server-side actions
+  either way — the server does not care which app is asking.
 
 ---
 

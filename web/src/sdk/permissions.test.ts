@@ -8,11 +8,12 @@ import { bundledAddOns, registeredApps } from '../shell/state/registry';
 /**
  * An app's declared permissions have to match what it actually reaches for.
  *
- * **This is not a sandbox, and cannot be one.** Every app runs in the same JS context as the
- * shell; an add-on that wanted `useContacts` without saying so could import it, or reach past
- * the SDK entirely. Nothing enforceable in the browser changes that, and §2.9 already says a
- * NUI request is not proof of intent — the server gates privileged actions independently and
- * remains the only real boundary.
+ * **A `core: true` app is still not sandboxed from the shell.** It runs in the shell's own JS
+ * context; an app that wanted `useContacts` without saying so could import it, or reach past
+ * the SDK entirely. A `core: false` add-on is different since `MICA-16` Step 4 — it runs in
+ * a sandboxed iframe and the shell re-checks every permission before answering a call — but
+ * §2.9 still applies either way: a NUI request is not proof of intent, and the server gates
+ * privileged actions independently.
  *
  * What this does buy is that the list is **true**. The Store shows a player which
  * capabilities an app wants, and until now that list was decorative: it was consumed by the

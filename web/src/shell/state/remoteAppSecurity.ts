@@ -1,12 +1,14 @@
 /**
- * Trust boundary for remote (dynamically loaded) gPhone apps.
+ * Trust boundary for remote (Store-installed) gPhone add-ons.
  *
- * Nothing here makes a remote app's *code* safe once it runs — see
- * `web/src/sdk/capability.ts`, which is explicit that permissions are a disclosure, not a
- * sandbox: every app shares the shell's own JS context. This module only decides two
- * narrower questions, both answered *before* a single line of fetched code executes: is
- * the bundle coming from somewhere the operator chose to trust, and is it the exact bytes
- * the operator published.
+ * This module decides two questions, both answered *before* a bundle is booted: is it
+ * coming from somewhere the operator chose to trust, and is it the exact bytes the
+ * operator published (the shell hash-verifies the fetched text against the catalog entry
+ * before handing it to `bootAddOn`). Since `MICA-16` Step 4, the bundle it clears also
+ * runs in a sandboxed `<iframe sandbox="allow-scripts" srcdoc>` — opaque origin, no shell
+ * DOM or NUI — so a host/hash match is no longer the only thing standing between a
+ * fetched bundle and the shell; `web/src/sdk/permissions.ts` is what still gates each
+ * individual host call once the frame is running.
  */
 
 /**

@@ -29,8 +29,14 @@ import type { AppPermission } from './manifest';
  * call outright rather than merely warn about it. `guarded()` attributes a call in this
  * order: the Svelte-context host (an app rendered under `HostProvider`) → the registered
  * host for an explicit app id (store/service scope) → the `system` host, which grants
- * every permission and only exists in-process — it is not a stand-in for a real app's host
- * once add-ons stop sharing the shell's JS context.
+ * every permission and only exists in-process — it is not a stand-in for a real app's
+ * host now that a `core: false` add-on runs in its own sandboxed iframe, out of the
+ * shell's JS context.
+ *
+ * Since Step 4, `PERMISSION_OF` also backs `HOOK_OF_FACET`, which the shell consults to
+ * re-check every add-on's `postMessage` call before answering it. The frame runs its own
+ * `guarded()` check first, but that check is inside the sandbox and is a courtesy to the
+ * add-on author, not the boundary — the shell-side re-check is what actually refuses.
  */
 export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermission[] | null> = {
   // implicit — what an app is made of

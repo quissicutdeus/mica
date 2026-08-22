@@ -164,10 +164,11 @@ export interface AppManifest {
   /**
    * What this app reaches for, as shown to a player in the Store.
    *
-   * **A disclosure, not a sandbox.** Nothing stops an app importing a hook it did not
-   * declare — every app runs in the same JS context as the shell, so a browser-side check
-   * could always be walked around. §2.9 is the real boundary: the server gates privileged
-   * actions and does not take a NUI request as proof of intent.
+   * **A disclosure, not only a sandbox.** A `core: true` app runs in the shell's own JS
+   * context, so nothing stops it importing a hook it did not declare; a `core: false`
+   * add-on runs in a sandboxed iframe and has the shell re-check every call. Either way
+   * §2.9 is the real boundary underneath: the server gates privileged actions and does not
+   * take a NUI request as proof of intent.
    *
    * What is enforced is that the disclosure is **true**. `sdk/permissions.test.ts` reads
    * each app's SDK imports and fails the build if it reaches for contacts, photos, the

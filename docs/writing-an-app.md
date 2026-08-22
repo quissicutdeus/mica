@@ -227,6 +227,26 @@ own directory, beside the store, because `sdk/host/` ships inside gPhone — `ap
 exports `useNotes`, `apps/blabber/store.ts` exports `useBlabber`. Either way the store itself is
 never reached by path from another app; the hook is the only handle.
 
+### Your app runs in a frame
+
+If `core: false`, your compiled bundle does not run in the shell's window — it boots inside a
+sandboxed `<iframe sandbox="allow-scripts" srcdoc>` with an opaque origin. Practically:
+
+- No `window.parent`, no shell DOM, no shell `localStorage`, no cookies. There is nothing to
+  reach even if you tried — `allow-same-origin` is not on the sandbox.
+- `fetchNui` does not exist in the bundle. All host access goes through `@gphone/sdk` hooks,
+  which route over `postMessage` to the shell; `useService` is the only way to reach your own
+  server actions.
+- Storage reads (`useStorage`) are synchronous against a cache the shell hydrates in at boot.
+  Data stores (`useContacts`, `useMail`, …) arrive asynchronously after your first paint — render
+  an empty/loading state rather than assuming a store is populated on mount.
+- An uncaught error or unhandled rejection inside the frame shows the shell's crash screen (the
+  message is visible in DEV) instead of taking down the shell.
+- `pnpm --filter web build:addons` builds your app's self-contained bundle to
+  `web/public/addons/<id>.js` — check it after changes that touch imports; anything that pulls in
+  a relative import out of `web/src/` or references `shell/state` will fail there even if
+  `pnpm dev` looks fine, since dev serves the app in-process for iteration speed.
+
 ## More wiring rules inside the app
 
 - `sort` on `createCrudStore` is what keeps one order however the list changed — the hand-written

@@ -4,6 +4,10 @@ import { useNuiEvent } from '../nui/useNuiEvent';
 /**
  * OS Service Hook for the FiveM NUI transport.
  *
+ * `core: true` only — exported from `@gphone/sdk/core`, not `@gphone/sdk`. A `core: false`
+ * add-on runs in a sandboxed iframe with no NUI to bridge to; its build swaps `fetchNui` for
+ * the `postMessage` twin in `sdk/host/iframe/fetchNui.ts` instead of this hook.
+ *
  * ## Why these are wrappers and not the functions themselves
  *
  * This used to return the imported functions directly, which made destructuring at module

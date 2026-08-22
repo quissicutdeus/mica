@@ -112,7 +112,7 @@ Not negotiable. If a task appears to require breaking one, **stop and ask** — 
 5. **No new dependencies** without asking.
 6. **Do not change** TypeScript versions in either package, Vite `build.outDir`, or
    `scripts/generate-barrels.js` output paths without asking.
-7. **SDK First.** Everything in `web/src/apps/`, and every external add-on, consumes the OS strictly through `@gphone/sdk` hooks — data (`useContacts`, `useMedia`, `useMail`, `useMessages`, `useAccount`, `useCall`, `useReports`), OS services (`useNavigation`, `usePhoneNotification`, `useKeybinds`, `useClock`, `useDisplay`, `useSystemHardware`, `useAppRegistry`, `useService`, `useAppEvents`, `useStorage`, `useCamera`, `useAdmin`, `useDevTools`), and the four an app is built out of: `useAppLevels` for its internal levels, `useAppAction` for a write, `useDeepLink` for the props it was opened with, and `onAppForeground` for loading. `useNuiBridge` is on `@gphone/sdk/core`, which only a `core: true` app may import — it is the raw transport, and `boundary.test.ts` refuses it to add-ons. Relative imports out of an app — into `shell/`, `services/`, `nui/`, `lib/`, or `sdk/` by path — are prohibited and enforced by `web/src/sdk/boundary.test.ts`. UI primitives (`Screen`, `ListItem`, `Button`, `Avatar`, `SearchBar`, `EmptyState`, `ConfirmDialog`, `FloatingActionButton`, `PhotoPickerModal`, `ReportDialog`, `SegmentedControl`, `ToggleSwitch`, `Skeleton`) live in `web/src/sdk/ui/`, re-exported from `web/src/sdk/components.ts`. The shell's own pieces — `PhoneFrame`, `Launcher`, `ToastHost`, `VolumeHud`, `ErrorBoundary` — are deliberately **not** exported; an app rendering its own phone frame or toast host is a bug. See [`docs/writing-an-app.md`](docs/writing-an-app.md) for the full walkthrough.
+7. **SDK First.** Everything in `web/src/apps/`, and every external add-on, consumes the OS strictly through `@gphone/sdk` hooks — data (`useContacts`, `useMedia`, `useMail`, `useMessages`, `useAccount`, `useCall`, `useReports`), OS services (`useNavigation`, `usePhoneNotification`, `useKeybinds`, `useClock`, `useDisplay`, `useSystemHardware`, `useAppRegistry`, `useService`, `useAppEvents`, `useStorage`, `useCamera`, `useAdmin`, `useDevTools`), and the four an app is built out of: `useAppLevels` for its internal levels, `useAppAction` for a write, `useDeepLink` for the props it was opened with, and `onAppForeground` for loading. `useNuiBridge` is on `@gphone/sdk/core`, which only a `core: true` app may import — it is the raw transport, and `boundary.test.ts` refuses it to add-ons; a `core: false` bundle has no NUI at all, since it runs in a sandboxed iframe with no route to the shell but `postMessage` (§7). Relative imports out of an app — into `shell/`, `services/`, `nui/`, `lib/`, or `sdk/` by path — are prohibited and enforced by `web/src/sdk/boundary.test.ts`. UI primitives (`Screen`, `ListItem`, `Button`, `Avatar`, `SearchBar`, `EmptyState`, `ConfirmDialog`, `FloatingActionButton`, `PhotoPickerModal`, `ReportDialog`, `SegmentedControl`, `ToggleSwitch`, `Skeleton`) live in `web/src/sdk/ui/`, re-exported from `web/src/sdk/components.ts`. The shell's own pieces — `PhoneFrame`, `Launcher`, `ToastHost`, `VolumeHud`, `ErrorBoundary` — are deliberately **not** exported; an app rendering its own phone frame or toast host is a bug. See [`docs/writing-an-app.md`](docs/writing-an-app.md) for the full walkthrough.
 
    **Keyboard shortcuts.** Never add a raw `keydown` listener or `<svelte:window on:keydown>` for
    a phone-level action; declare it in `shared/keybinds.ts` and claim it with
@@ -363,16 +363,17 @@ Why this is sharper in CEF than on the web: injected script can `fetch` against
 `https://<resource>/<event>` and invoke any registered NUI callback, including ones with server-side
 effects. XSS here is privilege escalation, not just defacement.
 
-### App permissions refuse in-process; they are still not a sandbox
+### App permissions, and where they are actually enforced
 
-`permissions` on a manifest is enforced now. A component-init call to a hook the manifest did not
-declare throws `AppPermissionError` into the app's own `ErrorBoundary`; a store-scope call
-resolves by explicit app id or falls back to `system`, which grants everything and only exists
-in-process. That refusal is not a sandbox, and cannot be one on its own: every app still runs in
-the shell's own JS context, so an add-on that wanted around it can `import` its way there directly
-— which is exactly the hatch Step 4 of `MICA-16` closes, by moving add-ons out of that context
-entirely. §2.9 stays the boundary in the meantime — the server gates privileged actions and does
-not treat a NUI request as proof of intent.
+`permissions` on a manifest is enforced. A `core: false` add-on runs in a sandboxed
+`<iframe sandbox="allow-scripts" srcdoc>` — no `allow-same-origin`, so it has an opaque origin
+and no access to the shell's DOM, `localStorage`, cookies, or NUI. It talks to the shell only
+over `postMessage` (`web/src/sdk/host/iframe/`), and the **shell** re-checks every permission
+against `HOOK_OF_FACET` in `web/src/sdk/permissions.ts` before answering a call — the frame's
+own check (thrown into its `ErrorBoundary`) is a courtesy, not the boundary. A `core: true` app
+still runs in-process and resolves store scope by explicit app id or `system`, which grants
+everything and only exists in-process. §2.9 stays the boundary for privileged server actions
+either way — the server gates them and does not treat a NUI request as proof of intent.
 
 It used to be decorative in a worse sense than unused. Nothing read it beyond the Store's renderer
 and a storage-size figure invented from `permissions.length`, so an app declaring `permissions: []`
@@ -385,6 +386,7 @@ discloses it, or `null` for the handful every app is built out of (`useAppLevels
 namespace) which are never declared. `permissions.test.ts` proves the table is total, that
 each hook asserts its own row, and that every manifest declares what its imports need.
 `network` and `bluetooth` are gone — nothing checked them; Bluetooth is `system-hardware`.
+`sound` is gone too — `useSound` is implicit now, like `useAppLevels`.
 
 Declaring more than the scan finds is fine. Declaring less is a lie to the person reading it.
 
