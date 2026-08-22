@@ -82,10 +82,32 @@ const warmServer = async () => {
   }
 };
 
+/**
+ * Why this is caught rather than allowed to propagate.
+ *
+ * `chromium.launch()` throws when Playwright's browsers were never downloaded, or when
+ * they were but the host is missing their shared libraries — the ordinary state of a fresh
+ * clone, and of any distro Playwright ships no build for. That rejection used to escape to
+ * the top level and kill the process outright: no summary, and `build` and `deadcode` never
+ * ran, on a machine where nothing was actually wrong with them.
+ *
+ * Which is the exact failure this file was written to end (see the note at the top — a
+ * knip failure rode `main` for four commits because the only gate that catches it sat
+ * behind a gate that could not run locally). An unrunnable e2e gate must cost the e2e gate
+ * and nothing else.
+ */
+const warmServerOrExplain = async () => {
+  try {
+    await warmServer();
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message.split('\n')[0] : String(error);
+  }
+};
+
 const waitForServer = async (timeoutMs = 60_000) => {
-  if (!(await waitForHtml(timeoutMs))) return false;
-  await warmServer();
-  return true;
+  if (!(await waitForHtml(timeoutMs))) return 'vite never served /';
+  return await warmServerOrExplain();
 };
 
 const results = [];
@@ -173,17 +195,26 @@ const main = async () => {
     // port, so a `pnpm dev` the developer already had open is used as-is and left alone.
     const borrowed = await portInUse();
     let server;
+    let blocked = null;
     if (!borrowed) {
       server = spawn('pnpm', ['--filter', 'web', 'dev'], { stdio: 'ignore', shell: true });
-      if (!(await waitForServer())) {
-        server.kill();
-        process.stdout.write(`\n[31mVite never came up on ${PORT}.[0m\n`);
-        report({ skipped: ['e2e', 'build', 'deadcode'] });
-        return 1;
-      }
+      blocked = await waitForServer();
     }
-    await gate('e2e', 'pnpm', ['test:e2e']);
-    server?.kill();
+    if (blocked) {
+      // The run continues from here. `build` and `deadcode` are seconds apiece and have
+      // nothing to do with a browser, so losing them to an e2e problem costs the developer
+      // the two gates most likely to catch what they just changed. e2e is recorded as
+      // failed rather than skipped: something was meant to run here and did not.
+      server?.kill();
+      results.push({ name: 'e2e', code: 1, seconds: '0.0' });
+      process.stdout.write(`\n[31me2e could not start: ${blocked}[0m\n`);
+      if (/Executable doesn't exist|missing dependencies|shared librar/i.test(blocked)) {
+        process.stdout.write(`[2mTry: pnpm test:e2e:install[0m\n`);
+      }
+    } else {
+      await gate('e2e', 'pnpm', ['test:e2e']);
+      server?.kill();
+    }
   }
 
   if (!stop()) await gate('build', 'pnpm', ['build']);
