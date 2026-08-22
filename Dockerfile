@@ -162,7 +162,7 @@ ENV PORT=8080
 # Override per run with `-e TZ=Europe/Berlin`. Note that bind-mounting
 # /etc/localtime will NOT win against this: Go consults /etc/localtime only when
 # $TZ is unset, and this line always sets it. To follow the host instead, pass
-# the host's own zone explicitly -- see the run recipe in the README.
+# the host's own zone explicitly -- see docs/demo-container.md.
 #
 # This only moves the server's log timestamps. The phone's clock and every
 # message timestamp are rendered in the browser from the *viewer's* system zone.

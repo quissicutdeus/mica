@@ -133,8 +133,8 @@ This runs watch scripts for client/server bundles (`pnpm watch`) and the Vite we
 
 ### Every Gate, One Command
 
-`pnpm verify` runs the full pipeline in order — barrels, format, typecheck, unit, e2e, build,
-dead-code. Every gate runs even after one fails, and the summary names all of them, so one bad
+`pnpm verify` runs the full pipeline in order — barrels, format, container, typecheck, unit, e2e,
+build, dead-code. Every gate runs even after one fails, and the summary names all of them, so one bad
 gate cannot hide the state of the rest. CI runs the same command, so a green local run means a
 green CI run.
 
@@ -151,6 +151,24 @@ them those two gates cost about fifteen seconds, which is worth paying before a 
 
 Check its exit code rather than eyeballing the output: piping it through `tail` reports `tail`'s
 status, not the suite's.
+
+### The Web Demo Container
+
+The phone in a browser with no FiveM server behind it — the shipped NUI bundle served
+standalone against the mock transport. One static binary and one directory of static files on
+`scratch`, 3.62 MB all in.
+
+```sh
+pnpm demo          # build and serve on http://127.0.0.1:8080
+pnpm demo:up       # same, detached
+pnpm demo:down     # stop and remove
+pnpm demo:smoke    # probe a running container
+```
+
+It binds to `127.0.0.1`, not every interface, and runs read-only with all capabilities dropped.
+This is not a development loop — there is no bind mount and no live reload, because `pnpm dev`
+already does that better. See [docs/demo-container.md](docs/demo-container.md) for stamping a
+real version into Settings > About, the `TZ` and port knobs, and what the gates check.
 
 ### Scaffolding an App
 
@@ -260,6 +278,7 @@ gphone/
 │       ├── sdk/                  # @gphone/sdk: the only thing an app may import
 │       ├── shell/                # The phone around the apps: frame, launcher, navigation, state
 │       └── services/             # Stores backing the SDK hooks; apps reach these through the SDK, never by path
+├── docker/serve/                 # The demo image's static file server (Go, stdlib only)
 ├── scripts/                      # Manifest generation, SQL generation, and build automation
 ├── build/                        # esbuild bundle configuration
 ├── gphone.sql                    # Generated: the whole schema (pnpm generate:sql)
@@ -272,6 +291,7 @@ gphone/
 ## Contributing
 
 - [docs/writing-an-app.md](docs/writing-an-app.md) — the five-minute path to a working app.
+- [docs/demo-container.md](docs/demo-container.md) — the demo image: running it, and what it ships.
 - [AGENTS.md](AGENTS.md) — the full engineering guide: hard constraints (§2), the CEF capability
   baseline (§6), the service layer (§10), and adding an app end to end (§11). Written for AI
   agents working in this repo, and the most complete description of how it fits together.
