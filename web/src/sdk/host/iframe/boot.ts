@@ -39,7 +39,14 @@ export async function bootAddOn(manifest: AppManifest, App: AppComponent): Promi
       stack: e.reason instanceof Error ? (e.reason.stack ?? null) : null
     })
   );
-  window.addEventListener('keydown', (e) =>
+  window.addEventListener('keydown', (e) => {
+    // A held key repeat-fires `keydown` with no `repeat` flag on the wire message —
+    // `routeKey` on the shell side drops `event.repeat` for the real listener, but a
+    // synthetic `KeyboardEvent` it rebuilds from this message is never "held" in that
+    // sense, so a repeat sent from here would fire the bound action on every repaint
+    // instead of once on the initial press. Drop it at the source instead of widening
+    // the wire schema for a bit the shell side would just re-derive as always-false.
+    if (e.repeat) return;
     transport.send({
       kind: 'key',
       key: e.key,
@@ -49,8 +56,8 @@ export async function bootAddOn(manifest: AppManifest, App: AppComponent): Promi
       altKey: e.altKey,
       metaKey: e.metaKey,
       typing: isTyping(e.target)
-    })
-  );
+    });
+  });
   window.addEventListener('focusin', (e) => {
     if (isTyping(e.target)) transport.send({ kind: 'typing', typing: true });
   });

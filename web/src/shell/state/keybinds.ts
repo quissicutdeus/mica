@@ -215,9 +215,20 @@ export function resolveAction(
   return matches.reduce((best, candidate) => (rank(candidate) < rank(best) ? candidate : best));
 }
 
-/** Returns true when the press was consumed. */
-export function dispatchKey(event: KeyboardEvent, env: KeybindEnvironment): boolean {
-  if (isTypingTarget(event.target)) return false;
+/**
+ * Returns true when the press was consumed.
+ *
+ * `typing` defaults to a DOM check on `event.target`, which is meaningless for a key
+ * forwarded from an add-on's iframe — that event's target is never a real focused
+ * field in this document. The frame reports its own typing state over the host
+ * protocol instead, and the shell passes it straight through.
+ */
+export function dispatchKey(
+  event: KeyboardEvent,
+  env: KeybindEnvironment,
+  typing = isTypingTarget(event.target)
+): boolean {
+  if (typing) return false;
 
   const action = resolveAction(event.key, env, get(bindings));
   if (!action) return false;

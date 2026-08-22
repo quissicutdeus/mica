@@ -171,6 +171,20 @@ describe('dispatchKey', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  it('an explicit `typing` param overrides the target-based check, without resolving', () => {
+    // A frame-forwarded key has no real DOM target to inspect — the caller (the shell,
+    // told by the add-on's own `onTyping`) supplies the answer directly instead.
+    const handler = vi.fn();
+    const release = registerHandler('back', handler);
+
+    const event = pressEvent('Backspace');
+    expect(dispatchKey(event, IDLE, true)).toBe(false);
+    expect(handler).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+
+    release();
+  });
+
   it('releasing a handler stops it firing', () => {
     const handler = vi.fn();
     registerHandler('back', handler)();

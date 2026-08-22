@@ -40,6 +40,8 @@
   import { clampedSignalLevel } from './state/signal';
   import { audio } from './state/audio';
   import { isLightMode } from './state/theme';
+  import AddOnFrame from './addon/AddOnFrame.svelte';
+  import { isTrustedNuiSource } from './nuiGuard';
 
   installSystemHost();
 
@@ -83,6 +85,12 @@
   });
 
   const handleMessage = (event: MessageEvent) => {
+    // Real CEF's `SendNUIMessage` arrives with a null/undefined `source`, and the dev
+    // harness posts its fixtures from `window` itself; anything else — an add-on
+    // frame's `contentWindow`, in particular — is refused here. A sandboxed add-on's
+    // only legitimate door into the shell is `IframeHostServer`, not this listener.
+    if (!isTrustedNuiSource(event)) return;
+
     const { action, data } = event.data ?? {};
 
     if (action === 'setVisible') {
@@ -211,58 +219,109 @@
     void hydrateSettings().then(() => migrateAppDrawerHintForExistingSaves());
   });
 
-  onMount(() => {
-    const handleKeydown = (event: KeyboardEvent) => {
-      // Held keys must not repeat-fire an action; the old Alt branch special-cased this
-      // and nothing else did.
-      if (event.repeat) return;
-
-      /**
-       * Browser only: honor the Open Phone binding here.
-       *
-       * That action is `scope: 'game'`, so in game it is a `RegisterKeyMapping` the
-       * client owns and the web never sees it. There is no FiveM in a browser, so
-       * nothing was listening at all and a collapsed phone could only be reopened with
-       * the mouse.
-       *
-       * Checked before `dispatchKey` because a collapsed phone has no meaningful
-       * phone-scope action, and after the typing guard so it cannot fire out from under
-       * a focused field.
-       *
-       * Reads the default straight off `KEYBIND_ACTIONS` rather than the `bindings`
-       * store: `bindings` only resolves phone-scope actions (see keybinds.ts), and
-       * `openPhone` is game-scope — its rebind path is FiveM's own Key Bindings menu,
-       * never this store, so there is no override to look up here.
-       */
-      if (isBrowser() && !isTypingTarget(event.target)) {
-        const openKey = findAction('openPhone')?.defaultKey;
-        if (openKey && event.key.toLowerCase() === openKey.toLowerCase()) {
-          event.preventDefault();
-          if (visible) {
-            visible = false;
-            closePhone();
-          } else {
-            visible = true;
-          }
-          return;
-        }
-      }
-
-      dispatchKey(event, {
-        currentApp: $currentApp.id,
-        callStatus: $callStore.status
-      });
-    };
+  /**
+   * The keydown body, shared by the real `window` listener and `handleFrameKey` below.
+   *
+   * `typing` is passed through explicitly rather than re-derived from `event.target`:
+   * a key forwarded from an add-on's iframe carries a synthetic event whose target is
+   * never a real focused field in *this* document, so the frame's own `onTyping` report
+   * is the only thing that can answer that question for it.
+   */
+  function routeKey(event: KeyboardEvent, typing: boolean) {
+    // Held keys must not repeat-fire an action; the old Alt branch special-cased this
+    // and nothing else did.
+    if (event.repeat) return;
 
     /**
-     * Tell the client when a text field has focus.
+     * Browser only: honor the Open Phone binding here.
      *
-     * The client cannot see DOM focus, and `RegisterKeyMapping` bindings would otherwise
-     * still fire while typing — reachable today via freelook, which enables
-     * `SetNuiFocusKeepInput`. Typing `MM` into a message would insert two characters and
-     * toggle the phone twice.
+     * That action is `scope: 'game'`, so in game it is a `RegisterKeyMapping` the
+     * client owns and the web never sees it. There is no FiveM in a browser, so
+     * nothing was listening at all and a collapsed phone could only be reopened with
+     * the mouse.
+     *
+     * Checked before `dispatchKey` because a collapsed phone has no meaningful
+     * phone-scope action, and after the typing guard so it cannot fire out from under
+     * a focused field.
+     *
+     * Reads the default straight off `KEYBIND_ACTIONS` rather than the `bindings`
+     * store: `bindings` only resolves phone-scope actions (see keybinds.ts), and
+     * `openPhone` is game-scope — its rebind path is FiveM's own Key Bindings menu,
+     * never this store, so there is no override to look up here.
      */
-    const reportTyping = (typing: boolean) => fetchNui('setTyping', { typing }).catch(() => {});
+    if (isBrowser() && !typing) {
+      const openKey = findAction('openPhone')?.defaultKey;
+      if (openKey && event.key.toLowerCase() === openKey.toLowerCase()) {
+        event.preventDefault();
+        if (visible) {
+          visible = false;
+          closePhone();
+        } else {
+          visible = true;
+        }
+        return;
+      }
+    }
+
+    dispatchKey(
+      event,
+      {
+        currentApp: $currentApp.id,
+        callStatus: $callStore.status
+      },
+      typing
+    );
+  }
+
+  /**
+   * Tell the client when a text field has focus.
+   *
+   * The client cannot see DOM focus, and `RegisterKeyMapping` bindings would otherwise
+   * still fire while typing — reachable today via freelook, which enables
+   * `SetNuiFocusKeepInput`. Typing `MM` into a message would insert two characters and
+   * toggle the phone twice.
+   *
+   * Hoisted out of the `onMount` below so the template can also reach it, for an
+   * add-on's own `onTyping` report (`AddOnFrame`'s frame has no real DOM focus event
+   * of its own to drive `handleFocusIn`/`handleFocusOut`).
+   */
+  const reportTyping = (typing: boolean) => fetchNui('setTyping', { typing }).catch(() => {});
+
+  /**
+   * Keys forwarded from an add-on's sandboxed iframe, over the host protocol rather
+   * than a real DOM event — the frame has no access to this document's `window` to
+   * dispatch one directly. Rebuilt as a `KeyboardEvent` so `routeKey` can stay the one
+   * place that knows how a keypress becomes an action, for both origins.
+   */
+  function handleFrameKey(k: {
+    key: string;
+    code: string;
+    ctrlKey: boolean;
+    shiftKey: boolean;
+    altKey: boolean;
+    metaKey: boolean;
+    typing: boolean;
+  }) {
+    // `cancelable: true` so `routeKey`'s `event.preventDefault()` (a claimed press) is
+    // a real, checkable no-op rather than silently doing nothing on an event that can
+    // never be canceled — nothing here reads it back, but a caller that later does
+    // (or a test asserting `defaultPrevented`) should see the same contract the real
+    // `window` keydown gives it.
+    const event = new KeyboardEvent('keydown', {
+      key: k.key,
+      code: k.code,
+      ctrlKey: k.ctrlKey,
+      shiftKey: k.shiftKey,
+      altKey: k.altKey,
+      metaKey: k.metaKey,
+      cancelable: true
+    });
+    routeKey(event, k.typing);
+  }
+
+  onMount(() => {
+    const handleKeydown = (event: KeyboardEvent) => routeKey(event, isTypingTarget(event.target));
+
     const handleFocusIn = (e: FocusEvent) => {
       if (isTypingTarget(e.target)) reportTyping(true);
     };
@@ -434,7 +493,27 @@
               {@const isNetworkBlocked =
                 (manifest?.requiresNetwork ?? false) && $clampedSignalLevel === 0}
               <div class="absolute inset-0" class:hidden={!isActive} inert={!isActive}>
-                {#if AppComponent}
+                {#if manifest && !manifest.core && !AppComponent}
+                  <!-- A shipped or Store-installed add-on: source text, a frame, a wall.
+                       A `core:false` app that *has* a component is a DEV-only runtime
+                       registration (see `registry.ts` and `error_boundary.spec.ts`) and
+                       stays on the in-process path below. -->
+                  <div class="h-full w-full" inert={isNetworkBlocked}>
+                    <AddOnFrame
+                      appId={instance.id}
+                      {manifest}
+                      host={hostForApp(instance.id, manifest)}
+                      props={instance.props}
+                      onKey={handleFrameKey}
+                      onTyping={(t) => reportTyping(t)}
+                    />
+                  </div>
+                  {#if isNetworkBlocked}
+                    <div class="absolute inset-0 z-30">
+                      <NotNetworkScreen title={manifest?.name ?? instance.id} onback={goHome} />
+                    </div>
+                  {/if}
+                {:else if AppComponent}
                   <ErrorBoundary appName={manifest?.name ?? instance.id}>
                     <HostProvider host={hostForApp(instance.id, manifest)}>
                       <div class="h-full w-full" inert={isNetworkBlocked}>

@@ -73,4 +73,27 @@ describe('bootAddOn', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA' }));
     expect(sent[0]).toMatchObject({ kind: 'key', key: 'a', code: 'KeyA' });
   });
+
+  it('drops a held key repeat rather than forwarding it', async () => {
+    // A wire `key` message carries no `repeat` flag, so the shell's `routeKey` would
+    // treat every one as a fresh press — a bound action would fire on every OS repaint
+    // a key is held for, instead of once. The forwarder has to drop it here, at source.
+    const { sent, parent } = stubParent();
+    const target = document.createElement('div');
+    target.id = 'app';
+    document.body.appendChild(target);
+
+    const bootDone = bootAddOn(manifest, UsesContacts);
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { kind: 'hydrate', payload },
+        source: parent as unknown as Window
+      })
+    );
+    await bootDone;
+
+    sent.length = 0;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA', repeat: true }));
+    expect(sent).toHaveLength(0);
+  });
 });
