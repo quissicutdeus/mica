@@ -130,8 +130,19 @@ export function attachLongPressDrag(element: HTMLElement, config: LongPressDragC
   element.addEventListener('pointerdown', handlePointerDown);
 
   return () => {
-    clearTimer();
     element.removeEventListener('pointerdown', handlePointerDown);
-    stopTracking();
+    // If a drag is armed, `onLongPress` has already fired — for the icon grid/drawer this
+    // is typically because `onLongPress` itself closed the drawer/folder the source icon
+    // lived in, unmounting `element` mid-gesture. The pointer is still down and the drag is
+    // tracked globally from here (`iconDragState`/`DragGhost`, which outlive the source
+    // icon), so tearing down the *window* listeners here — as opposed to the ones on the
+    // now-irrelevant `element` — would silently drop the eventual pointerup and strand the
+    // drag: no `onDragEnd`, no `onDragCancel`, nothing placed. Leave them attached; they
+    // clean up themselves via `stopTracking()` inside `handlePointerUp`/`handlePointerCancel`
+    // once the gesture actually ends.
+    if (!armed) {
+      clearTimer();
+      stopTracking();
+    }
   };
 }

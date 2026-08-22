@@ -37,6 +37,7 @@
        `elementsFromPoint` (in `iconDrag.ts`'s `resolveDropAtPoint`) reports under the
        pointer, or every drop would resolve against the ghost instead of the real target. -->
   <div
+    data-testid="drag-ghost"
     class="pointer-events-none fixed z-70 opacity-85"
     style="left: {point.x}px; top: {point.y}px; transform: translate(-50%, -50%);"
   >

@@ -58,15 +58,31 @@ export async function openAppDrawer(page: Page): Promise<void> {
   await page.mouse.down();
   await page.mouse.move(x, startY - scale * 700, { steps: 12 });
   await page.mouse.up();
-  await expect(page.getByRole('dialog', { name: 'App Drawer' })).toBeVisible();
+  const drawer = page.getByRole('dialog', { name: 'App Drawer' });
+  await expect(drawer).toBeVisible();
+  // Same class of problem `frameBox` guards against, but for the drawer's own entrance —
+  // `toBeVisible` resolves once the dialog is in the DOM and rendered, not once its `fly`
+  // transition (translateY, 300ms) has finished. A caller that immediately measures an
+  // icon's `boundingBox()` inside it can read a coordinate the icon is still animating
+  // through; under real CPU contention that gap widens enough that the icon grid ends up
+  // somewhere else by the time the recorded coordinate is actually used, and the drag picks
+  // up whatever icon happens to be there instead (MICA-34).
+  await expect
+    .poll(async () => drawer.evaluate((el) => el.getAnimations().length), { timeout: 5000 })
+    .toBe(0);
 }
 
 /**
  * Long-presses an icon and drags it to a viewport point, mirroring `attachLongPressDrag`'s
  * own state machine: it arms after 500ms of the pointer sitting still, then tracks the
- * pointer in raw viewport coordinates until release. The wait below clears that hold
- * before any movement happens, so the gesture reads as a long-press-then-drag rather than
- * a swipe that cancels it.
+ * pointer in raw viewport coordinates until release. Before arming, any pointer movement
+ * past `moveTolerance` cancels the whole gesture — so this waits for `DragGhost.svelte`'s
+ * `[data-testid="drag-ghost"]` (rendered only once `onLongPress` has actually fired) rather
+ * than sleeping a fixed duration. A fixed `waitForTimeout` raced the app's real 500ms timer:
+ * under CPU contention from a full parallel `pnpm test:e2e` run, the timer's callback could
+ * still be pending when the timeout elapsed, so the subsequent `mouse.move` read as
+ * pointer movement before the long-press armed and canceled the drag outright — passing
+ * alone or in CI (single worker) but failing under local full-suite load (MICA-34).
  */
 export async function dragIconTo(
   page: Page,
@@ -80,15 +96,17 @@ export async function dragIconTo(
   const startY = box.y + box.height / 2;
   await page.mouse.move(startX, startY);
   await page.mouse.down();
-  await page.waitForTimeout(600);
+  await page.getByTestId('drag-ghost').waitFor({ state: 'visible' });
+  // `onLongPress` already closed the App Drawer, but its `fly` transition takes a moment,
+  // and while it's mid-flight the drawer's own DOM is still there to intercept the point
+  // the drop is about to land on — not just the very next interaction, but this drop
+  // itself, since `elementsFromPoint` (`resolveDropAtPoint` in `iconDrag.ts`) reads
+  // whatever's actually on top at that coordinate on mouseup. Waiting for the dialog to
+  // actually detach, not just report invisible, is what makes the drop land on the grid
+  // cell underneath instead of silently resolving against the closing drawer.
+  await page.getByRole('dialog', { name: 'App Drawer' }).waitFor({ state: 'detached' });
   await page.mouse.move(destX, destY, { steps: 10 });
   await page.mouse.up();
-  // If the drag started inside the App Drawer, `onLongPress` already closed it — but its
-  // `fly` transition takes a moment, and while it's mid-flight the drawer's own DOM is
-  // still there to (very briefly) intercept a click meant for whatever the drop just
-  // revealed underneath. Waiting for it to actually detach, not just report invisible,
-  // is what makes the very next interaction reliable rather than occasionally flaky.
-  await page.getByRole('dialog', { name: 'App Drawer' }).waitFor({ state: 'detached' });
 }
 
 /** The viewport center of a home-grid cell at `position`, for `dragIconTo`'s destination. */
