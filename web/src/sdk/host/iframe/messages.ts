@@ -45,7 +45,11 @@ export interface HydratePayload {
   props: Record<string, unknown>;
   /** The `--color-*:` declaration block PhoneFrame applies — see shell/state/theme.ts themeStyleStore. */
   theme: string;
-  /** Every `gphone:<appId>:<key>` → raw string, so storage reads are sync from boot. */
+  /**
+   * Every full `gphone:<appId>:<key>` key → raw string (not stripped of its prefix — the
+   * iframe `storage.ts` twin re-adds it before every cache read), so storage reads are
+   * sync from boot.
+   */
   storage: Record<string, string>;
   constants: AddOnConstants;
 }

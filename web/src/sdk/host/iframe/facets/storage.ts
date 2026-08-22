@@ -39,6 +39,15 @@ export function markUnsynced(appId: string, key: string): void {
 }
 
 /**
+ * The inProcess twin hydrates settings from the real DB once at shell boot; an add-on's
+ * storage arrives synchronously in the frame's `hydrate` message instead (see
+ * `storageCache.ts`), so there is nothing for this to do here. It exists only because
+ * `useStorage.ts` re-exports it unconditionally from whichever `storage` twin the build
+ * resolves to, and the module graph needs the export to exist either way.
+ */
+export async function hydrateSettings(): Promise<void> {}
+
+/**
  * Wire the shell's later storage pushes to the cache and every live persisted store, once
  * the transport exists. Boot only has to call `hydrateStorage` directly for the initial
  * hydrate payload; this covers every push after.

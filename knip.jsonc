@@ -37,7 +37,7 @@
       // `src/sdk/index.ts` is deliberately NOT listed. Treating the whole SDK as public
       // API would stop knip ever reporting an unused export from it — and an exported,
       // complete, unused component is exactly what this found last time.
-      "entry": ["src/sdk/icons.ts", "e2e/**/*.spec.ts", "*.config.ts"],
+      "entry": ["src/sdk/icons.ts", "src/sdk/addon.ts", "e2e/**/*.spec.ts", "*.config.ts"],
       "project": ["src/**/*.{ts,svelte}"]
     }
   }

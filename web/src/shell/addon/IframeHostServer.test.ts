@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { writable } from 'svelte/store';
 import { createInProcessHost } from '../../sdk/host/inProcess/createInProcessHost';
 import { registerFacet, resetHostsForTest } from '../../sdk/host/current';
@@ -55,6 +55,10 @@ beforeEach(() => {
   );
 });
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe('IframeHostServer', () => {
   it('ignores messages from any other source', () => {
     const { posted, from } = server();
@@ -80,6 +84,26 @@ describe('IframeHostServer', () => {
       kind: 'hydrate',
       payload: { appId: 'probe', permissions: ['contacts'] }
     });
+  });
+  it('hydrate storage keeps the full gphone:<appId>:<key>, not stripped of its prefix', () => {
+    // This suite's jsdom has no real `localStorage` (see `sdk/storage.test.ts`'s doc
+    // comment — deliberate, matching the in-memory fallback CEF's own storage backend
+    // uses), so `storageSnapshot`'s `typeof localStorage === 'undefined'` guard would
+    // otherwise short-circuit this test before it exercises the prefix bug at all.
+    // Stubbing a minimal `Storage`-shaped global is what lets the real code path run.
+    const raw: Record<string, string> = {
+      'gphone:probe:k': '"v"',
+      'gphone:other:k': '"nope"'
+    };
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => raw[key] ?? null
+    });
+    Object.assign(globalThis.localStorage, raw);
+
+    const { posted, from } = server();
+    from({ kind: 'hello', manifest });
+    const hydrate = posted[0] as Extract<ToFrame, { kind: 'hydrate' }>;
+    expect(hydrate.payload.storage).toEqual({ 'gphone:probe:k': '"v"' });
   });
   it('calls a member and replies with the awaited value', async () => {
     const { posted, from } = server();

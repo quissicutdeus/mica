@@ -29,13 +29,21 @@ export interface IframeHostServerOptions {
 const isStore = (v: unknown): v is { subscribe: (cb: (x: unknown) => void) => () => void } =>
   !!v && typeof v === 'object' && typeof (v as { subscribe?: unknown }).subscribe === 'function';
 
-/** Every `gphone:<appId>:` key, raw — the frame's sync storage reads come from this. */
+/**
+ * Every `gphone:<appId>:` key, raw — the frame's sync storage reads come from this.
+ *
+ * Keys stay **full** (`gphone:<appId>:<key>`), not stripped of their prefix: the iframe
+ * twin's `storage.ts` reads its cache with `getStorageKey`, which re-adds the same prefix
+ * before every `readKey`/`writeKey` call — so a stripped snapshot key never matched what
+ * the twin looked up, and every `useStorage`/`usePersisted` read inside an add-on silently
+ * fell through to its default value.
+ */
 function storageSnapshot(appId: string): Record<string, string> {
   const prefix = `gphone:${appId}:`;
   const out: Record<string, string> = {};
   if (typeof localStorage === 'undefined') return out;
   for (const key of Object.keys(localStorage)) {
-    if (key.startsWith(prefix)) out[key.slice(prefix.length)] = localStorage.getItem(key) ?? '';
+    if (key.startsWith(prefix)) out[key] = localStorage.getItem(key) ?? '';
   }
   return out;
 }

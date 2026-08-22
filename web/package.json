@@ -5,8 +5,9 @@
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "concurrently -c \"green,yellow\" -n \"shell,addons\" \"vite\" \"node scripts/build-addons.mjs --watch\"",
+    "build": "node scripts/build-addons.mjs && vite build",
+    "build:addons": "node scripts/build-addons.mjs",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json --fail-on-warnings && tsc -p tsconfig.node.json",
     "test": "vitest run",
