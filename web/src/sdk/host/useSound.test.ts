@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { useSound } from './useSound';
 import { audio, soundMuted, soundVolume } from '../../shell/state/audio';

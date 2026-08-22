@@ -2,7 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { ALL_PERMISSIONS } from './manifest';
-import { HOOK_OF_FACET, PERMISSION_OF, permissionOfFacet } from './permissions';
+import {
+  HOOK_OF_FACET,
+  PERMISSION_OF,
+  permissionOfFacet,
+  DENIED_FACETS,
+  SAFE_IMPLICIT_FACETS
+} from './permissions';
 import { bundledAddOns, registeredApps } from '../shell/state/registry';
 
 /**
@@ -218,6 +224,57 @@ describe('HOOK_OF_FACET', () => {
   it('permissionOfFacet resolves through the table', () => {
     expect(permissionOfFacet('contacts')).toEqual({ hook: 'useContacts', needed: 'contacts' });
     expect(permissionOfFacet('nope')).toBeUndefined();
+  });
+});
+
+/**
+ * MICA-33: what stops MICA-21's bug class from coming back with a *different* facet
+ * name. MICA-21 fixed one specific hole — `onAppForeground` reachable by a raw
+ * `call`/`subscribe` with no permission and no `pinAppId`/`decodeArgs` pass — by hand-
+ * listing five bare-function facets in `DENIED_FACETS`. Nothing stopped a *sixth* implicit
+ * facet, shaped the same way, from being added later without anyone remembering to deny
+ * it — exactly the class of gap `SAFE_IMPLICIT_FACETS` exists to close: every implicit
+ * facet must be explicitly accounted for, so a new one that arrives unclassified fails
+ * this test immediately rather than shipping silently.
+ *
+ * Deliberately scoped to *implicit* facets, not every facet `DENIED_FACETS` happens to
+ * contain — `clearAppStorage`/`appStorageBytes` are denied for the same shape reason but
+ * require the real `storage` permission, so they are already protected regardless of
+ * this check and need no entry in `SAFE_IMPLICIT_FACETS` (which is *only* for implicit
+ * facets confirmed safe) to pass it.
+ */
+describe('every implicit facet is classified (MICA-33)', () => {
+  const implicitFacets = Object.entries(HOOK_OF_FACET)
+    .filter(([, hook]) => PERMISSION_OF[hook] === null)
+    .map(([facet]) => facet);
+
+  it('finds at least the implicit facets this test was written against', () => {
+    // A sanity floor, not a ceiling — guards against the filter above silently matching
+    // nothing (e.g. a PERMISSION_OF/HOOK_OF_FACET shape change) and every check below
+    // passing vacuously.
+    expect(implicitFacets.length).toBeGreaterThanOrEqual(9);
+  });
+
+  it('every implicit facet is denied, or confirmed safe, but never both', () => {
+    const unclassified = implicitFacets.filter(
+      (f) => !DENIED_FACETS.has(f) && !SAFE_IMPLICIT_FACETS.has(f)
+    );
+    expect(
+      unclassified,
+      'add it to DENIED_FACETS or SAFE_IMPLICIT_FACETS in permissions.ts'
+    ).toEqual([]);
+
+    const inBoth = implicitFacets.filter(
+      (f) => DENIED_FACETS.has(f) && SAFE_IMPLICIT_FACETS.has(f)
+    );
+    expect(inBoth, 'a facet cannot be both denied and safe').toEqual([]);
+  });
+
+  it('has no stale entries in SAFE_IMPLICIT_FACETS naming a facet that is no longer implicit', () => {
+    // DENIED_FACETS is deliberately not checked here — it legitimately contains
+    // non-implicit entries (see this block's own doc comment above).
+    const stale = [...SAFE_IMPLICIT_FACETS].filter((f) => !implicitFacets.includes(f));
+    expect(stale, 'remove it from SAFE_IMPLICIT_FACETS — no longer an implicit facet').toEqual([]);
   });
 });
 

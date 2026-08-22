@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { AppComponent } from '@gphone/sdk';
 import { get } from 'svelte/store';

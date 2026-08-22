@@ -2,7 +2,7 @@ import { get } from 'svelte/store';
 import type { Host } from '../../sdk/host/protocol';
 import { AppPermissionError } from '../../sdk/host/protocol';
 import { facets } from '../../sdk/host/current';
-import { permissionOfFacet } from '../../sdk/permissions';
+import { permissionOfFacet, DENIED_FACETS } from '../../sdk/permissions';
 import type { AppManifest } from '../../sdk/manifest';
 import type {
   ToFrame,
@@ -147,32 +147,14 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     appRegistry: ['registryStore', 'getFirstBootTime']
   };
 
-  /**
-   * Facets a raw `call`/`subscribe` must never name directly.
-   *
-   * Each of these is a bare function, not a factory with members: `onAppForeground` and
-   * `onAppUnmount` take the caller's own handler as a factory argument, `deepLink` and
-   * `clearAppStorage` likewise, and `appStorageBytes` is a plain computation. None of them
-   * pass through `pinAppId` (only `APP_SCOPED_FACETS`/`CONFIG_APP_ID_FACETS` do), so an
-   * `appId` named in `factoryArgs` reaches the factory unpinned — a sandboxed frame could
-   * name a different app entirely. And unlike a member call, a factory argument never
-   * passes through `decodeArgs` either, so a `handler` sent this way is whatever raw value
-   * arrived, not necessarily callable.
-   *
-   * The legitimate iframe twin for each never sends a raw message naming the facet itself:
-   * `onAppForeground`/`onAppUnmount` subscribe locally to the `lifecycle` facet's
-   * `currentApp` store and invoke the handler inside the sandbox; `deepLink` calls
-   * `lifecycle.consumeDeepLink`; `clearAppStorage` calls `storage(appId).clear`;
-   * `appStorageBytes` is computed entirely from the local cache. So refusing all five here
-   * costs no legitimate caller anything — see MICA-21.
-   */
-  const DENIED_FACETS: ReadonlySet<string> = new Set([
-    'onAppForeground',
-    'onAppUnmount',
-    'deepLink',
-    'clearAppStorage',
-    'appStorageBytes'
-  ]);
+  // `DENIED_FACETS` is imported from `sdk/permissions.ts`, not declared here (MICA-33):
+  // see that file's doc comment for which facets and why. It used to be a local set with
+  // a second, independently hand-typed copy in `IframeHostServer.test.ts` — two places the
+  // same five names had to agree, with nothing checking that they did, or that a sixth
+  // bare-function facet ever gets added to either. `permissions.test.ts` now proves every
+  // *implicit* facet is classified as this shape or the safe one; a facet that instead
+  // requires a real permission (`clearAppStorage`/`appStorageBytes`) is denied here for
+  // the same shape reason but needs no such proof, since its permission already gates it.
 
   /** Throws unless `member` is reachable on `facet` from inside the sandbox. */
   function requireMember(facet: string, member: string): void {

@@ -71,35 +71,45 @@ means `check:fast` runs at full-suite speed while you're mid-edit on a `package.
 (exactly the case that built this doc). It goes back to being fast again once that edit
 is the only thing left uncommitted... or, in practice, once you commit it.
 
-## Why `pnpm test:unit` (the full one) takes ~2 minutes
+## Why `pnpm test:unit` (the full one) takes as long as it does
 
-Profiled for this ticket, on an already-warm toolchain:
+Originally profiled during MICA-29 at ~112s for the `web` project, ~70s of that being
+jsdom environment creation/teardown. Two follow-up tickets acted on that finding:
 
-| Suite                   | Wall time | Where it goes                                            |
-| ----------------------- | --------- | -------------------------------------------------------- |
-| `pnpm test:unit:server` | ~2.6s     | 831 tests, 50 files, node environment — not the problem  |
-| `pnpm test:unit:web`    | ~112s     | 958 tests, 119 files — **environment: ~70s of the 112s** |
+**MICA-32 tried swapping the DOM implementation** (`jsdom` → `happy-dom`, the usual
+faster alternative for a Vitest suite) and reverted it. It really was faster — the
+environment phase roughly halved — but it broke `lib/markdown.ts`'s DOMPurify-based XSS
+sanitization silently: a `<script>` tag, an `onerror` handler, and an `<a href>` link all
+passed straight through un-stripped under happy-dom, where jsdom correctly strips them,
+and nothing about that failure was loud enough to trust switching wholesale. `jsdom` stays
+the DOM implementation.
 
-The `web` project runs `environment: 'jsdom'` with `fileParallelism: false`
-(`web/vite.config.ts`), and that serialization is deliberate: `registry.ts` eagerly globs
-every app manifest (pulling in the whole `sdk/components.ts` barrel), and under Vitest's
-default parallel file/worker model one file's jsdom environment could tear down while
-that module graph was still resolving for another file in the same worker, throwing an
-`EnvironmentTeardownError` on a run where every assertion actually passed. Serializing
-removed the race, at the cost of ~70s of jsdom environment creation/teardown running one
-file at a time instead of overlapping.
+**MICA-32 also found the actual fix**, once the diagnosis moved from "which DOM
+implementation" to "how many files pay for one at all": most test files in this suite
+never touch the DOM. `environment: 'node'` (`web/vite.config.ts`) is now the _default_ —
+essentially free to set up — and a file opts into a real `jsdom` with a
+`// @vitest-environment jsdom` docblock as its first line. Getting the classification
+wrong is loud and immediate (`ReferenceError: document is not defined`) rather than a
+silent behavior change, which is what made this safe to adopt where swapping DOM
+implementations wasn't. Net effect: the full `web` suite dropped from ~112s to ~78s, with
+zero behavioral risk — every file that touches the DOM still gets a real one.
 
-That tradeoff is the right one to keep for now — a faster suite that's occasionally red
-for no real reason is worse than a slower one that isn't. It was **not** re-litigated as
-part of this ticket: flipping `fileParallelism` back on and re-running many times to see
-whether the race is still live is exactly the kind of experiment that can look safe for a
-dozen runs and then flake on CI, and "unit suite got 40% faster" isn't worth "unit suite
-is occasionally red for no real reason" (AGENTS.md §9's actual quality gates aren't up for
-relaxing here — see this ticket's own Non-goals). The environment cost itself is close to
-inherent to jsdom; a real fix would be evaluating a faster DOM implementation
-(`happy-dom` is the usual alternative) as a **new dependency**, which needs asking first
-per AGENTS.md §2 rule 5 — flagged here as the actual next step rather than attempted
-silently.
+`fileParallelism: false` (`web/vite.config.ts`) is unrelated and unchanged by either
+ticket: `registry.ts` eagerly globs every app manifest (pulling in the whole
+`sdk/components.ts` barrel), and under Vitest's default parallel file/worker model one
+jsdom-environment file could tear down while that module graph was still resolving for
+another file in the same worker, throwing an `EnvironmentTeardownError` on a run where
+every assertion actually passed. Serializing removed the race — now paid only by the
+`@vitest-environment jsdom` files, a smaller set than before, but the same tradeoff:
+flipping it back on to see whether the race is still live is exactly the kind of
+experiment that can look safe for a dozen runs and then flake on CI, and was explicitly
+out of scope for both tickets.
+
+**Adding a new test file:** default to no docblock (fast, `node`). Add
+`// @vitest-environment jsdom` as the file's first line if it renders a Svelte component,
+touches `document`/`window`/`localStorage` directly, or imports something that eagerly
+does (the app registry is the one to watch for). If you guess wrong, the test fails
+immediately and obviously — add the docblock and move on.
 
 ## Playwright's per-test timeout, and its escape hatch
 

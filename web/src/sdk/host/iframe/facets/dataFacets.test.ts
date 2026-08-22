@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import { fakeTransport } from '../__fixtures__/fakeTransport';
 import type { ToShell } from '../messages';

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { flushSync } from 'svelte';
 import { bootAddOn } from './boot';

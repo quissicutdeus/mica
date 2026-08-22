@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import { charge, roundedCharge, displayCharge, isBatteryDead } from './charge';
 import { get } from 'svelte/store';

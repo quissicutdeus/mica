@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { bootstrapStores, resetBootstrapState } from './bootstrap';
 import { contacts } from '../../services/contacts';

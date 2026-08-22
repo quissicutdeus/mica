@@ -79,14 +79,25 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    environment: 'jsdom',
+    // MICA-32: `node`, not `jsdom`, is the *default* — jsdom's setup/teardown cost is
+    // real (profiled at ~600ms/file) and most test files here never touch the DOM at all.
+    // A file that renders a component, touches `document`/`window`, or imports something
+    // that does (`registry.ts`'s eager manifest glob counts — see below) opts back into a
+    // real DOM with a `// @vitest-environment jsdom` docblock as its first line. Getting
+    // this wrong is loud and immediate (`ReferenceError: document is not defined`), not
+    // silent — unlike swapping the DOM implementation itself, which was tried and reverted
+    // (`docs/dev-loop.md`) because it broke DOMPurify's sanitization without any test
+    // noticing on its own.
+    environment: 'node',
     include: ['src/**/*.test.ts', 'src/**/*.spec.ts', '../shared/**/*.test.ts'],
     // `registry.ts` eagerly globs every app manifest, which transitively pulls in the
     // whole `sdk/components.ts` barrel (every UI primitive). Under Vitest's parallel
     // file/worker model, one test file's jsdom environment can tear down while that
     // module graph is still resolving for another file in the same worker, throwing
     // an EnvironmentTeardownError that Vitest counts as an unhandled failure even
-    // though every assertion passed. Serializing test files removes the race.
+    // though every assertion passed. Serializing test files removes the race. Only the
+    // `@vitest-environment jsdom` files pay this cost now, not all of them — see MICA-32
+    // before assuming this can just be turned back on.
     fileParallelism: false,
     server: {
       deps: {

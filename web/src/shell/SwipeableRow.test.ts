@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 import SwipeableRow from './SwipeableRow.svelte';

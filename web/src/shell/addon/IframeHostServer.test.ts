@@ -1,9 +1,11 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get, writable } from 'svelte/store';
 import { createInProcessHost } from '../../sdk/host/inProcess/createInProcessHost';
 import { registerFacet, resetHostsForTest } from '../../sdk/host/current';
 import { createIframeHostServer } from './IframeHostServer';
 import { defineApp } from '../../sdk/manifest';
+import { DENIED_FACETS } from '../../sdk/permissions';
 import { is24Hour as shellIs24Hour } from '../state/time';
 import type { ToFrame } from '../../sdk/host/iframe/messages';
 import '../../sdk/host/useContacts';
@@ -389,13 +391,10 @@ describe('IframeHostServer', () => {
    * no real caller anything.
    */
   describe('denied facets (MICA-21)', () => {
-    const deniedFacets = [
-      'onAppForeground',
-      'onAppUnmount',
-      'deepLink',
-      'clearAppStorage',
-      'appStorageBytes'
-    ];
+    // MICA-33: from the same set `IframeHostServer.ts`'s `requireMember` actually
+    // checks, not a second hand-typed copy — the two used to be independent, which is
+    // exactly the kind of gap this ticket closes.
+    const deniedFacets = [...DENIED_FACETS];
 
     it.each(deniedFacets)(
       "refuses a call naming '%s' directly, before the factory ever runs",

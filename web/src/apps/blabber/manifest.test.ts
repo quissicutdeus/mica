@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import { get } from 'svelte/store';
 import manifest from './manifest';

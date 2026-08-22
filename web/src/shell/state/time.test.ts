@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import { time, is24Hour, formattedTime } from './time';
 import { get } from 'svelte/store';

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import { ALL_PERMISSIONS } from '../../sdk/manifest';
 import { formatPermission } from './appInfo';

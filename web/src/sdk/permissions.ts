@@ -152,3 +152,55 @@ export function permissionOfFacet(facet: string) {
   const hook = (HOOK_OF_FACET as Record<string, keyof typeof PERMISSION_OF>)[facet];
   return hook ? { hook, needed: PERMISSION_OF[hook] } : undefined;
 }
+
+/**
+ * Facets a raw `call`/`subscribe` must never name directly, regardless of what permission
+ * they require (MICA-21/33). Each is a bare function, `void`, or a primitive — no
+ * member object to gate through the normal `requireMember`/`decodeArgs` path, so naming
+ * the facet directly reaches the factory itself with an attacker-controlled
+ * `appId`/handler and no `pinAppId`/`decodeArgs` pass on it. `onAppForeground` (MICA-21)
+ * was exactly this shape: constructing it immediately subscribes a handler onto a
+ * long-lived store, so a broken handler throws every time that store next fires, for the
+ * life of the page.
+ *
+ * Not every entry here is *implicit* — `clearAppStorage`/`appStorageBytes` require the
+ * real `storage` permission, same as `useStorage` itself, but are exactly as
+ * bare-function-shaped and unpinned as the three implicit ones once an app has that
+ * permission at all. Danger here tracks shape, not whether a manifest has to declare
+ * anything.
+ *
+ * `IframeHostServer.ts`'s `DENIED_FACETS` **is** this set — imported, not duplicated, so
+ * the enforcement and this classification cannot drift apart the way `DENIED_FACETS` and
+ * `IframeHostServer.test.ts`'s own hardcoded list used to (two copies, one test, MICA-33).
+ */
+export const DENIED_FACETS: ReadonlySet<string> = new Set([
+  'onAppForeground',
+  'onAppUnmount',
+  'deepLink',
+  'clearAppStorage',
+  'appStorageBytes'
+]);
+
+/**
+ * Implicit facets (`PERMISSION_OF[hook] === null`) confirmed to return a real object with
+ * members — safely reachable the ordinary way, pinned via
+ * `APP_SCOPED_FACETS`/`CONFIG_APP_ID_FACETS` if they take an app id, gated per-member by
+ * `requireMember`/`decodeArgs` otherwise (MICA-33).
+ *
+ * Scoped to *implicit* facets specifically, unlike `DENIED_FACETS`: a facet requiring a
+ * real declared permission is already protected by that requirement regardless of shape,
+ * so it needs no entry here — only the facets with no permission at all need a positive
+ * "confirmed safe" record for `permissions.test.ts` to check every one of them against.
+ * Together with `DENIED_FACETS`, this is what makes the check structural: a new implicit
+ * facet landing in neither set fails loudly, which is what stops a future
+ * `onAppForeground`-shaped facet from being *silently* reachable — it can still be
+ * classified wrongly, but that is a review problem, not a forgotten one.
+ */
+export const SAFE_IMPLICIT_FACETS: ReadonlySet<string> = new Set([
+  'appLevels',
+  'appAction',
+  'timer',
+  'service',
+  'sound',
+  'lifecycle'
+]);
