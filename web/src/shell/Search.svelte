@@ -173,7 +173,9 @@
     'settling'
       ? 'duration-medium ease-emphasized transition-transform'
       : ''}"
-    style="transform: translateY({(1 - effectiveProgress) * 850}px)"
+    style={$searchDragPhase === 'idle'
+      ? undefined
+      : `transform: translateY(${(1 - effectiveProgress) * 850}px)`}
     ontransitionend={(e) => {
       if (
         e.target === e.currentTarget &&
