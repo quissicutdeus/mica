@@ -12,6 +12,7 @@ import type {
 } from '../../sdk/host/iframe/messages';
 import { isCallbackRef } from '../../sdk/host/iframe/messages';
 import { themeStyleStore } from '../state/theme';
+import { is24Hour } from '../state/time';
 import { messageOf } from '../../lib/errors';
 
 export interface IframeHostServerOptions {
@@ -61,7 +62,14 @@ function constantsFor(): AddOnConstants {
     display: numbers,
     wallpaper: { presets: w.presets, defaultWallpaper: w.defaultWallpaper },
     systemHardware: { volumeStepChoices: h.volumeStepChoices },
-    theme: { defaultTheme: t.defaultTheme }
+    theme: { defaultTheme: t.defaultTheme },
+    // Read straight off the shell's own store rather than through the `clock` facet: the
+    // frame's `is24Hour` shim needs a *synchronous* answer (`formatTime`'s default reads
+    // it during the first paint, before any subscribe reply could land), and this is the
+    // one place that can give it one. A mid-session toggle of the 24-hour setting does
+    // not reach an already-booted frame — see `iframe/shims/time.ts` for why that is
+    // deliberate rather than an oversight.
+    clock: { is24Hour: get(is24Hour) }
   };
 }
 
@@ -77,6 +85,84 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
 
   const serviceAllowed = (id: unknown) =>
     typeof id === 'string' && (id === host.appId || id.startsWith(`${host.appId}_`));
+
+  /**
+   * Facets whose **first factory argument is an app id** — the app the resulting object
+   * reads and writes on behalf of.
+   *
+   * A permission check answers "may this add-on use storage at all"; it says nothing
+   * about *whose* storage. Nothing in the bundle a player installs has to be involved:
+   * the frame's own script can `window.parent.postMessage({ kind: 'call', facet:
+   * 'storage', factoryArgs: ['settings'], member: 'setItem', args: [...] })` and, before
+   * this table, the server would have handed it a `storage('settings')` — the shell's own
+   * preferences namespace — because the declared `storage` permission passed. The same
+   * raw message against `appEvents`/`appAction`/`notifications` lets one add-on listen to
+   * another app's events, run actions under its name, or read and clear its notification
+   * list.
+   *
+   * So the id is not trusted, it is *stated*: whatever arrived in `factoryArgs[0]` is
+   * replaced with `host.appId`, the same way the `back` keybind's owner is (see `call`).
+   * `notifications()` with no argument means "every app" on the in-process side, and
+   * becomes `notifications(host.appId)` here for the same reason.
+   */
+  const APP_SCOPED_FACETS: ReadonlySet<string> = new Set([
+    'storage',
+    'appStorageBytes',
+    'clearAppStorage',
+    'appEvents',
+    'notifications',
+    'appAction',
+    'persisted',
+    'deepLink'
+  ]);
+
+  /**
+   * The same pin for the one facet that carries the app id inside a config object.
+   *
+   * `appLevels`' twin never round-trips (it runs in the frame and reaches the shell
+   * through `keybinds.onKeybind`, which is pinned already), so this is defensive: a raw
+   * `call` naming the facet directly is still a message the server has to answer safely.
+   */
+  const CONFIG_APP_ID_FACETS: ReadonlySet<string> = new Set(['appLevels']);
+
+  /**
+   * Members an add-on may reach on a facet that is otherwise core-only.
+   *
+   * `appRegistry` is the whole reason this exists: `permissionOfFacet` gates the facet,
+   * not the member, so an add-on holding `app-registry` (the Store declares it, and a
+   * Store-installed add-on may declare it too) could call `installFromCatalog`,
+   * `registerAddOn` or `unregisterApp` and install or delete apps. The iframe twin refuses
+   * those locally, but the twin is code inside the sandbox — a raw `postMessage` skips it
+   * entirely, which is exactly the boundary this server is.
+   *
+   * A facet absent from this table is unrestricted; a facet present in it exposes only the
+   * members listed.
+   */
+  const MEMBER_ALLOWLIST: Partial<Record<string, readonly string[]>> = {
+    appRegistry: ['registryStore', 'getFirstBootTime']
+  };
+
+  /** Throws unless `member` is reachable on `facet` from inside the sandbox. */
+  function requireMember(facet: string, member: string): void {
+    const allowed = MEMBER_ALLOWLIST[facet];
+    if (allowed && !allowed.includes(member)) {
+      throw new Error(`[gPhone] '${facet}.${member}' is core only`);
+    }
+  }
+
+  /** `factoryArgs` with any app id in it replaced by the calling app's own. */
+  function pinAppId(facet: string, factoryArgs: readonly unknown[]): readonly unknown[] {
+    if (APP_SCOPED_FACETS.has(facet)) return [host.appId, ...factoryArgs.slice(1)];
+    if (CONFIG_APP_ID_FACETS.has(facet)) {
+      const config = factoryArgs[0];
+      const pinned =
+        config && typeof config === 'object'
+          ? { ...config, appId: host.appId }
+          : { appId: host.appId };
+      return [pinned, ...factoryArgs.slice(1)];
+    }
+    return factoryArgs;
+  }
 
   /**
    * A handful of SDK hooks are implicit — `useAppLevels`, `onAppForeground`/`onAppUnmount`
@@ -108,11 +194,14 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
         `[gPhone] '${host.appId}' may only use its own service, not '${String(factoryArgs[0])}'`
       );
     }
-    const key = `${facet}:${JSON.stringify(factoryArgs)}`;
+    // After the checks, before the cache key: an id the frame sent must never reach the
+    // factory *or* be able to name a second cache entry.
+    const pinnedArgs = pinAppId(facet, factoryArgs);
+    const key = `${facet}:${JSON.stringify(pinnedArgs)}`;
     let obj = instances.get(key);
     if (!obj) {
       const factory = (facets as unknown as Record<string, (...a: unknown[]) => unknown>)[facet];
-      obj = factory(...factoryArgs) as Record<string, unknown>;
+      obj = factory(...pinnedArgs) as Record<string, unknown>;
       instances.set(key, obj);
     }
     return obj;
@@ -167,6 +256,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
 
   async function call(msg: Extract<ToShell, { kind: 'call' }>) {
     try {
+      requireMember(msg.facet, msg.member);
       const exempt = isImplicitNavPlumbing(msg.facet, msg.member, msg.args[0]);
       const obj = instance(msg.facet, msg.factoryArgs, exempt);
       const member = obj[msg.member];
@@ -198,6 +288,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
 
   function subscribe(msg: Extract<ToShell, { kind: 'subscribe' }>) {
     try {
+      requireMember(msg.facet, msg.member);
       const obj = instance(
         msg.facet,
         msg.factoryArgs,

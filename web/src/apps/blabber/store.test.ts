@@ -512,14 +512,17 @@ describe('blabber service', () => {
 
       await searchAccounts('ad');
 
-      // `cursor`/`limit` are `createPagedStore`'s own `fetchPage`, not something this
-      // call adds — every paged read carries them. No `defaultValue`: `fetchPage` lets a
-      // failure throw so `load`/`loadMore` can decide whether to keep the existing page.
-      expect(spy).toHaveBeenCalledWith('svc', {
-        service: 'accounts',
-        action: 'search',
-        data: { app: 'blabber', q: 'ad', cursor: undefined, limit: undefined }
-      });
+      // The `searchAccounts` *route*, not the generic service route. `accounts` is not
+      // Blabber's own namespace, so `IframeHostServer`'s `serviceAllowed` refused the
+      // generic form once Blabber became an add-on, and the segment answered "No people
+      // found" for every query. `app` is stated here; `cursor`/`limit` come from
+      // `createPagedStore`'s own `fetchPage`. No `defaultValue`, so a failure throws and
+      // `load`/`loadMore` decide whether to keep the existing page.
+      expect(spy).toHaveBeenCalledWith(
+        'searchAccounts',
+        { app: 'blabber', q: 'ad', cursor: undefined, limit: undefined },
+        undefined
+      );
       expect(get(accountResults)).toHaveLength(1);
     });
 

@@ -648,6 +648,31 @@ test.describe('Blabber', () => {
       await expect(frame.locator('button', { hasText: '#losangeles' })).toHaveCount(0);
     });
 
+    /**
+     * The People segment, which is the one search that reads a *shared* service.
+     *
+     * `accountResults` paged `{ service: 'accounts' }` until MICA-16 step 4's review:
+     * Blabber is an add-on, and `IframeHostServer` pins the generic service route to the
+     * app's own namespace, so from inside the frame every People query answered "No people
+     * found" — a working-looking search that could never match. It reads through
+     * `useAccounts().searchAccounts` now, and this drives it in the frame where the refusal
+     * happened rather than in a unit test where it could not.
+     */
+    test('finding a person by handle in the People segment', async ({ page }) => {
+      const frame = addOnFrame(page, 'blabber');
+      await openSearch(page);
+      // 'people' is the default segment, so no click — the query alone is the whole path.
+      await frame.locator('input[placeholder="Search Blabber"]').fill('night');
+
+      // @nightowl / 'Night Owl' from `mockAccounts`, matched on the display name.
+      await expect(frame.getByText('@nightowl')).toBeVisible();
+      await expect(frame.locator('text=No people found')).toHaveCount(0);
+
+      // And the row opens that account's profile, which is what the segment is for.
+      await frame.getByText('@nightowl').click();
+      await expect(frame.locator('text=@nightowl').first()).toBeVisible();
+    });
+
     test('finding a Blab by body and opening it lands on the flattened view', async ({ page }) => {
       const frame = addOnFrame(page, 'blabber');
       // Not the "traffic" post (id 3, no replies): `BlabRow`'s "View thread" affordance only

@@ -504,6 +504,7 @@
                       {manifest}
                       host={hostForApp(instance.id, manifest)}
                       props={instance.props}
+                      active={isActive}
                       onKey={handleFrameKey}
                       onTyping={(t) => reportTyping(t)}
                     />

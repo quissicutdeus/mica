@@ -28,7 +28,8 @@ const payload: HydratePayload = {
     display: {},
     wallpaper: { presets: [], defaultWallpaper: null },
     systemHardware: { volumeStepChoices: [] },
-    theme: { defaultTheme: null }
+    theme: { defaultTheme: null },
+    clock: { is24Hour: false }
   }
 };
 

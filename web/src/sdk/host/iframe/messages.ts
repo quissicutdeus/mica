@@ -59,6 +59,15 @@ export interface AddOnConstants {
   wallpaper: { presets: unknown; defaultWallpaper: unknown };
   systemHardware: { volumeStepChoices: unknown };
   theme: { defaultTheme: unknown };
+  /**
+   * The 12-versus-24-hour preference, as a plain value.
+   *
+   * Unlike everything else here this one *can* change mid-session (Settings toggles it),
+   * and it is a constant anyway: `formatTime`'s default reads it synchronously during the
+   * frame's first paint, which no subscribe reply can be in time for. See
+   * `iframe/shims/time.ts`.
+   */
+  clock: { is24Hour: boolean };
 }
 
 export type ToFrame =

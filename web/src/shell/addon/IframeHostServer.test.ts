@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { createInProcessHost } from '../../sdk/host/inProcess/createInProcessHost';
 import { registerFacet, resetHostsForTest } from '../../sdk/host/current';
 import { createIframeHostServer } from './IframeHostServer';
 import { defineApp } from '../../sdk/manifest';
+import { is24Hour as shellIs24Hour } from '../state/time';
 import type { ToFrame } from '../../sdk/host/iframe/messages';
 import '../../sdk/host/useContacts';
 import '../../sdk/host/useDisplay';
@@ -87,6 +88,16 @@ describe('IframeHostServer', () => {
       kind: 'hydrate',
       payload: { appId: 'probe', permissions: ['contacts'] }
     });
+  });
+  it('hydrate carries the 24-hour clock preference as a constant', () => {
+    // The frame cannot read `is24Hour` any other way in time: `formatTime`'s default reads
+    // it synchronously during the first paint, before any subscribe reply could land, and
+    // a formatter's callers do not declare the `clock` permission a subscribe would need.
+    const { posted, from } = server();
+    from({ kind: 'hello', appId: manifest.id });
+    const hydrate = posted[0] as Extract<ToFrame, { kind: 'hydrate' }>;
+    expect(hydrate.payload.constants.clock).toEqual({ is24Hour: get(shellIs24Hour) });
+    expect(typeof hydrate.payload.constants.clock.is24Hour).toBe('boolean');
   });
   it('hydrate storage keeps the full gphone:<appId>:<key>, not stripped of its prefix', () => {
     // This suite's jsdom has no real `localStorage` (see `sdk/storage.test.ts`'s doc
@@ -179,6 +190,175 @@ describe('IframeHostServer', () => {
     from({ kind: 'invoke', handle: reply.value.__fn, args: [] });
     expect(posted[posted.length - 1]).toEqual({ kind: 'callback', cb: 3, args: [-1] });
   });
+  /**
+   * The app id in `factoryArgs[0]` is stated by the server, never taken from the frame.
+   *
+   * The frame's script is not the add-on's bundle — a raw `postMessage` can name any facet,
+   * member and factory argument it likes. Before `APP_SCOPED_FACETS` these three shapes read
+   * and wrote another app's namespace on a permission the add-on genuinely holds.
+   */
+  describe('app-scoped facets are pinned to the calling app', () => {
+    /** Every app id each stub facet was constructed with, in order. */
+    let built: { facet: string; appId: unknown }[];
+
+    beforeEach(() => {
+      built = [];
+      registerFacet(
+        'storage' as any,
+        ((appId?: unknown) => {
+          built.push({ facet: 'storage', appId });
+          return { setItem: () => true, getItem: () => null };
+        }) as any
+      );
+      registerFacet(
+        'appEvents' as any,
+        ((appId?: unknown) => {
+          built.push({ facet: 'appEvents', appId });
+          return { eventsStore: writable([]), emit: () => true };
+        }) as any
+      );
+      registerFacet(
+        'appAction' as any,
+        ((appId?: unknown) => {
+          built.push({ facet: 'appAction', appId });
+          return { busy: writable(false), notify: () => true };
+        }) as any
+      );
+      registerFacet(
+        'notifications' as any,
+        ((appId?: unknown) => {
+          built.push({ facet: 'notifications', appId });
+          return { notificationsStore: writable([]), clear: () => true };
+        }) as any
+      );
+    });
+
+    it("replaces a call's factoryArgs[0] with the server's own appId", async () => {
+      const { posted, from } = server(['storage'] as any);
+      from({
+        kind: 'call',
+        id: 1,
+        facet: 'storage',
+        factoryArgs: ['settings'],
+        member: 'setItem',
+        args: ['k', 'v']
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(posted[posted.length - 1]).toMatchObject({ ok: true });
+      // Not 'settings' — that is the shell's own preferences namespace.
+      expect(built).toEqual([{ facet: 'storage', appId: 'probe' }]);
+    });
+
+    it('pins a subscribe the same way', () => {
+      const { from } = server(['app-events'] as any);
+      from({
+        kind: 'subscribe',
+        id: 2,
+        facet: 'appEvents',
+        factoryArgs: ['mail'],
+        member: 'eventsStore'
+      });
+      expect(built).toEqual([{ facet: 'appEvents', appId: 'probe' }]);
+    });
+
+    it('pins appAction, and turns notifications(undefined) — every app — into this one', async () => {
+      const { from } = server(['notifications'] as any);
+      from({
+        kind: 'call',
+        id: 3,
+        facet: 'appAction',
+        factoryArgs: ['mail'],
+        member: 'notify',
+        args: []
+      });
+      from({
+        kind: 'call',
+        id: 4,
+        facet: 'notifications',
+        factoryArgs: [],
+        member: 'clear',
+        args: []
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(built).toEqual([
+        { facet: 'appAction', appId: 'probe' },
+        // `notifications()` with no argument is "every app's notifications" on the
+        // in-process side; a frame does not get that view.
+        { facet: 'notifications', appId: 'probe' }
+      ]);
+    });
+  });
+
+  /**
+   * `permissionOfFacet` gates the facet, not the member — so the shell, not the twin in the
+   * sandbox, has to be the thing that refuses an install.
+   */
+  describe('appRegistry members', () => {
+    beforeEach(() => {
+      registerFacet(
+        'appRegistry' as any,
+        (() => ({
+          registryStore: writable([{ id: 'probe' }]),
+          getFirstBootTime: () => 7,
+          unregisterApp: () => true,
+          installFromCatalog: () => true
+        })) as any
+      );
+    });
+
+    it('refuses a mutating member even with the app-registry permission', async () => {
+      const { posted, from } = server(['app-registry'] as any);
+      from({
+        kind: 'call',
+        id: 1,
+        facet: 'appRegistry',
+        factoryArgs: [],
+        member: 'unregisterApp',
+        args: ['mail']
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(posted[posted.length - 1]).toMatchObject({
+        kind: 'reply',
+        id: 1,
+        ok: false,
+        error: { message: expect.stringContaining('core only') }
+      });
+    });
+
+    it('still allows the two read members', async () => {
+      const { posted, from } = server(['app-registry'] as any);
+      from({
+        kind: 'subscribe',
+        id: 2,
+        facet: 'appRegistry',
+        factoryArgs: [],
+        member: 'registryStore'
+      });
+      expect(posted[posted.length - 1]).toEqual({
+        kind: 'push',
+        id: 2,
+        value: [{ id: 'probe' }]
+      });
+
+      from({
+        kind: 'call',
+        id: 3,
+        facet: 'appRegistry',
+        factoryArgs: [],
+        member: 'getFirstBootTime',
+        args: []
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(posted[posted.length - 1]).toEqual({ kind: 'reply', id: 3, ok: true, value: 7 });
+    });
+  });
+
   it('pins service ids to the app namespace', async () => {
     registerFacet(
       'service' as any,

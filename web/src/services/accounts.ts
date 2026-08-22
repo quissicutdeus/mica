@@ -85,6 +85,30 @@ export const getFollowers = (query: FollowListQuery) =>
 export const getFollowing = (query: FollowListQuery) =>
   fetchNui<FollowPage>('getFollowing', query, undefined);
 
+/**
+ * Handle / display-name search within one app, paged the same way.
+ *
+ * Here for the reason the pair above is: Blabber's Search › People segment used to page
+ * `createPagedStore('search', { service: 'accounts' })`, and `accounts` is not Blabber's
+ * own service — `IframeHostServer`'s `serviceAllowed` refuses a foreign namespace, so
+ * inside the frame that segment answered "No people found" for every query. The facet is
+ * the only door an add-on has to a shared service.
+ *
+ * Public: `citizenid` is withheld by the server's `publicColumns`, so this answers "find
+ * the account named X", never "which accounts belong to one player". No `defaultValue`,
+ * matching `getFollowers`/`getFollowing` — an empty page on a transport failure is the
+ * same lie that hid the sandbox refusal.
+ */
+export interface AccountSearchQuery {
+  app: string;
+  q: string;
+  cursor?: number;
+  limit?: number;
+}
+
+export const searchAccounts = (query: AccountSearchQuery) =>
+  fetchNui<{ rows: Account[]; nextCursor: number | null }>('searchAccounts', query, undefined);
+
 export const followAccount = (input: {
   app: string;
   follower_account_id: number;

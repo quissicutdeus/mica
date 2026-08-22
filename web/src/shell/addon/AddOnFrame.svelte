@@ -13,6 +13,7 @@
     manifest,
     host,
     props,
+    active,
     onKey,
     onTyping
   }: {
@@ -20,6 +21,8 @@
     manifest: AppManifest;
     host: Host;
     props: Record<string, unknown>;
+    /** Whether this add-on is the app on screen. Only the active one may inject keys. */
+    active: boolean;
     onKey: (k: {
       key: string;
       code: string;
@@ -73,7 +76,22 @@
           console.error(`[gPhone] add-on '${appId}' crashed:`, message);
           crashed = { message, stack };
         },
-        onKey,
+        /**
+         * A backgrounded add-on is `display:none` and `inert`, but its iframe keeps
+         * running — timers, listeners and all — and `postMessage` is not gated by any of
+         * that. Without this check a resident add-on sitting behind another app could send
+         * `key` messages that `Shell`'s `handleFrameKey` replays as real shell keybinds:
+         * Backspace to walk the foreground app back, Escape to close the phone, arrow keys
+         * into whatever has focus. So the shell decides who is talking, not the frame.
+         *
+         * `active` is read here, at delivery, rather than captured when the server was
+         * built — the `untrack` above deliberately freezes the effect's other reads, and a
+         * captured boolean would pin this to whatever was true at mount and never change.
+         * `$props()` values are live getters, so reading one inside a callback is current.
+         */
+        onKey: (k) => {
+          if (active) onKey(k);
+        },
         onTyping
       })
     );

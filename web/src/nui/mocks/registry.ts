@@ -478,11 +478,14 @@ const mockRegistry: Record<string, MockHandler> = {
   },
   /**
    * Handle/display-name autocomplete for the Search app's Accounts segment — every app's
-   * identity lives in this one table (AGENTS.md §10), so this action is `accounts:*` rather than
-   * `blabber:*` even though Blabber is the only caller today. Keyset-paged like every other
-   * reader here, `citizenid` withheld by construction: the fixture rows never carried one.
+   * identity lives in this one table (AGENTS.md §10), so this is an `accounts` route
+   * (`searchAccounts` → `accounts:search`) rather than a `blabber:*` service action, even
+   * though Blabber is the only caller today. A named row rather than the generic service
+   * route because Blabber is an add-on: the sandbox refuses a foreign service namespace, so
+   * this is read through `useAccounts().searchAccounts`. Keyset-paged like every other reader
+   * here, `citizenid` withheld by construction: the fixture rows never carried one.
    */
-  'accounts:search': ({
+  searchAccounts: ({
     app,
     q,
     cursor,

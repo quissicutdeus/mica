@@ -617,12 +617,26 @@ onBlabberKind('dm', () => {
   void loadDmThreads();
 });
 
-/** The People segment: accounts whose handle or display name matches the query, this app only. */
-// TODO(MICA-16): accountResults still pages through { service: 'accounts' }, which the
-// sandbox refuses — needs a useAccounts.search read
-export const accountResults = createPagedStore<Account>('search', { service: 'accounts' });
-export const searchAccounts = (q: string): Promise<void> =>
-  accountResults.load({ app: 'blabber', q });
+/**
+ * The People segment: accounts whose handle or display name matches the query, this app only.
+ *
+ * Read through the `accounts` facet, exactly as `followers`/`following` above are and for the
+ * same reason: this paged `{ service: 'accounts' }` through the generic route, and `accounts` is
+ * not Blabber's own namespace, so `IframeHostServer`'s `serviceAllowed` refused it once Blabber
+ * became an add-on. On screen that looked like a working search that never matched anybody —
+ * "No people found" for every query, including a handle sitting in the fixture.
+ */
+const searchPage = (payload: Record<string, unknown>) =>
+  accounts().searchAccounts({
+    app: 'blabber',
+    q: String(payload.q ?? ''),
+    cursor: payload.cursor as number | undefined,
+    limit: payload.limit as number | undefined
+  });
+
+// No explicit type argument, for the reason `followers`/`following` give above.
+export const accountResults = createPagedStore(searchPage);
+export const searchAccounts = (q: string): Promise<void> => accountResults.load({ q });
 
 /** The Blabs segment: body search, replies included. */
 export const blabResults = createPagedStore<Blab>('search', { service: 'blabber' });

@@ -65,7 +65,8 @@ const fakeConstants = {
   },
   wallpaper: { presets: [], defaultWallpaper: { type: 'color' } },
   systemHardware: { volumeStepChoices: [1, 2, 5, 10, 20] },
-  theme: { defaultTheme: { seed: '#155dfc', mode: 'dark' } }
+  theme: { defaultTheme: { seed: '#155dfc', mode: 'dark' } },
+  clock: { is24Hour: false }
 };
 
 beforeEach(() => {

@@ -65,6 +65,7 @@ describe('AddOnFrame', () => {
         manifest,
         host: createInProcessHost('probe', []),
         props: {},
+        active: true,
         onKey: vi.fn(),
         onTyping: vi.fn()
       }
@@ -83,6 +84,7 @@ describe('AddOnFrame', () => {
         manifest,
         host: createInProcessHost('probe', []),
         props: {},
+        active: true,
         onKey: vi.fn(),
         onTyping: vi.fn()
       }
@@ -115,6 +117,73 @@ describe('AddOnFrame', () => {
     expect(secondFrame).not.toBe(firstFrame);
   });
 
+  /**
+   * A backgrounded add-on's iframe keeps running — `display:none` and `inert` on the
+   * parent's wrapper stop nothing inside it, and `postMessage` is not a DOM event, so it is
+   * not gated by focus or the tab order either. Every running frame is wired to the same
+   * `handleFrameKey`, which replays what it receives as a real shell keybind: an add-on
+   * behind another app could walk the foreground app back with Backspace or close the phone
+   * with Escape.
+   */
+  it('drops a key message from a backgrounded frame, and forwards it once active', async () => {
+    const onKey = vi.fn();
+    const { container, rerender } = render(AddOnFrame, {
+      props: {
+        appId: 'probe',
+        manifest,
+        host: createInProcessHost('probe', []),
+        props: {},
+        active: false,
+        onKey,
+        onTyping: vi.fn()
+      }
+    });
+
+    const iframe = await waitForFrame(container);
+    const source = iframe.contentWindow;
+    const key = {
+      kind: 'key',
+      key: 'Backspace',
+      code: 'Backspace',
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      typing: false
+    };
+
+    await fireEvent(
+      window,
+      new MessageEvent('message', { data: key, source: source as unknown as Window })
+    );
+    expect(onKey).not.toHaveBeenCalled();
+
+    // Read at delivery, not captured at mount: the same live server must start forwarding
+    // the moment the app comes to the front, without being rebuilt.
+    // Wrapped in `{ props: ... }`: `rerender` treats a bare object carrying a `props` key
+    // as its options rather than as the new props, so the flat form would set `props` and
+    // silently leave `active` at `false` — a test that passes for the wrong reason.
+    await rerender({
+      props: {
+        appId: 'probe',
+        manifest,
+        host: createInProcessHost('probe', []),
+        props: {},
+        active: true,
+        onKey,
+        onTyping: vi.fn()
+      }
+    });
+    expect(constructions.count).toBe(1);
+
+    await fireEvent(
+      window,
+      new MessageEvent('message', { data: key, source: source as unknown as Window })
+    );
+    expect(onKey).toHaveBeenCalledTimes(1);
+    expect(onKey).toHaveBeenCalledWith(expect.objectContaining({ key: 'Backspace' }));
+  });
+
   it('does not tear down and rebuild the host server when `props` is replaced by a re-render', async () => {
     const { container, rerender } = render(AddOnFrame, {
       props: {
@@ -122,6 +191,7 @@ describe('AddOnFrame', () => {
         manifest,
         host: createInProcessHost('probe', []),
         props: { count: 1 },
+        active: true,
         onKey: vi.fn(),
         onTyping: vi.fn()
       }
@@ -137,6 +207,7 @@ describe('AddOnFrame', () => {
       manifest,
       host: createInProcessHost('probe', []),
       props: { count: 2 },
+      active: true,
       onKey: vi.fn(),
       onTyping: vi.fn()
     });

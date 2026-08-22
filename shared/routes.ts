@@ -59,6 +59,12 @@ export const ROUTES: readonly Route[] = [
   // (`useAccounts().getFollowers`), never by calling this action from inside the sandbox.
   route('getFollowers', 'accounts', 'followers'),
   route('getFollowing', 'accounts', 'following'),
+  // Handle / display-name search within one app, keyset paged. On `accounts` rather than on a
+  // social app's own service for the same reason the follow lists are: identity is shared, so a
+  // second social app gets this search for free. Read from an add-on through the `accounts`
+  // facet (`useAccounts().searchAccounts`) — Blabber's Search > People segment — never by naming
+  // this action from inside the sandbox.
+  route('searchAccounts', 'accounts', 'search'),
   // The block graph, alongside the follow one. One-directional: it hides the blocked account
   // from the blocker's own feeds and notifications and refuses a DM between the two, and does
   // not tell the blocked account anything happened.
