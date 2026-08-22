@@ -1,4 +1,5 @@
 import { debugData } from '../lib/debug';
+import { placeholderAvatar } from '../lib/placeholderImage';
 import { appRegistryStore } from './state/registry';
 import { openApp } from './state/navigation';
 
@@ -22,8 +23,7 @@ const FIXTURES: Record<TestToast, { action: string; data: unknown }> = {
       senderName: 'Ursula (Crazy Ex)',
       message: '1... 🤬😡🗯️‼️',
       phone: '555-0199',
-      avatar:
-        'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=500&auto=format&fit=crop&q=80'
+      avatar: placeholderAvatar('Ursula')
     }
   },
   contact: {

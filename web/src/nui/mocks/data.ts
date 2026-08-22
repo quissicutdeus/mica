@@ -9,6 +9,7 @@ import type {
   MediaPreview,
   PricePoint
 } from '@shared/types';
+import { placeholderAvatar, placeholderPhotos } from '../../lib/placeholderImage';
 
 /** Inject created_at / updated_at timestamps into a mock object. Accepts an optional offset (ms before now). */
 const ts = (offsetMs: number = 0) => {
@@ -16,41 +17,25 @@ const ts = (offsetMs: number = 0) => {
   return { created_at: d, updated_at: d } as const;
 };
 
-// Helper function to generate unique Robohash / DiceBear avatars
-const getUniqueAvatar = (seed: string, setIndex: number = 1) => {
-  const sets = [
-    `https://robohash.org/${encodeURIComponent(seed)}.png?set=set1&bgset=bg1`,
-    `https://robohash.org/${encodeURIComponent(seed)}.png?set=set2&bgset=bg2`,
-    `https://robohash.org/${encodeURIComponent(seed)}.png?set=set4`,
-    `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(seed)}`,
-    `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(seed)}`
-  ];
-  return sets[setIndex % sets.length];
-};
+/**
+ * A distinct avatar per contact.
+ *
+ * `setIndex` used to choose between five remote avatar services; it now only varies the
+ * seed, which is all any caller ever wanted from it — the same name with a different
+ * index has to come out looking like a different person.
+ */
+const getUniqueAvatar = (seed: string, setIndex: number = 1) =>
+  placeholderAvatar(`${seed}-${setIndex}`);
 
-// 20 distinct, non-repeating Unsplash photo URLs for gallery and image attachments
-export const sampleAvatars = [
-  'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1537151608828-ea2b11777ee8?w=500&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1561037404-61cd46aa615b?w=500&auto=format&fit=crop&q=80'
-];
+/**
+ * The gallery/attachment photo pool.
+ *
+ * Named `sampleAvatars` for its callers' sake rather than its contents' — these are
+ * photographs, not avatars, and were twenty hotlinked Unsplash URLs until MICA-35.
+ * Generated now, so `pnpm dev` and the Playwright suite render identically offline and a
+ * public demo sends no visitor's IP to a third party. See `lib/placeholderImage.ts`.
+ */
+export const sampleAvatars = placeholderPhotos('gphone-gallery', 20);
 
 /**
  * The URL goes in `data`, not `url`, and that is deliberate.
@@ -195,8 +180,7 @@ const gtaCoreContacts: Contact[] = [
     firstname: 'Ursula',
     lastname: '(Crazy Ex)',
     phone: '555-0199',
-    avatar:
-      'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=500&auto=format&fit=crop&q=80',
+    avatar: sampleAvatars[0],
     favorite: true,
     ...ts()
   },
@@ -216,8 +200,7 @@ const gtaCoreContacts: Contact[] = [
     firstname: 'Simeon',
     lastname: 'Yetarian',
     phone: '555-0144',
-    avatar:
-      'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=500&auto=format&fit=crop&q=80',
+    avatar: sampleAvatars[11],
     favorite: false,
     ...ts()
   },
@@ -237,8 +220,7 @@ const gtaCoreContacts: Contact[] = [
     firstname: 'Michael',
     lastname: 'De Santa',
     phone: '555-0166',
-    avatar:
-      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=500&auto=format&fit=crop&q=80',
+    avatar: sampleAvatars[2],
     favorite: true,
     ...ts()
   },
@@ -248,8 +230,7 @@ const gtaCoreContacts: Contact[] = [
     firstname: 'Franklin',
     lastname: 'Clinton',
     phone: '555-0177',
-    avatar:
-      'https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=500&auto=format&fit=crop&q=80',
+    avatar: sampleAvatars[14],
     favorite: true,
     ...ts()
   },
@@ -259,8 +240,7 @@ const gtaCoreContacts: Contact[] = [
     firstname: 'Lamar',
     lastname: 'Davis',
     phone: '555-0188',
-    avatar:
-      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=80',
+    avatar: sampleAvatars[1],
     favorite: true,
     ...ts()
   },
@@ -290,8 +270,7 @@ const gtaCoreContacts: Contact[] = [
     firstname: 'Tracey',
     lastname: 'De Santa',
     phone: '555-0134',
-    avatar:
-      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=500&auto=format&fit=crop&q=80',
+    avatar: sampleAvatars[3],
     favorite: false,
     ...ts()
   },
@@ -301,8 +280,7 @@ const gtaCoreContacts: Contact[] = [
     firstname: 'Ron',
     lastname: 'Jakowski',
     phone: '555-0145',
-    avatar:
-      'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=500&auto=format&fit=crop&q=80',
+    avatar: sampleAvatars[15],
     favorite: false,
     ...ts()
   },
@@ -322,8 +300,7 @@ const gtaCoreContacts: Contact[] = [
     firstname: 'Brucie',
     lastname: 'Kibbutz',
     phone: '555-0189',
-    avatar:
-      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
+    avatar: sampleAvatars[16],
     favorite: false,
     ...ts()
   }
@@ -490,7 +467,8 @@ const generatedContacts: Contact[] = Array.from({ length: 87 }, (_, i) => {
   const ln = lastNames[i % lastNames.length];
   const seed = `${fn}-${ln}-${i}`;
 
-  // Distribute between Robohash robots, monsters, cats, and DiceBear SVG avatars so every avatar URL is 100% unique!
+  // Every sixth contact has no avatar at all, so the initials fallback stays on screen
+  // somewhere in a list this long rather than only in a unit test.
   let avatar: string | undefined = undefined;
   if (i % 6 !== 0) {
     avatar = getUniqueAvatar(seed, i);
@@ -522,8 +500,7 @@ const conversationTitles: {
     name: 'Ursula (Crazy Ex)',
     phone: '555-0199',
     cit: 'gta-ursula',
-    avatar:
-      'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=500&auto=format&fit=crop&q=80'
+    avatar: sampleAvatars[0]
   },
   {
     is_group: true,
@@ -544,24 +521,21 @@ const conversationTitles: {
     name: 'LSPD Central Dispatch',
     phone: 'group',
     cit: 'group-lspd',
-    avatar:
-      'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?w=500&auto=format&fit=crop&q=80'
+    avatar: sampleAvatars[13]
   },
   {
     is_group: false,
     name: 'Simeon Yetarian',
     phone: '555-0144',
     cit: 'gta-simeon',
-    avatar:
-      'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=500&auto=format&fit=crop&q=80'
+    avatar: sampleAvatars[11]
   },
   {
     is_group: true,
     name: 'Los Santos Tuners Club',
     phone: 'group',
     cit: 'group-tuners',
-    avatar:
-      'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?w=500&auto=format&fit=crop&q=80'
+    avatar: sampleAvatars[12]
   },
   {
     is_group: false,
@@ -575,8 +549,7 @@ const conversationTitles: {
     name: 'Michael De Santa',
     phone: '555-0166',
     cit: 'gta-michael',
-    avatar:
-      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=500&auto=format&fit=crop&q=80'
+    avatar: sampleAvatars[2]
   },
   {
     is_group: true,
@@ -590,24 +563,21 @@ const conversationTitles: {
     name: 'Franklin Clinton',
     phone: '555-0177',
     cit: 'gta-franklin',
-    avatar:
-      'https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=500&auto=format&fit=crop&q=80'
+    avatar: sampleAvatars[14]
   },
   {
     is_group: false,
     name: 'Lamar Davis',
     phone: '555-0188',
     cit: 'gta-lamar',
-    avatar:
-      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=80'
+    avatar: sampleAvatars[1]
   },
   {
     is_group: true,
     name: 'Diamond Casino VIPs',
     phone: 'group',
     cit: 'group-casino',
-    avatar:
-      'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=500&auto=format&fit=crop&q=80'
+    avatar: sampleAvatars[7]
   },
   {
     is_group: false,
@@ -621,8 +591,7 @@ const conversationTitles: {
     name: "Benny's Motorworks",
     phone: 'group',
     cit: 'group-bennys',
-    avatar:
-      'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=500&auto=format&fit=crop&q=80'
+    avatar: sampleAvatars[17]
   },
   { is_group: false, name: 'Agent 14', phone: '555-0122', cit: 'gta-agent14', avatar: undefined },
   {
@@ -637,24 +606,21 @@ const conversationTitles: {
     name: 'Tracey De Santa',
     phone: '555-0134',
     cit: 'gta-tracey',
-    avatar:
-      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=500&auto=format&fit=crop&q=80'
+    avatar: sampleAvatars[3]
   },
   {
     is_group: false,
     name: 'Ron Jakowski',
     phone: '555-0145',
     cit: 'gta-ron',
-    avatar:
-      'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=500&auto=format&fit=crop&q=80'
+    avatar: sampleAvatars[15]
   },
   {
     is_group: true,
     name: 'Vanilla Unicorn VIP',
     phone: 'group',
     cit: 'group-unicorn',
-    avatar:
-      'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=500&auto=format&fit=crop&q=80'
+    avatar: sampleAvatars[5]
   },
   {
     is_group: false,

@@ -30,5 +30,18 @@ export type { CatalogEntry } from '../shell/state/catalog';
 export { AppPermissionError } from './host/protocol';
 /** @public */
 export type { Host } from './host/protocol';
+/**
+ * Deterministic placeholder imagery, for the fixtures an app renders in a browser.
+ *
+ * Exported for the same reason `createCrudStore` above is: an app cannot import by path
+ * (§2.7), and both app-side consumers of these are apps — the camera's stand-in
+ * viewfinder frames and Developer Tools' test-SMS avatar. Without this line each would
+ * have to carry its own copy of the generator, or go back to hotlinking someone else's
+ * avatar service (MICA-35).
+ *
+ * Safe to sit in the SDK because `lib/` is state-free and I/O-free by definition
+ * (AGENTS.md §8), so it bundles into a sandboxed add-on unchanged.
+ */
+export { placeholderAvatar, placeholderPhoto, placeholderPhotos } from '../lib/placeholderImage';
 export * from './types';
 export * from './version';
