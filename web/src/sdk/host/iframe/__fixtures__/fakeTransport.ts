@@ -23,7 +23,8 @@ export function fakeTransport() {
       return id;
     },
     onTheme: () => {},
-    onStorage: () => {}
+    onStorage: () => {},
+    onProps: () => {}
   };
   setClientTransport(t);
   return { sent, replies, pushes, callbacks };

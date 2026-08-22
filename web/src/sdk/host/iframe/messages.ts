@@ -82,7 +82,8 @@ export type ToFrame =
   | { kind: 'push'; id: number; value: unknown }
   | { kind: 'callback'; cb: number; args: unknown[] }
   | { kind: 'theme'; css: string }
-  | { kind: 'storage'; snapshot: Record<string, string> };
+  | { kind: 'storage'; snapshot: Record<string, string> }
+  | { kind: 'props'; props: Record<string, unknown> };
 
 export const isCallbackRef = (v: unknown): v is CallbackRef =>
   !!v && typeof v === 'object' && typeof (v as CallbackRef).__cb === 'number';

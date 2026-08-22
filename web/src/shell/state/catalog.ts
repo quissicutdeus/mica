@@ -21,6 +21,8 @@ export interface CatalogEntry {
   permissions: AppPermission[];
   /** Whether the phone should block this app while signal is out. Defaults to `false`. */
   requiresNetwork?: boolean;
+  /** MICA-24: the exact origins the installed add-on's frame may `fetch()`. See `AppManifest.networkHosts`. */
+  networkHosts?: readonly string[];
 }
 
 const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
@@ -40,7 +42,9 @@ export function isCatalogEntry(value: unknown): value is CatalogEntry {
     (v.icon === undefined || typeof v.icon === 'string') &&
     Array.isArray(v.permissions) &&
     v.permissions.every((p) => ALL_PERMISSIONS.includes(p as AppPermission)) &&
-    (v.requiresNetwork === undefined || typeof v.requiresNetwork === 'boolean')
+    (v.requiresNetwork === undefined || typeof v.requiresNetwork === 'boolean') &&
+    (v.networkHosts === undefined ||
+      (Array.isArray(v.networkHosts) && v.networkHosts.every((h) => typeof h === 'string')))
   );
 }
 

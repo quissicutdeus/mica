@@ -321,6 +321,24 @@ describe('installFromCatalog', () => {
     await expect(appRegistryStore.getAddOnSource('remote_catalog_app')).resolves.toBe(bundleCode);
   });
 
+  /**
+   * MICA-24: `installVerified` used to build the manifest from `entry` field by field,
+   * naming each one explicitly — so a field added to `CatalogEntry`/`AppManifest` after
+   * that list was written (this one) silently never reached a real installed add-on's
+   * manifest, even though `isCatalogEntry` validated it and `defineApp` accepted it.
+   */
+  it('carries networkHosts from the catalog entry into the installed manifest', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode));
+
+    const result = await appRegistryStore.installFromCatalog({
+      ...catalogEntry,
+      requiresNetwork: true,
+      networkHosts: ['https://api.example.com']
+    });
+
+    expect(result.manifest.networkHosts).toEqual(['https://api.example.com']);
+  });
+
   it('refuses to import a bundle whose hash does not match', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode + '// tampered'));
 

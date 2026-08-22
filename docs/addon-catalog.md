@@ -19,6 +19,8 @@ interface CatalogEntry {
   permissions: AppPermission[];
   /** Whether the phone should block this app while signal is out. Defaults to `false`. */
   requiresNetwork?: boolean;
+  /** The exact origins the installed app's frame may `fetch()`. Defaults to none (MICA-24). */
+  networkHosts?: string[];
 }
 ```
 

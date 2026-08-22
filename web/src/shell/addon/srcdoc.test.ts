@@ -29,4 +29,33 @@ describe('srcdocFor', () => {
     const scriptCloses = html.match(/<\/script>/g) ?? [];
     expect(scriptCloses).toHaveLength(2);
   });
+
+  /** MICA-24: the frame's `connect-src`, derived from `AppManifest.networkHosts`. */
+  describe('connect-src', () => {
+    it('blocks outbound fetch entirely when no hosts are given', () => {
+      const html = srcdocFor('x');
+      expect(html).toContain(
+        '<meta http-equiv="Content-Security-Policy" content="connect-src \'none\'">'
+      );
+    });
+
+    it('blocks outbound fetch entirely for an explicitly empty list, same as none', () => {
+      const html = srcdocFor('x', []);
+      expect(html).toContain(
+        '<meta http-equiv="Content-Security-Policy" content="connect-src \'none\'">'
+      );
+    });
+
+    it('allows exactly the declared origins, space-separated', () => {
+      const html = srcdocFor('x', ['https://api.example.com', 'https://cdn.example.com:8443']);
+      expect(html).toContain(
+        '<meta http-equiv="Content-Security-Policy" content="connect-src https://api.example.com https://cdn.example.com:8443">'
+      );
+    });
+
+    it('places the CSP meta before any script tag, so it governs the whole document', () => {
+      const html = srcdocFor('x', ['https://api.example.com']);
+      expect(html.indexOf('Content-Security-Policy')).toBeLessThan(html.indexOf('<script'));
+    });
+  });
 });

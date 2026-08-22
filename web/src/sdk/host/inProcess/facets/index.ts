@@ -42,7 +42,7 @@ import type { storage, appStorageBytes, clearAppStorage } from './storage';
 import type { persisted } from './persisted';
 import type { service } from './service';
 import type { timer } from './timer';
-import type { onAppForeground, onAppUnmount } from './lifecycle';
+import type { onAppForeground, onAppUnmount, lifecycle } from './lifecycle';
 
 /** One key per facet function. The runtime object living behind this shape is the `Proxy`
  * exported as `facets` from `../../current.ts`. */
@@ -88,4 +88,5 @@ export interface Facets {
   timer: typeof timer;
   onAppForeground: typeof onAppForeground;
   onAppUnmount: typeof onAppUnmount;
+  lifecycle: typeof lifecycle;
 }

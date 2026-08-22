@@ -36,6 +36,33 @@ test.describe('Home screen search', () => {
     expect(bar.y).toBeGreaterThan(first.y + first.height);
   });
 
+  test('opening the sheet does not scroll the phone frame (MICA-18)', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+
+    // The input grabs focus while still off-screen, mid-`transition:fly` — without
+    // `preventScroll`, the browser's default focus-follows-scroll yanked the phone
+    // frame's own scroll position to "reveal" it, which read as the whole home screen
+    // sliding down and back over the course of the open animation.
+    const maxScrollTop = await page.evaluate(() => {
+      const el = document.querySelector('.rounded-frame-inner');
+      return new Promise<number>((resolve) => {
+        let max = 0;
+        let frames = 0;
+        function tick() {
+          if (el instanceof HTMLElement) max = Math.max(max, el.scrollTop);
+          frames += 1;
+          if (frames < 30) requestAnimationFrame(tick);
+          else resolve(max);
+        }
+        requestAnimationFrame(tick);
+        document.querySelector<HTMLButtonElement>('button[aria-label="Search"]')?.click();
+      });
+    });
+
+    expect(maxScrollTop).toBe(0);
+  });
+
   test('typing an app name finds the app and opens it', async ({ page }) => {
     await openSearch(page);
     await type(page, 'calcul');

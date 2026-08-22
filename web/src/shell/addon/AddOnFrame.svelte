@@ -39,9 +39,37 @@
   let crashed = $state<{ message: string; stack: string | null } | null>(null);
   let generation = $state(0); // re-keys the iframe on Restart
   let frame = $state<HTMLIFrameElement | undefined>();
+  // Whether this frame's last forwarded report was `typing: true` — tracked so a
+  // frame backgrounded mid-type doesn't strand `setTyping(true)` forever, since it
+  // never gets a DOM blur of its own to send the matching `false`.
+  let lastTypingSent = $state(false);
+  // The live server, once built below — `$state` so the props-push effect further down
+  // re-evaluates the moment it becomes available, in case a deep link updates `props`
+  // before the frame has finished loading (see that effect's own comment).
+  let server = $state<ReturnType<typeof createIframeHostServer>>();
 
   onMount(() => {
     void appRegistryStore.getAddOnSource(appId).then((s) => (source = s));
+  });
+
+  $effect(() => {
+    if (active || !lastTypingSent) return;
+    lastTypingSent = false;
+    onTyping(false);
+  });
+
+  /**
+   * MICA-25: a deep link into an add-on that is already open changes `props` (a new
+   * object from `openApp`'s merge — see `shell/state/navigation.ts`) without remounting
+   * this component, since apps are resident. The effect below deliberately does not react
+   * to `props` — rebuilding the server on every identity change would mean the frame's one
+   * `hello` never gets answered again — so this is the one place `props` *is* tracked, to
+   * forward the update over the wire instead. Reading `server` too means this also fires
+   * once the frame finishes loading if a deep link happened to land before it did.
+   */
+  $effect(() => {
+    const p = props;
+    server?.pushProps(p);
   });
 
   /**
@@ -54,9 +82,8 @@
    * would then have its live server disposed and rebuilt on every re-open, bound to an
    * iframe that already ran its one `hello` and has no way to send another — the frame
    * would go permanently deaf and blind to hydrate/theme/storage pushes. (A `props`
-   * value that changes *after* mount, from a deep link into an already-open add-on,
-   * is out of scope here; it would need its own push message to the frame, not a
-   * server rebuild — left for a follow-up.)
+   * value that changes *after* mount, from a deep link into an already-open add-on, is
+   * handled by the effect above instead, over its own `props` push message.)
    */
   $effect(() => {
     const el = frame;
@@ -65,7 +92,7 @@
     const win = el.contentWindow;
     if (!win) return;
 
-    const server = untrack(() =>
+    const built = untrack(() =>
       createIframeHostServer({
         host,
         manifest,
@@ -92,13 +119,23 @@
         onKey: (k) => {
           if (active) onKey(k);
         },
-        onTyping
+        // Gated the same way as `onKey` above, for the same reason: a backgrounded
+        // frame keeps running and `postMessage` isn't gated by `inert`/`display:none`,
+        // so an unchecked `typing` message would let it toggle the player's game-input
+        // capture at will.
+        onTyping: (typing) => {
+          if (!active) return;
+          lastTypingSent = typing;
+          onTyping(typing);
+        }
       })
     );
-    window.addEventListener('message', server.handle);
+    window.addEventListener('message', built.handle);
+    server = built;
     return () => {
-      window.removeEventListener('message', server.handle);
-      server.dispose();
+      window.removeEventListener('message', built.handle);
+      built.dispose();
+      server = undefined;
     };
   });
 </script>
@@ -125,7 +162,7 @@
       title={manifest.name}
       data-app={appId}
       sandbox="allow-scripts"
-      srcdoc={srcdocFor(source)}
+      srcdoc={srcdocFor(source, manifest.networkHosts)}
       class="h-full w-full border-0 bg-transparent"
     ></iframe>
   {/key}

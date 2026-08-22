@@ -5,7 +5,8 @@ import { registerHost, setSystemHost } from '../current';
 import { HOST_CONTEXT_KEY } from '../protocol';
 import { hydrateStorage } from './storageCache';
 import { setConstants } from './constants';
-import { remoteCall } from './remote';
+import { lifecycle } from './facets/lifecycle';
+import { liveAddOnProps, setLiveAddOnProps } from './liveProps.svelte';
 import type { AppComponent, AppManifest } from '../../manifest';
 
 // MICA-16 step 4: the add-on's entry point, called by the bundle every add-on ships
@@ -80,10 +81,21 @@ export async function bootAddOn(manifest: AppManifest, App: AppComponent): Promi
   registerHost(host);
   setSystemHost(host);
 
+  // `onback` lives outside `setLiveAddOnProps`'s tracked keys deliberately (see
+  // `liveProps.svelte.ts`) — it is host-owned and must survive every deep-link props push,
+  // not just the first.
+  liveAddOnProps.onback = () => void lifecycle(payload.appId).goHome();
+  setLiveAddOnProps(payload.props);
+  // MICA-25: re-opening an already-running add-on by a new deep link pushes updated
+  // props over the wire rather than remounting the frame — `AddOnFrame.svelte` never tore
+  // down and rebuilt the server for a `props` identity change, so there was previously no
+  // way for a second deep link to reach an app that was already open.
+  transport.onProps(setLiveAddOnProps);
+
   const target = document.getElementById('app') ?? document.body;
   mount(App, {
     target,
-    props: { onback: () => void remoteCall('navigation', [], 'goHome'), ...payload.props },
+    props: liveAddOnProps,
     context: new Map([[HOST_CONTEXT_KEY, host]])
   });
 }

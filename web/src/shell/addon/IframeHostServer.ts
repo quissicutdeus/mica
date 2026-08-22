@@ -101,9 +101,12 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
    * list.
    *
    * So the id is not trusted, it is *stated*: whatever arrived in `factoryArgs[0]` is
-   * replaced with `host.appId`, the same way the `back` keybind's owner is (see `call`).
-   * `notifications()` with no argument means "every app" on the in-process side, and
-   * becomes `notifications(host.appId)` here for the same reason.
+   * replaced with `host.appId`. `notifications()` with no argument means "every app" on
+   * the in-process side, and becomes `notifications(host.appId)` here for the same reason.
+   *
+   * `lifecycle` (MICA-27) is here for the same reason: its `onBack` takes only a
+   * handler as a call argument now, with no owner argument left to smuggle a lie through —
+   * ownership comes entirely from this pin.
    */
   const APP_SCOPED_FACETS: ReadonlySet<string> = new Set([
     'storage',
@@ -113,15 +116,17 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     'notifications',
     'appAction',
     'persisted',
-    'deepLink'
+    'deepLink',
+    'lifecycle'
   ]);
 
   /**
    * The same pin for the one facet that carries the app id inside a config object.
    *
    * `appLevels`' twin never round-trips (it runs in the frame and reaches the shell
-   * through `keybinds.onKeybind`, which is pinned already), so this is defensive: a raw
-   * `call` naming the facet directly is still a message the server has to answer safely.
+   * through `lifecycle.onBack`, which is pinned already — see `APP_SCOPED_FACETS`), so
+   * this is defensive: a raw `call` naming the facet directly is still a message the
+   * server has to answer safely.
    */
   const CONFIG_APP_ID_FACETS: ReadonlySet<string> = new Set(['appLevels']);
 
@@ -142,8 +147,38 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     appRegistry: ['registryStore', 'getFirstBootTime']
   };
 
+  /**
+   * Facets a raw `call`/`subscribe` must never name directly.
+   *
+   * Each of these is a bare function, not a factory with members: `onAppForeground` and
+   * `onAppUnmount` take the caller's own handler as a factory argument, `deepLink` and
+   * `clearAppStorage` likewise, and `appStorageBytes` is a plain computation. None of them
+   * pass through `pinAppId` (only `APP_SCOPED_FACETS`/`CONFIG_APP_ID_FACETS` do), so an
+   * `appId` named in `factoryArgs` reaches the factory unpinned — a sandboxed frame could
+   * name a different app entirely. And unlike a member call, a factory argument never
+   * passes through `decodeArgs` either, so a `handler` sent this way is whatever raw value
+   * arrived, not necessarily callable.
+   *
+   * The legitimate iframe twin for each never sends a raw message naming the facet itself:
+   * `onAppForeground`/`onAppUnmount` subscribe locally to the `lifecycle` facet's
+   * `currentApp` store and invoke the handler inside the sandbox; `deepLink` calls
+   * `lifecycle.consumeDeepLink`; `clearAppStorage` calls `storage(appId).clear`;
+   * `appStorageBytes` is computed entirely from the local cache. So refusing all five here
+   * costs no legitimate caller anything — see MICA-21.
+   */
+  const DENIED_FACETS: ReadonlySet<string> = new Set([
+    'onAppForeground',
+    'onAppUnmount',
+    'deepLink',
+    'clearAppStorage',
+    'appStorageBytes'
+  ]);
+
   /** Throws unless `member` is reachable on `facet` from inside the sandbox. */
   function requireMember(facet: string, member: string): void {
+    if (DENIED_FACETS.has(facet)) {
+      throw new Error(`[gPhone] '${facet}' is not reachable directly`);
+    }
     const allowed = MEMBER_ALLOWLIST[facet];
     if (allowed && !allowed.includes(member)) {
       throw new Error(`[gPhone] '${facet}.${member}' is core only`);
@@ -165,30 +200,14 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   }
 
   /**
-   * A handful of SDK hooks are implicit — `useAppLevels`, `onAppForeground`/`onAppUnmount`
-   * (`PERMISSION_OF[...] === null`, no manifest declaration needed) — but their iframe
-   * twins wire themselves up by calling into a *different*, permission-gated facet
-   * (`keybinds.onKeybind('back', ...)` for the physical Back key; `navigation.currentApp`
-   * / `navigation.goHome` for foreground detection and the same Back key's fallback to
-   * leaving the app). An in-process app never hits this: its twin of the same hooks calls
-   * the shell's internal functions directly, with no facet/permission indirection at all.
-   * Without this exemption every add-on — none of which declare `navigation` or `keybinds`
-   * — would have this baseline navigation plumbing silently fail (a caught rejection or a
-   * subscribe that never pushes), the same way `useAppLevels` did before this was added.
+   * Resolve (and cache) the facet object for `facet(factoryArgs)`, after the permission
+   * check — `host.require` is a no-op for an implicit (`null`) permission, `lifecycle`
+   * included, so there is no separate "skip the check" path to maintain (MICA-27).
    */
-  const isImplicitNavPlumbing = (facet: string, member: string, firstArg?: unknown) =>
-    (facet === 'keybinds' && member === 'onKeybind' && firstArg === 'back') ||
-    (facet === 'navigation' && (member === 'currentApp' || member === 'goHome'));
-
-  /** Resolve (and cache) the facet object for `facet(factoryArgs)`, after the permission check. */
-  function instance(
-    facet: string,
-    factoryArgs: readonly unknown[],
-    skipPermission = false
-  ): Record<string, unknown> {
+  function instance(facet: string, factoryArgs: readonly unknown[]): Record<string, unknown> {
     const perm = permissionOfFacet(facet);
     if (!perm) throw new Error(`[gPhone] unknown facet '${facet}'`);
-    if (!skipPermission) host.require(perm.needed, perm.hook);
+    host.require(perm.needed, perm.hook);
     if (facet === 'service' && !serviceAllowed(factoryArgs[0])) {
       throw new Error(
         `[gPhone] '${host.appId}' may only use its own service, not '${String(factoryArgs[0])}'`
@@ -257,22 +276,11 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   async function call(msg: Extract<ToShell, { kind: 'call' }>) {
     try {
       requireMember(msg.facet, msg.member);
-      const exempt = isImplicitNavPlumbing(msg.facet, msg.member, msg.args[0]);
-      const obj = instance(msg.facet, msg.factoryArgs, exempt);
+      const obj = instance(msg.facet, msg.factoryArgs);
       const member = obj[msg.member];
       if (typeof member !== 'function')
         throw new Error(`[gPhone] '${msg.facet}.${msg.member}' is not callable`);
       const args = decodeArgs(msg.args);
-      if (exempt && msg.facet === 'keybinds') {
-        // `onKeybind(actionId, handler, appId)`'s third argument says which app owns the
-        // binding, and the exemption above waived the `keybinds` permission check to get
-        // here. A frame that sent its own `appId` would therefore be registering a `back`
-        // handler against *another* app's name with no permission at all, so whatever it
-        // sent is discarded and the server states the owner itself. `args` may be shorter
-        // than three (the twin omits a trailing `undefined`), hence the assignment rather
-        // than a splice.
-        args[2] = host.appId;
-      }
       const value = await member.apply(obj, args);
       if (!disposed) post({ kind: 'reply', id: msg.id, ok: true, value: encodeResult(value) });
     } catch (e) {
@@ -289,11 +297,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   function subscribe(msg: Extract<ToShell, { kind: 'subscribe' }>) {
     try {
       requireMember(msg.facet, msg.member);
-      const obj = instance(
-        msg.facet,
-        msg.factoryArgs,
-        isImplicitNavPlumbing(msg.facet, msg.member)
-      );
+      const obj = instance(msg.facet, msg.factoryArgs);
       const member = obj[msg.member];
       if (!isStore(member)) throw new Error(`[gPhone] '${msg.facet}.${msg.member}' is not a store`);
       subscriptions.set(
@@ -372,6 +376,15 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       subscriptions.clear();
       handles.clear();
       instances.clear();
+    },
+    /**
+     * MICA-25: a new deep link into an add-on that is already open. `AddOnFrame.svelte`
+     * calls this instead of rebuilding the server — the frame already ran its one `hello`
+     * and has no way to receive a second, so there is nothing here to hydrate again, only
+     * a props update to push to the sandbox's own reactive props object.
+     */
+    pushProps(props: Record<string, unknown>) {
+      if (!disposed) post({ kind: 'props', props });
     }
   };
 }

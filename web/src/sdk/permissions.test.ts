@@ -111,11 +111,20 @@ describe('the permission table is total', () => {
     text: readFileSync(join(HOST, file), 'utf8')
   }));
 
-  // Kit components (`sdk/ui`, not `sdk/host`) are not exported from `sdk/host` at all —
-  // their disclosure comes from the host hook they call internally, not from an
-  // `assertCapability` call of their own. They stay in `PERMISSION_OF` for
-  // `sdkImportsOf`/manifest checking above, but have no host-side symbol to locate here.
-  const KIT_COMPONENTS = new Set(['PhotoPickerModal', 'ReportDialog']);
+  // Rows with no host-side symbol of their own — their disclosure comes from something
+  // else entirely, not from an `assertCapability`/`guarded()` call under their own name.
+  // They stay in `PERMISSION_OF` for `sdkImportsOf`/manifest checking above (or, for
+  // `lifecycle`, for `permissionOfFacet` to resolve at all), but have nothing to locate
+  // here.
+  //
+  // - `PhotoPickerModal`/`ReportDialog` (`sdk/ui`, not `sdk/host`): disclosed via the host
+  //   hook they call internally.
+  // - `lifecycle` (MICA-27): no public hook at all, by design — it is the implicit,
+  //   no-permission plumbing `onAppForeground`, `useDeepLink`, `onback`, and
+  //   `useAppLevels`'s Back binding are each built out of, and each of *those* already
+  //   goes through its own `guarded()` call under its own name. A `lifecycle` wrapper
+  //   here would just be a second, redundant gate on the same capability.
+  const DISCLOSED_ELSEWHERE = new Set(['PhotoPickerModal', 'ReportDialog', 'lifecycle']);
 
   /**
    * Find where `name` is exported from `sdk/host`, and the slice of source from that
@@ -148,7 +157,7 @@ describe('the permission table is total', () => {
 
   it('every non-kit row names a symbol that is actually exported from sdk/host', () => {
     const stale = Object.keys(PERMISSION_OF)
-      .filter((name) => !KIT_COMPONENTS.has(name))
+      .filter((name) => !DISCLOSED_ELSEWHERE.has(name))
       .filter((name) => !findDefinition(name))
       .map((name) => `${name}: no export found under sdk/host`);
     expect(stale, 'remove it from sdk/permissions.ts, or fix the name').toEqual([]);
@@ -165,7 +174,7 @@ describe('the permission table is total', () => {
     for (const [name, expected] of Object.entries(PERMISSION_OF)) {
       // implicit (null) rows still resolve through guarded() — they just carry no
       // permission to check — so they are covered here too, not skipped.
-      if (KIT_COMPONENTS.has(name)) continue; // disclosed via the hook it calls, not its own gate
+      if (DISCLOSED_ELSEWHERE.has(name)) continue;
       if (Array.isArray(expected)) {
         wrong.push(`${name}: row is an array but a host hook must gate exactly one name`);
         continue;
@@ -191,14 +200,16 @@ describe('HOOK_OF_FACET', () => {
     const names = readdirSync(dir)
       .filter((f) => f !== 'index.ts' && f.endsWith('.ts'))
       .map((f) => f.replace(/\.svelte\.ts$|\.ts$/, ''));
-    // storage.ts exports three facets; lifecycle.ts exports two.
+    // storage.ts exports three facets; lifecycle.ts exports three (MICA-27 added
+    // `lifecycle` itself alongside onAppForeground/onAppUnmount).
     const expected = new Set([
       ...names.filter((n) => !['storage', 'lifecycle'].includes(n)),
       'storage',
       'appStorageBytes',
       'clearAppStorage',
       'onAppForeground',
-      'onAppUnmount'
+      'onAppUnmount',
+      'lifecycle'
     ]);
     expect(new Set(Object.keys(HOOK_OF_FACET))).toEqual(expected);
     for (const hook of Object.values(HOOK_OF_FACET)) expect(hook in PERMISSION_OF).toBe(true);

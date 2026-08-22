@@ -28,14 +28,10 @@ export function appLevels(config: AppLevelsConfig): Twin {
     else config.onback?.();
   };
 
-  const releasePromise = remoteCall<() => void>(
-    'keybinds',
-    [],
-    'onKeybind',
-    'back',
-    back,
-    config.appId.toLowerCase()
-  );
+  // A direct `remoteCall` rather than the `lifecycle` twin helper (MICA-27): the twin's
+  // `onBack` is cast to the inProcess (synchronous) return shape, but the value crossing
+  // the wall really is a promise, and `release` below needs to `.then()` it.
+  const releasePromise = remoteCall<() => void>('lifecycle', [config.appId], 'onBack', back);
   const release = () => void releasePromise.then((off) => off());
   try {
     onDestroy(release);

@@ -79,6 +79,13 @@ describe('isCatalogEntry', () => {
     expect(isCatalogEntry({ ...validEntry, requiresNetwork: 'yes' })).toBe(false);
   });
 
+  it('accepts networkHosts as an optional array of strings (MICA-24)', () => {
+    expect(isCatalogEntry({ ...validEntry, networkHosts: ['https://api.example.com'] })).toBe(true);
+    expect(isCatalogEntry({ ...validEntry, networkHosts: [] })).toBe(true);
+    expect(isCatalogEntry({ ...validEntry, networkHosts: 'https://api.example.com' })).toBe(false);
+    expect(isCatalogEntry({ ...validEntry, networkHosts: [123] })).toBe(false);
+  });
+
   it('rejects an entry with no permissions array', () => {
     const { permissions: _permissions, ...withoutPermissions } = validEntry;
     expect(isCatalogEntry(withoutPermissions)).toBe(false);

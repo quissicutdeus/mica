@@ -22,26 +22,28 @@ TypeScript is **split by package** — see §3. Exact versions: `pnpm list`.
 
 Run from the **repo root** unless noted.
 
-| Task                         | Command                                      | Pre-approved?            |
-| ---------------------------- | -------------------------------------------- | ------------------------ |
-| **Every gate, in order**     | **`pnpm verify`**                            | Yes                      |
-| Every gate except e2e        | `pnpm verify --quick`                        | Yes                      |
-| Scaffold an app              | `pnpm new:app <id> [--service]`              | Yes                      |
-| Install                      | `pnpm install --frozen-lockfile`             | Yes                      |
-| Format (write)               | `pnpm format`                                | Yes                      |
-| Format (check)               | `pnpm format:check`                          | Yes                      |
-| Dead code scan               | `pnpm deadcode`                              | Yes                      |
-| Typecheck **everything**     | `pnpm typecheck`                             | Yes                      |
-| Typecheck one target         | `pnpm typecheck:client` · `:server` · `:web` | Yes                      |
-| Unit tests **everything**    | `pnpm test:unit`                             | Yes                      |
-| Unit tests one project       | `pnpm test:unit:web` · `:server`             | Yes                      |
-| E2E tests                    | `pnpm test:e2e`                              | Yes                      |
-| Install browsers (first run) | `pnpm test:e2e:install`                      | Yes                      |
-| Generate per-app SQL         | `pnpm generate:sql`                          | Yes                      |
-| Generate + dev reset SQL     | `pnpm generate:sql:reset`                    | Ask first — destructive  |
-| Full build                   | `pnpm build`                                 | Yes                      |
-| Dev (both watchers)          | `pnpm dev`                                   | Ask first — long-running |
-| Any mutating git             | —                                            | **No. See §2.**          |
+| Task                                              | Command                                      | Pre-approved?            |
+| ------------------------------------------------- | -------------------------------------------- | ------------------------ |
+| **Every gate, in order**                          | **`pnpm verify`**                            | Yes                      |
+| Every gate except e2e                             | `pnpm verify --quick`                        | Yes                      |
+| Fast loop: format + typecheck + changed unit only | `pnpm check:fast`                            | Yes                      |
+| Fail fast if no dev server is warm                | `pnpm dev:check`                             | Yes                      |
+| Scaffold an app                                   | `pnpm new:app <id> [--service]`              | Yes                      |
+| Install                                           | `pnpm install --frozen-lockfile`             | Yes                      |
+| Format (write)                                    | `pnpm format`                                | Yes                      |
+| Format (check)                                    | `pnpm format:check`                          | Yes                      |
+| Dead code scan                                    | `pnpm deadcode`                              | Yes                      |
+| Typecheck **everything**                          | `pnpm typecheck`                             | Yes                      |
+| Typecheck one target                              | `pnpm typecheck:client` · `:server` · `:web` | Yes                      |
+| Unit tests **everything**                         | `pnpm test:unit`                             | Yes                      |
+| Unit tests one project                            | `pnpm test:unit:web` · `:server`             | Yes                      |
+| E2E tests                                         | `pnpm test:e2e`                              | Yes                      |
+| Install browsers (first run)                      | `pnpm test:e2e:install`                      | Yes                      |
+| Generate per-app SQL                              | `pnpm generate:sql`                          | Yes                      |
+| Generate + dev reset SQL                          | `pnpm generate:sql:reset`                    | Ask first — destructive  |
+| Full build                                        | `pnpm build`                                 | Yes                      |
+| Dev (both watchers)                               | `pnpm dev`                                   | Ask first — long-running |
+| Any mutating git                                  | —                                            | **No. See §2.**          |
 
 `pnpm typecheck` fans out to all three targets via `concurrently`. **Use it, not `pnpm typecheck:web`** —
 the targets run _different TypeScript versions_ (§3), so a web-only check proves nothing about
@@ -93,6 +95,24 @@ Commands the **user** runs, not you — suggest, don't invoke:
 - `pnpm test:e2e:headed` — live visual run, single worker
 
 **Formatting**: Prettier is configured root-wide with `prettier-plugin-svelte`. Run `pnpm format` to format code across the workspace.
+
+### The fast local loop
+
+`pnpm verify` is the gate (§9), not the thing to run after every edit — a cold run costs
+minutes. For one file or feature: `pnpm --filter web exec vitest run <path>` (web unit),
+`pnpm exec vitest run <path>` (server/client unit, root `vitest.config.ts`),
+`pnpm --filter web exec playwright test <path>` (one e2e spec). `pnpm check:fast` is the
+named middle ground — format, full typecheck, and only the unit tests Vitest's `--changed`
+selects from your uncommitted diff — and is what the pre-push hook runs now; `pnpm
+verify:quick` is still the CI-grade check, for an explicit run before opening a PR. Keep
+`pnpm dev` running in a terminal for the session — Playwright and `scripts/verify.js` both
+reuse whatever is already listening on the configured port rather than paying its ~2.5 min
+cold start — and use `pnpm dev:check` to fail fast with a clear message if nothing is up
+yet, instead of a test silently eating that cold start to tell you the same thing. A
+Playwright test that legitimately needs more than the suite's 10s default timeout should
+override its own with `test.setTimeout(N)` rather than raising the suite-wide default.
+Full detail, including a `--changed` caveat worth knowing before it surprises you and why
+`pnpm test:unit` costs what it costs, is in [`docs/dev-loop.md`](docs/dev-loop.md).
 
 ---
 

@@ -230,3 +230,64 @@ describe('defineApp: keybinds', () => {
     expect(manifest.keybinds).toBeUndefined();
   });
 });
+
+describe('defineApp: networkHosts', () => {
+  it('refuses declared hosts without requiresNetwork: true', () => {
+    // The CSP allowlist this becomes (`srcdoc.ts`) is real network egress; declaring
+    // hosts while also claiming the app needs no network at all is a contradiction that
+    // should fail loudly rather than ship a manifest nobody would have written on purpose.
+    expect(() =>
+      defineApp({
+        id: 'sneaky',
+        color: 'bg-blue-600',
+        icon: null,
+        core: false,
+        networkHosts: ['https://api.example.com']
+      })
+    ).toThrow(/declares 'networkHosts' without 'requiresNetwork: true'/);
+  });
+
+  it('refuses a host that is not a bare https origin', () => {
+    expect(() =>
+      defineApp({
+        id: 'malformed',
+        color: 'bg-blue-600',
+        icon: null,
+        core: false,
+        requiresNetwork: true,
+        networkHosts: ['https://api.example.com/path']
+      })
+    ).toThrow(/not a bare https origin/);
+  });
+
+  it('accepts a well-formed origin alongside requiresNetwork: true', () => {
+    const manifest = defineApp({
+      id: 'networked',
+      color: 'bg-blue-600',
+      icon: null,
+      core: false,
+      requiresNetwork: true,
+      networkHosts: ['https://api.example.com', 'https://cdn.example.com:8443']
+    });
+
+    expect(manifest.networkHosts).toEqual([
+      'https://api.example.com',
+      'https://cdn.example.com:8443'
+    ]);
+  });
+
+  it('lets requiresNetwork: true stand alone with no hosts declared', () => {
+    // The common, honest case today: an app needs the in-game cell signal for its own
+    // ordinary server-proxied calls, but never calls `fetch()` itself, so there is no
+    // host to declare.
+    const manifest = defineApp({
+      id: 'signal_only',
+      color: 'bg-blue-600',
+      icon: null,
+      core: false,
+      requiresNetwork: true
+    });
+
+    expect(manifest.networkHosts).toBeUndefined();
+  });
+});

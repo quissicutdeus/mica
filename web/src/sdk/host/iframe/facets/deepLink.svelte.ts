@@ -1,5 +1,5 @@
 import { registerFacet } from '../../current';
-import { remoteCall } from '../remote';
+import { lifecycle } from './lifecycle';
 
 /**
  * Implementation of the `useDeepLink` facet — see the inProcess twin for the usage
@@ -8,7 +8,10 @@ import { remoteCall } from '../remote';
  */
 export function deepLink(appId: string, handle: () => boolean): void {
   $effect(() => {
-    if (handle()) void remoteCall('navigation', [], 'consumeDeepLink', appId);
+    // MICA-27: routed through the implicit `lifecycle` facet, not a raw call naming
+    // `navigation` directly — `useDeepLink` is implicit and this app may hold no
+    // `navigation` permission at all (see MICA-31, the bug this replaces).
+    if (handle()) void lifecycle(appId).consumeDeepLink();
   });
 }
 

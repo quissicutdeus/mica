@@ -21,6 +21,9 @@
     "test:unit": "concurrently -c \"cyan,magenta\" -n \"web,server\" \"pnpm:test:unit:web\" \"pnpm:test:unit:server\"",
     "test:unit:web": "pnpm --filter web test:unit",
     "test:unit:server": "vitest run",
+    "test:unit:changed": "concurrently -c \"cyan,magenta\" -n \"web,server\" \"pnpm:test:unit:web:changed\" \"pnpm:test:unit:server:changed\"",
+    "test:unit:web:changed": "pnpm --filter web test:unit:changed",
+    "test:unit:server:changed": "vitest run --changed",
     "test:watch:server": "vitest",
     "test:e2e:install": "pnpm --filter web test:e2e:install",
     "test:e2e": "pnpm --filter web test:e2e",
@@ -32,13 +35,15 @@
     "new:app": "node scripts/new-app.js",
     "verify": "node scripts/verify.js",
     "verify:quick": "node scripts/verify.js --quick",
+    "check:fast": "node scripts/generate-barrels.js && pnpm format:check && pnpm typecheck && pnpm test:unit:changed",
+    "dev:check": "node scripts/dev-check.js",
     "prepare": "simple-git-hooks"
   },
   "author": "quissicutdeus",
   "license": "AGPL-3.0-or-later",
   "simple-git-hooks": {
     "pre-commit": "pnpm exec lint-staged",
-    "pre-push": "pnpm verify:quick"
+    "pre-push": "pnpm check:fast"
   },
   "lint-staged": {
     "*.{ts,svelte,js,json,md,css}": "prettier --write"

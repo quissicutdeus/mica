@@ -94,8 +94,15 @@
 
   // Focus follows the sheet, not the mount: the input only exists while open, and it has
   // to be the focused element for typing to reach it without a second tap.
+  //
+  // `preventScroll: true` (MICA-18): the sheet mounts with the input still off-screen,
+  // mid-`transition:fly`. Without it, the browser's default focus-follows-scroll kicks in
+  // on `PhoneFrame.svelte`'s clipped `.rounded-frame-inner` — an `overflow: hidden`
+  // ancestor can still be scrolled programmatically — yanking its `scrollTop` up to bring
+  // the not-yet-visible input into view, then easing back to 0 as the sheet finishes
+  // flying in. That scroll is what read as the whole home screen sliding down and back.
   $effect(() => {
-    if ($isSearchOpen && inputRef) inputRef.focus();
+    if ($isSearchOpen && inputRef) inputRef.focus({ preventScroll: true });
   });
 
   /**

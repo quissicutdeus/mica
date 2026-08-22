@@ -119,6 +119,24 @@ describe('IframeHostServer', () => {
     const hydrate = posted[0] as Extract<ToFrame, { kind: 'hydrate' }>;
     expect(hydrate.payload.storage).toEqual({ [storageKey('probe', 'k')]: '"v"' });
   });
+  /**
+   * MICA-25: `AddOnFrame.svelte` calls this instead of rebuilding the server when a
+   * deep link into an already-open add-on changes `props` — the frame already ran its
+   * one `hello`, so there is no second hydrate to send, only this push.
+   */
+  it('pushProps posts a props message, and is a no-op once disposed', () => {
+    const { posted, from, s } = server();
+    from({ kind: 'hello', appId: manifest.id });
+    posted.length = 0;
+
+    s.pushProps({ label: 'from a deep link' });
+    expect(posted).toEqual([{ kind: 'props', props: { label: 'from a deep link' } }]);
+
+    posted.length = 0;
+    s.dispose();
+    s.pushProps({ label: 'too late' });
+    expect(posted).toHaveLength(0);
+  });
   it('calls a member and replies with the awaited value', async () => {
     const { posted, from } = server();
     from({
@@ -359,6 +377,78 @@ describe('IframeHostServer', () => {
     });
   });
 
+  /**
+   * MICA-21: `onAppForeground`, `onAppUnmount`, `deepLink`, `clearAppStorage` and
+   * `appStorageBytes` are bare-function facets whose factory takes an app id and (for the
+   * first three) a handler, neither of which passes through `pinAppId` or `decodeArgs`. A
+   * raw message naming one of them directly could hand it another app's id and a
+   * non-callable "handler" — for `onAppForeground`, that handler throws every time the
+   * named app is foregrounded, for the life of the page, since nothing ever unsubscribes
+   * it. None of these facets is ever named this way by a legitimate iframe twin (each
+   * routes through a different, already-gated facet instead), so refusing all five costs
+   * no real caller anything.
+   */
+  describe('denied facets (MICA-21)', () => {
+    const deniedFacets = [
+      'onAppForeground',
+      'onAppUnmount',
+      'deepLink',
+      'clearAppStorage',
+      'appStorageBytes'
+    ];
+
+    it.each(deniedFacets)(
+      "refuses a call naming '%s' directly, before the factory ever runs",
+      async (facet) => {
+        const factory = vi.fn();
+        registerFacet(facet as any, factory as any);
+        const { posted, from } = server([]);
+        from({
+          kind: 'call',
+          id: 1,
+          facet: facet as any,
+          factoryArgs: ['some-other-app', { __cb: 1 }],
+          member: 'anything',
+          args: []
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(posted[posted.length - 1]).toMatchObject({
+          kind: 'reply',
+          id: 1,
+          ok: false,
+          error: { message: expect.stringContaining('not reachable directly') }
+        });
+        expect(factory).not.toHaveBeenCalled();
+      }
+    );
+
+    it("refuses a subscribe naming 'onAppForeground' directly, so a poisoned handler never reaches currentApp", () => {
+      const factory = vi.fn();
+      registerFacet('onAppForeground' as any, factory as any);
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { posted, from } = server([]);
+      // A real attack: naming another app's id with a handler that is not a function at
+      // all. If this ever reached the factory, `currentApp.subscribe` would throw calling
+      // it the next time 'other-app' comes to the foreground.
+      from({
+        kind: 'subscribe',
+        id: 1,
+        facet: 'onAppForeground' as any,
+        factoryArgs: ['other-app', 'not-a-function'],
+        member: 'irrelevant'
+      });
+
+      expect(posted).toHaveLength(0);
+      expect(factory).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("add-on 'probe' subscribe failed"),
+        expect.any(Error)
+      );
+    });
+  });
+
   it('pins service ids to the app namespace', async () => {
     registerFacet(
       'service' as any,
@@ -387,28 +477,37 @@ describe('IframeHostServer', () => {
     expect(posted[1]).toMatchObject({ ok: false, error: { name: 'Error' } });
   });
   /**
-   * The `isImplicitNavPlumbing` bypass, from both sides.
-   *
-   * `useAppLevels` / `onAppForeground` are implicit hooks (no manifest declaration), but
-   * their iframe twins reach the shell through the permission-gated `keybinds` and
-   * `navigation` facets — so the server waives the check for exactly that plumbing. These
-   * cases pin down both what the waiver lets through and what it must not.
+   * MICA-27: the `lifecycle` facet replaced `isImplicitNavPlumbing`, a hand-maintained
+   * facet/member allow-list keyed on literal strings — MICA-31 was exactly that list
+   * missing an entry (`consumeDeepLink`) a legitimate implicit caller needed. `lifecycle`
+   * needs no such list: its own permission is `null`, so every member is implicit by
+   * construction, and it is pinned via `APP_SCOPED_FACETS` like `storage`/`deepLink`. The
+   * general `navigation`/`keybinds` facets it replaced borrowed members from now require
+   * their real permissions unconditionally — no exemption left at all.
    */
-  describe('implicit navigation plumbing', () => {
-    /** Records the owner `onKeybind` was handed, which is the whole point of case (a). */
-    let owners: (string | undefined)[];
+  describe('the lifecycle facet', () => {
+    /** Records the owner `onBack` was handed, which is the whole point of the pin test. */
+    let backOwners: (string | undefined)[];
+    let consumeDeepLinkCalls: string[];
 
     beforeEach(() => {
-      owners = [];
+      backOwners = [];
+      consumeDeepLinkCalls = [];
       registerFacet(
-        'keybinds' as any,
-        (() => ({
-          onKeybind: (_actionId: string, _handler: () => void, appId?: string) => {
-            owners.push(appId);
+        'lifecycle' as any,
+        ((appId: string) => ({
+          currentApp: writable({ id: 'probe' }),
+          onBack: (_handler: () => void) => {
+            backOwners.push(appId);
             return () => {};
+          },
+          goHome: () => {},
+          consumeDeepLink: () => {
+            consumeDeepLinkCalls.push(appId);
           }
         })) as any
       );
+      registerFacet('keybinds' as any, (() => ({ onKeybind: () => () => {} })) as any);
       registerFacet(
         'navigation' as any,
         (() => ({
@@ -419,26 +518,57 @@ describe('IframeHostServer', () => {
       );
     });
 
-    it("registers a 'back' binding with no permission, under the server's appId rather than the one the frame sent", async () => {
+    it("calls onBack with no permission, under the server's appId rather than the one the frame sent", async () => {
       const { posted, from } = server([]);
       from({
         kind: 'call',
         id: 1,
-        facet: 'keybinds',
-        factoryArgs: [],
-        member: 'onKeybind',
-        args: ['back', { __cb: 7 }, 'mail']
+        facet: 'lifecycle',
+        factoryArgs: ['mail'],
+        member: 'onBack',
+        args: [{ __cb: 7 }]
       });
       await Promise.resolve();
       await Promise.resolve();
 
       expect(posted[0]).toMatchObject({ kind: 'reply', id: 1, ok: true });
       // Not 'mail'. The frame does not get to name the owner of a binding it was let
-      // through the permission gate to register.
-      expect(owners).toEqual(['probe']);
+      // through with no permission at all to register.
+      expect(backOwners).toEqual(['probe']);
     });
 
-    it('refuses any other keybind with no permission', async () => {
+    it('subscribes currentApp with no permission', () => {
+      const { posted, from } = server([]);
+      from({ kind: 'subscribe', id: 1, facet: 'lifecycle', factoryArgs: [], member: 'currentApp' });
+      expect(posted[0]).toEqual({ kind: 'push', id: 1, value: { id: 'probe' } });
+    });
+
+    it('calls goHome and consumeDeepLink with no permission', async () => {
+      const { posted, from } = server([]);
+      from({
+        kind: 'call',
+        id: 1,
+        facet: 'lifecycle',
+        factoryArgs: [],
+        member: 'goHome',
+        args: []
+      });
+      from({
+        kind: 'call',
+        id: 2,
+        facet: 'lifecycle',
+        factoryArgs: [],
+        member: 'consumeDeepLink',
+        args: []
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(posted.map((m) => (m as any).ok)).toEqual([true, true]);
+      expect(consumeDeepLinkCalls).toEqual(['probe']);
+    });
+
+    it('refuses a raw keybinds.onKeybind call with no permission, even naming "back" — the old exemption is gone', async () => {
       const { posted, from } = server([]);
       from({
         kind: 'call',
@@ -446,7 +576,7 @@ describe('IframeHostServer', () => {
         facet: 'keybinds',
         factoryArgs: [],
         member: 'onKeybind',
-        args: ['screenshot', { __cb: 7 }]
+        args: ['back', { __cb: 7 }]
       });
       await Promise.resolve();
       await Promise.resolve();
@@ -457,28 +587,19 @@ describe('IframeHostServer', () => {
         ok: false,
         error: { name: 'AppPermissionError' }
       });
-      expect(owners).toEqual([]);
     });
 
-    it('refuses navigation.openApp with no permission, but pushes navigation.currentApp', async () => {
+    it('refuses navigation.goHome and navigation.currentApp with no permission — the old exemption is gone', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
       const { posted, from } = server([]);
       from({
         kind: 'call',
         id: 1,
         facet: 'navigation',
         factoryArgs: [],
-        member: 'openApp',
-        args: ['mail']
+        member: 'goHome',
+        args: []
       });
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(posted[0]).toMatchObject({
-        kind: 'reply',
-        id: 1,
-        ok: false,
-        error: { name: 'AppPermissionError' }
-      });
-
       from({
         kind: 'subscribe',
         id: 2,
@@ -486,7 +607,17 @@ describe('IframeHostServer', () => {
         factoryArgs: [],
         member: 'currentApp'
       });
-      expect(posted[1]).toEqual({ kind: 'push', id: 2, value: { id: 'probe' } });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(posted[0]).toMatchObject({
+        kind: 'reply',
+        id: 1,
+        ok: false,
+        error: { name: 'AppPermissionError' }
+      });
+      // `subscribe` logs and drops a refusal rather than replying — no push for id 2 ever.
+      expect(posted.some((m) => 'id' in m && m.id === 2)).toBe(false);
     });
   });
 

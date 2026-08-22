@@ -222,6 +222,27 @@ export interface AppManifest {
    * permission list. `Shell.svelte`'s "Not Network" gate reads this, not `permissions`.
    */
   requiresNetwork?: boolean;
+  /**
+   * MICA-24: the exact origins a `core: false` add-on's sandboxed frame may `fetch()`.
+   *
+   * The frame has no Content-Security-Policy otherwise, so an add-on's own JS — not just
+   * the code an author wrote, but anything a supply-chain compromise slipped into its
+   * bundle — could silently call out to any host on the internet. `srcdoc.ts` turns this
+   * list into the frame's `connect-src`; an empty or absent list means `connect-src
+   * 'none'`, blocking outbound `fetch()` entirely.
+   *
+   * Declaring this without also declaring `requiresNetwork: true` is refused by
+   * `defineApp` — asking for real network egress while saying the app does not need
+   * network at all is a contradiction, not an oversight to let through quietly. The
+   * reverse is fine and common: an app can need `requiresNetwork` (in-game cell signal,
+   * for its ordinary server-proxied calls) without ever calling `fetch()` itself, and
+   * should simply leave this empty rather than declare a host it does not use.
+   *
+   * Full origins only (`https://api.example.com`, no path) — `defineApp` rejects
+   * anything else, since a bare hostname or a wildcard is not a valid CSP source and
+   * `srcdoc.ts` does no correction of its own.
+   */
+  networkHosts?: readonly string[];
   /** ISO date string when app was installed */
   installedAt?: string;
   /** ISO date string when app was last updated */
@@ -327,6 +348,28 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
         `can be uninstalled, and is deliberately not inferred — it used to be derived from ` +
         `'author', which made a display string load-bearing.`
     );
+  }
+
+  /**
+   * MICA-24. Only the "declared hosts with no network need" direction is refused —
+   * see `networkHosts`'s own doc for why the reverse (network but no hosts) is fine.
+   */
+  const networkHosts = manifest.networkHosts ?? [];
+  if (networkHosts.length > 0 && manifest.requiresNetwork !== true) {
+    throw new Error(
+      `gPhone App Manifest error: '${id}' declares 'networkHosts' without 'requiresNetwork: ` +
+        `true'. A CSP allowlist for network the app claims not to need is a contradiction.`
+    );
+  }
+  const ORIGIN_PATTERN = /^https:\/\/[a-z0-9.-]+(:\d+)?$/i;
+  for (const host of networkHosts) {
+    if (!ORIGIN_PATTERN.test(host)) {
+      throw new Error(
+        `gPhone App Manifest error: '${id}' declares 'networkHosts' entry '${host}', which ` +
+          `is not a bare https origin (scheme, host, optional port — no path). CSP's ` +
+          `connect-src takes an origin, and 'srcdoc.ts' does not correct malformed entries.`
+      );
+    }
   }
 
   const author = manifest.author || 'gPhone';

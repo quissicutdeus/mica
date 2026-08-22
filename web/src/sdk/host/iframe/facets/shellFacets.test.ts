@@ -20,6 +20,7 @@ import { devTools as inDevTools } from '../../inProcess/facets/devTools';
 import { display as inDisplay } from '../../inProcess/facets/display';
 import { keybinds as inKeybinds } from '../../inProcess/facets/keybinds';
 import { navigation as inNavigation } from '../../inProcess/facets/navigation';
+import { lifecycle as inLifecycle } from '../../inProcess/facets/lifecycle';
 import { notificationSettings as inNotificationSettings } from '../../inProcess/facets/notificationSettings';
 import { phoneNotification as inPhoneNotification } from '../../inProcess/facets/phoneNotification';
 import { sound as inSound } from '../../inProcess/facets/sound';
@@ -46,7 +47,7 @@ import { wallpaper } from './wallpaper';
 import { storage, clearAppStorage } from './storage';
 import { persisted } from './persisted';
 import { timer } from './timer';
-import { onAppForeground } from './lifecycle';
+import { onAppForeground, lifecycle } from './lifecycle';
 
 /** A namespaced storage key. Built, not quoted: a `gphone:` literal reads as a net event to `server/__tests__/eventNames.test.ts`. */
 const storageKey = (app: string, key: string) => `gphone:${app}:${key}`;
@@ -103,6 +104,10 @@ describe('iframe shell facet twins — key parity with inProcess', () => {
   it('storage(appId): same keys as inProcess', () => {
     expect(keys(storage('blabber'))).toEqual(keys(inStorage('blabber')));
   });
+
+  it('lifecycle(appId): same keys as inProcess', () => {
+    expect(keys(lifecycle('blabber'))).toEqual(keys(inLifecycle('blabber')));
+  });
 });
 
 describe('appLevels — the back handler special case', () => {
@@ -115,18 +120,20 @@ describe('appLevels — the back handler special case', () => {
     ]
   });
 
-  it('registers back via keybinds.onKeybind with a callback ref', () => {
+  /** MICA-27: routed through the `lifecycle` facet, not a raw `keybinds` call. */
+  it('registers back via lifecycle.onBack with a callback ref', () => {
     const f = fakeTransport();
     setConstants(fakeConstants);
     appLevels(config());
 
     const msg = f.sent.find(
-      (m) => m.kind === 'call' && m.facet === 'keybinds' && m.member === 'onKeybind'
+      (m) => m.kind === 'call' && m.facet === 'lifecycle' && m.member === 'onBack'
     ) as Extract<ToShell, { kind: 'call' }>;
     expect(msg).toBeDefined();
-    expect(msg.args[0]).toBe('back');
-    expect(msg.args[1]).toMatchObject({ __cb: expect.any(Number) });
-    expect(msg.args[2]).toBe('notes');
+    // Ownership comes entirely from the pinned factory arg now, not a call argument a
+    // frame could otherwise lie about — see `IframeHostServer.ts`'s `APP_SCOPED_FACETS`.
+    expect(msg.factoryArgs).toEqual(['notes']);
+    expect(msg.args[0]).toMatchObject({ __cb: expect.any(Number) });
   });
 
   it('back() closes the deepest open level', () => {
@@ -178,14 +185,14 @@ describe('timer — verbatim from inProcess', () => {
   });
 });
 
-describe('onAppForeground — transition-only, over the navigation twin store', () => {
+describe('onAppForeground — transition-only, over the lifecycle twin store', () => {
   it('fires once on a push into foreground and not on a repeat push', () => {
     const f = fakeTransport();
     const handler = vi.fn();
     onAppForeground('probe', handler);
 
     const sub = f.sent.find(
-      (m) => m.kind === 'subscribe' && m.facet === 'navigation' && m.member === 'currentApp'
+      (m) => m.kind === 'subscribe' && m.facet === 'lifecycle' && m.member === 'currentApp'
     ) as Extract<ToShell, { kind: 'subscribe' }>;
     expect(sub).toBeDefined();
     const push = f.pushes.get(sub.id)!;

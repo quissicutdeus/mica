@@ -171,6 +171,20 @@ version of dead-zone degradation exploitable and fixing it afterwards.
   that runs in that sandboxed frame, not in the shell's own context; the shell hash-verifies the
   bundle text it was handed before booting it. §2.9 is what stands behind server-side actions
   either way — the server does not care which app is asking.
+- **An add-on's outbound network is a declared per-app allowlist, not "any host" (MICA-24).**
+  Before this, the sandboxed frame had no Content-Security-Policy at all: an opaque origin with
+  `allow-scripts` can still `fetch()` any URL, so a compromised bundle (or a supply-chain
+  compromise inside a legitimate one) could exfiltrate to, or beacon, anywhere on the internet
+  with nothing in place to stop it. `AppManifest.networkHosts` (`sdk/manifest.ts`) is the list
+  of exact `https://` origins an add-on may reach; `srcdoc.ts` turns it into the frame's
+  `connect-src`, and no hosts means `connect-src 'none'` — outbound `fetch()` blocked entirely,
+  which is the default every add-on gets unless it declares otherwise. Declaring a host without
+  also declaring `requiresNetwork: true` is refused by `defineApp`, so an app cannot get real
+  network egress by accident or through a field nobody meant to combine. Deliberately narrow:
+  only `connect-src` is restricted — `script-src`/`style-src`/etc. are left alone, since
+  tightening those risks breaking Svelte's own runtime-injected `<style>` tags or the inlined
+  module script itself, and there is no browser or game client in this environment to verify
+  against if it did.
 
 ---
 

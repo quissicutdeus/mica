@@ -12,6 +12,8 @@ export interface ClientTransport {
   registerCallback(fn: (...args: unknown[]) => unknown): number;
   onTheme(cb: (css: string) => void): void;
   onStorage(cb: (snapshot: Record<string, string>) => void): void;
+  /** A deep link into an already-running add-on — see `liveProps.svelte.ts`. */
+  onProps(cb: (props: Record<string, unknown>) => void): void;
 }
 
 /** Build the transport over `window.parent`. Messages whose `source !== window.parent` are dropped. */
@@ -21,6 +23,7 @@ export function createClientTransport(win: Window = window): ClientTransport {
   const callbacks = new Map<number, (...a: unknown[]) => unknown>();
   const themeCbs = new Set<(css: string) => void>();
   const storageCbs = new Set<(s: Record<string, string>) => void>();
+  const propsCbs = new Set<(p: Record<string, unknown>) => void>();
   let nextCb = 1;
   let resolveHydrate: (p: HydratePayload) => void = () => {};
   const hydrate = new Promise<HydratePayload>((r) => (resolveHydrate = r));
@@ -51,6 +54,9 @@ export function createClientTransport(win: Window = window): ClientTransport {
       case 'storage':
         for (const cb of storageCbs) cb(msg.snapshot);
         break;
+      case 'props':
+        for (const cb of propsCbs) cb(msg.props);
+        break;
     }
   });
 
@@ -74,6 +80,9 @@ export function createClientTransport(win: Window = window): ClientTransport {
     },
     onStorage: (cb) => {
       storageCbs.add(cb);
+    },
+    onProps: (cb) => {
+      propsCbs.add(cb);
     }
   };
 }

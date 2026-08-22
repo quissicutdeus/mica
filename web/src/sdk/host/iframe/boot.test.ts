@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { flushSync } from 'svelte';
 import { bootAddOn } from './boot';
 import { resetHostsForTest } from '../current';
 import UsesContacts from '../__fixtures__/UsesContacts.svelte';
+import PropsProbe from '../__fixtures__/PropsProbe.svelte';
 import type { AppManifest } from '../../manifest';
 import type { HydratePayload, ToShell } from './messages';
 
@@ -101,6 +103,38 @@ describe('bootAddOn', () => {
     const errors = sent.filter((m) => m.kind === 'error');
     expect(errors[0]).toMatchObject({ kind: 'error', message: 'nobody awaited me' });
     expect((errors[0] as Extract<ToShell, { kind: 'error' }>).stack).toBe(reason.stack);
+  });
+
+  it('updates a running app when the shell pushes new deep-link props (MICA-25)', async () => {
+    // Re-opening an already-running add-on by a new deep link used to leave it showing
+    // its original props: the frame already ran its one `hello`, so nothing hydrated it
+    // again. A `props` push into the same reactive object `mount()` was given is what
+    // makes a second deep link actually reach the running app.
+    const { parent } = stubParent();
+    const target = document.createElement('div');
+    target.id = 'app';
+    document.body.appendChild(target);
+
+    const bootDone = bootAddOn({ ...manifest, id: 'props_probe' }, PropsProbe);
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { kind: 'hydrate', payload: { ...payload, appId: 'props_probe', props: {} } },
+        source: parent as unknown as Window
+      })
+    );
+    await bootDone;
+
+    expect(document.body.textContent).toContain('none');
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { kind: 'props', props: { label: 'from a deep link' } },
+        source: parent as unknown as Window
+      })
+    );
+    flushSync();
+
+    expect(document.body.textContent).toContain('from a deep link');
   });
 
   it('drops a held key repeat rather than forwarding it', async () => {

@@ -654,6 +654,7 @@ function createAppRegistry() {
       icon: entry.icon ?? null,
       permissions: entry.permissions,
       requiresNetwork: entry.requiresNetwork ?? false,
+      networkHosts: entry.networkHosts ?? [],
       isRemote: true,
       bundleUrl: entry.bundleUrl,
       core: false

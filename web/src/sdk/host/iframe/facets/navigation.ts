@@ -8,8 +8,7 @@ export function navigation(): Twin {
     currentApp: store('navigation', [], 'currentApp', { id: '', props: {} }),
     openApp: fn('navigation', [], 'openApp'),
     goHome: fn('navigation', [], 'goHome'),
-    closePhone: fn('navigation', [], 'closePhone'),
-    consumeDeepLink: fn('navigation', [], 'consumeDeepLink')
+    closePhone: fn('navigation', [], 'closePhone')
   } as unknown as Twin;
 }
 

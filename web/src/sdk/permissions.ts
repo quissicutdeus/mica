@@ -47,6 +47,12 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   onAppForeground: null,
   onAppUnmount: null,
   useService: null,
+  // MICA-27: no public hook of its own — the wall-crossing plumbing `onAppForeground`,
+  // `useDeepLink`, the `onback` prop, and `useAppLevels`'s physical Back binding are built
+  // out of. See `IframeHostServer.ts`'s `APP_SCOPED_FACETS` doc for why this replaced a
+  // string allow-list (`isImplicitNavPlumbing`) instead of exempting specific members of
+  // the general `navigation`/`keybinds` facets.
+  lifecycle: null,
   // `sound.ts`'s own doc comment: this facet is playback of a fixed built-in effect set,
   // nothing else, "used by AppIcon, ToggleSwitch and SegmentedControl" — shared UI kit
   // widgets every app, core or not, is expected to render with. Gating it behind a
@@ -138,7 +144,8 @@ export const HOOK_OF_FACET = {
   service: 'useService',
   timer: 'useTimer',
   onAppForeground: 'onAppForeground',
-  onAppUnmount: 'onAppUnmount'
+  onAppUnmount: 'onAppUnmount',
+  lifecycle: 'lifecycle'
 } as const satisfies Record<string, keyof typeof PERMISSION_OF>;
 
 export function permissionOfFacet(facet: string) {

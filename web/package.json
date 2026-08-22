@@ -12,6 +12,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json --fail-on-warnings && tsc -p tsconfig.node.json",
     "test": "vitest run",
     "test:unit": "vitest run",
+    "test:unit:changed": "vitest run --changed",
     "test:watch": "vitest",
     "test:e2e:install": "playwright install",
     "test:e2e": "playwright test",

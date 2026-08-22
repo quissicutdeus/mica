@@ -184,6 +184,143 @@ describe('AddOnFrame', () => {
     expect(onKey).toHaveBeenCalledWith(expect.objectContaining({ key: 'Backspace' }));
   });
 
+  it('drops a typing message from a backgrounded frame, and forwards it once active', async () => {
+    const onTyping = vi.fn();
+    const { container, rerender } = render(AddOnFrame, {
+      props: {
+        appId: 'probe',
+        manifest,
+        host: createInProcessHost('probe', []),
+        props: {},
+        active: false,
+        onKey: vi.fn(),
+        onTyping
+      }
+    });
+
+    const iframe = await waitForFrame(container);
+    const source = iframe.contentWindow;
+    const typingMessage = { kind: 'typing', typing: true };
+
+    await fireEvent(
+      window,
+      new MessageEvent('message', { data: typingMessage, source: source as unknown as Window })
+    );
+    expect(onTyping).not.toHaveBeenCalled();
+
+    await rerender({
+      props: {
+        appId: 'probe',
+        manifest,
+        host: createInProcessHost('probe', []),
+        props: {},
+        active: true,
+        onKey: vi.fn(),
+        onTyping
+      }
+    });
+
+    await fireEvent(
+      window,
+      new MessageEvent('message', { data: typingMessage, source: source as unknown as Window })
+    );
+    expect(onTyping).toHaveBeenCalledTimes(1);
+    expect(onTyping).toHaveBeenCalledWith(true);
+  });
+
+  it('sends a synthetic `typing: false` when a frame is backgrounded mid-type', async () => {
+    const onTyping = vi.fn();
+    const { container, rerender } = render(AddOnFrame, {
+      props: {
+        appId: 'probe',
+        manifest,
+        host: createInProcessHost('probe', []),
+        props: {},
+        active: true,
+        onKey: vi.fn(),
+        onTyping
+      }
+    });
+
+    const iframe = await waitForFrame(container);
+    const source = iframe.contentWindow;
+
+    await fireEvent(
+      window,
+      new MessageEvent('message', {
+        data: { kind: 'typing', typing: true },
+        source: source as unknown as Window
+      })
+    );
+    expect(onTyping).toHaveBeenCalledWith(true);
+    onTyping.mockClear();
+
+    // The frame never gets a chance to send `typing: false` itself once backgrounded —
+    // it has no real DOM blur event of its own — so leaving the app must clear it.
+    await rerender({
+      props: {
+        appId: 'probe',
+        manifest,
+        host: createInProcessHost('probe', []),
+        props: {},
+        active: false,
+        onKey: vi.fn(),
+        onTyping
+      }
+    });
+
+    expect(onTyping).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  /**
+   * MICA-25: a second deep link into an already-open add-on hands this component a new
+   * `props` object (`openApp`'s merge, `shell/state/navigation.ts`) without remounting
+   * it — apps are resident. Before this, nothing forwarded that change to the frame at
+   * all: the host effect deliberately ignores `props` (see its own comment) to avoid
+   * rebuilding the live server on every re-open.
+   */
+  it('pushes a `props` message into the frame when `props` is replaced by a re-render', async () => {
+    const { container, rerender } = render(AddOnFrame, {
+      props: {
+        appId: 'probe',
+        manifest,
+        host: createInProcessHost('probe', []),
+        props: { first: true },
+        active: true,
+        onKey: vi.fn(),
+        onTyping: vi.fn()
+      }
+    });
+
+    const iframe = await waitForFrame(container);
+    const contentWindow = iframe.contentWindow;
+    expect(contentWindow).toBeTruthy();
+    // Spying rather than asserting on it directly: the live server also pushes the
+    // *initial* props once it finishes building (the props-push effect tracks `server` as
+    // well as `props` — see its own comment), and that can happen anywhere between mount
+    // and here, too timing-sensitive to pin down. Only the re-render's own push matters.
+    const postMessage = vi.spyOn(contentWindow!, 'postMessage');
+
+    await rerender({
+      props: {
+        appId: 'probe',
+        manifest,
+        host: createInProcessHost('probe', []),
+        props: { second: true },
+        active: true,
+        onKey: vi.fn(),
+        onTyping: vi.fn()
+      }
+    });
+
+    await waitFor(() =>
+      expect(postMessage).toHaveBeenCalledWith(
+        { kind: 'props', props: { second: true } },
+        expect.anything()
+      )
+    );
+  });
+
   it('does not tear down and rebuild the host server when `props` is replaced by a re-render', async () => {
     const { container, rerender } = render(AddOnFrame, {
       props: {
