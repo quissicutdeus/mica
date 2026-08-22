@@ -1,6 +1,14 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = process.env.PORT || 5173;
+/**
+ * 4173 — vite preview's port, deliberately NOT the dev server's 5173.
+ *
+ * The suite serves a built bundle now (see `webServer` below), and keeping it off the dev
+ * port means a `pnpm dev` a developer has open is never mistaken for it. Before, they
+ * shared 5173 and `reuseExistingServer` would silently hand the whole run to whatever
+ * happened to be listening.
+ */
+const PORT = process.env.E2E_PORT || 4173;
 
 export default defineConfig({
   testDir: './e2e',
@@ -67,22 +75,38 @@ export default defineConfig({
     }
   ],
   webServer: {
-    command: 'pnpm dev',
+    /**
+     * A built bundle, not `pnpm dev`.
+     *
+     * Vite's dev server transforms modules on demand. With more than one worker that is a
+     * compile stampede: every worker asks for a cold module graph at once and each request
+     * queues behind the others, so specs time out over compilation rather than over
+     * anything they assert. It was the dominant cause of 20 of the 22 failures a
+     * multi-worker local run produced (MICA-36), none of which reproduced serially.
+     *
+     * Building first moves that work to one deterministic step before any worker starts,
+     * and `scripts/verify.js` no longer needs the `warmServer()` browser-navigation hack
+     * that existed solely to force compilation up front.
+     *
+     * `--mode development` and not a plain production build: `window.triggerTestToast` and
+     * `window.appRegistryStore` live behind `import.meta.env.DEV` in `shell/devHarness.ts`,
+     * and `keybinds.spec.ts` and `error_boundary.spec.ts` drive both. A production bundle
+     * drops them and those specs fail on a global that is simply not there. Mode keeps the
+     * semantics identical to the dev server while still producing static output.
+     */
+    command: `pnpm build:e2e && pnpm preview --port ${PORT} --strictPort`,
     url: `http://127.0.0.1:${PORT}`,
     /**
-     * Always reuse, including in CI.
+     * Safe to reuse now, and no longer load-bearing.
      *
-     * The usual reason to refuse in CI is that a leftover server would serve stale code —
-     * but nothing here is left over. `scripts/verify.js` starts one Vite server up front
-     * and runs the whole e2e suite against it, precisely because Playwright's own cold
-     * start costs about two and a half minutes against twenty-seven seconds warm.
-     *
-     * With `!process.env.CI` that arrangement could not work: `verify` started the server,
-     * then Playwright found the port occupied and refused it, so **every CI run failed at
-     * the e2e gate** while the identical command passed locally. Each CI job is a fresh
-     * container, so there is no stale server for the strict setting to protect against.
+     * It used to be `true` because `scripts/verify.js` started the dev server itself and
+     * Playwright had to accept it — with `!process.env.CI` every CI run failed at the e2e
+     * gate while the identical command passed locally. verify.js no longer starts
+     * anything, so this only ever finds a preview server left over from a previous run on
+     * a port nothing else uses.
      */
     reuseExistingServer: true,
-    timeout: 120 * 1000
+    /** A cold build (add-ons, then the shell) rather than just a server boot. */
+    timeout: 180 * 1000
   }
 });

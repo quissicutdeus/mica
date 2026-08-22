@@ -78,6 +78,9 @@ importers:
       autoprefixer:
         specifier: ^10.5.4
         version: 10.5.4(postcss@8.5.26)
+      cross-env:
+        specifier: ^10.1.0
+        version: 10.1.0
       jsdom:
         specifier: ^30.0.1
         version: 30.0.1

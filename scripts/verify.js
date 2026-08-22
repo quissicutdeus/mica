@@ -1,6 +1,4 @@
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:net';
-import { chromium } from '@playwright/test';
 
 /**
  * Every gate, one command, cheapest first.
@@ -10,17 +8,15 @@ import { chromium } from '@playwright/test';
  * the docs describe — `test:unit` and `build`, so seventy-one e2e tests and the
  * formatter were enforced nowhere.
  *
- * The e2e step is why this is a script rather than a chain of `&&`. Playwright starts
- * its own Vite server when none is running, and that cold start costs about two and a
- * half minutes against twenty-seven seconds warm — six times the wall clock, paid on
- * every run. Starting one server up front and letting `reuseExistingServer` find it
- * gets that back.
+ * It used to manage the e2e server itself, for a cold-start cost that no longer exists:
+ * the suite now builds a bundle and serves that (web/playwright.config.ts), so there is
+ * no on-demand compilation to warm up and Playwright owns the server. What remains here
+ * is the reporting — running every gate and naming all of them.
  *
  * Every gate runs, and the report at the end names all of them. It used to stop at the
  * first failure, which quietly made the later gates unreachable on any machine where an
- * earlier one was unhappy: `deadcode` sits behind `e2e`, three home-grid drag specs fail
- * locally under full-suite load (they pass in CI), and so a knip failure rode `main` for
- * four commits because the only step that catches it could never be reached from a
+ * earlier one was unhappy: `deadcode` sits behind `e2e`, and so a knip failure rode `main`
+ * for four commits because the only step that catches it could never be reached from a
  * developer's terminal. A gate nobody can run is not a gate. Use `--bail` for the old
  * stop-at-first behaviour during a tight edit loop.
  *
@@ -31,84 +27,12 @@ import { chromium } from '@playwright/test';
 
 const QUICK = process.argv.includes('--quick');
 const BAIL = process.argv.includes('--bail');
-const PORT = Number(process.env.PORT ?? 5173);
 
 const run = (command, args, options = {}) =>
   new Promise((resolve) => {
     const child = spawn(command, args, { stdio: 'inherit', shell: true, ...options });
     child.on('close', (code) => resolve(code ?? 1));
   });
-
-const portInUse = () =>
-  new Promise((resolve) => {
-    const probe = createServer()
-      .once('error', () => resolve(true))
-      .once('listening', () => probe.close(() => resolve(false)))
-      .listen(PORT);
-  });
-
-const waitForHtml = async (timeoutMs = 60_000) => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${PORT}/`);
-      if (response.ok) return true;
-    } catch {
-      // not up yet
-    }
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  return false;
-};
-
-/**
- * A raw fetch of `/` only proves index.html is served — Vite transforms a module the
- * first time something actually imports it, which for a Svelte app means walking the
- * whole component graph, and only a real module-executing client does that. Skipping
- * this used to let the e2e gate start against a dev server that was up but still cold:
- * Playwright's ~16 parallel workers would then all hit that cold server at once, each
- * transform request queuing behind the others, and dozens of unrelated specs would time
- * out at 30s not because anything was broken but because the server hadn't finished
- * compiling by the time they asked. A real navigation forces the whole graph the app's
- * first screen needs to compile before any test worker starts.
- */
-const warmServer = async () => {
-  const browser = await chromium.launch();
-  try {
-    const page = await browser.newPage();
-    await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle', timeout: 60_000 });
-  } finally {
-    await browser.close();
-  }
-};
-
-/**
- * Why this is caught rather than allowed to propagate.
- *
- * `chromium.launch()` throws when Playwright's browsers were never downloaded, or when
- * they were but the host is missing their shared libraries — the ordinary state of a fresh
- * clone, and of any distro Playwright ships no build for. That rejection used to escape to
- * the top level and kill the process outright: no summary, and `build` and `deadcode` never
- * ran, on a machine where nothing was actually wrong with them.
- *
- * Which is the exact failure this file was written to end (see the note at the top — a
- * knip failure rode `main` for four commits because the only gate that catches it sat
- * behind a gate that could not run locally). An unrunnable e2e gate must cost the e2e gate
- * and nothing else.
- */
-const warmServerOrExplain = async () => {
-  try {
-    await warmServer();
-    return null;
-  } catch (error) {
-    return error instanceof Error ? error.message.split('\n')[0] : String(error);
-  }
-};
-
-const waitForServer = async (timeoutMs = 60_000) => {
-  if (!(await waitForHtml(timeoutMs))) return 'vite never served /';
-  return await warmServerOrExplain();
-};
 
 const results = [];
 
@@ -191,30 +115,20 @@ const main = async () => {
   if (QUICK) {
     // nothing to do — the summary derives `e2e` as skipped from GATES below.
   } else if (!stop()) {
-    // One server for the whole e2e run. Playwright reuses whatever is already on the
-    // port, so a `pnpm dev` the developer already had open is used as-is and left alone.
-    const borrowed = await portInUse();
-    let server;
-    let blocked = null;
-    if (!borrowed) {
-      server = spawn('pnpm', ['--filter', 'web', 'dev'], { stdio: 'ignore', shell: true });
-      blocked = await waitForServer();
-    }
-    if (blocked) {
-      // The run continues from here. `build` and `deadcode` are seconds apiece and have
-      // nothing to do with a browser, so losing them to an e2e problem costs the developer
-      // the two gates most likely to catch what they just changed. e2e is recorded as
-      // failed rather than skipped: something was meant to run here and did not.
-      server?.kill();
-      results.push({ name: 'e2e', code: 1, seconds: '0.0' });
-      process.stdout.write(`\n[31me2e could not start: ${blocked}[0m\n`);
-      if (/Executable doesn't exist|missing dependencies|shared librar/i.test(blocked)) {
-        process.stdout.write(`[2mTry: pnpm test:e2e:install[0m\n`);
-      }
-    } else {
-      await gate('e2e', 'pnpm', ['test:e2e']);
-      server?.kill();
-    }
+    // Playwright owns the server now.
+    //
+    // This used to start `pnpm --filter web dev` here and drive a real browser navigation
+    // to force Vite to compile the whole graph before any worker asked for it. That
+    // existed because the suite ran against a dev server that transforms on demand, and
+    // several minutes of a run were spent on the resulting stampede. The suite builds a
+    // bundle first now (web/playwright.config.ts), so there is nothing to warm and no
+    // reason for this file to know about ports at all.
+    //
+    // It also removes a crash: `chromium.launch()` failing here — no browsers downloaded,
+    // or downloaded onto a host missing their shared libraries — threw past this function
+    // and killed the run, taking `build` and `deadcode` with it. Playwright reports that
+    // as an ordinary gate failure.
+    await gate('e2e', 'pnpm', ['test:e2e']);
   }
 
   if (!stop()) await gate('build', 'pnpm', ['build']);
