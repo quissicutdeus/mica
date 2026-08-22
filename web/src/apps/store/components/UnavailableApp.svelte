@@ -10,11 +10,11 @@
    * its place, and tapping the icon afterwards landed in `ErrorBoundary` telling the player
    * the app had stopped working. It had not. It was never there.
    *
-   * Those entries are gone, so the only way to reach this now is a malformed app directory:
-   * `apps/<id>/manifest.ts` present, `index.svelte` missing. The registry lists such an app
-   * and has no component for it. That is a developer mistake rather than anything a player
-   * can cause, which is why this survives the fictions it was written for — the alternative
-   * is `registerApp(app, undefined)`, and the registry mounts whatever it is given.
+   * Those entries are gone, so the only way to reach this now is a malformed *core* app
+   * directory: `apps/<id>/manifest.ts` present, `index.svelte` missing. (An add-on never
+   * reaches here through this path at all — it has no component to be missing; see
+   * `registry.ts`'s `registerAddOn`.) That is a developer mistake rather than anything a
+   * player can cause, which is why this survives the fictions it was written for.
    */
   let { onback }: AppProps = $props();
 

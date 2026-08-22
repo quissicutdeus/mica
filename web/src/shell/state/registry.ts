@@ -10,7 +10,7 @@ import { messageOf } from '../../lib/errors';
 import { usePersisted } from '../../sdk/host/usePersisted';
 import { placeOnHomeGridIfAbsent } from './homeGrid';
 import { isTrustedRemoteUrl, matchesHash } from './remoteAppSecurity';
-import type { CatalogEntry } from './catalog';
+import { isCatalogEntry, type CatalogEntry } from './catalog';
 
 export type { AppManifest } from '../../sdk/manifest';
 
@@ -55,25 +55,30 @@ const firstBoot = getFirstBootTime();
 const loadedApps: AppManifest[] = [];
 /** In-repo apps shipping `core: false` — present in the tree, absent from the launcher. */
 const addOns: AppManifest[] = [];
+/** Every id seen so far in the glob loop below, core or not — the duplicate-id guard. */
+const seenManifestIds = new Set<string>();
 
 /**
- * What this build ships, from the glob above. **Never written to after startup.**
+ * What this build ships, from the glob above — **core apps only**, and **never written to
+ * after startup**. An add-on never has an entry here: its code runs in a sandboxed iframe
+ * from `getAddOnSource`'s fetched text, never `import()`ed by the shell (MICA-16 step 4).
  *
  * Split from the runtime registry below, and the split is the fix for a real defect: there was
  * one map, so `unregisterApp` deleting from it deleted the only reference to code that is still
- * sitting in the bundle. Uninstalling a bundled add-on and installing it again then found no
- * component, and the Store's `getComponent(id) || placeholderComponent()` handed the registry the
- * "Not part of this build" screen — for an app whose code had never left. In CEF the page never
- * unloads, so it stayed wrong for the rest of the session rather than until a refresh.
+ * sitting in the bundle. Uninstalling a core app's dev-only runtime registration and
+ * re-registering it then found no component, and the registry's fallback would have handed a
+ * "Not part of this build" screen for a component whose code had never left. In CEF the page
+ * never unloads, so it stayed wrong for the rest of the session rather than until a refresh.
  *
- * The two maps are genuinely different facts. This one is what the resource contains; the other
- * is what has been installed since boot. A remote app's component belongs only to the second,
- * because its code came from a URL and really is gone once uninstalled.
+ * The two maps are genuinely different facts. This one is what the resource contains; the
+ * other is what has been installed since boot.
  */
 const bundledComponents: Record<string, () => Promise<unknown>> = {};
 
 /**
- * Components that have finished loading, bundled or remote.
+ * Components that have finished loading — core apps, or a `core: false` fixture
+ * `registerApp` accepted under `import.meta.env.DEV` (an add-on proper never has one; see
+ * `addOnSources` below).
  *
  * `getComponent` has to answer synchronously — Svelte renders `{#if AppComponent}` and
  * cannot await — so the loader's result is cached here and the render reads the cache.
@@ -85,10 +90,34 @@ const loadedComponents: Record<string, AppComponent> = {};
 /** Loads in flight, so opening an app twice in quick succession imports it once. */
 const loading: Record<string, Promise<AppComponent | undefined>> = {};
 
-/** Registered since boot: a reinstall, or a remote bundle. Cleared by `unregisterApp`. */
+/**
+ * Registered since boot: a core app's reinstall, or a `core: false` runtime fixture
+ * `registerApp` accepted under `import.meta.env.DEV`. Cleared by `unregisterApp`.
+ */
 const componentRegistry: Record<string, AppComponent> = {};
 
-/** Runtime registration wins, so a remote app may shadow a bundled id; the bundle is fallback. */
+/**
+ * Add-on bundle text — never a component, and never executed by the shell.
+ *
+ * Holds two different things at different times. For a bundled add-on (`registerAddOn`
+ * called with no `source`), it starts empty and `getAddOnSource` fills it lazily, on
+ * first open, by fetching `./addons/<id>.js` — the file `pnpm build:addons` produced.
+ * For a catalog install (`installVerified`) or a dev-registered one, `registerAddOn`
+ * stores the already-fetched, already hash-verified text directly. Either way, this is
+ * *source*, handed to the sandboxed iframe transport to run — the shell itself never
+ * `import()`s it.
+ */
+const addOnSources: Record<string, string> = {};
+
+/** Fetches in flight for `getAddOnSource`, mirroring `loading` above. */
+const sourceLoads: Record<string, Promise<string | undefined>> = {};
+
+/**
+ * A component only ever exists for a core app, or a `core: false` runtime fixture
+ * `registerApp` accepted under `import.meta.env.DEV` — never for an add-on proper, which
+ * has no component at all (see `getAddOnSource`). Runtime registration wins over the
+ * glob's own loader so a dev fixture (or a reinstall) may shadow it; the glob is fallback.
+ */
 const resolveComponent = (appId: string): AppComponent | undefined =>
   componentRegistry[appId] ?? loadedComponents[appId];
 
@@ -97,10 +126,20 @@ const resolveComponent = (appId: string): AppComponent | undefined =>
  *
  * The two were the same question while every component was loaded at boot, and they are
  * not any more. `openApp` needs this one: refusing an app because its chunk is still in
- * flight would make opening it a race.
+ * flight would make opening it a race. Extended past components to cover add-ons: a
+ * bundled add-on is known (`addOnIds`) whether or not it has been installed yet — the
+ * glob is a fact about the build, not the install, same as `bundledComponents` always was
+ * for a core app — and an installed remote/dev add-on is known once its source has
+ * arrived (`addOnSources`).
  */
 const isKnownApp = (appId: string): boolean =>
-  Boolean(componentRegistry[appId] || bundledComponents[appId] || loadedComponents[appId]);
+  Boolean(
+    componentRegistry[appId] ||
+    bundledComponents[appId] ||
+    loadedComponents[appId] ||
+    addOnSources[appId] !== undefined ||
+    addOnIds.has(appId)
+  );
 
 /**
  * Fetch an app's component, once.
@@ -133,6 +172,40 @@ const loadComponent = async (appId: string): Promise<AppComponent | undefined> =
   return loading[appId];
 };
 
+/**
+ * Fetch a bundled add-on's built bundle text, once — the sandboxed iframe transport runs
+ * it, the shell never does.
+ *
+ * `addOnSources[appId]` already holding a value covers two cases at once: a catalog
+ * install or a dev-registered add-on, whose text `registerAddOn` was handed directly and
+ * which this never needs to fetch, and a bundled add-on that was opened before and is
+ * simply cached. Only a bundled add-on not yet opened reaches the `fetch` below, against
+ * `./addons/<id>.js` — the file `pnpm --filter web build:addons` produced (relative:
+ * `vite.config.ts` sets `base: './'`). A failed fetch is logged and its promise kept
+ * rather than retried on every render, mirroring `loadComponent`.
+ */
+const getAddOnSource = (appId: string): Promise<string | undefined> => {
+  if (addOnSources[appId] !== undefined) return Promise.resolve(addOnSources[appId]);
+  if (!addOnIds.has(appId)) return Promise.resolve(undefined);
+
+  sourceLoads[appId] ??= fetch(`./addons/${appId}.js`)
+    .then(async (response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      const text = await response.text();
+      addOnSources[appId] = text;
+      return text;
+    })
+    .catch((error) => {
+      console.error(
+        `gPhone App Registry: failed to fetch add-on source for '${appId}'`,
+        messageOf(error, 'unknown error')
+      );
+      return undefined;
+    });
+
+  return sourceLoads[appId];
+};
+
 for (const path in manifestFiles) {
   const rawManifest = (manifestFiles[path] as any).default as AppManifest;
   if (rawManifest && rawManifest.id) {
@@ -143,7 +216,7 @@ for (const path in manifestFiles) {
     });
     // Find corresponding component
     const componentPath = path.replace('manifest.ts', 'index.svelte');
-    if (import.meta.env.DEV && bundledComponents[manifest.id]) {
+    if (import.meta.env.DEV && seenManifestIds.has(manifest.id)) {
       // Two manifest files claiming one id. The second silently replaced the first's
       // component while both stayed listed in the launcher, so one of the two icons opened
       // the other app and nothing said why.
@@ -152,7 +225,13 @@ for (const path in manifestFiles) {
           `The last one loaded wins, and ids are also storage namespaces — rename one.`
       );
     }
-    if (appComponents[componentPath]) {
+    seenManifestIds.add(manifest.id);
+
+    // Only a core app's code belongs in `bundledComponents` — an add-on never gets a
+    // component loader, bundled or otherwise (MICA-16 step 4): its code runs in a
+    // sandboxed iframe from `getAddOnSource`'s fetched text, and the shell must never
+    // `import()`/execute it in-process.
+    if (manifest.core && appComponents[componentPath]) {
       // The loader, not the component. Called when the app is first opened.
       bundledComponents[manifest.id] = appComponents[componentPath] as () => Promise<unknown>;
     }
@@ -184,8 +263,16 @@ const LOCAL_STORAGE_KEY = 'gphone_installed_remote_apps';
 
 interface SavedRemoteApp {
   url: string;
-  /** Present only for a catalog install — `loadRemoteApp`'s push path never has one. */
-  sha256?: string;
+  /**
+   * The catalog entry `installVerified` built this install's manifest from — the only
+   * thing rehydration can rebuild the manifest from, since a saved install carries no
+   * component to fall back on and this registry never re-runs fetched code to ask it for
+   * one. A row from before this field existed cannot be rehydrated at all. The pinned
+   * hash lives on it too (`entry.sha256`) rather than duplicated up here — there is
+   * exactly one hash for an install, and keeping only one copy of it is what a stale
+   * top-level `sha256` next to a fresher `entry.sha256` cannot silently disagree with.
+   */
+  entry: CatalogEntry;
 }
 
 function getSavedRemoteApps(): SavedRemoteApp[] {
@@ -195,17 +282,33 @@ function getSavedRemoteApps(): SavedRemoteApp[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    // Pre-existing installs saved the old shape: a bare array of URL strings.
     return parsed
-      .map((entry): SavedRemoteApp | null => {
-        if (typeof entry === 'string') return { url: entry };
-        if (entry && typeof entry === 'object' && typeof entry.url === 'string') {
-          return {
-            url: entry.url,
-            sha256: typeof entry.sha256 === 'string' ? entry.sha256 : undefined
-          };
+      .map((row): SavedRemoteApp | null => {
+        // Pre-existing installs saved either a bare URL string (an old push-install path,
+        // since removed) or `{ url, sha256? }` with no catalog entry at all — neither
+        // carries enough to rebuild a manifest without running the bundle to ask it for
+        // one, which is exactly what this registry no longer does. Dropped, not silently
+        // skipped: the operator/player installed something that is now unrecoverable, and
+        // that is worth a line in the console naming what was lost.
+        const url =
+          typeof row === 'string'
+            ? row
+            : row && typeof row === 'object' && typeof row.url === 'string'
+              ? row.url
+              : undefined;
+        if (!url) return null;
+
+        const entry = row && typeof row === 'object' ? row.entry : undefined;
+        if (!isCatalogEntry(entry)) {
+          console.warn(
+            `gPhone Registry: dropped a saved remote app install for '${url}' — it has no ` +
+              `catalog entry to rehydrate a manifest from (installed before this build ` +
+              `could save one).`
+          );
+          return null;
         }
-        return null;
+
+        return { url, entry };
       })
       .filter((entry): entry is SavedRemoteApp => entry !== null);
   } catch {
@@ -214,12 +317,11 @@ function getSavedRemoteApps(): SavedRemoteApp[] {
 }
 
 /**
- * Upsert by `url`. A later install of the same URL always wins, because a later record is
- * always at least as informed as the earlier one: a hash-less `loadRemoteApp` record
- * replaced by a `installFromCatalog` record gains a hash it did not have, and a catalog
- * reinstall with a fresh hash (the operator republished the bundle) replaces a now-stale
- * one — without an upsert, rehydration would keep re-verifying against whichever hash
- * happened to be saved first, forever.
+ * Upsert by `url`. A later install of the same URL always wins: a catalog reinstall with
+ * a fresh hash (the operator republished the bundle) replaces a now-stale one — pinned as
+ * `entry.sha256`, so a later `saveRemoteApp` call naturally carries the fresh hash along
+ * with the rest of the fresh entry. Without this upsert, rehydration would keep
+ * re-verifying against whichever entry happened to be saved first, forever.
  */
 function saveRemoteApp(entry: SavedRemoteApp) {
   if (typeof localStorage === 'undefined') return;
@@ -265,132 +367,135 @@ const installedAddOnIds = usePersisted<string[]>('store', 'installedAddOns', [],
   sanitize: sanitizeInstalledAddOnIds
 });
 
-/** Import already-fetched module text via a `data:` URL — the reliable path in CEF. */
-function importModuleText(code: string): Promise<any> {
-  const dataUrl = `data:text/javascript;charset=utf-8,${encodeURIComponent(code)}`;
-  return import(/* @vite-ignore */ dataUrl);
-}
-
-/**
- * Pull `manifest`/`component` out of a loaded remote module, the same way for every path
- * that can produce one: `loadRemoteApp`, `installFromCatalog`, and boot-time rehydration.
- */
-function manifestAndComponentFromModule(
-  loadedModule: any,
-  url: string
-): { rawManifest: any; component: any } {
-  const rawManifest =
-    loadedModule.manifest ||
-    loadedModule.default?.manifest ||
-    (loadedModule.default &&
-    typeof loadedModule.default === 'object' &&
-    'id' in loadedModule.default
-      ? loadedModule.default
-      : null);
-
-  const component =
-    loadedModule.component ||
-    loadedModule.default?.component ||
-    (typeof loadedModule.default === 'function' || typeof loadedModule.default === 'object'
-      ? loadedModule.default
-      : null);
-
-  if (!rawManifest) {
-    throw new Error(
-      `gPhone Remote App Loader error: Module at '${url}' does not export a valid 'manifest'.`
-    );
-  }
-  if (!component) {
-    throw new Error(
-      `gPhone Remote App Loader error: Module at '${url}' does not export a valid Svelte 'component'.`
-    );
-  }
-  return { rawManifest, component };
-}
-
 // Reactive App Registry Store for Dynamic Community App Installation
 function createAppRegistry() {
   const installed = writable<AppManifest[]>(loadedApps);
   const { subscribe, update } = installed;
 
+  /**
+   * The bookkeeping every registration path shares — the store update, the installed-
+   * add-on tracking, and the home-grid placement — regardless of whether the caller is
+   * `registerApp` (a component, core apps and DEV-only fixtures) or `registerAddOn` (a
+   * source string, everything else). Split out because that bookkeeping is identical
+   * either way; only what gets stashed for later — a component or a source — differs.
+   */
+  function record(validatedManifest: AppManifest): void {
+    if (
+      CORE_APP_IDS.has(validatedManifest.id) &&
+      !loadedApps.some((a) => a.id === validatedManifest.id)
+    ) {
+      throw new Error(
+        `gPhone App Registry error: Overwriting core app '${validatedManifest.id}' is prohibited.`
+      );
+    }
+
+    if (import.meta.env.DEV && get(installed).some((a) => a.id === validatedManifest.id)) {
+      console.warn(
+        `gPhone App Registry: '${validatedManifest.id}' is already registered and is ` +
+          `being replaced. Expected when reinstalling that app; a bug if this is a ` +
+          `different one claiming a taken id.`
+      );
+    }
+
+    let isNewRegistration = false;
+    update((apps) => {
+      const existingIndex = apps.findIndex((a) => a.id === validatedManifest.id);
+      isNewRegistration = existingIndex < 0;
+      const now = new Date().toISOString();
+      let updated: AppManifest[];
+      if (existingIndex >= 0) {
+        const existing = apps[existingIndex];
+        const appWithDates: AppManifest = {
+          ...validatedManifest,
+          installedAt: validatedManifest.installedAt || existing.installedAt || now,
+          updatedAt: validatedManifest.updatedAt || now
+        };
+        updated = [...apps];
+        updated[existingIndex] = appWithDates;
+      } else {
+        const defaultTime = validatedManifest.core ? getFirstBootTime() : now;
+        const appWithDates: AppManifest = {
+          installedAt: defaultTime,
+          updatedAt: defaultTime,
+          ...validatedManifest
+        };
+        updated = [...apps, appWithDates];
+      }
+      return updated.sort((a, b) => a.name.localeCompare(b.name));
+    });
+
+    // Bundled add-ons only — never a remote app (which has its own URL-based
+    // persistence and must not be double-tracked), and never an id outside this
+    // build (e.g. a test's ad-hoc manifest). Guarded so re-registering an id already
+    // marked installed — including the rehydration below — does not fire a redundant
+    // write, since `usePersisted`'s `update` always persists.
+    if (!validatedManifest.isRemote && addOnIds.has(validatedManifest.id)) {
+      if (!get(installedAddOnIds).includes(validatedManifest.id)) {
+        installedAddOnIds.update((ids) => [...ids, validatedManifest.id]);
+      }
+    }
+
+    /**
+     * A player installing an add-on expects to find it on the home screen without
+     * also having to know the App Drawer exists — unlike a core app, which starts in
+     * the drawer only and stays there until dragged out (the home screen has no
+     * default placements at all). This covers what registering an app introduces: a
+     * Store install, a catalog install, or (in dev) the harness registering an app the
+     * repo does not ship — `error_boundary.spec.ts`'s crashing fixture, which has always
+     * expected to be clickable without opening the drawer (see `devHarness.ts`).
+     *
+     * Gated on `isNewRegistration`, not on `addOnIds`/`isRemote`/an install-tracking
+     * list: a boot-time re-registration of an add-on the player already positioned —
+     * or deliberately removed — must not move it, and `placeOnHomeGridIfAbsent` is
+     * itself the guard against placing an app that already has a cell.
+     */
+    if (!validatedManifest.core && isNewRegistration) {
+      placeOnHomeGridIfAbsent(validatedManifest.id);
+    }
+  }
+
   const store = {
     subscribe,
+    /**
+     * Register a manifest **with its component already loaded** — the in-process path.
+     *
+     * Stays for core apps, which always ran in-process. For a `core: false` manifest
+     * this is **dev-only**: `error_boundary.spec.ts` registers runtime crash fixtures
+     * through it, and nothing shipped is meant to reach it — a real add-on registers
+     * through `registerAddOn` below, as source text, and runs sandboxed. Blocked outside
+     * `import.meta.env.DEV` so a production build can't be handed a live component for
+     * an app that never went through the sandboxed transport.
+     */
     registerApp: (manifest: AppManifest, component: AppComponent) => {
       const validatedManifest = defineApp(manifest);
-
-      if (
-        CORE_APP_IDS.has(validatedManifest.id) &&
-        !loadedApps.some((a) => a.id === validatedManifest.id)
-      ) {
+      if (!validatedManifest.core && !import.meta.env.DEV) {
         throw new Error(
-          `gPhone App Registry error: Overwriting core app '${validatedManifest.id}' is prohibited.`
+          'gPhone App Registry error: add-ons register through registerAddOn(manifest, source).'
         );
       }
-
-      if (import.meta.env.DEV && get(installed).some((a) => a.id === validatedManifest.id)) {
-        console.warn(
-          `gPhone App Registry: '${validatedManifest.id}' is already registered and is ` +
-            `being replaced. Expected when reinstalling that app; a bug if this is a ` +
-            `different one claiming a taken id.`
-        );
-      }
-
       componentRegistry[validatedManifest.id] = component;
-      let isNewRegistration = false;
-      update((apps) => {
-        const existingIndex = apps.findIndex((a) => a.id === validatedManifest.id);
-        isNewRegistration = existingIndex < 0;
-        const now = new Date().toISOString();
-        let updated: AppManifest[];
-        if (existingIndex >= 0) {
-          const existing = apps[existingIndex];
-          const appWithDates: AppManifest = {
-            ...validatedManifest,
-            installedAt: validatedManifest.installedAt || existing.installedAt || now,
-            updatedAt: validatedManifest.updatedAt || now
-          };
-          updated = [...apps];
-          updated[existingIndex] = appWithDates;
-        } else {
-          const defaultTime = validatedManifest.core ? getFirstBootTime() : now;
-          const appWithDates: AppManifest = {
-            installedAt: defaultTime,
-            updatedAt: defaultTime,
-            ...validatedManifest
-          };
-          updated = [...apps, appWithDates];
-        }
-        return updated.sort((a, b) => a.name.localeCompare(b.name));
-      });
-
-      // Bundled add-ons only — never a remote app (which has its own URL-based
-      // persistence and must not be double-tracked), and never an id outside this
-      // build (e.g. a test's ad-hoc manifest). Guarded so re-registering an id already
-      // marked installed — including the rehydration below — does not fire a redundant
-      // write, since `usePersisted`'s `update` always persists.
-      if (!validatedManifest.isRemote && addOnIds.has(validatedManifest.id)) {
-        if (!get(installedAddOnIds).includes(validatedManifest.id)) {
-          installedAddOnIds.update((ids) => [...ids, validatedManifest.id]);
-        }
+      record(validatedManifest);
+    },
+    /**
+     * Register a manifest with its bundle **as source text**, never executed here.
+     *
+     * `source` given explicitly — a catalog install (`installVerified`, already
+     * hash-verified) or a dev-registered add-on — is stashed as-is. Omitted, `manifest.id`
+     * must be one of this build's own bundled add-ons (`addOnIds`); its text is left for
+     * `getAddOnSource` to fetch lazily, on first open, rather than eagerly here.
+     */
+    registerAddOn: (manifest: AppManifest, source?: string) => {
+      const validatedManifest = defineApp(manifest);
+      if (source !== undefined) {
+        addOnSources[validatedManifest.id] = source;
+      } else if (!addOnIds.has(validatedManifest.id)) {
+        throw new Error(
+          `gPhone App Registry error: '${validatedManifest.id}' was registered with no ` +
+            `source and is not one of this build's bundled add-ons — there is nothing for ` +
+            `getAddOnSource to fetch.`
+        );
       }
-
-      /**
-       * A player installing an add-on expects to find it on the home screen without
-       * also having to know the App Drawer exists — unlike a core app, which starts in
-       * the drawer only and stays there until dragged out (the home screen has no
-       * default placements at all). This covers what `registerApp` itself introduces: a
-       * Store install, a remote app, or (in dev) the harness registering an app the repo
-       * does not ship — `error_boundary.spec.ts`'s crashing fixture, which has always
-       * expected to be clickable without opening the drawer (see `devHarness.ts`).
-       *
-       * Gated on `isNewRegistration`, not on `addOnIds`/`isRemote`/an install-tracking
-       * list: a boot-time re-registration of an add-on the player already positioned —
-       * or deliberately removed — must not move it, and `placeOnHomeGridIfAbsent` is
-       * itself the guard against placing an app that already has a cell.
-       */
-      if (!validatedManifest.core && isNewRegistration) {
-        placeOnHomeGridIfAbsent(validatedManifest.id);
-      }
+      record(validatedManifest);
     },
     unregisterApp: (appId: string) => {
       let currentApps: AppManifest[] = [];
@@ -415,11 +520,19 @@ function createAppRegistry() {
         installedAddOnIds.update((ids) => ids.filter((id) => id !== appId));
       }
       /**
-       * The runtime map only. A bundled add-on's component stays where the glob put it, because
-       * uninstalling an app does not remove its code from the resource — and deleting it there
-       * is what made a reinstall mount the "not part of this build" placeholder.
+       * The runtime map only. A core app's own component stays where the glob put it
+       * (`bundledComponents`, never deleted), because uninstalling an app does not remove
+       * its code from the resource — deleting it there is what used to make a reinstall
+       * mount the "not part of this build" placeholder. This only ever clears a runtime
+       * registration: a reinstalled core app, or a dev-only `core: false` fixture.
        */
       delete componentRegistry[appId];
+      // The source text, and the fetch that produced it. Unlike `bundledComponents` (never
+      // deleted — the glob's loader is a fact about the build, not the install), a bundled
+      // add-on's fetched text is treated the same as a remote/dev one's here: gone on
+      // uninstall, and lazily re-fetched by `getAddOnSource` on the next install/open.
+      delete addOnSources[appId];
+      delete sourceLoads[appId];
       clearAppStorage(appId);
       update((apps) => apps.filter((a) => a.id !== appId));
     },
@@ -429,6 +542,12 @@ function createAppRegistry() {
     /** Fetch an app's component. Idempotent, and the only thing that imports app code. */
     loadComponent,
     /**
+     * Fetch an add-on's bundle *text*, never its component — the sandboxed iframe
+     * transport runs it, this registry only ever hands over bytes. Idempotent, same as
+     * `loadComponent`.
+     */
+    getAddOnSource,
+    /**
      * The manifest for an installed app.
      *
      * The shell holds app *ids*; anything shown to a player needs the manifest's `name`.
@@ -437,103 +556,89 @@ function createAppRegistry() {
      */
     getManifest: (appId: string): AppManifest | undefined =>
       get(installed).find((a: AppManifest) => a.id === appId),
-    loadRemoteApp: async (url: string): Promise<{ manifest: AppManifest; component: any }> => {
-      if (!url || typeof url !== 'string') {
-        throw new Error('gPhone App Loader error: Remote app URL must be a valid string.');
-      }
-      if (!isTrustedRemoteUrl(url)) {
-        throw new Error(
-          `gPhone App Loader error: '${url}' is not on the trusted remote-app host allowlist.`
-        );
-      }
-
-      let loadedModule: any;
-      try {
-        // Try direct dynamic import
-        loadedModule = await import(/* @vite-ignore */ url);
-      } catch (directImportError) {
-        // CEF / Fallback: Fetch bundle code and import via data URL
-        try {
-          const response = await fetch(url);
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status} ${response.statusText}`);
-          }
-          const code = await response.text();
-          loadedModule = await importModuleText(code);
-        } catch (fallbackError) {
-          const why = messageOf(directImportError, '') || messageOf(fallbackError, 'unknown error');
-          throw new Error(`gPhone Remote App Loader failed to load bundle from '${url}': ${why}`);
-        }
-      }
-
-      const { rawManifest, component } = manifestAndComponentFromModule(loadedModule, url);
-      const validatedManifest = defineApp({ ...rawManifest, isRemote: true, bundleUrl: url });
-
-      store.registerApp(validatedManifest, component);
-      saveRemoteApp({ url }); // in loadRemoteApp, unchanged from before
-
-      return { manifest: validatedManifest, component };
-    },
-    installFromCatalog: (entry: CatalogEntry): Promise<{ manifest: AppManifest; component: any }> =>
-      installVerified(entry.bundleUrl, entry.sha256),
+    /**
+     * The only way a remote app is ever installed. Builds the manifest from `entry` —
+     * never from anything the fetched bundle itself claims to be — after the bundle's
+     * bytes are hash-verified against `entry.sha256`. See `installVerified` below.
+     */
+    installFromCatalog: (entry: CatalogEntry): Promise<{ manifest: AppManifest }> =>
+      installVerified(entry),
     rehydrateSavedRemoteApps: async (): Promise<void> => {
       const savedRemoteApps = getSavedRemoteApps();
       await Promise.all(
-        savedRemoteApps.map((saved) => {
+        savedRemoteApps.map((saved) =>
           // A pinned hash re-verifies on every boot, not only at install time — a bundle
           // swapped out after install must be refused, not silently re-run.
-          const rehydrate = saved.sha256
-            ? installVerified(saved.url, saved.sha256)
-            : store.loadRemoteApp(saved.url);
-          return rehydrate.catch((err) => {
+          installVerified(saved.entry).catch((err) => {
             console.warn(
               `gPhone Registry failed to re-hydrate remote app from '${saved.url}':`,
               err
             );
-          });
-        })
+          })
+        )
       );
     }
   };
 
   /**
-   * Fetch, hash-verify, and import a remote bundle — the one path both `installFromCatalog`
-   * and hash-pinned boot rehydration use. Never uses the "try direct import first" shortcut
-   * `loadRemoteApp` does: that can execute the module before there is any text to hash, and
-   * seeing the bytes before running them is the entire point of this function existing.
+   * Fetch, hash-verify, and register a catalog entry's bundle — the one path both
+   * `installFromCatalog` and boot rehydration use. The manifest comes from `entry` alone;
+   * nothing here ever `import()`s the fetched bytes to ask the module what it claims to
+   * be, which is the whole point of the catalog carrying a manifest in the first place.
    */
-  async function installVerified(
-    bundleUrl: string,
-    sha256: string
-  ): Promise<{ manifest: AppManifest; component: any }> {
-    if (!isTrustedRemoteUrl(bundleUrl)) {
+  async function installVerified(entry: CatalogEntry): Promise<{ manifest: AppManifest }> {
+    // `isTrustedRemoteUrl` exempts `data:` URLs — safe for its other callers, which only
+    // ever build one internally from bytes already hash-verified, never from anything an
+    // operator's catalog (or a saved/rehydrated row derived from one) supplied. A catalog
+    // entry is exactly the kind of external input that exemption assumes never reaches
+    // it, so it is rejected here explicitly, before the host check and before any fetch —
+    // the same boundary `nuiMessages.ts`'s `installApp` applies to an NUI payload.
+    if (entry.bundleUrl.startsWith('data:')) {
       throw new Error(
-        `gPhone App Loader error: '${bundleUrl}' is not on the trusted remote-app host allowlist.`
+        `gPhone App Loader error: '${entry.bundleUrl}' is a data: URL, which a catalog entry ` +
+          'may not use.'
+      );
+    }
+    if (!isTrustedRemoteUrl(entry.bundleUrl)) {
+      throw new Error(
+        `gPhone App Loader error: '${entry.bundleUrl}' is not on the trusted remote-app host allowlist.`
       );
     }
 
-    const response = await fetch(bundleUrl);
+    const response = await fetch(entry.bundleUrl);
     if (!response.ok) {
-      throw new Error(`gPhone App Loader error: HTTP ${response.status} fetching '${bundleUrl}'.`);
+      throw new Error(
+        `gPhone App Loader error: HTTP ${response.status} fetching '${entry.bundleUrl}'.`
+      );
     }
     const code = await response.text();
 
-    const verified = await matchesHash(code, sha256);
+    const verified = await matchesHash(code, entry.sha256);
     if (!verified) {
       throw new Error(
-        `gPhone App Loader error: '${bundleUrl}' did not match its published checksum. ` +
+        `gPhone App Loader error: '${entry.bundleUrl}' did not match its published checksum. ` +
           'Refusing to run it.'
       );
     }
 
-    const loadedModule = await importModuleText(code);
-    const { rawManifest, component } = manifestAndComponentFromModule(loadedModule, bundleUrl);
-    const validatedManifest = defineApp({ ...rawManifest, isRemote: true, bundleUrl });
+    const validatedManifest = defineApp({
+      id: entry.id,
+      name: entry.name,
+      version: entry.version,
+      description: entry.description,
+      color: entry.color,
+      icon: entry.icon ?? null,
+      permissions: entry.permissions,
+      requiresNetwork: entry.requiresNetwork ?? false,
+      isRemote: true,
+      bundleUrl: entry.bundleUrl,
+      core: false
+    });
 
-    store.registerApp(validatedManifest, component);
-    saveRemoteApp({ url: bundleUrl, sha256 }); // in installVerified, for this task only
+    store.registerAddOn(validatedManifest, code);
+    saveRemoteApp({ url: entry.bundleUrl, entry });
 
-    return { manifest: validatedManifest, component };
+    return { manifest: validatedManifest };
   }
 
   // Rehydrate saved remote apps on startup if running in browser/client environment
@@ -548,20 +653,16 @@ function createAppRegistry() {
      * store, so one subscription covers both boot (fires immediately with the current
      * value) and a later character switch (`usePersisted`'s own rehydrate-on-server-copy
      * pushes a new value, which re-fires this subscription).
+     *
+     * No component to await here any more: `registerAddOn` with no `source` registers
+     * immediately and leaves the fetch to `getAddOnSource`, lazily, on first open.
      */
     installedAddOnIds.subscribe((ids) => {
       for (const id of ids) {
         if (get(installed).some((a) => a.id === id)) continue;
         const manifest = addOns.find((a) => a.id === id);
         if (!manifest) continue; // no longer part of this build
-        loadComponent(id)
-          .then((component) => {
-            if (!component) return; // build doesn't have it after all
-            store.registerApp(manifest, component);
-          })
-          .catch((err) => {
-            console.warn(`gPhone Registry failed to re-hydrate installed add-on '${id}':`, err);
-          });
+        store.registerAddOn(manifest);
       }
     });
   }

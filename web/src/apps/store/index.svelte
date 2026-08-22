@@ -7,13 +7,11 @@
     Screen,
     SegmentedControl,
     useAppAction,
-    type AppComponent,
     type AppProps,
     fetchCatalog
   } from '@gphone/sdk';
   import { mergedCatalogApps } from './appInfo';
   import AppDetails from './components/AppDetails.svelte';
-  import UnavailableApp from './components/UnavailableApp.svelte';
   import CatalogList from './components/CatalogList.svelte';
   import InstalledList from './components/InstalledList.svelte';
 
@@ -35,7 +33,7 @@
     mergedCatalogApps(REMOTE_CATALOG_URL).then((apps) => (catalogAppsList = apps));
   });
 
-  const { registryStore, unregisterApp, registerApp, installFromCatalog } = useAppRegistry();
+  const { registryStore, unregisterApp, registerAddOn, installFromCatalog } = useAppRegistry();
   const { openApp: openPhoneApp } = useNavigation();
   const { run } = useAppAction('store');
 
@@ -73,17 +71,6 @@
       })
   );
 
-  /**
-   * The registry mounts whatever it is given, so an app with no component gets a real one
-   * that says so rather than `undefined`.
-   *
-   * This used to hand over `{ name, type }`, which is not a component: tapping the icon
-   * afterwards reached `ErrorBoundary` and reported that the app had stopped working, for an
-   * app that had never existed. Now that the invented catalog entries are gone, the only
-   * way here is a manifest whose `index.svelte` is missing — see `UnavailableApp` itself.
-   */
-  const placeholderComponent = (): AppComponent => UnavailableApp;
-
   function handleInstall(app: AppManifest) {
     if (app.isRemote && app.bundleUrl) {
       const target = app;
@@ -99,17 +86,13 @@
       return;
     }
 
-    void run(
-      async () => {
-        // Awaited, because components load on demand: `getComponent` answers from a cache
-        // that is empty until an app has been opened once, so installing a bundled add-on
-        // straight from a fresh boot would have registered the "Not part of this build"
-        // placeholder for an app whose code is right there.
-        const component = (await registryStore.loadComponent(app.id)) ?? placeholderComponent();
-        registerApp(app, component);
-      },
-      { title: 'Store', success: `${app.name} installed successfully!` }
-    );
+    // No component to load: a bundled add-on registers as source text, fetched lazily by
+    // `getAddOnSource` the first time it is opened, not eagerly here — the shell never
+    // `import()`s an add-on's code in-process (MICA-16 step 4).
+    void run(() => registerAddOn(app), {
+      title: 'Store',
+      success: `${app.name} installed successfully!`
+    });
   }
 
   const requestUninstall = (app: AppManifest) => (appToUninstall = app);

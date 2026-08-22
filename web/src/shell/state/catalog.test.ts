@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { setTrustedRemoteAppHosts } from './remoteAppSecurity';
-import { fetchCatalog, type CatalogEntry } from './catalog';
+import { fetchCatalog, isCatalogEntry, type CatalogEntry } from './catalog';
 
 const validEntry: CatalogEntry = {
   id: 'remote_widget',
@@ -9,7 +9,8 @@ const validEntry: CatalogEntry = {
   description: 'A remote widget app.',
   bundleUrl: 'https://store.example.com/apps/widget.js',
   sha256: 'a'.repeat(64),
-  color: 'bg-sky-500'
+  color: 'bg-sky-500',
+  permissions: []
 };
 
 const jsonResponse = (body: unknown, ok = true, status = 200): Response =>
@@ -65,5 +66,26 @@ describe('fetchCatalog', () => {
     await expect(fetchCatalog('https://store.example.com/catalog.json')).rejects.toThrow(
       'HTTP 503'
     );
+  });
+});
+
+describe('isCatalogEntry', () => {
+  it('accepts a well-formed entry, permissions included', () => {
+    expect(isCatalogEntry(validEntry)).toBe(true);
+  });
+
+  it('accepts requiresNetwork as an optional boolean', () => {
+    expect(isCatalogEntry({ ...validEntry, requiresNetwork: true })).toBe(true);
+    expect(isCatalogEntry({ ...validEntry, requiresNetwork: 'yes' })).toBe(false);
+  });
+
+  it('rejects an entry with no permissions array', () => {
+    const { permissions: _permissions, ...withoutPermissions } = validEntry;
+    expect(isCatalogEntry(withoutPermissions)).toBe(false);
+    expect(isCatalogEntry({ ...validEntry, permissions: 'contacts' })).toBe(false);
+  });
+
+  it('rejects an entry declaring a permission outside ALL_PERMISSIONS', () => {
+    expect(isCatalogEntry({ ...validEntry, permissions: ['not-a-real-permission'] })).toBe(false);
   });
 });

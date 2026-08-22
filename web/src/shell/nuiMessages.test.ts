@@ -114,26 +114,64 @@ describe('notification click-through', () => {
 });
 
 describe('installApp', () => {
-  it('rejects a data: URL before it ever reaches loadRemoteApp', () => {
-    const loadRemoteApp = vi.spyOn(appRegistryStore, 'loadRemoteApp');
+  const catalogEntry = {
+    id: 'remote_weather',
+    name: 'Weather',
+    version: '1.0.0',
+    description: 'Live weather.',
+    bundleUrl: 'https://example.com/app.js',
+    sha256: 'a'.repeat(64),
+    color: 'bg-blue-500',
+    permissions: []
+  };
 
-    route(message('installApp', { url: 'data:text/javascript,alert(1)' }));
+  it('rejects a data: URL before it ever reaches installFromCatalog', () => {
+    const installFromCatalog = vi.spyOn(appRegistryStore, 'installFromCatalog');
 
-    expect(loadRemoteApp).not.toHaveBeenCalled();
+    route(message('installApp', { ...catalogEntry, bundleUrl: 'data:text/javascript,alert(1)' }));
+
+    expect(installFromCatalog).not.toHaveBeenCalled();
     expect(lastToast()).toMatchObject({
       type: 'error',
       message: expect.stringContaining('data:')
     });
   });
 
-  it('still forwards a normal https URL to loadRemoteApp', () => {
-    const loadRemoteApp = vi
-      .spyOn(appRegistryStore, 'loadRemoteApp')
+  it('routes a valid catalog entry to installFromCatalog', () => {
+    const installFromCatalog = vi
+      .spyOn(appRegistryStore, 'installFromCatalog')
       .mockRejectedValue(new Error('not trusted'));
+
+    route(message('installApp', catalogEntry));
+
+    expect(installFromCatalog).toHaveBeenCalledWith(catalogEntry);
+  });
+
+  it('rejects the old { url } shape — it has no catalog entry to build a manifest from', () => {
+    const installFromCatalog = vi.spyOn(appRegistryStore, 'installFromCatalog');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     route(message('installApp', { url: 'https://example.com/app.js' }));
 
-    expect(loadRemoteApp).toHaveBeenCalledWith('https://example.com/app.js');
+    expect(installFromCatalog).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith('[gPhone] installApp: payload is not a CatalogEntry', {
+      url: 'https://example.com/app.js'
+    });
+    expect(lastToast()).toMatchObject({
+      type: 'error',
+      message: expect.stringContaining('invalid catalog entry')
+    });
+  });
+
+  it('rejects any other malformed payload the same way, rather than failing silently', () => {
+    const installFromCatalog = vi.spyOn(appRegistryStore, 'installFromCatalog');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    route(message('installApp', null));
+    route(message('installApp', 'not an object'));
+    route(message('installApp', {}));
+
+    expect(installFromCatalog).not.toHaveBeenCalled();
   });
 });
 

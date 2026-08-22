@@ -13,8 +13,16 @@ vi.mock('../../services/settings', () => serviceMock);
 import { appRegistryStore, getFirstBootTime, type AppManifest } from './registry';
 import { hydrateSettings, useStorage } from '../../sdk/host/useStorage';
 import { setTrustedRemoteAppHosts, sha256Hex } from './remoteAppSecurity';
+import type { CatalogEntry } from './catalog';
+
+const fetchResponse = (text: string, ok = true, status = 200): Response =>
+  ({ ok, status, statusText: '', text: () => Promise.resolve(text) }) as Response;
 
 describe('App Registry Store', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('does not warn when installing a bundled add-on, but warns when replacing an already installed app', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
@@ -98,57 +106,154 @@ describe('App Registry Store', () => {
   });
 
   /**
-   * A bundled add-on survives being uninstalled and installed again.
-   *
-   * This is the defect the split between `bundledComponents` and `componentRegistry` exists for.
-   * One map meant `unregisterApp` deleted the only reference to code still sitting in the bundle,
-   * so the Store's `getComponent(id) || placeholderComponent()` handed the registry the "Not part
-   * of this build" screen on reinstall — for an app whose code had never left. In CEF the page
-   * never unloads, so it stayed broken for the rest of the session.
+   * `registerApp` with a `core: false` manifest is dev-only — `error_boundary.spec.ts`'s
+   * runtime crash fixtures are the intended (and only) non-core caller, and e2e runs
+   * against `pnpm dev`, where `import.meta.env.DEV` is `true`. Every other test in this
+   * file registers non-core manifests through `registerApp` too, relying on vitest also
+   * having `DEV` true — this is the one place that pins the gate itself, on both sides.
    */
-  it('keeps a bundled add-on mountable across uninstall and reinstall', async () => {
-    const blabber = get(appRegistryStore).find((a) => a.id === 'blabber');
-    // Blabber ships `core: false`, so it starts uninstalled and the glob is the only thing that
-    // has ever supplied its component.
-    expect(blabber).toBeUndefined();
+  it('blocks registerApp for a non-core manifest outside DEV, and allows it in DEV', () => {
+    const manifest: AppManifest = {
+      id: 'dev_gate_fixture',
+      name: 'Dev Gate Fixture',
+      color: 'bg-red-500',
+      icon: null,
+      core: false
+    };
+    const component = {} as unknown as AppComponent;
 
-    // Components load on demand now, so the glob supplies a *loader* and nothing resolves
-    // until an app is first opened. `getComponent` answers from the cache, which is empty
-    // here; `loadComponent` is what fills it.
+    vi.stubEnv('DEV', false);
+    try {
+      expect(() => appRegistryStore.registerApp(manifest, component)).toThrow(
+        'add-ons register through registerAddOn(manifest, source)'
+      );
+      expect(get(appRegistryStore).some((a) => a.id === 'dev_gate_fixture')).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    appRegistryStore.registerApp(manifest, component);
+    expect(get(appRegistryStore).some((a) => a.id === 'dev_gate_fixture')).toBe(true);
+    appRegistryStore.unregisterApp('dev_gate_fixture');
+  });
+
+  it('does not export loadRemoteApp any more — it executed fetched code to learn a manifest', () => {
+    expect((appRegistryStore as any).loadRemoteApp).toBeUndefined();
+  });
+
+  /**
+   * `registerAddOn` is the whole point of this task: an add-on's bundle is source text,
+   * never a component, and the registry never `import()`s it.
+   */
+  it('registers an add-on as source text, never a component', async () => {
+    const manifest: AppManifest = {
+      id: 'ad_hoc_addon',
+      name: 'Ad Hoc',
+      color: 'bg-teal-500',
+      icon: null,
+      core: false
+    };
+    try {
+      appRegistryStore.registerAddOn(manifest, 'export {}');
+
+      expect(appRegistryStore.isKnownApp('ad_hoc_addon')).toBe(true);
+      await expect(appRegistryStore.getAddOnSource('ad_hoc_addon')).resolves.toBe('export {}');
+      expect(appRegistryStore.getComponent('ad_hoc_addon')).toBeUndefined();
+    } finally {
+      appRegistryStore.unregisterApp('ad_hoc_addon');
+    }
+  });
+
+  it('refuses registerAddOn with no source for an id that is not a bundled add-on', () => {
+    expect(() =>
+      appRegistryStore.registerAddOn({
+        id: 'not_a_bundled_addon',
+        name: 'Nope',
+        color: 'bg-red-500',
+        icon: null,
+        core: false
+      })
+    ).toThrow('there is nothing for getAddOnSource to fetch');
+  });
+
+  /**
+   * A bundled add-on's source arrives lazily, on first open, and only once — a second
+   * `getAddOnSource` (or two in-flight at the same time) must not trigger a second fetch.
+   */
+  it("fetches a bundled add-on's source once, even when asked for twice at once", async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse('export {}'));
+
+    try {
+      const [first, second] = await Promise.all([
+        appRegistryStore.getAddOnSource('notes'),
+        appRegistryStore.getAddOnSource('notes')
+      ]);
+
+      expect(first).toBe('export {}');
+      expect(second).toBe('export {}');
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).toHaveBeenCalledWith('./addons/notes.js');
+    } finally {
+      appRegistryStore.unregisterApp('notes');
+    }
+  });
+
+  /**
+   * This is the defect the split between `bundledComponents`/`addOnIds` and the runtime
+   * maps exists for, restated for source text: a bundled add-on is known to
+   * `isKnownApp` — and its source fetchable — whether or not it has ever been installed,
+   * because the glob is a fact about the build, not the install.
+   */
+  it("keeps a bundled add-on's source fetchable across uninstall and reinstall, refetching after uninstall", async () => {
+    const blabber = get(appRegistryStore).find((a) => a.id === 'blabber');
+    expect(blabber).toBeUndefined();
     expect(appRegistryStore.getComponent('blabber')).toBeUndefined();
     expect(appRegistryStore.isKnownApp('blabber')).toBe(true);
 
-    const bundled = await appRegistryStore.loadComponent('blabber');
-    expect(bundled).toBeDefined();
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(fetchResponse('export {} // blabber'));
 
-    // Install, exactly as the Store does.
-    appRegistryStore.registerApp(
-      { id: 'blabber', name: 'Blabber', color: 'bg-sky-500', icon: null, core: false },
-      appRegistryStore.getComponent('blabber') as AppComponent
-    );
+    const source = await appRegistryStore.getAddOnSource('blabber');
+    expect(source).toBe('export {} // blabber');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    // Install, exactly as the Store does now — no component.
+    appRegistryStore.registerAddOn({
+      id: 'blabber',
+      name: 'Blabber',
+      color: 'bg-sky-500',
+      icon: null,
+      core: false
+    });
     expect(get(appRegistryStore).some((a) => a.id === 'blabber')).toBe(true);
 
     appRegistryStore.unregisterApp('blabber');
     expect(get(appRegistryStore).some((a) => a.id === 'blabber')).toBe(false);
 
-    // The component is still there, because the code is still in the build.
-    expect(appRegistryStore.getComponent('blabber')).toBe(bundled);
+    // The fetched text was dropped on uninstall, so the next ask fetches again.
+    const sourceAgain = await appRegistryStore.getAddOnSource('blabber');
+    expect(sourceAgain).toBe('export {} // blabber');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
-  it('forgets a remote app’s component on uninstall, because that code really is gone', async () => {
-    const code = `
-      export const manifest = { id: 'remote_gone', name: 'Gone', color: 'bg-gray-600', icon: null };
-      export const component = { type: 'MockRemoteComponent' };
-    `;
-    const url = `data:text/javascript;charset=utf-8,${encodeURIComponent(code)}`;
+  it("forgets a remote app's source on uninstall — unlike a bundled add-on, there is no bundle to refetch", async () => {
+    const source = 'export const manifest = { id: "remote_gone" };';
+    const manifest: AppManifest = {
+      id: 'remote_gone',
+      name: 'Gone',
+      color: 'bg-gray-600',
+      icon: null,
+      core: false,
+      isRemote: true
+    };
 
-    await appRegistryStore.loadRemoteApp(url);
-    expect(appRegistryStore.getComponent('remote_gone')).toBeDefined();
+    appRegistryStore.registerAddOn(manifest, source);
+    expect(await appRegistryStore.getAddOnSource('remote_gone')).toBe(source);
 
     appRegistryStore.unregisterApp('remote_gone');
 
-    // No bundle to fall back to — the asymmetry with a bundled add-on is the whole point.
-    expect(appRegistryStore.getComponent('remote_gone')).toBeUndefined();
+    expect(await appRegistryStore.getAddOnSource('remote_gone')).toBeUndefined();
   });
 
   it('prohibits unregistering built-in core apps', () => {
@@ -156,98 +261,53 @@ describe('App Registry Store', () => {
       "gPhone App Registry error: Unregistering core app 'contacts' is prohibited."
     );
   });
-
-  it('allows dynamic loading of remote ES module bundles via data URLs', async () => {
-    const mockAppCode = `
-      export const manifest = {
-        id: 'remote_marketplace',
-        name: 'Marketplace',
-        color: 'bg-emerald-600',
-        icon: 'https://example.com/icon.svg',
-      };
-      export const component = { type: 'MockRemoteComponent' };
-    `;
-    const dataUrl = `data:text/javascript;charset=utf-8,${encodeURIComponent(mockAppCode)}`;
-
-    const result = await appRegistryStore.loadRemoteApp(dataUrl);
-
-    expect(result.manifest.id).toBe('remote_marketplace');
-    expect(result.manifest.isRemote).toBe(true);
-    expect(result.manifest.bundleUrl).toBe(dataUrl);
-
-    const apps = get(appRegistryStore);
-    const installed = apps.find((a) => a.id === 'remote_marketplace');
-    expect(installed).toBeDefined();
-    expect(appRegistryStore.getComponent('remote_marketplace')).toBeDefined();
-
-    // Clean up dynamic app
-    appRegistryStore.unregisterApp('remote_marketplace');
-  });
-
-  it('rejects loading remote apps with invalid URLs or missing manifests', async () => {
-    await expect(appRegistryStore.loadRemoteApp('')).rejects.toThrow(
-      'gPhone App Loader error: Remote app URL must be a valid string.'
-    );
-  });
-
-  it('rejects a remote app host that is not on the allowlist', async () => {
-    setTrustedRemoteAppHosts([]);
-    await expect(
-      appRegistryStore.loadRemoteApp('https://not-trusted.example.com/app.js')
-    ).rejects.toThrow(
-      "'https://not-trusted.example.com/app.js' is not on the trusted remote-app host allowlist"
-    );
-  });
 });
 
 describe('installFromCatalog', () => {
-  const bundleCode = `
-      export const manifest = {
-        id: 'remote_catalog_app',
-        name: 'Catalog App',
-        color: 'bg-emerald-600',
-        icon: null,
-      };
-      export const component = { type: 'MockRemoteComponent' };
-    `;
-  // sha256 of `bundleCode` above, byte-for-byte — do not reformat the template literal
-  // without recomputing this.
-  const bundleSha256 = '4f86f544a3b1aac2670fed9693990f135ebf9a134305917ccd0bbd0e805048fe';
+  const bundleCode = `export const manifest = { id: 'remote_catalog_app' };`;
   const bundleUrl = 'https://store.example.com/apps/catalog_app.js';
 
-  const catalogEntry = {
-    id: 'remote_catalog_app',
-    name: 'Catalog App',
-    version: '1.0.0',
-    description: 'A catalog-installed app.',
-    bundleUrl,
-    sha256: bundleSha256,
-    color: 'bg-emerald-600'
-  };
+  // Computed fresh in `beforeEach` — `sha256Hex` is async, and a per-test hash is
+  // clearer than committing a hand-computed hex string that silently goes stale if
+  // `bundleCode` above is ever reformatted.
+  let catalogEntry: CatalogEntry;
 
-  const fetchResponse = (text: string, ok = true, status = 200): Response =>
-    ({ ok, status, text: () => Promise.resolve(text) }) as Response;
-
-  beforeEach(() => {
+  beforeEach(async () => {
     setTrustedRemoteAppHosts(['store.example.com']);
     vi.restoreAllMocks();
+    catalogEntry = {
+      id: 'remote_catalog_app',
+      name: 'Catalog App',
+      version: '1.0.0',
+      description: 'A catalog-installed app.',
+      bundleUrl,
+      sha256: await sha256Hex(bundleCode),
+      color: 'bg-emerald-600',
+      permissions: ['storage']
+    };
   });
 
   afterEach(() => {
-    if (appRegistryStore.getComponent('remote_catalog_app')) {
+    if (get(appRegistryStore).some((a) => a.id === 'remote_catalog_app')) {
       appRegistryStore.unregisterApp('remote_catalog_app');
     }
   });
 
-  it('installs a bundle whose hash matches the catalog entry', async () => {
+  it('installs a bundle whose hash matches the catalog entry, building the manifest from the entry', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode));
 
     const result = await appRegistryStore.installFromCatalog(catalogEntry);
 
     expect(result.manifest.id).toBe('remote_catalog_app');
+    expect(result.manifest.name).toBe('Catalog App');
     expect(result.manifest.isRemote).toBe(true);
     expect(result.manifest.bundleUrl).toBe(bundleUrl);
-    expect(appRegistryStore.getComponent('remote_catalog_app')).toBeDefined();
+    expect(result.manifest.core).toBe(false);
+    expect(result.manifest.permissions).toEqual(['storage']);
+    // No component — the registry never ran the fetched code to build a manifest, or a
+    // component, from it. `getAddOnSource` is what the sandboxed transport reads.
+    expect(appRegistryStore.getComponent('remote_catalog_app')).toBeUndefined();
+    await expect(appRegistryStore.getAddOnSource('remote_catalog_app')).resolves.toBe(bundleCode);
   });
 
   it('refuses to import a bundle whose hash does not match', async () => {
@@ -256,7 +316,7 @@ describe('installFromCatalog', () => {
     await expect(appRegistryStore.installFromCatalog(catalogEntry)).rejects.toThrow(
       'did not match its published checksum'
     );
-    expect(appRegistryStore.getComponent('remote_catalog_app')).toBeUndefined();
+    expect(get(appRegistryStore).some((a) => a.id === 'remote_catalog_app')).toBe(false);
   });
 
   it('refuses a bundleUrl that is not on the trusted host allowlist', async () => {
@@ -267,6 +327,26 @@ describe('installFromCatalog', () => {
       'is not on the trusted remote-app host allowlist'
     );
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * `isTrustedRemoteUrl` exempts `data:` URLs for its other, genuinely internal callers —
+   * an exemption that assumes nothing produces one from untrusted input. A catalog entry
+   * is untrusted input (an operator's catalog server, or a saved/rehydrated row derived
+   * from one), so `installVerified` has to reject it itself, before that exemption ever
+   * gets a say — the same boundary `nuiMessages.ts`'s `installApp` applies to an NUI
+   * payload.
+   */
+  it('refuses a data: bundleUrl, rather than letting the trusted-host exemption wave it through', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const dataEntry: CatalogEntry = {
+      ...catalogEntry,
+      bundleUrl: 'data:text/javascript,export const manifest = {}'
+    };
+
+    await expect(appRegistryStore.installFromCatalog(dataEntry)).rejects.toThrow('data:');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(get(appRegistryStore).some((a) => a.id === 'remote_catalog_app')).toBe(false);
   });
 
   it('refuses on a non-ok HTTP response', async () => {
@@ -290,22 +370,20 @@ describe('remote app persistence and rehydration', () => {
    */
   let localStorageBacking: Map<string, string>;
 
-  const bundleCode = `
-      export const manifest = {
-        id: 'remote_rehydrate_app',
-        name: 'Rehydrate App',
-        color: 'bg-purple-600',
-        icon: null,
-      };
-      export const component = { type: 'MockRemoteComponent' };
-    `;
-  // sha256 of `bundleCode` above, byte-for-byte — do not reformat the template literal
-  // without recomputing this.
-  const bundleSha256 = '984cedc40b8f071ffca1e5cc648a75a8de167d148666991bc428bb953ffdebdc';
+  const bundleCode = `export const manifest = { id: 'remote_rehydrate_app' };`;
   const bundleUrl = 'https://store.example.com/apps/rehydrate_app.js';
 
-  const fetchResponse = (text: string, ok = true, status = 200): Response =>
-    ({ ok, status, text: () => Promise.resolve(text) }) as Response;
+  const entryFor = (sha256: string, overrides: Partial<CatalogEntry> = {}): CatalogEntry => ({
+    id: 'remote_rehydrate_app',
+    name: 'Rehydrate App',
+    version: '1.0.0',
+    description: 'desc',
+    bundleUrl,
+    sha256,
+    color: 'bg-purple-600',
+    permissions: [],
+    ...overrides
+  });
 
   beforeEach(() => {
     setTrustedRemoteAppHosts(['store.example.com']);
@@ -319,42 +397,38 @@ describe('remote app persistence and rehydration', () => {
   });
 
   afterEach(() => {
-    if (appRegistryStore.getComponent('remote_rehydrate_app')) {
+    if (get(appRegistryStore).some((a) => a.id === 'remote_rehydrate_app')) {
       appRegistryStore.unregisterApp('remote_rehydrate_app');
     }
     delete (globalThis as any).localStorage;
   });
 
-  it('persists the pinned sha256 for a catalog install, not just the URL', async () => {
+  it('persists the catalog entry for a catalog install, not just the URL — the pinned hash lives on entry.sha256', async () => {
+    const sha256 = await sha256Hex(bundleCode);
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode));
 
-    await appRegistryStore.installFromCatalog({
-      id: 'remote_rehydrate_app',
-      name: 'Rehydrate App',
-      version: '1.0.0',
-      description: 'desc',
-      bundleUrl,
-      sha256: bundleSha256,
-      color: 'bg-purple-600'
-    });
+    const entry = entryFor(sha256);
+    await appRegistryStore.installFromCatalog(entry);
 
     const stored = JSON.parse(localStorage.getItem('gphone_installed_remote_apps') ?? '[]');
-    expect(stored).toEqual([{ url: bundleUrl, sha256: bundleSha256 }]);
+    expect(stored).toEqual([{ url: bundleUrl, entry }]);
   });
 
   it('re-verifies a hash-pinned install on rehydration and refuses a tampered bundle', async () => {
     // Storage holds the hash pinned at install time; the server now serves something else —
     // exactly what "swapped out after install" looks like.
+    const sha256 = await sha256Hex(bundleCode);
+    const entry = entryFor(sha256);
     localStorage.setItem(
       'gphone_installed_remote_apps',
-      JSON.stringify([{ url: bundleUrl, sha256: bundleSha256 }])
+      JSON.stringify([{ url: bundleUrl, entry }])
     );
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode + '// tampered'));
 
     await appRegistryStore.rehydrateSavedRemoteApps();
 
-    expect(appRegistryStore.getComponent('remote_rehydrate_app')).toBeUndefined();
+    expect(get(appRegistryStore).some((a) => a.id === 'remote_rehydrate_app')).toBe(false);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining(`re-hydrate remote app from '${bundleUrl}'`),
       expect.any(Error)
@@ -362,95 +436,73 @@ describe('remote app persistence and rehydration', () => {
   });
 
   it('rehydrates a hash-pinned install whose bundle still matches', async () => {
+    const sha256 = await sha256Hex(bundleCode);
+    const entry = entryFor(sha256);
     localStorage.setItem(
       'gphone_installed_remote_apps',
-      JSON.stringify([{ url: bundleUrl, sha256: bundleSha256 }])
+      JSON.stringify([{ url: bundleUrl, entry }])
     );
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode));
 
     await appRegistryStore.rehydrateSavedRemoteApps();
 
-    expect(appRegistryStore.getComponent('remote_rehydrate_app')).toBeDefined();
+    expect(get(appRegistryStore).some((a) => a.id === 'remote_rehydrate_app')).toBe(true);
+    await expect(appRegistryStore.getAddOnSource('remote_rehydrate_app')).resolves.toBe(bundleCode);
   });
 
-  it('upgrades a hash-less loadRemoteApp record to a pinned hash on a later catalog install', async () => {
-    // `loadRemoteApp`'s direct-import attempt on a real https URL fails in this test
-    // environment (no such module to import), so it falls back to `fetch` — which is
-    // mocked below — exactly like the CEF fallback path it is meant to cover.
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode));
-
-    await appRegistryStore.loadRemoteApp(bundleUrl);
-    expect(JSON.parse(localStorage.getItem('gphone_installed_remote_apps') ?? '[]')).toEqual([
-      { url: bundleUrl }
-    ]);
-
-    await appRegistryStore.installFromCatalog({
-      id: 'remote_rehydrate_app',
-      name: 'Rehydrate App',
-      version: '1.0.0',
-      description: 'desc',
-      bundleUrl,
-      sha256: bundleSha256,
-      color: 'bg-purple-600'
-    });
-
-    const stored = JSON.parse(localStorage.getItem('gphone_installed_remote_apps') ?? '[]');
-    expect(stored).toEqual([{ url: bundleUrl, sha256: bundleSha256 }]);
-  });
-
-  it('replaces a stale pinned hash when the same bundleUrl is reinstalled with a new one', async () => {
-    const updatedCode = bundleCode.replace('Rehydrate App', 'Rehydrate App v2');
+  it('replaces a stale pinned hash and entry when the same bundleUrl is reinstalled with a new one', async () => {
+    const updatedCode = bundleCode + '// v2';
+    const sha256 = await sha256Hex(bundleCode);
     const updatedSha256 = await sha256Hex(updatedCode);
 
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     fetchSpy.mockResolvedValueOnce(fetchResponse(bundleCode));
 
-    await appRegistryStore.installFromCatalog({
-      id: 'remote_rehydrate_app',
-      name: 'Rehydrate App',
-      version: '1.0.0',
-      description: 'desc',
-      bundleUrl,
-      sha256: bundleSha256,
-      color: 'bg-purple-600'
-    });
+    await appRegistryStore.installFromCatalog(entryFor(sha256));
 
     fetchSpy.mockResolvedValueOnce(fetchResponse(updatedCode));
+    const updatedEntry = entryFor(updatedSha256, { name: 'Rehydrate App v2', version: '1.0.1' });
 
-    await appRegistryStore.installFromCatalog({
-      id: 'remote_rehydrate_app',
-      name: 'Rehydrate App v2',
-      version: '1.0.1',
-      description: 'desc',
-      bundleUrl,
-      sha256: updatedSha256,
-      color: 'bg-purple-600'
-    });
+    await appRegistryStore.installFromCatalog(updatedEntry);
 
     const stored = JSON.parse(localStorage.getItem('gphone_installed_remote_apps') ?? '[]');
-    expect(stored).toEqual([{ url: bundleUrl, sha256: updatedSha256 }]);
+    expect(stored).toEqual([{ url: bundleUrl, entry: updatedEntry }]);
   });
 
-  it('still rehydrates a pre-existing plain-string-array install from before this change', async () => {
-    const legacyUrl = `data:text/javascript;charset=utf-8,${encodeURIComponent(bundleCode)}`;
-    localStorage.setItem('gphone_installed_remote_apps', JSON.stringify([legacyUrl]));
+  it('drops a pre-existing saved install with no catalog entry, warning by URL, rather than crashing', async () => {
+    // Shapes from before this task: a bare URL string, or `{ url, sha256 }` with nothing
+    // to rebuild a manifest from. Neither can be rehydrated any more — this registry
+    // never re-runs fetched code to ask it what it is.
+    localStorage.setItem(
+      'gphone_installed_remote_apps',
+      JSON.stringify([bundleUrl, { url: 'https://store.example.com/apps/other.js', sha256: 'x' }])
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
 
     await appRegistryStore.rehydrateSavedRemoteApps();
 
-    // No `sha256` in the old shape, so this goes through `loadRemoteApp`, unverified —
-    // exactly the behavior this install had before this task shipped.
-    expect(appRegistryStore.getComponent('remote_rehydrate_app')).toBeDefined();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(bundleUrl));
+    expect(get(appRegistryStore).some((a) => a.id === 'remote_rehydrate_app')).toBe(false);
   });
 });
 
 describe('installed add-on persistence', () => {
-  it('persists a bundled add-on install and removes it on uninstall', async () => {
-    const blabberComponent = (await appRegistryStore.loadComponent('blabber')) as AppComponent;
+  afterEach(() => {
+    if (get(appRegistryStore).some((a) => a.id === 'blabber')) {
+      appRegistryStore.unregisterApp('blabber');
+    }
+  });
 
-    appRegistryStore.registerApp(
-      { id: 'blabber', name: 'Blabber', color: 'bg-sky-500', icon: null, core: false },
-      blabberComponent
-    );
+  it('persists a bundled add-on install and removes it on uninstall', async () => {
+    appRegistryStore.registerAddOn({
+      id: 'blabber',
+      name: 'Blabber',
+      color: 'bg-sky-500',
+      icon: null,
+      core: false
+    });
     expect(useStorage('store').getItem<string[]>('installedAddOns')).toEqual(['blabber']);
 
     appRegistryStore.unregisterApp('blabber');
@@ -458,13 +510,16 @@ describe('installed add-on persistence', () => {
   });
 
   it('does not track a remote app in the installed add-on list', async () => {
-    const code = `
-      export const manifest = { id: 'remote_installed_addons_test', name: 'Remote', color: 'bg-gray-600', icon: null };
-      export const component = { type: 'MockRemoteComponent' };
-    `;
-    const url = `data:text/javascript;charset=utf-8,${encodeURIComponent(code)}`;
+    const manifest: AppManifest = {
+      id: 'remote_installed_addons_test',
+      name: 'Remote',
+      color: 'bg-gray-600',
+      icon: null,
+      core: false,
+      isRemote: true
+    };
 
-    await appRegistryStore.loadRemoteApp(url);
+    appRegistryStore.registerAddOn(manifest, 'export {}');
     expect(useStorage('store').getItem<string[]>('installedAddOns')).toEqual([]);
 
     appRegistryStore.unregisterApp('remote_installed_addons_test');

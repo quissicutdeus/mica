@@ -195,9 +195,10 @@ describe('defineApp: core', () => {
     // A remote app is never core, so requiring the declaration would be ceremony that
     // breaks every bundle written before this field existed.
     const app = defineApp(
-      // A remote manifest is untyped by definition — `loadRemoteApp` spreads whatever the
-      // bundle exported. Cast rather than `@ts-expect-error`, because the assertion under
-      // test is a runtime one and the cast is what the real call site effectively does.
+      // A remote manifest is untyped by definition — `installVerified` builds it from a
+      // `CatalogEntry`, which predates `core`'s existence on some real installs. Cast
+      // rather than `@ts-expect-error`, because the assertion under test is a runtime one
+      // and the cast is what the real call site effectively does.
       { id: 'legacy_remote', color: 'bg-blue-600', icon: null, isRemote: true } as never
     );
 

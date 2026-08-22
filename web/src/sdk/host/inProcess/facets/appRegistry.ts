@@ -16,10 +16,11 @@ export function appRegistry() {
     /** Add-ons this repo ships uninstalled — what the Store has to offer beyond remotes. */
     bundledAddOns,
     getFirstBootTime: () => getFirstBootTime(),
-    loadRemoteApp: (url: string) => appRegistryStore.loadRemoteApp(url),
     installFromCatalog: (entry: CatalogEntry) => appRegistryStore.installFromCatalog(entry),
     registerApp: (manifest: AppManifest, component: AppComponent) =>
       appRegistryStore.registerApp(manifest, component),
+    registerAddOn: (manifest: AppManifest, source?: string) =>
+      appRegistryStore.registerAddOn(manifest, source),
     unregisterApp: (appId: string) => appRegistryStore.unregisterApp(appId)
   };
 }

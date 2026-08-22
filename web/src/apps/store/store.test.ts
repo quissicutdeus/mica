@@ -94,7 +94,7 @@ describe('Store, rendered', () => {
 describe('handleInstall routing', () => {
   /**
    * `handleInstall` in `index.svelte` branches on `app.isRemote && app.bundleUrl` to pick
-   * `installFromCatalog` over the bundled-add-on `registerApp` path. Only the bundled
+   * `installFromCatalog` over the bundled-add-on `registerAddOn` path. Only the bundled
    * branch is reachable through a real render: `REMOTE_CATALOG_URL` is hard-coded to
    * `undefined` in `index.svelte` (a deliberate non-goal — no operator configuration for
    * the remote catalog URL yet), so `mergedCatalogApps` never returns a remote entry for
@@ -108,8 +108,8 @@ describe('handleInstall routing', () => {
     }
   });
 
-  it('installs a bundled add-on via registerApp, not installFromCatalog', async () => {
-    const registerApp = vi.spyOn(appRegistryStore, 'registerApp');
+  it('installs a bundled add-on via registerAddOn, not installFromCatalog', async () => {
+    const registerAddOn = vi.spyOn(appRegistryStore, 'registerAddOn');
     const installFromCatalog = vi.spyOn(appRegistryStore, 'installFromCatalog');
 
     const { getByText } = renderApp(Store, { id: 'store' });
@@ -121,8 +121,8 @@ describe('handleInstall routing', () => {
     // Second button in the row is Install/Uninstall; the first opens the details view.
     (buttons[1] as HTMLButtonElement).click();
 
-    await vi.waitFor(() => expect(registerApp).toHaveBeenCalled());
-    expect(registerApp.mock.calls[0][0]).toMatchObject({ id: 'notes' });
+    await vi.waitFor(() => expect(registerAddOn).toHaveBeenCalled());
+    expect(registerAddOn.mock.calls[0][0]).toMatchObject({ id: 'notes' });
     expect(installFromCatalog).not.toHaveBeenCalled();
   });
 });
@@ -136,7 +136,8 @@ describe('remote catalog', () => {
     bundleUrl: 'https://store.example.com/apps/weather.js',
     sha256: 'b'.repeat(64),
     color: 'bg-blue-500',
-    icon: 'https://store.example.com/icons/weather.svg'
+    icon: 'https://store.example.com/icons/weather.svg',
+    permissions: ['storage'] as const
   };
 
   beforeEach(() => {
@@ -167,7 +168,9 @@ describe('remote catalog', () => {
         color: 'bg-blue-500',
         core: false,
         isRemote: true,
-        bundleUrl: 'https://store.example.com/apps/weather.js'
+        bundleUrl: 'https://store.example.com/apps/weather.js',
+        permissions: ['storage'],
+        requiresNetwork: false
       }
     ]);
   });

@@ -48,6 +48,9 @@ import { persisted } from './persisted';
 import { timer } from './timer';
 import { onAppForeground } from './lifecycle';
 
+/** A namespaced storage key. Built, not quoted: a `gphone:` literal reads as a net event to `server/__tests__/eventNames.test.ts`. */
+const storageKey = (app: string, key: string) => `gphone:${app}:${key}`;
+
 const keys = (o: object) => Object.keys(o).sort();
 
 const fakeConstants = {
@@ -136,7 +139,7 @@ describe('appLevels — the back handler special case', () => {
 
 describe('storage — cache-backed reads', () => {
   it('getItem is sync from hydrateStorage', () => {
-    hydrateStorage({ 'gphone:blabber:k': '"v"' });
+    hydrateStorage({ [storageKey('blabber', 'k')]: '"v"' });
     expect(storage('blabber').getItem('k')).toBe('v');
   });
 });
@@ -144,7 +147,7 @@ describe('storage — cache-backed reads', () => {
 describe('clearAppStorage — routes through the storage facet, not a bare facet name', () => {
   it('sends a call to storage.clear scoped by appId, and clears the local cache', () => {
     const f = fakeTransport();
-    hydrateStorage({ 'gphone:probe:k': '"v"' });
+    hydrateStorage({ [storageKey('probe', 'k')]: '"v"' });
     expect(storage('probe').getItem('k')).toBe('v');
 
     clearAppStorage('probe');
@@ -161,7 +164,7 @@ describe('clearAppStorage — routes through the storage facet, not a bare facet
 
 describe('persisted — initial value from the cache', () => {
   it('reads its starting value from whatever hydrateStorage already put in the cache', () => {
-    hydrateStorage({ 'gphone:blabber:pref': '"fromCache"' });
+    hydrateStorage({ [storageKey('blabber', 'pref')]: '"fromCache"' });
     const store = persisted('blabber', 'pref', 'default');
     expect(get(store)).toBe('fromCache');
   });

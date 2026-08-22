@@ -1,6 +1,12 @@
 import { isTrustedRemoteUrl } from './remoteAppSecurity';
+import { ALL_PERMISSIONS, type AppPermission } from '../../sdk/manifest';
 
-/** One installable app as an operator's catalog server describes it. */
+/**
+ * One installable app as an operator's catalog server describes it — everything
+ * `installFromCatalog` needs to build the manifest itself, without ever running the
+ * bundle to ask it. See `registry.ts`'s `installVerified`: the manifest is built from
+ * these fields, never from `import()`ing fetched code.
+ */
 export interface CatalogEntry {
   id: string;
   name: string;
@@ -11,12 +17,16 @@ export interface CatalogEntry {
   sha256: string;
   color: string;
   icon?: string;
+  /** What this app discloses it reaches for — shown to a player before they install it. */
+  permissions: AppPermission[];
+  /** Whether the phone should block this app while signal is out. Defaults to `false`. */
+  requiresNetwork?: boolean;
 }
 
 const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
 
 /** Whether `value` has every field `CatalogEntry` requires, with the right primitive types. */
-function isCatalogEntry(value: unknown): value is CatalogEntry {
+export function isCatalogEntry(value: unknown): value is CatalogEntry {
   if (!value || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
   return (
@@ -27,7 +37,10 @@ function isCatalogEntry(value: unknown): value is CatalogEntry {
     isNonEmptyString(v.bundleUrl) &&
     isNonEmptyString(v.sha256) &&
     isNonEmptyString(v.color) &&
-    (v.icon === undefined || typeof v.icon === 'string')
+    (v.icon === undefined || typeof v.icon === 'string') &&
+    Array.isArray(v.permissions) &&
+    v.permissions.every((p) => ALL_PERMISSIONS.includes(p as AppPermission)) &&
+    (v.requiresNetwork === undefined || typeof v.requiresNetwork === 'boolean')
   );
 }
 

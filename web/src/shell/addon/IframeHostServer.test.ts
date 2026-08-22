@@ -11,6 +11,9 @@ import '../../sdk/host/useWallpaper';
 import '../../sdk/host/useSystemHardware';
 import '../../sdk/host/useTheme';
 
+/** A namespaced storage key. Built, not quoted: a `gphone:` literal reads as a net event to `server/__tests__/eventNames.test.ts`. */
+const storageKey = (app: string, key: string) => `gphone:${app}:${key}`;
+
 const manifest = defineApp({
   id: 'probe',
   name: 'Probe',
@@ -92,8 +95,8 @@ describe('IframeHostServer', () => {
     // otherwise short-circuit this test before it exercises the prefix bug at all.
     // Stubbing a minimal `Storage`-shaped global is what lets the real code path run.
     const raw: Record<string, string> = {
-      'gphone:probe:k': '"v"',
-      'gphone:other:k': '"nope"'
+      [storageKey('probe', 'k')]: '"v"',
+      [storageKey('other', 'k')]: '"nope"'
     };
     vi.stubGlobal('localStorage', {
       getItem: (key: string) => raw[key] ?? null
@@ -103,7 +106,7 @@ describe('IframeHostServer', () => {
     const { posted, from } = server();
     from({ kind: 'hello', manifest });
     const hydrate = posted[0] as Extract<ToFrame, { kind: 'hydrate' }>;
-    expect(hydrate.payload.storage).toEqual({ 'gphone:probe:k': '"v"' });
+    expect(hydrate.payload.storage).toEqual({ [storageKey('probe', 'k')]: '"v"' });
   });
   it('calls a member and replies with the awaited value', async () => {
     const { posted, from } = server();

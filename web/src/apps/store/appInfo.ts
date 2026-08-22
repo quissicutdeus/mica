@@ -53,7 +53,9 @@ const toAppManifest = (entry: CatalogEntry): AppManifest => ({
   color: entry.color,
   core: false,
   isRemote: true,
-  bundleUrl: entry.bundleUrl
+  bundleUrl: entry.bundleUrl,
+  permissions: entry.permissions,
+  requiresNetwork: entry.requiresNetwork ?? false
 });
 
 /**

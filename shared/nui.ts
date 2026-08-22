@@ -22,10 +22,6 @@ export interface OpenAppPayload {
   props?: Record<string, unknown>;
 }
 
-export interface InstallAppPayload {
-  url: string;
-}
-
 export interface UninstallAppPayload {
   appId: string;
 }
@@ -131,14 +127,6 @@ export function parseOpenApp(data: unknown): OpenAppPayload | null {
   if (!appId) return null;
   const props = safeObject(obj.props) ?? undefined;
   return { appId, props };
-}
-
-export function parseInstallApp(data: unknown): InstallAppPayload | null {
-  const obj = safeObject(data);
-  if (!obj) return null;
-  const url = safeString(obj.url, 2048);
-  if (!url) return null;
-  return { url };
 }
 
 export function parseUninstallApp(data: unknown): UninstallAppPayload | null {

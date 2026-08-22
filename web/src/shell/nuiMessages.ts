@@ -3,6 +3,7 @@ import { contacts } from '../services/contacts';
 import { mailStore } from '../services/mail';
 import { conversationsStore } from '../services/conversations';
 import { appRegistryStore } from './state/registry';
+import { isCatalogEntry, type CatalogEntry } from './state/catalog';
 import { setSignal } from './state/signal';
 import { time } from './state/time';
 import { hydrateSettings } from '../sdk/host/useStorage';
@@ -14,7 +15,6 @@ import { deliverAppEvent } from './state/appEvents';
 import { parseDeepLink } from '@shared/deepLink';
 import {
   parseContactShare,
-  parseInstallApp,
   parseNotify,
   parseOpenApp,
   parseReceiveMail,
@@ -38,18 +38,37 @@ export interface NotificationBridge {
  * instead of duplicating the list of what is handled here.
  */
 export function createNuiMessageRouter(bridge: NotificationBridge) {
+  /**
+   * `@shared/nui` used to export a parser for this action that handed back a bare
+   * `{ url }`, and the shell would `import()` whatever module answered from it — the
+   * exact thing MICA-16 step 4 forbids. That parser and its payload type were deleted
+   * outright rather than widened: nothing else used them, and a dead export still
+   * advertising the old shape was worse than removing it. A catalog entry is the only
+   * shape the registry can turn into a manifest without running the fetched code to ask
+   * it, so that is what an NUI install now has to look like — validated here with
+   * `isCatalogEntry`, the same validator `fetchCatalog` applies to a catalog response, so
+   * an NUI payload is held to the same bar.
+   */
   const installApp = (data: unknown) => {
-    const payload = parseInstallApp(data);
-    if (!payload) return;
+    if (!isCatalogEntry(data)) {
+      console.warn('[gPhone] installApp: payload is not a CatalogEntry', data);
+      toast.show({
+        type: 'error',
+        app: 'store',
+        message: 'Failed to install remote app: invalid catalog entry'
+      });
+      return;
+    }
+    const payload: CatalogEntry = data;
 
-    // `isTrustedRemoteUrl` (which `loadRemoteApp` checks) exempts `data:` URLs on the
-    // assumption that nothing produces one from untrusted input. An NUI message is
+    // `isTrustedRemoteUrl` (which `installFromCatalog` checks) exempts `data:` URLs on
+    // the assumption that nothing produces one from untrusted input. An NUI message is
     // untrusted input, and `data:text/javascript,<code>` would run arbitrary JS in the
     // shell's own context with no host check and no hash verification — there is no
     // legitimate reason a FiveM resource would push inline source over NUI instead of an
     // https:// URL. Reject it here, at the boundary, rather than widening the allowlist
     // check itself (which other, genuinely trusted, internal callers rely on).
-    if (payload.url.startsWith('data:')) {
+    if (payload.bundleUrl.startsWith('data:')) {
       toast.show({
         type: 'error',
         app: 'store',
@@ -59,7 +78,7 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     }
 
     appRegistryStore
-      .loadRemoteApp(payload.url)
+      .installFromCatalog(payload)
       .then(({ manifest }) => {
         toast.show({
           type: 'success',

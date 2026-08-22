@@ -20,9 +20,9 @@ export function appRegistry(): Twin {
     /** Add-ons don't list add-ons. */
     bundledAddOns: [],
     getFirstBootTime: fn('appRegistry', [], 'getFirstBootTime'),
-    loadRemoteApp: refused,
     installFromCatalog: refused,
     registerApp: refused,
+    registerAddOn: refused,
     unregisterApp: refused
   } as unknown as Twin;
 }

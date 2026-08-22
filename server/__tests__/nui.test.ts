@@ -5,7 +5,6 @@ import {
   parseSetSignal,
   parseNotify,
   parseOpenApp,
-  parseInstallApp,
   parseUninstallApp,
   parseReceiveMail,
   parseReceiveMessage,
@@ -56,9 +55,6 @@ describe('Shared NUI Payload Validation', () => {
     });
     expect(parseOpenApp({ appId: '' })).toBeNull();
 
-    expect(parseInstallApp({ url: 'https://example.com/app.js' })).toEqual({
-      url: 'https://example.com/app.js'
-    });
     expect(parseUninstallApp({ appId: 'notes' })).toEqual({ appId: 'notes' });
   });
 
