@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { addOnFrame } from './support/addon';
 
 /**
  * Every notification route, checked to actually land.
@@ -105,7 +106,7 @@ test('a toast follows the deep link its push declared', async ({ page }) => {
   });
 
   await page.getByText('New mail').click();
-  await expect(page.getByRole('heading', { name: 'Notes' })).toBeVisible();
+  await expect(addOnFrame(page, 'notes').getByRole('heading', { name: 'Notes' })).toBeVisible();
 });
 
 test('an unresolvable link leaves the phone where it was', async ({ page }) => {

@@ -37,7 +37,15 @@
       // `src/sdk/index.ts` is deliberately NOT listed. Treating the whole SDK as public
       // API would stop knip ever reporting an unused export from it — and an exported,
       // complete, unused component is exactly what this found last time.
-      "entry": ["src/sdk/icons.ts", "src/sdk/addon.ts", "e2e/**/*.spec.ts", "*.config.ts"],
+      // `src/sdk/host/iframe/facets/*.ts` twins are reached only through the add-on
+      // build's alias (`web/vite.addon.config.ts`), never by a static import in this repo.
+      "entry": [
+        "src/sdk/icons.ts",
+        "src/sdk/addon.ts",
+        "src/sdk/host/iframe/facets/*.ts",
+        "e2e/**/*.spec.ts",
+        "*.config.ts"
+      ],
       "project": ["src/**/*.{ts,svelte}"]
     }
   }

@@ -364,16 +364,30 @@ test.describe('Interactive Toast Notifications E2E', () => {
   });
 
   test('an app that is not installed does not get to interrupt the player', async ({ page }) => {
-    // The toast is gated on `getManifest(app)` finding a manifest that declares
-    // `notifications`. Blabber declares it but is `core: false`, so in a fresh session it
-    // is not installed and there is no manifest to consult.
+    // The toast is gated on `isInstalled(app)` *and* the manifest declaring
+    // `notifications`. Blabber declares it and, being a bundled add-on, its manifest
+    // resolves through `getManifest` even before an install (that fallback is what lets a
+    // deep link render one) — so installed-ness is the only thing standing between an
+    // add-on the player never installed and a toast in their face.
     //
-    // Worth asserting rather than assuming: the gate is the only thing keeping an add-on
-    // the player removed — or never installed — from raising toasts at them, and nothing
-    // else in the suite covers the negative case. The data half still flows either way,
-    // deliberately; §7 says permissions are a disclosure, not a sandbox.
+    // Worth asserting rather than assuming: nothing else in the suite covers the negative
+    // case. The data half still flows either way, deliberately; §7 says permissions are a
+    // disclosure, not a sandbox.
     await pushAppEvent(page, 'blabber', '@michael mentioned you');
-    await expect(page.getByText('@michael mentioned you')).toHaveCount(0);
+
+    const toastText = page.getByText('@michael mentioned you');
+    // The timeout is deliberately far below `ToastHost`'s 4500ms default life. With the
+    // default 5s expect timeout this assertion would also pass against a toast that *did*
+    // appear and then expired — which is the bug it exists to catch, not a pass.
+    await expect(toastText).toHaveCount(0, { timeout: 1500 });
+
+    // ...and it is still absent after a *later* push has been processed all the way to a
+    // visible toast. That second push is also this test's positive control: a
+    // `pushAppEvent` that had silently stopped working could otherwise make the assertion
+    // above pass for the wrong reason. `mail` is core, so it is installed and permitted.
+    await pushAppEvent(page, 'mail', 'You have new mail');
+    await expect(page.getByText('You have new mail')).toBeVisible();
+    await expect(toastText).toHaveCount(0);
   });
 });
 

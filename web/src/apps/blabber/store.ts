@@ -299,9 +299,32 @@ export const loadFollowStats = async (accountId: number): Promise<void> => {
  * read and left. A list is opened deliberately, is expected to be current, and only one is ever on
  * screen, so `load` replacing the window is the right behavior and a per-account cache would just
  * be a way to show a stale list.
+ *
+ * Read through the `accounts` facet rather than by route name, and that part is not a style
+ * choice. These two were the last reads in this app naming a row in `shared/routes.ts`
+ * directly, and Blabber is an add-on now (`core: false`): inside the sandbox a named NUI
+ * action is refused outright (`sdk/host/iframe/fetchNui.ts`) and the generic service route is
+ * pinned to the app's own namespace (`IframeHostServer`'s `serviceAllowed`), so the
+ * enumerated facet is the only door an add-on has to a *shared* service. The refusal was not
+ * silent, but it landed in the frame's own console — on screen the Followers and Following
+ * lists simply stayed empty under a follower count that had already moved, because the count
+ * is optimistic and the list is not.
  */
-export const followers = createPagedStore<Account>('getFollowers', { pageSize: 30 });
-export const following = createPagedStore<Account>('getFollowing', { pageSize: 30 });
+const followList =
+  (member: 'getFollowers' | 'getFollowing') => (payload: Record<string, unknown>) =>
+    accounts()[member]({
+      app: 'blabber',
+      account_id: Number(payload.account_id),
+      cursor: payload.cursor as number | undefined,
+      limit: payload.limit as number | undefined
+    });
+
+// No explicit type argument here, unlike the stores above. `routes.test.ts`'s scanner reads
+// this factory's name followed by a lazily-matched type argument, which backtracks past a
+// non-string first argument and picks up a quoted word further down the file as if it were an
+// action name. The element type infers from the reader's own return type either way.
+export const followers = createPagedStore(followList('getFollowers'), { pageSize: 30 });
+export const following = createPagedStore(followList('getFollowing'), { pageSize: 30 });
 
 /**
  * Whose followers, or whose following. Public, so no viewer identity is sent: these read the same
@@ -595,6 +618,8 @@ onBlabberKind('dm', () => {
 });
 
 /** The People segment: accounts whose handle or display name matches the query, this app only. */
+// TODO(MICA-16): accountResults still pages through { service: 'accounts' }, which the
+// sandbox refuses — needs a useAccounts.search read
 export const accountResults = createPagedStore<Account>('search', { service: 'accounts' });
 export const searchAccounts = (q: string): Promise<void> =>
   accountResults.load({ app: 'blabber', q });

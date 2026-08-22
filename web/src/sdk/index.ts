@@ -15,6 +15,12 @@ export * from './kit/index';
  */
 export { createCrudStore, byNewest } from '../services/createCrudStore';
 export { createPagedStore } from '../services/createPagedStore';
+/**
+ * @public
+ * The reader form of `createPagedStore`'s first argument — an app needs the type to name a
+ * paged read that goes through a facet (`useAccounts().getFollowers`) rather than a route.
+ */
+export type { PageReader } from '../services/createPagedStore';
 export {
   setTrustedRemoteAppHosts,
   getTrustedRemoteAppHosts

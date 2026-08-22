@@ -7,15 +7,30 @@
    */
   let {
     appName,
+    message = null,
     stack,
     onRestart,
     onHome
   }: {
     appName: string;
+    /**
+     * The error's own message, when the caller has one.
+     *
+     * `ErrorBoundary` catches a real `Error` and its `stack` already begins with the
+     * message, so it passes none. An add-on crashing inside its sandboxed iframe
+     * (`AddOnFrame`) only ever gets what survived `postMessage`, and a rejection whose
+     * reason was not an `Error` arrives with `stack: null` — message-only. Without this
+     * the DEV panel showed nothing at all for exactly the failures that are hardest to
+     * reproduce, since the frame's own console is not the shell's.
+     */
+    message?: string | null;
     stack: string | null;
     onRestart: () => void;
     onHome: () => void;
   } = $props();
+
+  /** DEV-only diagnostics: the message when there is no stack to subsume it, else both. */
+  const detail = $derived(stack && message ? `${message}\n\n${stack}` : (stack ?? message));
 </script>
 
 <div
@@ -54,11 +69,11 @@
     </button>
   </div>
 
-  {#if import.meta.env.DEV && stack}
+  {#if import.meta.env.DEV && detail}
     <div
-      class="border-error bg-error-container text-on-error-container text-body-small mt-6 max-h-32 w-full overflow-auto rounded-lg border p-3 text-left font-mono"
+      class="border-error bg-error-container text-on-error-container text-body-small mt-6 max-h-32 w-full overflow-auto rounded-lg border p-3 text-left font-mono whitespace-pre-wrap"
     >
-      {stack}
+      {detail}
     </div>
   {/if}
 </div>

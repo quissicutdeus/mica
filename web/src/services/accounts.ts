@@ -47,6 +47,44 @@ export const getFollowStats = (input: {
     }
   });
 
+/**
+ * The two lists behind those counts, paged.
+ *
+ * Here rather than as a bare `createPagedStore('getFollowers')` inside Blabber, because
+ * Blabber is an add-on now: `sdk/host/iframe/fetchNui.ts` refuses a named NUI action from
+ * inside the sandbox, and the generic service route is pinned to the app's own namespace
+ * (`IframeHostServer`'s `serviceAllowed`) — so the only door an add-on has to a *shared*
+ * service is its enumerated facet, which is this module. Public, like the counts: no
+ * viewer identity is sent, because these read the same whoever is looking.
+ */
+export interface FollowPage {
+  rows: Account[];
+  nextCursor: number | null;
+}
+
+export interface FollowListQuery {
+  app: string;
+  account_id: number;
+  cursor?: number;
+  limit?: number;
+}
+
+// Two literal calls rather than one helper taking the action name, for the reason
+// `toggleFollow` gives: `server/__tests__/routes.test.ts` scans for the action name as a
+// string literal at the call site, and a route it cannot see is reported as dead weight.
+//
+// No `defaultValue`, deliberately — unlike every read above. These two feed a
+// `createPagedStore`, whose own contract is that a failure throws so `load`/`loadMore` can
+// decide what it does to the window they are already holding (they keep the last known
+// page and warn). An empty page handed back on a transport failure is indistinguishable
+// from a real empty list, which is precisely the "nobody follows this account" lie that
+// hid the sandbox refusal this pair was written to fix.
+export const getFollowers = (query: FollowListQuery) =>
+  fetchNui<FollowPage>('getFollowers', query, undefined);
+
+export const getFollowing = (query: FollowListQuery) =>
+  fetchNui<FollowPage>('getFollowing', query, undefined);
+
 export const followAccount = (input: {
   app: string;
   follower_account_id: number;

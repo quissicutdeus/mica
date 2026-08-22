@@ -102,6 +102,10 @@ describe('AddOnFrame', () => {
 
     await waitFor(() => expect(getByText('App Stopped Working')).toBeTruthy());
     expect(getByText('Probe')).toBeTruthy();
+    // The frame's console is not the shell's, so a stackless crash from inside the
+    // sandbox would otherwise be entirely invisible. In DEV the message itself is shown.
+    expect(import.meta.env.DEV).toBe(true);
+    expect(getByText('boom')).toBeTruthy();
 
     await fireEvent.click(getByText('Restart App'));
 

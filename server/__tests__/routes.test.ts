@@ -183,8 +183,11 @@ describe('route table', () => {
     expect(MOCKS.size).toBeGreaterThan(20);
     // The declarative half specifically. If `createCrudStore` were renamed and this
     // collector quietly stopped matching, the dead-weight check would start failing for
-    // reasons that have nothing to do with dead weight.
-    expect(CRUD_EVENTS.length).toBeGreaterThan(10);
+    // reasons that have nothing to do with dead weight. The floor tracks the real count,
+    // which moves down as well as up: Blabber's `followers`/`following` stores now read
+    // through the `accounts` facet (MICA-16 step 4 — an add-on cannot name a NUI route
+    // from inside the sandbox), so they declare no action name for this collector to find.
+    expect(CRUD_EVENTS.length).toBeGreaterThan(9);
   });
 
   it('declares no duplicate NUI action names', () => {

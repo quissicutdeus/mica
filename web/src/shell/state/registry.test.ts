@@ -256,6 +256,17 @@ describe('App Registry Store', () => {
     expect(await appRegistryStore.getAddOnSource('remote_gone')).toBeUndefined();
   });
 
+  it('resolves a bundled add-on manifest that has never been installed', () => {
+    // A `?app=notes` deep link opens an uninstalled add-on by design, and `Shell.svelte`
+    // will not render it without a manifest — an installed-only lookup left that on a
+    // permanent spinner.
+    expect(get(appRegistryStore).some((a) => a.id === 'notes')).toBe(false);
+    expect(appRegistryStore.getManifest('notes')?.name).toBeTruthy();
+    expect(appRegistryStore.getManifest('notes')?.core).toBe(false);
+    // Still not a licence to invent apps: an id nothing in the build declares stays undefined.
+    expect(appRegistryStore.getManifest('not_a_real_app')).toBeUndefined();
+  });
+
   it('prohibits unregistering built-in core apps', () => {
     expect(() => appRegistryStore.unregisterApp('contacts')).toThrow(
       "gPhone App Registry error: Unregistering core app 'contacts' is prohibited."

@@ -82,8 +82,16 @@ let current: ClientTransport | undefined;
 export function setClientTransport(t: ClientTransport): void {
   current = t;
 }
-/** The single transport `remote.ts` uses. `setClientTransport` is called by boot (and tests). */
+/**
+ * The single transport `remote.ts` uses. Lazily created (and cached) against `window` on
+ * first use: the addon-entry bundle imports the app's own module graph (and therefore
+ * runs any module-scope `useAppEvents(...).on(...)` subscription it makes — see
+ * `apps/blabber/store.ts`) before `bootAddOn()` gets a chance to call `setClientTransport`.
+ * A `call`/`subscribe` sent this early is fine: the server answers it without a `hello`.
+ * `setClientTransport` still lets a test (or `bootAddOn`, which reuses whatever is already
+ * set) install a specific instance ahead of time.
+ */
 export function clientTransport(): ClientTransport {
-  if (!current) throw new Error('[gPhone] add-on transport used before bootAddOn() ran.');
+  if (!current) current = createClientTransport();
   return current;
 }

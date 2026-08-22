@@ -197,17 +197,26 @@ export default defineConfig({
     emptyOutDir: !process.env.ADDON_ID,
     target: 'chrome92',
     cssCodeSplit: false,
-    // Unminified under `--watch` (`ADDON_WATCH=1`, set by `build-addons.mjs`) so a dev
-    // rebuild stays readable; minified for a real `build`/`build:addons`, which also
-    // happens to strip the doc-comment prose that trips the `shell/state` grep below
-    // (see the report's Fix round 1 for the full before/after).
-    minify: !process.env.ADDON_WATCH,
+    // Always minified, `--watch` included. The bundle text is what the shell
+    // `encodeURIComponent`s into a `data:` module URL on every open, and under a parallel
+    // e2e run the unminified 770 KB Blabber bundle booted slower than a 5 s assertion —
+    // every Blabber test failed under load and passed alone. Read `ADDON_WATCH=1
+    // pnpm build:addons` output with a source map if you need the prose. Minifying also
+    // strips the doc-comment text that used to trip the `shell/state` grep.
+    minify: true,
     lib: {
       entry: Object.fromEntries(ids.map((id) => [id, `addon-entry:${id}`])),
       formats: ['es'],
       fileName: (_, name) => `${name}.js`
     },
     rollupOptions: {
+      treeshake: {
+        // `marked` and `dompurify` are reached only through `sdk/utils.ts`'s
+        // `renderMarkdown` re-export. Neither package declares `sideEffects: false`, so
+        // without this every add-on carried both (~130 KB unminified) whether or not it
+        // ever rendered Markdown — Snek shipped a Markdown parser. Both are pure on import.
+        moduleSideEffects: (id: string) => !/node_modules\/(marked|dompurify)\//.test(id)
+      },
       // Every entry is self-contained: no shared chunk, because the frame that loads one
       // bundle has no `<script>` tag or import map for another. The brief's rollup-era
       // option names (`inlineDynamicImports`, `manualChunks: () => undefined`) don't do

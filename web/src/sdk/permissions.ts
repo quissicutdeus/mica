@@ -41,6 +41,14 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   onAppForeground: null,
   onAppUnmount: null,
   useService: null,
+  // `sound.ts`'s own doc comment: this facet is playback of a fixed built-in effect set,
+  // nothing else, "used by AppIcon, ToggleSwitch and SegmentedControl" — shared UI kit
+  // widgets every app, core or not, is expected to render with. Gating it behind a
+  // declared permission never bit a core app (it always holds every permission), but the
+  // first real caller with a genuine restricted set — a sandboxed add-on — hit it on
+  // literally any screen with a tab bar or a toggle, for a capability with no more
+  // sensitivity than a UI sound effect.
+  useSound: null,
   // data
   useAccount: 'account',
   useAdmin: 'admin',
@@ -71,7 +79,6 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   useKeybinds: 'keybinds',
   useNavigation: 'navigation',
   useNotificationSettings: 'notification-settings',
-  useSound: 'sound',
   useSystemHardware: 'system-hardware',
   useTheme: 'theme',
   useWallpaper: 'wallpaper',

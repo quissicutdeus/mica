@@ -548,14 +548,38 @@ function createAppRegistry() {
      */
     getAddOnSource,
     /**
-     * The manifest for an installed app.
+     * Whether the app has actually been installed — the question `getManifest` used to be
+     * asked in place of, and stopped being able to answer.
+     *
+     * `getManifest` resolves a bundled add-on that has never been installed (see its own
+     * comment), which is right for rendering one opened by a deep link and wrong for any
+     * gate that means "the player has this app". `nuiMessages`' `appEvent` is exactly such a
+     * gate: it reads the manifest's `permissions` to decide whether a pushed toast is
+     * allowed, and with the fallback in place a never-installed Blabber would have started
+     * raising toasts. Installed-ness is its own fact, so it gets its own question.
+     */
+    isInstalled: (appId: string): boolean =>
+      get(installed).some((a: AppManifest) => a.id === appId),
+    /**
+     * The manifest for an app the shell can render — installed, or a bundled add-on.
      *
      * The shell holds app *ids*; anything shown to a player needs the manifest's `name`.
      * Without this the error boundary rendered the id rather than the manifest's
      * `name`, which are not the same string.
+     *
+     * The `addOns` fallback exists because `installed` and *renderable* are not the same
+     * set for a `core: false` app. `isKnownApp` already counts a bundled add-on as known
+     * whether or not it has been installed, so `openApp('notes')` from a `?app=` deep
+     * link legitimately makes it the current app — but `Shell.svelte` renders through
+     * `{#if manifest && ...}`, so an installed-only lookup left that path on a permanent
+     * spinner. Opening an uninstalled add-on straight from a deep link is by design (it
+     * is how the dev harness reaches one), so the manifest has to resolve for it. It is
+     * still a fact about the build, not the install: `addOns` is written once at startup
+     * from the manifest glob and nothing that is not in this bundle can appear in it.
      */
     getManifest: (appId: string): AppManifest | undefined =>
-      get(installed).find((a: AppManifest) => a.id === appId),
+      get(installed).find((a: AppManifest) => a.id === appId) ??
+      addOns.find((a: AppManifest) => a.id === appId),
     /**
      * The only way a remote app is ever installed. Builds the manifest from `entry` —
      * never from anything the fetched bundle itself claims to be — after the bundle's

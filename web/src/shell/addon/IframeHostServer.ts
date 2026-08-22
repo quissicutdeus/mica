@@ -78,11 +78,31 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   const serviceAllowed = (id: unknown) =>
     typeof id === 'string' && (id === host.appId || id.startsWith(`${host.appId}_`));
 
+  /**
+   * A handful of SDK hooks are implicit — `useAppLevels`, `onAppForeground`/`onAppUnmount`
+   * (`PERMISSION_OF[...] === null`, no manifest declaration needed) — but their iframe
+   * twins wire themselves up by calling into a *different*, permission-gated facet
+   * (`keybinds.onKeybind('back', ...)` for the physical Back key; `navigation.currentApp`
+   * / `navigation.goHome` for foreground detection and the same Back key's fallback to
+   * leaving the app). An in-process app never hits this: its twin of the same hooks calls
+   * the shell's internal functions directly, with no facet/permission indirection at all.
+   * Without this exemption every add-on — none of which declare `navigation` or `keybinds`
+   * — would have this baseline navigation plumbing silently fail (a caught rejection or a
+   * subscribe that never pushes), the same way `useAppLevels` did before this was added.
+   */
+  const isImplicitNavPlumbing = (facet: string, member: string, firstArg?: unknown) =>
+    (facet === 'keybinds' && member === 'onKeybind' && firstArg === 'back') ||
+    (facet === 'navigation' && (member === 'currentApp' || member === 'goHome'));
+
   /** Resolve (and cache) the facet object for `facet(factoryArgs)`, after the permission check. */
-  function instance(facet: string, factoryArgs: readonly unknown[]): Record<string, unknown> {
+  function instance(
+    facet: string,
+    factoryArgs: readonly unknown[],
+    skipPermission = false
+  ): Record<string, unknown> {
     const perm = permissionOfFacet(facet);
     if (!perm) throw new Error(`[gPhone] unknown facet '${facet}'`);
-    host.require(perm.needed, perm.hook);
+    if (!skipPermission) host.require(perm.needed, perm.hook);
     if (facet === 'service' && !serviceAllowed(factoryArgs[0])) {
       throw new Error(
         `[gPhone] '${host.appId}' may only use its own service, not '${String(factoryArgs[0])}'`
@@ -147,11 +167,23 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
 
   async function call(msg: Extract<ToShell, { kind: 'call' }>) {
     try {
-      const obj = instance(msg.facet, msg.factoryArgs);
+      const exempt = isImplicitNavPlumbing(msg.facet, msg.member, msg.args[0]);
+      const obj = instance(msg.facet, msg.factoryArgs, exempt);
       const member = obj[msg.member];
       if (typeof member !== 'function')
         throw new Error(`[gPhone] '${msg.facet}.${msg.member}' is not callable`);
-      const value = await member.apply(obj, decodeArgs(msg.args));
+      const args = decodeArgs(msg.args);
+      if (exempt && msg.facet === 'keybinds') {
+        // `onKeybind(actionId, handler, appId)`'s third argument says which app owns the
+        // binding, and the exemption above waived the `keybinds` permission check to get
+        // here. A frame that sent its own `appId` would therefore be registering a `back`
+        // handler against *another* app's name with no permission at all, so whatever it
+        // sent is discarded and the server states the owner itself. `args` may be shorter
+        // than three (the twin omits a trailing `undefined`), hence the assignment rather
+        // than a splice.
+        args[2] = host.appId;
+      }
+      const value = await member.apply(obj, args);
       if (!disposed) post({ kind: 'reply', id: msg.id, ok: true, value: encodeResult(value) });
     } catch (e) {
       // A synchronous throw here (unknown facet, missing permission, non-function
@@ -166,7 +198,11 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
 
   function subscribe(msg: Extract<ToShell, { kind: 'subscribe' }>) {
     try {
-      const obj = instance(msg.facet, msg.factoryArgs);
+      const obj = instance(
+        msg.facet,
+        msg.factoryArgs,
+        isImplicitNavPlumbing(msg.facet, msg.member)
+      );
       const member = obj[msg.member];
       if (!isStore(member)) throw new Error(`[gPhone] '${msg.facet}.${msg.member}' is not a store`);
       subscriptions.set(
@@ -183,7 +219,10 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   function hydrate() {
     const payload: HydratePayload = {
       appId: host.appId,
-      permissions: host.permissions,
+      // `host.permissions` is a Svelte reactive array (a `$state` proxy) on an
+      // in-process host; a Proxy cannot survive `postMessage`'s structured clone, so a
+      // plain copy crosses the wall instead.
+      permissions: [...host.permissions],
       props: opts.props,
       theme: get(themeStyleStore),
       storage: storageSnapshot(host.appId),
@@ -203,9 +242,9 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       if (!msg || typeof msg !== 'object' || typeof msg.kind !== 'string') return;
       switch (msg.kind) {
         case 'hello':
-          if (!msg.manifest || msg.manifest.id !== manifest.id) {
+          if (msg.appId !== manifest.id) {
             console.error(
-              `[gPhone] add-on frame for '${manifest.id}' announced '${msg.manifest?.id}'; refused.`
+              `[gPhone] add-on frame for '${manifest.id}' announced '${msg.appId}'; refused.`
             );
             return;
           }

@@ -205,7 +205,18 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
 
     if (!envelope.notify) return;
 
+    // Installed-ness is checked separately from the permission, and has to be:
+    // `getManifest` resolves a bundled add-on that has never been installed (so a deep
+    // link can render one), which would otherwise let a *shipped but uninstalled* app
+    // whose manifest happens to declare `notifications` raise toasts on a phone that
+    // does not have it.
     const manifest = appRegistryStore.getManifest(envelope.app);
+    if (!appRegistryStore.isInstalled(envelope.app)) {
+      if (import.meta.env.DEV) {
+        console.warn(`[appEvent] '${envelope.app}' asked for a toast but is not installed.`);
+      }
+      return;
+    }
     if (!manifest?.permissions?.includes('notifications')) {
       if (import.meta.env.DEV) {
         console.warn(

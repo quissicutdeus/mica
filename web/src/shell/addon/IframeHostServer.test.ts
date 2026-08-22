@@ -80,9 +80,9 @@ describe('IframeHostServer', () => {
   });
   it('answers hello with hydrate and refuses a hello whose id is not the manifest', () => {
     const { posted, from } = server();
-    from({ kind: 'hello', manifest: { ...manifest, id: 'other' } });
+    from({ kind: 'hello', appId: 'other' });
     expect(posted).toHaveLength(0);
-    from({ kind: 'hello', manifest });
+    from({ kind: 'hello', appId: manifest.id });
     expect(posted[0]).toMatchObject({
       kind: 'hydrate',
       payload: { appId: 'probe', permissions: ['contacts'] }
@@ -104,7 +104,7 @@ describe('IframeHostServer', () => {
     Object.assign(globalThis.localStorage, raw);
 
     const { posted, from } = server();
-    from({ kind: 'hello', manifest });
+    from({ kind: 'hello', appId: manifest.id });
     const hydrate = posted[0] as Extract<ToFrame, { kind: 'hydrate' }>;
     expect(hydrate.payload.storage).toEqual({ [storageKey('probe', 'k')]: '"v"' });
   });
@@ -206,6 +206,110 @@ describe('IframeHostServer', () => {
     expect((posted[0] as any).ok).toBe(true);
     expect(posted[1]).toMatchObject({ ok: false, error: { name: 'Error' } });
   });
+  /**
+   * The `isImplicitNavPlumbing` bypass, from both sides.
+   *
+   * `useAppLevels` / `onAppForeground` are implicit hooks (no manifest declaration), but
+   * their iframe twins reach the shell through the permission-gated `keybinds` and
+   * `navigation` facets — so the server waives the check for exactly that plumbing. These
+   * cases pin down both what the waiver lets through and what it must not.
+   */
+  describe('implicit navigation plumbing', () => {
+    /** Records the owner `onKeybind` was handed, which is the whole point of case (a). */
+    let owners: (string | undefined)[];
+
+    beforeEach(() => {
+      owners = [];
+      registerFacet(
+        'keybinds' as any,
+        (() => ({
+          onKeybind: (_actionId: string, _handler: () => void, appId?: string) => {
+            owners.push(appId);
+            return () => {};
+          }
+        })) as any
+      );
+      registerFacet(
+        'navigation' as any,
+        (() => ({
+          currentApp: writable({ id: 'probe' }),
+          goHome: () => {},
+          openApp: (id: string) => id
+        })) as any
+      );
+    });
+
+    it("registers a 'back' binding with no permission, under the server's appId rather than the one the frame sent", async () => {
+      const { posted, from } = server([]);
+      from({
+        kind: 'call',
+        id: 1,
+        facet: 'keybinds',
+        factoryArgs: [],
+        member: 'onKeybind',
+        args: ['back', { __cb: 7 }, 'mail']
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(posted[0]).toMatchObject({ kind: 'reply', id: 1, ok: true });
+      // Not 'mail'. The frame does not get to name the owner of a binding it was let
+      // through the permission gate to register.
+      expect(owners).toEqual(['probe']);
+    });
+
+    it('refuses any other keybind with no permission', async () => {
+      const { posted, from } = server([]);
+      from({
+        kind: 'call',
+        id: 1,
+        facet: 'keybinds',
+        factoryArgs: [],
+        member: 'onKeybind',
+        args: ['screenshot', { __cb: 7 }]
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(posted[0]).toMatchObject({
+        kind: 'reply',
+        id: 1,
+        ok: false,
+        error: { name: 'AppPermissionError' }
+      });
+      expect(owners).toEqual([]);
+    });
+
+    it('refuses navigation.openApp with no permission, but pushes navigation.currentApp', async () => {
+      const { posted, from } = server([]);
+      from({
+        kind: 'call',
+        id: 1,
+        facet: 'navigation',
+        factoryArgs: [],
+        member: 'openApp',
+        args: ['mail']
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(posted[0]).toMatchObject({
+        kind: 'reply',
+        id: 1,
+        ok: false,
+        error: { name: 'AppPermissionError' }
+      });
+
+      from({
+        kind: 'subscribe',
+        id: 2,
+        facet: 'navigation',
+        factoryArgs: [],
+        member: 'currentApp'
+      });
+      expect(posted[1]).toEqual({ kind: 'push', id: 2, value: { id: 'probe' } });
+    });
+  });
+
   it('forwards error, key and typing to the callbacks', () => {
     const onError = vi.fn(),
       onKey = vi.fn(),

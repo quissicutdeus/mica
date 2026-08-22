@@ -6,6 +6,5 @@ export default defineApp({
   color: 'bg-gray-800',
   icon: Icon,
   description: 'Perform basic mathematical calculations',
-  permissions: ['sound'],
   core: true
 });

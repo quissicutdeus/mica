@@ -1,4 +1,4 @@
-import type { AppManifest, AppPermission } from '../../manifest';
+import type { AppPermission } from '../../manifest';
 
 // MICA-16 step 4: the postMessage wire format between the shell and a sandboxed add-on iframe.
 
@@ -14,7 +14,7 @@ export interface FnRef {
 }
 
 export type ToShell =
-  | { kind: 'hello'; manifest: AppManifest }
+  | { kind: 'hello'; appId: string }
   | {
       kind: 'call';
       id: number;

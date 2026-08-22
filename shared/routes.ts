@@ -55,7 +55,8 @@ export const ROUTES: readonly Route[] = [
   route('getFollowStats', 'accounts', 'follows'),
   // The two lists behind those counts, each keyset paged on the follow row's own id so the order
   // is most-recently-followed first. Public, like the counts: they answer a question about a
-  // stranger's profile, not about the caller.
+  // stranger's profile, not about the caller. Read by an add-on through the `accounts` *facet*
+  // (`useAccounts().getFollowers`), never by calling this action from inside the sandbox.
   route('getFollowers', 'accounts', 'followers'),
   route('getFollowing', 'accounts', 'following'),
   // The block graph, alongside the follow one. One-directional: it hides the blocked account

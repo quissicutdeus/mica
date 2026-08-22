@@ -93,6 +93,44 @@ describe('notify', () => {
   });
 });
 
+describe('appEvent toasts', () => {
+  /** A pushed event for Blabber, which is a bundled add-on declaring `notifications`. */
+  const blabberEvent = () =>
+    message('appEvent', {
+      app: 'blabber',
+      event: 'mention',
+      payload: {},
+      at: Date.now(),
+      notify: { message: '@ada mentioned you' }
+    });
+
+  it('raises no toast for a bundled add-on that has never been installed', () => {
+    // The manifest resolves — `getManifest` falls back to the bundled add-ons so a deep
+    // link can render one — and it declares `notifications`. Neither fact means the player
+    // has the app, and a phone without Blabber must not show Blabber's toasts.
+    expect(appRegistryStore.isInstalled('blabber')).toBe(false);
+    expect(appRegistryStore.getManifest('blabber')?.permissions).toContain('notifications');
+
+    route(blabberEvent());
+
+    expect(get(toast)).toHaveLength(0);
+  });
+
+  it('raises the toast once the same app is installed', () => {
+    const manifest = appRegistryStore.getManifest('blabber')!;
+    appRegistryStore.registerAddOn(manifest, 'export default {}');
+    try {
+      expect(appRegistryStore.isInstalled('blabber')).toBe(true);
+
+      route(blabberEvent());
+
+      expect(lastToast()).toMatchObject({ app: 'blabber', message: '@ada mentioned you' });
+    } finally {
+      appRegistryStore.unregisterApp('blabber');
+    }
+  });
+});
+
 describe('notification click-through', () => {
   it('opens Mail on the message that arrived', () => {
     route(message('receiveMail', { id: 7, sender: 'a@b.c', subject: 'Hi' }));

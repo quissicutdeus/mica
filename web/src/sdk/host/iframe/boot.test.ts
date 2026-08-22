@@ -55,7 +55,7 @@ describe('bootAddOn', () => {
 
     const bootDone = bootAddOn(manifest, UsesContacts);
 
-    expect(sent[0]).toEqual({ kind: 'hello', manifest });
+    expect(sent[0]).toEqual({ kind: 'hello', appId: manifest.id });
 
     window.dispatchEvent(
       new MessageEvent('message', {
@@ -72,6 +72,34 @@ describe('bootAddOn', () => {
     sent.length = 0;
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA' }));
     expect(sent[0]).toMatchObject({ kind: 'key', key: 'a', code: 'KeyA' });
+  });
+
+  it('reports an unhandled rejection inside the frame as an error message', async () => {
+    // The shell cannot see into the sandbox: an add-on that rejects a promise nobody awaits
+    // would otherwise fail invisibly, since the frame's console is not the shell's. This
+    // forwarder is what turns it into `AddOnFrame`'s crash screen.
+    const { sent, parent } = stubParent();
+    const target = document.createElement('div');
+    target.id = 'app';
+    document.body.appendChild(target);
+
+    const bootDone = bootAddOn(manifest, UsesContacts);
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { kind: 'hydrate', payload },
+        source: parent as unknown as Window
+      })
+    );
+    await bootDone;
+
+    sent.length = 0;
+    const reason = new Error('nobody awaited me');
+    // jsdom has no `PromiseRejectionEvent`, so the event carrying `reason` is built by hand.
+    window.dispatchEvent(Object.assign(new Event('unhandledrejection'), { reason }));
+
+    const errors = sent.filter((m) => m.kind === 'error');
+    expect(errors[0]).toMatchObject({ kind: 'error', message: 'nobody awaited me' });
+    expect((errors[0] as Extract<ToShell, { kind: 'error' }>).stack).toBe(reason.stack);
   });
 
   it('drops a held key repeat rather than forwarding it', async () => {

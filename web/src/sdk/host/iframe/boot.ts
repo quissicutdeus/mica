@@ -1,5 +1,5 @@
 import { mount } from 'svelte';
-import { createClientTransport, setClientTransport } from './transport';
+import { clientTransport } from './transport';
 import { createInProcessHost } from '../inProcess/createInProcessHost';
 import { registerHost, setSystemHost } from '../current';
 import { HOST_CONTEXT_KEY } from '../protocol';
@@ -22,8 +22,7 @@ function applyTheme(css: string) {
 }
 
 export async function bootAddOn(manifest: AppManifest, App: AppComponent): Promise<void> {
-  const transport = createClientTransport();
-  setClientTransport(transport);
+  const transport = clientTransport();
 
   window.addEventListener('error', (e) =>
     transport.send({
@@ -65,7 +64,7 @@ export async function bootAddOn(manifest: AppManifest, App: AppComponent): Promi
     if (isTyping(e.target)) transport.send({ kind: 'typing', typing: false });
   });
 
-  transport.send({ kind: 'hello', manifest });
+  transport.send({ kind: 'hello', appId: manifest.id });
   const payload = await transport.hydrated();
 
   applyTheme(payload.theme);

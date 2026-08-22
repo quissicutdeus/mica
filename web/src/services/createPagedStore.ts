@@ -36,8 +36,26 @@ interface PagedReply<T> {
   nextCursor: number | null;
 }
 
+/**
+ * A page read, for a list that no NUI action or `useService` call can reach.
+ *
+ * The third door, and the one an add-on needs for a *shared* service: a named NUI action
+ * is refused inside the sandbox (`sdk/host/iframe/fetchNui.ts`) and the generic service
+ * route is pinned to the app's own namespace (`IframeHostServer`'s `serviceAllowed`), so
+ * a list like the follow graph is reachable only through its enumerated facet —
+ * `useAccounts().getFollowers`. Passing that function here keeps the paging (cursor,
+ * `hasMore`, the optimistic `prepend`/`replace`/`remove`) instead of reimplementing it
+ * per app.
+ */
+export type PageReader<T> = (payload: Record<string, unknown>) => Promise<PagedReply<T> | T[]>;
+
 export function createPagedStore<T extends { id: number }>(
-  action: string,
+  /**
+   * The NUI action, the server action (with `service:` set), or the reader itself. A
+   * function is also what keeps `server/__tests__/routes.test.ts`'s scanner from reading
+   * the name as a route nobody declared — there is no name to read.
+   */
+  action: string | PageReader<T>,
   options: {
     pageSize?: number;
     /**
@@ -61,6 +79,8 @@ export function createPagedStore<T extends { id: number }>(
   let filter: Record<string, unknown> = {};
   /** Guards against a scroll handler firing twice before the first reply lands. */
   let inFlight = false;
+  /** What the warnings below name the store, since `action` may be an anonymous reader. */
+  const label = typeof action === 'function' ? action.name || 'reader' : action;
 
   /**
    * No `defaultValue`, so a transport failure or a server error throws instead of being
@@ -69,10 +89,13 @@ export function createPagedStore<T extends { id: number }>(
    */
   const fetchPage = async (from: number | null): Promise<PagedReply<T>> => {
     const payload = { ...filter, cursor: from ?? undefined, limit: options.pageSize };
-    const reply = await fetchNui<PagedReply<T>>(
-      options.service ? GENERIC_SERVICE_ACTION : action,
-      options.service ? { service: options.service, action, data: payload } : payload
-    );
+    const reply =
+      typeof action === 'function'
+        ? await action(payload)
+        : await fetchNui<PagedReply<T>>(
+            options.service ? GENERIC_SERVICE_ACTION : action,
+            options.service ? { service: options.service, action, data: payload } : payload
+          );
     // A mock or an older server could answer with a bare array; treat it as one full page
     // rather than rendering nothing and looking like an empty feed.
     if (Array.isArray(reply)) return { rows: reply as T[], nextCursor: null };
@@ -94,7 +117,7 @@ export function createPagedStore<T extends { id: number }>(
         cursor = page.nextCursor;
         hasMore.set(page.nextCursor !== null);
       } catch (e) {
-        console.warn(`Paged store '${action}' failed to load; keeping the last known page.`, e);
+        console.warn(`Paged store '${label}' failed to load; keeping the last known page.`, e);
       } finally {
         inFlight = false;
         loaded.set(true);
@@ -114,7 +137,7 @@ export function createPagedStore<T extends { id: number }>(
         rows.update((current) => [...current, ...page.rows]);
         return true;
       } catch (e) {
-        console.warn(`Paged store '${action}' failed to load more; leaving the cursor as-is.`, e);
+        console.warn(`Paged store '${label}' failed to load more; leaving the cursor as-is.`, e);
         return false;
       } finally {
         inFlight = false;

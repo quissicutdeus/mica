@@ -133,7 +133,6 @@ const LABELS: Record<AppPermission, { label: string; icon: string }> = {
   keybinds: { label: 'Keyboard Shortcuts', icon: '\u{2328}\u{FE0F}' },
   navigation: { label: 'Open Other Apps', icon: '\u{21AA}\u{FE0F}' },
   'notification-settings': { label: 'Notification Settings', icon: '\u{1F515}' },
-  sound: { label: 'Sound Effects', icon: '\u{1F50A}' },
   'system-hardware': { label: 'Battery, Signal & Bluetooth', icon: '\u{1F50B}' },
   theme: { label: 'Theme', icon: '\u{1F3A8}' },
   wallpaper: { label: 'Wallpaper', icon: '\u{1F5BC}\u{FE0F}' }

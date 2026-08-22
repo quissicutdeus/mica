@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { addOnFrame } from './support/addon';
 
 /**
  * `?app=<id>` — the dev deep link.
@@ -20,7 +21,7 @@ test.describe('?app= deep link', () => {
     // this work, and it is the case `notes.spec.ts` pays for on every run.
     await page.goto('/?app=notes');
 
-    await expect(page.locator('h1', { hasText: 'Notes' })).toBeVisible();
+    await expect(addOnFrame(page, 'notes').locator('h1', { hasText: 'Notes' })).toBeVisible();
   });
 
   test('is case-insensitive, matching how openApp resolves', async ({ page }) => {

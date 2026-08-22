@@ -38,7 +38,10 @@ export const ALL_PERMISSIONS = [
   'keybinds',
   'navigation',
   'notification-settings',
-  'sound',
+  // No 'sound': `useSound` is implicit (`PERMISSION_OF.useSound === null`). Its facet is one
+  // `play(effect)` over a fixed built-in set, used by kit widgets — `AppIcon`, `ToggleSwitch`,
+  // `SegmentedControl` — that every app renders with, so a name to declare would be a name
+  // nothing checks.
   'system-hardware', // battery, signal, bluetooth, volume
   'theme',
   'wallpaper'

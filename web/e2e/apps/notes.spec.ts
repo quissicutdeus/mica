@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { seedHomeGrid } from '../support/homeGrid';
+import { addOnFrame } from '../support/addon';
 
 test.describe('Notes App E2E', () => {
   test.beforeEach(async ({ page }) => {
@@ -24,11 +25,11 @@ test.describe('Notes App E2E', () => {
     // Role-based, so the backgrounded Store's own catalog row — still in the DOM, but
     // `inert` — is not what gets clicked.
     await page.getByRole('button', { name: /Notes/ }).click();
-    await expect(page.locator('h1', { hasText: 'Notes' })).toBeVisible();
+    await expect(addOnFrame(page, 'notes').locator('h1', { hasText: 'Notes' })).toBeVisible();
   });
 
   test('renders Notes screen title and action buttons', async ({ page }) => {
-    const title = page.locator('h1', { hasText: 'Notes' });
+    const title = addOnFrame(page, 'notes').locator('h1', { hasText: 'Notes' });
     await expect(title).toBeVisible();
   });
 });

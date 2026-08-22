@@ -88,6 +88,7 @@
 {#if crashed}
   <AppCrashed
     appName={manifest.name}
+    message={crashed.message}
     stack={crashed.stack}
     onRestart={() => {
       crashed = null;

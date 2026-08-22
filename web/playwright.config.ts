@@ -4,6 +4,13 @@ const PORT = process.env.PORT || 5173;
 
 export default defineConfig({
   testDir: './e2e',
+  /**
+   * Ten seconds per test, not Playwright's thirty. Every test here that is going to pass
+   * does so in under ten; the only ones that ever reached thirty were the home-grid drag
+   * flakes, which sit on the limit and then fail anyway. Twenty seconds of waiting per
+   * flake, times six, times two projects, is four minutes of a verify run spent on nothing.
+   */
+  timeout: 10_000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

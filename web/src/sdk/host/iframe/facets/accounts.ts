@@ -12,6 +12,8 @@ export function accounts(): Twin {
     createAccount: fn('accounts', [], 'createAccount'),
     updateAccount: fn('accounts', [], 'updateAccount'),
     getFollowStats: fn('accounts', [], 'getFollowStats'),
+    getFollowers: fn('accounts', [], 'getFollowers'),
+    getFollowing: fn('accounts', [], 'getFollowing'),
     followAccount: fn('accounts', [], 'followAccount'),
     unfollowAccount: fn('accounts', [], 'unfollowAccount'),
     blockAccount: fn('accounts', [], 'blockAccount'),
