@@ -10,17 +10,67 @@
  * reported as **skipped**, never as passed — the same distinction `scripts/verify.js`
  * draws in its summary, and for the same reason: a gate nobody ran is not a gate.
  *
- * CI passes `--require`, which turns a missing tool into a failure. That is what keeps
- * "skipped locally" from quietly becoming "skipped everywhere".
+ * A missing tool falls back to running it in a container before it gives up, because
+ * anyone working on the demo image already has Docker — that is what the image is. So in
+ * practice these run for everyone, and "skipped" is reserved for a machine with neither
+ * the toolchain nor a Docker daemon. `--no-docker` forces the local binaries only.
  *
- *   node scripts/lint-container.js             skip what is not installed
+ * CI passes `--require`, which turns a genuinely-unrunnable check into a failure. That is
+ * what keeps "skipped locally" from quietly becoming "skipped everywhere".
+ *
+ *   node scripts/lint-container.js              local binaries, else Docker, else skip
  *   node scripts/lint-container.js --require    every check must actually run
+ *   node scripts/lint-container.js --no-docker  never fall back to a container
  */
 import { spawnSync } from 'node:child_process';
 
 const REQUIRE = process.argv.includes('--require');
+const NO_DOCKER = process.argv.includes('--no-docker');
 
 const has = (bin) => spawnSync(bin, ['--version'], { stdio: 'ignore' }).status === 0;
+
+/**
+ * Docker with a daemon actually answering, not merely a `docker` binary on PATH.
+ *
+ * `docker --version` prints happily with the daemon stopped, so `has('docker')` would
+ * route every check into a container that cannot start and report four failures where the
+ * honest answer is "skipped". `docker info` is the cheapest call that touches the daemon.
+ *
+ * Evaluated once, lazily: nothing pays for it on a machine that has the real toolchains.
+ */
+let dockerUsable;
+const hasDocker = () => {
+  if (NO_DOCKER) return false;
+  dockerUsable ??= spawnSync('docker', ['info'], { stdio: 'ignore' }).status === 0;
+  return dockerUsable;
+};
+
+/**
+ * Pinned to the same major the Dockerfile builds the server with, so a `go vet` here
+ * cannot pass against a different compiler than the one that produces the binary.
+ */
+const GO_IMAGE = 'golang:1-alpine';
+const HADOLINT_IMAGE = 'hadolint/hadolint:latest';
+
+/**
+ * `docker run` wrapping one of the checks below.
+ *
+ * `--user` matters: without it the container writes as root, and anything Go leaves in a
+ * mounted directory (it writes nothing today, but `go build` cache behaviour is not a
+ * promise) comes back owned by root in the developer's working tree.
+ */
+const inDocker = (image, workdir, mount, args) => [
+  'run',
+  '--rm',
+  '--user',
+  `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`,
+  '-v',
+  `${process.cwd()}/${mount}:/w`,
+  '-w',
+  workdir,
+  image,
+  ...args
+];
 
 const results = [];
 
@@ -37,28 +87,54 @@ const check = (name, bin, args, options = {}) => {
 
 const skip = (name, reason) => results.push({ name, skipped: true, reason });
 
+/** Why the Docker fallback was unavailable — a refusal and an absence are not the same. */
+const noFallback = NO_DOCKER ? '--no-docker' : 'no Docker daemon';
+
 // --- Go -------------------------------------------------------------------
+// `go build` compiling is the cheapest way to catch what gofmt and vet both miss: code
+// that is well-formatted, vet-clean, and does not build.
+const NULL_DEVICE = process.platform === 'win32' ? 'NUL' : '/dev/null';
+const GO_CHECKS = [
+  { name: 'gofmt', argv: ['gofmt', '-l', '.'], failOnStdout: true },
+  { name: 'go vet', argv: ['go', 'vet', './...'] },
+  { name: 'go build', argv: ['go', 'build', '-o', NULL_DEVICE, './...'] }
+];
+
 if (has('go')) {
-  const cwd = 'docker/serve';
-  check('gofmt', 'gofmt', ['-l', '.'], { cwd, failOnStdout: true });
-  check('go vet', 'go', ['vet', './...'], { cwd });
-  // Compiling is the cheapest way to catch the case gofmt and vet both miss: code that
-  // is well-formatted, vet-clean, and does not build.
-  check(
-    'go build',
-    'go',
-    ['build', '-o', process.platform === 'win32' ? 'NUL' : '/dev/null', './...'],
-    { cwd }
-  );
+  for (const { name, argv, failOnStdout } of GO_CHECKS) {
+    const [bin, ...args] = argv;
+    check(name, bin, args, { cwd: 'docker/serve', failOnStdout });
+  }
+} else if (hasDocker()) {
+  for (const { name, argv, failOnStdout } of GO_CHECKS) {
+    // GOFLAGS=-mod=mod and a writable GOCACHE inside the container, not the mount: the
+    // default cache path is $HOME/.cache, and `--user` gives the container a uid with no
+    // home, so Go would fail on a cache it cannot create before it ever reads the source.
+    check(
+      `${name} (docker)`,
+      'docker',
+      [...inDocker(GO_IMAGE, '/w', 'docker/serve', ['env', 'GOCACHE=/tmp/go', ...argv])],
+      { failOnStdout }
+    );
+  }
 } else {
-  skip('go', 'no `go` on PATH — install Go, or let CI run it');
+  skip('go', `no \`go\` and ${noFallback} — install Go, or let CI run it`);
 }
 
 // --- Dockerfile -----------------------------------------------------------
+// The repo root is mounted, not just the Dockerfile: hadolint reads .hadolint.yaml from
+// its working directory, and without it the DL3018 waiver documented there does not apply
+// and this reports two findings that were deliberately accepted.
 if (has('hadolint')) {
   check('hadolint', 'hadolint', ['--no-color', 'Dockerfile']);
+} else if (hasDocker()) {
+  check(
+    'hadolint (docker)',
+    'docker',
+    inDocker(HADOLINT_IMAGE, '/w', '.', ['hadolint', '--no-color', 'Dockerfile'])
+  );
 } else {
-  skip('hadolint', 'no `hadolint` on PATH — install it, or let CI run it');
+  skip('hadolint', `no \`hadolint\` and ${noFallback} — install it, or let CI run it`);
 }
 
 // --- report ---------------------------------------------------------------

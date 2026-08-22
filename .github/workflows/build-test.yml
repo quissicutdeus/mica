@@ -67,3 +67,67 @@ jobs:
           name: playwright-report
           path: web/playwright-report
           retention-days: 7
+
+  # A second job rather than more steps on `verify`: that one runs inside the Playwright
+  # container image, which has no Go toolchain, no hadolint and no Docker daemon. It also
+  # means a Svelte-only change gets its verdict from `verify` without waiting on an image
+  # build, and the two run in parallel.
+  container:
+    name: Demo container
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27'
+          # docker/serve is stdlib-only, so there is no go.sum and nothing to cache.
+          # Without this the action warns about a missing dependency file on every run.
+          cache: false
+
+      - name: Install hadolint
+        run: |
+          curl -sSLo /tmp/hadolint \
+            https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-Linux-x86_64
+          sudo install -m 0755 /tmp/hadolint /usr/local/bin/hadolint
+
+      # --require is the whole point of this job. lint-container.js reports a missing
+      # toolchain as *skipped* so a developer without Go can still push; this flag turns
+      # that into a failure, so the checks are guaranteed to have actually run somewhere.
+      - name: Lint the Go server and the Dockerfile
+        run: node scripts/lint-container.js --require
+
+      # Passed explicitly because .dockerignore keeps .git out of the build context, so
+      # the version stamp cannot fall back to `git rev-parse` inside the container.
+      - name: Build the image
+        run: GIT_BRANCH="${GITHUB_REF_NAME}" GIT_SHA="${GITHUB_SHA}" docker compose build
+
+      # `docker build` succeeding proves the image assembles, not that it serves.
+      - name: Start it
+        run: docker compose up -d
+
+      - name: Wait for healthy
+        run: |
+          for _ in $(seq 1 60); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' \
+              "$(docker compose ps -q demo)" 2>/dev/null || echo starting)
+            [ "$status" = healthy ] && exit 0
+            [ "$status" = unhealthy ] && break
+            sleep 1
+          done
+          echo "container never became healthy (last status: ${status:-unknown})" >&2
+          docker compose logs --no-log-prefix demo >&2
+          exit 1
+
+      - name: Smoke test
+        run: node scripts/smoke-image.js
+
+      - name: Server logs
+        if: failure()
+        run: docker compose logs --no-log-prefix demo
+
+      - name: Stop it
+        if: always()
+        run: docker compose down

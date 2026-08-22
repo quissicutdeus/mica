@@ -28,6 +28,9 @@ Run from the **repo root** unless noted.
 | Every gate except e2e                             | `pnpm verify --quick`                        | Yes                      |
 | Fast loop: format + typecheck + changed unit only | `pnpm check:fast`                            | Yes                      |
 | Fail fast if no dev server is warm                | `pnpm dev:check`                             | Yes                      |
+| Lint the Go server and the Dockerfile             | `pnpm lint:container`                        | Yes                      |
+| Run the demo image locally                        | `pnpm demo` / `demo:up` / `demo:down`        | Yes                      |
+| Smoke-test a running demo image                   | `pnpm demo:smoke`                            | Yes                      |
 | Scaffold an app                                   | `pnpm new:app <id> [--service]`              | Yes                      |
 | Install                                           | `pnpm install --frozen-lockfile`             | Yes                      |
 | Format (write)                                    | `pnpm format`                                | Yes                      |
@@ -605,13 +608,17 @@ runtime.
 
 ## 9. Definition of done
 
-Run these from the repo root before reporting any code change complete (§2.8). All four, in any
+Run these from the repo root before reporting any code change complete (§2.8). All five, in any
 order, all passing:
 
 1. `pnpm typecheck` — all three targets. Not `typecheck:web` alone (§3).
 2. `pnpm test:unit` — server and web.
 3. `pnpm test:e2e` — if the change touches `web/`.
 4. `pnpm format:check` — or `pnpm format` then re-check.
+5. `pnpm lint:container` — if the change touches `docker/`, the `Dockerfile` or `compose.yaml`.
+   Prettier has no parser for either language, so nothing else reads them. Runs the local
+   `go`/`hadolint` if present, otherwise the same checks in a container, and only reports
+   **skipped** when neither is available — and a skip is not a pass.
 
 Then, before saying it works:
 
@@ -703,5 +710,6 @@ Three things worth knowing before you open the doc:
   (`sdk/appContract.test.ts` enforces the pairing) — a badge has to be right before the launcher
   paints, which is before the app has ever been opened.
 
-`pnpm verify` (format → typecheck → unit → e2e → build → dead-code) before calling it done; see
+`pnpm verify` (format → container → typecheck → unit → e2e → build → dead-code) before calling it
+done; see
 §9. Then run it in game — a green suite is not evidence a NUI feature works (§6, §8).
