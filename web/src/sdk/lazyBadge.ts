@@ -1,4 +1,5 @@
 import type { Readable, Unsubscriber } from 'svelte/store';
+import { messageOf } from '../lib/errors';
 
 /**
  * A launcher badge count, composed the first time something reads it.
@@ -56,9 +57,15 @@ export function lazyBadge(
       let live: Unsubscriber | null = null;
       let cancelled = false;
 
-      void composed.then((store) => {
-        if (!cancelled) live = store.subscribe(run, invalidate);
-      });
+      void composed
+        .then((store) => {
+          if (!cancelled) live = store.subscribe(run, invalidate);
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            console.error('gPhone Badge: failed to compose', messageOf(error, 'unknown error'));
+          }
+        });
 
       return () => {
         cancelled = true;
