@@ -2,6 +2,7 @@ import { writable, derived } from 'svelte/store';
 import { isBrowser } from '../../lib/isBrowser';
 import { usePersisted } from '../../sdk/host/usePersisted';
 
+/** Hours and minutes, as rendered by `useClock`. */
 export interface TimeState {
   hours: number;
   minutes: number;

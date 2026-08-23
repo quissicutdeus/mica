@@ -16,6 +16,7 @@ import type { AppEventEnvelope } from '@shared/appEvents';
  *   - **Component scope** — mount-scoped, and replayed on subscribe from the buffer below.
  */
 
+/** One event delivered through `useAppEvents`. */
 export interface AppEvent<T = Record<string, unknown>> {
   app: string;
   event: string;

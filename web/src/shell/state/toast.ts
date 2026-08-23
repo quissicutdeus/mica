@@ -11,6 +11,7 @@ export interface ToastAction {
   onClick: (textInput?: string) => void | Promise<void>;
 }
 
+/** A single toast, as shown by `usePhoneNotification().toast`. */
 export interface ToastMessage {
   id: string;
   /** The drawer notification this toast created, if any — lets a swipe-to-archive act on the right row. */

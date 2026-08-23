@@ -4,6 +4,7 @@ import type { Listing } from '@shared/types';
 
 const service = () => useService('marketplace');
 
+/** A page of marketplace listings, as returned by the feed/search/mine reads. */
 export interface ListingPage {
   rows: Listing[];
   nextCursor: number | null;
@@ -34,6 +35,7 @@ export const viewListing = async (
 ): Promise<(Listing & { contactPhone: string | null; isOwn: boolean }) | null> =>
   service().call('view', { id }, null);
 
+/** What `postListing` takes to create a new marketplace listing. */
 export interface CreateListingInput {
   title: string;
   price: number;

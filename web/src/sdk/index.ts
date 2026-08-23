@@ -14,7 +14,9 @@ export * from './kit/index';
  * reaches its own server without a route table entry.
  */
 export { createCrudStore, byNewest } from '../services/createCrudStore';
+export type { CrudEvents, CrudOptions } from '../services/createCrudStore';
 export { createPagedStore } from '../services/createPagedStore';
+export type { PagedStore } from '../services/createPagedStore';
 /**
  * @public
  * The reader form of `createPagedStore`'s first argument — an app needs the type to name a
@@ -30,6 +32,15 @@ export type { CatalogEntry } from '../shell/state/catalog';
 export { AppPermissionError } from './host/protocol';
 /** @public */
 export type { Host } from './host/protocol';
+export type { Facets } from './host/inProcess/facets';
+export type { TimeState } from '../shell/state/time';
+export type { ResolvedKeybindAction } from '../shell/state/keybinds';
+export type { RunningApp } from '../shell/state/navigation';
+export type { ToastMessage } from '../shell/state/toast';
+export type { AppEvent } from '../shell/state/appEvents';
+export type { M3Tokens } from '../lib/m3';
+export type { FollowPage, FollowListQuery, AccountSearchQuery } from '../services/accounts';
+export type { ListingPage, CreateListingInput } from '../services/marketplace';
 /**
  * Deterministic placeholder imagery, for the fixtures an app renders in a browser.
  *

@@ -3,5 +3,6 @@
   "entryPoints": ["src/sdk/index.ts"],
   "tsconfig": "tsconfig.docs.json",
   "excludeExternals": true,
-  "name": "@gphone/sdk"
+  "name": "@gphone/sdk",
+  "ignoredHighlightLanguages": ["svelte"]
 }

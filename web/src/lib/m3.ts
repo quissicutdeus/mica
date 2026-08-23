@@ -201,6 +201,7 @@ export const STATE_TOKEN_NAMES: readonly string[] = [
 /** Every `--color-*` this module emits: the 34 roles plus the 25 derived values. */
 export const TOKEN_NAMES: readonly string[] = [...ROLE_NAMES, ...STATE_TOKEN_NAMES];
 
+/** The generated Material 3 color scheme — every `--color-*` custom property, by name. */
 export type M3Tokens = Record<string, string>;
 
 /**

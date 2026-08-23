@@ -2,6 +2,7 @@ import { writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
 import { GENERIC_SERVICE_ACTION } from '@shared/rpc';
 
+/** The NUI action names a `createCrudStore` reads and writes through. */
 export interface CrudEvents {
   list: string;
   create?: string;
@@ -9,6 +10,7 @@ export interface CrudEvents {
   remove?: string;
 }
 
+/** Configuration for `createCrudStore` — sort order, validation, and the events it uses. */
 export interface CrudOptions<T, TDraft> {
   /**
    * One order for the list, however it changed.

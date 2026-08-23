@@ -16,6 +16,7 @@ import {
   useNotifications,
   onAppMount,
   onAppUnmount,
+  MICA_VERSION,
   type AppManifest
 } from './index';
 import { useNuiBridge } from './core';
@@ -45,7 +46,7 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       expect(app.id).toBe('crypto_tracker');
       expect(app.name).toBe('Crypto Tracker');
       expect(app.color).toBe('bg-yellow-500');
-      expect(app.version).toBe('1.0.0');
+      expect(app.version).toBe(MICA_VERSION);
       expect(app.author).toBe('Community');
       expect(app.permissions).toEqual([]);
       expect(app.defaultProps).toEqual({});
