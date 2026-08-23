@@ -1,8 +1,9 @@
 import { registerFacet } from '../../current';
 import { callStore } from '../../../../services/call';
+import { callLog, loadCallLog } from '../../../../services/callLog';
 
 /**
- * OS Service Hook for active phone call management.
+ * OS Service Hook for active phone call management, plus the player's call history.
  */
 export function call() {
   return {
@@ -10,7 +11,9 @@ export function call() {
     startCall: (number: string, name?: string) => callStore.startCall(number, name),
     endCall: () => callStore.endCall(),
     answerCall: () => callStore.answerCall(),
-    toggleSpeaker: () => callStore.toggleSpeaker()
+    toggleSpeaker: () => callStore.toggleSpeaker(),
+    callLog,
+    loadCallLog
   };
 }
 

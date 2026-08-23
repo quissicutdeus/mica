@@ -18,7 +18,9 @@ export function call(): Twin {
     startCall: fn('call', [], 'startCall'),
     endCall: fn('call', [], 'endCall'),
     answerCall: fn('call', [], 'answerCall'),
-    toggleSpeaker: fn('call', [], 'toggleSpeaker')
+    toggleSpeaker: fn('call', [], 'toggleSpeaker'),
+    callLog: store('call', [], 'callLog', []),
+    loadCallLog: fn('call', [], 'loadCallLog')
   };
 }
 // The Twin above is what an iframe can honestly offer (MICA-26) -- Readable in place of

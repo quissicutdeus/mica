@@ -78,6 +78,7 @@ export const ROUTES: readonly Route[] = [
 
   // Contacts
   route('getContacts', 'contacts', 'get'),
+  route('getCallLog', 'phone_call_log', 'get'),
   route('createContact', 'contacts', 'create'),
   route('updateContact', 'contacts', 'update'),
   route('deleteContact', 'contacts', 'delete'),
