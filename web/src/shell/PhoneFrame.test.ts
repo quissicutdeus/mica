@@ -154,4 +154,39 @@ describe('PhoneFrame transparency', () => {
     expect(get(isShadeOpen)).toBe(false);
     expect(getByRole('button', { name: /Return to home screen/i })).toBeTruthy();
   });
+
+  it('keeps the home bar pressable and visible above the notification shade', async () => {
+    // MICA-38: the home bar used to sit at the same layer as the shade, so opening the
+    // shade painted over it — still labelled "Collapse notifications", entirely
+    // unclickable. Comparing the two z-index utilities (rather than asserting a literal
+    // `z-60`) catches a regression that drops the bar back level with or below the sheet,
+    // whatever number either one is renamed to.
+    const { getByRole, findByRole } = renderFrame(false);
+    const { openShade, isShadeOpen } = await import('./state/shade');
+    const { get } = await import('svelte/store');
+
+    openShade();
+    expect(get(isShadeOpen)).toBe(true);
+
+    const homeBar = await findByRole('button', { name: /Collapse notifications/i });
+    const shade = getByRole('dialog');
+
+    const zIndexOf = (el: HTMLElement) => {
+      const match = el.className.match(/(?:^|\s)z-(\d+)(?:\s|$)/);
+      if (!match) throw new Error(`no z-index utility class on: ${el.className}`);
+      return Number(match[1]);
+    };
+
+    expect(
+      zIndexOf(homeBar),
+      'home bar must stack above the shade to stay pressable'
+    ).toBeGreaterThan(zIndexOf(shade));
+
+    // Pressable isn't enough on its own — the pill also switches off `bg-white` while a
+    // sheet is open, because white is invisible on the sheet's near-white
+    // `surface-container-high` fill in the light color scheme. A reachable-but-invisible
+    // control is the same silent failure with a different symptom.
+    const pill = homeBar.querySelector('div');
+    expect(pill?.className ?? '').not.toMatch(/bg-white/);
+  });
 });
