@@ -45,7 +45,10 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: 'pnpm'
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        # --ignore-scripts: same reason the Dockerfile uses it -- the root "prepare"
+        # script installs dev git hooks, which CI never needs and which fails here
+        # anyway (git's safe.directory check rejects the checkout's ownership).
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       # tsc's incremental .tsbuildinfo and Vite's dep-optimization cache both key off
       # content hashes, so restoring last run's cache lets typecheck/build skip work for

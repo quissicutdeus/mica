@@ -4,7 +4,10 @@ updates:
   - package-ecosystem: 'npm'
     directory: /
     schedule:
-      interval: 'daily'
+      interval: 'weekly'
+    groups:
+      npm-deps:
+        patterns: ['*']
 
   # Workflow actions were not watched, which is why they drifted onto a deprecated runtime
   # with nothing saying so: `upload-artifact@v4` and `pnpm/action-setup@v4` both target
