@@ -5,31 +5,38 @@ the thing to run after every edit — a cold run costs minutes, most of it e2e a
 production build you don't need feedback on yet. This doc is the fast path underneath it,
 and the ticket that produced it: MICA-29.
 
-## Keep a dev server warm
+## `pnpm dev`, and why e2e no longer needs it warm
 
-Start one once per session and leave it running in its own terminal:
+Start one once per session and leave it running in its own terminal, for manually poking
+at the phone in a browser while you work:
 
 ```
 pnpm dev
 ```
 
-Playwright's `webServer.reuseExistingServer: true` (`web/playwright.config.ts`) and
-`scripts/verify.js` both use whatever is already listening on the configured port
-(5173 by default) instead of starting their own. A cold start costs about **2.5 minutes**
-(Vite plus the add-on watch build); reusing a warm one drops a full e2e run to roughly
-**1.6–2.8 minutes for the whole suite** instead of paying that tax on top.
+This used to matter for e2e too — Playwright's `webServer.reuseExistingServer: true`
+would reuse whatever `pnpm dev` had warm on port 5173, because the dev server compiles
+modules on demand and a cold graph took about 2.5 minutes to warm. MICA-36 replaced
+that: `web/playwright.config.ts`'s `webServer` now runs `pnpm build:e2e` (a real build,
+not `vite dev`) and serves the result with `vite preview` on **4173**, deliberately off
+the dev port, with `reuseExistingServer: false` and `--strictPort`. There is no on-demand
+compilation left to warm — the build itself is a one-time, low-double-digit-second step
+before any test runs, not a multi-minute tax — and it never looks at 5173 or at whatever
+`pnpm dev` is doing. A `pnpm dev` session and an e2e run are now fully independent; one
+being warm or cold has no effect on the other.
 
-`pnpm dev:check` fails fast with a clear message if nothing is listening, instead of
-letting `pnpm test:e2e` or `pnpm verify` silently eat the 2.5 minutes to discover the
-same thing:
+`pnpm dev:check` still fails fast with a clear message if nothing is listening on 5173,
+which is useful before you start manually driving the phone in a browser — but it buys
+you nothing before `pnpm test:e2e` or `pnpm verify` anymore, since neither one touches
+that port:
 
 ```
 $ pnpm dev:check
 Nothing is listening on 5173.
 
-Run `pnpm dev` in another terminal and leave it running for the session —
-Playwright and `pnpm verify` both reuse a server already on this port, so
-starting one once removes the cold-start tax from every e2e run after it.
+Run `pnpm dev` in another terminal and leave it running for the session if you
+want to manually drive the phone in a browser. It has no effect on `pnpm test:e2e`
+or `pnpm verify`, which build and serve their own copy independently of this port.
 ```
 
 ## The fast loop for one file or feature

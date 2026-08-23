@@ -107,11 +107,11 @@ minutes. For one file or feature: `pnpm --filter web exec vitest run <path>` (we
 `pnpm --filter web exec playwright test <path>` (one e2e spec). `pnpm check:fast` is the
 named middle ground — format, full typecheck, and only the unit tests Vitest's `--changed`
 selects from your uncommitted diff — and is what the pre-push hook runs now; `pnpm
-verify:quick` is still the CI-grade check, for an explicit run before opening a PR. Keep
-`pnpm dev` running in a terminal for the session — Playwright and `scripts/verify.js` both
-reuse whatever is already listening on the configured port rather than paying its ~2.5 min
-cold start — and use `pnpm dev:check` to fail fast with a clear message if nothing is up
-yet, instead of a test silently eating that cold start to tell you the same thing. A
+verify:quick` is still the CI-grade check, for an explicit run before opening a PR. `pnpm
+dev` is worth keeping running in a terminal for manually driving the phone in a browser,
+but e2e no longer needs it warm — Playwright builds and serves its own copy on a separate
+port (see docs/dev-loop.md) — so `pnpm dev:check` is a courtesy for that manual workflow,
+not a prerequisite for `pnpm test:e2e` or `pnpm verify`. A
 Playwright test that legitimately needs more than the suite's 10s default timeout should
 override its own with `test.setTimeout(N)` rather than raising the suite-wide default.
 Full detail, including a `--changed` caveat worth knowing before it surprises you and why
@@ -549,12 +549,13 @@ client/server relay layers above, framework bridge behavior, and SQL that only f
 schema. Playwright drives a modern Chromium against mocks — a green suite is not evidence a NUI
 feature works in game.
 
-E2E note: `webServer` polls port 5173 while Vite silently falls back to 5174 if 5173 is taken, so
-anything else holding that port produces a 120s `Timed out waiting for config.webServer` that reads
-like a code failure but is not one. On WSL2 the holder may be a **Windows-side** process, which
-`ss`/`netstat` inside the guest will not show — check `netstat.exe -ano | grep 5173` before
-concluding anything. **This is an environment collision, not a repo defect.** Report it and stop;
-do not "fix" it by changing the port or the config.
+E2E note: `webServer` builds a bundle and serves it with `vite preview --strictPort` on port 4173
+(`web/playwright.config.ts`) — deliberately not the dev server's 5173, and `--strictPort` means a
+port already held by something else is a loud bind failure rather than Vite's usual silent fallback
+to 5174. If the port is genuinely stuck, the holder may still be a **Windows-side** process on
+WSL2, which `ss`/`netstat` inside the guest will not show — check `netstat.exe -ano | grep 4173`
+before concluding anything. **This is an environment collision, not a repo defect.** Report it and
+stop; do not "fix" it by changing the port or the config.
 
 ---
 
