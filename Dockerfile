@@ -61,6 +61,7 @@ COPY web/ ./web/
 # full 40-char sha is fine to pass.
 ARG GIT_BRANCH=main
 ARG GIT_SHA=unknown
+ARG MICA_CALVER=
 
 # No font knob here on purpose. The `gphone:trim-fonts` plugin in
 # web/vite.config.ts drops the unused subsets and the legacy `.woff` fallback for
@@ -70,7 +71,7 @@ ARG GIT_SHA=unknown
 # and both builds follow.
 
 # build.outDir is '../dist/web' relative to web/, so this writes /app/dist/web.
-RUN GITHUB_REF_NAME="$GIT_BRANCH" GITHUB_SHA="$GIT_SHA" \
+RUN GITHUB_REF_NAME="$GIT_BRANCH" GITHUB_SHA="$GIT_SHA" MICA_CALVER="$MICA_CALVER" \
     pnpm --filter web build
 
 # Sidecars for the server's precompressed negotiation. Deliberately not the

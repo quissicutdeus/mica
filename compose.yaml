@@ -30,9 +30,11 @@ services:
         #
         # To stamp a real build:
         #   GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD) \
-        #   GIT_SHA=$(git rev-parse HEAD) docker compose up --build
+        #   GIT_SHA=$(git rev-parse HEAD) \
+        #   MICA_CALVER=$(date +%Y.%m.%d).1 docker compose up --build
         GIT_BRANCH:
         GIT_SHA:
+        MICA_CALVER:
         # Set to 0 to skip UPX and ship the binary plain -- ~0.5MB larger, ~165ms faster
         # to start, and legible to `strings`/`nm` if you are debugging or scanning it.
         COMPRESS_BINARY: ${COMPRESS_BINARY:-1}

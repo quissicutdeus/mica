@@ -106,11 +106,11 @@ function trimFonts(subsets: string[] = FONT_SUBSETS): Plugin {
   };
 }
 
-// CalVer, "YYYY.MM.DD.N": N is this commit's position among same-day commits,
-// so two deploys on one day get distinct versions. Deriving it from HEAD's
-// commit date (not "today") keeps it reproducible and lets `deploy` compute
-// the identical string for the Discord message.
+// CalVer, "YYYY.MM.DD.N" (N = commit's position among same-day commits).
+// Docker excludes .git from the build context, so `deploy` passes this
+// precomputed via MICA_CALVER; falls back to git log for local builds.
 function getCalVer() {
+  if (process.env.MICA_CALVER) return process.env.MICA_CALVER;
   try {
     const dates = execSync("git log --format=%cd --date=format:'%Y.%m.%d'")
       .toString()
