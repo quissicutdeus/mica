@@ -1,0 +1,48 @@
+name: Release
+
+# Only on push to main: main only advances via merge from development
+# (see AGENTS.md / the branching note in README), so every push here is a
+# real ship, and a tag/release cut on every commit to development would
+# mean dozens a day. Tagging main is what "release" is supposed to mean.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Tag and release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history, not the default shallow clone: the CalVer below
+          # counts every commit on HEAD's date across the whole log, and
+          # must match web/vite.config.ts's getCalVer() exactly (same git
+          # log, same field order) or the tag and the About screen disagree.
+          fetch-depth: 0
+
+      - name: Compute CalVer and tag
+        id: tag
+        run: |
+          dates=$(git log --format=%cd --date=format:%Y.%m.%d)
+          date=$(echo "$dates" | head -1)
+          count=$(echo "$dates" | grep -c "^$date\$")
+          tag="v${date}.${count}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          else
+            git tag "$tag"
+            git push origin "$tag"
+            echo "skip=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        if: steps.tag.outputs.skip == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ steps.tag.outputs.tag }}" --title "${{ steps.tag.outputs.tag }}" --generate-notes

@@ -1,7 +1,7 @@
 <h1 align="center">gPhone</h1>
 
 <p align="center">
-  <b>A modern, open-source custom phone resource for FiveM</b> — <a href="https://gphone.site/">Live Demo</a><br/>
+  <b>A modern, open-source custom phone resource for FiveM</b> — <a href="https://gphone.site/">Live Demo</a> · <a href="https://docs.gphone.site/">SDK Docs</a><br/>
   Powered by TypeScript, Svelte 5, Vite, and esbuild.
 </p>
 
@@ -291,6 +291,7 @@ gphone/
 ## Contributing
 
 - [docs/writing-an-app.md](docs/writing-an-app.md) — the five-minute path to a working app.
+- [docs.gphone.site](https://docs.gphone.site/) — the generated `@gphone/sdk` API reference.
 - [docs/demo-container.md](docs/demo-container.md) — the demo image: running it, and what it ships.
 - [AGENTS.md](AGENTS.md) — the full engineering guide: hard constraints (§2), the CEF capability
   baseline (§6), the service layer (§10), and adding an app end to end (§11). Written for AI
