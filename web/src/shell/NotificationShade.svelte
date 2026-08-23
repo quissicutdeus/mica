@@ -6,11 +6,19 @@
   import { fade, fly } from 'svelte/transition';
   import { attachDragGesture } from '../lib/pointerDrag';
   import { createSheetClose } from '../lib/sheetDrag';
+  import {
+    groupNotificationsByConversation,
+    type NotificationConversationGroup
+  } from './lib/notificationGrouping';
   import Avatar from '../sdk/ui/Avatar.svelte';
+  import AirplaneIcon from '../sdk/ui/icons/AirplaneIcon.svelte';
   import ArchiveIcon from '../sdk/ui/icons/ArchiveIcon.svelte';
+  import BluetoothIcon from '../sdk/ui/icons/BluetoothIcon.svelte';
   import CheckIcon from '../sdk/ui/icons/CheckIcon.svelte';
   import ChevronDownIcon from '../sdk/ui/icons/ChevronDownIcon.svelte';
   import CloseIcon from '../sdk/ui/icons/CloseIcon.svelte';
+  import FlashlightIcon from '../sdk/ui/icons/FlashlightIcon.svelte';
+  import SignalIcon from '../sdk/ui/icons/SignalIcon.svelte';
   import TrashIcon from '../sdk/ui/icons/TrashIcon.svelte';
   import {
     clearAllNotifications,
@@ -22,10 +30,51 @@
     restoreNotifications,
     shadeNotifications
   } from '../services/notifications';
+  import { airplaneModeEnabled, toggleAirplaneMode } from './state/airplane';
+  import { bluetoothEnabled, toggleBluetooth } from './state/bluetooth';
   import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
+  import { flashlightEnabled, toggleFlashlight } from './state/flashlight';
   import { openApp } from './state/navigation';
+  import { cellServiceEnabled, toggleCellService } from './state/signal';
   import { closeShade, isShadeOpen, shadeDragPhase, shadeDragProgress } from './state/shade';
   import SwipeableRow from './SwipeableRow.svelte';
+
+  interface QuickToggle {
+    label: string;
+    icon: typeof SignalIcon;
+    enabled: boolean;
+    disabled?: boolean;
+    onToggle: () => void;
+  }
+
+  let quickToggles = $derived<QuickToggle[]>([
+    {
+      label: 'Network',
+      icon: SignalIcon,
+      enabled: $cellServiceEnabled,
+      disabled: $airplaneModeEnabled,
+      onToggle: toggleCellService
+    },
+    {
+      label: 'Bluetooth',
+      icon: BluetoothIcon,
+      enabled: $bluetoothEnabled,
+      disabled: $airplaneModeEnabled,
+      onToggle: toggleBluetooth
+    },
+    {
+      label: 'Airplane',
+      icon: AirplaneIcon,
+      enabled: $airplaneModeEnabled,
+      onToggle: toggleAirplaneMode
+    },
+    {
+      label: 'Flashlight',
+      icon: FlashlightIcon,
+      enabled: $flashlightEnabled,
+      onToggle: toggleFlashlight
+    }
+  ]);
 
   let notifications = $derived($shadeNotifications);
 
@@ -189,6 +238,39 @@
   const handleClearSingle = async (e: MouseEvent, id: number) => {
     e.stopPropagation();
     await clearSingle(id);
+  };
+
+  /** Opening a conversation reads every message in it, not just the one tapped. */
+  const handleConversationClick = async (convo: NotificationConversationGroup) => {
+    const unreadIds = convo.items.filter((i) => !i.read_at).map((i) => i.id);
+    if (unreadIds.length > 0) {
+      await markNotificationsRead(unreadIds);
+    }
+    const link = convo.latest.deep_link ? parseDeepLink(convo.latest.deep_link) : null;
+    if (link) {
+      openApp(link.app, link.props);
+      closeShade();
+    }
+  };
+
+  const clearConversation = async (convo: NotificationConversationGroup) => {
+    await clearNotifications(convo.items.map((i) => i.id));
+  };
+
+  const handleClearConversation = async (e: MouseEvent, convo: NotificationConversationGroup) => {
+    e.stopPropagation();
+    await clearConversation(convo);
+  };
+
+  const restoreConversation = async (convo: NotificationConversationGroup) => {
+    const ids = convo.items.map((i) => i.id);
+    await restoreNotifications(ids);
+    historyItems = historyItems.filter((i) => !ids.includes(i.id));
+  };
+
+  const handleRestoreConversation = async (e: MouseEvent, convo: NotificationConversationGroup) => {
+    e.stopPropagation();
+    await restoreConversation(convo);
   };
 
   const handleClearAll = async () => {
@@ -356,6 +438,26 @@
       </div>
     </div>
 
+    <!-- Quick Settings Tiles -->
+    <div class="mb-4 flex items-center justify-between gap-2 px-6">
+      {#each quickToggles as toggle (toggle.label)}
+        <button
+          type="button"
+          class="duration-short ease-standard flex flex-1 flex-col items-center gap-1 rounded-lg p-2 transition-colors disabled:cursor-not-allowed disabled:opacity-40 {toggle.enabled
+            ? 'bg-primary-container text-on-primary-container'
+            : 'bg-surface text-on-surface-variant hover:bg-surface-container'}"
+          onclick={toggle.onToggle}
+          disabled={toggle.disabled}
+          title={toggle.label}
+          aria-label={toggle.label}
+          aria-pressed={toggle.enabled}
+        >
+          <toggle.icon class="size-icon-sm" />
+          <span class="text-label-small truncate">{toggle.label}</span>
+        </button>
+      {/each}
+    </div>
+
     <!-- Notification List Area -->
     <div bind:this={scrollContainerRef} class="flex-1 scrollbar-none overflow-y-auto px-5 pb-8">
       {#if showHistory}
@@ -517,39 +619,52 @@
                     </div>
                   </SwipeableRow>
 
-                  <!-- Expanded Group Sub-items List -->
+                  <!-- Expanded Group Sub-items List — one row per conversation
+                       (grouped by sender/title), not one per raw message. Twelve texts
+                       from the same person show as a single row here, not twelve. -->
                   {#if expandedHistoryGroups[group.app]}
                     <div
                       transition:fly={{ y: -5, duration: 150 }}
                       class="border-outline-variant mt-3 space-y-2 border-t pt-2.5 pr-1 pl-2"
                     >
-                      {#each group.items as childItem (childItem.id)}
-                        <SwipeableRow onCommit={() => restoreSingle(childItem.id)}>
+                      {#each groupNotificationsByConversation(group.items) as convo (convo.title)}
+                        <SwipeableRow onCommit={() => restoreConversation(convo)}>
                           <div
                             class="group/item border-outline-variant bg-surface-container-lowest hover:border-outline-variant hover:bg-surface-container duration-short ease-standard flex cursor-pointer items-start gap-2.5 rounded-xl border p-2.5 transition-colors active:scale-[0.99]"
-                            onclick={() => handleRowClick(childItem)}
+                            onclick={() => handleConversationClick(convo)}
                             role="button"
                             tabindex={0}
                             onkeydown={(e) => {
                               if (e.key === 'Enter' || e.key === ' ') {
                                 e.preventDefault();
-                                void handleRowClick(childItem);
+                                void handleConversationClick(convo);
                               }
                             }}
                           >
                             <div class="min-w-0 flex-1 space-y-0.5">
                               <div class="flex items-center justify-between gap-2">
-                                <h4 class="text-on-surface text-body-small truncate">
-                                  {childItem.title}
-                                </h4>
+                                <div class="flex min-w-0 items-center gap-1.5">
+                                  <h4 class="text-on-surface text-body-small truncate">
+                                    {convo.title}
+                                  </h4>
+                                  {#if convo.items.length > 1}
+                                    <span
+                                      class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 ring-1"
+                                    >
+                                      {convo.items.length}
+                                    </span>
+                                  {/if}
+                                </div>
                                 <div class="flex items-center gap-1.5">
                                   <span class="text-on-surface-variant text-label-small">
-                                    {formatTimestamp(childItem.cleared_at ?? childItem.created_at)}
+                                    {formatTimestamp(
+                                      convo.latest.cleared_at ?? convo.latest.created_at
+                                    )}
                                   </span>
                                   <button
                                     type="button"
                                     class="text-error hover:text-on-surface duration-short ease-standard rounded-full p-0.5 transition-colors"
-                                    onclick={(e) => handleRestoreSingle(e, childItem.id)}
+                                    onclick={(e) => handleRestoreConversation(e, convo)}
                                     title="Restore to Active notifications"
                                     aria-label="Restore to Active notifications"
                                   >
@@ -560,7 +675,7 @@
                               <p
                                 class="text-on-surface text-body-small line-clamp-2 leading-relaxed"
                               >
-                                {childItem.body}
+                                {convo.latest.body}
                               </p>
                             </div>
                           </div>
@@ -724,41 +839,52 @@
                     </div>
                   </SwipeableRow>
 
-                  <!-- Expanded Group Sub-items List -->
+                  <!-- Expanded Group Sub-items List — one row per conversation
+                       (grouped by sender/title), not one per raw message. Twelve texts
+                       from the same person show as a single row here, not twelve. -->
                   {#if expandedGroups[group.app]}
                     <div
                       transition:fly={{ y: -5, duration: 150 }}
                       class="border-outline-variant mt-3 space-y-2 border-t pt-2.5 pr-1 pl-2"
                     >
-                      {#each group.items as childItem (childItem.id)}
-                        <SwipeableRow onCommit={() => clearSingle(childItem.id)}>
+                      {#each groupNotificationsByConversation(group.items) as convo (convo.title)}
+                        <SwipeableRow onCommit={() => clearConversation(convo)}>
                           <div
                             class="group/item border-outline-variant bg-surface-container-lowest hover:border-outline-variant hover:bg-surface-container duration-short ease-standard flex cursor-pointer items-start gap-2.5 rounded-xl border p-2.5 transition-colors active:scale-[0.99]"
-                            onclick={() => handleRowClick(childItem)}
+                            onclick={() => handleConversationClick(convo)}
                             role="button"
                             tabindex={0}
                             onkeydown={(e) => {
                               if (e.key === 'Enter' || e.key === ' ') {
                                 e.preventDefault();
-                                void handleRowClick(childItem);
+                                void handleConversationClick(convo);
                               }
                             }}
                           >
                             <div class="min-w-0 flex-1 space-y-0.5">
                               <div class="flex items-center justify-between gap-2">
-                                <h4 class="text-on-surface text-body-small truncate">
-                                  {childItem.title}
-                                </h4>
+                                <div class="flex min-w-0 items-center gap-1.5">
+                                  <h4 class="text-on-surface text-body-small truncate">
+                                    {convo.title}
+                                  </h4>
+                                  {#if convo.items.length > 1}
+                                    <span
+                                      class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 ring-1"
+                                    >
+                                      {convo.items.length}
+                                    </span>
+                                  {/if}
+                                </div>
                                 <div class="flex items-center gap-1.5">
                                   <span class="text-on-surface-variant text-label-small">
-                                    {formatTimestamp(childItem.created_at)}
+                                    {formatTimestamp(convo.latest.created_at)}
                                   </span>
                                   <button
                                     type="button"
                                     class="text-on-surface-variant hover:text-error duration-short ease-standard rounded-full p-0.5 opacity-0 transition-opacity group-hover/item:opacity-100"
-                                    onclick={(e) => handleClearSingle(e, childItem.id)}
-                                    title="Clear notification"
-                                    aria-label="Clear notification"
+                                    onclick={(e) => handleClearConversation(e, convo)}
+                                    title="Clear conversation"
+                                    aria-label="Clear conversation"
                                   >
                                     <TrashIcon class="h-3 w-3" />
                                   </button>
@@ -767,7 +893,7 @@
                               <p
                                 class="text-on-surface text-body-small line-clamp-2 leading-relaxed"
                               >
-                                {childItem.body}
+                                {convo.latest.body}
                               </p>
                             </div>
                           </div>

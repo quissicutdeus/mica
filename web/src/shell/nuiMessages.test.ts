@@ -216,8 +216,13 @@ describe('installApp', () => {
 
 describe('contact share', () => {
   const accept = async () => {
-    const actions = lastToast()?.actions ?? [];
+    const current = lastToast();
+    const actions = current?.actions ?? [];
     await actions.find((a: { label: string }) => a.label === 'Accept')?.onClick();
+    // Mirrors ToastHost.svelte's handleActionClick: the acted-upon toast is dismissed
+    // once its action resolves, which is what lets any toast it raised (e.g. an error)
+    // take the now-empty visible slot instead of sitting queued behind it.
+    if (current) toast.dismiss(current.id);
   };
 
   it('adds a valid contact', async () => {

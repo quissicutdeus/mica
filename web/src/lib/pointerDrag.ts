@@ -101,17 +101,24 @@ export function shouldCommitSwipe(
 }
 
 export interface DragGestureConfig {
-  axis: 'x' | 'y';
-  /** Px of raw (uncorrected) movement before the gesture commits to `axis`. Default 4, matching dragScroll.ts. */
+  /**
+   * `'x'`/`'y'` pin the gesture to one axis — movement that locks to the other axis
+   * cancels (see `onCancel`). `'xy'` accepts either: whichever axis the movement first
+   * locks to becomes the gesture's axis for the rest of the drag.
+   */
+  axis: 'x' | 'y' | 'xy';
+  /** Px of raw (uncorrected) movement before the gesture commits to an axis. Default 4, matching dragScroll.ts. */
   axisThreshold?: number;
   /** Swallow the next `click` once a real drag has committed, so drag-release doesn't also fire a tap handler. Default true. */
   suppressClickAfterDrag?: boolean;
-  /** Ratio-corrected, signed delta along `axis`, called on every move once committed. */
+  /** Ratio-corrected, signed delta along the committed axis, called on every move once committed. */
   onMove: (delta: number, e: PointerEvent) => void;
-  /** Called once on release, with the final delta and a rolling velocity estimate (units/ms). Only fires if the gesture committed to `axis`. */
+  /** Called once on release, with the final delta and a rolling velocity estimate (units/ms). Only fires if the gesture committed to an axis. */
   onEnd: (delta: number, velocityPerMs: number) => void;
-  /** Fired once if movement locks to the *other* axis — the gesture never captures the pointer or calls `onMove`/`onEnd`. */
+  /** Fired once if movement locks to the *other* axis (only possible for a fixed `'x'`/`'y'` config) — the gesture never captures the pointer or calls `onMove`/`onEnd`. */
   onCancel?: () => void;
+  /** `axis: 'xy'` only — fired once, the moment movement commits to x or y. */
+  onAxisLocked?: (axis: 'x' | 'y') => void;
   /**
    * Checked on every `pointerdown`, before any tracking starts. Returning `false` lets the
    * event fall through untouched — e.g. a container-wide close-swipe that must not steal a
@@ -141,6 +148,7 @@ export function attachDragGesture(element: HTMLElement, config: DragGestureConfi
     onMove,
     onEnd,
     onCancel,
+    onAxisLocked,
     shouldStart
   } = config;
 
@@ -150,11 +158,14 @@ export function attachDragGesture(element: HTMLElement, config: DragGestureConfi
   let startY = 0;
   let dragRatio = 1;
   let velocityTracker = createVelocityTracker();
+  // For a fixed 'x'/'y' config this is pinned up front. For 'xy' it stays null until the
+  // first move locks it, and then never changes for the rest of the gesture.
+  let lockedAxis: 'x' | 'y' | null = axis === 'xy' ? null : axis;
 
   function rawDeltaFor(e: PointerEvent): number {
     const deltaX = e.clientX - startX;
     const deltaY = e.clientY - startY;
-    return axis === 'x' ? deltaX : deltaY;
+    return lockedAxis === 'x' ? deltaX : deltaY;
   }
 
   function handlePointerDown(e: PointerEvent) {
@@ -164,6 +175,7 @@ export function attachDragGesture(element: HTMLElement, config: DragGestureConfi
 
     activePointerId = e.pointerId;
     committed = false;
+    lockedAxis = axis === 'xy' ? null : axis;
     startX = e.clientX;
     startY = e.clientY;
     dragRatio = measureDragRatio(element);
@@ -182,12 +194,14 @@ export function attachDragGesture(element: HTMLElement, config: DragGestureConfi
     if (!committed) {
       const locked = lockAxis(deltaX, deltaY, axisThreshold);
       if (locked === null) return;
-      if (locked !== axis) {
+      if (axis !== 'xy' && locked !== axis) {
         stopTracking();
         onCancel?.();
         return;
       }
       committed = true;
+      lockedAxis = locked;
+      if (axis === 'xy') onAxisLocked?.(locked);
       try {
         element.setPointerCapture(e.pointerId);
       } catch {

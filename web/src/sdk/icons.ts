@@ -4,6 +4,7 @@
 // Apps import icons from '@gphone/sdk', never by relative path: an add-on installed
 // from the Store resolves the package and nothing else.
 export { default as AddIcon } from './ui/icons/AddIcon.svelte';
+export { default as AirplaneIcon } from './ui/icons/AirplaneIcon.svelte';
 export { default as ArchiveIcon } from './ui/icons/ArchiveIcon.svelte';
 export { default as BackspaceIcon } from './ui/icons/BackspaceIcon.svelte';
 export { default as BatteryIcon } from './ui/icons/BatteryIcon.svelte';
@@ -21,6 +22,7 @@ export { default as EditIcon } from './ui/icons/EditIcon.svelte';
 export { default as EmptyMailIcon } from './ui/icons/EmptyMailIcon.svelte';
 export { default as EmptyPhotoIcon } from './ui/icons/EmptyPhotoIcon.svelte';
 export { default as FlagIcon } from './ui/icons/FlagIcon.svelte';
+export { default as FlashlightIcon } from './ui/icons/FlashlightIcon.svelte';
 export { default as FlipCameraIcon } from './ui/icons/FlipCameraIcon.svelte';
 export { default as HomeIcon } from './ui/icons/HomeIcon.svelte';
 export { default as KeypadIcon } from './ui/icons/KeypadIcon.svelte';

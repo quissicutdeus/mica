@@ -1,7 +1,7 @@
 import { get, writable } from 'svelte/store';
 import { audio } from './audio';
 import { isBatteryDead } from './charge';
-import { addNotificationItem } from '../../services/notifications';
+import { addNotificationItem, clearNotifications } from '../../services/notifications';
 
 type ToastType = 'info' | 'success' | 'warning' | 'error' | 'message' | 'call' | 'contact';
 
@@ -13,6 +13,8 @@ export interface ToastAction {
 
 export interface ToastMessage {
   id: string;
+  /** The drawer notification this toast created, if any — lets a swipe-to-archive act on the right row. */
+  notificationId?: number;
   app?: string;
   title?: string;
   message: string;
@@ -40,8 +42,13 @@ export interface ToastMessage {
 let toastCounter = 0;
 
 function createToastStore() {
-  const { subscribe, update } = writable<ToastMessage[]>([]);
+  const store = writable<ToastMessage[]>([]);
+  const { subscribe, update } = store;
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  // Only ever one toast visible (the `store` above) — everything else waits here, in
+  // arrival order, so five messages in a row take turns instead of overriding each other.
+  let queue: ToastMessage[] = [];
 
   const clearToastTimer = (id: string) => {
     const existing = timers.get(id);
@@ -49,6 +56,20 @@ function createToastStore() {
       clearTimeout(existing);
       timers.delete(id);
     }
+  };
+
+  const showNext = (next: ToastMessage) => {
+    update(() => [next]);
+    if (next.duration !== undefined && next.duration > 0) {
+      scheduleToastTimer(next.id, next.duration);
+    }
+  };
+
+  /** Pull the next queued toast into view. No-op if something is already visible. */
+  const advanceQueue = () => {
+    if (get(store).length > 0) return;
+    const next = queue.shift();
+    if (next) showNext(next);
   };
 
   const scheduleToastTimer = (id: string, duration: number) => {
@@ -62,17 +83,40 @@ function createToastStore() {
         });
         timers.delete(id);
         void expiring?.onExpire?.();
+        advanceQueue();
       }, duration);
       timers.set(id, timer);
     }
   };
 
-  const MAX_VISIBLE_TOASTS = 2;
+  /** Same title or sender as an already-pending toast — a repeat, not a new one to queue. */
+  const findSpamMatch = (
+    toasts: ToastMessage[],
+    options: Partial<ToastMessage>
+  ): ToastMessage | undefined =>
+    toasts.find(
+      (t) =>
+        (options.title && t.title === options.title) ||
+        (options.sender && t.sender === options.sender)
+    );
 
   const show = (options: Partial<ToastMessage> & { message: string }) => {
     const id = options.id || `toast_${Date.now()}_${++toastCounter}`;
+
+    const notificationItem =
+      options.persist !== false
+        ? addNotificationItem({
+            app: options.app || (options.type === 'message' ? 'messages' : 'system'),
+            title: options.title || options.sender || 'System Notification',
+            body: options.message,
+            avatar: options.avatar,
+            deepLink: options.deepLink
+          })
+        : undefined;
+
     const newToast: ToastMessage = {
       id,
+      notificationId: notificationItem?.id,
       app: options.app,
       title: options.title,
       message: options.message,
@@ -88,62 +132,55 @@ function createToastStore() {
       onExpire: options.onExpire
     };
 
-    update((toasts) => {
-      // If there is an active toast from the same title or sender, replace it to prevent spam
-      const matchIndex = toasts.findIndex(
-        (t) =>
-          (options.title && t.title === options.title) ||
-          (options.sender && t.sender === options.sender)
-      );
+    const visible = get(store);
 
-      let next = [...toasts];
-      if (matchIndex !== -1) {
-        clearToastTimer(next[matchIndex].id);
-        next[matchIndex] = newToast;
-      } else {
-        next = [newToast, ...next];
-      }
-
-      // Cap visible toasts to MAX_VISIBLE_TOASTS by dismissing the oldest non-interactive toast
-      while (next.length > MAX_VISIBLE_TOASTS) {
-        let oldestIndex = -1;
-        for (let i = next.length - 1; i >= 0; i--) {
-          if (!next[i].actions && !next[i].hasReplyInput) {
-            oldestIndex = i;
-            break;
-          }
-        }
-        if (oldestIndex !== -1) {
-          clearToastTimer(next[oldestIndex].id);
-          next.splice(oldestIndex, 1);
-        } else {
-          break;
-        }
-      }
-
-      return next;
-    });
-
-    if (options.persist !== false) {
-      addNotificationItem({
-        app: options.app || (options.type === 'message' ? 'messages' : 'system'),
-        title: options.title || options.sender || 'System Notification',
-        body: options.message,
-        avatar: options.avatar,
-        deepLink: options.deepLink
-      });
+    // A repeat of the visible toast replaces it in place and restarts its timer.
+    const visibleMatch = findSpamMatch(visible, options);
+    if (visibleMatch) {
+      clearToastTimer(visibleMatch.id);
+      showNext(newToast);
+      return id;
     }
 
-    if (newToast.duration !== undefined && newToast.duration > 0) {
-      scheduleToastTimer(id, newToast.duration);
+    // A repeat of a queued toast replaces it in place, keeping its position in line.
+    const queueMatch = findSpamMatch(queue, options);
+    if (queueMatch) {
+      queue[queue.indexOf(queueMatch)] = newToast;
+      return id;
     }
 
+    if (visible.length === 0) {
+      showNext(newToast);
+      return id;
+    }
+
+    if (newToast.type === 'call') {
+      // A call interrupts whatever is showing, which resumes once the call is handled.
+      clearToastTimer(visible[0].id);
+      queue.unshift(visible[0]);
+      showNext(newToast);
+      return id;
+    }
+
+    queue.push(newToast);
     return id;
   };
 
   const dismiss = (id: string) => {
     clearToastTimer(id);
+    const wasVisible = get(store).some((t) => t.id === id);
     update((toasts) => toasts.filter((t) => t.id !== id));
+    queue = queue.filter((t) => t.id !== id);
+    if (wasVisible) advanceQueue();
+  };
+
+  /** Dismiss the toast and, if it created one, clear its notification from the drawer too. */
+  const archive = async (id: string) => {
+    const notificationId = get(store).find((t) => t.id === id)?.notificationId;
+    dismiss(id);
+    if (notificationId !== undefined) {
+      await clearNotifications([notificationId]);
+    }
   };
 
   const pauseDismiss = (id: string) => {
@@ -158,11 +195,13 @@ function createToastStore() {
     subscribe,
     show,
     dismiss,
+    archive,
     pauseDismiss,
     resumeDismiss,
     clear: () => {
       timers.forEach((t) => clearTimeout(t));
       timers.clear();
+      queue = [];
       update(() => []);
     },
 

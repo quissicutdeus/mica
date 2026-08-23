@@ -259,4 +259,59 @@ describe('attachDragGesture', () => {
     firePointerEvent(window, 'pointermove', { clientX: 0, clientY: 40, timeMs: 10 });
     expect(onMove).toHaveBeenCalledTimes(1);
   });
+
+  describe('axis: "xy"', () => {
+    it('locks to x and reports the x delta when horizontal movement dominates', () => {
+      const onMove = vi.fn();
+      const onEnd = vi.fn();
+      const onAxisLocked = vi.fn();
+      cleanup = attachDragGesture(element, { axis: 'xy', onMove, onEnd, onAxisLocked });
+
+      firePointerEvent(element, 'pointerdown', { clientX: 0, clientY: 0, timeMs: 0 });
+      firePointerEvent(window, 'pointermove', { clientX: 20, clientY: 1, timeMs: 5 });
+
+      expect(onAxisLocked).toHaveBeenCalledWith('x');
+      expect(onMove).toHaveBeenCalledWith(20, expect.anything());
+    });
+
+    it('locks to y and reports the y delta when vertical movement dominates', () => {
+      const onMove = vi.fn();
+      const onEnd = vi.fn();
+      const onAxisLocked = vi.fn();
+      cleanup = attachDragGesture(element, { axis: 'xy', onMove, onEnd, onAxisLocked });
+
+      firePointerEvent(element, 'pointerdown', { clientX: 0, clientY: 0, timeMs: 0 });
+      firePointerEvent(window, 'pointermove', { clientX: 1, clientY: -20, timeMs: 5 });
+
+      expect(onAxisLocked).toHaveBeenCalledWith('y');
+      expect(onMove).toHaveBeenCalledWith(-20, expect.anything());
+    });
+
+    it('keeps reporting delta along the axis it first locked to, once committed', () => {
+      const onMove = vi.fn();
+      const onEnd = vi.fn();
+      cleanup = attachDragGesture(element, { axis: 'xy', onMove, onEnd });
+
+      firePointerEvent(element, 'pointerdown', { clientX: 0, clientY: 0, timeMs: 0 });
+      firePointerEvent(window, 'pointermove', { clientX: 20, clientY: 1, timeMs: 5 });
+      firePointerEvent(window, 'pointermove', { clientX: 30, clientY: 25, timeMs: 10 });
+
+      // Locked to x on the first move; the second move's large y component is ignored.
+      expect(onMove).toHaveBeenLastCalledWith(30, expect.anything());
+    });
+
+    it('fires onEnd with the locked axis delta', () => {
+      const onMove = vi.fn();
+      const onEnd = vi.fn();
+      cleanup = attachDragGesture(element, { axis: 'xy', onMove, onEnd });
+
+      firePointerEvent(element, 'pointerdown', { clientX: 0, clientY: 0, timeMs: 0 });
+      firePointerEvent(window, 'pointermove', { clientX: 1, clientY: 20, timeMs: 5 });
+      firePointerEvent(window, 'pointerup', { clientX: 1, clientY: 50, timeMs: 10 });
+
+      expect(onEnd).toHaveBeenCalledTimes(1);
+      const [finalDelta] = onEnd.mock.calls[0];
+      expect(finalDelta).toBe(50);
+    });
+  });
 });

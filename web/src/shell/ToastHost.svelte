@@ -5,6 +5,7 @@
   import SendIcon from '../sdk/ui/icons/SendIcon.svelte';
   import Avatar from '../sdk/ui/Avatar.svelte';
   import { appRegistryStore } from './state/registry';
+  import SwipeableToast from './SwipeableToast.svelte';
 
   let toasts = $derived($toast);
 
@@ -90,21 +91,32 @@
   };
 </script>
 
-{#if toasts.length > 0}
+{#if toasts[0]}
+  {@const t = toasts[0]}
+  <!-- Rendered by `{#if}` on toasts[0], deliberately not a keyed `{#each}` — only one
+       toast is ever visible now (MICA-37), and a keyed list treats one toast replacing
+       another as remove-old/add-new, which plays the outgoing card's exit transition and
+       the incoming card's entrance transition at the same time: the old one visibly
+       "pushed down" by the new one for the duration of the crossfade. `{#if}` keeps the
+       same DOM node across a replacement — content updates in place with no transition —
+       and still plays the intro/outro transitions correctly on genuine appear/disappear
+       (no toast → one, or one → none). -->
   <div class="pointer-events-none absolute top-12 right-3 left-3 z-50 flex flex-col gap-2">
-    {#each toasts as t (t.id)}
-      <!-- Announced as a button only when tapping the body actually does something.
+    <!-- Announced as a button only when tapping the body actually does something.
            A toast whose actions are its own inner buttons stays presentational, so it
            does not put an extra stop in the tab order that leads nowhere. -->
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <!-- `role` and `tabindex` are both keyed on `t.onClick`, so the pairing is always
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <!-- `role` and `tabindex` are both keyed on `t.onClick`, so the pairing is always
            button+0 or presentation+none, and a presentational toast never takes a tab
            stop. The compiler checks the two attributes independently and cannot see that
            they move together; splitting the element in two to prove it would duplicate
            forty lines of markup to satisfy a static analysis rather than a user. -->
+    <!-- Left/right swipe archives (dismisses the toast and clears its notification from
+           the drawer); up swipe just hides the toast, leaving the notification active. -->
+    <SwipeableToast onArchive={() => toast.archive(t.id)} onHide={() => toast.dismiss(t.id)}>
       <div
         transition:fly={{ y: -20, duration: 250 }}
-        class="shadow-elevation-5 pointer-events-auto flex cursor-pointer flex-col space-y-2.5 rounded-lg border p-3 backdrop-blur-2xl transition-all hover:scale-[1.01] active:scale-[0.99] {getBgColor(
+        class="shadow-elevation-3 pointer-events-auto flex cursor-pointer flex-col space-y-2.5 rounded-lg border p-3.5 backdrop-blur-md transition-all hover:scale-[1.01] active:scale-[0.99] {getBgColor(
           t.type
         )} duration-short ease-standard"
         onclick={async () => {
@@ -160,20 +172,18 @@
                     size="size-icon-sm"
                     textClass="text-label-small"
                   />
-                  <span
-                    class="text-on-surface-variant text-label-small truncate tracking-wide uppercase"
-                  >
+                  <span class="text-primary text-body-small truncate tracking-wide uppercase">
                     {manifest.name}
                   </span>
                 </div>
               {/if}
             {/if}
             {#if t.title}
-              <h4 class="text-on-surface text-body-small mb-0.5 truncate tracking-tight">
+              <h4 class="text-on-surface text-body-medium mb-0.5 truncate">
                 {t.title}
               </h4>
             {/if}
-            <p class="text-on-surface text-body-small truncate leading-snug">
+            <p class="text-on-surface text-body-small line-clamp-2 leading-relaxed">
               {t.message}
             </p>
           </div>
@@ -245,6 +255,6 @@
           </div>
         {/if}
       </div>
-    {/each}
+    </SwipeableToast>
   </div>
 {/if}

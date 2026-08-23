@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import ToastHost from './ToastHost.svelte';
 import { toast } from './state/toast';
 
@@ -52,13 +53,34 @@ describe('ToastHost hit area', () => {
     expect(stack!.querySelectorAll('.pointer-events-auto').length).toBe(1);
   });
 
-  it('keeps every card independently interactive, with the stack still click-through, at the visible cap', () => {
+  it('renders only the one visible toast even when a second is queued behind it', () => {
     toast.show({ id: 'a', message: 'first', type: 'info', duration: 0 });
     toast.show({ id: 'b', message: 'second', type: 'info', duration: 0 });
     const { container } = render(ToastHost);
 
     const stack = container.querySelector('.pointer-events-none');
     expect(stack).not.toBeNull();
-    expect(stack!.querySelectorAll('.pointer-events-auto').length).toBe(2);
+    // The queued second toast has no DOM presence at all until it becomes visible.
+    expect(stack!.querySelectorAll('.pointer-events-auto').length).toBe(1);
+  });
+
+  it('updates the same card in place when the queue advances to the next toast, instead of remounting it', async () => {
+    const idA = toast.show({ message: 'first', type: 'info', duration: 0 });
+    toast.show({ message: 'second', type: 'info', duration: 0 }); // queued behind 'first'
+    const { container } = render(ToastHost);
+
+    const cardBefore = container.querySelector('.pointer-events-auto');
+    expect(cardBefore).not.toBeNull();
+
+    // Dismissing the visible toast advances the queue to 'second' in the same render
+    // pass. The card must never remount here — a remount plays the outgoing card's exit
+    // transition and the incoming card's entrance transition at the same time, which is
+    // what visually "pushed down" the first toast when two arrived in quick succession.
+    toast.dismiss(idA);
+    await tick();
+
+    const cardAfter = container.querySelector('.pointer-events-auto');
+    expect(cardAfter).toBe(cardBefore);
+    expect(cardAfter?.textContent).toContain('second');
   });
 });
