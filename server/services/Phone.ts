@@ -2,6 +2,7 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { notifyPlayer } from '../lib/shell';
 import { registerService } from '../lib/services';
 import { guardNetEvent, phoneNumberFrom } from '../lib/netGuard';
+import { phoneCallLog } from './PhoneCallLog';
 
 // Dictionary to track active calls: CallID -> { caller: source, target: source }
 interface ActiveCall {
@@ -11,6 +12,8 @@ interface ActiveCall {
   callerPhone: string;
   targetPhone: string;
   startTime: number;
+  /** Set by the `answer` handler. Null means the call never connected. */
+  answeredAt: number | null;
 }
 
 const activeCalls: Record<number, ActiveCall> = {};
@@ -24,6 +27,37 @@ const generateCallId = () => Math.floor(Math.random() * 900000) + 100000;
  */
 const PHONE_SERVICE = registerService('phone');
 void PHONE_SERVICE;
+
+/**
+ * Writes one call-log row per participant. Called from every path a call can end
+ * through — `end` (hangup, decline, or a client-side timeout, which all resolve to
+ * the same event) and `playerDropped` — so "missed" always means the same thing
+ * regardless of why the target never answered.
+ */
+function logCallEnd(call: ActiveCall): void {
+  const answered = call.answeredAt !== null;
+  const durationSec = answered ? Math.round((Date.now() - call.answeredAt!) / 1000) : 0;
+
+  const callerCitizenid = FrameworkBridge.getCitizenId(call.caller);
+  const targetCitizenid = FrameworkBridge.getCitizenId(call.target);
+
+  if (callerCitizenid) {
+    void phoneCallLog.repo.create({
+      citizenid: callerCitizenid,
+      kind: 'outgoing',
+      number: call.targetPhone,
+      duration: durationSec
+    });
+  }
+  if (targetCitizenid) {
+    void phoneCallLog.repo.create({
+      citizenid: targetCitizenid,
+      kind: answered ? 'incoming' : 'missed',
+      number: call.callerPhone,
+      duration: durationSec
+    });
+  }
+}
 
 onNet('gphone:server:phone:start', (rawTarget: unknown) => {
   // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
@@ -72,7 +106,8 @@ onNet('gphone:server:phone:start', (rawTarget: unknown) => {
     target: targetSrc,
     callerPhone,
     targetPhone,
-    startTime: Date.now()
+    startTime: Date.now(),
+    answeredAt: null
   };
 
   activeCalls[callId] = call;
@@ -98,6 +133,8 @@ onNet('gphone:server:phone:answer', () => {
 
   if (!call || call.target !== src) return;
 
+  call.answeredAt = Date.now();
+
   emitNet('gphone:client:phone:accepted', call.caller, { callId });
   emitNet('gphone:client:phone:accepted', call.target, { callId });
 });
@@ -118,6 +155,8 @@ onNet('gphone:server:phone:end', () => {
   if (call.caller !== src) emitNet('gphone:client:phone:ended', call.caller);
   if (call.target !== src) emitNet('gphone:client:phone:ended', call.target);
 
+  logCallEnd(call);
+
   // Clean up
   delete playerCalls[call.caller];
   delete playerCalls[call.target];
@@ -133,6 +172,8 @@ on('playerDropped', () => {
     // End for other party
     const other = call.caller === src ? call.target : call.caller;
     emitNet('gphone:client:phone:ended', other);
+
+    logCallEnd(call);
 
     delete playerCalls[other];
     delete playerCalls[src];
