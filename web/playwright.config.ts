@@ -13,21 +13,52 @@ const PORT = process.env.E2E_PORT || 4173;
 export default defineConfig({
   testDir: './e2e',
   /**
-   * Ten seconds per test, not Playwright's thirty. Every test here that is going to pass
-   * does so in under ten; the only ones that ever reached thirty were the home-grid drag
-   * flakes, which sit on the limit and then fail anyway. Twenty seconds of waiting per
-   * flake, times six, times two projects, is four minutes of a verify run spent on nothing.
+   * Playwright's default thirty, after ten was measured wrong.
+   *
+   * Ten was chosen on the reasoning that "every test here that is going to pass does so in
+   * under ten", and that anything reaching thirty was a flake sitting on the limit and
+   * failing anyway — so the extra twenty seconds were pure waiting. That was true when it
+   * was written, and it was measured serially.
+   *
+   * Under four workers it is false. A run at that width produced five failures whose
+   * durations were 10.3s, 10.4s, 10.5s, 11.1s, 11.3s and 11.7s — every one of them within
+   * two seconds of the line, none hanging, none asserting anything false, and each passing
+   * comfortably on a run where it happened to get a quieter slice of CPU. They were not
+   * flakes sitting on the limit; the limit was sitting on them.
+   *
+   * The cost the old number was avoiding is smaller than it looks now: `retries` is 0, so a
+   * genuinely failing test is waited out once rather than three times, and the count of
+   * tests that can reach the ceiling at all is the short list above.
    */
-  timeout: 10_000,
+  timeout: 30_000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  /**
+   * No retries, anywhere.
+   *
+   * CI used to retry twice, so "passes in CI" meant *passes with up to three attempts* —
+   * and because CI was also the only place that ran serially, a test could be reliably
+   * broken under parallelism and still show green on every PR. The two settings hid each
+   * other. A retry here now means a flake nobody is being told about, which is the state
+   * this ticket existed to leave.
+   */
+  retries: 0,
+  /**
+   * Whatever the machine has, on CI as well as locally.
+   *
+   * CI pinned this to 1 while local ran ~4, so the suite was never actually exercised
+   * under parallelism by anything that gates a merge — the failures only ever appeared on
+   * a developer's machine, which is precisely backwards. `undefined` lets Playwright size
+   * the pool; the reason it is safe now is that the suite serves a built bundle rather
+   * than compiling on demand under every worker (see `webServer`).
+   */
+  workers: undefined,
   reporter: process.env.CI ? [['github'], ['html']] : [['list'], ['html', { open: 'on-failure' }]],
   use: {
     headless: !process.env.HEADED,
     baseURL: `http://127.0.0.1:${PORT}`,
-    trace: 'on-first-retry',
+    // No retries to be the 'first' of, so capture on the failure itself.
+    trace: 'retain-on-failure',
     viewport: { width: 1280, height: 960 }
   },
   /**
@@ -97,15 +128,18 @@ export default defineConfig({
     command: `pnpm build:e2e && pnpm preview --port ${PORT} --strictPort`,
     url: `http://127.0.0.1:${PORT}`,
     /**
-     * Safe to reuse now, and no longer load-bearing.
+     * Never reuse. The command below *builds* before it serves, and reuse skips the whole
+     * command — so a preview server left listening from an earlier run makes the suite
+     * silently test the previous bundle. That is exactly what happened while fixing
+     * MICA-36: a spec was "still failing" against code that had already been changed,
+     * because the server answering on this port had been built ten minutes earlier.
      *
-     * It used to be `true` because `scripts/verify.js` started the dev server itself and
-     * Playwright had to accept it — with `!process.env.CI` every CI run failed at the e2e
-     * gate while the identical command passed locally. verify.js no longer starts
-     * anything, so this only ever finds a preview server left over from a previous run on
-     * a port nothing else uses.
+     * With `--strictPort`, a leftover server is now a loud bind failure instead of a
+     * quiet wrong answer. It used to be `true` because `scripts/verify.js` started the
+     * dev server itself and Playwright had to accept it; verify.js no longer starts
+     * anything.
      */
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     /** A cold build (add-ons, then the shell) rather than just a server boot. */
     timeout: 180 * 1000
   }
