@@ -7,6 +7,7 @@
   "scripts": {
     "build": "pnpm clearbuild && node scripts/generate-barrels.js && pnpm typecheck && node build/build-bundle.js && pnpm build:web",
     "build:web": "pnpm --filter web build",
+    "docs:sdk": "pnpm --filter web docs:sdk",
     "clearbuild": "node scripts/clear-build.js",
     "generate:sql": "node scripts/generate-sql.js",
     "generate:sql:reset": "node scripts/generate-sql.js --with-reset",
