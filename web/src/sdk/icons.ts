@@ -6,6 +6,8 @@
 export { default as AddIcon } from './ui/icons/AddIcon.svelte';
 export { default as AirplaneIcon } from './ui/icons/AirplaneIcon.svelte';
 export { default as ArchiveIcon } from './ui/icons/ArchiveIcon.svelte';
+export { default as ArrowDownLeftIcon } from './ui/icons/ArrowDownLeftIcon.svelte';
+export { default as ArrowUpRightIcon } from './ui/icons/ArrowUpRightIcon.svelte';
 export { default as BackspaceIcon } from './ui/icons/BackspaceIcon.svelte';
 export { default as BatteryIcon } from './ui/icons/BatteryIcon.svelte';
 export { default as BellIcon } from './ui/icons/BellIcon.svelte';
