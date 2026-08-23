@@ -10,7 +10,14 @@ jobs:
     # used to spend a minute-plus on every run downloading/apt-installing. Bump this tag
     # whenever the lockfile's playwright version changes, or the run fails on a missing
     # browser instead of a stale-but-working one.
-    container: mcr.microsoft.com/playwright:v1.62.1-noble
+    #
+    # `-resolute` is Ubuntu 26.04 LTS, the newest distro Playwright publishes for this
+    # version (the chain runs bionic 18.04 -> focal 20.04 -> jammy 22.04 -> noble 24.04 ->
+    # resolute 26.04). Both halves of this tag have to be chosen deliberately: the version
+    # tracks the lockfile, and the distro is only available for versions that shipped after
+    # it, so a future playwright bump may have no `-resolute` build yet. Check
+    # https://mcr.microsoft.com/v2/playwright/tags/list before changing either half.
+    container: mcr.microsoft.com/playwright:v1.62.1-resolute
     # Matched to the development machine on purpose, rather than to whatever is LTS.
     #
     # pnpm is the half that matters most: it is what writes pnpm-lock.yaml, and `pnpm
