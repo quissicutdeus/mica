@@ -9,6 +9,9 @@ pnpm-lock.yaml
 playwright-report
 test-results
 
+# TypeDoc output. Same reason as above.
+web/docs
+
 # Subagent-driven-development scratch state (ledgers, task briefs, review
 # packages). Gitignored via .superpowers/sdd/.gitignore, same reason as above.
 .superpowers
