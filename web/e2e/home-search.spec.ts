@@ -1,15 +1,15 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * The home-screen search bar: the collapsed pill under the Dock, the sheet it expands
- * into, and the three kinds of thing it can find.
+ * The home-screen search bar: the collapsed pill under the Dock, and the merged App
+ * Drawer sheet it opens (focused) — search and the app grid are one sheet now.
  */
 
 const openSearch = async (page: import('@playwright/test').Page) => {
   await page.goto('/');
   await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
   await page.getByRole('button', { name: 'Search', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'Search' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'App Drawer' })).toBeVisible();
 };
 
 const type = async (page: import('@playwright/test').Page, text: string) => {
@@ -36,7 +36,9 @@ test.describe('Home screen search', () => {
     expect(bar.y).toBeGreaterThan(first.y + first.height);
   });
 
-  test('opening the sheet does not scroll the phone frame (MICA-18)', async ({ page }) => {
+  test('opening the sheet focuses the input without scrolling the phone frame (MICA-18)', async ({
+    page
+  }) => {
     await page.goto('/');
     await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
 
@@ -61,6 +63,7 @@ test.describe('Home screen search', () => {
     });
 
     expect(maxScrollTop).toBe(0);
+    await expect(page.getByLabel('Search apps, contacts and messages')).toBeFocused();
   });
 
   test('typing an app name finds the app and opens it', async ({ page }) => {
@@ -71,11 +74,11 @@ test.describe('Home screen search', () => {
     // Scoped to the sheet: an app that is also on the Dock or home grid would otherwise
     // match its icon there instead, and that icon is covered by the sheet.
     await page
-      .getByRole('dialog', { name: 'Search' })
+      .getByRole('dialog', { name: 'App Drawer' })
       .getByRole('button', { name: /Calculator/ })
       .click();
 
-    await expect(page.getByRole('dialog', { name: 'Search' })).toBeHidden();
+    await expect(page.getByRole('dialog', { name: 'App Drawer' })).toBeHidden();
     await expect(page.locator('[data-testid="phone-screen"] h1').first()).toBeVisible();
   });
 
@@ -92,7 +95,7 @@ test.describe('Home screen search', () => {
     // app is named anything like it, so this query reaches the Contacts group alone.
     await type(page, 'trevor');
 
-    const sheet = page.getByRole('dialog', { name: 'Search' });
+    const sheet = page.getByRole('dialog', { name: 'App Drawer' });
     // The same name reaches both groups — the contact card and the conversation with them.
     await expect(sheet.getByRole('heading', { name: 'Contacts' })).toBeVisible();
     await expect(sheet.getByRole('heading', { name: 'Messages' })).toBeVisible();
@@ -116,9 +119,9 @@ test.describe('Home screen search', () => {
     // 40px band above the sheet's `top-10` edge, and the status bar's pull-down button
     // (`z-60`) covers that band entirely; the `back` keybind is not dispatched while focus
     // is in a text field, where Backspace means "delete a character".
-    await page.getByTestId('search-top-handle').click();
+    await page.getByTestId('drawer-top-handle').click();
 
-    await expect(page.getByRole('dialog', { name: 'Search' })).toBeHidden();
+    await expect(page.getByRole('dialog', { name: 'App Drawer' })).toBeHidden();
     await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
   });
 });

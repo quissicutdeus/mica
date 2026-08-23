@@ -6,7 +6,8 @@ import {
   closeDrawer,
   toggleDrawer,
   drawerDragProgress,
-  drawerDragPhase
+  drawerDragPhase,
+  searchQuery
 } from './appDrawer';
 import { activeHandlerFor } from './keybinds';
 import { iconDragState, startIconDrag } from './iconDrag';
@@ -69,5 +70,14 @@ describe('App Drawer state', () => {
 
     closeDrawer();
     expect(get(iconDragState).appId).toBeNull();
+  });
+
+  it('closing clears the search query', () => {
+    searchQuery.set('camer');
+    openDrawer();
+
+    closeDrawer();
+
+    expect(get(searchQuery)).toBe('');
   });
 });

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { get } from 'svelte/store';
-  import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
+  import { attachDragGesture } from '../lib/pointerDrag';
+  import { createSheetOpen } from '../lib/sheetDrag';
   import AppIcon from '../sdk/ui/AppIcon.svelte';
   import { appRegistryStore } from './state/registry';
   import { dockAppIds, DOCK_SLOT_COUNT } from './state/dock';
@@ -26,31 +27,22 @@
     })
   );
 
-  /**
-   * A plain tap opens an app (`attachDragGesture` never commits until the pointer moves
-   * past `axisThreshold`), and a swipe starting anywhere on the dock — including on top
-   * of an icon — pulls the drawer up. This mirrors the status bar's pull-down-the-shade
-   * gesture in `PhoneFrame.svelte`, inverted: negative deltaY is "up".
-   */
+  /** A plain tap opens an app; a swipe anywhere on the dock pulls the drawer up. */
+  const openDrag = createSheetOpen({
+    direction: 'up',
+    progress: drawerDragProgress,
+    phase: drawerDragPhase,
+    revealDistance: SHADE_DRAG_REVEAL_DISTANCE,
+    guard: () => !get(isDrawerOpen),
+    open: openDrawer
+  });
+
   $effect(() => {
     if (!dockElement) return;
     return attachDragGesture(dockElement, {
       axis: 'y',
-      onMove: (deltaY) => {
-        if (get(isDrawerOpen)) return;
-        drawerDragPhase.set('dragging');
-        drawerDragProgress.set(clampProgress(-deltaY / SHADE_DRAG_REVEAL_DISTANCE));
-      },
-      onEnd: (deltaY, velocity) => {
-        if (get(isDrawerOpen)) return;
-        drawerDragPhase.set('settling');
-        if (shouldCommitDrag(get(drawerDragProgress), -velocity)) {
-          drawerDragProgress.set(1);
-          openDrawer();
-        } else {
-          drawerDragProgress.set(0);
-        }
-      }
+      onMove: openDrag.onMove,
+      onEnd: openDrag.onEnd
     });
   });
 </script>

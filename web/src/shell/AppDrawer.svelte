@@ -5,15 +5,20 @@
   import { createSheetClose } from '../lib/sheetDrag';
   import { attachLongPressDrag } from '../lib/longPressDrag';
   import AppIcon from '../sdk/ui/AppIcon.svelte';
+  import SearchIcon from '../sdk/ui/icons/SearchIcon.svelte';
   import { isAdmin } from '../services/admin';
+  import { contacts } from '../services/contacts';
+  import { conversationsStore } from '../services/conversations';
   import { appRegistryStore } from './state/registry';
   import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
   import {
     closeDrawer,
     isDrawerOpen,
     drawerDragPhase,
-    drawerDragProgress
+    drawerDragProgress,
+    searchQuery
   } from './state/appDrawer';
+  import { searchEverything, type SearchResult } from './state/searchResults';
   import {
     iconDragState,
     resolveDropAtPoint,
@@ -22,7 +27,10 @@
     moveIconDrag
   } from './state/iconDrag';
 
-  let { openApp } = $props<{ openApp: (id: string) => void }>();
+  /** Two-arg `openApp` (not the Dock's single-arg one) — search results deep-link. */
+  let { openApp } = $props<{
+    openApp: (id: string, props?: Record<string, unknown>) => void;
+  }>();
 
   /**
    * The registry itself is already alphabetical (`registry.ts`'s sort comparator), but the
@@ -35,9 +43,51 @@
       .sort((a, b) => a.name.localeCompare(b.name))
   );
 
+  /**
+   * Search never fetches. It reads the same three stores the apps themselves read, and it
+   * can do that because Contacts and Messages both declare a `preload` in their manifests
+   * that `bootstrapStores` runs when the phone opens — so both lists are already populated
+   * before the home screen paints, whether or not the player has ever opened those apps.
+   */
+  const results = $derived(
+    searchEverything(
+      $searchQuery,
+      { apps: $appRegistryStore, contacts: $contacts, conversations: $conversationsStore },
+      { isAdmin: $isAdmin }
+    )
+  );
+
+  /**
+   * Group headers are derived from the result order rather than stored on each result:
+   * `searchEverything` already guarantees apps-then-contacts-then-messages, so a header
+   * belongs exactly where a result's kind differs from its predecessor's.
+   */
+  const GROUP_LABEL: Record<SearchResult['kind'], string> = {
+    app: 'Apps',
+    contact: 'Contacts',
+    message: 'Messages'
+  };
+
+  function launch(result: SearchResult) {
+    closeDrawer();
+    if (result.kind === 'app') {
+      openApp(result.id);
+    } else if (result.kind === 'contact') {
+      openApp('contacts', { initialContact: result.contact });
+    } else {
+      openApp('messages', { conversationId: result.conversationId });
+    }
+  }
+
   let topHandleRef = $state<HTMLElement | null>(null);
   let scrollContainerRef = $state<HTMLElement | null>(null);
   let drawerElement = $state<HTMLElement | null>(null);
+  let inputRef = $state<HTMLInputElement | null>(null);
+
+  /** Always focused on open, however it opened — typing to filter needs no extra tap. */
+  $effect(() => {
+    if ($isDrawerOpen && inputRef) inputRef.focus({ preventScroll: true });
+  });
 
   /**
    * The close-drag, shared with `NotificationShade.svelte` through `lib/sheetDrag.ts` —
@@ -70,10 +120,21 @@
     if (!drawerElement) return;
     return attachDragGesture(drawerElement, {
       axis: 'y',
-      shouldStart: closeDrag.bodyShouldStart,
+      shouldStart: (e) =>
+        !(e.target as HTMLElement | null)?.closest('input') && closeDrag.bodyShouldStart(e),
       onMove: closeDrag.onMove,
       onEnd: closeDrag.onEnd
     });
+  });
+
+  /** Fallback in case an overshoot drag leaves no `transitionend` to flip this back
+   * (MICA-45) — mirrors `NotificationShade.svelte`'s identical timer. */
+  $effect(() => {
+    if ($drawerDragPhase !== 'settling') return;
+    const timeout = setTimeout(() => {
+      if (get(drawerDragPhase) === 'settling') drawerDragPhase.set('idle');
+    }, 250);
+    return () => clearTimeout(timeout);
   });
 
   function attachIcon(node: HTMLElement, appId: string) {
@@ -116,7 +177,7 @@
   <div
     bind:this={drawerElement}
     transition:fly={{ y: 850, duration: $drawerDragPhase === 'idle' ? 300 : 0 }}
-    class="bg-surface-container-high text-on-surface shadow-elevation-5 rounded-t-xl absolute inset-x-0 top-10 bottom-0 z-55 flex flex-col pt-12 pb-2 backdrop-blur-3xl {$drawerDragPhase ===
+    class="bg-surface-container-high text-on-surface shadow-elevation-5 rounded-t-xl absolute inset-x-0 top-10 bottom-0 z-55 flex flex-col pt-10 pb-2 backdrop-blur-3xl {$drawerDragPhase ===
     'settling'
       ? 'duration-medium ease-emphasized transition-transform'
       : ''}"
@@ -152,12 +213,21 @@
       ></div>
     </button>
 
-    <div class="mb-6 flex items-baseline gap-2 px-6">
-      <h2 class="text-on-surface text-title-large">Apps</h2>
-      <span class="text-primary text-body-small tracking-wider uppercase">
-        {visibleApps.length}
-        {visibleApps.length === 1 ? 'app' : 'apps'}
-      </span>
+    <!-- Empty query shows the app grid below; typing swaps it for a filtered list. -->
+    <div class="mb-4 px-4">
+      <div
+        class="bg-surface-container-highest text-on-surface flex h-11 shrink-0 items-center gap-2 rounded-full px-4"
+      >
+        <SearchIcon class="text-on-surface-variant h-4 w-4" />
+        <input
+          bind:this={inputRef}
+          bind:value={$searchQuery}
+          type="text"
+          class="text-body-medium placeholder:text-on-surface-variant w-full bg-transparent outline-none"
+          placeholder="Search apps, contacts and messages"
+          aria-label="Search apps, contacts and messages"
+        />
+      </div>
     </div>
 
     <!-- `pt-2`: `AppIcon`'s unread badge overhangs `-top-1` above the icon tile itself, and
@@ -169,28 +239,68 @@
       bind:this={scrollContainerRef}
       class="flex-1 scrollbar-none overflow-y-auto px-4 pt-2 pb-10"
     >
-      <!-- `px-4`, not `px-6` — matches `Launcher.svelte`'s own outer padding (and, through
-           it, `Dock.svelte`'s), so an icon opened from the drawer lands under the same
-           column it would occupy on the home grid rather than a few px to the right of it.
-           Each cell centers its icon explicitly (`flex items-center justify-center`), the
-           same as `Launcher.svelte`'s own grid cells — without it an icon narrower than its
-           1fr track sits flush against the track's left edge instead of centered in it. -->
-      <div class="grid grid-cols-4 gap-y-6">
-        {#each visibleApps as app (app.id)}
-          <div use:attachIcon={app.id} class="flex items-center justify-center">
-            <AppIcon
-              name={app.name}
-              color={app.color}
-              icon={app.icon}
-              badgeStore={app.badgeStore}
-              onclick={() => {
-                closeDrawer();
-                openApp(app.id);
-              }}
-            />
-          </div>
+      {#if !$searchQuery.trim()}
+        <div class="grid grid-cols-4 gap-y-6">
+          {#each visibleApps as app (app.id)}
+            <div use:attachIcon={app.id} class="flex items-center justify-center">
+              <AppIcon
+                name={app.name}
+                color={app.color}
+                icon={app.icon}
+                badgeStore={app.badgeStore}
+                onclick={() => {
+                  closeDrawer();
+                  openApp(app.id);
+                }}
+              />
+            </div>
+          {/each}
+        </div>
+      {:else if results.length === 0}
+        <p class="text-on-surface-variant text-body-medium px-2 py-6 text-center">
+          No results for "{$searchQuery.trim()}"
+        </p>
+      {:else}
+        {#each results as result, index (result.key)}
+          {#if index === 0 || results[index - 1].kind !== result.kind}
+            <h2 class="text-primary text-label-small px-2 pt-3 pb-1 tracking-wider uppercase">
+              {GROUP_LABEL[result.kind]}
+            </h2>
+          {/if}
+          <button
+            type="button"
+            onclick={() => launch(result)}
+            class="hover:bg-surface-container-highest duration-short ease-standard flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors"
+          >
+            <!-- An app shows its own tile colour and glyph; a contact or a conversation has
+                 no icon of its own, so it gets a neutral monogram rather than borrowing some
+                 other app's identity. -->
+            {#if result.kind === 'app'}
+              <div
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg {result.manifest
+                  .color} text-white"
+              >
+                {#if typeof result.manifest.icon === 'string'}
+                  <img src={result.manifest.icon} alt="" class="h-5 w-5 object-contain" />
+                {:else if result.manifest.icon}
+                  {@const Icon = result.manifest.icon}
+                  <Icon class="h-5 w-5" />
+                {/if}
+              </div>
+            {:else}
+              <div
+                class="bg-surface-container-highest text-on-surface-variant text-label-large flex h-9 w-9 shrink-0 items-center justify-center rounded-full uppercase"
+              >
+                {result.title.trim().charAt(0) || '?'}
+              </div>
+            {/if}
+            <div class="min-w-0 flex-1">
+              <p class="text-body-medium truncate">{result.title}</p>
+              <p class="text-on-surface-variant text-body-small truncate">{result.subtitle}</p>
+            </div>
+          </button>
         {/each}
-      </div>
+      {/if}
     </div>
 
     <!-- No bottom grab handle here, deliberately. This sheet's `bottom-0` edge lands on

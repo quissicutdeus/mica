@@ -482,7 +482,7 @@
             {#if $currentApp.id === 'home'}
               <Home {openApp} />
               <Dock {openApp} />
-              <Search {openApp} />
+              <Search />
               <AppDrawer {openApp} />
             {/if}
 

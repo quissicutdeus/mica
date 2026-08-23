@@ -189,4 +189,73 @@ describe('PhoneFrame transparency', () => {
     const pill = homeBar.querySelector('div');
     expect(pill?.className ?? '').not.toMatch(/bg-white/);
   });
+
+  it('opens the app drawer on a swipe-up starting on the home bar (MICA-45)', async () => {
+    // The swipe-up-to-open-the-drawer gesture used to be wired only to `Dock.svelte`.
+    // The home bar sits underneath it as a sibling element, not a descendant, so a
+    // pointerdown that landed there never reached the Dock's listener and the swipe
+    // silently did nothing.
+    const { isDrawerOpen } = await import('./state/appDrawer');
+    const { isShadeOpen } = await import('./state/shade');
+    const { SHADE_DRAG_REVEAL_DISTANCE } = await import('./state/display');
+    const { get } = await import('svelte/store');
+
+    isDrawerOpen.set(false);
+    isShadeOpen.set(false);
+
+    const { getByRole } = renderFrame(false);
+    const homeBar = getByRole('button', { name: /Return to home screen/i });
+
+    const fire = (type: string, target: EventTarget, clientY: number, timeMs: number) => {
+      const event = new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: 0,
+        clientY,
+        pointerId: 1,
+        button: 0
+      });
+      Object.defineProperty(event, 'timeStamp', { value: timeMs, configurable: true });
+      target.dispatchEvent(event);
+    };
+
+    const commitDeltaY = -(SHADE_DRAG_REVEAL_DISTANCE * 0.6);
+    fire('pointerdown', homeBar, 0, 0);
+    fire('pointermove', window, commitDeltaY, 20);
+    fire('pointerup', window, commitDeltaY, 20);
+
+    expect(get(isDrawerOpen)).toBe(true);
+
+    // A real browser fires a synthetic `click` right after a touch/pointer release, which
+    // is what `attachDragGesture`'s `suppressClickAfterDrag` is there to swallow (so the
+    // drag-release doesn't also trigger the button's own tap handler). jsdom never
+    // synthesizes that click on its own, so without firing one here that swallow-once
+    // `window` listener leaks past this test and silently eats the first real click of
+    // whichever test runs next in this file.
+    homeBar.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
+
+  it('closes the app drawer when tapping the home bar (MICA-45)', async () => {
+    // The home bar's tap handler used to only check the shade — pressing it while the
+    // drawer (which used to be a separate search sheet too) was open fell through to the
+    // no-op `goHome()` branch.
+    const { isDrawerOpen, openDrawer } = await import('./state/appDrawer');
+    const { isShadeOpen } = await import('./state/shade');
+    const { get } = await import('svelte/store');
+    const { fireEvent } = await import('@testing-library/svelte');
+
+    isDrawerOpen.set(false);
+    isShadeOpen.set(false);
+
+    const { getByRole, findByRole } = renderFrame(false);
+
+    openDrawer();
+    expect(get(isDrawerOpen)).toBe(true);
+
+    const homeBar = await findByRole('button', { name: /Close app drawer/i });
+    await fireEvent.click(homeBar);
+
+    expect(get(isDrawerOpen)).toBe(false);
+    expect(getByRole('button', { name: /Return to home screen/i })).toBeTruthy();
+  });
 });

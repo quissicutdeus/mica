@@ -49,6 +49,49 @@ export interface SheetCloseHandlers {
   bodyShouldStart: (e: PointerEvent) => boolean;
 }
 
+export interface SheetOpenOptions {
+  /** Which way an opening pull travels. 'up' = drawer (rises from the bottom). */
+  direction: SheetCloseDirection;
+  progress: Writable<number>;
+  phase: Writable<SheetDragPhase>;
+  revealDistance: number;
+  /** Checked before every move/end — a drag starting while already open, or from the
+   * wrong screen, is a no-op rather than fighting whatever else owns the sheet. */
+  guard: () => boolean;
+  /** Called once, on a release that commits. */
+  open: () => void;
+}
+
+export interface SheetOpenHandlers {
+  onMove: (deltaY: number) => void;
+  onEnd: (deltaY: number, velocity: number) => void;
+}
+
+/** Open-drag counterpart to `createSheetClose`. Shared by the Dock, the home indicator
+ * bar, and the collapsed search bar (MICA-45/46) so the swipe-up-to-open math lives once. */
+export function createSheetOpen(options: SheetOpenOptions): SheetOpenHandlers {
+  const { direction, progress, phase, revealDistance, guard, open } = options;
+  const sign = direction === 'up' ? -1 : 1;
+
+  return {
+    onMove(deltaY) {
+      if (!guard()) return;
+      phase.set('dragging');
+      progress.set(clampProgress((sign * deltaY) / revealDistance));
+    },
+    onEnd(_deltaY, velocity) {
+      if (!guard()) return;
+      phase.set('settling');
+      if (shouldCommitDrag(get(progress), sign * velocity)) {
+        progress.set(1);
+        open();
+      } else {
+        progress.set(0);
+      }
+    }
+  };
+}
+
 export function createSheetClose(options: SheetCloseOptions): SheetCloseHandlers {
   const { direction, progress, phase, revealDistance, close, scrollContainer } = options;
 

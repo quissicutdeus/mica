@@ -3,13 +3,14 @@
   import { get } from 'svelte/store';
   import { fly, fade } from 'svelte/transition';
   import { formattedTime, formattedDate } from './state/time';
-  import { goHome } from './state/navigation';
+  import { goHome, currentApp } from './state/navigation';
   import { displayCharge, isBatteryDead } from './state/charge';
   import { clampedSignalLevel } from './state/signal';
   import { bluetoothEnabled } from './state/bluetooth';
   import { stepVolume } from './state/audio';
   import { enableDragScroll } from '../lib/dragScroll';
   import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
+  import { createSheetOpen } from '../lib/sheetDrag';
   import { PHONE_HEIGHT, PHONE_WIDTH, SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
   import LightningWarningIcon from '../sdk/ui/icons/LightningWarningIcon.svelte';
   import SignalIcon from '../sdk/ui/icons/SignalIcon.svelte';
@@ -25,7 +26,13 @@
     shadeDragProgress,
     shadeDragPhase
   } from './state/shade';
-  import { isDrawerOpen } from './state/appDrawer';
+  import {
+    openDrawer,
+    closeDrawer,
+    isDrawerOpen,
+    drawerDragProgress,
+    drawerDragPhase
+  } from './state/appDrawer';
   import { unreadCounts } from '../services/notifications';
   import { appRegistryStore } from './state/registry';
   import { wallpaperBackground } from './state/wallpaper';
@@ -34,6 +41,7 @@
   let { transparent = false, onClose, children } = $props();
   let screenElement = $state<HTMLElement | null>(null);
   let statusBarRef = $state<HTMLElement | null>(null);
+  let homeBarRef = $state<HTMLElement | null>(null);
   const wallpaper = $derived($wallpaperBackground);
   const themeStyle = $derived($themeStyleStore);
 
@@ -96,6 +104,25 @@
           shadeDragProgress.set(0);
         }
       }
+    });
+  });
+
+  // Home-screen-only swipe-up-to-open-the-drawer, mirroring the Dock's own (MICA-45).
+  const openDrag = createSheetOpen({
+    direction: 'up',
+    progress: drawerDragProgress,
+    phase: drawerDragPhase,
+    revealDistance: SHADE_DRAG_REVEAL_DISTANCE,
+    guard: () => get(currentApp).id === 'home' && !get(isDrawerOpen) && !get(isShadeOpen),
+    open: openDrawer
+  });
+
+  $effect(() => {
+    if (!homeBarRef) return;
+    return attachDragGesture(homeBarRef, {
+      axis: 'y',
+      onMove: openDrag.onMove,
+      onEnd: openDrag.onEnd
     });
   });
 </script>
@@ -330,15 +357,24 @@
          job; that handle is gone (MICA-36) now that a swipe closes the shade, so this
          is the affordance again and it has to be reachable. -->
     <button
+      bind:this={homeBarRef}
       class="absolute bottom-0 left-0 z-60 flex h-6 w-full cursor-pointer items-center justify-center"
       onclick={() => {
         if ($isShadeOpen) {
           closeShade();
+        } else if ($isDrawerOpen) {
+          // MICA-45: this button used to not check the drawer, so it fell through to
+          // the no-op goHome() branch and left the drawer open.
+          closeDrawer();
         } else {
           goHome();
         }
       }}
-      aria-label={$isShadeOpen ? 'Collapse notifications' : 'Return to home screen'}
+      aria-label={$isShadeOpen
+        ? 'Collapse notifications'
+        : $isDrawerOpen
+          ? 'Close app drawer'
+          : 'Return to home screen'}
     >
       <!-- White over an app, but the sheets it now sits above are
            `bg-surface-container-high` — near-white in the light scheme, where a white pill

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, screen } from '@testing-library/svelte';
+import { get } from 'svelte/store';
 import Search from './Search.svelte';
-import { closeSearch, isSearchOpen, searchQuery } from './state/search';
+import { closeDrawer, isDrawerOpen } from './state/appDrawer';
+import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
 
 if (!Element.prototype.animate) {
   Element.prototype.animate = vi.fn().mockReturnValue({
@@ -12,107 +14,54 @@ if (!Element.prototype.animate) {
   }) as unknown as Element['animate'];
 }
 
-const type = async (text: string) => {
-  const input = screen.getByLabelText('Search apps, contacts and messages');
-  await fireEvent.input(input, { target: { value: text } });
-};
-
 beforeEach(() => {
-  closeSearch();
+  closeDrawer();
 });
 
-describe('Search', () => {
-  it('shows a collapsed bar until it is tapped', async () => {
-    render(Search, { props: { openApp: () => {} } });
+const fire = (target: EventTarget, type: string, clientY: number, timeMs: number) => {
+  const event = new PointerEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX: 0,
+    clientY,
+    pointerId: 1,
+    button: 0
+  });
+  Object.defineProperty(event, 'timeStamp', { value: timeMs, configurable: true });
+  target.dispatchEvent(event);
+};
 
-    expect(screen.getByLabelText('Search')).toBeTruthy();
+describe('Search (collapsed bar)', () => {
+  it('opens the drawer when tapped', async () => {
+    render(Search);
+
     await fireEvent.click(screen.getByLabelText('Search'));
 
-    expect(screen.getByRole('dialog', { name: 'Search' })).toBeTruthy();
+    expect(get(isDrawerOpen)).toBe(true);
   });
 
-  it('lists matching apps as the query is typed', async () => {
-    render(Search, { props: { openApp: () => {} } });
+  it('hides itself while the drawer is open', async () => {
+    render(Search);
     await fireEvent.click(screen.getByLabelText('Search'));
 
-    await type('camer');
-
-    expect(screen.getByText('Apps')).toBeTruthy();
-    expect(screen.getByText('Camera')).toBeTruthy();
+    expect(screen.queryByLabelText('Search')).toBeNull();
   });
 
-  it('says so when nothing matches', async () => {
-    render(Search, { props: { openApp: () => {} } });
-    await fireEvent.click(screen.getByLabelText('Search'));
+  it('opens the app drawer on a swipe-up starting on the collapsed bar, not just a tap (MICA-45)', async () => {
+    // Same defect as the home indicator bar: the collapsed bar is a sibling of the Dock,
+    // not a descendant, so a swipe starting here never reached the Dock's own gesture.
+    render(Search);
+    const bar = screen.getByLabelText('Search');
 
-    await type('zzzznope');
+    const commitDeltaY = -(SHADE_DRAG_REVEAL_DISTANCE * 0.6);
+    fire(bar, 'pointerdown', 0, 0);
+    fire(window, 'pointermove', commitDeltaY, 20);
+    fire(window, 'pointerup', commitDeltaY, 20);
 
-    expect(screen.getByText(/No results for/)).toBeTruthy();
-  });
+    expect(get(isDrawerOpen)).toBe(true);
 
-  it('opening an app result closes the sheet and clears the query', async () => {
-    const openApp = vi.fn();
-    render(Search, { props: { openApp } });
-    await fireEvent.click(screen.getByLabelText('Search'));
-    await type('camer');
-
-    await fireEvent.click(screen.getByText('Camera'));
-
-    expect(openApp).toHaveBeenCalledWith('camera');
-
-    // Asserted on the store rather than on the sheet being gone from the DOM: the sheet
-    // leaves via `transition:fly`, and an outro keeps the node mounted for its duration.
-    let open = true;
-    isSearchOpen.subscribe((v) => (open = v))();
-    expect(open).toBe(false);
-
-    let query = 'unset';
-    searchQuery.subscribe((v) => (query = v))();
-    expect(query).toBe('');
-  });
-
-  it('depends on Contacts and Messages preloading their stores at boot', async () => {
-    // Search reads those two stores and never fetches for itself. Both apps declare a
-    // `preload` that `bootstrapStores` runs when the phone opens, which is what puts data
-    // there before the home screen paints. Dropping either `preload` would not break that
-    // app — its own screens load on foreground — but contacts or conversations would
-    // silently vanish from search until the app had been opened once.
-    const [contactsManifest, messagesManifest] = await Promise.all([
-      import('../apps/contacts/manifest'),
-      import('../apps/messages/manifest')
-    ]);
-
-    expect(contactsManifest.default.preload).toBeTypeOf('function');
-    expect(messagesManifest.default.preload).toBeTypeOf('function');
-  });
-
-  it('the top handle closes the sheet', async () => {
-    // The handle rather than the scrim: the scrim is covered by the status bar in the real
-    // shell and cannot be tapped there, so a test that clicked it would be exercising a
-    // path no player has. See the note on the handle in `Search.svelte`.
-    render(Search, { props: { openApp: () => {} } });
-    await fireEvent.click(screen.getByLabelText('Search'));
-
-    let open = true;
-    const stop = isSearchOpen.subscribe((v) => (open = v));
-    await fireEvent.click(screen.getByLabelText('Close search'));
-    stop();
-
-    expect(open).toBe(false);
-  });
-
-  it('closes itself when it is unmounted with the sheet still open', async () => {
-    // The shell only renders this component while the home screen is showing, so anything
-    // that opens an app over an open search — an incoming call, a notification deep link —
-    // unmounts it mid-flight. Left open, its `back` keybind handler stays registered and
-    // would later swallow a Back press meant for whatever is actually on screen.
-    const { unmount } = render(Search, { props: { openApp: () => {} } });
-    await fireEvent.click(screen.getByLabelText('Search'));
-
-    unmount();
-
-    let open = true;
-    isSearchOpen.subscribe((v) => (open = v))();
-    expect(open).toBe(false);
+    // Consume the swallow-once `click` listener a real drag release leaves on `window`
+    // (jsdom never synthesizes it the way a real touch release would).
+    bar.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   });
 });

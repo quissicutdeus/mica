@@ -5,6 +5,9 @@ import { markAppDrawerHintSeen } from './onboarding';
 
 export const isDrawerOpen = writable<boolean>(false);
 
+/** What's typed into the drawer's search input; cleared by `closeDrawer()`. */
+export const searchQuery = writable<string>('');
+
 /** 0 (closed) .. 1 (open). Mirrors `shadeDragProgress` — see `shade.ts` for the rationale. */
 export const drawerDragProgress = writable<number>(0);
 
@@ -27,6 +30,11 @@ export function openDrawer(): void {
 
 export function closeDrawer(): void {
   isDrawerOpen.set(false);
+  drawerDragProgress.set(0);
+  drawerDragPhase.set('idle');
+  // The query is state about one visit, not a setting: reopening the drawer should offer
+  // an empty field rather than yesterday's search and its stale result list.
+  searchQuery.set('');
   if (unregisterBack) {
     unregisterBack();
     unregisterBack = null;
