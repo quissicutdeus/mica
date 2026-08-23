@@ -4,7 +4,6 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import type { Plugin } from 'vite';
 import path from 'path';
 import { execSync } from 'child_process';
-import pkg from '../package.json' with { type: 'json' };
 
 function getGitInfo() {
   const envBranch = process.env.GITHUB_REF_NAME;
@@ -107,8 +106,26 @@ function trimFonts(subsets: string[] = FONT_SUBSETS): Plugin {
   };
 }
 
+// CalVer, "YYYY.MM.DD.N": N is this commit's position among same-day commits,
+// so two deploys on one day get distinct versions. Deriving it from HEAD's
+// commit date (not "today") keeps it reproducible and lets `deploy` compute
+// the identical string for the Discord message.
+function getCalVer() {
+  try {
+    const dates = execSync("git log --format=%cd --date=format:'%Y.%m.%d'")
+      .toString()
+      .trim()
+      .split('\n');
+    const date = dates[0];
+    const count = dates.filter((d) => d === date).length;
+    return `${date}.${count}`;
+  } catch {
+    return '0.0.0.0';
+  }
+}
+
 const gitInfo = getGitInfo();
-const version = pkg.version || '1.0.0';
+const version = getCalVer();
 const buildInfo = `v${version} (${gitInfo.branch}@${gitInfo.commit})`;
 
 // https://vite.dev/config/
