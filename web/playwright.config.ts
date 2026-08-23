@@ -12,6 +12,9 @@ const PORT = process.env.E2E_PORT || 4173;
 
 export default defineConfig({
   testDir: './e2e',
+  // MICA-39: wipe test-results/ before any run — whole suite or one filtered spec —
+  // so a stale failure directory from an earlier run is never mistaken for this one.
+  globalSetup: './e2e/support/globalSetup.ts',
   /**
    * Playwright's default thirty, after ten was measured wrong.
    *
