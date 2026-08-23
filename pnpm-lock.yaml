@@ -14,9 +14,6 @@ importers:
       '@citizenfx/server':
         specifier: 2.0.34410-1
         version: 2.0.34410-1
-      '@playwright/test':
-        specifier: ^1.62.1
-        version: 1.62.1
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0

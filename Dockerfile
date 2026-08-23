@@ -33,8 +33,8 @@ COPY web/package.json ./web/package.json
 #      pnpm-workspace.yaml's allowBuilds/onlyBuiltDependencies (those govern
 #      *dependencies*). With no .git in the context it has no git root to write
 #      to. Whether it exits non-zero is version-dependent; don't bet a build.
-#   2. @playwright/test is a root devDep whose transitive postinstall downloads
-#      ~500MB of browsers.
+#   2. @playwright/test is a `web` devDep whose transitive postinstall downloads
+#      ~500MB of browsers, and `--filter web...` pulls web's devDeps in.
 # Nothing is lost: allowBuilds already sets `esbuild: false`, so esbuild's
 # postinstall does not run locally or in CI either.
 #
