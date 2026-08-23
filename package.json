@@ -42,7 +42,7 @@
     "verify:quick": "node scripts/verify.js --quick",
     "check:fast": "node scripts/generate-barrels.js && pnpm format:check && pnpm typecheck && pnpm test:unit:changed",
     "dev:check": "node scripts/dev-check.js",
-    "prepare": "simple-git-hooks"
+    "prepare": "node scripts/install-git-hooks.js"
   },
   "author": "quissicutdeus",
   "license": "AGPL-3.0-or-later",
