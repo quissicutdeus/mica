@@ -12,6 +12,7 @@ import type {
   Message,
   Note,
   NotificationItem,
+  PhoneCallLogEntry,
   Report,
   Transaction
 } from '@shared/types';
@@ -369,6 +370,36 @@ const mockNotifications: NotificationItem[] = [
  * Account-to-account, with no citizenid, exactly as the table is: every `gphone_accounts` row
  * carries an `app`, so a row can only link two accounts in the same one.
  */
+const mockCallLog: PhoneCallLogEntry[] = [
+  {
+    id: 3,
+    citizenid: 'mock_citizenid',
+    kind: 'missed',
+    number: '555-0199',
+    duration: 0,
+    created_at: new Date(Date.now() - 300000).toISOString(),
+    updated_at: new Date(Date.now() - 300000).toISOString()
+  },
+  {
+    id: 2,
+    citizenid: 'mock_citizenid',
+    kind: 'incoming',
+    number: '555-0133',
+    duration: 45,
+    created_at: new Date(Date.now() - 3600000).toISOString(),
+    updated_at: new Date(Date.now() - 3600000).toISOString()
+  },
+  {
+    id: 1,
+    citizenid: 'mock_citizenid',
+    kind: 'outgoing',
+    number: '555-0144',
+    duration: 122,
+    created_at: new Date(Date.now() - 86400000).toISOString(),
+    updated_at: new Date(Date.now() - 86400000).toISOString()
+  }
+];
+
 const mockFollows: { follower: number; followee: number }[] = [];
 const mockBlocks: { blocker: number; blocked: number }[] = [];
 const mockReactions: { account: number; table: string; target: number; emoji: string }[] = [];
@@ -1189,6 +1220,7 @@ const mockRegistry: Record<string, MockHandler> = {
     update: 'updateContact',
     remove: 'deleteContact'
   }),
+  getCallLog: () => ({ rows: mockCallLog, nextCursor: null }),
   /**
    * The real client resolves this NUI callback immediately and pushes the outcome
    * asynchronously as a toast — mirrored here via the same `appEvent` message the real
