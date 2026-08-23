@@ -342,11 +342,16 @@
     >
       <!-- White over an app, but the sheets it now sits above are
            `bg-surface-container-high` — near-white in the light scheme, where a white pill
-           is invisible. `on-surface` inverts with the scheme, so it reads in both. -->
+           is invisible. The `on-surface` roles invert with the scheme, so they read in both.
+           `on-surface-variant` rather than `on-surface/80`: §6 forbids an opacity modifier
+           on a themed role token, because those are written as inline custom properties at
+           runtime and `app-utilities.css` generates no class for the modified form — the
+           pill would simply render with no background. The variant role is the
+           pre-resolved, dimmer counterpart and needs no modifier. -->
       <div
         class="duration-medium ease-emphasized h-1 w-1/3 rounded-full transition-colors {$isShadeOpen ||
         $isDrawerOpen
-          ? 'bg-on-surface/80 hover:bg-on-surface'
+          ? 'bg-on-surface-variant hover:bg-on-surface'
           : 'bg-white/80 hover:bg-white'}"
       ></div>
     </button>
