@@ -4,7 +4,8 @@
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { fade, fly } from 'svelte/transition';
-  import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
+  import { attachDragGesture } from '../lib/pointerDrag';
+  import { createSheetClose } from '../lib/sheetDrag';
   import Avatar from '../sdk/ui/Avatar.svelte';
   import ArchiveIcon from '../sdk/ui/icons/ArchiveIcon.svelte';
   import CheckIcon from '../sdk/ui/icons/CheckIcon.svelte';
@@ -194,77 +195,33 @@
     await clearAllNotifications();
   };
 
-  let handleRef = $state<HTMLElement | null>(null);
   let shadeElement = $state<HTMLElement | null>(null);
   let scrollContainerRef = $state<HTMLElement | null>(null);
 
   /**
-   * Shared close-drag behavior, wired to both the bottom grab handle and the shade body
-   * itself — mirrors `AppDrawer.svelte`'s own `onCloseDragMove`/`onCloseDragEnd`, which
-   * documented the same conflict this used to sidestep by only ever wiring the handle:
-   * a body-wide swipe competes with `enableDragScroll`'s drag-to-scroll on the same
-   * axis. `bodyDragShouldStart` below is what resolves it, the same way the drawer's own
-   * `scrollTop <= 0` gate does — just mirrored, since this list scrolls opposite the
-   * drawer's (closing here is a pull *up*).
+   * The close-drag, shared with `AppDrawer.svelte` through `lib/sheetDrag.ts` — the same
+   * gesture pointed the other way. Everything that used to be written out here (the
+   * progress maths, the commit heuristic, the settle, and the rule that a body swipe
+   * never arms on top of a `<button>`) lives there once, and `direction: 'up'` is what
+   * makes this the shade rather than the drawer: closing pulls up, so the gesture frees
+   * itself from the list only at its scroll *bottom*.
    */
-  function onCloseDragMove(deltaY: number) {
-    shadeDragPhase.set('dragging');
-    // Dragging up closes: deltaY goes negative as the finger pulls up, so progress
-    // (1 = open) counts back down toward 0 (closed) as the pull continues.
-    shadeDragProgress.set(clampProgress(1 + deltaY / SHADE_DRAG_REVEAL_DISTANCE));
-  }
-
-  function onCloseDragEnd(_deltaY: number, velocity: number) {
-    shadeDragPhase.set('settling');
-    // Reuse the open-drag commit heuristic, mirrored: "closing progress" is how far
-    // back toward 0 the pull got, and a fast upward flick reads as positive closing
-    // velocity even though the raw axis delta is negative while dragging up.
-    const closingProgress = 1 - get(shadeDragProgress);
-    const closingVelocity = -velocity;
-    if (shouldCommitDrag(closingProgress, closingVelocity)) {
-      shadeDragProgress.set(0);
-      closeShade();
-    } else {
-      shadeDragProgress.set(1);
-    }
-  }
-
-  /**
-   * A drag closing the shade reads as a pull *up*, which is the same direction as
-   * scrolling further *down* through the notification list (dragging a finger up moves
-   * content up, i.e. `scrollTop` increasing). The two only stop competing once the list
-   * has nothing further to reveal — at its scroll bottom — the mirror image of the
-   * drawer's own `scrollTop <= 0` check for its top.
-   */
-  function bodyDragShouldStart(e: PointerEvent): boolean {
-    // Also refuses to arm on top of a `<button>` — clear/archive/restore, per row — the
-    // same reasoning `AppDrawer.svelte`'s own body gesture gates on: this axis-locks on
-    // ~4px of movement, well before a tap-with-a-little-wobble would read as anything
-    // but a click, and once it captures the pointer the click never lands.
-    if ((e.target as HTMLElement).closest('button')) return false;
-    if (!scrollContainerRef) return true;
-    return (
-      scrollContainerRef.scrollTop + scrollContainerRef.clientHeight >=
-      scrollContainerRef.scrollHeight - 1
-    );
-  }
-
-  $effect(() => {
-    if (!handleRef) return;
-    return attachDragGesture(handleRef, {
-      axis: 'y',
-      onMove: onCloseDragMove,
-      onEnd: onCloseDragEnd
-    });
+  const closeDrag = createSheetClose({
+    direction: 'up',
+    progress: shadeDragProgress,
+    phase: shadeDragPhase,
+    revealDistance: SHADE_DRAG_REVEAL_DISTANCE,
+    close: closeShade,
+    scrollContainer: () => scrollContainerRef
   });
 
   $effect(() => {
     if (!shadeElement) return;
     return attachDragGesture(shadeElement, {
       axis: 'y',
-      shouldStart: bodyDragShouldStart,
-      onMove: onCloseDragMove,
-      onEnd: onCloseDragEnd
+      shouldStart: closeDrag.bodyShouldStart,
+      onMove: closeDrag.onMove,
+      onEnd: closeDrag.onEnd
     });
   });
 
@@ -825,26 +782,5 @@
         {/if}
       {/if}
     </div>
-
-    <!-- Grab Handle / Home Gesture Bar.
-
-         Pointer-only drag handle, styled to match and overlap PhoneFrame's home gesture
-         bar so there is a single white pill at the bottom of the screen when the shade is open.
-         Scoped by `data-gesture-drag` so `dragScroll.ts` never claims a press here,
-         and attached to `handleRef` for drag-up to close gesture. -->
-    <button
-      type="button"
-      bind:this={handleRef}
-      class="absolute bottom-0 left-0 z-10 flex h-6 w-full cursor-pointer touch-none items-end justify-center pb-1.5"
-      data-gesture-drag
-      data-testid="shade-grab-handle"
-      onclick={closeShade}
-      aria-hidden="true"
-      tabindex="-1"
-    >
-      <div
-        class="duration-medium ease-emphasized h-1 w-1/3 rounded-full bg-white opacity-80 transition-opacity hover:opacity-100"
-      ></div>
-    </button>
   </div>
 {/if}

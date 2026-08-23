@@ -1,7 +1,8 @@
 <script lang="ts">
   import { get } from 'svelte/store';
   import { fade, fly } from 'svelte/transition';
-  import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
+  import { attachDragGesture } from '../lib/pointerDrag';
+  import { createSheetClose } from '../lib/sheetDrag';
   import { attachLongPressDrag } from '../lib/longPressDrag';
   import AppIcon from '../sdk/ui/AppIcon.svelte';
   import { isAdmin } from '../services/admin';
@@ -39,59 +40,29 @@
   let drawerElement = $state<HTMLElement | null>(null);
 
   /**
-   * Shared close-drag behavior, wired to two surfaces below: the top pill and the
-   * drawer body itself — no bottom handle (see the note by the body's closing tag for
-   * why). The body attach is gated by `bodyDragShouldStart` so it never steals a scroll
-   * in progress inside the icon grid — see that function for why.
-   */
-  function onCloseDragMove(deltaY: number) {
-    drawerDragPhase.set('dragging');
-    // Dragging down closes: deltaY grows positive, progress (1 = open) counts back
-    // down toward 0 as the pull continues — mirrors NotificationShade's own handle.
-    drawerDragProgress.set(clampProgress(1 - deltaY / SHADE_DRAG_REVEAL_DISTANCE));
-  }
-
-  function onCloseDragEnd(_deltaY: number, velocity: number) {
-    drawerDragPhase.set('settling');
-    const closingProgress = 1 - get(drawerDragProgress);
-    const closingVelocity = velocity;
-    if (shouldCommitDrag(closingProgress, closingVelocity)) {
-      drawerDragProgress.set(0);
-      closeDrawer();
-    } else {
-      drawerDragProgress.set(1);
-    }
-  }
-
-  /**
-   * The icon grid scrolls (mouse-drag-to-scroll via `enableDragScroll`, same axis as this
-   * close gesture), so a drag starting mid-scroll must not also try to close the drawer —
-   * that's the exact conflict `NotificationShade` avoided by only ever wiring its handle.
-   * Gating on `scrollTop <= 0` lets a downward drag close only when there's nothing left
-   * to scroll up into; an upward drag while already at the top just harmlessly re-commits
-   * to progress 1 (still open), since there's no further scrolling for it to compete with.
+   * The close-drag, shared with `NotificationShade.svelte` through `lib/sheetDrag.ts` —
+   * the same gesture pointed the other way. `direction: 'down'` is what makes this the
+   * drawer: closing pulls down, so the body swipe frees itself from the icon grid only at
+   * its scroll *top*, which is what keeps it from stealing a scroll already in progress
+   * (or an icon's own long-press-to-pick-up — see `bodyShouldStart` there).
    *
-   * Also refuses to arm on top of a `<button>` — every icon is one, and without this an
-   * icon's own long-press-to-pick-up (`attachLongPressDrag`, wired to the icon itself)
-   * and this whole-body close-swipe (wired to `drawerElement`, which the icon sits
-   * inside) both start tracking the *same* pointerdown via bubbling. Dragging an icon
-   * out is `axis: 'y'` movement too, so this gesture's own axis-lock could commit before
-   * the long-press timer ever fires, steal pointer capture, and then spring the drawer
-   * back open on release — undoing the `closeDrawer()` the long-press had already
-   * called. A drag genuinely meant to close still works from any empty space between or
-   * below the icons.
+   * Wired to two surfaces below: the top pill, and the drawer body itself.
    */
-  function bodyDragShouldStart(e: PointerEvent) {
-    if ((e.target as HTMLElement).closest('button')) return false;
-    return !scrollContainerRef || scrollContainerRef.scrollTop <= 0;
-  }
+  const closeDrag = createSheetClose({
+    direction: 'down',
+    progress: drawerDragProgress,
+    phase: drawerDragPhase,
+    revealDistance: SHADE_DRAG_REVEAL_DISTANCE,
+    close: closeDrawer,
+    scrollContainer: () => scrollContainerRef
+  });
 
   $effect(() => {
     if (!topHandleRef) return;
     return attachDragGesture(topHandleRef, {
       axis: 'y',
-      onMove: onCloseDragMove,
-      onEnd: onCloseDragEnd
+      onMove: closeDrag.onMove,
+      onEnd: closeDrag.onEnd
     });
   });
 
@@ -99,9 +70,9 @@
     if (!drawerElement) return;
     return attachDragGesture(drawerElement, {
       axis: 'y',
-      shouldStart: bodyDragShouldStart,
-      onMove: onCloseDragMove,
-      onEnd: onCloseDragEnd
+      shouldStart: closeDrag.bodyShouldStart,
+      onMove: closeDrag.onMove,
+      onEnd: closeDrag.onEnd
     });
   });
 
@@ -228,6 +199,6 @@
          that real, permanently-fixed control moving — it never does; the drawer's own
          opaque sheet was just covering it and animating a look-alike on top. Closing is
          still reachable three other ways: the top pill below, a swipe down starting
-         anywhere on the body (gated by `bodyDragShouldStart`), and a tap on the scrim. -->
+         anywhere on the body (gated by `closeDrag.bodyShouldStart`), and a tap on the scrim. -->
   </div>
 {/if}

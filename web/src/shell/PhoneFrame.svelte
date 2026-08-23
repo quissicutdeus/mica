@@ -25,6 +25,7 @@
     shadeDragProgress,
     shadeDragPhase
   } from './state/shade';
+  import { isDrawerOpen } from './state/appDrawer';
   import { unreadCounts } from '../services/notifications';
   import { appRegistryStore } from './state/registry';
   import { wallpaperBackground } from './state/wallpaper';
@@ -317,9 +318,19 @@
          `h-6` centered gives the pill even clearance from the screen edge below and
          whatever sits above it — originally `Dock` once it moved off the `bottom-6` that
          crowded this bar, and now `Search.svelte`'s collapsed bar at `bottom-8`, with the
-         Dock pushed up to `bottom-20` behind it. -->
+         Dock pushed up to `bottom-20` behind it.
+
+         `z-60`, the same layer the status bar above uses and for the same reason: the
+         shade and drawer sheets are `absolute inset-0 z-55`, so at `z-50` this button was
+         painted over whenever either was open and could not be pressed at all. It was
+         still there, still labelled "Collapse notifications", and entirely unclickable —
+         which is what made the shade spec hang: Playwright correctly refused to click a
+         covered element and waited out the full timeout. The shade used to paper over
+         that with a grab handle of its own, sitting on top of this one and doing the same
+         job; that handle is gone (MICA-36) now that a swipe closes the shade, so this
+         is the affordance again and it has to be reachable. -->
     <button
-      class="absolute bottom-0 left-0 z-50 flex h-6 w-full cursor-pointer items-center justify-center"
+      class="absolute bottom-0 left-0 z-60 flex h-6 w-full cursor-pointer items-center justify-center"
       onclick={() => {
         if ($isShadeOpen) {
           closeShade();
@@ -329,8 +340,14 @@
       }}
       aria-label={$isShadeOpen ? 'Collapse notifications' : 'Return to home screen'}
     >
+      <!-- White over an app, but the sheets it now sits above are
+           `bg-surface-container-high` — near-white in the light scheme, where a white pill
+           is invisible. `on-surface` inverts with the scheme, so it reads in both. -->
       <div
-        class="duration-medium ease-emphasized h-1 w-1/3 rounded-full bg-white/80 transition-colors hover:bg-white"
+        class="duration-medium ease-emphasized h-1 w-1/3 rounded-full transition-colors {$isShadeOpen ||
+        $isDrawerOpen
+          ? 'bg-on-surface/80 hover:bg-on-surface'
+          : 'bg-white/80 hover:bg-white'}"
       ></div>
     </button>
   </div>

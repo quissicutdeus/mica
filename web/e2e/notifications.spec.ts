@@ -432,17 +432,32 @@ test.describe('Notification shade gestures', () => {
     await expect(page.getByRole('dialog', { name: 'Notification Shade' })).toBeHidden();
   });
 
-  test('dragging up from the grab handle past the threshold closes the shade', async ({ page }) => {
+  test('flicking up from the shade body past the threshold closes the shade', async ({ page }) => {
     await page.getByRole('button', { name: 'Open notification shade' }).click();
     const shade = page.getByRole('dialog', { name: 'Notification Shade' });
     await waitForSettled(shade);
 
-    const scale = await currentScale(page);
-    const handle = page.getByTestId('shade-grab-handle');
-    const box = await handle.boundingBox();
-    if (!box) throw new Error('grab handle not on screen');
+    // The shade used to carry its own grab handle at the bottom, and this drove that.
+    // It was removed (MICA-36): it sat directly on top of PhoneFrame's home bar — which
+    // relabels itself to "Collapse notifications" while the shade is open — so the real,
+    // labelled control could not be clicked at all, and the shade being `z-55` meant the
+    // handle won the hit-test regardless of its own lower `z-10`. The close-drag it
+    // carried is the same one the body already has.
+    //
+    // The body gesture deliberately stays out of the way until the list has nothing left
+    // to reveal in the direction the pull travels, so a swipe never steals a scroll in
+    // progress — `createSheetClose`'s `bodyShouldStart` in `lib/sheetDrag.ts`. Scroll to
+    // the bottom first, which is where a user who had read the list would already be.
+    const list = shade.locator('.overflow-y-auto').first();
+    await list.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
 
-    await dragVertical(page, box.x + box.width / 2, box.y + box.height / 2, -scale * 700);
+    const scale = await currentScale(page);
+    const box = await shade.boundingBox();
+    if (!box) throw new Error('shade not on screen');
+
+    // From the shade's own header strip, above the list and clear of every row button —
+    // `bodyShouldStart` refuses to arm on top of a `<button>`.
+    await dragVertical(page, box.x + box.width / 2, box.y + 24, -scale * 700);
 
     await expect(shade).toBeHidden();
   });
