@@ -520,6 +520,26 @@ CREATE TABLE IF NOT EXISTS `gphone_notifications` (
         REFERENCES `players` (`citizenid`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+-- Generated from the 'phone_call_log' defineService declaration.
+-- Do not edit by hand; change the declaration and regenerate.
+
+CREATE TABLE IF NOT EXISTS `gphone_phone_call_log` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `citizenid` varchar(50) NOT NULL,
+    `kind` ENUM('incoming', 'outgoing', 'missed') NOT NULL,
+    `number` varchar(20) NOT NULL,
+    `duration` int(11) NOT NULL,
+    `status` ENUM('active', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `status` (`status`),
+    KEY `citizenid_status` (`citizenid`, `status`),
+    KEY `citizenid_status_created` (`citizenid`, `status`, `created_at`),
+    CONSTRAINT `fk_phone_call_log_citizenid` FOREIGN KEY (`citizenid`)
+        REFERENCES `players` (`citizenid`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 -- Generated from the 'reports' defineService declaration.
 -- Do not edit by hand; change the declaration and regenerate.
 

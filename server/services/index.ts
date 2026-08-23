@@ -18,6 +18,7 @@ import './Messages';
 import './Notes';
 import './Notifications';
 import './Phone';
+import './PhoneCallLog';
 import './Reports';
 import './Schema';
 import './Seed';
