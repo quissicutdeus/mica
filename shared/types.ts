@@ -100,6 +100,27 @@ export interface PhoneBattery {
 }
 
 /**
+ * One call, from one participant's point of view. A call between two players writes
+ * two rows — one per side — so each player's log is theirs alone, with no membership
+ * check needed (matches every other owner-scoped table in this codebase).
+ *
+ * `number` is the *other* party's phone number. No display name is stored: the client
+ * resolves one from its own contacts, the same way the Favorites bar already does, so
+ * an edited contact is never stale in an old log entry.
+ */
+export interface PhoneCallLogEntry {
+  id: number;
+  citizenid: string;
+  kind: 'incoming' | 'outgoing' | 'missed';
+  number: string;
+  /** Seconds. 0 when the call was never answered. */
+  duration: number;
+  status?: 'active' | 'deleted' | 'moderated';
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+/**
  * One stored preference, owned by a citizenid rather than by a browser profile.
  *
  * `useStorage` is `localStorage`, which is per-PC and shared between characters — so a
