@@ -192,6 +192,13 @@
           const base64Data = await fetchNui<string>('takePhoto');
           capturedImage = base64Data;
 
+          // The screenshot is already taken — the boosted zoom did its job the moment
+          // `takePhoto` resolved. Shrinking back now, rather than waiting for the crop,
+          // save and gallery-refresh below to finish, keeps the oversized phone on
+          // screen for as short a window as possible instead of however long that whole
+          // round trip happens to take.
+          if (boostedZoom) captureZoomBoost.set(false);
+
           if (
             !base64Data.startsWith('http') &&
             !base64Data.startsWith('https') &&
