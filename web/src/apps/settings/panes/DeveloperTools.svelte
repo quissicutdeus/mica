@@ -43,27 +43,44 @@
     });
   };
 
+  /**
+   * In a browser there is no server to ask, so this fakes the toast locally — always
+   * has. In game it used to do the exact same thing: a toast with no call behind it,
+   * where Accept opened the Phone app onto a call that didn't exist and Decline told
+   * the server to end one it had never started. Now it drives the real call machinery
+   * instead — `gphone:server:phone:simulateIncoming`, the NUI-reachable twin of the
+   * `gphonecall` console command — and Shell.svelte's own `callStatus` handler takes it
+   * from there, the same as any real incoming call. The display name won't be
+   * `callName` unless it happens to match a saved contact; that's what a real call
+   * does too.
+   */
   const triggerCall = () => {
-    callStore.setIncoming(callNumber, callName);
-    // Held so Accept can archive it. The simulation mirrors the real ring in
-    // `Shell.svelte` — including clearing the shade row on pickup — because a test path
-    // that behaves differently from the thing it stands in for is worse than no test path.
-    let simulatedToastId: string | null = null;
-    simulatedToastId = toast.showCall({
-      name: callName,
-      number: callNumber,
-      onAccept: () => {
-        openApp('phone');
-        callStore.setStatus('connected');
-        if (simulatedToastId) {
-          void toast.archive(simulatedToastId);
-          simulatedToastId = null;
+    if (isBrowser()) {
+      callStore.setIncoming(callNumber, callName);
+      // Held so Accept can archive it. The simulation mirrors the real ring in
+      // `Shell.svelte` — including clearing the shade row on pickup — because a test path
+      // that behaves differently from the thing it stands in for is worse than no test path.
+      let simulatedToastId: string | null = null;
+      simulatedToastId = toast.showCall({
+        name: callName,
+        number: callNumber,
+        onAccept: () => {
+          openApp('phone');
+          callStore.setStatus('connected');
+          if (simulatedToastId) {
+            void toast.archive(simulatedToastId);
+            simulatedToastId = null;
+          }
+        },
+        onDecline: () => {
+          callStore.setStatus('idle');
+          fetchNui('rejectCall', { number: callNumber });
         }
-      },
-      onDecline: () => {
-        callStore.setStatus('idle');
-        fetchNui('rejectCall', { number: callNumber });
-      }
+      });
+      return;
+    }
+    void run(() => fetchNui('simulateIncomingCall', { number: callNumber }), {
+      error: 'Could not simulate an incoming call'
     });
   };
 
@@ -246,6 +263,11 @@
     <!-- Incoming Call Simulation -->
     <div class="border-outline-variant flex flex-col gap-2 border-t pt-3">
       <span class="text-on-surface font-semibold">Incoming Call Test</span>
+      <span class="text-on-surface-variant text-label-small">
+        {isBrowser()
+          ? 'Fakes the toast — nothing real to ask here.'
+          : 'Rings you for real. Caller Name only shows if the number matches a saved contact.'}
+      </span>
       <div class="flex gap-2">
         <input
           type="text"

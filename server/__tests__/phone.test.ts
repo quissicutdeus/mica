@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { dbMock, handlers, globalHandlers } = vi.hoisted(() => {
+const { dbMock, handlers, globalHandlers, commands } = vi.hoisted(() => {
   const captured = new Map<string, Function>();
   const capturedGlobal = new Map<string, Function>();
+  const capturedCommands = new Map<string, Function>();
   const previousOnNet = (globalThis as any).onNet;
   (globalThis as any).onNet = (event: string, handler: Function) => {
     captured.set(event, handler);
@@ -13,13 +14,22 @@ const { dbMock, handlers, globalHandlers } = vi.hoisted(() => {
     capturedGlobal.set(event, handler);
     return typeof previousOn === 'function' ? previousOn(event, handler) : undefined;
   };
+  (globalThis as any).RegisterCommand = (name: string, handler: Function) => {
+    capturedCommands.set(name, handler);
+  };
   return {
     dbMock: { query: vi.fn(), insert: vi.fn(), update: vi.fn(), scalar: vi.fn(), single: vi.fn() },
     handlers: captured,
-    globalHandlers: capturedGlobal
+    globalHandlers: capturedGlobal,
+    commands: capturedCommands
   };
 });
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
+
+const adminState = vi.hoisted(() => ({ isAdmin: true }));
+vi.mock('../services/Admin', () => ({
+  isAdmin: (src: number) => (src === 0 ? true : adminState.isAdmin)
+}));
 
 const bridge = vi.hoisted(() => ({
   players: new Map<number, string>([
@@ -49,7 +59,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 }));
 
 import '../services/Phone';
-import { __resetCalls } from '../services/Phone';
+import { __resetCalls, injectIncomingCall, endActiveCallFor } from '../services/Phone';
 import { __resetRateLimits, allow } from '../lib/rateLimit';
 
 const START = 'gphone:server:phone:start';
@@ -60,10 +70,19 @@ beforeEach(() => {
   vi.clearAllMocks();
   __resetRateLimits();
   __resetCalls();
+  adminState.isAdmin = true;
   dbMock.insert.mockResolvedValue(1);
   dbMock.query.mockResolvedValue([]);
   (globalThis as any).emitNet = vi.fn();
 });
+
+const runCommand = async (name: string, src: number, args: string[] = []) => {
+  (globalThis as any).source = src;
+  const handler = commands.get(name);
+  if (!handler) throw new Error(`no command registered for ${name}`);
+  handler(src, args);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+};
 
 const fire = async (event: string, src: number, ...args: unknown[]) => {
   (globalThis as any).source = src;
@@ -281,5 +300,126 @@ describe('rate limiting and payload guards on the raw onNet handlers', () => {
 
     expect(emitCalls()).toHaveLength(0);
     expect(createCalls()).toHaveLength(0);
+  });
+});
+
+describe('injectIncomingCall / endActiveCallFor — gphonecall support', () => {
+  it('rings the target with the given caller phone', async () => {
+    const callId = injectIncomingCall(2, '555-9999');
+
+    expect(callId).not.toBeNull();
+    expect(emitCalls()).toEqual([
+      ['gphone:client:phone:incoming', 2, { from: '555-9999', callId }]
+    ]);
+  });
+
+  it('refuses to inject onto a target already on a call', async () => {
+    await fire(START, 1, '555-0002'); // 2 is now busy
+    (globalThis as any).emitNet.mockClear();
+
+    const callId = injectIncomingCall(2, '555-9999');
+
+    expect(callId).toBeNull();
+    expect(emitCalls()).toHaveLength(0);
+  });
+
+  it('the target can answer an injected call through the real answer handler', async () => {
+    const callId = injectIncomingCall(2, '555-9999');
+    (globalThis as any).emitNet.mockClear();
+
+    await fire(ANSWER, 2);
+
+    // The fake caller (-1) hears 'accepted' too, same as the real handler always does —
+    // harmless, since nothing real is ever connected at that source.
+    expect(emitCalls()).toEqual(
+      expect.arrayContaining([['gphone:client:phone:accepted', 2, { callId }]])
+    );
+  });
+
+  it('notifies only the real party and logs on their side alone', async () => {
+    injectIncomingCall(2, '555-9999');
+    (globalThis as any).emitNet.mockClear();
+
+    const ended = endActiveCallFor(2);
+
+    expect(ended).toBe(true);
+    expect(emitCalls()).toEqual([['gphone:client:phone:ended', 2]]);
+
+    // No caller-side row — there is no real citizenid behind the synthetic source.
+    const inserts = createCalls();
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0][1]).toEqual(expect.arrayContaining(['CID_TARGET', 'missed', 0]));
+  });
+
+  it('is a no-op for a target with no active call', () => {
+    expect(endActiveCallFor(3)).toBe(false);
+  });
+});
+
+// `respondCall` notifies the caller of the outcome via `shell:notify`, same as
+// `notifyPlayer` elsewhere in this file — every assertion below filters for the one
+// event that matters rather than the full emit list.
+const incomingCalls = () =>
+  emitCalls().filter(([event]) => event === 'gphone:client:phone:incoming');
+const endedCalls = () => emitCalls().filter(([event]) => event === 'gphone:client:phone:ended');
+
+describe('gphonecall command', () => {
+  it('refuses a non-admin', async () => {
+    adminState.isAdmin = false;
+
+    await runCommand('gphonecall', 1);
+
+    expect(incomingCalls()).toHaveLength(0);
+  });
+
+  it('refuses the console — there is no player source to ring', async () => {
+    await runCommand('gphonecall', 0);
+
+    expect(emitCalls()).toHaveLength(0);
+  });
+
+  it('rings the caller with a default number when no argument is given', async () => {
+    await runCommand('gphonecall', 1);
+
+    const incoming = emitCalls().find(([event]) => event === 'gphone:client:phone:incoming');
+    expect(incoming?.[2]).toEqual(expect.objectContaining({ from: '5550100' }));
+  });
+
+  it('rings from a seeded character by first name', async () => {
+    await runCommand('gphonecall', 1, ['Marla']);
+
+    const incoming = emitCalls().find(([event]) => event === 'gphone:client:phone:incoming');
+    expect(incoming?.[2]).toEqual(expect.objectContaining({ from: '5550101' }));
+  });
+
+  it('rings from an arbitrary literal number', async () => {
+    await runCommand('gphonecall', 1, ['5559999']);
+
+    const incoming = emitCalls().find(([event]) => event === 'gphone:client:phone:incoming');
+    expect(incoming?.[2]).toEqual(expect.objectContaining({ from: '5559999' }));
+  });
+
+  it('refuses to ring someone already on a call', async () => {
+    await runCommand('gphonecall', 1);
+    (globalThis as any).emitNet.mockClear();
+
+    await runCommand('gphonecall', 1);
+
+    expect(incomingCalls()).toHaveLength(0);
+  });
+
+  it("end tears down the caller's own active call", async () => {
+    await runCommand('gphonecall', 1);
+    (globalThis as any).emitNet.mockClear();
+
+    await runCommand('gphonecall', 1, ['end']);
+
+    expect(endedCalls()).toEqual([['gphone:client:phone:ended', 1]]);
+  });
+
+  it('end on a caller with no active call does not throw or emit', async () => {
+    await runCommand('gphonecall', 1, ['end']);
+
+    expect(endedCalls()).toHaveLength(0);
   });
 });

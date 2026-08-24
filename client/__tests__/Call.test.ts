@@ -74,7 +74,15 @@ const serverEvent = (event: string, data?: unknown) => netSubscriptions.get(even
 describe('NUI callbacks', () => {
   it('registers every callback the phone UI can invoke', () => {
     expect(registeredNuiTypes.toSorted()).toEqual(
-      ['answerCall', 'endCall', 'rejectCall', 'startCall', 'toggleMute', 'toggleSpeaker'].toSorted()
+      [
+        'answerCall',
+        'endCall',
+        'rejectCall',
+        'simulateIncomingCall',
+        'startCall',
+        'toggleMute',
+        'toggleSpeaker'
+      ].toSorted()
     );
   });
 
@@ -104,6 +112,13 @@ describe('NUI callbacks', () => {
 
     expect(triggeredServerEvents).toEqual([['gphone:server:phone:end']]);
     expect(result).toEqual({ status: 'idle' });
+  });
+
+  it('simulateIncomingCall relays the number and always answers success', async () => {
+    const result = await nuiCall('simulateIncomingCall', { number: '555-0177' });
+
+    expect(triggeredServerEvents).toEqual([['gphone:server:phone:simulateIncoming', '555-0177']]);
+    expect(result).toEqual({ success: true });
   });
 
   it('toggleMute asks pma-voice to override talking state, inverted', async () => {

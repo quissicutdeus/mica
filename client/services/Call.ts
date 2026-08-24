@@ -43,6 +43,15 @@ on('__cfx_nui:rejectCall', (_: any, cb: Function) => {
   cb({ status: 'idle' });
 });
 
+// Settings > Developer Tools' "Simulate Incoming Call", in game. Admin-gated
+// server-side (`gphone:server:phone:simulateIncoming`) independently of the DevTools
+// unlock, which is a display gate only.
+RegisterNuiCallbackType('simulateIncomingCall');
+on('__cfx_nui:simulateIncomingCall', (data: { number?: string }, cb: Function) => {
+  TriggerServerEvent('gphone:server:phone:simulateIncoming', data?.number);
+  cb({ success: true });
+});
+
 /**
  * Microphone mute.
  *

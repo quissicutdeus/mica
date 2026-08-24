@@ -179,6 +179,8 @@ export const CLIENT_ONLY_ACTIONS: readonly string[] = [
   'rejectCall',
   'toggleSpeaker',
   'toggleMute',
+  // DevTools' in-game "Simulate Incoming Call" — same fire-and-forget shape.
+  'simulateIncomingCall',
   // Proximity contact sharing — same fire-and-forget shape as a call. The outcome is
   // pushed back as a toast rather than returned on this reply.
   'shareContact',

@@ -1801,6 +1801,21 @@ const mockRegistry: Record<string, MockHandler> = {
     activeCall = null;
     return true;
   },
+  /**
+   * DevTools' in-game "Simulate Incoming Call" path. Not what the browser button
+   * itself calls — `DeveloperTools.svelte` fakes the toast locally there instead, same
+   * as it always has — but the mock still needs an entry, and posting the real
+   * `callStatus` message is what makes this genuinely exercisable from a console too.
+   */
+  simulateIncomingCall: (payload?: { number?: string }): { success: boolean } => {
+    const number =
+      typeof payload?.number === 'string' && payload.number ? payload.number : '5550100';
+    window.postMessage(
+      { action: 'callStatus', data: { status: 'incoming', number, name: 'Unknown' } },
+      '*'
+    );
+    return { success: true };
+  },
   setTyping: () => true,
   setBatteryLevel: () => true,
   // The browser has no ace list; the panel is unconditional there anyway.
