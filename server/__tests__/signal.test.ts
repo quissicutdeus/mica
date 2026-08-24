@@ -15,6 +15,7 @@ import {
   addDeadZone,
   currentRules,
   playerOverride,
+  pollSignal,
   removeDeadZone,
   setGlobalSignal,
   setPlayerSignal,
@@ -105,6 +106,56 @@ describe('signal rules', () => {
       delete (globalThis as any).DoesEntityExist;
       (FrameworkBridge.getAllPlayers as any).mockReturnValue({});
     }
+  });
+
+  /**
+   * `FrameworkBridge.getAllPlayers()` can list a player slightly before FiveM's own
+   * networking layer has fully attached their connection — the window right around join.
+   * `emitNet` to a source in that state throws a native argument error
+   * ("native ...: Argument at index 1 was null.") rather than failing quietly, and with no
+   * guard it would recur every two-second poll until the player finished connecting.
+   * `GetPlayerName` is the standard "is this actually a live client" check.
+   */
+  it('skips a source GetPlayerName says is not really connected yet', () => {
+    (FrameworkBridge.getAllPlayers as any).mockReturnValue({ 5: {}, 6: {} });
+    (globalThis as any).GetPlayerName = (src: string) => (src === '5' ? '' : 'Bob');
+
+    try {
+      pollSignal();
+
+      const pushedTo = (globalThis.emitNet as any).mock.calls
+        .filter((c: unknown[]) => c[0] === 'gphone:client:signal:set')
+        .map((c: unknown[]) => c[1]);
+      expect(pushedTo).not.toContain(5);
+      expect(pushedTo).toContain(6);
+    } finally {
+      delete (globalThis as any).GetPlayerName;
+      (FrameworkBridge.getAllPlayers as any).mockReturnValue({});
+    }
+  });
+
+  /**
+   * Defense-in-depth for the same race slipping past the `GetPlayerName` check in the
+   * instant between the check and the send: one player's `emitNet` throwing must not stop
+   * the rest of that tick's players from getting their update, the same failure mode
+   * `playerCoords.ts`'s own guard exists to avoid for `GetEntityCoords`.
+   */
+  it('does not let one bad emitNet target abort the rest of the poll', () => {
+    (FrameworkBridge.getAllPlayers as any).mockReturnValue({ 5: {}, 6: {} });
+    (globalThis.emitNet as any).mockImplementation((event: string, src: number) => {
+      if (event === 'gphone:client:signal:set' && src === 5) {
+        throw new Error('native 000000002f7a49e6: Argument at index 1 was null.');
+      }
+    });
+
+    expect(() => pollSignal()).not.toThrow();
+
+    const pushedTo = (globalThis.emitNet as any).mock.calls
+      .filter((c: unknown[]) => c[0] === 'gphone:client:signal:set')
+      .map((c: unknown[]) => c[1]);
+    expect(pushedTo).toContain(6);
+
+    (FrameworkBridge.getAllPlayers as any).mockReturnValue({});
   });
 });
 

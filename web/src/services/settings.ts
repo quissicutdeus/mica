@@ -32,9 +32,14 @@ export const fetchSettings = (): Promise<PhoneSetting[]> =>
  * Failure is swallowed by `fetchNui`'s default rather than thrown. A preference that did
  * not reach the server is still applied locally, and a toast about it would be noise for
  * something the player did not ask to do — the next write retries anyway.
+ *
+ * `quiet: true` for the same reason `fetchSettings` above is quiet: a store can write back
+ * through `usePersisted` during the same boot window `fetchSettings` already accounts for
+ * — before a character is selected — and "Player not authenticated" is the expected first
+ * answer there too, not a failure worth a console warning.
  */
 export const saveSetting = (app: string, key: string, value: string): Promise<boolean> =>
-  fetchNui<boolean>('saveSetting', { app, key, value }, { defaultValue: false });
+  fetchNui<boolean>('saveSetting', { app, key, value }, { defaultValue: false, quiet: true });
 
 export const removeSetting = (app: string, key: string): Promise<boolean> =>
   fetchNui<boolean>('removeSetting', { app, key }, { defaultValue: false });

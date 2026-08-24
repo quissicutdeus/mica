@@ -169,7 +169,24 @@ export const pollSignal = (): void => {
 
     if (lastPushed.get(src) === level) continue;
     lastPushed.set(src, level);
-    if (typeof emitNet === 'function') emitNet('gphone:client:signal:set', src, level);
+
+    // The framework can list a player (`FrameworkBridge.getAllPlayers()`) slightly before
+    // FiveM's own networking layer has fully attached their connection — the window right
+    // around join. `emitNet` to a source in that state throws a native argument error
+    // rather than failing quietly, and it repeats every poll until the player finishes
+    // connecting. `GetPlayerName` is the standard "is this actually a live client" check;
+    // guarded like `playerCoords.ts`'s natives, since it does not exist outside a running
+    // server. The try/catch is defense-in-depth for the same race slipping past the guard
+    // in the instant between the check and the send — one bad target must not stop the
+    // rest of this tick's players from getting their update.
+    if (typeof GetPlayerName === 'function' && !GetPlayerName(String(src))) continue;
+    if (typeof emitNet === 'function') {
+      try {
+        emitNet('gphone:client:signal:set', src, level);
+      } catch (error) {
+        console.error(`[gphone] signal push to ${src} failed:`, error);
+      }
+    }
   }
 };
 
