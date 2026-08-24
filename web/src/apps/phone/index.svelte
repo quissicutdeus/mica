@@ -378,7 +378,13 @@
 
         <button
           class="bg-error shadow-call-end duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full transition-colors hover:bg-red-400"
-          onclick={() => callStore.endCall()}
+          onclick={async () => {
+            // `endCall` writes the log row server-side, and nothing else refetches it —
+            // `loadCallLog` only otherwise runs once, on foreground. Without this a hang-up
+            // is invisible in Recents until the player leaves and reopens the app.
+            await callStore.endCall();
+            void loadCallLog();
+          }}
           aria-label="End Call"
         >
           <PhoneIcon class="text-on-surface h-8 w-8 rotate-135" />

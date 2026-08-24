@@ -48,8 +48,10 @@ test.describe('Bank App E2E', () => {
       await page.getByText('Send', { exact: true }).click();
 
       await expect(page.getByText('You cannot send money to your own number.')).toBeVisible();
-      // Refused, not just slow — the balance never moved.
-      await expect(page.getByText('$12,450.00')).toBeVisible();
+      // Refused, not just slow — the balance never moved. Exact match: the modal is
+      // still open behind this refusal, and its own "Available balance: $12,450.00"
+      // line contains the same figure as the CreditCard's.
+      await expect(page.getByText('$12,450.00', { exact: true })).toBeVisible();
     });
 
     test('refuses an amount over the configured transfer cap', async ({ page }) => {
