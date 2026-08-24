@@ -8,13 +8,16 @@
  * `IframeHostServer` enforces. An add-on's only legitimate door into the shell is that
  * server, which the frame's own `message` listener (in `AddOnFrame`) already owns.
  *
- * Real CEF delivers `SendNUIMessage` with a null/undefined `event.source` (there is no
- * window on the other end, just the client injecting into this page). The dev harness
- * (`devHarness.ts`) posts fixtures with `window.postMessage(fixture, '*')`, which arrives
- * back with `event.source === window`. Anything else — in particular an iframe's
- * `contentWindow`, which is what a `parent.postMessage` from inside the sandboxed frame
- * carries as its source — is refused.
+ * Real CEF (verified live against Chrome/103.0.5060.141, the documented CEF baseline —
+ * see AGENTS.md §6) delivers `SendNUIMessage` with `event.source === window.top`, the
+ * root `nui://game` window gPhone's own frame is embedded in — not null/undefined as
+ * previously assumed here, which silently discarded every real NUI message including
+ * `setVisible` and left the phone permanently blank. The dev harness (`devHarness.ts`)
+ * posts fixtures with `window.postMessage(fixture, '*')`, which arrives back with
+ * `event.source === window`. Anything else — in particular an iframe's `contentWindow`,
+ * which is what a `parent.postMessage` from inside the sandboxed frame carries as its
+ * source, and which is neither `window` nor `window.top` from here — is refused.
  */
 export function isTrustedNuiSource(event: MessageEvent): boolean {
-  return event.source == null || event.source === window;
+  return event.source == null || event.source === window || event.source === window.top;
 }

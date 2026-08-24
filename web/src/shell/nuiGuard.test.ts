@@ -21,6 +21,10 @@ describe('isTrustedNuiSource', () => {
     expect(isTrustedNuiSource({ source: window } as unknown as MessageEvent)).toBe(true);
   });
 
+  it('trusts window.top — how real CEF actually delivers SendNUIMessage', () => {
+    expect(isTrustedNuiSource({ source: window.top } as unknown as MessageEvent)).toBe(true);
+  });
+
   it("refuses any other source, such as an iframe's contentWindow", () => {
     expect(isTrustedNuiSource({ source: {} } as unknown as MessageEvent)).toBe(false);
   });
