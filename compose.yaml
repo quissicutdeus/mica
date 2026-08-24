@@ -39,7 +39,11 @@ services:
         # to start, and legible to `strings`/`nm` if you are debugging or scanning it.
         COMPRESS_BINARY: ${COMPRESS_BINARY:-1}
 
-    image: gphone-demo:local
+    # A multi-instance deployment (one demo per branch on the same host) needs its
+    # own tag too, or the second build silently steals `gphone-demo:local` from the
+    # first -- the first container keeps running fine, but its image becomes an
+    # untagged, orphan-looking hash with nothing pointing at it anymore.
+    image: ${MICA_IMAGE_TAG:-gphone-demo:local}
 
     # Lets a multi-instance deployment (e.g. one demo per branch on the same host)
     # give each container a distinct, stable name instead of Compose's default
