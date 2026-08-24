@@ -17,9 +17,22 @@ const takePhoto = async (): Promise<string> => {
       // PNG makes the intermediate lossless, so the single remaining encode in the NUI
       // sees the original pixels. It costs a larger one-off NUI message; the frame is
       // discarded immediately and only the crop is ever stored.
-      exports['screencapture'].requestScreenshot({ encoding: 'png' }, (data: string) => {
-        resolve(data);
-      });
+      //
+      // maxWidth/maxHeight: screencapture's own capture step defaults to 1920x1080 and
+      // silently downscales anything bigger before gPhone ever sees it — on a monitor
+      // wider than that (an ultrawide most of all, since its height is often still under
+      // 1080) the whole frame gets shrunk well below native, and the phone's viewfinder
+      // crop is a small fraction of that already-shrunk frame. Passing the real screen
+      // resolution here is what actually fixes that; `computeCropGeometry` in
+      // `apps/camera/capture.ts` still caps the *stored* crop's long edge at 1080px on
+      // its own, so this does not change output size for anyone at or under 1080p.
+      const [screenWidth, screenHeight] = GetActiveScreenResolution();
+      exports['screencapture'].requestScreenshot(
+        { encoding: 'png', maxWidth: screenWidth, maxHeight: screenHeight },
+        (data: string) => {
+          resolve(data);
+        }
+      );
     } catch (error) {
       console.error('Failed to take photo with screencapture export:', error);
       reject(error);
