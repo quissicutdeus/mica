@@ -364,16 +364,23 @@
       class="bg-surface-container border-outline-variant text-on-surface rounded-b-frame-inner shadow-elevation-5 duration-short ease-standard relative z-10 mx-[-1rem] mb-[-1rem] flex transform-gpu flex-col items-center gap-4 overflow-hidden border-t px-4 pt-4 pb-10 backdrop-blur-lg transition-opacity"
       class:opacity-0={$isTakingPhoto}
     >
-      <!-- Mode Toggle Buttons -->
+      <!-- Mode Toggle Buttons. VIDEO and LANDSCAPE are disabled: neither is wired to
+           anything yet (no recording pipeline, no rotated crop geometry — see
+           MICA-80/79), so letting a player pick one produced a mode that silently did
+           nothing, which read as broken rather than unfinished. -->
       <div class="flex items-center gap-4">
         {#each ['PHOTO', 'VIDEO', 'LANDSCAPE'] as mode (mode)}
           <button
             type="button"
+            disabled={mode !== 'PHOTO'}
+            title={mode !== 'PHOTO' ? 'Coming soon' : undefined}
             onclick={() => (cameraMode = mode as 'PHOTO' | 'VIDEO' | 'LANDSCAPE')}
-            class="text-body-small duration-medium ease-standard cursor-pointer rounded-full px-3.5 py-1 tracking-wider uppercase transition-all {cameraMode ===
+            class="text-body-small duration-medium ease-standard rounded-full px-3.5 py-1 tracking-wider uppercase transition-all {cameraMode ===
             mode
               ? 'shadow-elevation-1 scale-105 border border-yellow-400/40 bg-black/60 text-yellow-400'
-              : 'text-on-surface hover:text-on-surface'}"
+              : mode !== 'PHOTO'
+                ? 'text-on-surface-variant cursor-not-allowed opacity-40'
+                : 'text-on-surface hover:text-on-surface cursor-pointer'}"
           >
             {mode}
           </button>
