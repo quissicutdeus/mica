@@ -5,6 +5,16 @@ import { PhoneState } from '../lib/PhoneState';
 // apply. They answer the NUI callback immediately and let the server push state changes
 // back through the `gphone:client:*` events below.
 
+/**
+ * `exports` is a genuine FiveM global at runtime, but the bare identifier resolves to
+ * the current module's own (empty) exports object under Node-based test runners —
+ * `Database.ts`'s `oxmysql` getter hit the same thing first and solved it the same way.
+ * Preferring `globalThis.exports` is what makes the calls below testable at all; in the
+ * real client the two are the same object.
+ */
+const pmaVoice = (): any =>
+  (globalThis as any).exports?.['pma-voice'] ?? (exports as any)['pma-voice'];
+
 // NUI Callbacks
 RegisterNuiCallbackType('startCall');
 on('__cfx_nui:startCall', (data: { number: string }, cb: Function) => {
@@ -42,7 +52,7 @@ on('__cfx_nui:rejectCall', (_: any, cb: Function) => {
 RegisterNuiCallbackType('toggleMute');
 on('__cfx_nui:toggleMute', (data: { muted: boolean }, cb: Function) => {
   try {
-    exports['pma-voice']?.setPlayerTalkingOverride?.(!data?.muted);
+    pmaVoice()?.setPlayerTalkingOverride?.(!data?.muted);
   } catch {
     // pma-voice absent or a different version; the UI stays consistent regardless.
   }
@@ -86,8 +96,15 @@ onNet('gphone:client:phone:incoming', (data: { from: string; callId: number }) =
 });
 
 onNet('gphone:client:phone:accepted', (data: { callId: number }) => {
-  // Connect to PMA Voice Channel
-  exports['pma-voice'].addPlayerToCall(data.callId);
+  // Connect to PMA Voice Channel. Guarded the same way `toggleMute` is: without pma-voice
+  // present, or a version that renamed this export, an unguarded call threw inside this
+  // handler and the UI update below never ran — the phone showed "dialing" forever on a
+  // call the server had already connected.
+  try {
+    pmaVoice()?.addPlayerToCall?.(data.callId);
+  } catch {
+    // pma-voice absent or a different version; the UI still reflects the connected call.
+  }
 
   // Update UI
   SendNuiMessage(
@@ -99,8 +116,13 @@ onNet('gphone:client:phone:accepted', (data: { callId: number }) => {
 });
 
 onNet('gphone:client:phone:ended', () => {
-  // Disconnect from PMA Voice
-  exports['pma-voice'].removePlayerFromCall();
+  // Disconnect from PMA Voice. Same guard as `accepted` above — a throw here must not
+  // stop the phone from returning to idle.
+  try {
+    pmaVoice()?.removePlayerFromCall?.();
+  } catch {
+    // pma-voice absent or a different version; the UI still returns to idle.
+  }
 
   // Update UI
   SendNuiMessage(
@@ -111,7 +133,9 @@ onNet('gphone:client:phone:ended', () => {
   );
 });
 
-// If calls fail
+// If calls fail. Only ever emitted from the server's `start` handler — before an
+// `accepted` event has ever been sent for this call — so no pma-voice channel was joined
+// and there is deliberately no `removePlayerFromCall()` here to undo.
 onNet('gphone:client:phone:failed', () => {
   SendNuiMessage(
     JSON.stringify({

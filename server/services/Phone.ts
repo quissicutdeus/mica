@@ -22,6 +22,16 @@ const playerCalls: Record<number, number> = {}; // Source -> CallID (Fast lookup
 const generateCallId = () => Math.floor(Math.random() * 900000) + 100000;
 
 /**
+ * Test seam, matching `__resetRateLimits`/`__resetBatteryState`. Both maps are module-scoped
+ * and mutated by every handler below, so without this a case that starts, answers or drops a
+ * call leaks state into the next one.
+ */
+export const __resetCalls = (): void => {
+  for (const key of Object.keys(activeCalls)) delete activeCalls[Number(key)];
+  for (const key of Object.keys(playerCalls)) delete playerCalls[Number(key)];
+};
+
+/**
  * Calls are a service with no endpoint and no table: pure signalling, hand-written
  * handlers below. Declared so the `<service>` segment resolves like any other.
  */
