@@ -102,11 +102,59 @@
     showDeleteConfirm = false;
   };
 
-  const shareSelected = () => {
-    // Not implemented. Says so, rather than an `alert()` claiming it worked.
-    toast.show({ type: 'info', app: 'media', message: 'Sharing photos is not implemented yet' });
+  /**
+   * Fans out to the same `dropNearby` path `sendNearby` uses below, once per selected
+   * photo. Caught per-photo rather than left to `run` — one bad photo throwing would
+   * otherwise collapse the whole batch into `run`'s generic error toast and hide
+   * however many of the others actually went through. `recipientCount` takes the
+   * largest count seen rather than summing: it's "how many nearby people," which
+   * doesn't grow by sending them a second photo.
+   */
+  const shareSelected = async () => {
+    const ids = Array.from(selectedIds);
+    const total = ids.length;
+    let sent = 0;
+    let failed = 0;
+    let recipientCount = 0;
+
+    await run(async () => {
+      for (const id of ids) {
+        try {
+          const result = await dropNearby(id);
+          const count = result?.count ?? 0;
+          if (count > 0) {
+            sent++;
+            recipientCount = Math.max(recipientCount, count);
+          }
+        } catch {
+          failed++;
+        }
+      }
+    });
+
     selectedIds.clear();
     isSelectionMode = false;
+
+    if (failed > 0) {
+      toast.show({
+        type: sent > 0 ? 'warning' : 'error',
+        app: 'media',
+        message:
+          sent > 0
+            ? `${sent} of ${total} photos sent to ${recipientCount} nearby ${recipientCount === 1 ? 'phone' : 'phones'}. ${failed} failed.`
+            : `Could not send ${failed === 1 ? 'the photo' : 'the photos'}. Try again.`
+      });
+      return;
+    }
+
+    toast.show({
+      type: sent > 0 ? 'success' : 'info',
+      app: 'media',
+      message:
+        sent > 0
+          ? `${sent} ${sent === 1 ? 'photo' : 'photos'} sent to ${recipientCount} nearby ${recipientCount === 1 ? 'phone' : 'phones'}.`
+          : 'No Bluetooth-visible players are in range.'
+    });
   };
 
   const sendNearby = async () => {

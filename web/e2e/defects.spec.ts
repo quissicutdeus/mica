@@ -107,6 +107,45 @@ test.describe('Media', () => {
     await expect(page.getByText(/not implemented/i)).toHaveCount(0);
     await expect(page.getByText(/no bluetooth-visible players/i)).toBeVisible();
   });
+
+  /**
+   * The multi-select toolbar's own share button (MICA-57) — a second, independent
+   * stub sitting right next to the one above, said "not implemented yet" long after the
+   * single-photo path went real.
+   */
+  test('bulk sharing sends selected photos to nearby devices instead of claiming it is unimplemented', async ({
+    page
+  }) => {
+    await openApp(page, 'Media');
+    await page.getByRole('button', { name: 'Select' }).click();
+
+    const photos = page.locator('img');
+    await photos.first().click();
+    await photos.nth(1).click();
+
+    await page.locator('button[aria-label="Share selected"]').click();
+
+    await expect(page.getByText(/not implemented/i)).toHaveCount(0);
+    await expect(page.getByText(/no bluetooth-visible players/i)).toBeVisible();
+  });
+
+  test('a successful bulk share reports how many photos reached how many nearby devices', async ({
+    page
+  }) => {
+    // `?bluetoothNearby=2` — the mock registry's own knob for a non-empty proximity
+    // range, same param `shareMediaNearby`'s single-photo mock reads.
+    await page.goto('/?bluetoothNearby=2');
+    await openApp(page, 'Media');
+    await page.getByRole('button', { name: 'Select' }).click();
+
+    const photos = page.locator('img');
+    await photos.first().click();
+    await photos.nth(1).click();
+
+    await page.locator('button[aria-label="Share selected"]').click();
+
+    await expect(page.getByText('2 photos sent to 2 nearby phones.')).toBeVisible();
+  });
 });
 
 test.describe('Lists can be used from the keyboard', () => {
