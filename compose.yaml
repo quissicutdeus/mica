@@ -41,6 +41,12 @@ services:
 
     image: gphone-demo:local
 
+    # Lets a multi-instance deployment (e.g. one demo per branch on the same host)
+    # give each container a distinct, stable name instead of Compose's default
+    # <project>-demo-1. Unset, this keeps the name `docker compose up` has always
+    # produced for a single local instance.
+    container_name: ${MICA_CONTAINER_NAME:-gphone-demo}
+
     # Host side only. The container always listens on 8080 (`ENV PORT` in the Dockerfile);
     # changing where that is published does not change what the server binds.
     #
