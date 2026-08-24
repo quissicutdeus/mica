@@ -71,6 +71,8 @@ because it is the only command that changes a live database (§8).
 | `gphoneseed` / `gphoneseed add`         | Creates test characters, contacts and threads for the caller                      |
 | `gphoneseed text <firstname> <message>` | Has a seeded character text you — exercises inbound delivery                      |
 | `gphoneseed clear`                      | Removes everything `gphoneseed` created                                           |
+| `gphonecall [number \| firstname]`      | Rings yourself — a real call, peer faked. See `docs/testing-voip.md`              |
+| `gphonecall end`                        | Force-ends your own active call                                                   |
 
 `gphoneseed` exists because a fresh database has one character and nobody to
 text, and a conversation needs a real counterpart —

@@ -208,3 +208,9 @@ Prettier was checked the same way and does not have the problem: cold 8.2s, warm
 believed rather than measured: a cache that fails to hit is silent by design —
 it just does the work — so "the cache is configured" and "the cache is working"
 are different claims and only one of them is checkable. Time the gate.
+
+## Testing calls without a second player
+
+Calls are the one feature this loop doesn't otherwise cover — a real one needs a
+second connected player. [`docs/testing-voip.md`](testing-voip.md) maps the four
+layers that get you most of the way solo, and where each one honestly stops.
