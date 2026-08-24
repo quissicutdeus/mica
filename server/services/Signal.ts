@@ -168,7 +168,6 @@ export const pollSignal = (): void => {
     }
 
     if (lastPushed.get(src) === level) continue;
-    lastPushed.set(src, level);
 
     // The framework can list a player (`FrameworkBridge.getAllPlayers()`) slightly before
     // FiveM's own networking layer has fully attached their connection — the window right
@@ -179,10 +178,16 @@ export const pollSignal = (): void => {
     // server. The try/catch is defense-in-depth for the same race slipping past the guard
     // in the instant between the check and the send — one bad target must not stop the
     // rest of this tick's players from getting their update.
+    //
+    // `lastPushed` is only marked once the send actually goes out. Marking it beforehand
+    // — whether skipped by the guard or thrown past it — would tell the next poll "already
+    // told them", so a player who failed once would never be retried once they actually
+    // connect, unless the level happened to change again first.
     if (typeof GetPlayerName === 'function' && !GetPlayerName(String(src))) continue;
     if (typeof emitNet === 'function') {
       try {
         emitNet('gphone:client:signal:set', src, level);
+        lastPushed.set(src, level);
       } catch (error) {
         console.error(`[gphone] signal push to ${src} failed:`, error);
       }

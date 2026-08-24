@@ -116,18 +116,26 @@ describe('signal rules', () => {
    * guard it would recur every two-second poll until the player finished connecting.
    * `GetPlayerName` is the standard "is this actually a live client" check.
    */
-  it('skips a source GetPlayerName says is not really connected yet', () => {
+  it('skips a source GetPlayerName says is not really connected yet, and retries once they are', () => {
     (FrameworkBridge.getAllPlayers as any).mockReturnValue({ 5: {}, 6: {} });
-    (globalThis as any).GetPlayerName = (src: string) => (src === '5' ? '' : 'Bob');
+    let connected = false;
+    (globalThis as any).GetPlayerName = (src: string) => (src === '5' && !connected ? '' : 'Bob');
 
     try {
       pollSignal();
 
-      const pushedTo = (globalThis.emitNet as any).mock.calls
-        .filter((c: unknown[]) => c[0] === 'gphone:client:signal:set')
-        .map((c: unknown[]) => c[1]);
-      expect(pushedTo).not.toContain(5);
-      expect(pushedTo).toContain(6);
+      const pushedTo = () =>
+        (globalThis.emitNet as any).mock.calls
+          .filter((c: unknown[]) => c[0] === 'gphone:client:signal:set')
+          .map((c: unknown[]) => c[1]);
+      expect(pushedTo()).not.toContain(5);
+      expect(pushedTo()).toContain(6);
+
+      // The point of not marking `lastPushed` for a skipped player: the very next poll
+      // still tries them again, rather than treating the skip as "already told them".
+      connected = true;
+      pollSignal();
+      expect(pushedTo()).toContain(5);
     } finally {
       delete (globalThis as any).GetPlayerName;
       (FrameworkBridge.getAllPlayers as any).mockReturnValue({});
@@ -140,20 +148,32 @@ describe('signal rules', () => {
    * the rest of that tick's players from getting their update, the same failure mode
    * `playerCoords.ts`'s own guard exists to avoid for `GetEntityCoords`.
    */
-  it('does not let one bad emitNet target abort the rest of the poll', () => {
+  it('does not let one bad emitNet target abort the rest of the poll, and retries it next time', () => {
     (FrameworkBridge.getAllPlayers as any).mockReturnValue({ 5: {}, 6: {} });
+    let failing = true;
     (globalThis.emitNet as any).mockImplementation((event: string, src: number) => {
-      if (event === 'gphone:client:signal:set' && src === 5) {
+      if (event === 'gphone:client:signal:set' && src === 5 && failing) {
         throw new Error('native 000000002f7a49e6: Argument at index 1 was null.');
       }
     });
 
-    expect(() => pollSignal()).not.toThrow();
+    const attemptsFor = (src: number) =>
+      (globalThis.emitNet as any).mock.calls.filter(
+        (c: unknown[]) => c[0] === 'gphone:client:signal:set' && c[1] === src
+      ).length;
 
-    const pushedTo = (globalThis.emitNet as any).mock.calls
-      .filter((c: unknown[]) => c[0] === 'gphone:client:signal:set')
-      .map((c: unknown[]) => c[1]);
-    expect(pushedTo).toContain(6);
+    expect(() => pollSignal()).not.toThrow();
+    expect(attemptsFor(6)).toBe(1);
+    // The throwing call is still attempted once (and recorded, since a mock records a
+    // call whether or not its implementation throws) — the assertion that matters is the
+    // *next* one below.
+    expect(attemptsFor(5)).toBe(1);
+
+    // A throw must not be mistaken for a delivery: the next poll has to try player 5
+    // again rather than treating the failed call as "already told them".
+    failing = false;
+    pollSignal();
+    expect(attemptsFor(5)).toBe(2);
 
     (FrameworkBridge.getAllPlayers as any).mockReturnValue({});
   });
