@@ -61,7 +61,7 @@ jobs:
       # content hashes, so restoring last run's cache lets typecheck/build skip work for
       # anything unchanged instead of starting cold every run.
       - name: Cache TypeScript/Vite build state
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             **/*.tsbuildinfo
