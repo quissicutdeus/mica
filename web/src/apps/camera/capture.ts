@@ -60,8 +60,8 @@ interface CropGeometry {
 }
 
 /**
- * The output width every capture is resampled to, regardless of the on-screen scale the
- * source rect happened to be measured at.
+ * The output size every capture's longer edge is resampled to, when the source's longer
+ * edge is already that big or bigger.
  *
  * `rect` comes from `containerRef.getBoundingClientRect()`, which reports **post-transform**
  * screen pixels — `Shell.svelte` draws the whole phone at a fixed 400x850 design size and
@@ -70,12 +70,21 @@ interface CropGeometry {
  * measurement became the output canvas's actual pixel size, so the same photo came out
  * sharper or softer depending on a setting that has nothing to do with the camera.
  *
- * Pinning `outWidth` fixes the *resolution*, not the *framing* — `outHeight` still follows
- * the crop's own aspect ratio (`physHeight / physWidth`), which was never the problem: a
- * uniform `scale()` changes `rect.width` and `rect.height` by the same factor, so their
- * ratio was already scale-invariant. Only the absolute size floated.
+ * Pinning the longer edge fixes the *resolution*, not the *framing* — the shorter edge
+ * still follows the crop's own aspect ratio, which was never the problem: a uniform
+ * `scale()` changes `rect.width` and `rect.height` by the same factor, so their ratio was
+ * already scale-invariant. Only the absolute size floated.
+ *
+ * It is the longer edge specifically, not always the width, so this holds for a future
+ * landscape crop too — the phone today is portrait (400x850), so the taller edge is the
+ * one this caps; a wider-than-tall crop would cap on width instead, the same rule.
+ *
+ * This is a ceiling, not a target — `computeCropGeometry` never stretches a smaller
+ * source up to it. The phone usually renders far smaller than 1080 physical pixels on its
+ * long edge, and resampling that up is pure interpolation blur with no real detail behind
+ * it.
  */
-export const CAPTURE_WIDTH = 1080;
+export const CAPTURE_MAX_DIMENSION = 1080;
 
 /**
  * The crop math, pulled out so it can be tested without a real `<canvas>` — jsdom has no
@@ -105,8 +114,15 @@ export const computeCropGeometry = (
     return null;
   }
 
-  const outWidth = CAPTURE_WIDTH;
-  const outHeight = Math.round(outWidth * (physHeight / physWidth));
+  let outWidth: number;
+  let outHeight: number;
+  if (physWidth >= physHeight) {
+    outWidth = Math.min(CAPTURE_MAX_DIMENSION, physWidth);
+    outHeight = Math.round(outWidth * (physHeight / physWidth));
+  } else {
+    outHeight = Math.min(CAPTURE_MAX_DIMENSION, physHeight);
+    outWidth = Math.round(outHeight * (physWidth / physHeight));
+  }
 
   return { physX, physY, physWidth, physHeight, outWidth, outHeight };
 };

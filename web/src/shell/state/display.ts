@@ -179,14 +179,34 @@ const fitScale = derived(viewportSize, fitScaleFor);
 export const frameMargin = derived(viewportSize, ({ width, height }) => marginFor(width, height));
 
 /**
+ * Set by the camera around a capture, to draw the phone at its largest normal size
+ * instead of the player's Display setting for that one frame.
+ *
+ * A bigger on-screen phone means `screencapture` grabs more real pixels for the same
+ * viewfinder crop, which is the whole point — the alternative is upscaling the smaller
+ * capture afterwards, which is interpolation blur with no extra detail behind it. This
+ * never touches `displaySize` itself, so the player's own setting is untouched once the
+ * capture is done.
+ */
+export const captureZoomBoost = writable<boolean>(false);
+
+/**
  * What the phone is drawn at.
  *
  * The fit is folded into the *range* rather than applied as a clamp afterwards, which is
  * the whole fix — see `scaleForSize`. `Math.min` still guards the floor case, where the
  * window cannot fit even `MIN_SCALE` and the range has nowhere left to go.
+ *
+ * The capture boost is clamped to `MAX_SCALE` rather than handed the raw fit: `fitScale`
+ * is capped by the *window*, not by the phone's normal size range, and a wide-but-short
+ * monitor (a 5120x1440 ultrawide, say) fits a taller scale than any Display setting ever
+ * produces. Drawing the phone bigger than it is ever normally allowed to render for a
+ * capture would exercise a size nothing else in the shell expects.
  */
-export const phoneScale = derived([displaySize, fitScale], ([$size, $fit]) =>
-  Math.min(scaleForSize($size, $fit), $fit)
+export const phoneScale = derived(
+  [displaySize, fitScale, captureZoomBoost],
+  ([$size, $fit, $boost]) =>
+    $boost ? Math.min(MAX_SCALE, $fit) : Math.min(scaleForSize($size, $fit), $fit)
 );
 
 /** The scaled box, which is what the flex layout has to reserve — a transform does not. */

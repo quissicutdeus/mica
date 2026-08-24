@@ -15,7 +15,7 @@
     isBrowser,
     type AppProps
   } from '@gphone/sdk';
-  import { useNuiBridge } from '@gphone/sdk/core';
+  import { useNuiBridge, useCaptureZoomBoost } from '@gphone/sdk/core';
 
   const { isTakingPhoto, isPreviewingPhoto } = useCamera();
   const { capturePhoto, media } = useMedia();
@@ -24,11 +24,12 @@
   const { toast } = usePhoneNotification();
   const { after } = useTimer();
   import { sampleAvatars } from './mockViewfinder';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
 
   let { onback }: AppProps = $props();
 
   const { fetchNui, useNuiEvent } = useNuiBridge();
+  const captureZoomBoost = useCaptureZoomBoost();
 
   let cameraMode = $state<'PHOTO' | 'VIDEO' | 'LANDSCAPE'>('PHOTO');
   let isFrontCamera = $state(false);
@@ -150,9 +151,6 @@
   const takePhoto = async () => {
     isTakingPhoto.set(true);
 
-    // Get the phone dimensions from the container before hiding it
-    const rect = containerRef?.getBoundingClientRect();
-
     // A brief pulse, not a white screen. This used to hold solid white for 180ms, which
     // was tolerable over the old opaque black panel and is jarring now that the
     // viewfinder shows the live world. The overlay stays mounted and fades, so the
@@ -161,6 +159,20 @@
     after(60, () => {
       isFlashing = false;
     });
+
+    // Briefly draw the phone at max zoom, under cover of the flash above, so
+    // `screencapture` grabs more real pixels for the crop below instead of a small
+    // capture getting stretched up afterwards. Only worth doing for a real capture —
+    // the browser mock ignores geometry entirely.
+    const boostedZoom = !isBrowser();
+    if (boostedZoom) {
+      captureZoomBoost.set(true);
+      await tick();
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }
+
+    // Get the phone dimensions from the container before hiding it
+    const rect = containerRef?.getBoundingClientRect();
 
     // The chrome fades out over `duration-short` (100ms), and the screenshot is a crop
     // of this exact region — so the capture has to wait for the fade to finish or the
@@ -234,6 +246,7 @@
         console.error('Failed to take photo', err);
         toast.show({ type: 'error', app: 'camera', message: 'Could not save that photo' });
       } finally {
+        if (boostedZoom) captureZoomBoost.set(false);
         isTakingPhoto.set(false);
       }
     });
