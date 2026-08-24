@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   audio,
   soundMuted,
@@ -67,6 +67,29 @@ describe('audio', () => {
     expect(() => {
       audio.warm();
     }).not.toThrow();
+  });
+
+  /**
+   * `warm()` used to construct/resume the context eagerly on every call, which a plain
+   * browser's autoplay policy always refuses before a real gesture — jsdom has no real
+   * autoplay policy to observe that with, so this checks the thing that actually causes
+   * it instead: `warm()` must not touch `AudioContext` at all in a browser (no
+   * `window.invokeNative`, which is what `isBrowser()` keys on) until a real gesture
+   * fires the `unlock` listener it attaches.
+   */
+  it('does not construct an AudioContext eagerly in a browser', () => {
+    const ctor = vi.fn(function (this: unknown) {
+      return { state: 'suspended', resume: () => Promise.resolve() };
+    });
+    (window as any).AudioContext = ctor;
+
+    audio.warm();
+    expect(ctor).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new Event('pointerdown'));
+    expect(ctor).toHaveBeenCalledTimes(1);
+
+    delete (window as any).AudioContext;
   });
 
   it('respects mute setting', () => {

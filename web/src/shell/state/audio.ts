@@ -1,6 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { usePersisted } from '../../sdk/host/usePersisted';
 import { isBatteryDead } from './charge';
+import { isBrowser } from '../../lib/isBrowser';
 
 export type SoundEffect = 'click' | 'pop' | 'camera' | 'notification' | 'ringtone';
 
@@ -124,12 +125,21 @@ class SoundService {
   /**
    * Proactively warm and unlock the Web AudioContext on phone reveal or user gesture.
    * Prevents Chromium CEF autoplay restrictions from muting ringtones and notifications.
+   *
+   * Only attempted eagerly in CEF. A plain browser enforces Chrome's own autoplay policy
+   * and refuses every time this runs before a real gesture — which in practice is always,
+   * since `visible` starts `true` there — so the eager attempt did nothing but print a
+   * console warning on every load. The `unlock` listeners below are what actually resume
+   * it, on the player's first click, keypress or touch; skipping straight to attaching
+   * them in a browser changes nothing about when audio actually unlocks.
    */
   public warm(): void {
     if (typeof window === 'undefined') return;
-    const ctx = this.getAudioContext();
-    if (ctx && ctx.state === 'suspended') {
-      ctx.resume().catch(() => {});
+    if (!isBrowser()) {
+      const ctx = this.getAudioContext();
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
     }
 
     if (this.warmingListenersAttached) return;
