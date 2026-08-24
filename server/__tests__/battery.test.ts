@@ -1,16 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { dbMock, bridgeMock } = vi.hoisted(() => ({
-  dbMock: {
-    query: vi.fn(),
-    insert: vi.fn(),
-    update: vi.fn(),
-    scalar: vi.fn(),
-    single: vi.fn()
-  },
-  // registerUsableItem runs at import time; the rest is only what this suite drives.
-  bridgeMock: { getPlayer: vi.fn(), registerUsableItem: vi.fn() }
-}));
+const { dbMock, bridgeMock, handlers } = vi.hoisted(() => {
+  // Inside `vi.hoisted` because ESM evaluates imports first: assigning `on`/`onNet`
+  // below the imports would run after the service registered and capture nothing.
+  const captured = new Map<string, Function>();
+  const captureHandler = (event: string, handler: Function) => {
+    captured.set(event, handler);
+  };
+  (globalThis as any).on = captureHandler;
+  (globalThis as any).onNet = captureHandler;
+
+  return {
+    dbMock: {
+      query: vi.fn(),
+      insert: vi.fn(),
+      update: vi.fn(),
+      scalar: vi.fn(),
+      single: vi.fn()
+    },
+    // registerUsableItem runs at import time; the rest is only what this suite drives.
+    bridgeMock: { getPlayer: vi.fn(), registerUsableItem: vi.fn() },
+    handlers: captured
+  };
+});
 
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 vi.mock('../lib/FrameworkBridge', () => ({ FrameworkBridge: bridgeMock }));
@@ -273,5 +285,29 @@ describe('gphonecharge command', () => {
 
     expect(chargeCalls()).toHaveLength(0);
     expect(notifies()[0]?.[2]?.message).toMatch(/usage/i);
+  });
+});
+
+describe('character-loaded listeners', () => {
+  it('registers for both QBCore and qbx player-loaded events', () => {
+    expect(handlers.has('QBCore:Server:OnPlayerLoaded')).toBe(true);
+    expect(handlers.has('QBCore:Server:PlayerLoaded')).toBe(true);
+  });
+
+  it('loads a bare numeric source from qbx_core (net, no payload)', () => {
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    handlers.get('QBCore:Server:OnPlayerLoaded')!(SRC);
+    expect(bridgeMock.getPlayer).toHaveBeenCalledWith(SRC);
+  });
+
+  it('loads the resolved source from a QBCore player object', () => {
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: SRC } });
+    expect(bridgeMock.getPlayer).toHaveBeenCalledWith(SRC);
+  });
+
+  it('does nothing when the source cannot be resolved', () => {
+    handlers.get('QBCore:Server:OnPlayerLoaded')!({ PlayerData: {} });
+    expect(bridgeMock.getPlayer).not.toHaveBeenCalled();
   });
 });

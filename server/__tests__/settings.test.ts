@@ -1,14 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { dbMock, handlers } = vi.hoisted(() => {
-  // Inside `vi.hoisted` because ESM evaluates imports first: assigning `onNet` below the
-  // imports would run after the service registered and capture nothing, which reads as
-  // "no handler" rather than as a broken test.
+  // Inside `vi.hoisted` because ESM evaluates imports first: assigning `on`/`onNet` below
+  // the imports would run after the service registered and capture nothing, which reads
+  // as "no handler" rather than as a broken test.
   const captured = new Map<string, Function>();
-  const previous = (globalThis as any).onNet;
+  const previousOnNet = (globalThis as any).onNet;
   (globalThis as any).onNet = (event: string, handler: Function) => {
     captured.set(event, handler);
-    return typeof previous === 'function' ? previous(event, handler) : undefined;
+    return typeof previousOnNet === 'function' ? previousOnNet(event, handler) : undefined;
+  };
+  const previousOn = (globalThis as any).on;
+  (globalThis as any).on = (event: string, handler: Function) => {
+    captured.set(event, handler);
+    return typeof previousOn === 'function' ? previousOn(event, handler) : undefined;
   };
 
   return {
@@ -214,5 +219,30 @@ describe('settings service', () => {
       expect(params[0]).toBe(CID);
       expect(params).not.toContain('VICTIM99');
     });
+  });
+});
+
+describe('character-loaded listeners', () => {
+  it('registers for both QBCore and qbx player-loaded events', () => {
+    expect(handlers.has('QBCore:Server:OnPlayerLoaded')).toBe(true);
+    expect(handlers.has('QBCore:Server:PlayerLoaded')).toBe(true);
+  });
+
+  it('pushes a rehydrate to a bare numeric source from qbx_core (net, no payload)', () => {
+    (globalThis as any).emitNet = vi.fn();
+    handlers.get('QBCore:Server:OnPlayerLoaded')!(SRC);
+    expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:settings:rehydrate', SRC);
+  });
+
+  it('pushes a rehydrate to the resolved source from a QBCore player object', () => {
+    (globalThis as any).emitNet = vi.fn();
+    handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: SRC } });
+    expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:settings:rehydrate', SRC);
+  });
+
+  it('does nothing when the source cannot be resolved', () => {
+    (globalThis as any).emitNet = vi.fn();
+    handlers.get('QBCore:Server:OnPlayerLoaded')!({ PlayerData: {} });
+    expect(globalThis.emitNet).not.toHaveBeenCalled();
   });
 });

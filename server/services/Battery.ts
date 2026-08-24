@@ -273,7 +273,8 @@ onNet('gphone:server:battery:load', () => {
  * Without this the loop has nothing to tick, and `currentCharge` would answer 100 for a
  * player whose saved charge is 12.
  */
-on('QBCore:Server:OnPlayerLoaded', (player: any) => {
+// Network, not local -- see the comment on the matching listener in lib/shell.ts.
+onNet('QBCore:Server:OnPlayerLoaded', (player: any) => {
   const src = typeof player === 'number' ? player : player?.PlayerData?.source;
   if (src) {
     void sendLoadedBatteryToClient(src);
@@ -281,7 +282,7 @@ on('QBCore:Server:OnPlayerLoaded', (player: any) => {
 });
 
 // Listen for QBX core player loaded event
-on('qbx_core:server:playerLoaded', (player: any) => {
+on('QBCore:Server:PlayerLoaded', (player: any) => {
   const src = typeof player === 'number' ? player : player?.PlayerData?.source;
   if (src) {
     void sendLoadedBatteryToClient(src);

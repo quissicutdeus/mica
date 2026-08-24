@@ -216,12 +216,13 @@ const pushRehydrate = (src: number): void => {
 const sourceOf = (player: any): number | undefined =>
   typeof player === 'number' ? player : player?.PlayerData?.source;
 
-on('QBCore:Server:OnPlayerLoaded', (player: any) => {
+// Network, not local -- see the comment on the matching listener in lib/shell.ts.
+onNet('QBCore:Server:OnPlayerLoaded', (player: any) => {
   const src = sourceOf(player);
   if (src) pushRehydrate(src);
 });
 
-on('qbx_core:server:playerLoaded', (player: any) => {
+on('QBCore:Server:PlayerLoaded', (player: any) => {
   const src = sourceOf(player);
   if (src) pushRehydrate(src);
 });

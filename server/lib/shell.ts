@@ -52,12 +52,20 @@ const sourceOf = (player: unknown): number | undefined =>
  * is safe to assume. Kept here rather than duplicated a third time, since the push itself
  * is shell-scoped rather than owned by any one app's data.
  */
-on('QBCore:Server:OnPlayerLoaded', (player: unknown) => {
+/**
+ * Network, not local: qbx_core's own compat shim `RegisterNetEvent`s this exact name and
+ * fires it from the client with no payload, so a plain `on()` here throws "was not safe
+ * for net" the moment a qbx_core player loads — `RegisterNetEvent`'s network-safety flag is
+ * per-resource, not global, so qbx_core declaring it net-safe for itself does nothing for
+ * gPhone's own handler. `onNet` still receives vanilla QBCore's local, Player-object
+ * `TriggerEvent` for this same name unaffected — only the network case needed guarding.
+ */
+onNet('QBCore:Server:OnPlayerLoaded', (player: unknown) => {
   const src = sourceOf(player);
   if (src) pushRehydrate(src);
 });
 
-on('qbx_core:server:playerLoaded', (player: unknown) => {
+on('QBCore:Server:PlayerLoaded', (player: unknown) => {
   const src = sourceOf(player);
   if (src) pushRehydrate(src);
 });
