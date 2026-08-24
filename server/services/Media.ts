@@ -4,6 +4,9 @@ import { findNearbyVisiblePlayers } from '../lib/proximity';
 import { appEventChannel } from '../lib/appEvents';
 import { requirePositiveInt, fields } from '../lib/payload';
 import { playerCoords } from '../lib/playerCoords';
+import { Database } from '../lib/Database';
+import { isAdmin } from './Admin';
+import { notifyPlayer } from '../lib/shell';
 
 /**
  * The media table: owner-scoped, create/read/delete only.
@@ -238,3 +241,117 @@ app.registerEvent('shareLocation', async (source, _cbId, data, citizenid) => {
 
   return { id, media: await repo.findById(id, citizenid) };
 });
+
+interface MediaTotalsRow {
+  rowCount: number | string | null;
+  totalBytes: number | string | null;
+}
+
+interface MediaHolderRow {
+  citizenid: string;
+  rowCount: number | string;
+  bytes: number | string | null;
+}
+
+export interface MediaStorageStats {
+  rowCount: number;
+  totalBytes: number;
+  topHolders: { citizenid: string; rowCount: number; bytes: number }[];
+}
+
+const TOP_HOLDER_COUNT = 10;
+
+/**
+ * MICA-71 step 1: measure before anything else. `byte_size` (the column) is never
+ * written by anything today, so it cannot answer this — the real size lives in `data` and
+ * `thumbnail` themselves, measured directly. Every row counts, not just `status = 'active'`
+ * ones: a soft delete leaves the payload columns in place, so a deleted or moderated row
+ * still costs exactly as many bytes as a live one until something actually purges it.
+ */
+export const mediaStorageStats = async (): Promise<MediaStorageStats> => {
+  const totals = await Database.single<MediaTotalsRow>(
+    `SELECT COUNT(*) AS rowCount,
+            SUM(IFNULL(LENGTH(data), 0) + IFNULL(LENGTH(thumbnail), 0)) AS totalBytes
+     FROM gphone_media`
+  );
+
+  const holders = await Database.query<MediaHolderRow[]>(
+    `SELECT citizenid,
+            COUNT(*) AS rowCount,
+            SUM(IFNULL(LENGTH(data), 0) + IFNULL(LENGTH(thumbnail), 0)) AS bytes
+     FROM gphone_media
+     GROUP BY citizenid
+     ORDER BY bytes DESC
+     LIMIT ${TOP_HOLDER_COUNT}`
+  );
+
+  return {
+    rowCount: Number(totals?.rowCount ?? 0),
+    totalBytes: Number(totals?.totalBytes ?? 0),
+    topHolders: (holders ?? []).map((h) => ({
+      citizenid: h.citizenid,
+      rowCount: Number(h.rowCount),
+      bytes: Number(h.bytes ?? 0)
+    }))
+  };
+};
+
+const formatBytes = (bytes: number): string => {
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(unit === 0 ? 0 : 1)}${units[unit]}`;
+};
+
+/**
+ * `gphonemedia` — report-only, same shape as `gphoneschema` without an `apply` half:
+ * nothing here writes anything. Console and any `isAdmin` caller both get the full
+ * breakdown in the server console (a top-10 list does not fit a toast), plus a one-line
+ * toast for whoever ran it in-game so they know it actually did something.
+ */
+export const runMediaStatsCommand = async (source: number): Promise<void> => {
+  if (!isAdmin(source)) {
+    notifyPlayer(source, {
+      type: 'error',
+      message: 'You do not have permission to use that.'
+    });
+    return;
+  }
+
+  const stats = await mediaStorageStats();
+
+  console.log(
+    `[gphonemedia] ${stats.rowCount} row(s), ${formatBytes(stats.totalBytes)} total ` +
+      `(${stats.totalBytes} bytes) in gphone_media.`
+  );
+  if (stats.topHolders.length > 0) {
+    console.log(`[gphonemedia] top ${stats.topHolders.length} by size:`);
+    for (const holder of stats.topHolders) {
+      console.log(
+        `[gphonemedia]   ${holder.citizenid}: ${holder.rowCount} row(s), ` +
+          `${formatBytes(holder.bytes)} (${holder.bytes} bytes)`
+      );
+    }
+  }
+
+  if (source !== 0) {
+    notifyPlayer(source, {
+      type: 'success',
+      message: `gphone_media: ${stats.rowCount} rows, ${formatBytes(stats.totalBytes)} — see server console for the breakdown.`
+    });
+  }
+};
+
+RegisterCommand(
+  'gphonemedia',
+  (source: number) => {
+    void runMediaStatsCommand(source).catch((error) => {
+      console.error('[gphonemedia] failed:', error);
+    });
+  },
+  false
+);
