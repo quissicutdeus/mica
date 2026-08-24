@@ -64,6 +64,7 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   // data
   useAccount: 'account',
   useAdmin: 'admin',
+  useBank: 'bank',
   useReports: 'admin',
   useCall: 'call',
   useCamera: 'camera',
@@ -109,6 +110,7 @@ export const HOOK_OF_FACET = {
   account: 'useAccount',
   accounts: 'useAccounts',
   admin: 'useAdmin',
+  bank: 'useBank',
   call: 'useCall',
   camera: 'useCamera',
   contacts: 'useContacts',

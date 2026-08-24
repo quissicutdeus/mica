@@ -8,6 +8,7 @@ export * from './useAppAction';
 export * from './useAppEvents';
 export * from './useAppLevels';
 export * from './useAppRegistry';
+export * from './useBank';
 export * from './useCall';
 export * from './useCamera';
 export * from './useClock';

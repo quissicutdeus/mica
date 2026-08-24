@@ -15,4 +15,62 @@ test.describe('Bank App E2E', () => {
     const recentTxHeading = page.locator('h3', { hasText: 'Recent Transactions' });
     await expect(recentTxHeading).toBeVisible();
   });
+
+  /**
+   * The whole solo-testable path from MICA-56: the mock registry's `sendMoney`
+   * plays the same state machine `server/services/Bank.ts` does (self-transfer refused,
+   * an amount over the cap refused, everything else settles), so this is real coverage
+   * of the flow, not a UI-only stub.
+   */
+  test.describe('Send Money', () => {
+    test('sends money, updates the balance, and records a transaction', async ({ page }) => {
+      await expect(page.getByText('$12,450.00')).toBeVisible();
+
+      await page.getByText('Send Money').click();
+      await page.getByPlaceholder("Recipient's phone number").fill('555-0199');
+      await page.getByPlaceholder('Amount').fill('100');
+      await page.getByText('Send', { exact: true }).click();
+
+      // The modal closes on success and the balance re-fetch reflects the real deduction.
+      await expect(page.getByPlaceholder("Recipient's phone number")).toBeHidden();
+      await expect(page.getByText('$12,350.00')).toBeVisible();
+      await expect(page.getByText('Sent to 555-0199')).toBeVisible();
+    });
+
+    test('refuses a self-transfer with the specific reason, not a generic error', async ({
+      page
+    }) => {
+      await page.getByText('Send Money').click();
+      // The mock's own number, mirroring `getPhoneNumber`'s '867-5309' — the same
+      // same_player check `Payments.transfer` makes server-side.
+      await page.getByPlaceholder("Recipient's phone number").fill('867-5309');
+      await page.getByPlaceholder('Amount').fill('50');
+      await page.getByText('Send', { exact: true }).click();
+
+      await expect(page.getByText('You cannot send money to your own number.')).toBeVisible();
+      // Refused, not just slow — the balance never moved.
+      await expect(page.getByText('$12,450.00')).toBeVisible();
+    });
+
+    test('refuses an amount over the configured transfer cap', async ({ page }) => {
+      await page.getByText('Send Money').click();
+      await page.getByPlaceholder("Recipient's phone number").fill('555-0199');
+      await page.getByPlaceholder('Amount').fill('999999');
+      await page.getByText('Send', { exact: true }).click();
+
+      await expect(
+        page.getByText('That is more than this phone can send in a single transfer.')
+      ).toBeVisible();
+    });
+
+    test('Cancel closes the sheet without sending anything', async ({ page }) => {
+      await page.getByText('Send Money').click();
+      await page.getByPlaceholder("Recipient's phone number").fill('555-0199');
+      await page.getByPlaceholder('Amount').fill('100');
+      await page.getByText('Cancel').click();
+
+      await expect(page.getByPlaceholder("Recipient's phone number")).toBeHidden();
+      await expect(page.getByText('$12,450.00')).toBeVisible();
+    });
+  });
 });

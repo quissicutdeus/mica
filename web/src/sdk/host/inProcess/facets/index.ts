@@ -8,6 +8,7 @@
 import type { account } from './account';
 import type { accounts } from './accounts';
 import type { admin } from './admin';
+import type { bank } from './bank';
 import type { call } from './call';
 import type { camera } from './camera';
 import type { contacts } from './contacts';
@@ -50,6 +51,7 @@ export interface Facets {
   account: typeof account;
   accounts: typeof accounts;
   admin: typeof admin;
+  bank: typeof bank;
   call: typeof call;
   camera: typeof camera;
   contacts: typeof contacts;

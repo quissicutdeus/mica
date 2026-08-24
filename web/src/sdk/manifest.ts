@@ -16,6 +16,10 @@ export const ALL_PERMISSIONS = [
   // Player data — a service behind each
   'account', // own phone number, bank balance, citizenid
   'admin', // moderation queue and admin actions
+  // Separate from `account` on purpose: reading a balance and moving money are not the
+  // same ask, and `account` is common enough (any app showing a balance) that bundling a
+  // spend capability into it would grant it far wider than anyone declaring it intended.
+  'bank', // send money to another player
   'call',
   'camera',
   'contacts',

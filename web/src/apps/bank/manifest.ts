@@ -6,7 +6,8 @@ export default defineApp({
   tile: { bg: 'bg-purple-600' },
   icon: Icon,
   description: 'Manage bank accounts and transfer funds',
-  permissions: ['account'],
+  // 'notifications': the post-transfer success toast, via `usePhoneNotification`.
+  permissions: ['account', 'bank', 'notifications'],
   requiresNetwork: true,
   core: true
 });

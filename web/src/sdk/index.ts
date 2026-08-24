@@ -41,6 +41,7 @@ export type { AppEvent } from '../shell/state/appEvents';
 export type { M3Tokens } from '../lib/m3';
 export type { FollowPage, FollowListQuery, AccountSearchQuery } from '../services/accounts';
 export type { ListingPage, CreateListingInput } from '../services/marketplace';
+export type { SendMoneyOutcome, SendMoneyInput } from '../services/bank';
 /**
  * Deterministic placeholder imagery, for the fixtures an app renders in a browser.
  *

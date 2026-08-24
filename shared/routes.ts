@@ -35,8 +35,10 @@ export const ROUTES: readonly Route[] = [
   // Admin
   route('checkAdmin', 'admin', 'check'),
 
-  // Bank — read-only, backed by the banking resource's export rather than a table.
+  // Bank — read-only history backed by the banking resource's export rather than a table,
+  // plus one write: a player-to-player transfer resolved by phone number server-side.
   route('getTransactions', 'bank', 'getTransactions'),
+  route('sendMoney', 'bank', 'sendMoney'),
 
   // Accounts — social identities, shared by every social app. `mine` is a custom action
   // scoped server-side; making citizenid client-filterable would let anyone list anyone's.

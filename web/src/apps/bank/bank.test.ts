@@ -1,6 +1,18 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { fireEvent, screen } from '@testing-library/svelte';
 import { renderApp } from '@gphone/sdk/testing';
+
+// jsdom has no Web Animations API and `SendMoneyModal`'s `transition:fade` calls it on mount.
+if (!Element.prototype.animate) {
+  Element.prototype.animate = vi.fn().mockReturnValue({
+    cancel: () => {},
+    finish: () => {},
+    startTime: 0,
+    currentTime: 0,
+    effect: { getComputedTiming: () => ({ duration: 0 }) }
+  });
+}
 
 vi.mock('../../nui/fetchNui', () => ({
   fetchNui: vi.fn(async () => null),
@@ -53,5 +65,16 @@ describe('Bank', () => {
 
     const { queryByText } = renderApp(Bank, { id: 'bank' });
     expect(queryByText('No transactions')).toBeNull();
+  });
+
+  it('opens Send Money from the app itself — proving the bank permission is wired, not just declared', async () => {
+    // `SendMoneyModal.test.ts` covers the modal's own behavior in isolation, with
+    // `useBank` mocked. This is the one check that `bank/manifest.ts` declaring `bank`
+    // actually resolves inside Bank's real render context — a missing or misspelled
+    // permission throws `AppPermissionError` at construction, before anything renders.
+    renderApp(Bank, { id: 'bank' });
+
+    await fireEvent.click(screen.getByText('Send Money'));
+    expect(screen.getByPlaceholderText("Recipient's phone number")).toBeTruthy();
   });
 });

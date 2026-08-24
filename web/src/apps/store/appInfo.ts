@@ -117,6 +117,7 @@ export function getAppStorageSize(app: AppManifest): string {
 const LABELS: Record<AppPermission, { label: string; icon: string }> = {
   account: { label: 'Phone Number & Bank Balance', icon: '\u{1F4B3}' },
   admin: { label: 'Moderation Tools', icon: '\u{1F6E1}\u{FE0F}' },
+  bank: { label: 'Send Money', icon: '\u{1F4B8}' },
   call: { label: 'Phone Calls', icon: '\u{1F4DE}' },
   camera: { label: 'Camera Access', icon: '\u{1F4F7}' },
   contacts: { label: 'Contacts Access', icon: '\u{1F4C7}' },

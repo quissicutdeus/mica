@@ -1,5 +1,9 @@
 import { taggedTopics } from '@shared/richText';
 import { GENERIC_SERVICE_ACTION } from '@shared/rpc';
+// Type-only: `services/bank.ts` imports `fetchNui`, which imports this file's own
+// transport — a value import here would be a real import cycle, a type-only one is
+// erased before anything runs.
+import type { SendMoneyOutcome } from '../../services/bank';
 import type {
   Account,
   Blab,
@@ -376,6 +380,35 @@ const mockNotifications: NotificationItem[] = [
  * Account-to-account, with no citizenid, exactly as the table is: every `gphone_accounts` row
  * carries an `app`, so a row can only link two accounts in the same one.
  */
+/** Mutated by `sendMoney` below, so a browser session sees its own transfer reflected. */
+let mockBankBalance = 12450;
+const mockBankTransactions: Transaction[] = [
+  {
+    id: 'mock-1',
+    title: 'Store',
+    message: 'Store Purchase',
+    amount: 45,
+    direction: 'out',
+    time: Math.floor(Date.now() / 1000)
+  },
+  {
+    id: 'mock-2',
+    title: 'Job',
+    message: 'Salary',
+    amount: 1500,
+    direction: 'in',
+    time: Math.floor(Date.now() / 1000) - 86400
+  },
+  {
+    id: 'mock-3',
+    title: 'Transfer',
+    message: 'Transfer',
+    amount: 200,
+    direction: 'out',
+    time: Math.floor(Date.now() / 1000) - 172800
+  }
+];
+
 const mockCallLog: PhoneCallLogEntry[] = [
   {
     id: 3,
@@ -1430,36 +1463,49 @@ const mockRegistry: Record<string, MockHandler> = {
   // Account
   getCitizenId: () => 'my-id',
   getPhoneNumber: () => '867-5309',
-  getBankBalance: () => 12450,
+  getBankBalance: () => mockBankBalance,
   // Shaped exactly like BankingBridge output: positive magnitudes with an explicit
   // direction. The previous mock used signed amounts, which no banking resource
   // produces — so red/green rendering worked here and was wrong in game.
-  getTransactions: (): Transaction[] => [
-    {
-      id: 'mock-1',
-      title: 'Store',
-      message: 'Store Purchase',
-      amount: 45,
+  getTransactions: (): Transaction[] => mockBankTransactions,
+  /**
+   * Mirrors `server/services/Bank.ts`'s `sendMoney` refusal reasons, so the same UI
+   * copy in `SendMoneyModal.svelte` is exercised in a browser as in game. `867-5309` is
+   * this mock's own `getPhoneNumber` — dialing it is a self-transfer, same as the real
+   * `same_player` check. `000-0000` is the one number nobody is ever reachable at.
+   */
+  sendMoney: (payload?: { phone?: string; amount?: number; note?: string }): SendMoneyOutcome => {
+    const phone = typeof payload?.phone === 'string' ? payload.phone.trim() : '';
+    const amount = Number(payload?.amount);
+
+    if (!Number.isInteger(amount) || amount <= 0) {
+      return { ok: false, reason: 'invalid_amount' };
+    }
+    if (amount > 50_000) {
+      return { ok: false, reason: 'exceeds_limit' };
+    }
+    if (phone === '867-5309') {
+      return { ok: false, reason: 'same_player' };
+    }
+    if (!phone || phone === '000-0000') {
+      return { ok: false, reason: 'recipient_offline' };
+    }
+    if (amount > mockBankBalance) {
+      return { ok: false, reason: 'insufficient_funds' };
+    }
+
+    mockBankBalance -= amount;
+    mockBankTransactions.unshift({
+      id: `mock-transfer-${Date.now()}`,
+      title: 'Transfer',
+      message: payload?.note ? `Sent to ${phone}: ${payload.note}` : `Sent to ${phone}`,
+      amount,
       direction: 'out',
       time: Math.floor(Date.now() / 1000)
-    },
-    {
-      id: 'mock-2',
-      title: 'Job',
-      message: 'Salary',
-      amount: 1500,
-      direction: 'in',
-      time: Math.floor(Date.now() / 1000) - 86400
-    },
-    {
-      id: 'mock-3',
-      title: 'Transfer',
-      message: 'Transfer',
-      amount: 200,
-      direction: 'out',
-      time: Math.floor(Date.now() / 1000) - 172800
-    }
-  ],
+    });
+
+    return { ok: true, to: phone, amount };
+  },
 
   // Call
   startCall: async () => {
