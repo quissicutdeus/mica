@@ -13,7 +13,10 @@
             >Display popup banners when notifications arrive</span
           >
         </div>
-        <ToggleSwitch checked={$toastsEnabled} onchange={(val) => toastsEnabled.set(val)} />
+        <ToggleSwitch
+          checked={$toastsEnabled}
+          onchange={(val: boolean) => toastsEnabled.set(val)}
+        />
       </div>
 
       <div class="flex items-center justify-between p-4">
@@ -25,7 +28,7 @@
         </div>
         <ToggleSwitch
           checked={$notificationSoundEnabled}
-          onchange={(val) => notificationSoundEnabled.set(val)}
+          onchange={(val: boolean) => notificationSoundEnabled.set(val)}
         />
       </div>
     </div>
@@ -39,7 +42,7 @@
           >Show unread count badges on launcher icons</span
         >
       </div>
-      <ToggleSwitch checked={$badgesEnabled} onchange={(val) => badgesEnabled.set(val)} />
+      <ToggleSwitch checked={$badgesEnabled} onchange={(val: boolean) => badgesEnabled.set(val)} />
     </div>
   </SettingsSection>
 </div>

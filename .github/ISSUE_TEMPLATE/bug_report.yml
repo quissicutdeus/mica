@@ -1,0 +1,63 @@
+name: Bug report
+description: Something in gPhone is broken
+labels: ['bug']
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: How can we see this ourselves?
+      placeholder: |
+        1. Open the phone
+        2. Go to ...
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: false
+
+  - type: input
+    id: fivem-artifact
+    attributes:
+      label: FiveM artifact / build version
+      placeholder: e.g. 12345
+    validations:
+      required: false
+
+  - type: input
+    id: gphone-version
+    attributes:
+      label: gPhone version / commit
+      placeholder: e.g. v1.2.3 or commit sha
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console errors / logs
+      description: Server console, client F8 console, or browser devtools (nui_devTools) output, if any.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Anything else?
+      description: Screenshots, resource list, framework (QBCore/QBX/etc), other resources that might conflict.
+    validations:
+      required: false

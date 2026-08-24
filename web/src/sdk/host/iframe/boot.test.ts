@@ -103,7 +103,7 @@ describe('bootAddOn', () => {
 
     const errors = sent.filter((m) => m.kind === 'error');
     expect(errors[0]).toMatchObject({ kind: 'error', message: 'nobody awaited me' });
-    expect((errors[0] as Extract<ToShell, { kind: 'error' }>).stack).toBe(reason.stack);
+    expect(errors[0].stack).toBe(reason.stack);
   });
 
   it('updates a running app when the shell pushes new deep-link props (MICA-25)', async () => {

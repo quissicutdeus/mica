@@ -33,7 +33,7 @@ on('__cfx_nui:takePhoto', async (_: any, cb: Function) => {
     const base64Data = await takePhoto();
     // Return the raw base64 data URI string
     cb(base64Data);
-  } catch (e) {
+  } catch {
     // Return a dummy transparent pixel as fallback on failure
     cb(
       'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='

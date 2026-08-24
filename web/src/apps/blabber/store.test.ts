@@ -109,7 +109,7 @@ describe('blabber service', () => {
       vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({
         rows: mockAccounts,
         limit: 5
-      } as any);
+      });
 
       await loadMyAccounts();
 
@@ -134,7 +134,7 @@ describe('blabber service', () => {
           updated_at: '2026-01-01T00:00:00Z'
         }
       ]);
-      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(undefined as any);
+      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(undefined);
 
       await updateAccount(1, { display_name: 'Alice Cooper', bio: 'Hello world' });
 
@@ -163,7 +163,7 @@ describe('blabber service', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z'
       };
-      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(created as any);
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(created);
 
       const result = await claimAccount('charlie', 'Charlie');
 
@@ -205,7 +205,7 @@ describe('blabber service', () => {
       vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({
         ...mockBlab,
         editWindow: 600
-      } as any);
+      });
 
       const created = await postBlab('Testing blab');
 
@@ -226,7 +226,7 @@ describe('blabber service', () => {
       };
       feed.prepend(initialBlab);
 
-      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(undefined as any);
+      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(undefined);
 
       await editBlab(200, 'Updated text');
 
@@ -258,7 +258,7 @@ describe('blabber service', () => {
         mouth_of: null
       });
 
-      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(undefined as any);
+      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(undefined);
 
       await deleteBlab(1);
 
@@ -276,7 +276,7 @@ describe('blabber service', () => {
       const mockData: Record<number, BlabEngagement> = {
         101: { replies: 2, mouths: 1, ears: 5, earedByMe: true, mouthedByMe: false }
       };
-      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockData as any);
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockData);
 
       await loadEngagement([101]);
 
@@ -290,7 +290,7 @@ describe('blabber service', () => {
         101: { replies: 0, mouths: 0, ears: 0, earedByMe: false, mouthedByMe: false }
       });
 
-      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(undefined as any);
+      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(undefined);
 
       await toggleEar(101);
 
@@ -334,7 +334,7 @@ describe('blabber service', () => {
         followedByMe: true,
         blockedByMe: false
       };
-      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(stats as any);
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(stats);
 
       await loadFollowStats(42);
 
@@ -355,7 +355,7 @@ describe('blabber service', () => {
         42: { followers: 10, following: 5, followedByMe: false, blockedByMe: false }
       });
 
-      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(undefined as any);
+      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(undefined);
 
       await toggleFollow(42);
 
@@ -380,7 +380,7 @@ describe('blabber service', () => {
         { peer_account_id: 3, handle: 'charlie', display_name: 'Charlie', unread: 1, last: null }
       ];
 
-      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(threads as any);
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(threads);
 
       await loadDmThreads();
 
@@ -456,7 +456,7 @@ describe('blabber service', () => {
         root: { id: 7, account_id: 1, body: 'root', created_at: '', updated_at: '' },
         replies: [],
         nextCursor: null
-      } as any);
+      });
 
       const result = await viewBlab(7);
 
@@ -476,7 +476,7 @@ describe('blabber service', () => {
         root: null,
         replies: [{ id: 12, account_id: 1, body: 'older', created_at: '', updated_at: '' }],
         nextCursor: 12
-      } as any);
+      });
 
       const result = await loadMoreReplies(7, 20);
 
@@ -492,7 +492,7 @@ describe('blabber service', () => {
     it('viewBlab passes anchorId through when given', async () => {
       const spy = vi
         .spyOn(fetchNuiModule, 'fetchNui')
-        .mockResolvedValue({ root: null, replies: [], nextCursor: null } as any);
+        .mockResolvedValue({ root: null, replies: [], nextCursor: null });
 
       await viewBlab(9, { anchorId: 9 });
 
@@ -509,7 +509,7 @@ describe('blabber service', () => {
       const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({
         rows: [{ id: 1, app: 'blabber', handle: 'ada' }],
         nextCursor: null
-      } as any);
+      });
 
       await searchAccounts('ad');
 
@@ -531,7 +531,7 @@ describe('blabber service', () => {
       vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({
         rows: [{ id: 8, account_id: 1, created_at: '', updated_at: '' }],
         nextCursor: null
-      } as any);
+      });
 
       await searchBlabs('traffic');
 
@@ -542,7 +542,7 @@ describe('blabber service', () => {
       vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({
         rows: [{ tag: 'losangeles', uses: 5 }],
         nextCursor: null
-      } as any);
+      });
 
       await searchTags('los');
 
@@ -550,9 +550,7 @@ describe('blabber service', () => {
     });
 
     it('loadTrendingTags populates trendingTags', async () => {
-      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue([
-        { tag: 'losangeles', uses: 40 }
-      ] as any);
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue([{ tag: 'losangeles', uses: 40 }]);
 
       await loadTrendingTags();
 
@@ -563,7 +561,7 @@ describe('blabber service', () => {
       const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({
         rows: [{ id: 8, account_id: 1, created_at: '', updated_at: '' }],
         nextCursor: null
-      } as any);
+      });
 
       await loadTaggedBlabs('losangeles');
 

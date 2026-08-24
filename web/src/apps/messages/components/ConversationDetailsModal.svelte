@@ -115,7 +115,7 @@
         <div
           class="divide-outline-variant border-outline-variant bg-surface-container shadow-elevation-3 divide-y overflow-hidden rounded-xl border"
         >
-          {#each currentConv.participants || [] as member}
+          {#each currentConv.participants || [] as member (member.citizenid)}
             {@const pContact =
               member.contact || $contacts.find((c) => c.citizenid === member.citizenid)}
             <button

@@ -111,7 +111,7 @@
                 Favorites
               </div>
               <div class="no-scrollbar flex space-x-4 overflow-x-auto pb-2">
-                {#each $favoriteContacts as fav}
+                {#each $favoriteContacts as fav (fav.id)}
                   <button
                     class="flex min-w-[64px] flex-col items-center space-y-1"
                     onclick={() => startCall(fav.phone, `${fav.firstname} ${fav.lastname || ''}`)}
@@ -138,7 +138,7 @@
 
           <!-- Keypad -->
           <div class="grid w-full max-w-[280px] grid-cols-3 gap-6">
-            {#each [1, 2, 3, 4, 5, 6, 7, 8, 9] as num}
+            {#each [1, 2, 3, 4, 5, 6, 7, 8, 9] as num (num)}
               <button
                 class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
                 onclick={() => handleKeypad(num.toString())}

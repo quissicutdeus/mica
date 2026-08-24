@@ -38,7 +38,7 @@ describe('host refusal', () => {
     // this test's `blabber` one. This proves the component-init path renders cleanly with
     // Blabber's declared permissions — it does not exercise the store-scope declarations
     // themselves, which is why it cannot catch a bad permission on one of those hooks.
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({ rows: [] } as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({ rows: [] });
 
     expect(() =>
       renderApp(Blabber, { id: 'blabber', permissions: blabberManifest.permissions })

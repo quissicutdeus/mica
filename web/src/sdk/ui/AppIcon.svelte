@@ -15,6 +15,7 @@
     onclick
   }: {
     name: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see manifest.ts's Icon field
     icon: Component<any> | Snippet | string | null;
     color: string;
     badge?: number;

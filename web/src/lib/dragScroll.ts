@@ -89,7 +89,7 @@ export function enableDragScroll(container: HTMLElement): () => void {
     }
   }
 
-  function handlePointerUp(e: MouseEvent) {
+  function handlePointerUp(_e: MouseEvent) {
     if (isDragging) {
       // Prevent click trigger on drag release
       const captureClick = (clickEvent: MouseEvent) => {

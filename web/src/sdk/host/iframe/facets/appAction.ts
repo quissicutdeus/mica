@@ -19,10 +19,7 @@ export function appAction(appId?: string): Twin {
   const notify = (n: { type: 'success' | 'error'; title?: string; message: string }) =>
     void remoteCall('appAction', factoryArgs, 'notify', n);
 
-  const run = async (
-    work: () => Promise<unknown> | unknown,
-    options: AppActionOptions = {}
-  ): Promise<boolean> => {
+  const run = async (work: () => unknown, options: AppActionOptions = {}): Promise<boolean> => {
     busy.set(true);
     try {
       await work();

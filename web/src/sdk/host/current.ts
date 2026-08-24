@@ -44,6 +44,8 @@ const facets: Facets = new Proxy({} as Facets, {
     // assertion. Pass them straight through to the (empty) target instead of treating them
     // as an unregistered facet.
     if (typeof prop === 'symbol' || prop === 'then') {
+      // `Reflect.get` is untyped by TS's own lib.d.ts; a Proxy trap has nothing more specific to return.
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return Reflect.get(target, prop, receiver);
     }
     const name = prop as keyof Facets;

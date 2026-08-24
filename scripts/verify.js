@@ -37,7 +37,17 @@ const run = (command, args, options = {}) =>
 const results = [];
 
 /** Every gate in the order it runs. Only used to report the ones that did not. */
-const GATES = ['format', 'container', 'typecheck', 'unit', 'e2e', 'build', 'deadcode'];
+const GATES = [
+  'format',
+  'markdown',
+  'container',
+  'lint',
+  'typecheck',
+  'unit',
+  'e2e',
+  'build',
+  'deadcode'
+];
 
 const gate = async (name, command, args, options) => {
   const started = Date.now();
@@ -96,6 +106,7 @@ const main = async () => {
   const stop = () => BAIL && results.some((r) => r.code !== 0);
 
   if (!stop()) await gate('format', 'pnpm', ['format:check']);
+  if (!stop()) await gate('markdown', 'pnpm', ['lint:md']);
 
   // The Go server and the Dockerfile, which `format:check` cannot read — Prettier has no
   // parser for either. Cheap, and second only to `format` because a `gofmt` diff should
@@ -105,6 +116,7 @@ const main = async () => {
   // put a Go toolchain between a Svelte change and a push. CI passes --require, which is
   // what stops "skipped locally" from silently becoming "skipped everywhere".
   if (!stop()) await gate('container', 'pnpm', ['lint:container']);
+  if (!stop()) await gate('lint', 'pnpm', ['lint']);
   if (!stop()) await gate('typecheck', 'pnpm', ['typecheck']);
   if (!stop()) await gate('unit', 'pnpm', ['test:unit']);
 

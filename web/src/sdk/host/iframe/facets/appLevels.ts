@@ -1,5 +1,4 @@
 import { registerFacet } from '../../current';
-import type { Facets } from '../../inProcess/facets';
 import type { AsTwin } from './_shared';
 import { onDestroy } from 'svelte';
 import { remoteCall } from '../remote';
@@ -60,4 +59,4 @@ export function appLevels(config: AppLevelsConfig): Twin {
 // Writable, and (for the handful of members noted above) async where the wire makes
 // something inProcess exposes synchronously. This is the one place that gap is bridged,
 // once per facet, rather than a blanket cast hiding the whole object from the checker.
-registerFacet('appLevels', appLevels as unknown as Facets['appLevels']);
+registerFacet('appLevels', appLevels);

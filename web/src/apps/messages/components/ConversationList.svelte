@@ -44,7 +44,7 @@
 
 <!-- Conversation List -->
 <div class="divide-outline-variant divide-y">
-  {#each conversations as conv}
+  {#each conversations as conv (conv.id)}
     <ListItem class="hover:bg-surface-container items-start" onclick={() => onselect(conv.id)}>
       <div class="relative mr-4 shrink-0">
         <Avatar

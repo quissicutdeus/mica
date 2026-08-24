@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "eslint/no-underscore-dangle": "off",
+    "typescript/no-extraneous-class": "off",
+    // `.toSorted()`/`.toReversed()` are ES2023 — client/server's tsconfig targets
+    // `lib: ["es2021"]` on purpose, so oxlint's suggested fix doesn't compile.
+    // oxlint is syntax-only and can't see the lib target to know that.
+    "unicorn/no-array-sort": "off",
+    "unicorn/no-array-reverse": "off"
+  },
+  "ignorePatterns": ["**/node_modules/**", "**/dist/**", "web/**", "gphone.sql", "fxmanifest.lua"]
+}

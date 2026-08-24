@@ -28,9 +28,9 @@ const MARKDOWN_POLICY: Config = {
 export const renderMarkdown = (text: string): string => {
   if (!text) return '';
   try {
-    const html = marked.parse(text, { async: false }) as string;
-    return DOMPurify.sanitize(html, MARKDOWN_POLICY) as string;
+    const html = marked.parse(text, { async: false });
+    return DOMPurify.sanitize(html, MARKDOWN_POLICY);
   } catch {
-    return DOMPurify.sanitize(text, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] }) as string;
+    return DOMPurify.sanitize(text, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
   }
 };

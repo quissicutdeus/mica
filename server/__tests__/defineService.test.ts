@@ -228,21 +228,21 @@ describe('buildRepository — inherits every Phase 1 guarantee', () => {
   });
 });
 
-describe('defineService — event registration', () => {
-  /** Capture the events ServiceEndpoint registers, so the wiring is observable. */
-  const mountAndCapture = (definition: ServiceDefinition): string[] => {
-    const registered: string[] = [];
-    (globalThis as Record<string, unknown>).onNet = (event: string) => {
-      registered.push(event);
-    };
-    defineService(definition);
-    return registered;
+/** Capture the events ServiceEndpoint registers, so the wiring is observable. */
+const mountAndCapture = (definition: ServiceDefinition): string[] => {
+  const registered: string[] = [];
+  (globalThis as Record<string, unknown>).onNet = (event: string) => {
+    registered.push(event);
   };
+  defineService(definition);
+  return registered;
+};
 
+describe('defineService — event registration', () => {
   it('registers the four generic CRUD events for an owner-scoped app', () => {
     const events = mountAndCapture({ id: 'owned_a', schema: { label: 'string' } });
 
-    expect(events.sort()).toEqual([
+    expect(events.toSorted()).toEqual([
       'gphone:server:owned_a:create',
       'gphone:server:owned_a:delete',
       'gphone:server:owned_a:get',
@@ -277,7 +277,7 @@ describe('defineService — event registration', () => {
       schema: { sender: 'string' }
     });
 
-    expect(events.sort()).toEqual([
+    expect(events.toSorted()).toEqual([
       'gphone:server:authored_a:delete',
       'gphone:server:authored_a:get'
     ]);
@@ -290,7 +290,10 @@ describe('defineService — event registration', () => {
       options: { disableUpdate: true, disableDelete: true }
     });
 
-    expect(events.sort()).toEqual(['gphone:server:owned_b:create', 'gphone:server:owned_b:get']);
+    expect(events.toSorted()).toEqual([
+      'gphone:server:owned_b:create',
+      'gphone:server:owned_b:get'
+    ]);
   });
 
   it('audits a delete against the declared table, not the id-derived default', async () => {

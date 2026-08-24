@@ -47,7 +47,7 @@
         step="1"
         value={$displaySize}
         aria-label="Phone size"
-        oninput={(e) => setDisplaySize(Number((e.currentTarget as HTMLInputElement).value))}
+        oninput={(e) => setDisplaySize(Number(e.currentTarget.value))}
         class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-blue-500"
       />
       <div class="text-on-surface-variant text-body-small flex items-center justify-between">
@@ -134,7 +134,7 @@
       label="24-Hour Time"
       description="Use 24-hour format"
       checked={$is24Hour}
-      onchange={(v) => is24Hour.set(v)}
+      onchange={(v: boolean) => is24Hour.set(v)}
     />
   </SettingsSection>
 </div>

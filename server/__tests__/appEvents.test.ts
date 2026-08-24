@@ -126,7 +126,7 @@ describe('pushMany', () => {
     const result = appEventChannel('blabber').pushMany(['CIT_A', 'CIT_B', 'CIT_GONE'], 'mention');
 
     expect(walks).toBe(1);
-    expect(result.delivered.sort()).toEqual(['CIT_A', 'CIT_B']);
+    expect(result.delivered.toSorted()).toEqual(['CIT_A', 'CIT_B']);
     expect(result.offline).toEqual(['CIT_GONE']);
   });
 

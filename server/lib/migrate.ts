@@ -67,8 +67,9 @@ const INTEGER_TYPE = /^(tinyint|smallint|mediumint|int|bigint)\b/;
  * it is the actual length, and ignoring it would let a column declared as 64 sit
  * silently as 16 and truncate.
  */
+const clean = (s: string) => s.toLowerCase().replace(/\s+/g, '').replace(/"/g, "'");
+
 const typesAgree = (expected: string, live: string): boolean => {
-  const clean = (s: string) => s.toLowerCase().replace(/\s+/g, '').replace(/"/g, "'");
   const a = clean(expected);
   const b = clean(live);
   if (a === b) return true;

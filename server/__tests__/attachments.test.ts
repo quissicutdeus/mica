@@ -6,13 +6,13 @@ import { resolveOwnedAttachments } from '../lib/attachments';
  * now too. A `photo_id` is a client-supplied row id (§2.9), so this is what stands
  * between "I attached my photo" and "I attached anyone's photo by guessing an id."
  */
-describe('resolveOwnedAttachments', () => {
-  const ownerOf = (owned: Set<number>) => ({
-    findById: vi.fn(async (id: number, citizenid: string) =>
-      owned.has(id) ? { id, citizenid } : null
-    )
-  });
+const ownerOf = (owned: Set<number>) => ({
+  findById: vi.fn(async (id: number, citizenid: string) =>
+    owned.has(id) ? { id, citizenid } : null
+  )
+});
 
+describe('resolveOwnedAttachments', () => {
   it('keeps an id the caller owns', async () => {
     const repo = ownerOf(new Set([5]));
     const result = await resolveOwnedAttachments([{ photo_id: 5 }], 'ABC', repo);

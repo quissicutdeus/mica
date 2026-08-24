@@ -78,7 +78,7 @@ export class FrameworkBridge {
               if (resource('qbx_core')?.SetMetaData) {
                 resource('qbx_core').SetMetaData(src, key, value);
               }
-            } catch (e) {
+            } catch {
               // ignore
             }
           },
@@ -236,7 +236,7 @@ export class FrameworkBridge {
       if (resource('ox_inventory')?.RemoveItem) {
         return resource('ox_inventory').RemoveItem(src, item, count);
       }
-    } catch (e) {
+    } catch {
       // ox_inventory not present
     }
 

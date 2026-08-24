@@ -66,13 +66,13 @@ export async function fetchCatalog(catalogUrl: string): Promise<CatalogEntry[]> 
     throw new Error(`gPhone Catalog error: HTTP ${response.status} fetching '${catalogUrl}'.`);
   }
 
-  const body = await response.json();
+  const body: unknown = await response.json();
   if (!Array.isArray(body)) {
     throw new Error(`gPhone Catalog error: '${catalogUrl}' did not return a JSON array.`);
   }
 
   const entries: CatalogEntry[] = [];
-  for (const row of body) {
+  for (const row of body as unknown[]) {
     if (isCatalogEntry(row)) {
       entries.push(row);
     } else {

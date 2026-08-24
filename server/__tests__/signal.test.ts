@@ -108,18 +108,18 @@ describe('signal rules', () => {
   });
 });
 
-describe('the precedence order', () => {
-  const rules = (global: number, zones: any[] = []) => ({ global, zones });
-  const zone = (over: Partial<any> = {}) => ({
-    id: 1,
-    x: 0,
-    y: 0,
-    z: 0,
-    radius: 100,
-    level: 0,
-    ...over
-  });
+const rules = (global: number, zones: any[] = []) => ({ global, zones });
+const zone = (over: Partial<any> = {}) => ({
+  id: 1,
+  x: 0,
+  y: 0,
+  z: 0,
+  radius: 100,
+  level: 0,
+  ...over
+});
 
+describe('the precedence order', () => {
   it('is full bars when nothing applies', () => {
     expect(evaluateSignal(0, 0, 0, rules(FULL_SIGNAL), null)).toBe(FULL_SIGNAL);
   });

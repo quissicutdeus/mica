@@ -2,8 +2,8 @@ import { isBrowser } from '../lib/isBrowser';
 import { MockRegistry } from './mocks/registry';
 
 export interface ITransportAdapter {
-  send<T = any>(event: string, data?: unknown): Promise<T>;
-  on<T = any>(event: string, handler: (data: T) => void): () => void;
+  send<T = unknown>(event: string, data?: unknown): Promise<T>;
+  on<T = unknown>(event: string, handler: (data: T) => void): () => void;
 }
 
 export class NuiTransportAdapter implements ITransportAdapter {
@@ -13,7 +13,7 @@ export class NuiTransportAdapter implements ITransportAdapter {
     this.resourceName = window.GetParentResourceName ? window.GetParentResourceName() : 'gphone';
   }
 
-  async send<T = any>(event: string, data?: unknown): Promise<T> {
+  async send<T = unknown>(event: string, data?: unknown): Promise<T> {
     const options = {
       method: 'POST',
       headers: {
@@ -23,15 +23,14 @@ export class NuiTransportAdapter implements ITransportAdapter {
     };
 
     const resp = await fetch(`https://${this.resourceName}/${event}`, options);
-    const respFormatted = await resp.json();
-    return respFormatted;
+    return (await resp.json()) as T;
   }
 
-  on<T = any>(event: string, handler: (data: T) => void): () => void {
+  on<T = unknown>(event: string, handler: (data: T) => void): () => void {
     const eventListener = (e: MessageEvent) => {
-      const { action, data } = e.data || {};
+      const { action, data } = (e.data || {}) as { action?: string; data?: T };
       if (action === event) {
-        handler(data);
+        handler(data as T);
       }
     };
     window.addEventListener('message', eventListener);
@@ -40,18 +39,18 @@ export class NuiTransportAdapter implements ITransportAdapter {
 }
 
 export class MockTransportAdapter implements ITransportAdapter {
-  async send<T = any>(event: string, data?: unknown): Promise<T> {
+  async send<T = unknown>(event: string, data?: unknown): Promise<T> {
     if (MockRegistry.has(event)) {
       return (await MockRegistry.handle(event, data)) as T;
     }
     return null as unknown as T;
   }
 
-  on<T = any>(event: string, handler: (data: T) => void): () => void {
+  on<T = unknown>(event: string, handler: (data: T) => void): () => void {
     const eventListener = (e: MessageEvent) => {
-      const { action, data } = e.data || {};
+      const { action, data } = (e.data || {}) as { action?: string; data?: T };
       if (action === event) {
-        handler(data);
+        handler(data as T);
       }
     };
     window.addEventListener('message', eventListener);
@@ -70,6 +69,15 @@ export interface WebSocketTransportOptions {
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 
+/** The wire shape `handleIncomingMessage` parses — either an RPC reply or an event broadcast. */
+interface WireMessage {
+  id?: string;
+  error?: string;
+  data?: unknown;
+  action?: string;
+  event?: string;
+}
+
 export class WebSocketTransportAdapter implements ITransportAdapter {
   private url: string;
   private autoConnect: boolean;
@@ -85,12 +93,15 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
     {
       // Deliberately `any`: one map holds the pending promise of every in-flight
       // request, each with its own `T`. There is no single type that is all of them.
+      /* eslint-disable @typescript-eslint/no-explicit-any -- see comment above */
       resolve: (value: any) => void;
       reject: (reason: any) => void;
+      /* eslint-enable @typescript-eslint/no-explicit-any */
       timer: ReturnType<typeof setTimeout>;
     }
   >();
   // Same reason: one map, many payload shapes, each known only to its subscriber.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see comment above
   private eventHandlers = new Map<string, Set<(data: any) => void>>();
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -138,7 +149,7 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
     };
 
     this.ws.onmessage = (event: MessageEvent) => {
-      this.handleIncomingMessage(event.data);
+      this.handleIncomingMessage(event.data as string);
     };
 
     this.ws.onerror = () => {
@@ -187,7 +198,7 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
 
   private handleIncomingMessage(rawMessage: string): void {
     try {
-      const payload = JSON.parse(rawMessage);
+      const payload = JSON.parse(rawMessage) as WireMessage;
 
       // RPC response check
       if (payload.id && this.pendingRequests.has(payload.id)) {
@@ -220,7 +231,7 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
     }
   }
 
-  async send<T = any>(event: string, data?: unknown): Promise<T> {
+  async send<T = unknown>(event: string, data?: unknown): Promise<T> {
     if (!this.ws || this.status !== 'connected') {
       throw new Error(`WebSocket is not connected (status: ${this.status})`);
     }
@@ -243,12 +254,12 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
       } catch (err) {
         clearTimeout(timer);
         this.pendingRequests.delete(id);
-        reject(err);
+        reject(err instanceof Error ? err : new Error(String(err)));
       }
     });
   }
 
-  on<T = any>(event: string, handler: (data: T) => void): () => void {
+  on<T = unknown>(event: string, handler: (data: T) => void): () => void {
     if (!this.eventHandlers.has(event)) {
       this.eventHandlers.set(event, new Set());
     }

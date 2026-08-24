@@ -30,7 +30,7 @@ const onBatteryDrained = () => {
     if (exports['pma-voice']?.removePlayerFromCall) {
       exports['pma-voice'].removePlayerFromCall();
     }
-  } catch (e) {
+  } catch {
     // pma-voice not loaded or active
   }
 

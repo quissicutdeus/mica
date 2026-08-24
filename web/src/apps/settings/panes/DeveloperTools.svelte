@@ -149,7 +149,7 @@
         min="0"
         max="100"
         value={Math.round($charge)}
-        oninput={(e) => applyBatteryLevel(Number((e.currentTarget as HTMLInputElement).value))}
+        oninput={(e) => applyBatteryLevel(Number(e.currentTarget.value))}
         class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-emerald-500"
       />
       <div class="grid grid-cols-4 gap-1.5 pt-0.5">
@@ -191,7 +191,7 @@
         <span class="font-mono text-emerald-400">{$signalLevel} Bars</span>
       </div>
       <div class="grid grid-cols-5 gap-1.5">
-        {#each [0, 1, 2, 3, 4] as level}
+        {#each [0, 1, 2, 3, 4] as level (level)}
           <button
             type="button"
             onclick={() => setSignal(level)}
@@ -229,7 +229,7 @@
         max="1"
         step="0.05"
         value={$soundVolume}
-        oninput={(e) => setVolume(Number((e.currentTarget as HTMLInputElement).value))}
+        oninput={(e) => setVolume(Number(e.currentTarget.value))}
         class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-emerald-500"
       />
     </div>

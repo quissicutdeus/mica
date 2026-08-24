@@ -71,7 +71,7 @@ export function renderApp<Props extends AppProps>(
   // The bound above is what carries the guarantee — a component that does not accept
   // `onback` is no longer something this function will take.
   const result = render(App as AppComponent, {
-    props: { onback, ...props } as AppProps,
+    props: { onback, ...props },
     context: new Map([[HOST_CONTEXT_KEY, host]])
   });
 

@@ -85,6 +85,7 @@
   }
 
   let groupedNotifications = $derived.by(() => {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- scratch structure local to this computation; discarded once `groups` is built, nothing observes it
     const groupsMap = new Map<string, NotificationItem[]>();
     for (const item of notifications) {
       const list = groupsMap.get(item.app) || [];
@@ -129,6 +130,7 @@
   let loadingHistory = $state(false);
 
   let groupedHistory = $derived.by(() => {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- scratch structure local to this computation; discarded once `groups` is built, nothing observes it
     const groupsMap = new Map<string, NotificationItem[]>();
     for (const item of historyItems) {
       const list = groupsMap.get(item.app) || [];

@@ -19,18 +19,18 @@ describe('createCrudStore', () => {
     spy.mockResolvedValue([
       { id: 1, label: 'old', created_at: '2026-01-01T00:00:00Z' },
       { id: 2, label: 'new', created_at: '2026-06-01T00:00:00Z' }
-    ] as any);
+    ]);
 
     return store.load().then(async () => {
       expect(get(store).map((r) => r.id)).toEqual([2, 1]);
 
-      spy.mockResolvedValue({ id: 3, label: 'newest', created_at: '2026-09-01T00:00:00Z' } as any);
-      await store.add({ label: 'newest' } as any);
+      spy.mockResolvedValue({ id: 3, label: 'newest', created_at: '2026-09-01T00:00:00Z' });
+      await store.add({ label: 'newest' });
       expect(get(store).map((r) => r.id)).toEqual([3, 2, 1]);
 
       // And an edit that changes the sort key moves the row, rather than leaving it
       // where it happened to be.
-      spy.mockResolvedValue(true as any);
+      spy.mockResolvedValue(true);
       await store.update({ id: 1, label: 'old', created_at: '2026-12-01T00:00:00Z' });
       expect(get(store).map((r) => r.id)).toEqual([1, 3, 2]);
     });
@@ -41,7 +41,7 @@ describe('createCrudStore', () => {
     vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue([
       { id: 9, label: 'b' },
       { id: 4, label: 'a' }
-    ] as any);
+    ]);
 
     await store.load();
     expect(get(store).map((r) => r.id)).toEqual([9, 4]);
@@ -53,7 +53,7 @@ describe('createCrudStore', () => {
         if (!draft.label) throw new Error('A label is required.');
       }
     });
-    const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({} as any);
+    const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({});
 
     await expect(store.add({} as any)).rejects.toThrow('A label is required.');
     expect(spy).not.toHaveBeenCalled();
@@ -65,7 +65,7 @@ describe('createCrudStore', () => {
         if (!draft.label) throw new Error('A label is required.');
       }
     });
-    const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true as any);
+    const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true);
 
     await expect(store.update({ id: 1, label: '' })).rejects.toThrow('A label is required.');
     expect(spy).not.toHaveBeenCalled();
@@ -74,7 +74,7 @@ describe('createCrudStore', () => {
   it('empties the list rather than trusting a reply of the wrong shape', async () => {
     const store = createCrudStore<Row>('Rows', events);
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({ error: 'nope' } as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({ error: 'nope' });
 
     await store.load();
 
@@ -105,7 +105,7 @@ describe('createCrudStore', () => {
     spy.mockResolvedValue([
       { id: 1, label: 'a' },
       { id: 2, label: 'b' }
-    ] as any);
+    ]);
     await store.load();
 
     store.patch(2, { label: 'B' });
@@ -114,7 +114,7 @@ describe('createCrudStore', () => {
       { id: 2, label: 'B' }
     ]);
 
-    spy.mockResolvedValue(true as any);
+    spy.mockResolvedValue(true);
     await store.delete(1);
     expect(get(store)).toEqual([{ id: 2, label: 'B' }]);
   });
@@ -127,7 +127,7 @@ describe('createCrudStore', () => {
     const store = createCrudStore<Row>('Rows', events);
     const spy = vi.spyOn(fetchNuiModule, 'fetchNui');
 
-    spy.mockResolvedValueOnce([{ id: 1, label: 'a' }] as any);
+    spy.mockResolvedValueOnce([{ id: 1, label: 'a' }]);
     await store.load();
     expect(get(store)).toEqual([{ id: 1, label: 'a' }]);
 
@@ -146,7 +146,7 @@ describe('createCrudStore', () => {
     vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue([
       { id: 1, label: 'undated' },
       { id: 2, label: 'dated', created_at: '2026-06-01T00:00:00Z' }
-    ] as any);
+    ]);
 
     await store.load();
     expect(get(store).map((r) => r.id)).toEqual([2, 1]);

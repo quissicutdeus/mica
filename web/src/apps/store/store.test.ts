@@ -120,7 +120,7 @@ describe('handleInstall routing', () => {
     expect(row).toBeTruthy();
     const buttons = row.querySelectorAll('button');
     // Second button in the row is Install/Uninstall; the first opens the details view.
-    (buttons[1] as HTMLButtonElement).click();
+    buttons[1].click();
 
     await vi.waitFor(() => expect(registerAddOn).toHaveBeenCalled());
     expect(registerAddOn.mock.calls[0][0]).toMatchObject({ id: 'notes' });

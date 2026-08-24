@@ -1,7 +1,7 @@
 import { writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
 
-type CallStatus = 'idle' | 'dialing' | 'connected' | 'incoming';
+export type CallStatus = 'idle' | 'dialing' | 'connected' | 'incoming';
 
 interface CallState {
   status: CallStatus;

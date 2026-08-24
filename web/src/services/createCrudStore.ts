@@ -46,7 +46,10 @@ export interface CrudOptions<T, TDraft> {
 }
 
 const timeOf = (value: unknown): number => {
-  const parsed = Date.parse(String(value ?? ''));
+  if (value instanceof Date) return value.getTime();
+  const parsed = Date.parse(
+    typeof value === 'string' || typeof value === 'number' ? String(value) : ''
+  );
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 

@@ -11,7 +11,7 @@ describe('media store', () => {
   it('loads media gallery', async () => {
     const mockMedia = [{ id: 1, image: 'data:image/png;base64,123', citizenid: 'CIT_1' }];
 
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockMedia as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockMedia);
 
     await media.load();
     expect(get(media)).toEqual(mockMedia);
@@ -19,7 +19,7 @@ describe('media store', () => {
 
   it('adds photo to gallery', async () => {
     const newPhoto = { id: 2, image: 'data:image/png;base64,456', citizenid: 'CIT_1' };
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(newPhoto as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(newPhoto);
 
     const result = await media.add({ kind: 'photo' as const, data: 'data:image/png;base64,456' });
     expect(result).toEqual(newPhoto);
@@ -31,10 +31,10 @@ describe('media store', () => {
       { id: 1, image: 'img1', citizenid: 'CIT_1' },
       { id: 2, image: 'img2', citizenid: 'CIT_1' }
     ];
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockMedia as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockMedia);
     await media.load();
 
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true);
     await media.delete(1);
 
     expect(get(media)).toEqual([{ id: 2, image: 'img2', citizenid: 'CIT_1' }]);

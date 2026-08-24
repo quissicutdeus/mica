@@ -20,7 +20,7 @@
     PHONE_WIDTH
   } from './state/display';
   import { get } from 'svelte/store';
-  import { callStore } from '../services/call';
+  import { callStore, type CallStatus } from '../services/call';
   import { contacts } from '../services/contacts';
   import { isPreviewingPhoto } from '../services/camera';
   import PhoneFrame from './PhoneFrame.svelte';
@@ -91,10 +91,10 @@
     // only legitimate door into the shell is `IframeHostServer`, not this listener.
     if (!isTrustedNuiSource(event)) return;
 
-    const { action, data } = event.data ?? {};
+    const { action, data } = (event.data ?? {}) as { action?: string; data?: unknown };
 
     if (action === 'setVisible') {
-      visible = data;
+      visible = data as boolean;
       if (visible) audio.warm();
       if (!visible && isFreelook) isFreelook = false;
       // Developer Tools are earned per session, so closing the phone puts them back
@@ -104,17 +104,17 @@
     }
 
     if (action === 'callStatus') {
-      // { status: 'connected' | 'idle' | 'incoming', number: '...', name: '...' }
-      if (data.status === 'incoming') {
+      const call = data as { status: CallStatus; number: string; name?: string };
+      if (call.status === 'incoming') {
         // The client has no address book to check — that lives in the web layer's own
         // contacts store — so it sends 'Unknown' and this is the one place that can
         // still resolve a name from the caller's number before the toast renders.
-        const known = get(contacts).find((c) => c.phone === data.number);
-        const displayName = known ? `${known.firstname} ${known.lastname || ''}`.trim() : data.name;
-        callStore.setIncoming(data.number, displayName);
+        const known = get(contacts).find((c) => c.phone === call.number);
+        const displayName = known ? `${known.firstname} ${known.lastname || ''}`.trim() : call.name;
+        callStore.setIncoming(call.number, displayName);
         incomingToastId = toast.showCall({
           name: displayName,
-          number: data.number,
+          number: call.number,
           onAccept: () => {
             visible = true;
             openApp('phone');
@@ -131,7 +131,7 @@
           toast.dismiss(incomingToastId);
           incomingToastId = null;
         }
-        callStore.setStatus(data.status);
+        callStore.setStatus(call.status);
       }
       return;
     }
@@ -506,7 +506,7 @@
                       props={instance.props}
                       active={isActive}
                       onKey={handleFrameKey}
-                      onTyping={(t) => reportTyping(t)}
+                      onTyping={(t: boolean) => reportTyping(t)}
                     />
                   </div>
                   {#if isNetworkBlocked}

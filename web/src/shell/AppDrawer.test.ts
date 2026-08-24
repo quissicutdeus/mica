@@ -30,7 +30,7 @@ if (!Element.prototype.animate) {
     cancel: () => {},
     finish: () => {},
     effect: { getComputedTiming: () => ({ duration: 0 }) }
-  }) as unknown as Element['animate'];
+  });
 }
 
 const names = (container: HTMLElement) =>

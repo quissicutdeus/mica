@@ -123,9 +123,10 @@ export const findAction = (id: string): KeybindAction | undefined =>
  * contexts are exempt from that: `back` and `endCall` deliberately share Backspace
  * (call:any outranks unscoped), and that pairing stays allowed.
  */
+const isApp = (w: KeybindContext | undefined) => typeof w === 'string' && w.startsWith('app:');
+
 function canCoexist(a: KeybindContext | undefined, b: KeybindContext | undefined): boolean {
   if (a === b) return false;
-  const isApp = (w: KeybindContext | undefined) => typeof w === 'string' && w.startsWith('app:');
   if ((a === undefined && isApp(b)) || (b === undefined && isApp(a))) return false;
   return true;
 }

@@ -59,7 +59,7 @@
         Favorites
       </div>
       <div class="divide-outline-variant divide-y">
-        {#each favorites as contact}
+        {#each favorites as contact (contact.id)}
           {@render contactItem(contact)}
         {/each}
       </div>
@@ -74,7 +74,7 @@
         Contacts
       </div>
       <div class="divide-outline-variant divide-y">
-        {#each others as contact}
+        {#each others as contact (contact.id)}
           {@render contactItem(contact)}
         {/each}
       </div>

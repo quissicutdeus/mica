@@ -131,6 +131,11 @@
     }
   };
 
+  /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access --
+     `textAreaRef` is `HTMLTextAreaElement | null` (svelte-check is clean on this
+     function) — typescript-eslint's project service just can't resolve its type
+     here, downstream of the `useTimer()`/facet generic lookup used lower in this
+     function. Tooling gap, not a real `any`. */
   const insertMarkdown = (prefix: string, suffix: string = '', placeholder: string = '') => {
     if (!textAreaRef) return;
 
@@ -160,6 +165,7 @@
       }
     });
   };
+  /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 
   // No sort here — the store keeps the list newest-edited-first however it changed, so a
   // note saved while the list is on screen moves immediately rather than at next load.
@@ -245,7 +251,7 @@
                   class="border-outline-variant bg-surface-container shadow-elevation-4 absolute right-0 bottom-full mb-2 flex min-w-[3rem] flex-col overflow-hidden rounded-lg border"
                   transition:fade={{ duration: 100 }}
                 >
-                  {#each [1, 2, 3, 4, 5, 6] as level}
+                  {#each [1, 2, 3, 4, 5, 6] as level (level)}
                     <button
                       class="border-outline-variant text-on-surface hover:bg-surface-container-high text-body-medium border-b px-3 py-2 text-left last:border-0"
                       onclick={() => {
@@ -374,7 +380,7 @@
                     class="border-outline-variant bg-surface-container shadow-elevation-4 absolute right-0 bottom-full mb-2 flex min-w-[3rem] flex-col overflow-hidden rounded-lg border"
                     transition:fade={{ duration: 100 }}
                   >
-                    {#each [1, 2, 3, 4, 5, 6] as level}
+                    {#each [1, 2, 3, 4, 5, 6] as level (level)}
                       <button
                         class="border-outline-variant text-on-surface hover:bg-surface-container-high text-body-medium border-b px-3 py-2 text-left last:border-0"
                         onclick={() => {

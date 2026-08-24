@@ -1,5 +1,4 @@
 import { registerFacet } from '../../current';
-import type { Facets } from '../../inProcess/facets';
 import type { AsTwin } from './_shared';
 import { remoteCall } from '../remote';
 import { clientTransport } from '../transport';
@@ -124,6 +123,6 @@ export function clearAppStorage(appId: string): void {
 // Writable, and (for the handful of members noted above) async where the wire makes
 // something inProcess exposes synchronously. This is the one place that gap is bridged,
 // once per facet, rather than a blanket cast hiding the whole object from the checker.
-registerFacet('storage', storage as unknown as Facets['storage']);
+registerFacet('storage', storage);
 registerFacet('appStorageBytes', appStorageBytes);
 registerFacet('clearAppStorage', clearAppStorage);

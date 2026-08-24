@@ -97,10 +97,10 @@ describe('the public export surface', () => {
   });
 });
 
-describe('SendNotification', () => {
-  const send = (options: unknown, citizenid: unknown = CID) =>
-    publishedExport('SendNotification')!(citizenid, options) as any;
+const send = (options: unknown, citizenid: unknown = CID) =>
+  publishedExport('SendNotification')!(citizenid, options) as any;
 
+describe('SendNotification', () => {
   it('accepts a real gPhone app id', () => {
     expect(send({ app: 'mail', title: 'Hi', body: 'there' }).ok).toBe(true);
   });
@@ -177,10 +177,10 @@ describe('battery exports', () => {
   });
 });
 
-describe('AddMedia', () => {
-  const add = (media: unknown, citizenid: unknown = CID) =>
-    publishedExport('AddMedia')!(citizenid, media) as Promise<any>;
+const addMedia = (media: unknown, citizenid: unknown = CID) =>
+  publishedExport('AddMedia')!(citizenid, media) as Promise<any>;
 
+describe('AddMedia', () => {
   beforeEach(() => {
     dbMock.insert.mockResolvedValue(77);
   });
@@ -188,67 +188,67 @@ describe('AddMedia', () => {
   it('accepts a hotlinked gif and returns its row id', async () => {
     // The camera can only ever produce a `photo`, so before this export the six other
     // kinds the table understands had no way to exist at all.
-    const result = await add({ kind: 'gif', url: 'https://x.test/a.gif' });
+    const result = await addMedia({ kind: 'gif', url: 'https://x.test/a.gif' });
     expect(result).toMatchObject({ ok: true, value: { id: 77 } });
   });
 
   it('refuses a kind the table does not have', async () => {
-    expect((await add({ kind: 'hologram', url: 'https://x.test/a.gif' })).ok).toBe(false);
+    expect((await addMedia({ kind: 'hologram', url: 'https://x.test/a.gif' })).ok).toBe(false);
   });
 
   it('refuses a row with nothing to show', async () => {
     // Neither bytes nor a url renders as a placeholder forever, which is worse than
     // refusing the call.
-    expect((await add({ kind: 'photo' })).ok).toBe(false);
+    expect((await addMedia({ kind: 'photo' })).ok).toBe(false);
   });
 
   it('refuses a url or thumbnail that could execute', async () => {
     // `url` is `clientWritable: false`, so this export is the only way a value reaches the
     // column — which makes it the right place to refuse a scheme rather than trusting
     // every future consumer to re-check.
-    expect((await add({ kind: 'gif', url: 'javascript:alert(1)' })).ok).toBe(false);
+    expect((await addMedia({ kind: 'gif', url: 'javascript:alert(1)' })).ok).toBe(false);
     expect(
-      (await add({ kind: 'video', url: 'https://x.test/v.mp4', thumbnail: 'javascript:1' })).ok
+      (await addMedia({ kind: 'video', url: 'https://x.test/v.mp4', thumbnail: 'javascript:1' })).ok
     ).toBe(false);
   });
 
   it('writes under the citizenid it was given', async () => {
-    await add({ kind: 'gif', url: 'https://x.test/a.gif' }, 'OTHER99');
+    await addMedia({ kind: 'gif', url: 'https://x.test/a.gif' }, 'OTHER99');
     const params = dbMock.insert.mock.calls[0][1] as unknown[];
     expect(params).toContain('OTHER99');
   });
 
   it('requires a citizenid', async () => {
-    expect((await add({ kind: 'gif', url: 'https://x.test/a.gif' }, '')).ok).toBe(false);
+    expect((await addMedia({ kind: 'gif', url: 'https://x.test/a.gif' }, '')).ok).toBe(false);
   });
 });
 
-describe('AddContact', () => {
-  const add = (contact: unknown, citizenid: unknown = CID) =>
-    publishedExport('AddContact')!(citizenid, contact) as Promise<any>;
+const addContact = (contact: unknown, citizenid: unknown = CID) =>
+  publishedExport('AddContact')!(citizenid, contact) as Promise<any>;
 
+describe('AddContact', () => {
   beforeEach(() => {
     dbMock.insert.mockResolvedValue(42);
   });
 
   it('accepts a contact and returns its row id', async () => {
-    const result = await add({ firstname: 'Dispatch', phone: '555-0100' });
+    const result = await addContact({ firstname: 'Dispatch', phone: '555-0100' });
     expect(result).toMatchObject({ ok: true, value: { id: 42 } });
   });
 
   it('requires a firstname and a phone', async () => {
-    expect((await add({ phone: '555-0100' })).ok).toBe(false);
-    expect((await add({ firstname: 'Dispatch' })).ok).toBe(false);
+    expect((await addContact({ phone: '555-0100' })).ok).toBe(false);
+    expect((await addContact({ firstname: 'Dispatch' })).ok).toBe(false);
   });
 
   it('writes under the citizenid it was given', async () => {
-    await add({ firstname: 'Dispatch', phone: '555-0100' }, 'OTHER99');
+    await addContact({ firstname: 'Dispatch', phone: '555-0100' }, 'OTHER99');
     const params = dbMock.insert.mock.calls[0][1] as unknown[];
     expect(params).toContain('OTHER99');
   });
 
   it('requires a citizenid', async () => {
-    expect((await add({ firstname: 'Dispatch', phone: '555-0100' }, '')).ok).toBe(false);
+    expect((await addContact({ firstname: 'Dispatch', phone: '555-0100' }, '')).ok).toBe(false);
   });
 });
 

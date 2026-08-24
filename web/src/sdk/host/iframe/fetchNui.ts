@@ -8,7 +8,7 @@ import { remoteCall } from './remote';
  * wall, and it is routed through the `service` facet so the shell pins the id to the app's
  * namespace. A named NUI action — every core route — is refused here before it is even sent.
  */
-export async function fetchNui<T = any>(
+export async function fetchNui<T = unknown>(
   eventName: string,
   data?: unknown,
   options?: { defaultValue?: T; quiet?: boolean }

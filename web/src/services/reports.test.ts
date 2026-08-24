@@ -41,14 +41,14 @@ describe('reports store', () => {
   });
 
   it('ignores a reply that is not a list', async () => {
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({ error: 'nope' } as never);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({ error: 'nope' });
     await loadPendingReports();
     expect(get(pendingReports)).toEqual([]);
   });
 
   it('re-reads both lists after a decision, so the badge agrees with the server', async () => {
     const spy = vi.spyOn(fetchNuiModule, 'fetchNui');
-    spy.mockResolvedValueOnce({} as never); // resolveReport
+    spy.mockResolvedValueOnce({}); // resolveReport
     spy.mockResolvedValueOnce([] as never); // getReportQueue
     spy.mockResolvedValueOnce([report(9)] as never); // getReportHistory
 
@@ -64,7 +64,7 @@ describe('reports store', () => {
   });
 
   it('raises the error the server gave, rather than reporting a decision it refused', async () => {
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({ error: 'Not authorised' } as never);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({ error: 'Not authorised' });
 
     await expect(resolveReport(1, 'moderate')).rejects.toThrow('Not authorised');
     await expect(reopenReport(1)).rejects.toThrow('Not authorised');
@@ -72,7 +72,7 @@ describe('reports store', () => {
 
   it('reopens through the same reload path', async () => {
     const spy = vi.spyOn(fetchNuiModule, 'fetchNui');
-    spy.mockResolvedValueOnce({} as never);
+    spy.mockResolvedValueOnce({});
     spy.mockResolvedValueOnce([report(3)] as never);
     spy.mockResolvedValueOnce([] as never);
 

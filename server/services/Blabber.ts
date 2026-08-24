@@ -452,7 +452,11 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     // driver text reaches a player's toast.
     const message = error instanceof Error ? error.message : '';
     if (mouthOf !== null && /duplicate/i.test(message)) {
-      throw new Error('You have already mouthed that.');
+      // `{ cause }` is the constructor's ES2022 form; this repo's lib target is ES2021, so
+      // the property is set directly instead — same effect, portable to the older lib.
+      const already = new Error('You have already mouthed that.');
+      (already as Error & { cause?: unknown }).cause = error;
+      throw already;
     }
     throw error;
   }
@@ -510,6 +514,9 @@ app.registerEvent('unear', async (source, cbId, data, citizenid) => {
  * removed by a path that forgets to decrement — the same defect class as the invented storage
  * figure in `72b6d10`.
  */
+const byId = (rows: { parent?: number; blab_id?: number; total: number }[]) =>
+  new Map(rows.map((row) => [Number(row.parent ?? row.blab_id), Number(row.total)]));
+
 app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
   const body = fields(data);
   const raw = Array.isArray(body.ids) ? body.ids : [];
@@ -582,8 +589,6 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
 
   const earedByMe = new Set(myEars.map((row) => row.blab_id));
   const mouthedByMe = new Set(myMouths.map((row) => row.mouth_of));
-  const byId = (rows: { parent?: number; blab_id?: number; total: number }[]) =>
-    new Map(rows.map((row) => [Number(row.parent ?? row.blab_id), Number(row.total)]));
 
   const replyCounts = byId(replies);
   const mouthCounts = byId(mouths);

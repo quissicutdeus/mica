@@ -10,11 +10,11 @@ const {
   notifyPlayerMock,
   registeredCommands
 } = vi.hoisted(() => {
-  const registeredCommands = new Map<string, (source: number, args?: string[]) => void>();
+  const commands = new Map<string, (source: number, args?: string[]) => void>();
   (globalThis as Record<string, unknown>).RegisterCommand = (
     name: string,
     handler: (source: number, args?: string[]) => void
-  ) => registeredCommands.set(name, handler);
+  ) => commands.set(name, handler);
 
   return {
     dbMock: {
@@ -27,7 +27,7 @@ const {
     runPendingMigrationsMock: vi.fn(),
     reportPendingMigrationsMock: vi.fn(),
     notifyPlayerMock: vi.fn(),
-    registeredCommands
+    registeredCommands: commands
   };
 });
 vi.mock('../lib/Database', () => ({ Database: dbMock }));

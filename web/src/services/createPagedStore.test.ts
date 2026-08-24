@@ -13,7 +13,7 @@ describe('createPagedStore', () => {
     vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({
       rows: [{ id: 2, label: 'b' }],
       nextCursor: 2
-    } as any);
+    });
 
     await store.load();
 
@@ -72,10 +72,10 @@ describe('createPagedStore', () => {
   it('appends the next page on loadMore', async () => {
     const store = createPagedStore<Row>('getFeed');
     const spy = vi.spyOn(fetchNuiModule, 'fetchNui');
-    spy.mockResolvedValueOnce({ rows: [{ id: 2, label: 'b' }], nextCursor: 2 } as any);
+    spy.mockResolvedValueOnce({ rows: [{ id: 2, label: 'b' }], nextCursor: 2 });
     await store.load();
 
-    spy.mockResolvedValueOnce({ rows: [{ id: 1, label: 'a' }], nextCursor: null } as any);
+    spy.mockResolvedValueOnce({ rows: [{ id: 1, label: 'a' }], nextCursor: null });
     const appended = await store.loadMore();
 
     expect(appended).toBe(true);
@@ -94,7 +94,7 @@ describe('createPagedStore', () => {
     const store = createPagedStore<Row>('getFeed');
     const spy = vi.spyOn(fetchNuiModule, 'fetchNui');
 
-    spy.mockResolvedValueOnce({ rows: [{ id: 2, label: 'b' }], nextCursor: 2 } as any);
+    spy.mockResolvedValueOnce({ rows: [{ id: 2, label: 'b' }], nextCursor: 2 });
     await store.load();
     expect(get(store)).toEqual([{ id: 2, label: 'b' }]);
 
@@ -113,7 +113,7 @@ describe('createPagedStore', () => {
     const store = createPagedStore<Row>('getFeed');
     const spy = vi.spyOn(fetchNuiModule, 'fetchNui');
 
-    spy.mockResolvedValueOnce({ rows: [{ id: 2, label: 'b' }], nextCursor: 2 } as any);
+    spy.mockResolvedValueOnce({ rows: [{ id: 2, label: 'b' }], nextCursor: 2 });
     await store.load();
 
     spy.mockImplementationOnce(async (_event, _payload, opts) => {
@@ -127,7 +127,7 @@ describe('createPagedStore', () => {
     expect(get(store.hasMore)).toBe(true);
 
     // A retry from the same, unmoved cursor succeeds normally.
-    spy.mockResolvedValueOnce({ rows: [{ id: 1, label: 'a' }], nextCursor: null } as any);
+    spy.mockResolvedValueOnce({ rows: [{ id: 1, label: 'a' }], nextCursor: null });
     const retried = await store.loadMore();
     expect(retried).toBe(true);
     expect(get(store)).toEqual([

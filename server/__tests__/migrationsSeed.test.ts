@@ -10,7 +10,7 @@ const migrationIdsOnDisk = (): string[] =>
     .readdirSync(MIGRATIONS_DIR)
     .filter((file) => file.endsWith('.ts') && file !== 'index.ts' && !file.endsWith('.test.ts'))
     .map((file) => file.replace(/\.ts$/, ''))
-    .sort();
+    .toSorted();
 
 describe('the migrations ledger seed stays in sync with server/migrations/', () => {
   it('lists every migration id in the generated gphone.sql seed', () => {

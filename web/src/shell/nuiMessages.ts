@@ -284,7 +284,7 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
   };
 
   return (event: MessageEvent): boolean => {
-    const { action, data } = event.data ?? {};
+    const { action, data } = (event.data ?? {}) as { action?: string; data?: unknown };
     const route = typeof action === 'string' ? routes[action] : undefined;
     if (!route) return false;
     route(data);

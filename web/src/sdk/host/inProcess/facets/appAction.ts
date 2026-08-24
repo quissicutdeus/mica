@@ -16,10 +16,7 @@ export interface AppActionOptions {
 export function appAction(appId?: string) {
   const busy = writable(false);
 
-  const run = async (
-    work: () => Promise<unknown> | unknown,
-    options: AppActionOptions = {}
-  ): Promise<boolean> => {
+  const run = async (work: () => unknown, options: AppActionOptions = {}): Promise<boolean> => {
     busy.set(true);
     try {
       await work();

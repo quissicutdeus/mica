@@ -9,7 +9,7 @@ describe('callStore', () => {
   });
 
   it('starts call with dialing status and resets duration', async () => {
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true);
 
     await callStore.startCall('555-1234', 'John Doe');
     const state = get(callStore);
@@ -30,7 +30,7 @@ describe('callStore', () => {
   });
 
   it('answers call and changes status to connected', async () => {
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true);
 
     await callStore.answerCall();
     const state = get(callStore);
@@ -39,7 +39,7 @@ describe('callStore', () => {
   });
 
   it('ends call and resets to initial state', async () => {
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true);
 
     await callStore.endCall();
     const state = get(callStore);
@@ -50,7 +50,7 @@ describe('callStore', () => {
   });
 
   it('toggles speaker mode', async () => {
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true);
 
     const initialSpeaker = get(callStore).speaker;
     await callStore.toggleSpeaker();

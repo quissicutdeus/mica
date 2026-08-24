@@ -68,7 +68,7 @@ const generateIconIndex = () => {
   const files = fs
     .readdirSync(iconDir)
     .filter((file) => file.endsWith('.svelte'))
-    .sort();
+    .toSorted();
 
   const lines = files
     .map((file) => {
@@ -110,7 +110,7 @@ const generateMigrationsIndex = () => {
   const files = fs
     .readdirSync(fullDir)
     .filter((file) => file.endsWith('.ts') && file !== 'index.ts' && !file.endsWith('.test.ts'))
-    .sort();
+    .toSorted();
 
   const imports = files
     .map((file, i) => `import { migration as m${i} } from './${file.replace(/\.ts$/, '')}';`)

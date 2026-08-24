@@ -140,6 +140,8 @@ export interface AppManifest {
   color: string;
   /** A Svelte component, a snippet, or an image URL. Null renders no glyph, which
    *  is what a remote app that shipped without one gets. */
+  // A manifest icon can be any component with any props shape; `unknown` would reject every real component here.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   icon: Component<any> | Snippet | string | null;
   /** Reactive unread count for the launcher badge — `unreadMailCount` and friends. */
   badgeStore?: Readable<number>;

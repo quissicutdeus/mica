@@ -142,7 +142,7 @@
           <CatalogList
             apps={catalogAppsList}
             {isInstalled}
-            onselect={(app) => (selectedApp = app)}
+            onselect={(app: AppManifest) => (selectedApp = app)}
             oninstall={handleInstall}
             onuninstall={requestUninstall}
           />
@@ -151,7 +151,7 @@
             apps={filteredInstalledApps}
             bind:filter={installedFilter}
             bind:sortOrder={installedSortOrder}
-            onselect={(app) => (selectedApp = app)}
+            onselect={(app: AppManifest) => (selectedApp = app)}
             onopen={openPhoneApp}
           />
         {/if}

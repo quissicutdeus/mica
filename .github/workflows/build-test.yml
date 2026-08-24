@@ -1,5 +1,12 @@
 name: Verify
-on: [push, pull_request]
+on:
+  # A PR's synchronize event already runs this on every push to a branch with an open
+  # PR, so an unscoped `push` trigger doubled every run for no benefit. Scoped to main
+  # and dev: the branches where a direct push — a merge landing, or the periodic
+  # keep-dev-in-sync merge — deserves its own confirmation that things are still green.
+  push:
+    branches: [main, dev]
+  pull_request:
 
 jobs:
   verify:
@@ -90,7 +97,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: '1.27'
           # docker/serve is stdlib-only, so there is no go.sum and nothing to cache.

@@ -102,7 +102,7 @@ describe('net event naming', () => {
     });
 
     expect(
-      offenders.map(({ event, file }) => `${event}  (${file})`).sort(),
+      offenders.map(({ event, file }) => `${event}  (${file})`).toSorted(),
       'add the missing segment rather than exempting the name'
     ).toEqual([]);
   });
@@ -135,7 +135,7 @@ describe('net event naming', () => {
       return parts.length === 4 && !known.has(parts[2]);
     });
 
-    expect(unknown.map(({ event, file }) => `${event}  (${file})`).sort()).toEqual([]);
+    expect(unknown.map(({ event, file }) => `${event}  (${file})`).toSorted()).toEqual([]);
   });
 });
 

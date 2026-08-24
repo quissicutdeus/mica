@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import { get } from 'svelte/store';
   import { fly, fade } from 'svelte/transition';
   import { formattedTime, formattedDate } from './state/time';
@@ -38,7 +38,11 @@
   import { wallpaperBackground } from './state/wallpaper';
   import { themeStyleStore } from './state/theme';
 
-  let { transparent = false, onClose, children } = $props();
+  let {
+    transparent = false,
+    onClose,
+    children
+  }: { transparent?: boolean; onClose: () => void; children: Snippet } = $props();
   let screenElement = $state<HTMLElement | null>(null);
   let statusBarRef = $state<HTMLElement | null>(null);
   let homeBarRef = $state<HTMLElement | null>(null);

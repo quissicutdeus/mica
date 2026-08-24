@@ -111,7 +111,7 @@
   {/if}
   {#if attachments.length > 0}
     <div class="no-scrollbar mb-2 flex gap-2 overflow-x-auto p-1">
-      {#each attachments as att}
+      {#each attachments as att (att.photo_id)}
         <div
           class="border-outline shadow-elevation-2 relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border"
         >
@@ -201,7 +201,7 @@
     title="Select Photos"
     multiSelect={true}
     selectedIds={attachments.map((a) => a.photo_id)}
-    onmultichange={(photoId, media) => {
+    onmultichange={(photoId: number, media: MediaPreview) => {
       const existing = attachments.find((a) => a.photo_id === photoId);
       if (existing) {
         attachments = attachments.filter((a) => a.photo_id !== photoId);

@@ -27,7 +27,7 @@
         max="100"
         value={Math.round($soundVolume * 100)}
         aria-label="System volume"
-        oninput={(e) => setVolume(Number((e.currentTarget as HTMLInputElement).value) / 100)}
+        oninput={(e) => setVolume(Number(e.currentTarget.value) / 100)}
         class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-blue-500"
       />
     </div>

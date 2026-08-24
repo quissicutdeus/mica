@@ -54,7 +54,7 @@ export function defineMockCrud<T extends { id: number }>(
   handlers[events.list] = () => rows.filter(visible);
 
   if (events.create) {
-    handlers[events.create] = async (draft: any) => {
+    handlers[events.create] = async (draft?: Partial<T> & { created_at?: string }) => {
       await delay(wait);
       const now = new Date().toISOString();
       const created = {
@@ -64,7 +64,7 @@ export function defineMockCrud<T extends { id: number }>(
         id: nextId++,
         created_at: draft?.created_at ?? now,
         updated_at: now
-      } as T;
+      } as unknown as T;
       if (options.insert === 'prepend') rows.unshift(created);
       else rows.push(created);
       return created;
@@ -72,7 +72,7 @@ export function defineMockCrud<T extends { id: number }>(
   }
 
   if (events.update) {
-    handlers[events.update] = async (row: any) => {
+    handlers[events.update] = async (row?: Partial<T> & { id?: number }) => {
       await delay(wait);
       const index = rows.findIndex((r) => r.id === row?.id);
       if (index !== -1) rows[index] = { ...rows[index], ...row };
@@ -86,7 +86,7 @@ export function defineMockCrud<T extends { id: number }>(
       const index = rows.findIndex((r) => r.id === data?.id);
       if (index === -1) return true;
       if (options.remove === 'soft') {
-        rows[index] = { ...rows[index], status: 'deleted' } as T;
+        rows[index] = { ...rows[index], status: 'deleted' };
       } else {
         rows.splice(index, 1);
       }

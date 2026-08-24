@@ -182,7 +182,7 @@
 
     <!-- Keypad -->
     <div class="grid grid-cols-4 gap-3">
-      {#each ['C', '±', '%', '÷', '7', '8', '9', '×', '4', '5', '6', '-', '1', '2', '3', '+', '0', '.', '⌫', '='] as btn}
+      {#each ['C', '±', '%', '÷', '7', '8', '9', '×', '4', '5', '6', '-', '1', '2', '3', '+', '0', '.', '⌫', '='] as btn (btn)}
         <button
           class="flex aspect-square items-center justify-center rounded-full text-2xl font-medium transition-all active:scale-95
           {btn === '='

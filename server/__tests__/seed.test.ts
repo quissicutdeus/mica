@@ -65,8 +65,8 @@ describe('clearSeed', () => {
     }
 
     // Every seed character accounted for, and nothing else.
-    const phones = contactDeletes.map((c) => c[1][0]).sort();
-    expect(phones).toEqual(SEED_CHARACTERS.map((c) => c.phone).sort());
+    const phones = contactDeletes.map((c) => c[1][0]).toSorted();
+    expect(phones).toEqual(SEED_CHARACTERS.map((c) => c.phone).toSorted());
   });
 
   it('requires the seed license as well as the seed ids before touching players', async () => {
@@ -81,7 +81,7 @@ describe('clearSeed', () => {
     expect(flat).toContain('license = ?');
     expect(flat).toContain('citizenid IN');
     expect(params[0]).toBe('license:gphoneseed');
-    expect(params.slice(1).sort()).toEqual(SEED_CHARACTERS.map((c) => c.citizenid).sort());
+    expect(params.slice(1).toSorted()).toEqual(SEED_CHARACTERS.map((c) => c.citizenid).toSorted());
   });
 
   it('deletes conversation children before their parent', async () => {

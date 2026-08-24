@@ -29,7 +29,7 @@ export interface ToastMessage {
   hasReplyInput?: boolean;
   replyPlaceholder?: string;
   onReply?: (replyText: string) => void | Promise<void>;
-  onClick?: () => void;
+  onClick?: () => void | Promise<void>;
   /**
    * Run when the toast times out on its own, as opposed to being dismissed or actioned.
    *
@@ -212,7 +212,7 @@ function createToastStore() {
       message: string;
       avatar?: string;
       onReply: (replyText: string) => void | Promise<void>;
-      onClick?: () => void;
+      onClick?: () => void | Promise<void>;
     }) => {
       audio.play('pop');
       return show({

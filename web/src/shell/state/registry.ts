@@ -207,7 +207,7 @@ const getAddOnSource = (appId: string): Promise<string | undefined> => {
 };
 
 for (const path in manifestFiles) {
-  const rawManifest = (manifestFiles[path] as any).default as AppManifest;
+  const rawManifest = (manifestFiles[path] as { default: AppManifest }).default;
   if (rawManifest && rawManifest.id) {
     const manifest = defineApp({
       installedAt: firstBoot,
@@ -233,7 +233,7 @@ for (const path in manifestFiles) {
     // `import()`/execute it in-process.
     if (manifest.core && appComponents[componentPath]) {
       // The loader, not the component. Called when the app is first opened.
-      bundledComponents[manifest.id] = appComponents[componentPath] as () => Promise<unknown>;
+      bundledComponents[manifest.id] = appComponents[componentPath];
     }
 
     // Core apps start installed on OS startup.
@@ -280,9 +280,9 @@ function getSavedRemoteApps(): SavedRemoteApp[] {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed
+    return (parsed as unknown[])
       .map((row): SavedRemoteApp | null => {
         // Pre-existing installs saved either a bare URL string (an old push-install path,
         // since removed) or `{ url, sha256? }` with no catalog entry at all — neither
@@ -290,15 +290,13 @@ function getSavedRemoteApps(): SavedRemoteApp[] {
         // one, which is exactly what this registry no longer does. Dropped, not silently
         // skipped: the operator/player installed something that is now unrecoverable, and
         // that is worth a line in the console naming what was lost.
+        const rowObj =
+          row && typeof row === 'object' ? (row as Record<string, unknown>) : undefined;
         const url =
-          typeof row === 'string'
-            ? row
-            : row && typeof row === 'object' && typeof row.url === 'string'
-              ? row.url
-              : undefined;
+          typeof row === 'string' ? row : typeof rowObj?.url === 'string' ? rowObj.url : undefined;
         if (!url) return null;
 
-        const entry = row && typeof row === 'object' ? row.entry : undefined;
+        const entry = rowObj?.entry;
         if (!isCatalogEntry(entry)) {
           console.warn(
             `gPhone Registry: dropped a saved remote app install for '${url}' — it has no ` +

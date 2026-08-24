@@ -179,7 +179,7 @@
       </h4>
       {#if (app.permissions && app.permissions.length > 0) || app.requiresNetwork}
         <div class="grid grid-cols-2 gap-2">
-          {#each app.permissions ?? [] as perm}
+          {#each app.permissions ?? [] as perm (perm)}
             {@const formatted = formatPermission(perm)}
             <div
               class="border-outline-variant bg-surface-container text-on-surface text-body-small flex items-center gap-2 rounded-xl border px-3 py-2"

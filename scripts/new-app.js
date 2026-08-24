@@ -184,7 +184,7 @@ const registerInAppContract = () => {
   const imports = [
     ...contract.matchAll(/^import \w+ from '\.\.\/apps\/\w+\/index\.svelte';$/gm)
   ].map((m) => m[0]);
-  const sortedImports = [...imports, importLine].sort((a, b) => a.localeCompare(b));
+  const sortedImports = [...imports, importLine].toSorted((a, b) => a.localeCompare(b));
   contract = contract.replace(imports.join('\n'), sortedImports.join('\n'));
 
   const entries = contract.match(/const APPS: Record<string, AppComponent> = \{\n([\s\S]*?)\n\};/);
@@ -192,7 +192,7 @@ const registerInAppContract = () => {
     .split('\n')
     .map((line) => line.trim().replace(/,$/, ''))
     .filter(Boolean);
-  const sortedRows = [...rows, `${id}: ${Pascal}`].sort((a, b) => a.localeCompare(b));
+  const sortedRows = [...rows, `${id}: ${Pascal}`].toSorted((a, b) => a.localeCompare(b));
   contract = contract.replace(
     entries[0],
     `const APPS: Record<string, AppComponent> = {\n${sortedRows.map((r) => `  ${r}`).join(',\n')}\n};`

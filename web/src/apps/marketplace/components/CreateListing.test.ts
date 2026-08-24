@@ -15,6 +15,10 @@ describe('CreateListing', () => {
 
   it('Post is disabled until title, price, and description are all filled', async () => {
     render(CreateListing, { props: { onposted: () => {}, oncancel: () => {} } });
+    // eslint's type info disagrees with svelte-check/tsc here: it sees this as redundant,
+    // but tsc genuinely needs it (`screen.getByText` returns `HTMLElement`, which has no
+    // `.disabled`) — confirmed by removing it and getting a real svelte-check error.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
     const post = screen.getByText('Post') as HTMLButtonElement;
     expect(post.disabled).toBe(true);
 

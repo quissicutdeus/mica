@@ -199,16 +199,14 @@ describe('sendLoadedBatteryToClient', () => {
   });
 });
 
-describe('gphonecharge command', () => {
-  const notifies = () =>
-    (globalThis.emitNet as any).mock.calls.filter(
-      (c: any[]) => c[0] === 'gphone:client:shell:notify'
-    );
-  const chargeCalls = () =>
-    (globalThis.emitNet as any).mock.calls.filter(
-      (c: any[]) => c[0] === 'gphone:client:battery:set'
-    );
+const notifies = () =>
+  (globalThis.emitNet as any).mock.calls.filter(
+    (c: any[]) => c[0] === 'gphone:client:shell:notify'
+  );
+const chargeCalls = () =>
+  (globalThis.emitNet as any).mock.calls.filter((c: any[]) => c[0] === 'gphone:client:battery:set');
 
+describe('gphonecharge command', () => {
   beforeEach(() => {
     bridgeMock.getPlayer.mockReturnValue(mockPlayer());
     (globalThis as any).GetConvar = (_n: string, fallback: string) => fallback;

@@ -117,6 +117,6 @@ describe('deliverToParticipants', () => {
 
     await deliverToParticipants(7, 'SENDER', { name: null, phone: null }, message);
 
-    expect(emitted.map((e) => e.target).sort()).toEqual([1, 2]);
+    expect(emitted.map((e) => e.target).toSorted()).toEqual([1, 2]);
   });
 });

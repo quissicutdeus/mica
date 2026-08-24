@@ -28,7 +28,7 @@
 <Screen title={app.title} onback={app.back}>
   {#if screen.name === 'feed'}
     <Feed
-      onselect={(id) => (screen = { name: 'detail', id })}
+      onselect={(id: number) => (screen = { name: 'detail', id })}
       onCreate={() => (screen = { name: 'create' })}
       onMyListings={() => (screen = { name: 'mine' })}
     />
@@ -36,7 +36,7 @@
     <ListingDetail id={screen.id} onback={() => (screen = { name: 'feed' })} />
   {:else if screen.name === 'create'}
     <CreateListing
-      onposted={(id) => (screen = { name: 'detail', id })}
+      onposted={(id: number) => (screen = { name: 'detail', id })}
       oncancel={() => (screen = { name: 'feed' })}
     />
   {:else if screen.name === 'mine'}

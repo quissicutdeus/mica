@@ -134,7 +134,7 @@
     title="Select Photos"
     multiSelect={true}
     selectedIds={attachments.map((a) => a.photo_id)}
-    onmultichange={(photoId, media) => {
+    onmultichange={(photoId: number, media: MediaPreview) => {
       const existing = attachments.find((a) => a.photo_id === photoId);
       if (existing) {
         attachments = attachments.filter((a) => a.photo_id !== photoId);

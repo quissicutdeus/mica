@@ -472,7 +472,7 @@
         <div
           class="divide-outline-variant bg-surface-container max-h-56 divide-y overflow-y-auto rounded-xl p-1"
         >
-          {#each filteredContacts as contact}
+          {#each filteredContacts as contact (contact.id)}
             <ListItem
               class="hover:bg-surface-container rounded-lg py-2"
               onclick={() => handleSelectContactRaw(contact)}
@@ -532,7 +532,7 @@
         {currentConv}
         {lastReadMyMessageId}
         isReadByOther={isMessageReadByOther}
-        onreply={(msg) => (replyingToMsg = msg)}
+        onreply={(msg: UIMessage) => (replyingToMsg = msg)}
         onscrollto={handleScrollToMessage}
         onloadmore={page.loadMore}
         onscroll={page.onScroll}

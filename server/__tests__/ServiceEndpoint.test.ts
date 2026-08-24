@@ -69,7 +69,8 @@ const call = async (action: string, data: unknown) => {
 
 /** The payload the last emitNet delivered back to the client. */
 const lastReply = () => emitted[emitted.length - 1]?.[3] as any;
-const sqlOf = (call: unknown[] | undefined) => String(call?.[0]).replace(/\s+/g, ' ').trim();
+const sqlOf = (mockCall: unknown[] | undefined) =>
+  String(mockCall?.[0]).replace(/\s+/g, ' ').trim();
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -288,7 +289,7 @@ describe('ServiceEndpoint — authentication and registration', () => {
   it('registers exactly the CRUD events that are not disabled', () => {
     mount({ disableUpdate: true, disableDelete: true });
 
-    expect([...handlers.keys()].sort()).toEqual([
+    expect([...handlers.keys()].toSorted()).toEqual([
       'gphone:server:test:create',
       'gphone:server:test:get'
     ]);

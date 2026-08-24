@@ -629,7 +629,7 @@ onBlabberKind('dm', () => {
 const searchPage = (payload: Record<string, unknown>) =>
   accounts().searchAccounts({
     app: 'blabber',
-    q: String(payload.q ?? ''),
+    q: typeof payload.q === 'string' ? payload.q : '',
     cursor: payload.cursor as number | undefined,
     limit: payload.limit as number | undefined
   });

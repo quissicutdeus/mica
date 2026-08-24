@@ -67,9 +67,8 @@
   const handleAddWaypoint = async (media: MediaPreview) => {
     await run(
       async () => {
-        const parsed = media.data ? JSON.parse(media.data) : null;
-        const x = parsed?.x;
-        const y = parsed?.y;
+        const parsed: unknown = media.data ? JSON.parse(media.data) : null;
+        const { x, y } = (parsed ?? {}) as { x?: unknown; y?: unknown };
         if (typeof x !== 'number' || typeof y !== 'number') {
           throw new Error('Bad location data');
         }
@@ -165,7 +164,7 @@
 
       {#if msg.attachments && msg.attachments.length > 0}
         <div class="mb-2 space-y-2">
-          {#each msg.attachments as attach}
+          {#each msg.attachments as attach (attach.id ?? attach.photo_id)}
             {#if attach.media}
               {@const media = attach.media}
               {#if media.kind === 'location'}

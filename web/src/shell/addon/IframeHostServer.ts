@@ -263,7 +263,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       if (typeof member !== 'function')
         throw new Error(`[gPhone] '${msg.facet}.${msg.member}' is not callable`);
       const args = decodeArgs(msg.args);
-      const value = await member.apply(obj, args);
+      const value: unknown = await member.apply(obj, args);
       if (!disposed) post({ kind: 'reply', id: msg.id, ok: true, value: encodeResult(value) });
     } catch (e) {
       // A synchronous throw here (unknown facet, missing permission, non-function
@@ -313,7 +313,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   }
 
   return {
-    handle(event: MessageEvent) {
+    handle(this: void, event: MessageEvent) {
       if (disposed || event.source !== source) return;
       const msg = event.data as ToShell;
       if (!msg || typeof msg !== 'object' || typeof msg.kind !== 'string') return;

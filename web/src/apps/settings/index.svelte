@@ -185,7 +185,7 @@
     {#if selectedApp}
       <AppInfo app={selectedApp} onremoved={() => (selectedAppId = null)} />
     {:else}
-      <Apps onselect={(id) => (selectedAppId = id)} />
+      <Apps onselect={(id: string) => (selectedAppId = id)} />
     {/if}
   {:else if pane === 'display'}
     <Display />

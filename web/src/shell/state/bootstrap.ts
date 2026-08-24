@@ -4,7 +4,7 @@ import { loadUnreadCounts } from '../../services/notifications';
 import { bundledAddOns, registeredApps } from './registry';
 
 let isBootstrapped = false;
-let bootstrapPromise: Promise<any> | null = null;
+let bootstrapPromise: Promise<void> | null = null;
 
 /**
  * Preloads primary stores in parallel on phone opening, so switching between apps is

@@ -217,7 +217,7 @@
 
     {#if recentMessages.length > 0}
       <div class="divide-outline-variant divide-y">
-        {#each recentMessages as msg}
+        {#each recentMessages as msg (msg.id)}
           <button
             type="button"
             class="group hover:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between gap-3 p-3.5 text-left transition-colors"

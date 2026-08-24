@@ -100,26 +100,26 @@ const DROP_ALL_MICA_TABLES = [
  *
  * Kahn's algorithm, alphabetical within a dependency level so output is stable.
  */
+const referencedTables = (app) => {
+  const refs = [];
+  for (const { def } of app.fields) {
+    if (def.references) refs.push(def.references.table);
+  }
+  for (const child of app.childTables) {
+    for (const spec of Object.values(child.columns)) {
+      const ref = typeof spec === 'string' ? undefined : spec.references;
+      if (ref) refs.push(ref.table);
+    }
+  }
+  return refs;
+};
+
 function orderAppsByDependency(apps) {
   const ownerOf = new Map();
   for (const app of apps) {
     ownerOf.set(app.table, app.id);
     for (const child of app.childTables) ownerOf.set(child.name, app.id);
   }
-
-  const referencedTables = (app) => {
-    const refs = [];
-    for (const { def } of app.fields) {
-      if (def.references) refs.push(def.references.table);
-    }
-    for (const child of app.childTables) {
-      for (const spec of Object.values(child.columns)) {
-        const ref = typeof spec === 'string' ? undefined : spec.references;
-        if (ref) refs.push(ref.table);
-      }
-    }
-    return refs;
-  };
 
   // dependsOn: app id -> set of app ids that must be applied first.
   const dependsOn = new Map(apps.map((a) => [a.id, new Set()]));
@@ -132,7 +132,7 @@ function orderAppsByDependency(apps) {
   }
 
   const ordered = [];
-  const remaining = [...apps].sort((a, b) => a.id.localeCompare(b.id));
+  const remaining = apps.toSorted((a, b) => a.id.localeCompare(b.id));
 
   while (remaining.length > 0) {
     const readyIndex = remaining.findIndex((app) =>
@@ -165,7 +165,7 @@ function migrationIds() {
     .readdirSync(dir)
     .filter((file) => file.endsWith('.ts') && file !== 'index.ts' && !file.endsWith('.test.ts'))
     .map((file) => file.replace(/\.ts$/, ''))
-    .sort();
+    .toSorted();
 }
 
 /** Wipe-and-rebuild in one file: drop everything, then the framework and app schemas. */

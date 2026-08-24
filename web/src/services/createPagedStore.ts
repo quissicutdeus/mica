@@ -98,7 +98,7 @@ export function createPagedStore<T extends { id: number }>(
           );
     // A mock or an older server could answer with a bare array; treat it as one full page
     // rather than rendering nothing and looking like an empty feed.
-    if (Array.isArray(reply)) return { rows: reply as T[], nextCursor: null };
+    if (Array.isArray(reply)) return { rows: reply, nextCursor: null };
     return { rows: reply?.rows ?? [], nextCursor: reply?.nextCursor ?? null };
   };
 

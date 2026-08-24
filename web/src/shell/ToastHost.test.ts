@@ -25,7 +25,7 @@ if (!Element.prototype.animate) {
     startTime: 0,
     currentTime: 0,
     effect: { getComputedTiming: () => ({ duration: 0 }) }
-  }) as unknown as Element['animate'];
+  });
 }
 
 describe('ToastHost hit area', () => {

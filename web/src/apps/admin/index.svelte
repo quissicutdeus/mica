@@ -199,7 +199,7 @@
       confirming &&
       decide(
         () => resolveReport(confirming!.report.id, confirming!.action),
-        confirming!.action === 'moderate' ? 'Content removed' : 'Report closed'
+        confirming.action === 'moderate' ? 'Content removed' : 'Report closed'
       )}
     oncancel={() => (confirming = null)}
   />

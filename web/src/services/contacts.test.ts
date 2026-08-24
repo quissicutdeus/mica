@@ -14,7 +14,7 @@ describe('contacts store', () => {
       { id: 2, name: 'Bob', number: '555-0200', favorite: false }
     ];
 
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockContacts as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockContacts);
 
     await contacts.load();
     expect(get(contacts)).toEqual(mockContacts);
@@ -26,7 +26,7 @@ describe('contacts store', () => {
       { id: 2, name: 'Bob', number: '555-0200', favorite: false }
     ];
 
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockContacts as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockContacts);
 
     await contacts.load();
     expect(get(favoriteContacts)).toEqual([mockContacts[0]]);
@@ -36,7 +36,7 @@ describe('contacts store', () => {
     const newContactData = { firstname: 'Charlie', phone: '555-0300' };
     const createdContact = { id: 3, ...newContactData, favorite: false };
 
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(createdContact as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(createdContact);
 
     const result = await contacts.add(newContactData as any);
     expect(result).toEqual(createdContact);
@@ -67,10 +67,10 @@ describe('contacts store', () => {
       { id: 2, name: 'Bob', number: '555-0200' }
     ];
 
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(initialContacts as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(initialContacts);
     await contacts.load();
 
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({ ok: true } as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({ ok: true });
     await contacts.delete(1);
 
     expect(get(contacts)).toEqual([{ id: 2, name: 'Bob', number: '555-0200' }]);
@@ -86,7 +86,7 @@ describe('contacts store', () => {
     const seed = [{ id: 1, firstname: 'Alice', phone: '555-0100' }];
 
     beforeEach(async () => {
-      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(seed as any);
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(seed);
       await contacts.load();
       vi.restoreAllMocks();
     });

@@ -1,4 +1,4 @@
-import { SchemaRepository, type ResolvedService } from '../lib/defineService';
+import { SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { Listing, MediaPreview } from '@shared/types';
 
@@ -12,10 +12,6 @@ const distinctIds = (ids: number[]): number[] => [...new Set(ids)];
  * would tie an image back to the listing's owner (§10).
  */
 export class MarketplaceRepository extends SchemaRepository<Listing> {
-  constructor(resolved: ResolvedService) {
-    super(resolved);
-  }
-
   async findAttachmentsFor(
     listingIds: number[]
   ): Promise<Map<number, { id: number; media: MediaPreview }[]>> {

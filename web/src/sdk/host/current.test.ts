@@ -74,6 +74,8 @@ describe('facet registry', () => {
     // `String(facets)`, `console.log(facets)`, `expect(...).toEqual(...)` and an `await`
     // near the object all probe `Symbol.toStringTag` / `Symbol.toPrimitive` / `'then'`
     // before ever naming a real facet. None of those is a facet name, and none should throw.
+    // The point of this assertion is that the call doesn't throw, not what it stringifies to.
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string
     expect(() => String(facets)).not.toThrow();
     expect(
       () => (facets as unknown as { [Symbol.toStringTag]?: string })[Symbol.toStringTag]

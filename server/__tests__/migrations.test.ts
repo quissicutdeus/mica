@@ -32,20 +32,20 @@ const fakeMigration = (id: string, up: () => Promise<void> = async () => {}): Mi
 
 describe('pendingMigrations', () => {
   it('returns every migration when none are applied', () => {
-    const onDisk = [fakeMigration('0002_b'), fakeMigration('0001_a')];
-    const result = pendingMigrations(onDisk, new Set());
+    const candidates = [fakeMigration('0002_b'), fakeMigration('0001_a')];
+    const result = pendingMigrations(candidates, new Set());
     expect(result.map((m) => m.id)).toEqual(['0001_a', '0002_b']);
   });
 
   it('filters out ids already in the ledger', () => {
-    const onDisk = [fakeMigration('0001_a'), fakeMigration('0002_b')];
-    const result = pendingMigrations(onDisk, new Set(['0001_a']));
+    const candidates = [fakeMigration('0001_a'), fakeMigration('0002_b')];
+    const result = pendingMigrations(candidates, new Set(['0001_a']));
     expect(result.map((m) => m.id)).toEqual(['0002_b']);
   });
 
   it('sorts by id regardless of input order', () => {
-    const onDisk = [fakeMigration('0003_c'), fakeMigration('0001_a'), fakeMigration('0002_b')];
-    const result = pendingMigrations(onDisk, new Set());
+    const candidates = [fakeMigration('0003_c'), fakeMigration('0001_a'), fakeMigration('0002_b')];
+    const result = pendingMigrations(candidates, new Set());
     expect(result.map((m) => m.id)).toEqual(['0001_a', '0002_b', '0003_c']);
   });
 });

@@ -1,5 +1,8 @@
+/* eslint-disable @typescript-eslint/triple-slash-reference --
+   these load ambient globals (import.meta.env, etc.); an `import` doesn't have the same effect. */
 /// <reference types="svelte" />
 /// <reference types="vite/client" />
+/* eslint-enable @typescript-eslint/triple-slash-reference */
 
 declare module '*.svelte' {
   import type { ComponentType, SvelteComponent } from 'svelte';

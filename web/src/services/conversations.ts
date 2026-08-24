@@ -201,7 +201,7 @@ function createMessagesStore() {
     },
 
     startConversation: async (phone: string, isGroup: boolean = false) => {
-      let myId = get(citizenid);
+      const myId = get(citizenid);
       const currentContacts = get(contacts);
 
       try {

@@ -241,7 +241,7 @@
             onclick={(e) => e.stopPropagation()}
             role="presentation"
           >
-            {#each t.actions as act}
+            {#each t.actions as act (act.label)}
               <button
                 type="button"
                 class="shadow-elevation-2 text-body-small cursor-pointer rounded-xl px-3.5 py-1.5 transition-all {getActionBtnClass(

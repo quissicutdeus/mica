@@ -22,6 +22,7 @@
   } from '@gphone/sdk';
   import type { MediaItem } from '@shared/types';
   import { fade } from 'svelte/transition';
+  import { SvelteSet } from 'svelte/reactivity';
 
   let {
     onback,
@@ -36,7 +37,7 @@
 
   let selectedPhoto: MediaItem | null = $state(null);
   let isSelectionMode = $state(false);
-  let selectedIds = $state<Set<number>>(new Set());
+  const selectedIds = new SvelteSet<number>();
   let showDeleteConfirm = $state(false);
   let reporting = $state(false);
 
@@ -81,7 +82,6 @@
       } else {
         selectedIds.add(photo.id);
       }
-      selectedIds = new Set(selectedIds); // Trigger reactivity
     } else {
       selectedPhoto = photo;
     }

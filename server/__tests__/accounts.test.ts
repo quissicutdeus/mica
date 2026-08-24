@@ -680,16 +680,16 @@ describe('reactions', () => {
  * otherwise correlate every alt in the graph back to its owner — and that the paging is the keyset
  * shape every other paged read uses.
  */
-describe('follower and following lists', () => {
-  const rowsFrom = (ids: number[]) =>
-    ids.map((id) => ({
-      id,
-      handle: `h${id}`,
-      app: 'blabber',
-      status: 'active',
-      cursor_id: id * 10
-    }));
+const rowsFrom = (ids: number[]) =>
+  ids.map((id) => ({
+    id,
+    handle: `h${id}`,
+    app: 'blabber',
+    status: 'active',
+    cursor_id: id * 10
+  }));
 
+describe('follower and following lists', () => {
   it('lists who follows an account, newest relation first', async () => {
     dbMock.query.mockResolvedValueOnce(rowsFrom([7, 8]));
 

@@ -45,7 +45,7 @@
       {#if !$transactionsLoaded}
         <Skeleton count={3} height="h-14" />
       {:else}
-        {#each $transactions as transaction}
+        {#each $transactions as transaction (transaction.id)}
           <TransactionItem {transaction} />
         {:else}
           <EmptyState

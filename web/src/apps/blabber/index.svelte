@@ -546,7 +546,7 @@
       activeId={$activeAccount?.id ?? null}
       canClaim={$canClaimAnother}
       limit={$accountLimit}
-      onswitch={(id) => {
+      onswitch={(id: number) => {
         activeAccountId.set(id);
         menu = false;
         // A main and an alt follow different people, so the Following feed belongs to the account
@@ -593,11 +593,11 @@
       busy={$busy}
       peer={dmPeer}
       peerAccount={dmPeerAccount}
-      onopen={(peer, account) => {
+      onopen={(peer: number | null, account?: DmPeer | null) => {
         dmPeer = peer;
         dmPeerAccount = account ?? null;
       }}
-      onpeername={(name) => (dmThreadName = name)}
+      onpeername={(name: string | null) => (dmThreadName = name)}
       onhandle={openProfile}
       ontag={openTag}
     />
@@ -617,7 +617,7 @@
       tag={activeTag}
       onhandle={openProfile}
       ontag={openTag}
-      onopen={(b) => openBlab(b.id)}
+      onopen={(b: Blab) => openBlab(b.id)}
       onmouth={mouth}
       onear={ear}
     />
@@ -632,7 +632,7 @@
     <Profile
       handle={profileHandle}
       onhandle={openProfile}
-      onmessage={(account) => openDms(account.id, account)}
+      onmessage={(account: Account) => openDms(account.id, account)}
       onfollows={openFollows}
     />
   {:else if !$accountsLoaded}
@@ -646,7 +646,7 @@
     <Search
       onhandle={openProfile}
       ontag={openTag}
-      onopen={(id, anchorId) => openBlab(id, anchorId)}
+      onopen={(id: number, anchorId?: number) => openBlab(id, anchorId)}
     />
   {:else if tab === 'following'}
     <!-- `pb-20` clears the nav and safe bottom inset: without it the last row hides underneath the bar. -->
@@ -668,12 +668,12 @@
             stats={$engagement[blab.id]}
             onhandle={openProfile}
             ontag={openTag}
-            onedit={(b) => (editing = b)}
+            onedit={(b: Blab) => (editing = b)}
             ondelete={remove}
-            onreply={(b) => openBlab(b.id)}
+            onreply={(b: Blab) => openBlab(b.id)}
             onmouth={mouth}
             onear={ear}
-            onopen={(b) => openBlab(b.id)}
+            onopen={(b: Blab) => openBlab(b.id)}
           />
         {/each}
         {#if followingPage.loading}
@@ -697,12 +697,12 @@
             stats={$engagement[blab.id]}
             onhandle={openProfile}
             ontag={openTag}
-            onedit={(b) => (editing = b)}
+            onedit={(b: Blab) => (editing = b)}
             ondelete={remove}
-            onreply={(b) => openBlab(b.id)}
+            onreply={(b: Blab) => openBlab(b.id)}
             onmouth={mouth}
             onear={ear}
-            onopen={(b) => openBlab(b.id)}
+            onopen={(b: Blab) => openBlab(b.id)}
           />
         {/each}
         {#if page.loading}

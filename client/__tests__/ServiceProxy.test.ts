@@ -81,7 +81,7 @@ describe('ServiceProxy — subscribes the reply it will actually receive', () =>
     app.registerCallback('archiveMail', 'gphone:server:mail:archiveMail');
     app.registerCallback('deleteMail', 'gphone:server:mail:deleteMail');
 
-    expect([...netSubscriptions.keys()].sort()).toEqual([
+    expect([...netSubscriptions.keys()].toSorted()).toEqual([
       'gphone:client:mail:archiveMail',
       'gphone:client:mail:deleteMail',
       'gphone:client:mail:getMail',

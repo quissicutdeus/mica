@@ -346,7 +346,7 @@
     >
       <!-- Mode Toggle Buttons -->
       <div class="flex items-center gap-4">
-        {#each ['PHOTO', 'VIDEO', 'LANDSCAPE'] as mode}
+        {#each ['PHOTO', 'VIDEO', 'LANDSCAPE'] as mode (mode)}
           <button
             type="button"
             onclick={() => (cameraMode = mode as 'PHOTO' | 'VIDEO' | 'LANDSCAPE')}

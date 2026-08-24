@@ -55,6 +55,8 @@ beforeEach(() => {
   (globalThis as any).GetConvar = (_n: string, f: string) => f;
 });
 
+const repo = () => getSettingsRepository()!;
+
 describe('settings service', () => {
   it('declares the unique key that makes the upsert safe', () => {
     // Not decoration. Without it two writes in the same tick — which is what dragging a
@@ -84,8 +86,6 @@ describe('settings service', () => {
   });
 
   describe('repository', () => {
-    const repo = () => getSettingsRepository()!;
-
     it('upserts in one statement rather than find-then-insert', async () => {
       await repo().put(CID, 'settings', 'theme', '{"mode":"dark"}');
 

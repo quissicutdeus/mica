@@ -64,7 +64,11 @@ const main = async () => {
   const htmlRefs = [...html.matchAll(/(?:src|href)="(\.\/[^"]+)"/g)].map((m) => m[1].slice(1));
   for (const ref of htmlRefs) {
     const r = await get(ref);
-    r.status === 200 ? ok(`html ref ${ref}`) : bad(`html ref ${ref}`, `status ${r.status}`);
+    if (r.status === 200) {
+      ok(`html ref ${ref}`);
+    } else {
+      bad(`html ref ${ref}`, `status ${r.status}`);
+    }
   }
 
   // --- every url() in every stylesheet resolves ---

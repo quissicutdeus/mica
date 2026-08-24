@@ -34,6 +34,10 @@
     "format:check": "prettier --check .",
     "deadcode": "pnpm dlx knip",
     "lint:container": "node scripts/lint-container.js",
+    "lint:md": "markdownlint-cli2",
+    "lint:ts": "oxlint .",
+    "lint:web": "pnpm --filter web lint",
+    "lint": "concurrently -c \"cyan,magenta\" -n \"ts,web\" \"pnpm:lint:ts\" \"pnpm:lint:web\"",
     "demo": "docker compose up --build",
     "demo:up": "docker compose up -d --build",
     "demo:down": "docker compose down",
@@ -62,10 +66,12 @@
     "cross-env": "^10.1.0",
     "esbuild": "^0.28.2",
     "lint-staged": "^17.3.0",
+    "markdownlint-cli2": "^0.23.2",
+    "oxlint": "^1.79.0",
     "prettier": "^3.9.6",
     "prettier-plugin-svelte": "^4.1.1",
     "simple-git-hooks": "^2.13.1",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

@@ -195,8 +195,8 @@
               <ReactionBar
                 counts={$dmReactions[message.id]?.counts ?? {}}
                 mine={$dmReactions[message.id]?.mine ?? []}
-                onreact={(emoji) => toggleDmReaction(message.id, emoji)}
-                onunreact={(emoji) => toggleDmReaction(message.id, emoji)}
+                onreact={(emoji: string) => toggleDmReaction(message.id, emoji)}
+                onunreact={(emoji: string) => toggleDmReaction(message.id, emoji)}
                 class="mt-1"
               />
             </div>
@@ -205,7 +205,7 @@
       {/if}
     </div>
 
-    <DmComposer {busy} onsubmit={(body) => sendDm(peer, body)} />
+    <DmComposer {busy} onsubmit={(body: string) => sendDm(peer, body)} />
   </div>
 {/if}
 

@@ -329,7 +329,13 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     // The index did its job in a race. Translate it, because the raw driver error reaches a
     // player's toast and reads as a crash.
     const message = error instanceof Error ? error.message : '';
-    if (/duplicate/i.test(message)) throw new Error(`@${handle} is taken.`);
+    if (/duplicate/i.test(message)) {
+      // `{ cause }` is the constructor's ES2022 form; this repo's lib target is ES2021, so
+      // the property is set directly instead — same effect, portable to the older lib.
+      const takenError = new Error(`@${handle} is taken.`);
+      (takenError as Error & { cause?: unknown }).cause = error;
+      throw takenError;
+    }
     throw error;
   }
 });
@@ -759,7 +765,7 @@ const followList = async (
      * set rather than anything about the account, and a client that received it per row would
      * have two plausible things to page from.
      */
-    rows: page.map(({ cursor_id, ...account }) => account as Account),
+    rows: page.map(({ cursor_id: _cursor_id, ...account }) => account as Account),
     nextCursor: hasMore ? page[page.length - 1].cursor_id : null
   };
 };

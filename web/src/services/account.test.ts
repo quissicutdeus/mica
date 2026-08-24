@@ -16,7 +16,7 @@ describe('account store', () => {
   });
 
   it('fetches citizen ID and updates citizenid store', async () => {
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue('CITIZEN_123' as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue('CITIZEN_123');
 
     const result = await fetchCitizenId();
     expect(result).toBe('CITIZEN_123');
@@ -24,7 +24,7 @@ describe('account store', () => {
   });
 
   it('fetches bank balance and updates bankBalance store', async () => {
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(15000 as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(15000);
 
     await fetchBalance();
     expect(get(bankBalance)).toBe(15000);
@@ -35,7 +35,7 @@ describe('account store', () => {
       { amount: 500, time: 1609459200, title: 'Salary Paycheck', message: 'Direct Deposit' }
     ];
 
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockTx as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockTx);
 
     await fetchTransactions();
     expect(get(transactions)).toEqual(mockTx);

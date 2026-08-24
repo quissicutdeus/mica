@@ -225,7 +225,7 @@ export function compactGridToCurrentCapacity(): void {
     }
     if (free === -1) break; // grid is entirely full — nowhere left to put the rest
     occupied.add(free);
-    result.push({ ...item, position: free } as HomeGridItem);
+    result.push({ ...item, position: free });
   }
   homeGridItems.set(result);
 }

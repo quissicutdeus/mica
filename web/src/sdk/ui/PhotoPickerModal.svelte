@@ -59,7 +59,7 @@
 
   <!-- Photo Grid -->
   <div class="grid flex-1 grid-cols-3 content-start gap-2 overflow-y-auto p-3">
-    {#each $media as photo}
+    {#each $media as photo (photo.id)}
       {#if multiSelect}
         {@const selected = isSelected(photo.id)}
         <button

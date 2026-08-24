@@ -20,7 +20,7 @@ describe('mailStore', () => {
       }
     ];
 
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockMails as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockMails);
 
     await mailStore.load();
     expect(get(mailStore)).toEqual(mockMails);
@@ -38,10 +38,10 @@ describe('mailStore', () => {
         status: 'active'
       }
     ];
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockMails as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockMails);
     await mailStore.load();
 
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true);
     await mailStore.markAsRead(1);
 
     expect(get(mailStore)[0].read).toBe(true);
@@ -60,10 +60,10 @@ describe('mailStore', () => {
         status: 'active'
       }
     ];
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockMails as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(mockMails);
     await mailStore.load();
 
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true as any);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true);
     await mailStore.delete(1);
 
     expect(get(mailStore)).toEqual([

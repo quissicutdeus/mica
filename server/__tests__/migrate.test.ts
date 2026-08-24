@@ -184,6 +184,17 @@ describe('planAppMigration', () => {
 
 import { SchemaMigrator } from '../lib/SchemaMigrator';
 
+const liveChild = (): LiveTable => ({
+  exists: true,
+  columns: [
+    { name: 'id', type: 'int(11)', nullable: false },
+    { name: 'widget_id', type: 'int(11)', nullable: false },
+    { name: 'label', type: 'varchar(30)', nullable: true },
+    { name: 'archived_at', type: 'timestamp', nullable: true }
+  ],
+  indexes: ['PRIMARY', 'widget']
+});
+
 describe('planChildMigration', () => {
   const child = {
     name: 'gphone_widget_parts',
@@ -194,17 +205,6 @@ describe('planChildMigration', () => {
     },
     indexes: [{ name: 'widget', columns: ['widget_id'] }]
   };
-
-  const liveChild = (): LiveTable => ({
-    exists: true,
-    columns: [
-      { name: 'id', type: 'int(11)', nullable: false },
-      { name: 'widget_id', type: 'int(11)', nullable: false },
-      { name: 'label', type: 'varchar(30)', nullable: true },
-      { name: 'archived_at', type: 'timestamp', nullable: true }
-    ],
-    indexes: ['PRIMARY', 'widget']
-  });
 
   it('does nothing when already in sync', () => {
     expect(isNoop(planChildMigration(child, liveChild()))).toBe(true);
@@ -228,6 +228,11 @@ describe('planChildMigration', () => {
 
     expect(planChildMigration(noId, live).drift).toEqual([]);
   });
+});
+
+const statement = (name: string) => ({
+  description: `add column gphone_widgets.${name}`,
+  sql: `ALTER TABLE \`gphone_widgets\` ADD COLUMN \`${name}\` text`
 });
 
 describe('SchemaMigrator', () => {
@@ -297,10 +302,6 @@ describe('SchemaMigrator', () => {
    */
   it('apply() keeps what already ran when a later statement throws', async () => {
     dbMock.query.mockClear();
-    const statement = (name: string) => ({
-      description: `add column gphone_widgets.${name}`,
-      sql: `ALTER TABLE \`gphone_widgets\` ADD COLUMN \`${name}\` text`
-    });
     vi.spyOn(SchemaMigrator, 'plan').mockResolvedValueOnce([
       {
         table: 'gphone_widgets',

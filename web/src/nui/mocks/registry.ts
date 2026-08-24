@@ -35,6 +35,12 @@ import { defineMockCrud } from './defineMockCrud';
 // Helper to simulate delays
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Deliberately `any`: each handler in `mockRegistry` below declares its own,
+// more specific payload shape than this container type — arrow-function
+// object properties get strict (non-bivariant) parameter checking in
+// TypeScript, so `unknown` here would reject every handler whose declared
+// parameter isn't itself `unknown`.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- see comment above
 export type MockHandler<T = any> = (data?: any) => Promise<T> | T;
 
 let mockPhotoIndex = 5;

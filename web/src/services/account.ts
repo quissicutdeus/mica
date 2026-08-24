@@ -55,7 +55,7 @@ export const fetchBalance = async () => {
 
 export const fetchTransactions = async () => {
   try {
-    const data = await fetchNui<any[]>('getTransactions', null, {
+    const data = await fetchNui<Transaction[]>('getTransactions', null, {
       defaultValue: []
     });
     transactions.set(data);

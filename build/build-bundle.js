@@ -34,8 +34,8 @@ const buildBundle = async () => {
         // We must define a plugin to replicate the old 'onRebuild' logging behavior
         const watchLoggerPlugin = {
           name: 'watch-logger',
-          setup(build) {
-            build.onEnd(result => {
+          setup(pluginBuild) {
+            pluginBuild.onEnd(result => {
               if (result.errors.length > 0) {
                 console.error(
                   `[ESBuild Watch] (${targetOpts.entryPoints[0]}) Failed to rebuild bundle`

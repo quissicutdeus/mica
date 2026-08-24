@@ -27,7 +27,6 @@ vi.mock('../lib/FrameworkBridge', () => ({
 }));
 
 import '../services/Notifications';
-import { notifications } from '../services/Notifications';
 import { appEventChannel } from '../lib/appEvents';
 
 const CITIZEN = 'CITIZEN_1';

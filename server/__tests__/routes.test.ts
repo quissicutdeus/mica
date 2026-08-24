@@ -209,7 +209,7 @@ describe('no missing layer', () => {
   it('every action web/ calls is handled somewhere', () => {
     const orphans = FETCH_CALLS.filter(({ action }) => !HANDLED.has(action));
     expect(
-      [...new Set(orphans.map(({ action, file }) => `${action}  (${file})`))].sort(),
+      [...new Set(orphans.map(({ action, file }) => `${action}  (${file})`))].toSorted(),
       'web calls this and nothing answers it in game — the mock registry hides that'
     ).toEqual([]);
   });
@@ -217,7 +217,7 @@ describe('no missing layer', () => {
   it('every route reaches a server event that is actually registered', () => {
     const missing = ROUTES.filter((r) => !registeredServerEvents.has(serverEventFor(r)));
     expect(
-      missing.map((r) => `${r.action} -> ${serverEventFor(r)}`).sort(),
+      missing.map((r) => `${r.action} -> ${serverEventFor(r)}`).toSorted(),
       'the client would forward this and the server would never answer, so the NUI ' +
         'callback hangs for 15s and then reports a timeout'
     ).toEqual([]);
@@ -225,14 +225,14 @@ describe('no missing layer', () => {
 
   it('every client-only action really is registered on the client', () => {
     const missing = CLIENT_ONLY_ACTIONS.filter((a) => !CLIENT_CALLBACKS.has(a));
-    expect(missing.sort()).toEqual([]);
+    expect(missing.toSorted()).toEqual([]);
   });
 
   it('every unimplemented action still answers, rather than doing nothing', () => {
     // The promise of the unimplemented list is that the web is told, not that the
     // callback is absent. An absent one is exactly the silent no-op being outlawed.
     const missing = UNIMPLEMENTED_ACTIONS.filter((a) => !CLIENT_CALLBACKS.has(a));
-    expect(missing.sort()).toEqual([]);
+    expect(missing.toSorted()).toEqual([]);
   });
 });
 
@@ -240,7 +240,7 @@ describe('no dead weight', () => {
   it('every declared route is actually called by web/', () => {
     const called = new Set(FETCH_CALLS.map((c) => c.action));
     const unused = [...ROUTE_ACTIONS].filter((a) => !called.has(a));
-    expect(unused.sort(), 'delete the route, or wire up the caller').toEqual([]);
+    expect(unused.toSorted(), 'delete the route, or wire up the caller').toEqual([]);
   });
 
   it('every route and client-only action has a browser mock', () => {
@@ -249,6 +249,6 @@ describe('no dead weight', () => {
     const missing = [...ROUTE_ACTIONS, ...CLIENT_ONLY_ACTIONS, ...UNIMPLEMENTED_ACTIONS].filter(
       (a) => !MOCKS.has(a)
     );
-    expect(missing.sort()).toEqual([]);
+    expect(missing.toSorted()).toEqual([]);
   });
 });

@@ -17,7 +17,7 @@ export const resolvedReports = writable<Report[]>([]);
 /** Drives the home-screen badge. Falls to zero only when the queue empties. */
 export const pendingReportCount = derived(pendingReports, ($pending) => $pending.length);
 
-const asReports = (value: unknown): Report[] => (Array.isArray(value) ? value : []);
+const asReports = (value: unknown): Report[] => (Array.isArray(value) ? (value as Report[]) : []);
 
 export const loadPendingReports = async (): Promise<void> => {
   // A non-admin is refused server-side; an empty queue is the right thing to show.
