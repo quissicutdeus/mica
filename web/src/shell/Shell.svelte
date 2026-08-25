@@ -118,6 +118,22 @@
           onAccept: () => {
             visible = true;
             openApp('phone');
+            // Answer it, rather than merely opening the app on top of a still-ringing
+            // call. `registerHandler('answerCall')` below has always done this; the
+            // toast's own Accept button did not, so picking up from the ring left the
+            // status on 'incoming', started no duration timer, and never sent
+            // `answerCall` to the server — which then logged the call as *missed* with a
+            // zero duration, since `answeredAt` was never set (`server/services/Phone.ts`).
+            callStore.answerCall();
+            // `ToastHost` dismisses a toast once its action resolves, and a plain dismiss
+            // deliberately leaves the row it created in the shade. That is right for a
+            // call nobody picked up and wrong for this one: archiving clears the
+            // notification too, so an answered call stops sitting in the drawer as though
+            // it still needed attention.
+            if (incomingToastId) {
+              void toast.archive(incomingToastId);
+              incomingToastId = null;
+            }
           },
           onDecline: declineCall,
           // Nothing else ends an unanswered call, so letting the toast simply vanish

@@ -45,11 +45,20 @@
 
   const triggerCall = () => {
     callStore.setIncoming(callNumber, callName);
-    toast.showCall({
+    // Held so Accept can archive it. The simulation mirrors the real ring in
+    // `Shell.svelte` — including clearing the shade row on pickup — because a test path
+    // that behaves differently from the thing it stands in for is worse than no test path.
+    let simulatedToastId: string | null = null;
+    simulatedToastId = toast.showCall({
       name: callName,
       number: callNumber,
       onAccept: () => {
         openApp('phone');
+        callStore.setStatus('connected');
+        if (simulatedToastId) {
+          void toast.archive(simulatedToastId);
+          simulatedToastId = null;
+        }
       },
       onDecline: () => {
         callStore.setStatus('idle');
