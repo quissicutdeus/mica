@@ -336,9 +336,12 @@ export const runChargeCommand = (source: number, args: string[]): void => {
     return;
   }
 
-  void savePlayerBattery(target, level);
-  emitNet('gphone:client:battery:set', target, level);
-  respond(source, `battery for ${target} set to ${level}%`);
+  // Through `applyCharge`, not a bare save-and-push. Writing the row and telling the
+  // phone leaves out the third place the number lives: the `charge` map the server's own
+  // drain loop ticks from. The phone showed 100 and the very next tick pushed the old
+  // level straight back over it, having never heard about this command.
+  const applied = applyCharge(target, level);
+  respond(source, `battery for ${target} set to ${applied}%`);
 };
 
 RegisterCommand(
