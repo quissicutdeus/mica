@@ -18,5 +18,9 @@ files {
   'dist/web/index.html',
   'dist/web/assets/**/*',
   'dist/web/*.svg',
+  -- Add-ons are fetched at runtime by `shell/state/registry.ts` (`./addons/<id>.js`) and
+  -- are not part of the hashed `assets/` graph, so `assets/**/*` never covered them. FiveM
+  -- serves only what is declared here, so every add-on 404'd — blabber, hodlr, notes, snek.
+  'dist/web/addons/**/*',
 }
 
