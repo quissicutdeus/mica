@@ -1,5 +1,14 @@
 import { PhoneCamera } from '../game/PhoneCamera';
 
+/**
+ * Upper bound on the intermediate capture's long edge, in pixels.
+ *
+ * Trades capture cost against viewfinder sharpness: full native resolution on a big or
+ * ultrawide monitor froze the game for seconds while PNG-encoding the frame, and the
+ * stored crop is capped at 1080px on its long edge downstream anyway.
+ */
+const CAPTURE_LONG_EDGE_MAX = 2560;
+
 const takePhoto = async (): Promise<string> => {
   return new Promise((resolve, reject) => {
     try {
@@ -22,13 +31,25 @@ const takePhoto = async (): Promise<string> => {
       // silently downscales anything bigger before gPhone ever sees it — on a monitor
       // wider than that (an ultrawide most of all, since its height is often still under
       // 1080) the whole frame gets shrunk well below native, and the phone's viewfinder
-      // crop is a small fraction of that already-shrunk frame. Passing the real screen
-      // resolution here is what actually fixes that; `computeCropGeometry` in
-      // `apps/camera/capture.ts` still caps the *stored* crop's long edge at 1080px on
-      // its own, so this does not change output size for anyone at or under 1080p.
+      // crop is a small fraction of that already-shrunk frame.
+      //
+      // The fix is to raise that ceiling, but not all the way to native: capturing and
+      // PNG-encoding a full 5120px-wide frame stalls the game for seconds. So the long
+      // edge is clamped to CAPTURE_LONG_EDGE_MAX with the aspect ratio preserved —
+      // maxWidth/maxHeight is a bounding box screencapture downscales to fit, so this is
+      // purely a lower ceiling and never a crop or a stretch. Well above the old 1920x1080
+      // default, so viewfinder crops stay far sharper, and cheap enough not to freeze.
+      //
+      // `computeCropGeometry` in `apps/camera/capture.ts` still caps the *stored* crop's
+      // long edge at 1080px on its own, so none of this changes output size.
       const [screenWidth, screenHeight] = GetActiveScreenResolution();
+      const captureScale = Math.min(1, CAPTURE_LONG_EDGE_MAX / Math.max(screenWidth, screenHeight));
       exports['screencapture'].requestScreenshot(
-        { encoding: 'png', maxWidth: screenWidth, maxHeight: screenHeight },
+        {
+          encoding: 'png',
+          maxWidth: Math.round(screenWidth * captureScale),
+          maxHeight: Math.round(screenHeight * captureScale)
+        },
         (data: string) => {
           resolve(data);
         }
