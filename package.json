@@ -52,6 +52,7 @@
   "author": "quissicutdeus",
   "license": "AGPL-3.0-or-later",
   "simple-git-hooks": {
+    "commit-msg": "node scripts/check-commit-msg.js \"$1\"",
     "pre-commit": "pnpm exec lint-staged",
     "pre-push": "pnpm check:fast"
   },
