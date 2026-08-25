@@ -270,6 +270,27 @@ not work around it.
     (`MICA-16`) — the key only, never the site URL, which identifies the
     owner.
 
+12. **Every branch is named for its Jira key.** `MICA-<n>`, optionally with a
+    lowercase slug — `MICA-56` or `MICA-56-bank-send`. `main` and `dev` are
+    the only other legal names. No `feature/`, no tool-generated names, no
+    `claude/…`: a branch whose name does not say which ticket it serves is one
+    nobody else can triage.
+
+    Enforced in two halves, because neither covers the other's blind spot. The
+    `pre-push` hook (`scripts/check-branch-name.js`, installed by
+    `simple-git-hooks`) judges the _remote_ ref of each push — so
+    `git push origin HEAD:refs/heads/MICA-56` is legal from a
+    differently-named local branch, and a session on a machine with no global
+    git config is still covered. The ruleset in
+    `.github/rulesets/ticket-key-branch-names.json` covers what never reaches a
+    local hook: the web UI, and anything pushed by an app. Import it under
+    Settings → Rules. It excludes `refs/heads/dependabot/**` deliberately —
+    Dependabot names its own branches and blocking them stops dependency
+    updates.
+
+    Deletions are exempt from the hook, so a non-conforming branch predating the
+    rule can still be removed.
+
 ---
 
 ## 3. TypeScript is split by package — on purpose
