@@ -107,11 +107,31 @@ describe('residency cap', () => {
     expect(resident[resident.length - 1]).toBe(opened[opened.length - 1]);
   });
 
-  it('re-opening refreshes recency rather than duplicating', () => {
+  it('re-opening refreshes recency without duplicating or moving the app', () => {
     openApp('notes');
     openApp('media');
     openApp('notes');
-    expect(names()).toEqual(['media', 'notes']);
+    // Mount order, not recency order: this list is the DOM's order, and moving a mounted
+    // app's node reloads any iframe inside it. Recency lives beside the list — see
+    // `openApp` — and is asserted through eviction by the cases around this one.
+    expect(names()).toEqual(['notes', 'media']);
+  });
+
+  it('never moves a resident app, because moving one reloads any iframe inside it', () => {
+    // The invariant this file exists to protect. `runningApps` is the order `Shell`
+    // renders in, so it is the DOM's order; a keyed `{#each}` relocates a node whose
+    // position changes, and relocating an iframe destroys and recreates it. The add-on
+    // inside then comes back as a new window that its host server refuses to talk to, and
+    // renders blank with no error. Recency belongs beside this list, never as its order.
+    openApp('notes');
+    openApp('media');
+    const before = names();
+
+    openApp('notes');
+    openApp('media');
+    openApp('notes');
+
+    expect(names()).toEqual(before);
   });
 
   it('never evicts an app that stays in use', () => {

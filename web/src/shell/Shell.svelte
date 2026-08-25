@@ -508,7 +508,27 @@
               {@const manifest = appRegistryStore.getManifest(instance.id)}
               {@const isNetworkBlocked =
                 (manifest?.requiresNetwork ?? false) && $clampedSignalLevel === 0}
-              <div class="absolute inset-0" class:hidden={!isActive} inert={!isActive}>
+              {@const isAddOn = !!manifest && !manifest.core && !AppComponent}
+              <!-- Backgrounded in-process apps get `display:none`; add-on frames must not.
+                   An iframe with no box has a 0x0 viewport, and the sandbox document is a
+                   `height:100%` chain (`srcdoc.ts`) — so `display:none` collapses the whole
+                   add-on to nothing, and CEF's Chromium 103 does not reliably lay it back
+                   out when the box returns. The add-on came back blank, still running and
+                   still talking to the host, just measured at zero.
+
+                   `visibility:hidden` keeps the box, so the frame keeps its size and never
+                   has to be re-laid-out at all. The compositor objection in the note above
+                   is about `backdrop-blur`/`transform` layers inside an in-process app
+                   leaking over the home screen; an add-on is one replaced element, and a
+                   hidden iframe paints nothing. `pointer-events-none` because a hidden box
+                   is still a hit-testing target where `display:none` was not. -->
+              <div
+                class="absolute inset-0"
+                class:hidden={!isActive && !isAddOn}
+                class:invisible={!isActive && isAddOn}
+                class:pointer-events-none={!isActive && isAddOn}
+                inert={!isActive}
+              >
                 {#if manifest && !manifest.core && !AppComponent}
                   <!-- A shipped or Store-installed add-on: source text, a frame, a wall.
                        A `core:false` app that *has* a component is a DEV-only runtime

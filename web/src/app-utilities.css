@@ -938,6 +938,9 @@
 .h-screen {
   height: 100vh;
 }
+.invisible {
+  visibility: hidden;
+}
 .hidden {
   display: none;
 }

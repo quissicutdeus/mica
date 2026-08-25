@@ -314,7 +314,29 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
 
   return {
     handle(this: void, event: MessageEvent) {
-      if (disposed || event.source !== source) return;
+      if (disposed) return;
+      if (event.source !== source) {
+        /**
+         * Loud, because this is the shape of failure with no symptom.
+         *
+         * A frame that reloads comes back as a different window, and every message it
+         * sends is refused here — including the `hello` it needs answered to render at
+         * all. The add-on then sits blank, still mounted and still running, with nothing
+         * in any console and nothing in any log to look for. That cost a long evening.
+         *
+         * Only `hello` is worth reporting: it is the one message whose loss is fatal, and
+         * a stray `call`/`subscribe` from a dying frame is ordinary teardown noise.
+         */
+        const stray = event.data as { kind?: unknown; appId?: unknown } | null;
+        if (stray && typeof stray === 'object' && stray.kind === 'hello') {
+          console.error(
+            `[gPhone] add-on '${manifest.id}' said hello from a window this host is not ` +
+              `bound to — it has probably reloaded, and will stay blank until the host ` +
+              `rebinds. See AddOnFrame's onload handler.`
+          );
+        }
+        return;
+      }
       const msg = event.data as ToShell;
       if (!msg || typeof msg !== 'object' || typeof msg.kind !== 'string') return;
       switch (msg.kind) {

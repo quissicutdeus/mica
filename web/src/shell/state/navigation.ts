@@ -41,6 +41,15 @@ export const MAX_RESIDENT_APPS = 5;
 /** Resident apps, least recently active first. */
 export const runningApps = writable<RunningApp[]>([]);
 
+/**
+ * Which resident app was used least recently, most-recent last.
+ *
+ * Deliberately not `runningApps`' own order — see the note in `openApp`. Eviction needs
+ * recency; the DOM needs stability; these are two different orders and conflating them is
+ * what made add-ons blank out.
+ */
+let recency: string[] = [];
+
 /** Whatever is on screen. `home` is the shell, not an app, and is never resident. */
 export const currentApp = writable<RunningApp>({ id: 'home', props: {} });
 
@@ -82,8 +91,29 @@ export const openApp = (appName: string, props: Record<string, unknown> = {}) =>
     // deep link set earlier. A deep link passes its own keys and those win.
     resolved = { id, props: { ...(existing?.props ?? {}), ...props } };
 
-    // Re-append so array order is recency order, then evict from the front.
-    return [...apps.filter((a) => a.id !== id), resolved].slice(-MAX_RESIDENT_APPS);
+    // Recency is tracked beside the list, never *as* its order.
+    //
+    // This array is the order `Shell` renders in, so it is the DOM's order, and a keyed
+    // `{#each}` physically moves a node when its position changes. Moving an iframe
+    // reloads it — a new browsing context, a new `contentWindow` — and `AddOnFrame`'s
+    // host server has already captured the old one as the window it will accept messages
+    // from. The reloaded add-on announced itself, was refused as a stranger, and sat
+    // there blank forever. Re-appending on every open meant that happened to any resident
+    // add-on as soon as you opened something else and came back to it.
+    //
+    // So a mounted app keeps its slot for as long as it lives, and only its props change.
+    recency = [...recency.filter((r) => r !== id), id];
+
+    const next = existing ? apps.map((a) => (a.id === id ? resolved : a)) : [...apps, resolved];
+    if (next.length <= MAX_RESIDENT_APPS) return next;
+
+    // Evict the least recently active, never what was just opened. Dropping entries does
+    // not disturb the relative order of the ones that stay, so no surviving node moves.
+    const evicted = new Set(
+      recency.filter((r) => r !== id).slice(0, next.length - MAX_RESIDENT_APPS)
+    );
+    recency = recency.filter((r) => !evicted.has(r));
+    return next.filter((a) => !evicted.has(a.id));
   });
 
   currentApp.set(resolved);
@@ -129,11 +159,13 @@ export const goHome = () => {
  */
 export const closeApp = (appName: string) => {
   const id = appName.toLowerCase();
+  recency = recency.filter((r) => r !== id);
   runningApps.update((apps) => apps.filter((a) => a.id !== id));
   if (get(currentApp).id === id) goHome();
 };
 
 export const closeAllApps = () => {
+  recency = [];
   runningApps.set([]);
   goHome();
 };
