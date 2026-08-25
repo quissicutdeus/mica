@@ -277,7 +277,8 @@ not work around it.
     nobody else can triage.
 
     Enforced in two halves, because neither covers the other's blind spot. The
-    `pre-push` hook (`scripts/check-branch-name.js`, installed by
+    `pre-push` hook (`scripts/pre-push.js`, which judges names via
+    `scripts/check-branch-name.js` and then runs `check:fast`, installed by
     `simple-git-hooks`) judges the _remote_ ref of each push — so
     `git push origin HEAD:refs/heads/MICA-56` is legal from a
     differently-named local branch, and a session on a machine with no global
@@ -289,7 +290,10 @@ not work around it.
     updates.
 
     Deletions are exempt from the hook, so a non-conforming branch predating the
-    rule can still be removed.
+    rule can still be removed — and a delete-only push skips `check:fast`
+    entirely, since it introduces no code to verify. That skip is not a
+    micro-optimisation: running the full gate on a deletion took long enough to
+    time out the push before git performed it.
 
 ---
 
