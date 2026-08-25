@@ -171,7 +171,7 @@
 <Screen title={app.title} onback={app.back} actions={headerActions}>
   {#if selectedPhoto}
     <!-- Full Screen Image View -->
-    <div class="relative flex h-full flex-col bg-black" transition:fade>
+    <div class="relative flex flex-1 flex-col bg-black" transition:fade>
       <div class="flex flex-1 items-center justify-center p-2">
         <MediaThumb item={selectedPhoto} fit="contain" alt="Photo {selectedPhoto.id}" />
       </div>
@@ -210,7 +210,7 @@
     </div>
   {:else}
     <!-- Grid View -->
-    <div class="no-scrollbar bg-surface relative h-full overflow-y-auto p-1">
+    <div class="no-scrollbar bg-surface relative min-h-0 flex-1 overflow-y-auto p-1">
       {#if !$mediaLoaded}
         <Skeleton count={4} height="h-24" rounded="rounded-none" />
       {:else if $media.length === 0}

@@ -1120,6 +1120,9 @@
 .min-h-0 {
   min-height: 0;
 }
+.min-h-full {
+  min-height: 100%;
+}
 .min-h-\[22px\] {
   min-height: 22px;
 }
@@ -1329,6 +1332,9 @@
 }
 .pb-12 {
   padding-bottom: 3rem;
+}
+.pb-14 {
+  padding-bottom: 3.5rem;
 }
 .pb-1\.5 {
   padding-bottom: 0.375rem;

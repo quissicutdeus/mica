@@ -196,7 +196,7 @@
   {#if !selectedNote}
     {#if isAdding}
       <div
-        class="animate-in fade-in slide-in-from-right bg-surface-container m-2 flex h-[calc(100%-1rem)] flex-col space-y-3 rounded-lg p-4"
+        class="animate-in fade-in slide-in-from-right bg-surface-container m-2 flex flex-1 flex-col space-y-3 rounded-lg p-4"
       >
         <input
           class="bg-surface-container-high placeholder-on-surface-variant w-full rounded p-2 text-lg font-bold"
@@ -283,7 +283,7 @@
         </div>
       </div>
     {:else}
-      <div class="no-scrollbar flex h-full flex-col space-y-2 overflow-y-auto p-2">
+      <div class="no-scrollbar flex min-h-0 flex-1 flex-col space-y-2 overflow-y-auto p-2">
         {#if !isAdding && $notes.length > 0}
           <div class="mb-2">
             <SearchBar
@@ -325,7 +325,7 @@
     {/if}
   {:else}
     <!-- Detailed View / Edit -->
-    <div class="bg-surface relative flex h-full flex-col">
+    <div class="bg-surface relative flex flex-1 flex-col">
       {#if isEditing && draftNote}
         <div class="flex h-full flex-col gap-4 p-4">
           <input

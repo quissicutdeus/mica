@@ -650,7 +650,7 @@
     />
   {:else if tab === 'following'}
     <!-- `pb-20` clears the nav and safe bottom inset: without it the last row hides underneath the bar. -->
-    <div class="flex-1 overflow-y-auto pb-20" onscroll={followingPage.onScroll}>
+    <div class="min-h-0 flex-1 overflow-y-auto pb-20" onscroll={followingPage.onScroll}>
       {#if !$followingLoaded}
         <div class="p-4"><Skeleton count={4} height="h-16" /></div>
       {:else if $followingFeed.length === 0}
@@ -682,7 +682,7 @@
       {/if}
     </div>
   {:else}
-    <div class="flex-1 overflow-y-auto pb-20" onscroll={page.onScroll}>
+    <div class="min-h-0 flex-1 overflow-y-auto pb-20" onscroll={page.onScroll}>
       {#if !$feedLoaded}
         <!-- Still waiting on the first page. "Nothing here yet" is a claim about the feed, and
              making it before the server has answered is a claim the app cannot support. -->

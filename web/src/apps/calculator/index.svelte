@@ -174,7 +174,7 @@
 <svelte:window on:keydown={handleKeydown} />
 
 <Screen title={app.title} onback={app.back}>
-  <div class="flex h-full flex-col p-4">
+  <div class="flex flex-1 flex-col p-4">
     <!-- Display -->
     <div class="mb-8 flex flex-1 items-end justify-end text-6xl font-light break-all">
       {display}

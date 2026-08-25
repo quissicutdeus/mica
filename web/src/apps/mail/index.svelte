@@ -121,7 +121,7 @@
 <Screen title={app.title} onback={app.back} actions={headerActions}>
   {#if selectedMail}
     <!-- Detail View -->
-    <div class="flex h-full flex-col p-4">
+    <div class="flex flex-1 flex-col p-4">
       <div class="border-outline-variant mb-4 border-b pb-3">
         <div class="mb-2 flex items-start justify-between">
           <div>
