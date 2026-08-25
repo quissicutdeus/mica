@@ -260,6 +260,92 @@ describe('attachDragGesture', () => {
     expect(onMove).toHaveBeenCalledTimes(1);
   });
 
+  describe('crossAxisCancel: false', () => {
+    it('keeps a gesture that starts sideways, reading it along the configured axis', () => {
+      const onMove = vi.fn();
+      const onEnd = vi.fn();
+      const onCancel = vi.fn();
+      cleanup = attachDragGesture(element, {
+        axis: 'y',
+        crossAxisCancel: false,
+        onMove,
+        onEnd,
+        onCancel
+      });
+
+      // More sideways than vertical at the moment the threshold is cleared — `lockAxis`
+      // calls this 'x', which by default would kill the gesture outright.
+      firePointerEvent(element, 'pointerdown', { clientX: 0, clientY: 0, timeMs: 0 });
+      firePointerEvent(window, 'pointermove', { clientX: 20, clientY: 15, timeMs: 5 });
+
+      expect(onCancel).not.toHaveBeenCalled();
+      expect(onMove).toHaveBeenCalledWith(15, expect.anything());
+
+      // And it stays on the y axis for the rest of the drag.
+      firePointerEvent(window, 'pointermove', { clientX: 60, clientY: 40, timeMs: 10 });
+      expect(onMove).toHaveBeenLastCalledWith(40, expect.anything());
+    });
+
+    it('still cancels a sideways start by default', () => {
+      const onMove = vi.fn();
+      const onCancel = vi.fn();
+      cleanup = attachDragGesture(element, { axis: 'y', onMove, onEnd: vi.fn(), onCancel });
+
+      firePointerEvent(element, 'pointerdown', { clientX: 0, clientY: 0, timeMs: 0 });
+      firePointerEvent(window, 'pointermove', { clientX: 20, clientY: 15, timeMs: 5 });
+
+      expect(onCancel).toHaveBeenCalledTimes(1);
+      expect(onMove).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('click suppression', () => {
+    /** Press, wobble/drag to `travel` px, release — the shape of both cases below. */
+    const gesture = (travel: number) => {
+      firePointerEvent(element, 'pointerdown', { clientX: 0, clientY: 0, timeMs: 0 });
+      firePointerEvent(window, 'pointermove', { clientX: 0, clientY: travel, timeMs: 10 });
+      firePointerEvent(window, 'pointerup', { clientX: 0, clientY: travel, timeMs: 20 });
+    };
+
+    it('lets the click through when the gesture only wobbled past the axis threshold', () => {
+      const onClick = vi.fn();
+      element.addEventListener('click', onClick);
+      cleanup = attachDragGesture(element, { axis: 'y', onMove: vi.fn(), onEnd: vi.fn() });
+
+      // 6px: past `axisThreshold` (4) so the gesture commits, but under the 10px
+      // suppression slop — an ordinary click that drifted, not a drag.
+      gesture(6);
+      element.click();
+
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('swallows the click after a gesture that actually travelled', () => {
+      const onClick = vi.fn();
+      element.addEventListener('click', onClick);
+      cleanup = attachDragGesture(element, { axis: 'y', onMove: vi.fn(), onEnd: vi.fn() });
+
+      gesture(40);
+      element.click();
+
+      expect(onClick).not.toHaveBeenCalled();
+    });
+
+    it('does not leave the swallower armed when no click follows the drag', async () => {
+      const onClick = vi.fn();
+      element.addEventListener('click', onClick);
+      cleanup = attachDragGesture(element, { axis: 'y', onMove: vi.fn(), onEnd: vi.fn() });
+
+      // A drag that ends over some other element fires no click, so `once` never spends
+      // the listener. It has to be torn down anyway or it eats the next unrelated click.
+      gesture(40);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      element.click();
+
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('axis: "xy"', () => {
     it('locks to x and reports the x delta when horizontal movement dominates', () => {
       const onMove = vi.fn();

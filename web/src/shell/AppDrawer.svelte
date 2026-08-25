@@ -111,6 +111,7 @@
     if (!topHandleRef) return;
     return attachDragGesture(topHandleRef, {
       axis: 'y',
+      crossAxisCancel: false,
       onMove: closeDrag.onMove,
       onEnd: closeDrag.onEnd
     });

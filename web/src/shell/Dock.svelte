@@ -1,7 +1,7 @@
 <script lang="ts">
   import { get } from 'svelte/store';
   import { attachDragGesture } from '../lib/pointerDrag';
-  import { createSheetOpen } from '../lib/sheetDrag';
+  import { createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/sheetDrag';
   import AppIcon from '../sdk/ui/AppIcon.svelte';
   import { appRegistryStore } from './state/registry';
   import { dockAppIds, DOCK_SLOT_COUNT } from './state/dock';
@@ -34,7 +34,8 @@
     phase: drawerDragPhase,
     revealDistance: SHADE_DRAG_REVEAL_DISTANCE,
     guard: () => !get(isDrawerOpen),
-    open: openDrawer
+    open: openDrawer,
+    commit: DRAWER_OPEN_COMMIT
   });
 
   $effect(() => {

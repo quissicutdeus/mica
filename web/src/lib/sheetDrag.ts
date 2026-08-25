@@ -1,5 +1,5 @@
 import { get, type Writable } from 'svelte/store';
-import { clampProgress, shouldCommitDrag } from './pointerDrag';
+import { clampProgress, shouldCommitDrag, type CommitDragOptions } from './pointerDrag';
 
 /**
  * The close-drag shared by the two sheets that slide over the phone: the App Drawer and
@@ -49,6 +49,28 @@ export interface SheetCloseHandlers {
   bodyShouldStart: (e: PointerEvent) => boolean;
 }
 
+/**
+ * What counts as "open it" for the App Drawer's swipe-up.
+ *
+ * The default `shouldCommitDrag` thresholds are the shade's, and they are right there: the
+ * shade is pulled *down* from the status bar, which is a long, deliberate travel anyway.
+ * Applied to the drawer they were not — with `revealDistance` at the full 850px phone
+ * height, committing at 0.5 meant swiping up 425px, half the phone, from a 24px bar at the
+ * very bottom edge. The velocity escape hatch did not rescue it either: `measureDragRatio`
+ * divides the delta by the phone's zoom, so on a display large enough to scale the phone
+ * *up* — an ultrawide, where it fits at ~1.7x — 1.2 design-px/ms is nearer 2000 real px/s.
+ * The gesture was reachable in principle and almost never in practice.
+ *
+ * Lowering `revealDistance` instead would have been the wrong knob: `AppDrawer.svelte`
+ * maps this same progress onto a fixed 850px `translateY`, so a shorter reveal distance
+ * makes the sheet outrun the finger. Thresholds change what counts as intent; the sheet
+ * still tracks the finger 1:1 the whole way.
+ */
+export const DRAWER_OPEN_COMMIT: CommitDragOptions = {
+  progressThreshold: 0.2,
+  velocityThreshold: 0.6
+};
+
 export interface SheetOpenOptions {
   /** Which way an opening pull travels. 'up' = drawer (rises from the bottom). */
   direction: SheetCloseDirection;
@@ -60,6 +82,8 @@ export interface SheetOpenOptions {
   guard: () => boolean;
   /** Called once, on a release that commits. */
   open: () => void;
+  /** Overrides the commit thresholds. Defaults to the shade's; the drawer passes `DRAWER_OPEN_COMMIT`. */
+  commit?: CommitDragOptions;
 }
 
 export interface SheetOpenHandlers {
@@ -70,7 +94,7 @@ export interface SheetOpenHandlers {
 /** Open-drag counterpart to `createSheetClose`. Shared by the Dock, the home indicator
  * bar, and the collapsed search bar (MICA-45/46) so the swipe-up-to-open math lives once. */
 export function createSheetOpen(options: SheetOpenOptions): SheetOpenHandlers {
-  const { direction, progress, phase, revealDistance, guard, open } = options;
+  const { direction, progress, phase, revealDistance, guard, open, commit } = options;
   const sign = direction === 'up' ? -1 : 1;
 
   return {
@@ -82,7 +106,7 @@ export function createSheetOpen(options: SheetOpenOptions): SheetOpenHandlers {
     onEnd(_deltaY, velocity) {
       if (!guard()) return;
       phase.set('settling');
-      if (shouldCommitDrag(get(progress), sign * velocity)) {
+      if (shouldCommitDrag(get(progress), sign * velocity, commit)) {
         progress.set(1);
         open();
       } else {

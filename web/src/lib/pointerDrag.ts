@@ -111,12 +111,45 @@ export interface DragGestureConfig {
   axisThreshold?: number;
   /** Swallow the next `click` once a real drag has committed, so drag-release doesn't also fire a tap handler. Default true. */
   suppressClickAfterDrag?: boolean;
+  /**
+   * Raw px of peak travel a gesture must reach before its release is allowed to swallow
+   * the following `click`. Default 10.
+   *
+   * Not the same number as `axisThreshold`, and deliberately larger. Committing to an
+   * axis at 4px is right for *starting* to track a drag — it has to beat a real swipe to
+   * the punch. Treating that same 4px as "this was a drag, so eat the click" is not: a
+   * plain mouse click drifts a few pixels between press and release all the time, and
+   * every one of those was landing as a committed gesture that travelled nowhere, failed
+   * to commit on release, and then ate its own click. The button simply went dead — which
+   * is what happened to the drawer's search pill and the home bar, both of which do their
+   * real work in `onclick`.
+   */
+  clickSuppressSlop?: number;
   /** Ratio-corrected, signed delta along the committed axis, called on every move once committed. */
   onMove: (delta: number, e: PointerEvent) => void;
   /** Called once on release, with the final delta and a rolling velocity estimate (units/ms). Only fires if the gesture committed to an axis. */
   onEnd: (delta: number, velocityPerMs: number) => void;
   /** Fired once if movement locks to the *other* axis (only possible for a fixed `'x'`/`'y'` config) — the gesture never captures the pointer or calls `onMove`/`onEnd`. */
   onCancel?: () => void;
+  /**
+   * Whether movement that locks to the other axis kills the gesture. Default true.
+   *
+   * Yielding is right wherever a cross-axis gesture is genuinely competing for the same
+   * pixels — the shade's list has `SwipeableRow`, the drawer's grid has icons that pick up
+   * in any direction — and those keep it.
+   *
+   * On a dedicated grab handle there is nothing to yield *to*, and the cancel is pure
+   * cost. `lockAxis` decides on whichever pointermove first clears `axisThreshold`, and a
+   * mouse clears 4px in one jump: a flick that starts even slightly more sideways than
+   * vertical locked to `'x'`, and since a lost axis lock tears the listeners down, the
+   * gesture was dead until the player released and pressed again. A perfectly diagonal
+   * start died every time — `lockAxis` resolves ties to `'x'`. That is the "I have to try
+   * way too hard to swipe it" the sheets had in both directions.
+   *
+   * With this off, movement is simply read along the configured axis and a sideways start
+   * is a no-op rather than a rejection.
+   */
+  crossAxisCancel?: boolean;
   /** `axis: 'xy'` only — fired once, the moment movement commits to x or y. */
   onAxisLocked?: (axis: 'x' | 'y') => void;
   /**
@@ -140,14 +173,40 @@ export interface DragGestureConfig {
  * listeners) and its click-swallow-on-release idiom, generalized so gesture call sites
  * don't each reimplement it.
  */
+/**
+ * The click-swallower armed by the most recent committed drag, if it has not fired yet.
+ *
+ * Module-level rather than per-gesture on purpose: the listener it tracks is on `window`,
+ * so a stale one armed by *any* gesture disarms the next click anywhere in the phone. The
+ * drawer had exactly that — a failed swipe up on the home bar left one behind, and the
+ * search pill the player pressed next did nothing.
+ */
+let pendingClickSwallow: ((event: MouseEvent) => void) | null = null;
+
+/**
+ * Drop a swallower that never got its click.
+ *
+ * Called from every `pointerdown` as well as on a timer. The timer alone is not enough to
+ * rely on — it is the prompt cleanup, not the guarantee — whereas a click is always
+ * preceded by a pointerdown, so clearing there is what actually bounds how long a stale
+ * swallower can survive.
+ */
+function clearPendingClickSwallow(): void {
+  if (!pendingClickSwallow) return;
+  window.removeEventListener('click', pendingClickSwallow, { capture: true });
+  pendingClickSwallow = null;
+}
+
 export function attachDragGesture(element: HTMLElement, config: DragGestureConfig): () => void {
   const {
     axis,
     axisThreshold = 4,
     suppressClickAfterDrag = true,
+    clickSuppressSlop = 10,
     onMove,
     onEnd,
     onCancel,
+    crossAxisCancel = true,
     onAxisLocked,
     shouldStart
   } = config;
@@ -157,6 +216,8 @@ export function attachDragGesture(element: HTMLElement, config: DragGestureConfi
   let startX = 0;
   let startY = 0;
   let dragRatio = 1;
+  /** Furthest the gesture got from its origin, in raw px. Gates the click swallow below. */
+  let peakTravel = 0;
   let velocityTracker = createVelocityTracker();
   // For a fixed 'x'/'y' config this is pinned up front. For 'xy' it stays null until the
   // first move locks it, and then never changes for the rest of the gesture.
@@ -173,11 +234,14 @@ export function attachDragGesture(element: HTMLElement, config: DragGestureConfi
     if (activePointerId !== null) return;
     if (shouldStart && !shouldStart(e)) return;
 
+    clearPendingClickSwallow();
+
     activePointerId = e.pointerId;
     committed = false;
     lockedAxis = axis === 'xy' ? null : axis;
     startX = e.clientX;
     startY = e.clientY;
+    peakTravel = 0;
     dragRatio = measureDragRatio(element);
     velocityTracker = createVelocityTracker();
 
@@ -195,12 +259,16 @@ export function attachDragGesture(element: HTMLElement, config: DragGestureConfi
       const locked = lockAxis(deltaX, deltaY, axisThreshold);
       if (locked === null) return;
       if (axis !== 'xy' && locked !== axis) {
-        stopTracking();
-        onCancel?.();
-        return;
+        if (crossAxisCancel) {
+          stopTracking();
+          onCancel?.();
+          return;
+        }
+        // Falls through: the gesture commits to its configured axis regardless, and the
+        // sideways component is just ignored from here on.
       }
       committed = true;
-      lockedAxis = locked;
+      lockedAxis = axis === 'xy' ? locked : axis;
       if (axis === 'xy') onAxisLocked?.(locked);
       try {
         element.setPointerCapture(e.pointerId);
@@ -211,6 +279,7 @@ export function attachDragGesture(element: HTMLElement, config: DragGestureConfi
     }
 
     e.preventDefault();
+    peakTravel = Math.max(peakTravel, Math.abs(rawDeltaFor(e)));
     const correctedDelta = rawDeltaFor(e) / dragRatio;
     velocityTracker.record(correctedDelta, e.timeStamp);
     onMove(correctedDelta, e);
@@ -233,12 +302,23 @@ export function attachDragGesture(element: HTMLElement, config: DragGestureConfi
       const correctedDelta = rawDeltaFor(e) / dragRatio;
       const velocity = velocityTracker.velocityPerMs();
 
-      if (suppressClickAfterDrag) {
+      if (suppressClickAfterDrag && peakTravel >= clickSuppressSlop) {
+        // `once` only spends the listener if a click actually arrives, and after a drag
+        // one often does not — release the pointer over a different element than it went
+        // down on and the browser fires no click at all. Left to itself the listener sat
+        // on window indefinitely and ate the next unrelated click. It is tracked so a
+        // later gesture can drop it, and cleared here first so two drags never stack two.
+        clearPendingClickSwallow();
         const swallowClick = (clickEvent: MouseEvent) => {
+          pendingClickSwallow = null;
           clickEvent.stopPropagation();
           clickEvent.preventDefault();
         };
+        pendingClickSwallow = swallowClick;
         window.addEventListener('click', swallowClick, { capture: true, once: true });
+        // The click, when there is one, is dispatched right after `pointerup`, so one
+        // still armed a task later has none coming.
+        setTimeout(clearPendingClickSwallow, 0);
       }
 
       onEnd(correctedDelta, velocity);

@@ -4,6 +4,7 @@
   import AppIcon from '../sdk/ui/AppIcon.svelte';
   import { attachLongPressDrag } from '../lib/longPressDrag';
   import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
+  import { DRAWER_OPEN_COMMIT } from '../lib/sheetDrag';
   import { appRegistryStore } from './state/registry';
   import { homeGridColumns, homeGridRows } from './state/homeGridSettings';
   import { homeGridItems, openFolderId, type HomeGridItem } from './state/homeGrid';
@@ -152,6 +153,10 @@
       // pointer.
       shouldStart: (e) =>
         !get(isShadeOpen) && !get(isDrawerOpen) && !(e.target as HTMLElement).closest('button'),
+      // `shouldStart` above has already excluded every icon and folder, so this only ever
+      // runs on empty grid cells — there is no horizontal gesture left to yield to, and
+      // cancelling on one just rejected any swipe that started a little sideways.
+      crossAxisCancel: false,
       onMove: driveSwipeShortcut,
       onEnd: (deltaY, velocity) => {
         const target = swipeTarget;
@@ -168,7 +173,7 @@
         } else if (target === 'drawer') {
           if (get(isDrawerOpen)) return;
           drawerDragPhase.set('settling');
-          if (shouldCommitDrag(get(drawerDragProgress), -velocity)) {
+          if (shouldCommitDrag(get(drawerDragProgress), -velocity, DRAWER_OPEN_COMMIT)) {
             drawerDragProgress.set(1);
             openDrawer();
           } else {

@@ -10,7 +10,7 @@
   import { stepVolume } from './state/audio';
   import { enableDragScroll } from '../lib/dragScroll';
   import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
-  import { createSheetOpen } from '../lib/sheetDrag';
+  import { createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/sheetDrag';
   import { PHONE_HEIGHT, PHONE_WIDTH, SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
   import LightningWarningIcon from '../sdk/ui/icons/LightningWarningIcon.svelte';
   import SignalIcon from '../sdk/ui/icons/SignalIcon.svelte';
@@ -93,6 +93,8 @@
     if (!statusBarRef) return;
     return attachDragGesture(statusBarRef, {
       axis: 'y',
+      // A dedicated grab surface: nothing horizontal shares these pixels.
+      crossAxisCancel: false,
       onMove: (deltaY) => {
         if (get(isShadeOpen)) return;
         shadeDragPhase.set('dragging');
@@ -118,13 +120,15 @@
     phase: drawerDragPhase,
     revealDistance: SHADE_DRAG_REVEAL_DISTANCE,
     guard: () => get(currentApp).id === 'home' && !get(isDrawerOpen) && !get(isShadeOpen),
-    open: openDrawer
+    open: openDrawer,
+    commit: DRAWER_OPEN_COMMIT
   });
 
   $effect(() => {
     if (!homeBarRef) return;
     return attachDragGesture(homeBarRef, {
       axis: 'y',
+      crossAxisCancel: false,
       onMove: openDrag.onMove,
       onEnd: openDrag.onEnd
     });

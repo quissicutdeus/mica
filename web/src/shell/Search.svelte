@@ -1,7 +1,7 @@
 <script lang="ts">
   import { get } from 'svelte/store';
   import { attachDragGesture } from '../lib/pointerDrag';
-  import { createSheetOpen } from '../lib/sheetDrag';
+  import { createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/sheetDrag';
   import { isDrawerOpen, openDrawer, drawerDragProgress, drawerDragPhase } from './state/appDrawer';
   import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
   import SearchIcon from '../sdk/ui/icons/SearchIcon.svelte';
@@ -15,13 +15,15 @@
     phase: drawerDragPhase,
     revealDistance: SHADE_DRAG_REVEAL_DISTANCE,
     guard: () => !get(isDrawerOpen),
-    open: openDrawer
+    open: openDrawer,
+    commit: DRAWER_OPEN_COMMIT
   });
 
   $effect(() => {
     if (!collapsedBarRef) return;
     return attachDragGesture(collapsedBarRef, {
       axis: 'y',
+      crossAxisCancel: false,
       onMove: openDrag.onMove,
       onEnd: openDrag.onEnd
     });
