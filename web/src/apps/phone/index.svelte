@@ -91,155 +91,173 @@
   {#if $callStore.status === 'idle'}
     <!-- Keypad / Recents -->
     <Screen title="Phone" {onback}>
-      <div class="px-4 pt-2">
-        <SegmentedControl
-          options={[
-            { id: 'keypad', label: 'Keypad' },
-            { id: 'recents', label: 'Recents' }
-          ]}
-          bind:selected={activeTab}
-          aria-label="Phone view"
-        />
-      </div>
+      <!-- `Screen`'s content box is `flex-1 overflow-y-auto` and *not* a flex column, so a
+           child asking for `h-full` got the full height of that box rather than what was
+           left under the tabs — tabs plus a full screen overflowed it, and the whole app
+           scrolled. This column is the missing layer: it fills the content box exactly, the
+           tabs take their natural height, and the pane below takes the rest. -->
+      <div class="flex h-full flex-col">
+        <div class="px-4 pt-2">
+          <SegmentedControl
+            options={[
+              { id: 'keypad', label: 'Keypad' },
+              { id: 'recents', label: 'Recents' }
+            ]}
+            bind:selected={activeTab}
+            aria-label="Phone view"
+          />
+        </div>
 
-      {#if activeTab === 'keypad'}
-        <div class="flex h-full flex-1 flex-col items-center justify-end p-8 pb-12">
-          <!-- Favorites Bar -->
-          {#if $favoriteContacts.length > 0}
-            <div class="mt-4 mb-auto w-full">
-              <div class="text-on-surface-variant text-body-small mb-2 ml-1 uppercase">
-                Favorites
+        {#if activeTab === 'keypad'}
+          <!-- `justify-end` used to bottom-cram this whole column, with the favourites bar's
+             own `mb-auto` acting as the only thing holding the top. A player with no
+             favourites — which is everyone until they mark one — got no such spacer, so the
+             keypad collapsed against the bottom edge and the entire upper half of the app
+             was dead space. The dialler group below carries its own `flex-1` centring
+             instead, so it sits properly whether or not the bar above it exists.
+
+             `pb-14` rather than `pb-12`: the call button was landing on top of the frame's
+             own home-indicator pill (`h-6` at `bottom-0` in `PhoneFrame.svelte`). -->
+          <div class="flex min-h-0 flex-1 flex-col items-center p-8 pb-14">
+            <!-- Favorites Bar -->
+            {#if $favoriteContacts.length > 0}
+              <div class="mt-4 w-full">
+                <div class="text-on-surface-variant text-body-small mb-2 ml-1 uppercase">
+                  Favorites
+                </div>
+                <div class="no-scrollbar flex space-x-4 overflow-x-auto pb-2">
+                  {#each $favoriteContacts as fav (fav.id)}
+                    <button
+                      class="flex min-w-[64px] flex-col items-center space-y-1"
+                      onclick={() => startCall(fav.phone, `${fav.firstname} ${fav.lastname || ''}`)}
+                    >
+                      <Avatar
+                        initials={(fav.firstname[0] || '') + (fav.lastname?.[0] || '')}
+                        size="w-12 h-12"
+                        textClass="text-lg"
+                        bgClass="bg-yellow-600 shadow-elevation-3"
+                      />
+                      <span class="text-on-surface text-body-small w-full truncate text-center"
+                        >{fav.firstname}</span
+                      >
+                    </button>
+                  {/each}
+                </div>
               </div>
-              <div class="no-scrollbar flex space-x-4 overflow-x-auto pb-2">
-                {#each $favoriteContacts as fav (fav.id)}
+            {/if}
+
+            <div class="flex w-full flex-1 flex-col items-center justify-center">
+              <!-- Number Display -->
+              <div class="mb-8 flex h-12 items-center text-4xl font-light">
+                {enteredNumber}
+              </div>
+
+              <!-- Keypad -->
+              <div class="grid w-full max-w-[280px] grid-cols-3 gap-6">
+                {#each [1, 2, 3, 4, 5, 6, 7, 8, 9] as num (num)}
                   <button
-                    class="flex min-w-[64px] flex-col items-center space-y-1"
-                    onclick={() => startCall(fav.phone, `${fav.firstname} ${fav.lastname || ''}`)}
+                    class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
+                    onclick={() => handleKeypad(num.toString())}
+                  >
+                    {num}
+                  </button>
+                {/each}
+                <button
+                  class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
+                  onclick={() => handleKeypad('*')}>*</button
+                >
+                <button
+                  class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
+                  onclick={() => handleKeypad('0')}>0</button
+                >
+                <button
+                  class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
+                  onclick={() => handleKeypad('#')}>#</button
+                >
+              </div>
+
+              <div class="relative mt-8 flex w-full max-w-[280px] items-center justify-center">
+                <!-- Place holder to center call button -->
+                <div class="w-16"></div>
+
+                <!-- Call Button -->
+                <button
+                  class="shadow-elevation-3 duration-short ease-standard mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-500 shadow-green-500/30 transition-colors hover:bg-green-400"
+                  aria-label="Call"
+                  onclick={() => startCall(enteredNumber)}
+                >
+                  <PhoneIcon class="text-on-surface h-8 w-8" />
+                </button>
+
+                <!-- Backspace -->
+                <div class="flex w-16 justify-center">
+                  {#if enteredNumber}
+                    <button
+                      class="text-on-surface-variant hover:text-on-surface duration-short ease-standard transition-colors"
+                      onclick={handleBackspace}
+                      aria-label="Backspace"
+                    >
+                      <BackspaceIcon class="h-8 w-8" />
+                    </button>
+                  {/if}
+                </div>
+              </div>
+            </div>
+          </div>
+        {:else}
+          <!-- Recents -->
+          <div class="scrollbar-none min-h-0 flex-1 overflow-y-auto px-4 pb-8">
+            {#if $callLog.length === 0}
+              <div
+                class="text-on-surface-variant flex h-full flex-col items-center justify-center space-y-2 text-center"
+              >
+                <p class="text-body-large">No recent calls</p>
+              </div>
+            {:else}
+              <div class="space-y-2 pt-2">
+                {#each $callLog as entry (entry.id)}
+                  <button
+                    class="bg-surface hover:bg-surface-container duration-short ease-standard flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors"
+                    onclick={() => startCall(entry.number, nameForNumber(entry.number))}
                   >
                     <Avatar
-                      initials={(fav.firstname[0] || '') + (fav.lastname?.[0] || '')}
-                      size="w-12 h-12"
-                      textClass="text-lg"
-                      bgClass="bg-yellow-600 shadow-elevation-3"
+                      initials={nameForNumber(entry.number)[0]?.toUpperCase() || '#'}
+                      size="w-10 h-10"
+                      textClass="text-sm"
                     />
-                    <span class="text-on-surface text-body-small w-full truncate text-center"
-                      >{fav.firstname}</span
-                    >
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-1.5">
+                        {#if entry.kind === 'outgoing'}
+                          <ArrowUpRightIcon class="text-on-surface-variant size-icon-sm" />
+                        {:else if entry.kind === 'incoming'}
+                          <ArrowDownLeftIcon class="text-on-surface-variant size-icon-sm" />
+                        {:else}
+                          <ArrowDownLeftIcon class="text-error size-icon-sm" />
+                        {/if}
+                        <span
+                          class="truncate {entry.kind === 'missed'
+                            ? 'text-error'
+                            : 'text-on-surface'}"
+                        >
+                          {nameForNumber(entry.number)}
+                        </span>
+                      </div>
+                      <p class="text-on-surface-variant text-body-small">
+                        {formatCallTimestamp(entry.created_at)}
+                      </p>
+                    </div>
+                    {#if entry.kind !== 'missed'}
+                      <span class="text-on-surface-variant text-body-small shrink-0">
+                        {formatDuration(entry.duration)}
+                      </span>
+                    {/if}
                   </button>
                 {/each}
               </div>
-            </div>
-          {/if}
-
-          <!-- Number Display -->
-          <div class="mb-8 flex h-12 items-center text-4xl font-light">
-            {enteredNumber}
+            {/if}
           </div>
-
-          <!-- Keypad -->
-          <div class="grid w-full max-w-[280px] grid-cols-3 gap-6">
-            {#each [1, 2, 3, 4, 5, 6, 7, 8, 9] as num (num)}
-              <button
-                class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
-                onclick={() => handleKeypad(num.toString())}
-              >
-                {num}
-              </button>
-            {/each}
-            <button
-              class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
-              onclick={() => handleKeypad('*')}>*</button
-            >
-            <button
-              class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
-              onclick={() => handleKeypad('0')}>0</button
-            >
-            <button
-              class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
-              onclick={() => handleKeypad('#')}>#</button
-            >
-          </div>
-
-          <div class="relative mt-8 flex w-full max-w-[280px] items-center justify-center">
-            <!-- Place holder to center call button -->
-            <div class="w-16"></div>
-
-            <!-- Call Button -->
-            <button
-              class="shadow-elevation-3 duration-short ease-standard mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-500 shadow-green-500/30 transition-colors hover:bg-green-400"
-              aria-label="Call"
-              onclick={() => startCall(enteredNumber)}
-            >
-              <PhoneIcon class="text-on-surface h-8 w-8" />
-            </button>
-
-            <!-- Backspace -->
-            <div class="flex w-16 justify-center">
-              {#if enteredNumber}
-                <button
-                  class="text-on-surface-variant hover:text-on-surface duration-short ease-standard transition-colors"
-                  onclick={handleBackspace}
-                  aria-label="Backspace"
-                >
-                  <BackspaceIcon class="h-8 w-8" />
-                </button>
-              {/if}
-            </div>
-          </div>
-        </div>
-      {:else}
-        <!-- Recents -->
-        <div class="scrollbar-none flex-1 overflow-y-auto px-4 pb-8">
-          {#if $callLog.length === 0}
-            <div
-              class="text-on-surface-variant flex h-full flex-col items-center justify-center space-y-2 text-center"
-            >
-              <p class="text-body-large">No recent calls</p>
-            </div>
-          {:else}
-            <div class="space-y-2 pt-2">
-              {#each $callLog as entry (entry.id)}
-                <button
-                  class="bg-surface hover:bg-surface-container duration-short ease-standard flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors"
-                  onclick={() => startCall(entry.number, nameForNumber(entry.number))}
-                >
-                  <Avatar
-                    initials={nameForNumber(entry.number)[0]?.toUpperCase() || '#'}
-                    size="w-10 h-10"
-                    textClass="text-sm"
-                  />
-                  <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-1.5">
-                      {#if entry.kind === 'outgoing'}
-                        <ArrowUpRightIcon class="text-on-surface-variant size-icon-sm" />
-                      {:else if entry.kind === 'incoming'}
-                        <ArrowDownLeftIcon class="text-on-surface-variant size-icon-sm" />
-                      {:else}
-                        <ArrowDownLeftIcon class="text-error size-icon-sm" />
-                      {/if}
-                      <span
-                        class="truncate {entry.kind === 'missed'
-                          ? 'text-error'
-                          : 'text-on-surface'}"
-                      >
-                        {nameForNumber(entry.number)}
-                      </span>
-                    </div>
-                    <p class="text-on-surface-variant text-body-small">
-                      {formatCallTimestamp(entry.created_at)}
-                    </p>
-                  </div>
-                  {#if entry.kind !== 'missed'}
-                    <span class="text-on-surface-variant text-body-small shrink-0">
-                      {formatDuration(entry.duration)}
-                    </span>
-                  {/if}
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      {/if}
+        {/if}
+      </div>
     </Screen>
   {:else}
     <!-- In Call View -->
