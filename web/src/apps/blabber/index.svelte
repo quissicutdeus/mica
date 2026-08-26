@@ -507,9 +507,15 @@
 {#snippet overlays()}
   {#if composing || editing}
     <!-- Full screen rather than pinned above the feed: the dominant modal shape in the repo,
-         and the composer is now reached from the FAB rather than always mounted. -->
+         and the composer is now reached from the FAB rather than always mounted.
+
+         `pt-safe-top` because `inset-0` means exactly that — it covers the header the
+         `Screen` drew, and with it the `pt-safe-top` that header was the only thing
+         carrying. The shell's status bar is `z-60` and paints over any app regardless, so
+         without the inset "Posting as @handle" landed on top of the clock (MICA-83). Any
+         overlay in this snippet that starts its content at the top edge needs it. -->
     <div
-      class="animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col"
+      class="pt-safe-top animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col"
     >
       <Composer
         handle={$activeAccount?.handle}
@@ -534,7 +540,7 @@
 
   {#if claiming}
     <div
-      class="animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col"
+      class="pt-safe-top animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col"
     >
       <ClaimHandle busy={$busy} onclaim={claim} oncancel={() => (claiming = false)} />
     </div>

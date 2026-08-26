@@ -44,7 +44,7 @@
   class="animate-in fade-in bg-surface-container-lowest duration-medium ease-emphasized absolute inset-0 z-40 flex flex-col backdrop-blur-md"
 >
   <!-- Modal Header -->
-  <div class="border-outline-variant flex items-center justify-between border-b p-4">
+  <div class="border-outline-variant pt-safe-top flex items-center justify-between border-b p-4">
     <h3 class="text-on-surface text-body-large">Conversation Details</h3>
     <button
       type="button"

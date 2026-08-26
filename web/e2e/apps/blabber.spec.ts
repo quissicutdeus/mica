@@ -125,6 +125,34 @@ test.describe('Blabber', () => {
     await expect(frame.locator('text=e2e was here')).toBeVisible();
   });
 
+  test('opens the composer clear of the status bar', async ({ page }) => {
+    /**
+     * The overlay is `inset-0`, so it covers the header `Screen` drew — and the header was the
+     * only thing carrying `pt-safe-top`. The shell's status bar is `z-60` and paints over every
+     * app regardless of what the app puts there, so the composer's first line of content landed
+     * on top of the clock: "Posting as @ada" and "2:21 PM" in the same pixels, both illegible
+     * (MICA-83).
+     *
+     * Geometry rather than a class assertion, because the class is not the contract — clearing
+     * the bar is. `boundingBox()` on a `FrameLocator` is in main-frame viewport coordinates, so
+     * the add-on's iframe and the shell's own status bar are directly comparable.
+     */
+    const frame = addOnFrame(page, 'blabber');
+    await openComposer(page);
+
+    const postingAs = frame.locator('p', { hasText: /Posting as @/ });
+    await expect(postingAs).toBeVisible();
+
+    const statusBar = await page
+      .getByRole('button', { name: 'Open notification shade' })
+      .boundingBox();
+    const firstLine = await postingAs.boundingBox();
+
+    expect(statusBar, 'status bar is on screen').not.toBeNull();
+    expect(firstLine, 'composer is on screen').not.toBeNull();
+    expect(firstLine!.y).toBeGreaterThanOrEqual(statusBar!.y + statusBar!.height);
+  });
+
   test('closes the composer on Back rather than leaving the app', async ({ page }) => {
     /**
      * Every overlay is its own `useAppLevels` rung. One that is not gets skipped, and Back sends

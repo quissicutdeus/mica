@@ -48,7 +48,7 @@
 </script>
 
 <div
-  class="animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col p-5"
+  class="pt-safe-top animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col p-5"
 >
   <h3 class="text-on-surface mb-1 text-lg font-bold">Edit profile</h3>
   <p class="text-on-surface-variant text-body-small mb-4">
