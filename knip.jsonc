@@ -16,6 +16,12 @@
   // before. Only what someone has deliberately labelled public is exempt, and the label
   // sits next to the code rather than in this file.
   "tags": ["-public"],
+  // `lint-staged` is invoked by .githooks/pre-commit, a shell script knip does not parse.
+  // It was visible until the hooks stopped being generated from a `simple-git-hooks` block
+  // in package.json, which knip did read. The dependency is genuinely used; nothing but the
+  // evidence moved. Kept to this one name rather than ignoring the check, so a devDependency
+  // that really does go unused is still reported.
+  "ignoreDependencies": ["lint-staged"],
   "workspaces": {
     ".": {
       // esbuild builds these two directly (`build/build-bundle.js`), so nothing in the
