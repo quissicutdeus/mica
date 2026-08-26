@@ -3,7 +3,7 @@ import { defineApp } from '@gphone/sdk/app';
 
 export default defineApp({
   id: 'notes',
-  color: 'bg-yellow-400',
+  color: 'bg-yellow-400 text-gray-900',
   icon: Icon,
   /**
    * Imported lazily, not at module scope.
