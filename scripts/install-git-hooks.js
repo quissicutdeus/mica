@@ -1,46 +1,61 @@
-import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 /**
- * `simple-git-hooks` writes into `<projectRoot>/.git/hooks` by default, which breaks
- * inside a linked worktree: `.git` there is a *file* (`gitdir: <path>`), not a
- * directory, so its `mkdir` throws ENOTDIR and hook installation silently fails
- * (MICA-41) — `pnpm install` scrolls an error line past and nothing is ever
- * installed.
+ * Copy the checked-in hooks in .githooks/ into git's default hooks directory.
  *
- * `git rev-parse --git-dir` resolves the right hooks directory in every case — `.git`
- * in a normal checkout, `.git/worktrees/<name>` in a linked worktree — and is exactly
- * what git's own default hook lookup already uses. Handing that path to
- * `simple-git-hooks` via a LOCAL `core.hooksPath` override, scoped to this script's own
- * run, sidesteps its buggy default without ever leaving a persistent override behind:
- * every hook in this repo is actually looked up through the machine-wide dispatcher at
- * `core.hooksPath` (global, `~/.config/git/hooks`), which chains to the file this
- * script installs — a lingering local override would silently take precedence over
- * that dispatcher instead, taking the commit-msg AI-attribution guard down with it.
+ * This replaced `simple-git-hooks`, which generated the same three shims from a
+ * block in package.json. Two reasons the generator went:
+ *
+ *   - It wrote to `<projectRoot>/.git/hooks`, which is not a directory inside a
+ *     linked worktree (`.git` there is a *file* holding `gitdir: <path>`), so
+ *     its mkdir threw ENOTDIR and installation silently failed (MICA-41).
+ *     `git rev-parse --git-dir` resolves correctly in a normal checkout, a
+ *     linked worktree and a submodule alike, and is what git's own hook lookup
+ *     uses.
+ *   - Generated shims are not reviewable. The hooks are now ordinary files in
+ *     .githooks/, so a change to one shows up in a diff like anything else.
+ *
+ * Why copy into .git/hooks at all, rather than just pointing core.hooksPath at
+ * .githooks/: that would be a *local* override, and it would take precedence
+ * over the machine-wide dispatcher some contributors run at a global
+ * core.hooksPath, silently disabling every guard that lives there. .git/hooks
+ * is git's default and needs no configuration, so these hooks work on a machine
+ * with no dispatcher and no ~/.config -- a cloud coding-agent host, say, which
+ * is exactly the case the commit-msg guard exists for. A machine that DOES run
+ * such a dispatcher reaches .githooks/ directly, ahead of this copy; both paths
+ * execute the same files.
  */
 
-function git(args) {
-  return execFileSync('git', args, { encoding: 'utf8' }).trim();
-}
+const HOOKS = ['pre-commit', 'commit-msg', 'pre-push'];
 
-const gitDir = git(['rev-parse', '--git-dir']);
-const hooksDir = path.resolve(gitDir, 'hooks');
-
-let previousHooksPath;
+let gitDir;
 try {
-  previousHooksPath = git(['config', '--local', 'core.hooksPath']);
+  gitDir = execFileSync('git', ['rev-parse', '--git-dir'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore']
+  }).trim();
 } catch {
-  previousHooksPath = undefined; // unset
+  // Installing from a tarball rather than a checkout: there is no repository to
+  // install hooks into, and that is not an error.
+  console.log('install-git-hooks: not a git checkout, nothing to install.');
+  process.exit(0);
 }
 
-git(['config', '--local', 'core.hooksPath', hooksDir]);
+const dest = path.resolve(gitDir, 'hooks');
+fs.mkdirSync(dest, { recursive: true });
 
-try {
-  execFileSync('pnpm', ['exec', 'simple-git-hooks'], { stdio: 'inherit' });
-} finally {
-  if (previousHooksPath) {
-    git(['config', '--local', 'core.hooksPath', previousHooksPath]);
-  } else {
-    git(['config', '--local', '--unset', 'core.hooksPath']);
+for (const hook of HOOKS) {
+  const src = path.resolve('.githooks', hook);
+  // A missing source is a broken checkout, not a reason to install nothing and
+  // report success -- the hooks here are the only gate for two of the checks.
+  if (!fs.existsSync(src)) {
+    throw new Error(`install-git-hooks: .githooks/${hook} is missing`);
   }
+  const out = path.join(dest, hook);
+  fs.copyFileSync(src, out);
+  fs.chmodSync(out, 0o755);
 }
+
+console.log(`install-git-hooks: installed ${HOOKS.join(', ')} into ${dest}`);

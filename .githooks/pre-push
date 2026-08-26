@@ -1,0 +1,12 @@
+#!/bin/sh
+# Enforce branch naming (AGENTS.md §12), then run the fast verify gate -- but
+# only when the push actually carries commits. See scripts/pre-push.js.
+#
+# `exec` so the refs git puts on this hook's stdin reach the script unchanged;
+# pre-push.js reads fd 0 to decide whether the push is delete-only.
+#
+# The branch-name half has no CI backstop and needs only `node`. The check:fast
+# half shells out to pnpm and does need node_modules.
+#
+# Deliberate bypass: git push --no-verify
+exec node scripts/pre-push.js

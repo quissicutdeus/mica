@@ -1,0 +1,18 @@
+#!/bin/sh
+# Format staged files via lint-staged.
+#
+# Unlike the other two hooks this one genuinely needs node_modules, so it skips
+# with a notice when they are absent rather than making a fresh clone
+# un-committable. That is a deliberate fail-open and it is the safe one to make:
+# formatting is re-checked by the Verify workflow on every push, whereas the
+# attribution and branch-name gates beside this file have no CI backstop at all
+# and so are never skipped.
+#
+# Deliberate bypass: git commit --no-verify
+if [ ! -d node_modules ]; then
+    echo "pre-commit: node_modules missing, skipping lint-staged (CI still verifies)." >&2
+    echo "  run: pnpm install" >&2
+    exit 0
+fi
+
+exec pnpm exec lint-staged

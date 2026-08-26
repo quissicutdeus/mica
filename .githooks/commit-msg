@@ -1,0 +1,11 @@
+#!/bin/sh
+# Reject AI attribution in the commit message (AGENTS.md §10).
+#
+# Checked in rather than generated, and installed into git's default hooks
+# directory by scripts/install-git-hooks.js. There is no CI backstop for this
+# check -- this hook is the only gate -- so it deliberately depends on nothing
+# but `node`: check-commit-msg.js imports node:fs and nothing else, which means
+# it still runs on a bare clone where `pnpm install` has never been run.
+#
+# Deliberate bypass: git commit --no-verify
+exec node scripts/check-commit-msg.js "$1"
