@@ -18,6 +18,20 @@ EXPECTED_SHA="88c13de5c40784af450283f0d4ff7e86d9982071baf667dd9040f1ded771ff0d"
 ENV_FILE="/opt/fivem-main/.env"
 FIVEM_PORT=30120
 
+# compose.yaml reads these from the environment. deploy-<target>.sh supplies
+# them and sudoers env_keeps them across the sudo boundary -- but nothing made
+# them REQUIRED, and unset they do not error: compose quietly falls back to the
+# defaults baked into compose.yaml, whose container_name is the same string for
+# both targets. So running this script bare renames one target's container to
+# that default and then collides with it from the other, leaving the live
+# container removed and the replacement stuck in Created. Ask how I know.
+: "${MICA_PORT:?not set -- invoke ~gphone/bin/deploy-<target>.sh, not this directly}"
+: "${GIT_BRANCH:?not set -- invoke ~gphone/bin/deploy-<target>.sh, not this directly}"
+: "${GIT_SHA:?not set -- invoke ~gphone/bin/deploy-<target>.sh, not this directly}"
+: "${MICA_CALVER:?not set -- invoke ~gphone/bin/deploy-<target>.sh, not this directly}"
+: "${MICA_CONTAINER_NAME:?not set -- invoke ~gphone/bin/deploy-<target>.sh, not this directly}"
+: "${MICA_IMAGE_TAG:?not set -- invoke ~gphone/bin/deploy-<target>.sh, not this directly}"
+
 ACTUAL_SHA=$(sha256sum "$COMPOSE_FILE" | cut -d' ' -f1)
 if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
   echo "REFUSED: $COMPOSE_FILE does not match the pinned hash." >&2

@@ -31,6 +31,25 @@ unavoidable for the other two, which live outside the checkout they reset.
 
 Check which version is actually live with `sha256sum` on both sides.
 
+## Never invoke the wrappers directly
+
+Run `~gphone/bin/deploy-<target>.sh`. The wrapper is not a standalone entry
+point: `compose.yaml` takes the container name, port, image tag and version
+labels from the environment, and it is the deploy script that sets them.
+
+Run bare, those are simply unset, and compose falls back to the defaults in
+`compose.yaml` — whose `container_name` is the same string for both targets. The
+result is that one target's live container gets renamed to that default and the
+other then collides with it, leaving the running container removed and its
+replacement stuck in `Created`. The wrappers now refuse to start without those
+variables, which is the only reason this is a paragraph and not an outage.
+
+To exercise the path by hand, use the deploy script:
+
+```sh
+sudo -u gphone /home/gphone/bin/deploy-dev.sh
+```
+
 ## Why the split
 
 `gphone` is not in the `docker` group — on a shared host that is
