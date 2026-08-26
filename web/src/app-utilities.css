@@ -1662,6 +1662,23 @@
 .shadow-\[0_0_20px_rgba\(239\,68\,68\,0\.3\)\] {
   box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
 }
+/* Phone's call controls, on the same footing as `.shadow-fab` and for the same reason:
+   one class carrying both the M3 elevation and the colored bloom, because `box-shadow` is
+   a single property and does not compose across classes. Each button used to pair
+   `shadow-elevation-3` with a `shadow-<color>-500/30`, so the drop shadow never rendered
+   and what was left was a 20px-blurred, 4px-spread 30% bloom — the same too-bright halo
+   the FAB had (MICA-84). Raw palette green and red rather than a theme role: answer and
+   hang up are signal colors, the same reason the buttons' own `bg-green-500` is raw. */
+.shadow-call-accept {
+  box-shadow:
+    var(--shadow-elevation-3),
+    0 0 16px 0 rgba(34, 197, 94, 0.18);
+}
+.shadow-call-end {
+  box-shadow:
+    var(--shadow-elevation-3),
+    0 0 16px 0 rgba(239, 68, 68, 0.18);
+}
 .shadow-elevation-1 {
   box-shadow: var(--shadow-elevation-1);
 }
@@ -1680,14 +1697,15 @@
 .shadow-emerald-900\/30 {
   box-shadow: 0 0 20px 4px rgba(6, 78, 59, 0.3);
 }
-.shadow-green-500\/30 {
-  box-shadow: 0 0 20px 4px rgba(34, 197, 94, 0.3);
-}
-.shadow-primary-glow {
-  box-shadow: 0 0 24px 8px var(--color-primary-glow);
-}
-.shadow-red-500\/30 {
-  box-shadow: 0 0 20px 4px rgba(239, 68, 68, 0.3);
+/* The FAB's whole shadow, in one declaration because `box-shadow` does not compose
+   across classes — the element used to carry `shadow-elevation-3` *and*
+   `shadow-primary-glow`, and the later rule simply replaced the earlier one, so the M3
+   drop shadow a FAB is supposed to have never rendered at all (MICA-84). Elevation
+   first, bloom behind it: later layers paint under earlier ones. */
+.shadow-fab {
+  box-shadow:
+    var(--shadow-elevation-3),
+    0 0 16px 0 var(--color-primary-glow);
 }
 .shadow-yellow-400\/30 {
   box-shadow: 0 0 20px 4px rgba(250, 204, 21, 0.3);

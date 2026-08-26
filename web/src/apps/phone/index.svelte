@@ -182,7 +182,7 @@
 
                 <!-- Call Button -->
                 <button
-                  class="shadow-elevation-3 duration-short ease-standard mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-500 shadow-green-500/30 transition-colors hover:bg-green-400"
+                  class="shadow-call-accept duration-short ease-standard mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-500 transition-colors hover:bg-green-400"
                   aria-label="Call"
                   onclick={() => startCall(enteredNumber)}
                 >
@@ -368,7 +368,7 @@
       <div class="mt-12 mb-8 flex justify-center space-x-8">
         {#if $callStore.status === 'incoming'}
           <button
-            class="shadow-elevation-3 duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full bg-green-500 shadow-green-500/30 transition-colors hover:bg-green-400"
+            class="shadow-call-accept duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full bg-green-500 transition-colors hover:bg-green-400"
             onclick={() => callStore.answerCall()}
             aria-label="Answer Call"
           >
@@ -377,7 +377,7 @@
         {/if}
 
         <button
-          class="bg-error shadow-elevation-3 duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full shadow-red-500/30 transition-colors hover:bg-red-400"
+          class="bg-error shadow-call-end duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full transition-colors hover:bg-red-400"
           onclick={() => callStore.endCall()}
           aria-label="End Call"
         >

@@ -166,11 +166,17 @@ export const STATE_LAYER_BASES = [
 
 /**
  * The one token here with no M3 role behind it: the FAB's colored bloom, primary at
- * 30% for a `box-shadow`. It is an elevation effect rather than a semantic role, and it
+ * 18% for a `box-shadow`. It is an elevation effect rather than a semantic role, and it
  * is named so that stays obvious. The purist alternative is M3's `shadow` role, which
  * is pure black and loses the glow entirely.
+ *
+ * 18% rather than the 30% this started at (MICA-84). `primary` in the dark scheme is a
+ * light tone — tone 80, `rgb(182, 196, 255)` for the default seed — so 30% of it blurred
+ * 24px and spread a further 8px read as a lamp behind the button rather than as
+ * elevation, on every screen that mounts a FAB. The spread went with it; see
+ * `.shadow-fab` in `app-utilities.css`, which is the other half of the same fix.
  */
-const GLOW_ALPHA = 0.3;
+const GLOW_ALPHA = 0.18;
 
 /**
  * M3 specifies `scrim` as a *role* of tone 0 — opaque black — and applies it at 32%

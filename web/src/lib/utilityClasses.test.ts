@@ -191,3 +191,84 @@ describe('app-utilities.css coverage', () => {
     }
   });
 });
+
+/**
+ * `box-shadow` is one property, so two `shadow-*` classes on one element is not a layered
+ * shadow — the rule that comes later in `app-utilities.css` wins outright and the other
+ * renders nothing at all. Same silent-no-op failure the check above exists for, one step
+ * further along: the class is defined, it just never reaches the pixel.
+ *
+ * The FAB is how this surfaced (MICA-84). It carried `shadow-elevation-3` *and* a glow
+ * class; the glow sorted later, so every FAB in the phone rendered a bare 24px bloom and
+ * none of the M3 drop shadow it was asking for — which is most of why the halo read as
+ * "too bright" rather than as elevation. Phone's three call buttons had it identically.
+ * The fix in both cases is one composite class carrying both layers: `.shadow-fab`,
+ * `.shadow-call-accept`, `.shadow-call-end`.
+ *
+ * Inherits `findClassUsages`'s blind spot, deliberately: a pairing formed inside a
+ * `{expr}` — an elevation in the literal text and a glow returned from a helper — is
+ * invisible to a regex scan, and two of those are still live (`ToastHost`'s success action
+ * button, Camera's bouncing thumbnail). Both are dark or transient rather than a standing
+ * halo, so they are not what MICA-84 was about; catching them needs a real parser, not a
+ * looser regex that would start guessing which branch of a ternary is a class.
+ */
+function findShadowPairings(files: string[]): ClassUsage[] {
+  const pairings: ClassUsage[] = [];
+  const classAttrRe = /\bclass="((?:[^"\\]|\\.)*)"/g;
+
+  for (const file of files) {
+    const blankComment = (match: string) => '\n'.repeat((match.match(/\n/g) ?? []).length);
+    const source = fs
+      .readFileSync(file, 'utf8')
+      .replace(/<!--[\s\S]*?-->/g, blankComment)
+      .replace(/\/\*[\s\S]*?\*\//g, blankComment);
+    const rel = path.relative(WEB_SRC, file);
+
+    classAttrRe.lastIndex = 0;
+    for (const match of source.matchAll(classAttrRe)) {
+      const shadows = stripInterpolations(match[1])
+        .split(/\s+/)
+        .filter((token) => /^shadow-/.test(token));
+      if (shadows.length > 1) {
+        pairings.push({
+          file: rel,
+          line: lineOf(source, match.index ?? 0),
+          token: shadows.join(' ')
+        });
+      }
+    }
+  }
+
+  return pairings;
+}
+
+describe('box-shadow does not compose across classes', () => {
+  it('has no element carrying two shadow utilities', () => {
+    const found = findShadowPairings(walk(WEB_SRC, ['.svelte']));
+
+    if (found.length > 0) {
+      const report = found.map((u) => `  ${u.file}:${u.line} — "${u.token}"`).join('\n');
+      expect.fail(
+        `${found.length} element(s) with more than one \`shadow-*\` class. \`box-shadow\` ` +
+          `does not layer across classes, so only the rule sorting last in ` +
+          `app-utilities.css renders and the other is silently dead. Compose both layers ` +
+          `into one class, the way \`.shadow-fab\` does:\n${report}`
+      );
+    }
+  });
+
+  it('gives each composite one class carrying both the elevation and the bloom', () => {
+    const css = fs.readFileSync(path.join(WEB_SRC, 'app-utilities.css'), 'utf8');
+
+    for (const [name, bloom] of [
+      ['shadow-fab', 'var(--color-primary-glow)'],
+      ['shadow-call-accept', 'rgba(34, 197, 94, 0.18)'],
+      ['shadow-call-end', 'rgba(239, 68, 68, 0.18)']
+    ]) {
+      const rule = new RegExp(`\\.${name}\\s*\\{([^}]*)\\}`).exec(css);
+      expect(rule, `.${name} declared in app-utilities.css`).not.toBeNull();
+      expect(rule?.[1], `.${name} keeps its elevation`).toContain('var(--shadow-elevation-3)');
+      expect(rule?.[1], `.${name} keeps its bloom`).toContain(bloom);
+    }
+  });
+});
