@@ -47,7 +47,8 @@ Run from the **repo root** unless noted.
 | Generate + dev reset SQL                          | `pnpm generate:sql:reset`                    | Ask first — destructive  |
 | Full build                                        | `pnpm build`                                 | Yes                      |
 | Dev (both watchers)                               | `pnpm dev`                                   | Ask first — long-running |
-| Any mutating git                                  | —                                            | **No. See §2.**          |
+| Commit / push on `dev` or a ticket branch         | —                                            | Yes — see §2.1           |
+| Force-push, move `main`, change protection        | —                                            | **Ask first. See §2.1.** |
 
 `pnpm typecheck` fans out to all three targets via `concurrently`. **Use it, not
 `pnpm typecheck:web`** — the targets run _different TypeScript versions_ (§3),
@@ -133,8 +134,20 @@ surprises you and why `pnpm test:unit` costs what it costs, is in
 Not negotiable. If a task appears to require breaking one, **stop and ask** — do
 not work around it.
 
-1. **No mutating git.** `git status`, `git diff`, `git log` are fine. Never
-   `add`, `commit`, `push`, `checkout`, `reset`, `stash`, `rebase`, or `branch`.
+1. **Git: commit and push freely on `dev`.** `add`, `commit`, `push`,
+   `checkout`, `branch` and `stash` on `dev` or a ticket branch need no
+   permission. This is a solo project; asking per-command bought nothing and
+   cost a whole session in round-trips.
+
+   **Stop and ask** before any of these, which are hard to undo or reach further
+   than the working tree: a force-push (`--force`, `--force-with-lease`) or any
+   rewrite of already-pushed history; `reset --hard` over uncommitted work;
+   anything that moves `main`; changing branch protection or repository
+   settings; `--no-verify`. Say what you are about to do and why, then wait.
+
+   §2.10 is unaffected — the attribution ban is absolute, and nothing here
+   loosens it.
+
 2. **Never edit `fxmanifest.lua` or anything in `dist/`.** Both are generated —
    the manifest by `scripts/generate-barrels.js`, `dist/` by the build. Edits
    are erased by the next `clearbuild`. Change the generator instead.

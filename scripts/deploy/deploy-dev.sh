@@ -37,6 +37,19 @@ cd "/opt/fivem-dev/server-data/resources/[standalone]/gPhone/"
 git fetch https://github.com/quissicutdeus/gPhone.git dev
 git reset --hard FETCH_HEAD
 
+# Re-install this script from the checkout it just reset. README.md here says a
+# change to these is inert until someone copies it to the box, and on 2026-08-27
+# that drift is exactly what left a deploy fix unapplied across two failed runs.
+# Only the unprivileged half self-updates: the root-owned compose scripts in
+# /usr/local/sbin stay hand-installed on purpose, because a deploy account that
+# could rewrite what it invokes as root would not be an unprivileged account.
+#
+# rename(2) rather than a copy in place: bash reads a script incrementally, so
+# overwriting this file mid-run would corrupt whatever it has not read yet. The
+# new version therefore takes effect on the NEXT deploy, not this one.
+install -m 755 scripts/deploy/deploy-dev.sh "$HOME/bin/.deploy-dev.sh.new"
+mv -f "$HOME/bin/.deploy-dev.sh.new" "$HOME/bin/deploy-dev.sh"
+
 # --ignore-scripts: same reason the Dockerfile and CI use it -- the root
 # "prepare" script installs dev git hooks into the submodule's git dir, which
 # this account cannot write to and which a deploy has no use for anyway.

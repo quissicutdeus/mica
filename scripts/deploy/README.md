@@ -12,22 +12,32 @@ command, and the server decides what runs.
 | `gphone-deploy-dev-compose.sh`  | `/usr/local/sbin/`                | `root`, via `sudoers`        |
 | `gphone-deploy-main-compose.sh` | `/usr/local/sbin/`                | `root`, via `sudoers`        |
 
-## These are not installed by CI
+## The unprivileged half self-installs; the privileged half does not
 
-Nothing deploys them. A change here is inert until someone copies it to the box:
+`deploy-dev.sh` and `deploy-main.sh` re-install themselves from the checkout
+they just reset, so a change to either reaches the box on the next deploy and
+takes effect on the one after that. They copy to a temp name and `mv` it into
+place rather than writing over themselves: bash reads a script incrementally,
+and overwriting it mid-run corrupts whatever it has not read yet.
+
+The root-owned compose scripts still need copying by hand:
 
 ```sh
-# unprivileged half
-install -m 755 scripts/deploy/deploy-dev.sh ~gphone/bin/deploy-dev.sh
-
 # privileged half -- root-owned so the deploy account cannot edit what it invokes
 sudo install -m 700 -o root -g root \
   scripts/deploy/gphone-deploy-dev-compose.sh /usr/local/sbin/
 ```
 
-That is deliberate for the root-owned pair: a deploy account that could rewrite
-the script it runs as root would not be an unprivileged account. It is merely
-unavoidable for the other two, which live outside the checkout they reset.
+That asymmetry is the point: a deploy account that could rewrite the script it
+invokes as root would not be an unprivileged account. The unprivileged pair has
+no such problem — it already runs as `gphone` and already resets the checkout it
+copies from, so self-installing grants it nothing it did not have.
+
+Bootstrapping is still manual, once, before the first deploy of these:
+
+```sh
+install -m 755 scripts/deploy/deploy-dev.sh ~gphone/bin/deploy-dev.sh
+```
 
 Check which version is actually live with `sha256sum` on both sides.
 
