@@ -56,19 +56,23 @@ mv -f "$HOME/bin/.deploy-main.sh.new" "$HOME/bin/deploy-main.sh"
 CI=true pnpm install --frozen-lockfile --ignore-scripts
 pnpm build
 
-# Hand back what this deploy just wrote. The checkout carries a default ACL (see
+# Hand back the build output. The checkout carries a default ACL (see
 # scripts/fix-perms.sh in the superproject) so new files land 664/2775, but an
-# ACL only decides the mode at CREATION -- pnpm chmods its node_modules/.bin
-# shims to 0755 afterwards and the bundler does the same to dist/, which locks
-# the interactive account out of half the tree until someone re-runs fix-perms
-# as root. Correcting it here needs no root: this account owns these paths
-# because it just created them. Capital X so only directories and
-# already-executable files keep +x.
-for _dir in node_modules web/node_modules dist; do
-    if [ -d "$_dir" ]; then
-        chmod -R g+rwX "$_dir"
-    fi
-done
+# ACL only decides the mode at CREATION and the bundler chmods dist/ after
+# writing it -- which locks the interactive account out of the build output
+# until someone re-runs fix-perms as root. No root needed here: this account
+# built dist/ and owns it. Capital X so only directories and already-executable
+# files keep +x.
+#
+# dist/ ONLY, deliberately. This loop covered node_modules too and took the main
+# deploy down: pnpm hardlinks package files from its content-addressable store,
+# so those inodes belong to whoever first populated the store and chmod returns
+# EPERM for this account. Even where it succeeded it would be wrong -- chmod
+# through a hardlink rewrites the mode in the shared store, for every project
+# using it. node_modules is disposable and regenerated; leave it alone.
+if [ -d dist ]; then
+    chmod -R g+rwX dist
+fi
 
 GIT_SHA=$(git rev-parse HEAD)
 MICA_CALVER=$(date +%Y.%m.%d).1
