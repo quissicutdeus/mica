@@ -107,19 +107,43 @@ Getting the classification wrong is loud and immediate
 (`ReferenceError: document is not defined`) rather than a silent behavior
 change, which is what made this safe to adopt where swapping DOM implementations
 wasn't. Net effect: the full `web` suite dropped from ~112s to ~78s, with zero
-behavioral risk — every file that touches the DOM still gets a real one.
+behavioral risk — every file that touches the DOM still gets a real one. (That
+took the suite from ~112s to ~78s at the time. Parallelism, below, took it the
+rest of the way to ~12s.)
 
-`fileParallelism: false` (`web/vite.config.ts`) is unrelated and unchanged by
-either ticket: `registry.ts` eagerly globs every app manifest (pulling in the
-whole `sdk/components.ts` barrel), and under Vitest's default parallel
+**`fileParallelism` is on again**, and it is the largest single win in this
+loop: the `web` suite runs in ~12s where serialized it took ~70s.
+
+It was off for a real race. `registry.ts` eagerly globs every app manifest
+(pulling in the whole `sdk/components.ts` barrel), and under Vitest's parallel
 file/worker model one jsdom-environment file could tear down while that module
-graph was still resolving for another file in the same worker, throwing an
+graph was still resolving for another file in the same worker — an
 `EnvironmentTeardownError` on a run where every assertion actually passed.
-Serializing removed the race — now paid only by the `@vitest-environment jsdom`
-files, a smaller set than before, but the same tradeoff: flipping it back on to
-see whether the race is still live is exactly the kind of experiment that can
-look safe for a dozen runs and then flake on CI, and was explicitly out of scope
-for both tickets.
+
+This page used to argue against turning it back on, in these words: _flipping it
+back on to see whether the race is still live is exactly the kind of experiment
+that can look safe for a dozen runs and then flake on CI._ That caution is worth
+keeping in view rather than deleting, because it is still the right shape of
+worry. Three things changed under it:
+
+- **The exposure is much smaller.** MICA-32's own fix means only the ~69
+  `@vitest-environment jsdom` files construct a DOM at all. The other ~57 are
+  node-environment and were never able to hit a DOM teardown race.
+- **Vitest is 4.1.11** now, not the version the race was diagnosed against.
+- **The CI those flakes were seen on has itself been overhauled** since —
+  MICA-76 took the actions to current versions and added the caching that was
+  missing. A good part of what the caution was protecting against was the
+  runners, not the test suite, so "it might flake on CI" was a prediction about
+  a CI that no longer exists in that form.
+
+Measured before flipping it: five consecutive full runs, 127 files and 1063
+tests each, no teardown error and no unhandled rejection. Five runs is still not
+a proof about a race, so **if it does come back**, the fix is narrow and is
+written beside the flag in `web/vite.config.ts`: give the jsdom files their own
+Vitest project with `fileParallelism: false` and leave the node ones parallel.
+Setting the flag back to `false` wholesale is the blunt version and costs the
+whole minute again. The failure is loud and names `EnvironmentTeardownError`, so
+you will not have to guess what happened.
 
 **Adding a new test file:** default to no docblock (fast, `node`). Add
 `// @vitest-environment jsdom` as the file's first line if it renders a Svelte
@@ -130,15 +154,17 @@ move on.
 
 ## Playwright's per-test timeout, and its escape hatch
 
-`web/playwright.config.ts` sets a 10-second default (`timeout: 10_000`), down
-from Playwright's own 30s default — real assertions in this suite resolve in
-under 2s, and a 30s wait on a genuine flake was pure wasted time (see the file's
-own comment for the math).
+`web/playwright.config.ts` sets Playwright's own 30-second default
+(`timeout: 30_000`). It was briefly 10s, on the reasoning that every test here
+that passes does so in under ten and anything approaching thirty is a flake
+failing anyway — which was true when measured serially and false under four
+workers. A run at that width produced failures at 10.3s through 11.7s, none
+hanging and none asserting anything false: the limit was sitting on them rather
+than the other way round. The file's own comment carries the full math.
 
-That default is occasionally too short for a legitimately long test — not a
-flake, just a test that does more: one Settings e2e case (ten clicks, two
-navigations, a reload) legitimately needs closer to 20s. Don't raise the
-suite-wide default for one slow test. Override it in that test:
+A test that legitimately needs longer than the default — not a flake, just a
+test that does more — should still say so itself rather than move the suite-wide
+number:
 
 ```ts
 test('walks through every Settings screen and back', async ({ page }) => {
