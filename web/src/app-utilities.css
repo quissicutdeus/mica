@@ -773,6 +773,9 @@
 .h-6 {
   height: 1.5rem;
 }
+.h-home-indicator {
+  height: var(--spacing-home-indicator);
+}
 .h-7 {
   height: 1.75rem;
 }
@@ -1359,6 +1362,9 @@
 }
 .pb-safe-bottom {
   padding-bottom: var(--spacing-safe-bottom);
+}
+.pb-home-indicator {
+  padding-bottom: var(--spacing-home-indicator);
 }
 .pl-2 {
   padding-left: 0.5rem;

@@ -366,7 +366,7 @@
          is the affordance again and it has to be reachable. -->
     <button
       bind:this={homeBarRef}
-      class="absolute bottom-0 left-0 z-60 flex h-6 w-full cursor-pointer items-center justify-center"
+      class="h-home-indicator absolute bottom-0 left-0 z-60 flex w-full cursor-pointer items-center justify-center"
       onclick={() => {
         if ($isShadeOpen) {
           closeShade();

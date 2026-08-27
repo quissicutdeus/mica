@@ -267,6 +267,18 @@
    */
   --spacing-safe-top: 2rem; /* pt-8 */
   --spacing-safe-bottom: 1rem; /* pb-4 */
+
+  /**
+   * The home-indicator gesture bar's own height, named because two places need the same
+   * number and disagreeing is invisible until you tap.
+   *
+   * `PhoneFrame` sizes the bar with it; anything anchored to the bottom of an app pads by
+   * it to stay out of the bar's reach. The bar is a real full-width button at `z-60`, so a
+   * composer flush to the screen edge does not merely look crowded — its lower third
+   * returns you to the home screen instead of sending. Distinct from `safe-bottom`, which
+   * is the frame's visual inset and is smaller.
+   */
+  --spacing-home-indicator: 1.5rem; /* h-6 */
 }
 
 body {
