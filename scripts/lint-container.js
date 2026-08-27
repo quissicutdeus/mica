@@ -27,7 +27,25 @@ import { spawnSync } from 'node:child_process';
 const REQUIRE = process.argv.includes('--require');
 const NO_DOCKER = process.argv.includes('--no-docker');
 
-const has = (bin) => spawnSync(bin, ['--version'], { stdio: 'ignore' }).status === 0;
+/**
+ * Is this tool installed and runnable?
+ *
+ * The probe is per-tool because `--version` is not universal, and guessing it wrong fails
+ * *silently in the direction of "not installed"*. `go --version` is not a Go command: it
+ * exits 2 with `flag provided but not defined: -version`. So this answered "no Go" on
+ * every machine that had Go, the local branch below was dead code, and every check took
+ * the Docker fallback instead.
+ *
+ * Nothing was wrong with the *result* -- the container runs the same checks against the
+ * same pinned image -- which is exactly why it survived: the only visible trace was the
+ * `(docker)` suffix in this script's own output. CI paid for it twice, installing a Go
+ * toolchain it then never used and pulling golang:1-alpine to do work the installed Go
+ * was standing right there to do.
+ */
+const has = (bin, probe = ['--version']) => spawnSync(bin, probe, { stdio: 'ignore' }).status === 0;
+
+/** `go version` -- not `go --version`, which is an error. See the note on `has` above. */
+const GO_PROBE = ['version'];
 
 /**
  * Docker with a daemon actually answering, not merely a `docker` binary on PATH.
@@ -100,7 +118,7 @@ const GO_CHECKS = [
   { name: 'go build', argv: ['go', 'build', '-o', NULL_DEVICE, './...'] }
 ];
 
-if (has('go')) {
+if (has('go', GO_PROBE)) {
   for (const { name, argv, failOnStdout } of GO_CHECKS) {
     const [bin, ...args] = argv;
     check(name, bin, args, { cwd: 'docker/serve', failOnStdout });
