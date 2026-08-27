@@ -27,6 +27,21 @@ import { spawn } from 'node:child_process';
 
 const QUICK = process.argv.includes('--quick');
 const BAIL = process.argv.includes('--bail');
+/**
+ * Drop the `container` gate, for the one caller that has something better.
+ *
+ * This gate is cheap where it cannot run and expensive where it can: inside a container
+ * with no Docker daemon it reports skipped in under a second, but on a plain runner it
+ * finds Docker, pulls golang:1-alpine and hadolint, and spends ~30s reaching a verdict
+ * that CI's `container` job has already reached properly — that job installs the real
+ * toolchains and passes `--require`, which is the only place a skip is an error.
+ *
+ * So this exists for that workflow and not as a general escape hatch. It is safe there
+ * precisely because something else is failing the build when these checks cannot run;
+ * it would not be safe as a habit, and the summary still lists `container` as skipped
+ * rather than dropping it, for the reason `skipped` is printed at all.
+ */
+const NO_CONTAINER = process.argv.includes('--no-container');
 
 const run = (command, args, options = {}) =>
   new Promise((resolve) => {
@@ -115,7 +130,7 @@ const main = async () => {
   // Reports a missing `go` or `hadolint` as skipped rather than failing, so this does not
   // put a Go toolchain between a Svelte change and a push. CI passes --require, which is
   // what stops "skipped locally" from silently becoming "skipped everywhere".
-  if (!stop()) await gate('container', 'pnpm', ['lint:container']);
+  if (!stop() && !NO_CONTAINER) await gate('container', 'pnpm', ['lint:container']);
   if (!stop()) await gate('lint', 'pnpm', ['lint']);
   if (!stop()) await gate('typecheck', 'pnpm', ['typecheck']);
   if (!stop()) await gate('unit', 'pnpm', ['test:unit']);

@@ -26,6 +26,9 @@ dist-ssr
 # Test artifacts
 playwright-report
 test-results
+# Each `--shard` writes one of these; the merge job turns the set back into a
+# single playwright-report. Only CI produces them, but a local shard run would too.
+blob-report
 
 # Generated docs
 docs

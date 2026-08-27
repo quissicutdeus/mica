@@ -777,7 +777,18 @@ disclosure stays true at runtime.
 line-length error costs seconds instead of a minute behind the e2e suite — and
 it reports every failure rather than stopping at the first.
 `pnpm verify --quick` skips e2e (what `pre-push` runs); `--bail` stops at the
-first failure, for a tight edit loop.
+first failure, for a tight edit loop; `--no-container` drops the Go/Dockerfile
+gate, and exists for CI rather than for you — see below.
+
+**`pnpm verify` is still the whole set; CI just runs it across four machines.**
+The `verify` job runs `pnpm verify --quick --no-container`, the `e2e` job runs
+the Playwright suite sharded in two, and the `container` job runs the
+Go/Dockerfile checks with `--require`. The union of those three is exactly what
+`pnpm verify` runs locally, and a gate added to `scripts/verify.js` lands in the
+first of them without anything else being touched — only e2e and the container
+checks are carved out by name. They are split because e2e was 158s of a 227s run
+and the only thing needing the Playwright image, and because the container
+checks need a Go toolchain that image does not have.
 
 Ordering is not a nicety. Running these by hand, in the order they happen to be
 listed below, is how a two-second markdownlint failure ends up found after a

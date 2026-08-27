@@ -47,19 +47,6 @@ jobs:
     # straight sync PR, resolves to dev's tree anyway. Every other PR — a MICA-<n> branch
     # into dev — is untouched by this and still gets its run.
     if: github.event_name != 'pull_request' || github.head_ref != 'dev'
-    # Pinned to the @playwright/test version in pnpm-lock.yaml (currently 1.62.1). This
-    # image ships Chromium and its OS deps preinstalled, replacing what `--with-deps`
-    # used to spend a minute-plus on every run downloading/apt-installing. Bump this tag
-    # whenever the lockfile's playwright version changes, or the run fails on a missing
-    # browser instead of a stale-but-working one.
-    #
-    # `-resolute` is Ubuntu 26.04 LTS, the newest distro Playwright publishes for this
-    # version (the chain runs bionic 18.04 -> focal 20.04 -> jammy 22.04 -> noble 24.04 ->
-    # resolute 26.04). Both halves of this tag have to be chosen deliberately: the version
-    # tracks the lockfile, and the distro is only available for versions that shipped after
-    # it, so a future playwright bump may have no `-resolute` build yet. Check
-    # https://mcr.microsoft.com/v2/playwright/tags/list before changing either half.
-    container: mcr.microsoft.com/playwright:v1.62.1-resolute
     # Matched to the development machine on purpose, rather than to whatever is LTS.
     #
     # pnpm is the half that matters most: it is what writes pnpm-lock.yaml, and `pnpm
@@ -118,24 +105,160 @@ jobs:
             build-state-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
             build-state-${{ runner.os }}-
 
-      # The same command a developer runs, so the two cannot drift. This used to be
-      # `test:unit` and `build` only, which left the e2e suite and the formatter
-      # enforced nowhere — seventy-one tests free to go red without anything saying so.
+      # Still `pnpm verify`, minus the two gates that belong to other jobs -- so a
+      # developer's one command and CI's set of them stay the same set. That property is
+      # worth stating because this is where it is easiest to lose: the union of this job
+      # and the `e2e` job below is exactly `pnpm verify`, and a gate added to verify.js
+      # lands here automatically. Only e2e was ever carved out by name.
+      #
+      # `--quick` drops e2e, which now runs sharded across its own machines: it was 158s
+      # of this job's 227s of gates, and the only reason this job was paying a 42s pull of
+      # the Playwright image at all.
+      #
+      # `--no-container` drops the Go/Dockerfile gate, which the `container` job below
+      # runs properly with `--require`. Without the flag this job would find the runner's
+      # Docker, pull two images and spend ~30s reaching a verdict that job has already
+      # reached -- and would newly depend on Docker Hub to do it.
       - name: Verify
-        run: pnpm verify
+        run: pnpm verify --quick --no-container
+
+  # The e2e suite, on its own machines, split in two.
+  #
+  # It was 158s of the ~227s `pnpm verify` spent in the job above, and it was also the
+  # only reason that job ran inside the Playwright image at all -- a 42s pull, paid by
+  # every gate whether or not it needed a browser. Between them those two facts were 69%
+  # of that job. Splitting the suite out takes both off it at once, and the shards run
+  # beside it rather than after it.
+  #
+  # Two shards and not more because the fixed cost per shard is that same 42s image pull.
+  # Tests are ~156s of the 158s (the bundle the webServer serves builds in about five),
+  # so two shards is ~78s of tests against ~58s of setup, and a third would buy about
+  # twenty seconds of wall clock for another full machine's overhead. The matrix is one
+  # line to widen if that trade ever looks different.
+  #
+  # `fail-fast: false` deliberately: one shard failing must not cancel the other, or a
+  # red run tells you about half the suite and stays silent about the rest.
+  e2e:
+    name: E2E ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    # Same carve-out as `verify` above and `container` below. Every job needs its own
+    # copy: the condition is per-job, so a new job without it silently reintroduces the
+    # doubled run on every push to dev.
+    if: github.event_name != 'pull_request' || github.head_ref != 'dev'
+    # Pinned to the @playwright/test version in pnpm-lock.yaml (currently 1.62.1). This
+    # image ships Chromium and its OS deps preinstalled, replacing what `--with-deps`
+    # used to spend a minute-plus on every run downloading/apt-installing. Bump this tag
+    # whenever the lockfile's playwright version changes, or the run fails on a missing
+    # browser instead of a stale-but-working one.
+    #
+    # `-resolute` is Ubuntu 26.04 LTS, the newest distro Playwright publishes for this
+    # version (the chain runs bionic 18.04 -> focal 20.04 -> jammy 22.04 -> noble 24.04 ->
+    # resolute 26.04). Both halves of this tag have to be chosen deliberately: the version
+    # tracks the lockfile, and the distro is only available for versions that shipped after
+    # it, so a future playwright bump may have no `-resolute` build yet. Check
+    # https://mcr.microsoft.com/v2/playwright/tags/list before changing either half.
+    container: mcr.microsoft.com/playwright:v1.62.1-resolute
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/2', '2/2']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        name: Install pnpm 11
+        with:
+          version: 11
+      - name: Install Node.js 26
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # `--reporter=blob` rather than the config's own reporters. A shard sees only its
+      # own third of the results, so an HTML report per shard is two partial reports and
+      # no whole one; blob is the intermediate the merge job below turns back into a
+      # single report. Nothing about `pnpm test:e2e` changes for a developer.
+      #
+      # `workers` stays whatever Playwright picks (web/playwright.config.ts sets it to
+      # `undefined` on purpose). Sharding adds machines; raising workers would add
+      # contention on one, and that config's timeout comment records exactly what that
+      # did to this suite the last time -- six tests failing between 10.3s and 11.7s
+      # against a 10s limit, none of them actually broken.
+      - name: Run shard ${{ matrix.shard }}
+        run: pnpm --filter web exec playwright test --shard=${{ matrix.shard }} --reporter=blob
+
+      # `always()`, not `failure()`. The merge job below runs only when something failed,
+      # but it has to merge *every* shard's blob to produce a report of the whole suite --
+      # uploading only the failed shard's would give a report that silently omits half the
+      # results while looking complete. On a green run these are small (traces are
+      # retain-on-failure) and nothing downloads them; they expire in a day.
+      - name: Upload blob report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: blob-report-${{ strategy.job-index }}
+          path: web/blob-report
+          retention-days: 1
+
+  # One readable HTML report out of the shards' blobs -- and only when something failed.
+  #
+  # `needs:` makes this run after the shards rather than beside them, so on a green run it
+  # would be pure added wall clock: about a minute of checkout and install for a report
+  # nobody opens. `if: failure()` is what keeps the common path at the cost of the slowest
+  # shard. This matches what the old single job did, which also uploaded its report only
+  # on failure.
+  e2e-report:
+    name: E2E report
+    runs-on: ubuntu-latest
+    needs: [e2e]
+    if: failure()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        name: Install pnpm 11
+        with:
+          version: 11
+      - name: Install Node.js 26
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # Every shard's blob into one directory; merge-reports reads the set, not a file.
+      - name: Download blob reports
+        uses: actions/download-artifact@v8
+        with:
+          path: web/blob-report
+          pattern: blob-report-*
+          merge-multiple: true
+
+      - name: Merge into one report
+        run: pnpm --filter web exec playwright merge-reports --reporter html ./blob-report
 
       - name: Upload Playwright report
-        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: web/playwright-report
           retention-days: 7
 
-  # A second job rather than more steps on `verify`: that one runs inside the Playwright
-  # container image, which has no Go toolchain, no hadolint and no Docker daemon. It also
-  # means a Svelte-only change gets its verdict from `verify` without waiting on an image
-  # build, and the two run in parallel.
+  # A separate job rather than more steps on `verify`, and it owns these checks outright:
+  # `verify` passes `--no-container` precisely because this job runs them properly, with
+  # the real Go and hadolint installed and `--require` turning a skip into a failure.
+  #
+  # (It used to be separate because `verify` ran inside the Playwright image, which has
+  # no Go, no hadolint and no Docker daemon. That stopped being true when e2e moved to
+  # its own job and `verify` came back to a plain runner -- where Docker *is* available,
+  # which is what made the flag necessary rather than merely tidy.)
+  #
+  # It also means a Svelte-only change gets its verdict without waiting on an image
+  # build, since all four jobs run in parallel.
   container:
     name: Demo container
     runs-on: ubuntu-latest
