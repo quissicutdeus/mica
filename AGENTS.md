@@ -155,7 +155,11 @@ not work around it.
    plain CSS, no framework. It is not. See §6 — removing it breaks CSS nesting
    (and any `oklab()`/`oklch()`) in game while the dev browser looks perfect.
 4. **Never pass unsanitized user content to `{@html}`.** See §7.
-5. **No new dependencies** without asking.
+5. **No new _runtime_ dependencies** without asking — they ship to players, cost
+   bundle size, and are a licence and supply-chain commitment. A devDependency
+   (linter, test util, build plugin) needs no permission: add it, and say what
+   it is for. `@citizenfx/client` and `@citizenfx/server` stay pinned exactly,
+   no caret.
 6. **Do not change** TypeScript versions in either package, Vite `build.outDir`,
    or `scripts/generate-barrels.js` output paths without asking.
 7. **SDK First.** Everything in `web/src/apps/`, and every external add-on,
@@ -280,6 +284,12 @@ not work around it.
     phased plan in this repo names the Jira issue key it corresponds to
     (`MICA-16`) — the key only, never the site URL, which identifies the
     owner.
+
+    **A ticket is for what you would otherwise forget, not for everything.** A
+    fix that ships within the hour does not need one; the commit is the record.
+    Open an issue when the work is deferred, when it is worth doing but not now,
+    or when you want the shape of it written down before starting. The rule
+    above governs where a plan lives, not whether small work must have one.
 
 12. **A branch is named for its Jira key** — `MICA-<n>`, optionally with a
     lowercase slug (`MICA-56`, `MICA-56-bank-send`). `main` and `dev` are
