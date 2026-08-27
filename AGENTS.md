@@ -298,16 +298,25 @@ not work around it.
     history, or when you want a PR to think in — neither is required, and the
     rule above governs the name only if you make one.
 
-    Enforced in two halves, because neither covers the other's blind spot. The
-    `pre-push` hook (`scripts/pre-push.js`, judging names via
-    `scripts/check-branch-name.js`, then running `check:fast`; installed from
-    `.githooks/` by `scripts/install-git-hooks.js`) judges the _remote_ ref of
-    each push, so `git push origin HEAD:refs/heads/MICA-56` is legal from a
-    differently-named local branch. The ruleset in
-    `.github/rulesets/ticket-key-branch-names.json` covers what never reaches a
-    local hook — the web UI, and anything pushed by an app. It excludes
-    `refs/heads/dependabot/**` deliberately: blocking those stops dependency
-    updates.
+    **Enforced in one place, and it is a local hook.** `scripts/pre-push.js`
+    judges names via `scripts/check-branch-name.js` and then runs `check:fast`;
+    it is installed from `.githooks/` by `scripts/install-git-hooks.js`. It
+    judges the _remote_ ref of each push, so
+    `git push origin HEAD:refs/heads/MICA-56` is legal from a
+    differently-named local branch.
+
+    This used to claim a second half, and that half never existed.
+    `.github/rulesets/ticket-key-branch-names.json` was committed and described
+    here as covering what no local hook sees — the web UI, and anything pushed
+    by an app — but it was never imported, and it cannot be: GitHub answers
+    `422 Invalid rule 'branch_name_pattern'` for this repository, a minimal
+    one-rule probe included. The type is in the REST schema, so this is a
+    per-repository availability limit rather than a malformed file; the
+    published docs do not say which limit. Whatever the cause, **a push that
+    never reaches a local hook is not checked at all**, and a rule that reads as
+    enforced while enforcing nothing is worse than no rule. The file is deleted
+    rather than left lying; git history has it if this repo ever moves to an
+    organization and the rule becomes available.
 
     Deletions are exempt, and a delete-only push skips `check:fast` — running
     the full gate on a deletion took long enough to time out the push before git

@@ -33,15 +33,16 @@ are frequently more specific than the request that pointed you at it.
 `feature/`, no `claude/`, no tool-generated name. A branch whose name doesn't
 say which ticket it serves is one nobody else can triage.
 
-Enforced in two halves, because neither covers the other's blind spot:
+Enforced in exactly one place: `scripts/pre-push.js` (via
+`scripts/check-branch-name.js`) judges the **remote** ref of each push, then
+runs `check:fast`. So `git push origin HEAD:refs/heads/MICA-56` is legal from
+a differently-named local branch. Deletions are exempt, and a delete-only push
+skips `check:fast`.
 
-- `scripts/pre-push.js` (via `scripts/check-branch-name.js`) judges the
-  **remote** ref of each push, then runs `check:fast`. So
-  `git push origin HEAD:refs/heads/MICA-56` is legal from a differently-named
-  local branch. Deletions are exempt, and a delete-only push skips `check:fast`.
-- `.github/rulesets/ticket-key-branch-names.json` covers what never reaches a
-  local hook — the web UI, and anything pushed by an app. `dependabot/**` is
-  excluded deliberately.
+Nothing covers a push that never reaches a local hook — the web UI, or anything
+pushed by an app. A committed ruleset used to claim that job and was never
+active; GitHub refuses a `branch_name_pattern` rule on this repository. Do not
+re-add one without checking the API accepts it first (AGENTS.md §2.12).
 
 ## Commit messages
 
