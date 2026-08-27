@@ -37,7 +37,10 @@ cd "/opt/fivem-main/server-data/resources/[standalone]/gPhone/"
 git fetch https://github.com/quissicutdeus/gPhone.git main
 git reset --hard FETCH_HEAD
 
-CI=true pnpm install --frozen-lockfile
+# --ignore-scripts: same reason the Dockerfile and CI use it -- the root
+# "prepare" script installs dev git hooks into the submodule's git dir, which
+# this account cannot write to and which a deploy has no use for anyway.
+CI=true pnpm install --frozen-lockfile --ignore-scripts
 pnpm build
 
 GIT_SHA=$(git rev-parse HEAD)
@@ -50,7 +53,7 @@ MICA_CALVER=$(date +%Y.%m.%d).1
 # export's status rather than the command's, so `set -e` never fired and every
 # deploy sent an RCON packet with a blank password. Root can read that file;
 # this account has no business being able to.
-sudo MICA_PORT=8675 GIT_BRANCH=main GIT_SHA="$GIT_SHA" MICA_CALVER="$MICA_CALVER" MICA_CONTAINER_NAME=gphone-main MICA_IMAGE_TAG=gphone-mainocal \
+sudo MICA_PORT=8675 GIT_BRANCH=main GIT_SHA="$GIT_SHA" MICA_CALVER="$MICA_CALVER" MICA_CONTAINER_NAME=gphone-main MICA_IMAGE_TAG=gphone-main:local \
   /usr/local/sbin/gphone-deploy-main-compose.sh
 
 echo "deployed main @ $GIT_SHA"
