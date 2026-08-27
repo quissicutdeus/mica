@@ -14,6 +14,10 @@ sql/dev-reset.sql
 .superpowers/
 .agent/
 .env*
-# Assistant config is shared, like AGENTS.md — see §2.10. Personal overrides are not.
+# Assistant config is shared, like AGENTS.md — see §2.10. Personal overrides are not,
+# and neither is anything Claude Code writes per-machine: `worktrees/` is scratch it
+# creates and removes on its own. The `.worktrees/` line below does not cover it —
+# a pattern with no leading slash still has to match the whole path segment.
 .claude/settings.local.json
+.claude/worktrees/
 .worktrees/
