@@ -229,25 +229,20 @@ not work around it.
      go through a **named** repository method built on
      `protected updateUnscoped`, never a service-level bypass.
 
-   Client-writable fields are declared per table via `clientWritable`;
-   `ServiceEndpoint` reduces the payload to that set before it reaches SQL.
-   `id`, `citizenid`, `created_at`, `updated_at` are never client-writable, and
-   `status` (moderation/soft-delete) is excluded everywhere.
+   - **`clientWritable` declares what a payload may set**, and `ServiceEndpoint`
+     reduces to that set before it reaches SQL. `id`, `citizenid`, `created_at`,
+     `updated_at` and `status` are never client-writable.
 
-   **Rate and payload size are attacker-controlled too, and both are checked:**
+   Rate and value limits are enforced too — a limiter at the `registerEvent`
+   boundary, so custom actions are covered and not just generic CRUD, and
+   `columnRules` derived from the schema, so a write cannot silently truncate a
+   `varchar` in non-strict mode. The mechanics are in `docs/security.md`. Two
+   parts of it constrain what you write, so they live here:
 
-   - A rate limiter sits at the transport boundary in `registerEvent` (covers
-     custom actions, not just generic CRUD), keyed on
-     `(source, service, action)`, fixed 60s window, `gphone_rate_limit`
-     requests/window (default 60), checked before `FrameworkBridge.getPlayer`.
-     Cleared on `playerDropped` — FiveM reuses server ids.
-   - Values are checked against `columnRules` (`length`, `values`) derived from
-     the schema, so a write can't silently truncate a `varchar` column in
-     non-strict mode.
-   - `assertWritableValue`'s error messages reach players via
-     `fetchNui`/`useAppAction` toasts, so they carry no `[Repository]` prefix
-     and no table name.
-   - **No blanket read cap, deliberately** — a public read is bounded by
+   - `assertWritableValue`'s messages reach players as `fetchNui` /
+     `useAppAction` toasts, so they carry no `[Repository]` prefix and no table
+     name.
+   - **No blanket read cap, deliberately.** A public read is bounded by
      mandatory `paging` (§10), an owner-scoped read by its citizenid predicate.
      A global `LIMIT` would silently truncate a player's own list.
 
@@ -403,10 +398,8 @@ whole system:
 - Prefer the scale already in `app-utilities.css` over inventing an arbitrary
   value; add a class there rather than reaching for an inline `style=`
   attribute.
-- **No visible scrollbars.** Scrollbars must never be visible anywhere inside
-  the phone interface. Global CSS rules in `web/src/app.css`
-  (`scrollbar-width: none` / `::-webkit-scrollbar { display: none }`) enforce
-  this across all scrollable containers.
+- **No visible scrollbars anywhere in the phone.** `web/src/app.css` enforces it
+  globally (`scrollbar-width: none` / `::-webkit-scrollbar { display: none }`).
 - **Read §6 before writing any color, layout, or variant utility** — CEF's
   baseline is several years behind a dev browser, and it's easy to reach for a
   CSS feature it doesn't have.
@@ -857,35 +850,25 @@ export const notes = defineService<Note>({
 });
 ```
 
-The rules that matter most when writing one:
+The field-by-field reference is `docs/schema-and-services.md`. What bites if you
+guess it:
 
 - `id, citizenid, status, created_at, updated_at` are **supplied by the
-  framework** — declaring them in `schema` is an error.
-- `access` is two independent axes, `read` and `write`, each `'owner'`
-  (default), `'public'`, or `'members'` (`'server'` also valid for `write`).
-  **`read: 'public'` requires `paging`** — `defineService` throws without it,
-  since an unpaged public read returns the whole table. `'members'`/`'public'`
-  reads register no generic `get`; membership needs `access.membership`, which
-  derives `Repository.isMember`:
-
-  ```ts
-  { table, foreignKey, localKey?, citizenColumn?, liveWhileNull? }
-  ```
-
-- `access.editWindow` (seconds) time-boxes an ownership-scoped update only —
-  never `delete`.
-- `ColumnDef.private: true` withholds a column from a public read's projection;
-  `citizenid` is withheld automatically from every public projection.
-- `paging` is always keyset on `id DESC` (never offset, never configurable) —
-  `{ cursor?, limit? }` in, `{ rows, nextCursor }` out, `nextCursor: null`
-  meaning end-of-list.
-- `childTables` declares join/attachment tables (DDL-only, no repository or
-  events derived) — declare every column explicitly.
-- `repositoryFactory` lets you subclass `SchemaRepository` for custom read
-  behavior without losing the identifier allowlist or ownership scoping.
-- `table` overrides the default `gphone_<id>` table name; `options`
-  (`disableGet`, `disableCreate`, etc.) turns off a generic action the declared
-  shape doesn't fit.
+  framework** — declaring one in `schema` is an error.
+- `access` is two independent axes, `read` and `write` — `'owner'` (default),
+  `'public'`, `'members'`, and `'server'` for write. **`read: 'public'` requires
+  `paging`** and `defineService` throws without it, since an unpaged public read
+  returns the whole table.
+- **`'members'` and `'public'` reads register no generic `get`.** Membership
+  needs `access.membership`, which derives `Repository.isMember`.
+- `access.editWindow` time-boxes an ownership-scoped **update** only — never a
+  `delete`.
+- `paging` is always keyset on `id DESC`, never offset and never configurable;
+  `nextCursor: null` means end-of-list.
+- `childTables` are **DDL-only** — no repository and no events are derived from
+  them, and every column is declared explicitly.
+- A public projection withholds `citizenid` automatically, and anything else you
+  mark `private: true`.
 
 Full detail — every field, the accounts/identity model shared social apps build
 on, Blabber as the worked public-read example, and the `gphone.sql`
