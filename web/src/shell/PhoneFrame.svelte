@@ -19,6 +19,7 @@
   import VolumeHud from './VolumeHud.svelte';
   import NotificationShade from './NotificationShade.svelte';
   import DragGhost from './DragGhost.svelte';
+  import RemoveTarget from './RemoveTarget.svelte';
   import {
     openShade,
     isShadeOpen,
@@ -214,6 +215,11 @@
 
     <!-- Notification Shade Overlay -->
     <NotificationShade />
+
+    <!-- Take-it-off-the-home-screen drop target. Rendered here rather than in
+         `Launcher.svelte` for the same reason the ghost is: a drag can begin on the home
+         grid, the dock or an open folder popup, and all three need the same one target. -->
+    <RemoveTarget />
 
     <!-- Drag ghost: renders above every layer regardless of which surface (App Drawer,
          home grid, dock, folder popup) started the drag. -->

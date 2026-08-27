@@ -109,6 +109,38 @@ export async function dragIconTo(
   await page.mouse.up();
 }
 
+/**
+ * Long-presses an icon and drops it on the remove target (MICA-87). Not expressible via
+ * `dragIconTo`: that takes its destination up front, and the target does not exist until
+ * the long-press has armed — it renders only while a removable drag is in flight, which is
+ * the whole point of it. So the press and the measurement have to interleave.
+ */
+export async function dragIconToRemoveTarget(page: Page, icon: Locator): Promise<void> {
+  // Settle the frame's entrance fly-in before measuring anything. `dragIconTo` gets this
+  // for free because every caller reaches it through `openAppDrawer`, which measures the
+  // frame first; this one starts from the home screen, so it has to do it itself. Without
+  // it `toBeVisible()` resolves mid-flight, the icon's recorded box is a coordinate it is
+  // still travelling through, and the press lands on empty grid — no long-press, no ghost,
+  // no target, and a 30s wait for an element that was never going to appear.
+  await frameBox(page);
+  const box = await icon.boundingBox();
+  if (!box) throw new Error('drag source icon is not on screen');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  // The target itself is the arm signal here, not `[data-testid="drag-ghost"]` as in
+  // `dragIconTo`: both appear the moment `onLongPress` fires, but the ghost renders
+  // nothing for a folder drag (it has no manifest to draw), and a folder is exactly one of
+  // the things this removes.
+  const target = page.getByTestId('remove-drop-target');
+  await target.waitFor({ state: 'visible' });
+  const targetBox = await target.boundingBox();
+  if (!targetBox) throw new Error('the remove target is not on screen');
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, {
+    steps: 10
+  });
+  await page.mouse.up();
+}
+
 /** The viewport center of a home-grid cell at `position`, for `dragIconTo`'s destination. */
 export async function gridCellCenter(page: Page, position: number) {
   const cell = page.locator(`[data-position="${position}"]`);

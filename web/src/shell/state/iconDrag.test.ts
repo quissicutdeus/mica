@@ -6,6 +6,7 @@ import {
   moveIconDrag,
   cancelIconDrag,
   endIconDrag,
+  isRemovableOrigin,
   resolveIconDrop
 } from './iconDrag';
 import { dockAppIds, DEFAULT_DOCK_APP_IDS } from './dock';
@@ -112,6 +113,76 @@ describe('Icon drag session', () => {
       const items = get(homeGridItems);
       expect((items.find((i) => i.kind === 'folder') as HomeGridFolder).appIds).toEqual(['notes']);
       expect(items.find((i) => i.kind === 'app' && i.appId === 'mail')?.position).toBe(9);
+    });
+
+    /**
+     * MICA-87. Before this, every removal was a side effect of putting the app
+     * somewhere else and a drop that hit nothing cancelled — so a pinned icon could be
+     * moved forever and never taken off the home screen.
+     */
+    describe('remove', () => {
+      it('grid -> remove takes the app off the home screen', () => {
+        homeGridItems.set([
+          { position: 3, kind: 'app', appId: 'notes' },
+          { position: 4, kind: 'app', appId: 'mail' }
+        ]);
+        startIconDrag('notes', { kind: 'grid', position: 3 }, 0, 0);
+        expect(resolveIconDrop(get(iconDragState), { kind: 'remove' })).toBe('removed');
+        expect(get(homeGridItems)).toEqual([{ position: 4, kind: 'app', appId: 'mail' }]);
+        expect(get(iconDragState).appId).toBeNull();
+      });
+
+      it('grid -> remove takes a whole folder off, apps included', () => {
+        homeGridItems.set([
+          { position: 2, kind: 'folder', folderId: 'f1', name: 'Stuff', appIds: ['notes', 'mail'] }
+        ]);
+        startIconDrag('f1', { kind: 'grid', position: 2 }, 0, 0);
+        expect(resolveIconDrop(get(iconDragState), { kind: 'remove' })).toBe('removed');
+        expect(get(homeGridItems)).toEqual([]);
+      });
+
+      it('folder -> remove pulls the app out without placing it anywhere', () => {
+        homeGridItems.set([
+          { position: 3, kind: 'folder', folderId: 'f1', name: '', appIds: ['notes', 'mail'] }
+        ]);
+        startIconDrag('mail', { kind: 'folder', folderId: 'f1' }, 0, 0);
+        expect(resolveIconDrop(get(iconDragState), { kind: 'remove' })).toBe('removed');
+        const items = get(homeGridItems);
+        expect((items[0] as HomeGridFolder).appIds).toEqual(['notes']);
+        expect(items.some((i) => i.kind === 'app' && i.appId === 'mail')).toBe(false);
+      });
+
+      it('folder -> remove drops the folder too once it is empty', () => {
+        homeGridItems.set([
+          { position: 3, kind: 'folder', folderId: 'f1', name: '', appIds: ['mail'] }
+        ]);
+        startIconDrag('mail', { kind: 'folder', folderId: 'f1' }, 0, 0);
+        expect(resolveIconDrop(get(iconDragState), { kind: 'remove' })).toBe('removed');
+        expect(get(homeGridItems)).toEqual([]);
+      });
+
+      it('dock -> remove empties that slot without shrinking the dock', () => {
+        startIconDrag('phone', { kind: 'dock', index: 0 }, 0, 0);
+        expect(resolveIconDrop(get(iconDragState), { kind: 'remove' })).toBe('removed');
+        expect(get(dockAppIds)[0]).toBe('');
+        expect(get(dockAppIds)).toHaveLength(DEFAULT_DOCK_APP_IDS.length);
+      });
+
+      it('drawer -> remove is rejected and mutates nothing', () => {
+        homeGridItems.set([{ position: 3, kind: 'app', appId: 'notes' }]);
+        startIconDrag('notes', { kind: 'drawer' }, 0, 0);
+        expect(resolveIconDrop(get(iconDragState), { kind: 'remove' })).toBe('rejected');
+        expect(get(homeGridItems)).toEqual([{ position: 3, kind: 'app', appId: 'notes' }]);
+        expect(get(iconDragState).appId).toBeNull();
+      });
+
+      it('offers removal from every origin except the drawer', () => {
+        expect(isRemovableOrigin(null)).toBe(false);
+        expect(isRemovableOrigin({ kind: 'drawer' })).toBe(false);
+        expect(isRemovableOrigin({ kind: 'grid', position: 0 })).toBe(true);
+        expect(isRemovableOrigin({ kind: 'dock', index: 0 })).toBe(true);
+        expect(isRemovableOrigin({ kind: 'folder', folderId: 'f1' })).toBe(true);
+      });
     });
 
     it('rejects dropping onto a full folder and leaves the folder untouched', () => {

@@ -2197,6 +2197,12 @@
 .z-60 {
   z-index: 60;
 }
+/* Between the status bar / home indicator (60) and the drag ghost (70) — the band the
+   home-screen remove target occupies, reachable over a folder popup and still under the
+   icon being dragged onto it. */
+.z-65 {
+  z-index: 65;
+}
 .z-70 {
   z-index: 70;
 }

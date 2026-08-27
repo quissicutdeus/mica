@@ -52,7 +52,19 @@ export function endIconDrag(): void {
 }
 
 export type DropTarget =
-  { kind: 'grid'; position: number } | { kind: 'dock'; index: number } | { kind: 'none' };
+  | { kind: 'grid'; position: number }
+  | { kind: 'dock'; index: number }
+  | { kind: 'remove' }
+  | { kind: 'none' };
+
+/**
+ * Whether a drag has somewhere to be removed *from* — i.e. whether `RemoveTarget.svelte`
+ * should appear at all. Every origin but the drawer does: the drawer is the surface that
+ * lists apps which are not on the home screen, so "remove from home screen" there is
+ * either a no-op or a lie about uninstalling.
+ */
+export const isRemovableOrigin = (origin: DragOrigin | null): boolean =>
+  origin !== null && origin.kind !== 'drawer';
 
 /**
  * The whole drag/drop decision matrix in one place, rather than duplicated hit-testing
@@ -62,13 +74,30 @@ export type DropTarget =
 export function resolveIconDrop(
   state: IconDragState,
   target: DropTarget
-): PlacementResult | 'no-op' {
+): PlacementResult | 'no-op' | 'removed' {
   if (!state.appId || !state.origin) return 'no-op';
   const { appId, origin } = state;
 
   if (target.kind === 'none') {
     cancelIconDrag();
     return 'rejected';
+  }
+
+  // Unpinning (MICA-87). Handled before the folder-origin bookkeeping below because a
+  // drawer drag has to bail out having mutated nothing: dropping a drawer icon here is
+  // not a removal, and `RemoveTarget.svelte` does not render for that origin in the first
+  // place (`isRemovableOrigin`), so this is the unreachable-in-practice guard rather than
+  // a branch the UI can reach.
+  if (target.kind === 'remove') {
+    if (origin.kind === 'drawer') {
+      cancelIconDrag();
+      return 'rejected';
+    }
+    if (origin.kind === 'folder') removeAppFromFolderOnly(origin.folderId, appId);
+    else if (origin.kind === 'grid') removeFromGrid(origin.position);
+    else clearDockSlotIfStillThere(origin.index, appId);
+    endIconDrag();
+    return 'removed';
   }
 
   // Leaving a folder is committed the moment the app lands anywhere else — the folder
@@ -110,8 +139,9 @@ function clearDockSlotIfStillThere(index: number, appId: string): void {
 }
 
 /**
- * Hit-tests a viewport point against the drop targets rendered by `Dock.svelte`
- * (`data-dock-index`) and `Launcher.svelte` (`data-position`), so every drag origin
+ * Hit-tests a viewport point against the drop targets rendered by `RemoveTarget.svelte`
+ * (`data-drop-remove`), `Dock.svelte` (`data-dock-index`) and `Launcher.svelte`
+ * (`data-position`), so every drag origin
  * (drawer, grid, dock, folder) shares one hit-testing implementation instead of each
  * component reimplementing `elementsFromPoint`. Dock is checked first: the dock physically
  * overlaps the bottom rows of the home grid area's hit-box during a drag, and a drop meant
@@ -123,6 +153,12 @@ export function resolveDropAtPoint(x: number, y: number): DropTarget {
     return { kind: 'none' };
   }
   const elements = document.elementsFromPoint(x, y) as HTMLElement[];
+  // Remove first, for the same reason dock beats grid below: the target floats above the
+  // whole screen, so whatever cell or slot happens to sit under it must not swallow a drop
+  // aimed at it.
+  for (const el of elements) {
+    if (el.dataset?.dropRemove !== undefined) return { kind: 'remove' };
+  }
   for (const el of elements) {
     if (el.dataset?.dockIndex !== undefined) {
       return { kind: 'dock', index: Number(el.dataset.dockIndex) };

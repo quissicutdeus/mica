@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test';
-import { openAppDrawer, dragIconTo, gridCellCenter } from './support/homeGrid';
+import {
+  openAppDrawer,
+  dragIconTo,
+  dragIconToRemoveTarget,
+  gridCellCenter,
+  seedHomeGrid
+} from './support/homeGrid';
 
 /**
  * The real drag-and-drop path onto the home grid — placing an app, and the two ways a
@@ -66,6 +72,60 @@ test.describe('Home Grid drag-and-drop', () => {
     // the grid's own icons.
     await expect(page.getByRole('button', { name: 'Calculator' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Contacts' })).toBeVisible();
+  });
+
+  /**
+   * MICA-87. Pinning was one long-press and unpinning was nothing at all — the only
+   * removals in `resolveIconDrop` were side effects of dropping the app somewhere else,
+   * and a drop that hit nothing cancelled the drag rather than removing anything.
+   */
+  test.describe('removing an app from the home screen', () => {
+    test.beforeEach(async ({ page }) => {
+      // Seeded rather than dragged out of the drawer: the placement gesture has its own
+      // tests above, and re-driving it here would make a removal failure indistinguishable
+      // from a placement one. The reload is what `seedHomeGrid` needs — it is an
+      // `addInitScript`, and the outer `beforeEach` has already navigated by the time this
+      // one runs, so the write has to land before a *fresh* boot to be read at all.
+      await seedHomeGrid(page, ['calculator']);
+      await page.goto('/');
+      await expect(
+        page.locator('[data-position="0"]').getByRole('button', { name: 'Calculator' })
+      ).toBeVisible();
+    });
+
+    test('the target is absent until an icon is actually picked up', async ({ page }) => {
+      await expect(page.getByTestId('remove-drop-target')).toBeHidden();
+    });
+
+    test('dropping a pinned app on it takes the app off the grid for good', async ({ page }) => {
+      const icon = page.locator('[data-position="0"]').getByRole('button', { name: 'Calculator' });
+      await dragIconToRemoveTarget(page, icon);
+      await expect(page.locator('[data-position="0"]').getByRole('button')).toHaveCount(0);
+
+      // The grid is persisted storage, so a removal that only held in memory would come
+      // back on the next boot. Asserted against the stored value rather than by reloading
+      // the way the placement tests above do: `seedHomeGrid` is an `addInitScript`, which
+      // re-runs on every navigation and would put the app straight back — a reload here
+      // would test the seed, not the removal.
+      await expect
+        .poll(async () =>
+          page.evaluate(() => window.localStorage.getItem('gphone:settings:homeGridItems'))
+        )
+        .toBe('[]');
+    });
+
+    test('the app is still installed — it is back in the drawer, not uninstalled', async ({
+      page
+    }) => {
+      const icon = page.locator('[data-position="0"]').getByRole('button', { name: 'Calculator' });
+      await dragIconToRemoveTarget(page, icon);
+      await expect(page.locator('[data-position="0"]').getByRole('button')).toHaveCount(0);
+
+      await openAppDrawer(page);
+      await expect(
+        page.getByRole('dialog', { name: 'App Drawer' }).getByRole('button', { name: 'Calculator' })
+      ).toBeVisible();
+    });
   });
 
   test('naming a folder updates its icon label', async ({ page }) => {
