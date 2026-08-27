@@ -164,7 +164,9 @@ test('dragging a list tracks the cursor at a reduced size', async ({ page }) => 
   await expect(page.locator('h1', { hasText: 'Contacts' })).toBeVisible();
   await frameBox(page);
 
-  const scroller = page.locator('[data-testid="phone-screen"] .overflow-y-auto').first();
+  // `.last()`: the contact list scrolls itself rather than the shell — see the note in
+  // `app-residency.spec.ts` and `Screen.svelte`. This drag has to grab the box that moves.
+  const scroller = page.locator('[data-testid="phone-screen"] .overflow-y-auto').last();
   const box = await scroller.boundingBox();
   if (!box) throw new Error('nothing to scroll');
 

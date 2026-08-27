@@ -160,7 +160,7 @@
   let reporting = $state(false);
 </script>
 
-<div class="flex h-full flex-col">
+<div class="flex min-h-0 flex-1 flex-col">
   <div class="border-outline-variant flex items-center gap-3 border-b p-4">
     <Avatar
       src={account?.avatar ?? undefined}

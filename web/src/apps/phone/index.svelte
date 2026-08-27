@@ -96,7 +96,7 @@
            left under the tabs — tabs plus a full screen overflowed it, and the whole app
            scrolled. This column is the missing layer: it fills the content box exactly, the
            tabs take their natural height, and the pane below takes the rest. -->
-      <div class="flex flex-1 flex-col">
+      <div class="flex min-h-0 flex-1 flex-col">
         <div class="px-4 pt-2">
           <SegmentedControl
             options={[

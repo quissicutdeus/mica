@@ -511,7 +511,7 @@
 
   {#if selectedConversationId}
     <!-- Chat View -->
-    <div class="bg-surface flex flex-1 flex-col">
+    <div class="bg-surface flex min-h-0 flex-1 flex-col">
       {#if showInChatSearch}
         <!-- In-Chat Search Bar -->
         <div class="border-outline-variant bg-surface border-b p-2 backdrop-blur-md">

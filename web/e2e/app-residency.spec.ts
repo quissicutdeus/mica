@@ -90,8 +90,13 @@ test.describe('App residency', () => {
   test('scroll position survives an app switch', async ({ page }) => {
     // Contacts, because its list is long enough to actually scroll — Settings' hub is
     // shorter than the screen and scrollTop stays 0, which would pass vacuously.
+    //
+    // `.last()`, not `.first()`: the list owns its own scroll now. `Screen`'s content box
+    // is a definite height, so a child that declares `overflow-y-auto` shrinks to its share
+    // and scrolls inside itself instead of stretching the box and scrolling the shell (see
+    // `Screen.svelte`). The outer scroller this used to read sits at 0 forever.
     await openApp(page, 'Contacts');
-    const scroller = page.locator('.overflow-y-auto').first();
+    const scroller = page.locator('[data-testid="phone-screen"] .overflow-y-auto').last();
     await scroller.evaluate((el) => el.scrollTo(0, 120));
     const before = await scroller.evaluate((el) => el.scrollTop);
     expect(before).toBeGreaterThan(0);
@@ -100,8 +105,8 @@ test.describe('App residency', () => {
     await openApp(page, 'Contacts');
 
     const after = await page
-      .locator('.overflow-y-auto')
-      .first()
+      .locator('[data-testid="phone-screen"] .overflow-y-auto')
+      .last()
       .evaluate((el) => el.scrollTop);
     expect(after).toBe(before);
   });

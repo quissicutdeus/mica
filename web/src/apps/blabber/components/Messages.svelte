@@ -136,7 +136,7 @@
     {/if}
   </div>
 {:else}
-  <div class="flex h-full flex-col">
+  <div class="flex min-h-0 flex-1 flex-col">
     <div class="border-outline-variant flex items-center gap-2 border-b px-4 py-2.5">
       <Avatar
         initials={(active?.handle || '?').slice(0, 2).toUpperCase()}

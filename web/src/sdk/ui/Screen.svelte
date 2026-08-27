@@ -33,21 +33,29 @@
        item actually shrink to its share instead of its content, so this is exactly the gap
        between the header and the bottom of the phone, no matter what is rendered inside.
 
-       The inner box is what makes that a boundary an app cannot argue with. It has a
-       floor and no ceiling — `min-h-full`, never `h-full` — so it is always at least a
-       full screen (a short app fills its background rather than floating in dead space)
-       and grows past one when there is genuinely more to show (a feed still scrolls).
-       Crucially its *height* stays `auto`, and a percentage height needs a definite parent
-       to resolve against. An app that writes `h-full` therefore gets `auto` — its own
-       content's height — instead of conjuring a second full screen the way it used to.
-       That was the bug: `h-full` inside a non-flex scroller meant tabs *plus* a whole
-       screen, and the app scrolled when it had nothing to scroll.
+       The inner box hands that height on. It is `h-full` — a definite height, resolved
+       against a scroller that has one — and that is the whole of the contract. A child
+       that asks to fill gets the screen and nothing more; a child that is genuinely taller
+       overflows it and the scroller scrolls, which is what a feed wants.
 
-       So the contract for apps is: fill with `flex-1`, not with a percentage height.
-       Percentage heights simply have nothing to bite on here, which is the point — the
-       shell decides how tall an app is, and the app decides how to divide that up. -->
+       It used to be `min-h-full`: a floor and no ceiling, so its own height stayed `auto`.
+       That made percentage heights inside it meaningless (`h-full` on a child resolved to
+       `auto` — its own content's height, MICA-89) and, worse, made `flex-1` fill without
+       *bounding*, because a flex item in an auto-height column is sized by its content once
+       the content is the larger of the two. Views with fixed chrome came apart under enough
+       content: Blabber's DM composer walked ~82px down the screen per message sent, and the
+       core Messages thread put its composer 4000px below the visible screen.
+
+       So the contract for apps is: fill with `min-h-0 flex-1`, never with a percentage
+       height. `flex-1` claims the leftover space; `min-h-0` is the half that is easy to
+       forget and the half that does the work, because a flex item's default `min-height:
+       auto` resolves to its own content's minimum and will refuse to shrink to its share
+       without it. A child that declares `overflow-y-auto` is already exempt from that
+       default and scrolls itself; anything else needs the class.
+
+       `web/src/lib/utilityClasses.test.ts` enforces both halves statically. -->
   <div class="no-scrollbar relative min-h-0 flex-1 overflow-y-auto">
-    <div class="flex min-h-full flex-col">
+    <div class="flex h-full flex-col">
       {@render children()}
     </div>
   </div>

@@ -325,7 +325,7 @@
     {/if}
   {:else}
     <!-- Detailed View / Edit -->
-    <div class="bg-surface relative flex flex-1 flex-col">
+    <div class="bg-surface relative flex min-h-0 flex-1 flex-col">
       {#if isEditing && draftNote}
         <div class="flex h-full flex-col gap-4 p-4">
           <input

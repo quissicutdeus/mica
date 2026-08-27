@@ -65,7 +65,7 @@
   const showingTrending = $derived(query.trim().length < 2);
 </script>
 
-<div class="flex h-full flex-col">
+<div class="flex min-h-0 flex-1 flex-col">
   <div class="border-outline-variant space-y-2 border-b p-3">
     <SearchBar bind:value={query} placeholder="Search Blabber" focus={true} />
     <SegmentedControl

@@ -5,7 +5,7 @@
 </script>
 
 <Screen {title} {onback}>
-  <div class="flex h-full items-center justify-center p-6">
+  <div class="flex min-h-0 flex-1 items-center justify-center p-6">
     <EmptyState
       title="No Signal"
       description="This app needs a cellular connection. Reconnect to service to continue."

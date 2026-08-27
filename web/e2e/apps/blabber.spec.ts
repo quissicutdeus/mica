@@ -298,6 +298,58 @@ test.describe('Blabber', () => {
   });
 
   /**
+   * MICA-89. The thread opened with `h-full`, which resolves to `auto` against `Screen`'s
+   * indefinite inner box, so the column grew with its content instead of filling the screen
+   * and the composer — its last child — was pushed down one bubble height per send, until it
+   * left the bottom edge entirely. `utilityClasses.test.ts` covers the class statically; this
+   * pins the symptom, which is the part a reader recognises.
+   */
+  test('keeps the DM composer anchored as the thread grows', async ({ page }) => {
+    const frame = addOnFrame(page, 'blabber');
+    await frame.getByRole('button', { name: /Messages/ }).click();
+    await frame.locator('button', { hasText: 'nightowl' }).click();
+
+    const send = frame.getByRole('button', { name: 'Send', exact: true });
+    const opened = await send.boundingBox();
+    expect(opened, 'the Send button is on screen to begin with').not.toBeNull();
+
+    // Six, not one: the thread only outgrows the screen on the fifth, and the earlier
+    // `min-h-0 flex-1` attempt at this fix held perfectly still for the first four.
+    for (const body of ['one', 'two', 'three', 'four', 'five', 'six']) {
+      await frame.locator('textarea').fill(body);
+      await send.click();
+      await expect(frame.getByText(body, { exact: true })).toBeVisible();
+
+      const now = await send.boundingBox();
+      // Exactly still, not merely still on screen: it drifted ~82px a send, so a loose
+      // bound would have passed for the first two.
+      expect(
+        Math.abs((now?.y ?? 0) - opened!.y),
+        `Send moved after sending "${body}"`
+      ).toBeLessThanOrEqual(1);
+    }
+
+    // The other half of the contract, and the reason the composer stays put: the thread
+    // scrolls inside its own list. If the app hands its scrolling to the shell instead,
+    // the column has grown past the screen again and the composer is riding on the end.
+    // Anchored on the Send button rather than on a class inside the composer, whose
+    // markup is not this test's to depend on.
+    const scrolling = await send.evaluate((button) => {
+      const composer = button.closest('.border-t') as HTMLElement;
+      const list = composer.previousElementSibling as HTMLElement;
+      const shell = composer.closest('.overflow-y-auto.relative') as HTMLElement;
+      return {
+        list: list.scrollHeight > list.clientHeight,
+        shell: shell.scrollHeight > shell.clientHeight
+      };
+    });
+    expect(scrolling, 'the thread scrolls itself, not the screen under it').toEqual({
+      list: true,
+      shell: false
+    });
+  });
+
+  /**
    * Identity. Everything in this block was reachable only from the server before: the menu did
    * not exist, `ClaimHandle` rendered solely at zero accounts so a second handle could not be
    * claimed, and `display_name`/`bio` were client-writable columns with no UI and no route.

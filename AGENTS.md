@@ -398,6 +398,19 @@ whole system:
   _window_, which is not the phone. Size against the frame — `h-full`, `flex-1`,
   and the `safe-top`/`safe-bottom` insets in `app.css`.
 
+- **Inside `Screen`, fill with `min-h-0 flex-1` — never `h-full`, and never
+  `flex-1` on its own.** `Screen`'s content box hands the app a definite height,
+  so a child that asks to fill gets exactly the screen; a child that is
+  genuinely taller overflows it and the scroller scrolls. `h-full` is a
+  percentage against a box that has already resolved, and `flex-1` without
+  `min-h-0` leaves the child's `min-height: auto` intact, so it is sized by its
+  own content and refuses to shrink to its share. Both fail silently and only
+  under enough content: MICA-89 was a DM composer drifting ~82px per message
+  sent, and a core Messages composer sitting 4000px below the visible screen. A
+  box that declares `overflow-y-auto` is already exempt and scrolls itself.
+  `Screen.svelte` carries the reasoning; both halves are enforced in
+  `web/src/lib/utilityClasses.test.ts`.
+
 ---
 
 ## 6. The CEF capability baseline — read this before touching CSS
