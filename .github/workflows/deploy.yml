@@ -8,10 +8,32 @@ on:
     workflows: [Verify]
     types: [completed]
 
+# One deploy per branch at a time, queued rather than cancelled.
+#
+# Belt to the `event == 'push'` braces below. That condition removes the known cause of a
+# double fire; this removes the consequence of any cause, including one nobody has thought
+# of yet -- and the consequence is bad enough to be worth both. `deploy-dev.sh` git-resets,
+# reinstalls and rebuilds a single working tree on the box, with no lock of its own, so two
+# runs at once means two `git reset --hard` in one checkout and two `pnpm install` writing
+# one `node_modules`.
+#
+# `cancel-in-progress: false` deliberately: a half-finished deploy is a server left between
+# two commits with a partial `node_modules`, which is worse than making the next one wait.
+concurrency:
+  group: deploy-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
 jobs:
   deploy-dev:
+    # `event == 'push'` is load-bearing, not a tidy-up. Verify runs twice for every push
+    # to `dev`: once for the push, and once as a `pull_request` synchronize, because the
+    # long-lived "Release: sync dev into main" PR has `dev` as its head branch. Two Verify
+    # completions meant two deploys, and they overlapped -- 04:08:57 and 04:09:37 on
+    # 2026-08-27, both green, both rebuilding the same checkout. A deploy should follow the
+    # push that changed the branch, not every check that happened to look at it.
     if: >
       github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'dev'
     runs-on: ubuntu-latest
     steps:
@@ -28,8 +50,15 @@ jobs:
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
 
   deploy-main:
+    # `event == 'push'` is load-bearing, not a tidy-up. Verify runs twice for every push
+    # to `dev`: once for the push, and once as a `pull_request` synchronize, because the
+    # long-lived "Release: sync dev into main" PR has `dev` as its head branch. Two Verify
+    # completions meant two deploys, and they overlapped -- 04:08:57 and 04:09:37 on
+    # 2026-08-27, both green, both rebuilding the same checkout. A deploy should follow the
+    # push that changed the branch, not every check that happened to look at it.
     if: >
       github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     steps:

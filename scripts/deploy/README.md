@@ -31,6 +31,22 @@ unavoidable for the other two, which live outside the checkout they reset.
 
 Check which version is actually live with `sha256sum` on both sides.
 
+**The current change worth copying up is the `flock`** at the top of
+`deploy-dev.sh` and `deploy-main.sh`. Until it is on the box, nothing
+server-side stops two deploys running at once — and on 2026-08-27 two ran
+concurrently for about two and a half minutes against the same checkout, both
+reporting success. `.github/workflows/deploy.yml` now fixes the cause it knew
+about and adds a `concurrency` group, but a run started by hand still bypasses
+both; the lock is the only guard that sees every caller.
+
+## Never invoke two at once
+
+A second deploy waits up to thirty minutes for the first, then gives up rather
+than piling on — `-w 1800` rather than `-n`, because a deploy arriving
+mid-deploy should land after it, not be silently dropped. Concurrency is not
+free of consequence here: each script git-resets one working tree, reinstalls
+its `node_modules` and rebuilds its `dist`.
+
 ## Never invoke the wrappers directly
 
 Run `~gphone/bin/deploy-<target>.sh`. The wrapper is not a standalone entry
