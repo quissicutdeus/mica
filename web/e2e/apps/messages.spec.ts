@@ -82,4 +82,29 @@ test.describe('Messages App E2E', () => {
     // on the toast/feedback path only, never on map state.
     await expect(page.locator('text=Waypoint set')).toBeVisible();
   });
+
+  /**
+   * `PhoneFrame`'s home-indicator gesture bar is a real full-width button at `z-60` sitting
+   * across the bottom of the screen, so a composer flush to that edge has its lower third
+   * inside a target that leaves the app. It was invisible for as long as the thread column
+   * was unbounded and the composer was thousands of pixels below the screen (MICA-89);
+   * anchoring it correctly is what brought the two into contact.
+   */
+  test('the composer keeps clear of the home indicator', async ({ page }) => {
+    await page
+      .locator('[role="button"]')
+      .filter({ hasText: 'Trevor' })
+      .first()
+      .click({ force: true });
+    await expect(page.locator('#messages-container')).toBeVisible();
+
+    const send = await page.getByRole('button', { name: 'Send' }).first().boundingBox();
+    const home = await page.locator("button[aria-label='Return to home screen']").boundingBox();
+    expect(send, 'the Send button is on screen').not.toBeNull();
+    expect(home, 'the home indicator is on screen').not.toBeNull();
+
+    // Strictly above, not merely not-overlapping: an edge exactly on the bar's reads as
+    // touching it and still puts the tap target within a pixel of the wrong action.
+    expect(send!.y + send!.height, 'Send sits above the gesture bar').toBeLessThan(home!.y);
+  });
 });

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { EmojiPicker, SendIcon } from '@gphone/sdk';
+  import { EmojiPicker, MessageBar } from '@gphone/sdk';
 
   /**
    * The DM input.
@@ -12,8 +12,11 @@
    * Parameterising it would paper over that and then force the public composer to carry whatever
    * a private surface grows next — emoji, GIFs, attachments — none of which a Blab is getting.
    *
-   * Shaped after `messages/components/MessageComposer.svelte` instead: an icon-only send button
-   * with an `aria-label`, so there is no verb to get wrong, and Enter sends.
+   * What it *does* share with `messages`' composer is the row itself, which is now `MessageBar`
+   * in the SDK. Two hand-written copies had drifted apart on surface role, focus colour, send
+   * button elevation and scrollbar suppression — all visible, none of it decided. This file is
+   * what is actually particular to a DM: the emoji picker above the row, and the 500-character
+   * limit its column imposes.
    */
 
   /** 500, matching `gphone_blabber_dms.body`. The server enforces it from the same declaration. */
@@ -29,53 +32,20 @@
 
   let text = $state('');
 
-  const canSend = $derived(text.trim().length > 0 && !busy);
-
   const send = () => {
-    if (!canSend) return;
+    if (!text.trim() || busy) return;
     onsubmit(text.trim());
     text = '';
   };
 </script>
 
-<div class="border-outline-variant border-t p-3">
-  <!-- The picker types an emoji into the body rather than sending it standalone — reacting to a
-       message the person already sent is `ReactionBar`'s job, on the thread side, not this
-       composer's. -->
-  <div class="mb-1.5">
-    <EmojiPicker onselect={(emoji) => (text += emoji)} />
-  </div>
-  <div class="flex w-full items-end gap-2.5">
-    <!-- A solid `sky-600` focus border rather than `sky-500/50`: an opacity modifier compiles to
-         `color-mix()`, which CEF 103 does not have (§6), and one hairline does not earn a theme
-         token. It matches the send button, which is the color this app already uses. -->
-    <div
-      class="bg-surface-container flex flex-1 items-center rounded-lg border border-transparent px-3.5 py-1.5 focus-within:border-sky-600"
-    >
-      <!-- maxlength as well: the server refuses an over-long body, and meeting the limit while
-           typing beats being told after tapping send. -->
-      <textarea
-        bind:value={text}
-        placeholder="Message"
-        maxlength={LIMIT}
-        rows="1"
-        class="text-on-surface placeholder-on-surface-variant text-body-medium h-[22px] max-h-32 min-h-[22px] w-full resize-none bg-transparent p-0 leading-normal focus:outline-none"
-        onkeydown={(event) => {
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
-            send();
-          }
-        }}></textarea>
+<MessageBar bind:value={text} maxlength={LIMIT} {busy} onsend={send}>
+  {#snippet above()}
+    <!-- The picker types an emoji into the body rather than sending it standalone — reacting to a
+         message the person already sent is `ReactionBar`'s job, on the thread side, not this
+         composer's. -->
+    <div class="mb-1.5">
+      <EmojiPicker onselect={(emoji: string) => (text += emoji)} />
     </div>
-
-    <button
-      type="button"
-      class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover duration-short ease-standard flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-      onclick={send}
-      disabled={!canSend}
-      aria-label="Send"
-    >
-      <SendIcon class="text-on-surface size-icon-sm" />
-    </button>
-  </div>
-</div>
+  {/snippet}
+</MessageBar>

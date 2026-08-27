@@ -161,7 +161,7 @@ not work around it.
    `shell/`, `services/`, `nui/`, `lib/`, or `sdk/` by path — are prohibited and
    enforced by `web/src/sdk/boundary.test.ts`. UI primitives (`Screen`,
    `ListItem`, `Button`, `Avatar`, `SearchBar`, `EmptyState`, `ConfirmDialog`,
-   `FloatingActionButton`, `PhotoPickerModal`, `ReportDialog`,
+   `FloatingActionButton`, `MessageBar`, `PhotoPickerModal`, `ReportDialog`,
    `SegmentedControl`, `ToggleSwitch`, `Skeleton`) live in `web/src/sdk/ui/`,
    re-exported from `web/src/sdk/components.ts`. The shell's own pieces —
    `PhoneFrame`, `Launcher`, `ToastHost`, `VolumeHud`, `ErrorBoundary` — are
@@ -410,6 +410,12 @@ whole system:
   box that declares `overflow-y-auto` is already exempt and scrolls itself.
   `Screen.svelte` carries the reasoning; both halves are enforced in
   `web/src/lib/utilityClasses.test.ts`.
+
+- **Anything anchored to the bottom of an app clears the home indicator.**
+  `PhoneFrame` paints its gesture bar full-width at `z-60`, so a row flush to
+  the bottom edge has its lower third inside a button that returns to the home
+  screen. `--spacing-home-indicator` is the shared number; `MessageBar` (the
+  shared composer row, `sdk/ui`) already pads by it.
 
 ---
 
