@@ -44,18 +44,43 @@ try {
 }
 
 const dest = path.resolve(gitDir, 'hooks');
-fs.mkdirSync(dest, { recursive: true });
 
+// A missing source is a broken checkout, not a reason to install nothing and
+// report success -- the hooks here are the only gate for two of the checks.
+// This is checked before the writability bail-out below, so a checkout missing
+// a hook fails loudly even where nothing could have been installed anyway.
 for (const hook of HOOKS) {
-  const src = path.resolve('.githooks', hook);
-  // A missing source is a broken checkout, not a reason to install nothing and
-  // report success -- the hooks here are the only gate for two of the checks.
-  if (!fs.existsSync(src)) {
+  if (!fs.existsSync(path.resolve('.githooks', hook))) {
     throw new Error(`install-git-hooks: .githooks/${hook} is missing`);
   }
-  const out = path.join(dest, hook);
-  fs.copyFileSync(src, out);
-  fs.chmodSync(out, 0o755);
+}
+
+// A deploy host runs `pnpm install` in a checkout whose git dir belongs to the
+// human who set the stack up, not the deploy account, so this copy is EPERM
+// there and taking the install down with it fails the deploy (the whole reason
+// the main deploy could never run). Skipping is safe rather than fail-open: a
+// machine that reaches these hooks through a global core.hooksPath dispatcher
+// reads .githooks/ directly and never needed the copy, and a deploy host has no
+// use for dev hooks at all. It is loud so a developer who genuinely cannot
+// write .git/hooks sees why their guards are missing.
+//
+// Note this must survive an install nobody asked for: `pnpm build` runs its own
+// dependency check, which re-invokes `pnpm install` WITHOUT the --ignore-scripts
+// the deploy passes, so the flag alone does not settle it.
+try {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const hook of HOOKS) {
+    const out = path.join(dest, hook);
+    fs.copyFileSync(path.resolve('.githooks', hook), out);
+    fs.chmodSync(out, 0o755);
+  }
+} catch (error) {
+  if (!['EPERM', 'EACCES', 'EROFS'].includes(error.code)) throw error;
+  console.warn(
+    `install-git-hooks: cannot write ${dest} (${error.code}) -- skipping. ` +
+      'Git hooks are NOT installed for this checkout.'
+  );
+  process.exit(0);
 }
 
 console.log(`install-git-hooks: installed ${HOOKS.join(', ')} into ${dest}`);
