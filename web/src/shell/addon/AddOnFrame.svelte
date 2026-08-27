@@ -38,25 +38,6 @@
   let source = $state<string | undefined>();
   let crashed = $state<{ message: string; stack: string | null } | null>(null);
   let generation = $state(0); // re-keys the iframe on Restart
-  /**
-   * Bumped by the iframe's own `load`, and read by the handshake effect below.
-   *
-   * A frame can reload for reasons the shell never asked for — being moved in the DOM is
-   * the one that bit us — and a reload is a *new* window. The server captured the old one
-   * as the only `event.source` it will accept, so the reloaded guest's `hello` was thrown
-   * away and the add-on stayed blank with no error anywhere. Rebuilding on `load` means
-   * the server is always bound to the window that is actually running.
-   */
-  let loadTick = $state(0);
-  /**
-   * The window the current server is bound to.
-   *
-   * The frame's first `load` arrives *after* the effect below has already built against
-   * that same window, so firing on every load would tear down and rebuild a perfectly good
-   * server for nothing. Only a genuinely different window — which is what a destroyed and
-   * recreated frame gives you — is worth rebuilding for.
-   */
-  let builtWindow: Window | null = null;
   let frame = $state<HTMLIFrameElement | undefined>();
   // Whether this frame's last forwarded report was `typing: true` — tracked so a
   // frame backgrounded mid-type doesn't strand `setTyping(true)` forever, since it
@@ -107,19 +88,26 @@
   $effect(() => {
     const el = frame;
     const src = source;
-    // A dependency, not a value: every (re)load rebinds the server to the new window.
-    void loadTick;
     if (!el || !src) return;
-    const win = el.contentWindow;
-    if (!win) return;
 
     const built = untrack(() =>
       createIframeHostServer({
         host,
         manifest,
         props,
-        target: win,
-        source: win,
+        /**
+         * MICA-90: the frame is asked who it is running on every message, rather than
+         * handing the server one window and hoping it stays the one in there.
+         *
+         * The `load`-driven rebind this replaces could not work, and the log line it left
+         * behind pointed at itself for the recovery. A frame's scripts run before its
+         * `load` fires, so a reloaded guest posts its one and only `hello` while the host
+         * is still bound to the old window: refused, and then rebound a step later to a
+         * window that will never introduce itself again. The add-on stayed blank, alive
+         * and talking to nobody. Reading `contentWindow` here instead makes the reloaded
+         * frame's first `hello` land, with nothing to rebuild and no ordering to lose.
+         */
+        guest: () => el.contentWindow,
         onError: (message, stack) => {
           console.error(`[gPhone] add-on '${appId}' crashed:`, message);
           crashed = { message, stack };
@@ -153,12 +141,10 @@
     );
     window.addEventListener('message', built.handle);
     server = built;
-    builtWindow = win;
     return () => {
       window.removeEventListener('message', built.handle);
       built.dispose();
       server = undefined;
-      builtWindow = null;
     };
   });
 </script>
@@ -185,11 +171,6 @@
       title={manifest.name}
       data-app={appId}
       sandbox="allow-scripts"
-      onload={() => {
-        // Only a frame that came back as a *new* window needs the handshake redone; the
-        // first load is already covered by the effect that built against it.
-        if (frame && frame.contentWindow !== builtWindow) loadTick += 1;
-      }}
       srcdoc={srcdocFor(source, manifest.networkHosts)}
       class="h-full w-full border-0 bg-transparent"
     ></iframe>

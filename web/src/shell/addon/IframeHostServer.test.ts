@@ -26,28 +26,41 @@ const manifest = defineApp({
   permissions: ['contacts']
 } as any);
 
+/**
+ * A stand-in guest window. Both ends of the channel are the same object, the way a real
+ * `contentWindow` is — and `guest` is a getter, so a test can swap in a reloaded frame's
+ * new window by reassigning `current` (see the reload block).
+ */
 function server(permissions = manifest.permissions!) {
   const posted: ToFrame[] = [];
-  const source = {};
+  const makeWindow = () => ({ postMessage: (m: ToFrame) => posted.push(m) });
+  let current = makeWindow();
   const s = createIframeHostServer({
     host: createInProcessHost('probe', permissions),
     manifest,
     props: {},
-    target: { postMessage: (m) => posted.push(m) },
-    source,
+    guest: () => current,
     onError: vi.fn(),
     onKey: vi.fn(),
     onTyping: vi.fn()
   });
-  const from = (data: unknown, src: unknown = source) =>
+  const from = (data: unknown, src: unknown = current) =>
     s.handle({ data, source: src } as MessageEvent);
-  return { posted, from, s };
+  /** What a reload gives you: a different window in the same frame. */
+  const reload = () => {
+    current = makeWindow();
+    return current;
+  };
+  return { posted, from, s, reload, guest: () => current };
 }
+
+/** The stand-in facet's store, reachable from a test that needs to push a change through it. */
+let store = writable(1);
 
 beforeEach(() => {
   resetHostsForTest();
   // A stand-in facet: a store member and a function member that takes a callback and returns a release.
-  const store = writable(1);
+  store = writable(1);
   registerFacet(
     'contacts' as any,
     (() => ({
@@ -627,23 +640,85 @@ describe('IframeHostServer', () => {
     });
   });
 
+  /**
+   * MICA-90. A frame can come back as a new window, and the guest says `hello` exactly
+   * once — from its own script execution, which is before the frame's `load` event. Any
+   * binding refreshed on `load` is therefore refreshed after the message it exists to
+   * accept has already been refused, and nothing re-sends it: the add-on stays blank while
+   * the frame keeps running. Reading the window at delivery is what removes the ordering.
+   */
+  describe('a reloaded frame', () => {
+    const hello = { kind: 'hello', appId: 'probe' };
+
+    it('is hydrated on its first hello, with no rebind in between', () => {
+      const { posted, from, reload } = server();
+      from(hello);
+      expect(posted.filter((m) => m.kind === 'hydrate')).toHaveLength(1);
+
+      const fresh = reload();
+      posted.length = 0;
+      // From the *new* window, and nothing has told the server about it — which is the
+      // whole situation, since `load` has not fired yet and never will in time.
+      from(hello, fresh);
+
+      expect(posted.filter((m) => m.kind === 'hydrate')).toHaveLength(1);
+    });
+
+    it('still refuses a hello from a window that is not in the frame', () => {
+      const { posted, from } = server();
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      from(hello, { postMessage: () => {} });
+
+      expect(posted).toHaveLength(0);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('not the one'));
+      error.mockRestore();
+    });
+
+    it('drops the subscriptions the previous document left behind', () => {
+      const subscribe = {
+        kind: 'subscribe',
+        id: 1,
+        facet: 'contacts',
+        factoryArgs: [],
+        member: 'contactsStore'
+      };
+      const { posted, from, reload } = server();
+      from(hello);
+      from(subscribe);
+
+      // The new document allocates its subscription ids from 1 again, so re-subscribing
+      // overwrites the entry the old one left in the map — and without unsubscribing it
+      // first, that store keeps a listener nothing can ever reach or stop. One leak per
+      // id per reload, for as long as the frame lives.
+      const fresh = reload();
+      from(hello, fresh);
+      from(subscribe, fresh);
+      posted.length = 0;
+
+      store.set(2);
+
+      expect(posted.filter((m) => m.kind === 'push')).toHaveLength(1);
+    });
+  });
+
   it('forwards error, key and typing to the callbacks', () => {
     const onError = vi.fn(),
       onKey = vi.fn(),
       onTyping = vi.fn();
-    const source = {};
+    const source = { postMessage: () => {} };
     const s = createIframeHostServer({
       host: createInProcessHost('probe', []),
       manifest,
       props: {},
-      target: { postMessage: () => {} },
-      source,
+      guest: () => source,
       onError,
       onKey,
       onTyping
     });
-    s.handle({ data: { kind: 'error', message: 'boom', stack: null }, source } as MessageEvent);
-    s.handle({ data: { kind: 'typing', typing: true }, source } as MessageEvent);
+    const from = (data: unknown) => s.handle({ data, source } as unknown as MessageEvent);
+    from({ kind: 'error', message: 'boom', stack: null });
+    from({ kind: 'typing', typing: true });
     expect(onError).toHaveBeenCalledWith('boom', null);
     expect(onTyping).toHaveBeenCalledWith(true);
   });

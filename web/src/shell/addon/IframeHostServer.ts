@@ -15,13 +15,31 @@ import { themeStyleStore } from '../state/theme';
 import { is24Hour } from '../state/time';
 import { messageOf } from '../../lib/errors';
 
+/** The guest end of the channel: the window a frame is currently running. */
+export interface GuestWindow {
+  postMessage(msg: ToFrame, origin: string): void;
+}
+
 export interface IframeHostServerOptions {
   host: Host;
   manifest: AppManifest;
   props: Record<string, unknown>;
-  target: { postMessage(msg: ToFrame, origin: string): void };
-  /** What `event.source` must equal for a message to be accepted. */
-  source: unknown;
+  /**
+   * The frame's window, resolved on every message rather than captured once (MICA-90).
+   *
+   * It is both ends of the channel: what outbound messages are posted to, and what
+   * `event.source` must equal for an inbound one to be accepted. One accessor rather than
+   * two options because the two can only ever disagree by accident, and that disagreement
+   * was the bug — a `hello` refused as a stranger while replies went to a dead window.
+   *
+   * Resolving late is what makes a reloaded frame recoverable at all. A frame that comes
+   * back as a new window sends its one `hello` from that window during its own script
+   * execution, which is *before* its `load` event — so any binding refreshed on `load` is
+   * refreshed one step too late to accept the message it exists to accept. Asking the
+   * element who it is running right now turns the check into "is this the window in my
+   * frame?", which a reloaded guest satisfies on its first try with nothing to rebuild.
+   */
+  guest: () => GuestWindow | null | undefined;
   onError(message: string, stack: string | null): void;
   onKey(key: Extract<ToShell, { kind: 'key' }>): void;
   onTyping(typing: boolean): void;
@@ -74,14 +92,16 @@ function constantsFor(): AddOnConstants {
 }
 
 export function createIframeHostServer(opts: IframeHostServerOptions) {
-  const { host, manifest, target, source } = opts;
-  const post = (msg: ToFrame) => target.postMessage(msg, '*');
+  const { host, manifest, guest } = opts;
+  const post = (msg: ToFrame) => guest()?.postMessage(msg, '*');
   const instances = new Map<string, Record<string, unknown>>();
   const subscriptions = new Map<number, () => void>();
   const handles = new Map<number, (...a: unknown[]) => unknown>();
   let nextHandle = 1;
   let disposed = false;
   let stopTheme: (() => void) | undefined;
+  /** The window whose `hello` was last answered — how a reload is recognised. */
+  let hydrated: unknown;
 
   const serviceAllowed = (id: unknown) =>
     typeof id === 'string' && (id === host.appId || id.startsWith(`${host.appId}_`));
@@ -293,6 +313,16 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     }
   }
 
+  /** Drop everything held on behalf of one guest document. */
+  function forgetGuest() {
+    stopTheme?.();
+    stopTheme = undefined;
+    for (const off of subscriptions.values()) off();
+    subscriptions.clear();
+    handles.clear();
+    instances.clear();
+  }
+
   function hydrate() {
     const payload: HydratePayload = {
       appId: host.appId,
@@ -315,14 +345,18 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   return {
     handle(this: void, event: MessageEvent) {
       if (disposed) return;
-      if (event.source !== source) {
+      if (event.source !== guest()) {
         /**
          * Loud, because this is the shape of failure with no symptom.
          *
-         * A frame that reloads comes back as a different window, and every message it
-         * sends is refused here — including the `hello` it needs answered to render at
-         * all. The add-on then sits blank, still mounted and still running, with nothing
-         * in any console and nothing in any log to look for. That cost a long evening.
+         * A refused `hello` means an add-on that sits blank — still mounted, still
+         * running, with nothing in any console to look for. That cost a long evening once.
+         *
+         * It no longer means "the frame reloaded": `guest()` is read here, at delivery, so
+         * whatever window is in the frame right now is by definition the one accepted
+         * (MICA-90). Reaching this line means a `hello` arrived from a window that is
+         * not in this frame at all — a sibling add-on's frame, or one already torn out of
+         * the DOM — which is a wiring bug rather than a race, and worth the same noise.
          *
          * Only `hello` is worth reporting: it is the one message whose loss is fatal, and
          * a stray `call`/`subscribe` from a dying frame is ordinary teardown noise.
@@ -330,9 +364,9 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
         const stray = event.data as { kind?: unknown; appId?: unknown } | null;
         if (stray && typeof stray === 'object' && stray.kind === 'hello') {
           console.error(
-            `[gPhone] add-on '${manifest.id}' said hello from a window this host is not ` +
-              `bound to — it has probably reloaded, and will stay blank until the host ` +
-              `rebinds. See AddOnFrame's onload handler.`
+            `[gPhone] add-on '${manifest.id}' said hello from a window that is not the one ` +
+              `in its frame, and will stay blank. The frame it came from is not the one ` +
+              `this host was given.`
           );
         }
         return;
@@ -347,6 +381,18 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
             );
             return;
           }
+          /**
+           * A second `hello` is a reloaded frame: the guest sends exactly one, from its
+           * own script execution, so a new one means a new document is running in there.
+           *
+           * Everything below belongs to the guest that is gone. Its subscription ids start
+           * from 1 again in the new document, so keeping them would leak a live store
+           * subscription per id the moment the new guest reused it, and every handle it
+           * was ever given is now unreachable. Dropping the whole set is what the teardown
+           * on rebuild used to do; the server outlives a reload now, so it does it here.
+           */
+          if (hydrated !== undefined && hydrated !== event.source) forgetGuest();
+          hydrated = event.source;
           hydrate();
           break;
         case 'call':
@@ -380,11 +426,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     },
     dispose() {
       disposed = true;
-      stopTheme?.();
-      for (const off of subscriptions.values()) off();
-      subscriptions.clear();
-      handles.clear();
-      instances.clear();
+      forgetGuest();
     },
     /**
      * MICA-25: a new deep link into an add-on that is already open. `AddOnFrame.svelte`

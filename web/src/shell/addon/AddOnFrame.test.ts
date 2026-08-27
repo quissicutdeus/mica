@@ -5,6 +5,12 @@ import AddOnFrame from './AddOnFrame.svelte';
 import { appRegistryStore } from '../state/registry';
 import { createInProcessHost } from '../../sdk/host/inProcess/createInProcessHost';
 import { defineApp, type AppManifest } from '../../sdk/manifest';
+// Registered by import alone. The reload test below drives a real `hello` through the real
+// server, and its `hydrate` payload reads every one of these facets for its constants.
+import '../../sdk/host/useDisplay';
+import '../../sdk/host/useWallpaper';
+import '../../sdk/host/useSystemHardware';
+import '../../sdk/host/useTheme';
 
 /**
  * jsdom does not execute an iframe's `srcdoc`, so nothing inside the frame ever really
@@ -319,6 +325,56 @@ describe('AddOnFrame', () => {
         expect.anything()
       )
     );
+  });
+
+  /**
+   * MICA-90: the ordering a reload actually produces, which is the ordering the old
+   * `load`-driven rebind could never win.
+   *
+   * A frame's scripts run *before* its `load` event, so the reloaded guest posts its one
+   * `hello` while the host is still bound to the window that is gone. Rebinding on `load`
+   * arrives one step later, to a window that will never introduce itself again: no
+   * `hydrate`, so `bootAddOn` never resolves `transport.hydrated()`, so the app never
+   * mounts. The frame stays alive and renders nothing, which is what made it expensive.
+   *
+   * jsdom never runs the `srcdoc`, so the guest is a stand-in window swapped in over
+   * `contentWindow` — which is exactly what the shell sees when a frame is re-parented and
+   * its browsing context is replaced.
+   */
+  it('hydrates a reloaded frame from the hello it sends before `load`', async () => {
+    const { container } = render(AddOnFrame, {
+      props: {
+        appId: 'probe',
+        manifest,
+        host: createInProcessHost('probe', []),
+        props: {},
+        active: true,
+        onKey: vi.fn(),
+        onTyping: vi.fn()
+      }
+    });
+
+    const iframe = await waitForFrame(container);
+    const reloaded = { postMessage: vi.fn() };
+    Object.defineProperty(iframe, 'contentWindow', { value: reloaded, configurable: true });
+
+    // Before `load`, deliberately: the message the guest sends during its own script run.
+    await fireEvent(
+      window,
+      new MessageEvent('message', {
+        data: { kind: 'hello', appId: 'probe' },
+        source: reloaded as unknown as Window
+      })
+    );
+
+    await waitFor(() =>
+      expect(reloaded.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'hydrate' }),
+        expect.anything()
+      )
+    );
+    // And with no rebuild: the server that answered is the one built at mount.
+    expect(constructions.count).toBe(1);
   });
 
   it('does not tear down and rebuild the host server when `props` is replaced by a re-render', async () => {
