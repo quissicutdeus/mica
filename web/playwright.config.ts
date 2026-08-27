@@ -10,6 +10,19 @@ import { defineConfig, devices } from '@playwright/test';
  */
 const PORT = process.env.E2E_PORT || 4173;
 
+/**
+ * The specs that assert on the colour scheme, and so are the only ones worth running in
+ * both of them.
+ *
+ * A named list rather than a naming convention, because it is checked:
+ * `src/lib/e2eThemeCoverage.test.ts` reads this file and fails if any spec outside the
+ * list reads a computed colour. That guard is what makes the single-scheme default below
+ * safe — without it, adding a colour assertion to an untagged spec would quietly leave it
+ * exercised in one scheme only, which is the gap the old two-project matrix closed by
+ * brute force. Keep the entries as plain single-quoted globs, one per line.
+ */
+const THEME_SPECS = ['**/theme-modes.spec.ts', '**/settings-persistence.spec.ts'];
+
 export default defineConfig({
   testDir: './e2e',
   // MICA-39: wipe test-results/ before any run — whole suite or one filtered spec —
@@ -64,30 +77,33 @@ export default defineConfig({
     trace: 'retain-on-failure',
     viewport: { width: 1280, height: 960 }
   },
-  /**
-   * The whole suite runs in both color schemes.
-   *
-   * Light mode is not a skin over dark — the roles invert, so `on-surface` goes from a
-   * near-white to a near-black and every surface tier moves with it. Nothing had ever
-   * rendered light until the Display toggle shipped, which means every screen in the phone
-   * was unexercised in half its supported states.
-   *
-   * The mode is seeded through `localStorage` before the app boots rather than by driving
-   * the Settings UI, because a spec about Messages should not have to walk through Display
-   * to get there. `usePersisted` reads its key once at construction, in module scope, so
-   * the value has to be present before the bundle evaluates — an `addInitScript` after
-   * navigation would be too late.
-   *
-   * The cost is roughly double the wall time. That is the price of the second scheme
-   * actually being supported rather than merely available.
-   */
   projects: [
+    /**
+     * Every spec, in the default scheme.
+     *
+     * The suite used to run twice over — once dark, once light — for roughly double the
+     * wall time. Light mode is genuinely not a skin over dark (the roles invert, so
+     * `on-surface` moves from near-white to near-black and every surface tier with it),
+     * but nothing here compares pixels: these specs assert on the DOM and on geometry,
+     * both of which are identical between schemes. Twenty-seven of the twenty-nine spec
+     * files were asserting the same things a second time.
+     */
     {
-      name: 'chromium-dark',
+      name: 'chromium',
       use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 960 } }
     },
+    /**
+     * The colour-asserting specs again, in light.
+     *
+     * The mode is seeded through `localStorage` before the app boots rather than by driving
+     * the Settings UI, because a spec about Messages should not have to walk through Display
+     * to get there. `usePersisted` reads its key once at construction, in module scope, so
+     * the value has to be present before the bundle evaluates — an `addInitScript` after
+     * navigation would be too late.
+     */
     {
       name: 'chromium-light',
+      testMatch: THEME_SPECS,
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1280, height: 960 },
