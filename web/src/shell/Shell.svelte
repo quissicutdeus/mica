@@ -45,7 +45,30 @@
 
   installSystemHost();
 
-  let visible = $state(isBrowser());
+  /**
+   * The phone starts closed everywhere, including a dev browser, and is opened by
+   * something — the client's `setVisible`, or the harness below.
+   *
+   * This used to be `$state(isBrowser())`, which read as harmless: in game
+   * `window.invokeNative` exists, so `isBrowser()` is false and the phone starts
+   * closed. But it is evaluated once, at module-init, and it is only true that CEF has
+   * injected `invokeNative` *by then* if the bundle happens to evaluate after the
+   * injection. Lose that race and the phone starts `visible` in game — which is
+   * MICA-86, by a route that has nothing to do with the animation itself.
+   *
+   * `PhoneFrame`'s `transition:fly` is a **local** transition, and a local transition
+   * does not play on initial render (`main.ts` mounts with no `intro` option, and even
+   * `intro: true` does not change this for a local one). So a phone that starts open
+   * has its frame created at initial render, silently, with no fly-in. `setVisible: true`
+   * on the player's first open then finds `visible` already true, creates no block, and
+   * so runs no transition — the phone appears instantly instead of sliding up. Seeding
+   * `false` puts the frame's creation back on the actual open, where the intro plays.
+   *
+   * The browser has no client to send `setVisible`, so it opens itself in `onMount`
+   * below — deliberately after initial render, so the dev browser exercises the same
+   * block-creation path the game does rather than a second, untested one.
+   */
+  let visible = $state(false);
 
   /**
    * The page behind the phone, in a dev browser only — never in CEF.
@@ -233,6 +256,22 @@
    */
   onMount(() => {
     void hydrateSettings().then(() => migrateAppDrawerHintForExistingSaves());
+  });
+
+  /**
+   * The dev browser's stand-in for `openPhone` on the client.
+   *
+   * In game the phone is opened by `setVisible`; a browser has no client to send one, so
+   * without this the page would load to the "Open gPhone" button and every e2e spec would
+   * have to click it first. Opening here rather than seeding `visible = true` above is the
+   * point of the exercise: `onMount` runs after initial render, so the frame is created by
+   * a state change and its `transition:fly` actually plays — the same path the game takes.
+   *
+   * `mount()` is synchronous and `onMount` callbacks run inside it, so this lands before
+   * the browser's first paint; the button above is never visibly on screen.
+   */
+  onMount(() => {
+    if (isBrowser()) visible = true;
   });
 
   /**

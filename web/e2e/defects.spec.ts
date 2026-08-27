@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { seedHomeGrid } from './support/homeGrid';
+import { settlePhoneOpen } from './support/phoneOpen';
 
 /**
  * Regressions for defects found in the pre-app-phase survey.
@@ -200,6 +201,11 @@ test.describe('The first-run hint does not overlap the Dock', () => {
   test('the hint sits above the Dock icons, not over them', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+
+    // Both boxes below are read while the phone is on screen, and the phone flies in over
+    // 500ms — without this the two reads sample the element at two different points in
+    // that flight and the comparison is meaningless. See `support/phoneOpen.ts`.
+    await settlePhoneOpen(page);
 
     const hint = page.getByText('Swipe up for apps');
     await expect(hint).toBeVisible();

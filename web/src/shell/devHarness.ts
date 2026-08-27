@@ -45,9 +45,13 @@ const FIXTURES: Record<TestToast, { action: string; data: unknown }> = {
  *
  * Immediately, not on `debugData`'s default 1000ms timer. That delay is there to emulate
  * NUI latency, which is a reasonable thing to emulate for a *reply* and actively wrong
- * for the initial state: `visible` already starts `true` in a browser, so the delayed
- * `setVisible: true` changes nothing you can see — unless you closed the phone inside
- * that first second, in which case it silently reopens under you.
+ * for the initial state: `Shell` already opens itself in a browser from `onMount`
+ * (MICA-86), so the `setVisible: true` here changes nothing you can see — unless you
+ * closed the phone inside that first second, in which case it silently reopens under you.
+ *
+ * It is kept rather than dropped because it is not only about `visible`: this is the one
+ * place a browser session gets a `setVisible` through the real `handleMessage` path at
+ * all, so removing it would take the browser further from what the client actually sends.
  *
  * That was a real dev annoyance and an invisible test race. `keybinds.spec.ts` pressed
  * Escape immediately after load and lost whenever the machine was busy enough to push

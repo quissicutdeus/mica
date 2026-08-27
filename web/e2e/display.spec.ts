@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { seedHomeGrid } from './support/homeGrid';
+import { settlePhoneOpen } from './support/phoneOpen';
 
 /**
  * The phone is one shape drawn at many sizes.
@@ -20,14 +21,18 @@ const DESIGN_RATIO = DESIGN_WIDTH / DESIGN_HEIGHT;
  * `boundingBox()` waits for visibility, not for a transform to settle, and the phone
  * arrives on a 500ms `transition:fly` — reading it mid-flight gives a `y` a thousand
  * pixels below the window and a test that fails for the wrong reason.
+ *
+ * That wait was written here as a precaution and was, until MICA-86, describing
+ * something that never happened: the phone started open, so its frame was created at
+ * initial render, where a local transition does not play. Nothing animated, and the poll
+ * was satisfied by the absence of the fly-in rather than by its end. The phone genuinely
+ * does fly in now, which is why the wait now lives in `support/phoneOpen.ts` where other
+ * specs measuring geometry can reach it — `defects.spec.ts` needed it the moment the
+ * animation came back. `openAnimation.spec.ts` is what keeps the fly-in itself honest.
  */
 const frameBox = async (page: Page) => {
-  const frame = page.getByTestId('phone-frame');
-  await expect(frame).toBeVisible();
-  await expect
-    .poll(async () => frame.evaluate((el) => el.getAnimations().length), { timeout: 5000 })
-    .toBe(0);
-  const box = await frame.boundingBox();
+  await settlePhoneOpen(page);
+  const box = await page.getByTestId('phone-frame').boundingBox();
   if (!box) throw new Error('the phone frame is not on screen');
   return box;
 };
