@@ -4,6 +4,8 @@ on:
   # PR, so an unscoped `push` trigger doubled every run for no benefit. Scoped to main
   # and dev: the branches where a direct push — a merge landing, or the periodic
   # keep-dev-in-sync merge — deserves its own confirmation that things are still green.
+  # That carve-out re-created the double once dev became a permanent PR head; the `if` on
+  # each job below is what actually settles it.
   push:
     branches: [main, dev]
   pull_request:
@@ -12,6 +14,23 @@ jobs:
   verify:
     name: Verify
     runs-on: ubuntu-latest
+    # Skip the standing "Release: sync dev into main" PR, whose head branch is dev.
+    #
+    # The trigger comment above scoped `push` to main and dev so a direct push gets its own
+    # confirmation. That was right when nothing else watched those branches, and became a
+    # duplicate the day dev became a permanent PR head: every push to dev then fired both
+    # this workflow's `push` trigger and that PR's `synchronize`, on the same sha, ~3s
+    # apart — two full ~5m runs of identical work, every commit. `deploy.yml` already
+    # carries half of this story; it saw the same double as two deploys.
+    #
+    # Filtering by head branch has to be a job condition: `on.pull_request.branches`
+    # filters the *base*, which is main here and is not what distinguishes this PR.
+    #
+    # The push run is the one kept, deliberately. It tests the dev commit itself; the PR
+    # run tests a merge of dev into main, which is a commit that exists nowhere and, for a
+    # straight sync PR, resolves to dev's tree anyway. Every other PR — a MICA-<n> branch
+    # into dev — is untouched by this and still gets its run.
+    if: github.event_name != 'pull_request' || github.head_ref != 'dev'
     # Pinned to the @playwright/test version in pnpm-lock.yaml (currently 1.62.1). This
     # image ships Chromium and its OS deps preinstalled, replacing what `--with-deps`
     # used to spend a minute-plus on every run downloading/apt-installing. Bump this tag
@@ -62,9 +81,15 @@ jobs:
       # anything unchanged instead of starting cold every run.
       #
       # `node_modules/.cache` is ESLint's and Prettier's, and it is the one that matters
-      # most: `lint` is type-aware across ~865 files and takes ~110s cold against ~1s warm.
-      # Both cache on content hash and mtime, so a restored cache can only ever skip a file
-      # that has not changed — a stale entry is not a way for a real error to get through.
+      # most: `lint` is type-aware across ~865 files and takes ~120s cold against ~2s warm.
+      # Both key on file content — ESLint only because `web`'s lint script passes
+      # `--cache-strategy content`, and it has to. ESLint's default strategy is mtime+size,
+      # and `actions/checkout` writes every file fresh on every run, so this cache restored
+      # and then matched nothing: `lint` cost its full ~118s here for weeks while this
+      # comment claimed ~1s. Reproduced locally by touching every file without editing it —
+      # 2.7s became 122s under the default strategy, and stayed 1.7s under `content`.
+      # Content hashing means a restored entry can only ever skip a file that has not
+      # changed, so a stale entry is not a way for a real error to get through.
       - name: Cache TypeScript/Vite build state
         uses: actions/cache@v6
         with:
@@ -98,6 +123,8 @@ jobs:
   container:
     name: Demo container
     runs-on: ubuntu-latest
+    # Same carve-out as `verify` above, for the same reason — this job doubled too.
+    if: github.event_name != 'pull_request' || github.head_ref != 'dev'
     steps:
       - name: Checkout
         uses: actions/checkout@v7

@@ -172,3 +172,39 @@ test('walks through every Settings screen and back', async ({ page }) => {
   // ...
 });
 ```
+
+## `lint` is ~2s here and was ~118s in CI, and the cache was the reason
+
+`pnpm verify`'s `lint` gate is ~2-3s locally and cost **118s on every CI run** —
+a third of a 316s job — while `.github/workflows/build-test.yml` restored an
+ESLint cache each time and its comment claimed a warm run took a second. Both
+halves were true: the cache really was restored, and it really did match
+nothing.
+
+ESLint's default `cacheStrategy` is `metadata` — file mtime and size, not
+content. `actions/checkout` writes every file fresh on every run, so every mtime
+differed from the one in the restored cache and all ~865 files were re-linted
+under a type-aware config. The cache was inert by construction, not stale or
+mis-keyed, so nothing about it looked wrong from the outside.
+
+Reproducing it locally takes one command, and is worth knowing because it is how
+you would catch the next one of these:
+
+```sh
+cd web
+pnpm exec eslint . --cache --cache-location node_modules/.cache/eslint/   # 2.7s
+find src -type f \( -name '*.ts' -o -name '*.svelte' \) -exec touch {} +
+pnpm exec eslint . --cache --cache-location node_modules/.cache/eslint/   # 122s
+```
+
+Not one byte changed between those two runs. `web`'s `lint` script now passes
+`--cache-strategy content`, which hashes each file instead, and the same
+touch-everything test costs 1.7s.
+
+Prettier was checked the same way and does not have the problem: cold 8.2s, warm
+1.9s, and still 1.9s after every mtime in the tree is rewritten.
+
+**The general shape**, since this is the second cache in this repo to be
+believed rather than measured: a cache that fails to hit is silent by design —
+it just does the work — so "the cache is configured" and "the cache is working"
+are different claims and only one of them is checkable. Time the gate.
