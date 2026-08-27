@@ -72,11 +72,11 @@ because it is the only command that changes a live database (§8).
 | `gphoneseed clear`                      | Removes everything `gphoneseed` created                                           |
 
 `gphoneseed` exists because a fresh database has one character and nobody to
-text: `conversations:create` resolves a phone number to a `citizenid` and gives
-up when it cannot, and `gphone_messages_participants.citizenid` is a foreign key
-onto `players`. So the seeded counterparts are real `players` rows, marked by a
-license nothing else uses (`lib/seed.ts`) so `clear` can find exactly its own
-and nothing a person made.
+text, and a conversation needs a real counterpart —
+`gphone_messages_participants.citizenid` is a foreign key onto `players`. Its
+seeded rows are therefore real `players` rows, marked by a license nothing else
+uses (`lib/seed.ts`) so `clear` removes exactly its own and nothing a person
+made.
 
 `pnpm test:unit` likewise fans out to **two separate Vitest projects**, and they
 are not interchangeable:
@@ -159,28 +159,24 @@ not work around it.
 6. **Do not change** TypeScript versions in either package, Vite `build.outDir`,
    or `scripts/generate-barrels.js` output paths without asking.
 7. **SDK First.** Everything in `web/src/apps/`, and every external add-on,
-   consumes the OS strictly through `@gphone/sdk` hooks — data (`useContacts`,
-   `useMedia`, `useMail`, `useMessages`, `useAccount`, `useCall`, `useReports`),
-   OS services (`useNavigation`, `usePhoneNotification`, `useKeybinds`,
-   `useClock`, `useDisplay`, `useSystemHardware`, `useAppRegistry`,
-   `useService`, `useAppEvents`, `useStorage`, `useCamera`, `useAdmin`,
-   `useDevTools`), and the four an app is built out of: `useAppLevels` for its
-   internal levels, `useAppAction` for a write, `useDeepLink` for the props it
-   was opened with, and `onAppForeground` for loading. `useNuiBridge` is on
-   `@gphone/sdk/core`, which only a `core: true` app may import — it is the raw
-   transport, and `boundary.test.ts` refuses it to add-ons; a `core: false`
-   bundle has no NUI at all, since it runs in a sandboxed iframe with no route
-   to the shell but `postMessage` (§7). Relative imports out of an app — into
-   `shell/`, `services/`, `nui/`, `lib/`, or `sdk/` by path — are prohibited and
-   enforced by `web/src/sdk/boundary.test.ts`. UI primitives (`Screen`,
-   `ListItem`, `Button`, `Avatar`, `SearchBar`, `EmptyState`, `ConfirmDialog`,
-   `FloatingActionButton`, `MessageBar`, `PhotoPickerModal`, `ReportDialog`,
-   `SegmentedControl`, `ToggleSwitch`, `Skeleton`) live in `web/src/sdk/ui/`,
-   re-exported from `web/src/sdk/components.ts`. The shell's own pieces —
-   `PhoneFrame`, `Launcher`, `ToastHost`, `VolumeHud`, `ErrorBoundary` — are
-   deliberately **not** exported; an app rendering its own phone frame or toast
-   host is a bug. See [`docs/writing-an-app.md`](docs/writing-an-app.md) for the
-   full walkthrough.
+   consumes the OS strictly through `@gphone/sdk` — the data and OS-service
+   hooks, the UI primitives in `web/src/sdk/ui/` (re-exported from
+   `sdk/components.ts`), and the four an app is built out of: `useAppLevels` for
+   its internal levels, `useAppAction` for a write, `useDeepLink` for the props
+   it was opened with, `onAppForeground` for loading. The exhaustive list is the
+   SDK's own exports; [`docs/writing-an-app.md`](docs/writing-an-app.md) is the
+   walkthrough. Three things that list will not tell you:
+
+   - **Relative imports out of an app are prohibited** — into `shell/`,
+     `services/`, `nui/`, `lib/` or `sdk/` by path.
+     `web/src/sdk/boundary.test.ts` enforces it.
+   - **`useNuiBridge` is on `@gphone/sdk/core`, and only a `core: true` app may
+     import it.** It is the raw transport, and `boundary.test.ts` refuses it to
+     add-ons. A `core: false` bundle has no NUI at all: it runs in a sandboxed
+     iframe whose only route to the shell is `postMessage` (§7).
+   - **The shell's own pieces are deliberately not exported** — `PhoneFrame`,
+     `Launcher`, `ToastHost`, `VolumeHud`, `ErrorBoundary`. An app rendering its
+     own phone frame or toast host is a bug.
 
    **Keyboard shortcuts.** Never add a raw `keydown` listener or
    `<svelte:window on:keydown>` for a phone-level action; declare it in
@@ -285,30 +281,31 @@ not work around it.
     (`MICA-16`) — the key only, never the site URL, which identifies the
     owner.
 
-12. **Every branch is named for its Jira key.** `MICA-<n>`, optionally with a
-    lowercase slug — `MICA-56` or `MICA-56-bank-send`. `main` and `dev` are
+12. **A branch is named for its Jira key** — `MICA-<n>`, optionally with a
+    lowercase slug (`MICA-56`, `MICA-56-bank-send`). `main` and `dev` are
     the only other legal names. No `feature/`, no tool-generated names, no
-    `claude/…`: a branch whose name does not say which ticket it serves is one
-    nobody else can triage.
+    `claude/…`.
+
+    **Committing straight to `dev` is fine, and is the normal path here.** This
+    is a solo repo; a branch per change buys nothing when nobody is reviewing.
+    Take a ticket branch when the work is long enough to want its own CI
+    history, or when you want a PR to think in — neither is required, and the
+    rule above governs the name only if you make one.
 
     Enforced in two halves, because neither covers the other's blind spot. The
-    `pre-push` hook (`scripts/pre-push.js`, which judges names via
-    `scripts/check-branch-name.js` and then runs `check:fast`, installed by
-    `simple-git-hooks`) judges the _remote_ ref of each push — so
-    `git push origin HEAD:refs/heads/MICA-56` is legal from a
-    differently-named local branch, and a session on a machine with no global
-    git config is still covered. The ruleset in
+    `pre-push` hook (`scripts/pre-push.js`, judging names via
+    `scripts/check-branch-name.js`, then running `check:fast`; installed from
+    `.githooks/` by `scripts/install-git-hooks.js`) judges the _remote_ ref of
+    each push, so `git push origin HEAD:refs/heads/MICA-56` is legal from a
+    differently-named local branch. The ruleset in
     `.github/rulesets/ticket-key-branch-names.json` covers what never reaches a
-    local hook: the web UI, and anything pushed by an app. Import it under
-    Settings → Rules. It excludes `refs/heads/dependabot/**` deliberately —
-    Dependabot names its own branches and blocking them stops dependency
+    local hook — the web UI, and anything pushed by an app. It excludes
+    `refs/heads/dependabot/**` deliberately: blocking those stops dependency
     updates.
 
-    Deletions are exempt from the hook, so a non-conforming branch predating the
-    rule can still be removed — and a delete-only push skips `check:fast`
-    entirely, since it introduces no code to verify. That skip is not a
-    micro-optimisation: running the full gate on a deletion took long enough to
-    time out the push before git performed it.
+    Deletions are exempt, and a delete-only push skips `check:fast` — running
+    the full gate on a deletion took long enough to time out the push before git
+    performed it.
 
 ---
 
@@ -544,20 +541,14 @@ explicit app id or `system`, which grants everything and only exists in-process.
 §2.9 stays the boundary for privileged server actions either way — the server
 gates them and does not treat a NUI request as proof of intent.
 
-It used to be decorative in a worse sense than unused. Nothing read it beyond
-the Store's renderer and a storage-size figure invented from
-`permissions.length`, so an app declaring `permissions: []` had exactly the
-access of one declaring all eight — and half the manifests understated what they
-touched. Settings declared nothing and used ten hooks.
-
 `web/src/sdk/permissions.ts` is the one table: every host hook and the
 permission that discloses it, or `null` for the handful every app is built out
 of (`useAppLevels`, `useAppAction`, `useDeepLink`, `onAppForeground`/`useTimer`,
 `useService` in its own namespace) which are never declared.
 `permissions.test.ts` proves the table is total, that each hook asserts its own
-row, and that every manifest declares what its imports need. `network` and
-`bluetooth` are gone — nothing checked them; Bluetooth is `system-hardware`.
-`sound` is gone too — `useSound` is implicit now, like `useAppLevels`.
+row, and that every manifest declares what its imports need. There is no
+`network`, `bluetooth` or `sound` permission — Bluetooth is `system-hardware`,
+and `useSound` is implicit like `useAppLevels`.
 
 Declaring more than the scan finds is fine. Declaring less is a lie to the
 person reading it.
@@ -642,10 +633,9 @@ Two traps:
 - **Response events are derived, never written by hand.** `shared/rpc.ts` owns
   `requestEventFor` / `responseEventFor`, and both `ServiceEndpoint` and
   `ServiceProxy` import them, so the two cannot disagree.
-  `ServiceProxy.registerCallback` subscribes the derived reply itself.
-  Previously the client subscribed a fixed set of four CRUD reply names and
-  every custom action needed an explicit opt-in — all four mail actions were
-  missing it and timed out after 15s, silently.
+  `ServiceProxy.registerCallback` subscribes the derived reply itself. Hand-
+  writing a reply name, or requiring a per-action opt-in, is how a custom action
+  ends up timing out after 15s with no error.
 
 Payload shape: the generic CRUD path reads the row id from `data.id`.
 Conversation-scoped custom actions accept `conversation_id`, `id`, or a bare id
@@ -691,20 +681,15 @@ matches no listener.
 Two scopes are not apps:
 
 - **`shell`** — the phone itself rather than any app
-  (`gphone:client:shell:notify`). `shell` is the word this codebase already uses
-  for the layer that owns navigation, key dispatch, and anything above an
-  individual app. Not `core`: `web/src/nui/` is the transport directory and
-  every other use of "core" in the tree means QBCore / qbx_core — and `core` is
-  now also a manifest field (§11), which would make it the third meaning of one
-  word.
+  (`gphone:client:shell:notify`). Not `core`: `web/src/nui/` is the transport
+  directory, every other use of "core" in the tree means QBCore / qbx_core, and
+  `core` is also a manifest field (§11) — three meanings for one word.
 - **`admin`** — the privileged surface, grouped by who may call it rather than
   by subject.
 
-Names drifted before this was enforced. Fifteen events omitted the app segment
-and `gphone:call:failed` had no **side** segment at all, so its direction was
-unreadable from the name. NUI message actions (`setVisible`, `receiveMail`) are
-a **separate namespace** and carry no `gphone:` prefix; the test scans `web/src`
-precisely to catch one borrowing the prefix.
+NUI message actions (`setVisible`, `receiveMail`) are a **separate namespace**
+and carry no `gphone:` prefix; the test scans `web/src` precisely to catch one
+borrowing the prefix.
 
 ### Testing
 
@@ -793,37 +778,39 @@ it reports every failure rather than stopping at the first.
 first failure, for a tight edit loop; `--no-container` drops the Go/Dockerfile
 gate, and exists for CI rather than for you — see below.
 
-**`pnpm verify` is still the whole set; CI just runs it across four machines.**
-The `verify` job runs `pnpm verify --quick --no-container`, the `e2e` job runs
-the Playwright suite sharded in two, and the `container` job runs the
-Go/Dockerfile checks with `--require`. The union of those three is exactly what
-`pnpm verify` runs locally, and a gate added to `scripts/verify.js` lands in the
-first of them without anything else being touched — only e2e and the container
-checks are carved out by name. They are split because e2e was 158s of a 227s run
-and the only thing needing the Playwright image, and because the container
-checks need a Go toolchain that image does not have.
+**`pnpm verify` is the whole set; CI just runs it across four machines** — a
+`verify` job (`--quick --no-container`), an `e2e` job sharded in two, and a
+`container` job with `--require`. Their union is exactly the local run, so a
+gate added to `scripts/verify.js` lands in CI with nothing else touched. Only
+e2e and the container checks are carved out by name, because e2e needs the
+Playwright image and the container checks need a Go toolchain it lacks.
 
-Ordering is not a nicety. Running these by hand, in the order they happen to be
-listed below, is how a two-second markdownlint failure ends up found after a
-one-minute Playwright run.
+It runs, in order: `format:check`, `lint:md`, `lint:container`, `lint`,
+`typecheck`, `test:unit`, `test:e2e`, `build:nocheck`, `deadcode`. Cheapest
+first is deliberate — run these by hand in the order below and a two-second
+markdownlint failure surfaces after a one-minute Playwright run. The build gate
+uses `build:nocheck` because the `typecheck` gate already checked this tree;
+`pnpm build` alone keeps its typecheck, since nothing else has run one.
 
-What it runs, in order: `format:check`, `lint:md`, `lint:container`, `lint`,
-`typecheck`, `test:unit`, `test:e2e`, `build:nocheck`, `deadcode`. The build
-gate runs `build:nocheck` rather than `build` because `pnpm build` typechecks
-first, and the `typecheck` gate three steps earlier already ran exactly that
-against exactly this tree. `pnpm build` on its own keeps its typecheck — outside
-this script nothing else has run one. Individually, and required before
-reporting any code change complete (§2.8):
+### Match the gate to what the change touched
 
-1. `pnpm typecheck` — all three targets. Not `typecheck:web` alone (§3).
-2. `pnpm test:unit` — server and web.
-3. `pnpm test:e2e` — if the change touches `web/`.
-4. `pnpm format:check` — or `pnpm format` then re-check.
-5. `pnpm lint:container` — if the change touches `docker/`, the `Dockerfile` or
-   `compose.yaml`. Prettier has no parser for either language, so nothing else
-   reads them. Runs the local `go`/`hadolint` if present, otherwise the same
-   checks in a container, and only reports **skipped** when neither is available
-   — and a skip is not a pass.
+`pnpm verify` before anything reaching `main`, and whenever you are unsure.
+Below that, run what the change can actually break — a comment in a YAML file
+does not need the e2e suite:
+
+| Change touches                          | Run                                         |
+| --------------------------------------- | ------------------------------------------- |
+| Markdown, config, `.github/`            | `format:check` + `lint:md`                  |
+| Shell (`scripts/**.sh`, `.githooks/`)   | `shellcheck -x` on the files                |
+| `docker/`, `Dockerfile`, `compose.yaml` | `lint:container` — a **skip is not a pass** |
+| `client/`, `server/`, `shared/`         | `typecheck` + `test:unit`                   |
+| `web/`                                  | `typecheck` + `test:unit` + `test:e2e`      |
+| Anything you cannot confidently bound   | `pnpm verify`                               |
+
+`pnpm typecheck` means all three targets, never `typecheck:web` alone (§3).
+`pnpm check:fast` is the packaged middle ground and what `pre-push` runs — but
+its `--changed` selection reads your _uncommitted_ diff, so it selects nothing
+on a clean tree and is not evidence on its own.
 
 Then, before saying it works:
 
