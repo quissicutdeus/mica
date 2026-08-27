@@ -167,6 +167,10 @@ describe('remote catalog', () => {
         description: 'Live weather from a remote catalog.',
         icon: 'https://store.example.com/icons/weather.svg',
         color: 'bg-blue-500',
+        // Split out of the wire field, so a remote listing carries the same structured
+        // tile a bundled manifest does (MICA-91). The catalog itself still speaks
+        // `color`; that is a published format and stays a string.
+        tile: { bg: 'bg-blue-500' },
         core: false,
         isRemote: true,
         bundleUrl: 'https://store.example.com/apps/weather.js',

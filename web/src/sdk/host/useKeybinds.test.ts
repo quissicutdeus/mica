@@ -8,6 +8,7 @@ describe('useKeybinds groups', () => {
     id: 'snek_hook_test',
     name: 'Snek Hook Test',
     color: 'bg-green-600',
+    tile: { bg: 'bg-green-600' },
     icon: null,
     core: false,
     keybinds: [{ id: 'pause', label: 'Pause Game', defaultKey: 'p' }]
@@ -66,6 +67,7 @@ describe('useKeybinds groups', () => {
         id: 'no_binds_app',
         name: 'No Binds',
         color: 'bg-gray-600',
+        tile: { bg: 'bg-gray-600' },
         icon: null,
         core: false
       },
@@ -81,6 +83,7 @@ describe('useKeybinds groups', () => {
       id: 'snek_two_actions',
       name: 'Snek Two Actions',
       color: 'bg-green-600',
+      tile: { bg: 'bg-green-600' },
       icon: null,
       core: false,
       keybinds: [

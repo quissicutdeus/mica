@@ -27,7 +27,7 @@ const manifest: AppManifest = defineApp({
   id: 'probe',
   name: 'Probe',
   icon: 'x',
-  color: '#000',
+  tile: { bg: 'bg-gray-900' },
   core: false,
   permissions: []
 });

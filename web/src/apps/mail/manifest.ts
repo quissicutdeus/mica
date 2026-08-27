@@ -3,7 +3,7 @@ import { defineApp, lazyBadge } from '@gphone/sdk/app';
 
 export default defineApp({
   id: 'mail',
-  color: 'bg-blue-500',
+  tile: { bg: 'bg-blue-500' },
   icon: Icon,
   badgeStore: lazyBadge(async () => {
     const { unreadMailCount } = await import('@gphone/sdk');

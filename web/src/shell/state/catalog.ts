@@ -1,5 +1,5 @@
 import { isTrustedRemoteUrl } from './remoteAppSecurity';
-import { ALL_PERMISSIONS, type AppPermission } from '../../sdk/manifest';
+import { ALL_PERMISSIONS, tileFromColorClasses, type AppPermission } from '../../sdk/manifest';
 
 /**
  * One installable app as an operator's catalog server describes it — everything
@@ -38,7 +38,11 @@ export function isCatalogEntry(value: unknown): value is CatalogEntry {
     isNonEmptyString(v.description) &&
     isNonEmptyString(v.bundleUrl) &&
     isNonEmptyString(v.sha256) &&
+    // Not merely a non-empty string: a catalog is remote data, and a `color` that names no
+    // `bg-` class is interpolated into a `class` attribute and renders an invisible tile.
+    // Checked here so the row is dropped and logged rather than listed and unreadable.
     isNonEmptyString(v.color) &&
+    tileFromColorClasses(v.color) !== null &&
     (v.icon === undefined || typeof v.icon === 'string') &&
     Array.isArray(v.permissions) &&
     v.permissions.every((p) => ALL_PERMISSIONS.includes(p as AppPermission)) &&

@@ -3,7 +3,7 @@ import { defineApp } from '@gphone/sdk/app';
 
 export default defineApp({
   id: 'settings',
-  color: 'bg-gray-700',
+  tile: { bg: 'bg-gray-700' },
   icon: Icon,
   description: 'Configure phone settings and preferences',
   // `storage` because the Apps pane reads and clears what other apps have stored, and `media`

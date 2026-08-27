@@ -73,7 +73,9 @@ import { defineApp } from '@gphone/sdk/app';
 
 export default defineApp({
   id: '${id}',
-  color: 'bg-slate-500',
+  // The launcher tile. Add \`fg: 'text-gray-900'\` if you pick a light background —
+  // the glyph inherits a near-white default that is unreadable on one.
+  tile: { bg: 'bg-slate-500' },
   icon: Icon,
   description: 'TODO: one line, shown in the Store.',
   permissions: [],

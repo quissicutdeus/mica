@@ -3,7 +3,7 @@ import { defineApp, lazyBadge } from '@gphone/sdk/app';
 
 export default defineApp({
   id: 'admin',
-  color: 'bg-rose-600',
+  tile: { bg: 'bg-rose-600' },
   icon: Icon,
   // Counts outstanding reports, and only falls when one is decided. Opening the app
   // does not clear it — unlike an unread count, a report stays outstanding until

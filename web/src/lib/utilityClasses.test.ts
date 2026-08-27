@@ -139,31 +139,37 @@ function findClassUsages(files: string[]): ClassUsage[] {
   return usages;
 }
 
+/** `tile: { bg: 'bg-x', fg: 'text-y' }` in a manifest, as the two classes it names. */
+function readTile(source: string): { bg?: string; fg?: string; index: number } | null {
+  const match = /\btile:\s*\{([^}]*)\}/.exec(source);
+  if (!match) return null;
+  return {
+    bg: /\bbg:\s*'([^']*)'/.exec(match[1])?.[1],
+    fg: /\bfg:\s*'([^']*)'/.exec(match[1])?.[1],
+    index: match.index
+  };
+}
+
 /**
- * Every statically-known class token from an app manifest's `color` field.
+ * Every statically-known class token from an app manifest's `tile`.
  *
- * `AppIcon` interpolates `manifest.color` directly into a `class` (see `sdk/manifest.ts`),
- * so a stale or typo'd token there is exactly the same silent-no-op failure a `.svelte`
+ * `AppIcon` interpolates the tile straight into a `class` (see `sdk/manifest.ts`), so a
+ * stale or typo'd token there is exactly the same silent-no-op failure a `.svelte`
  * `class="..."` typo is — it just lives one file away from where it renders. Narrow and
- * literal on purpose: only a plain single- or double-quoted string literal assigned to
- * `color:` is read. A template literal or any other expression is skipped rather than
- * guessed at — there is nothing statically knowable to check in that case, the same
- * reasoning `stripInterpolations` applies to a Svelte `{expr}`.
+ * literal on purpose: only plain single-quoted string literals inside a `tile: { … }`
+ * object are read. Anything computed is skipped rather than guessed at, the same reasoning
+ * `stripInterpolations` applies to a Svelte `{expr}`.
  */
-function findManifestColorUsages(files: string[]): ClassUsage[] {
+function findManifestTileUsages(files: string[]): ClassUsage[] {
   const usages: ClassUsage[] = [];
-  const colorFieldRe = /\bcolor:\s*(['"])((?:(?!\1)[^\\]|\\.)*)\1/g;
 
   for (const file of files) {
     const source = fs.readFileSync(file, 'utf8');
-    const rel = path.relative(WEB_SRC, file);
-
-    colorFieldRe.lastIndex = 0;
-    for (const match of source.matchAll(colorFieldRe)) {
-      const line = lineOf(source, match.index ?? 0);
-      for (const token of match[2].split(/\s+/).filter(Boolean)) {
-        usages.push({ file: rel, line, token });
-      }
+    const tile = readTile(source);
+    if (!tile) continue;
+    const line = lineOf(source, tile.index);
+    for (const token of [tile.bg, tile.fg].filter((t): t is string => !!t)) {
+      usages.push({ file: path.relative(WEB_SRC, file), line, token });
     }
   }
 
@@ -171,13 +177,13 @@ function findManifestColorUsages(files: string[]): ClassUsage[] {
 }
 
 describe('app-utilities.css coverage', () => {
-  it('has a rule for every statically-known class token used in .svelte markup and app manifest colors', () => {
+  it('has a rule for every statically-known class token used in .svelte markup and app manifest tiles', () => {
     const defined = loadDefinedClasses();
     const svelteFiles = walk(WEB_SRC, ['.svelte']);
     const manifestFiles = walk(path.join(WEB_SRC, 'apps'), ['.ts']).filter((f) =>
       f.endsWith('manifest.ts')
     );
-    const usages = [...findClassUsages(svelteFiles), ...findManifestColorUsages(manifestFiles)];
+    const usages = [...findClassUsages(svelteFiles), ...findManifestTileUsages(manifestFiles)];
 
     const missing = usages.filter((u) => !defined.has(u.token));
 
@@ -382,11 +388,10 @@ describe('launcher tile contrast', () => {
     for (const file of manifests) {
       const source = fs.readFileSync(file, 'utf8');
       const rel = path.relative(WEB_SRC, file);
-      const color = /\bcolor:\s*'([^']*)'/.exec(source);
-      if (!color) continue;
+      const declared = readTile(source);
+      if (!declared?.bg) continue;
 
-      const tokens = color[1].split(/\s+/).filter(Boolean);
-      const tile = tokens.map((t) => backgrounds.get(t)).find(Boolean);
+      const tile = backgrounds.get(declared.bg);
       // A themed role or anything that is not a flat palette literal: nothing to measure.
       if (!tile) continue;
 
@@ -399,8 +404,10 @@ describe('launcher tile contrast', () => {
         continue;
 
       // The tile's own foreground, or what `Launcher` hands down when it names none. An
-      // icon cannot enter into it — the check below is what keeps that true.
-      const glyph = tokens.map((t) => foregrounds.get(t)).find(Boolean) ?? inherited;
+      // icon cannot enter into it — the check below is what keeps that true. Since
+      // MICA-91 the two roles are named rather than sniffed out of one string, so
+      // "the manifest states no foreground" is now a fact this can read rather than infer.
+      const glyph = (declared.fg && foregrounds.get(declared.fg)) || inherited;
       const ratio = contrast(tile, glyph);
       const recorded = BELOW_FLOOR[rel];
 

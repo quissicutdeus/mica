@@ -95,4 +95,21 @@ describe('isCatalogEntry', () => {
   it('rejects an entry declaring a permission outside ALL_PERMISSIONS', () => {
     expect(isCatalogEntry({ ...validEntry, permissions: ['not-a-real-permission'] })).toBe(false);
   });
+
+  /**
+   * MICA-91. A catalog is remote data and its `color` is a wire field, so it stays a
+   * string here rather than becoming a `tile` — but "non-empty string" was the whole of
+   * the check, and a colour value that names no `bg-` class is interpolated into a `class`
+   * attribute and lists the app with an invisible tile. Dropped and logged now, like any
+   * other malformed row.
+   */
+  it('rejects an entry whose colour names no background class', () => {
+    expect(isCatalogEntry({ ...validEntry, color: '#4ade80' })).toBe(false);
+    expect(isCatalogEntry({ ...validEntry, color: 'emerald' })).toBe(false);
+    expect(isCatalogEntry({ ...validEntry, color: 'text-gray-900' })).toBe(false);
+  });
+
+  it('still accepts a colour carrying both roles, as a published catalog may', () => {
+    expect(isCatalogEntry({ ...validEntry, color: 'bg-green-400 text-gray-900' })).toBe(true);
+  });
 });

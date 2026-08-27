@@ -3,7 +3,7 @@ import { defineApp } from '@gphone/sdk/app';
 
 export default defineApp({
   id: 'phone',
-  color: 'bg-green-500',
+  tile: { bg: 'bg-green-500' },
   icon: Icon,
   description: 'Make phone calls and view call history',
   permissions: ['call', 'contacts', 'notifications'],

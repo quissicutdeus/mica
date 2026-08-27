@@ -107,23 +107,27 @@ describe('defineApp: name', () => {
   });
 });
 
-describe('defineApp: color', () => {
-  it('warns that a hex string produces an invisible icon', () => {
-    // The docstring promised "utility class or hex string" and `AppIcon` interpolates the
-    // value straight into a `class` attribute, so `#f59e0b` becomes a class name that
-    // matches no rule — an icon with no background at all. One manifest in the repo's own
-    // test fixtures does this.
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    defineApp({ id: 'hexy', name: 'Hexy', color: '#f59e0b', icon: null, core: false });
-
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('#f59e0b'));
+describe('defineApp: the launcher tile', () => {
+  it('throws on a hex value, which would produce an invisible icon', () => {
+    // `AppIcon` interpolates the tile straight into a `class` attribute, so `#f59e0b`
+    // becomes a class name matching no rule — an icon with no background at all. This was
+    // a DEV-only `console.warn` until MICA-91: a warning in a browser console, for a
+    // manifest field that is wrong in every environment. One fixture in this repo did it.
+    expect(() =>
+      defineApp({ id: 'hexy', name: 'Hexy', tile: { bg: '#f59e0b' }, icon: null, core: false })
+    ).toThrow("tile.bg '#f59e0b'");
   });
 
   it('accepts a utility class without complaint', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    defineApp({ id: 'classy', name: 'Classy', color: 'bg-indigo-600', icon: null, core: false });
+    defineApp({
+      id: 'classy',
+      name: 'Classy',
+      tile: { bg: 'bg-indigo-600' },
+      icon: null,
+      core: false
+    });
 
     expect(warn).not.toHaveBeenCalled();
   });
@@ -134,7 +138,7 @@ describe('registry: duplicate ids', () => {
     // Two manifests with the same `id` used to mean the second silently replaced the
     // first's component, with both still listed in the launcher.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const opts = { color: 'bg-blue-600', icon: null, core: false } as const;
+    const opts = { tile: { bg: 'bg-blue-600' }, icon: null, core: false } as const;
     const first = defineApp({ id: 'dupe', name: 'First', ...opts });
 
     appRegistryStore.registerApp(first, stub);

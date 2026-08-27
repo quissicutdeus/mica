@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { AppComponent } from '@gphone/sdk';
+import { defineApp, type AppComponent } from '@gphone/sdk';
 import { get } from 'svelte/store';
 
 const serviceMock = vi.hoisted(() => ({
@@ -32,7 +32,14 @@ describe('App Registry Store', () => {
 
       // Clean bundled add-on install should log no warning
       appRegistryStore.registerApp(
-        { id: 'blabber', name: 'Blabber', color: 'bg-sky-500', icon: null, core: false },
+        {
+          id: 'blabber',
+          name: 'Blabber',
+          color: 'bg-sky-500',
+          tile: { bg: 'bg-sky-500' },
+          icon: null,
+          core: false
+        },
         blabberComponent
       );
       expect(warnSpy).not.toHaveBeenCalled();
@@ -43,6 +50,7 @@ describe('App Registry Store', () => {
           id: 'blabber',
           name: 'Blabber Reinstalled',
           color: 'bg-sky-500',
+          tile: { bg: 'bg-sky-500' },
           icon: null,
           core: false
         },
@@ -72,13 +80,16 @@ describe('App Registry Store', () => {
   });
 
   it('allows dynamic registration of custom third-party apps with installation timestamps', () => {
-    const mockManifest: AppManifest = {
+    // Through `defineApp` rather than hand-built: `color` is derived from `tile` now
+    // (MICA-91), and a literal that sets one without the other is a manifest no real
+    // app can produce.
+    const mockManifest: AppManifest = defineApp({
       id: 'crypto_app',
       name: 'Crypto',
-      color: '#f59e0b',
+      tile: { bg: 'bg-amber-500' },
       icon: null,
       core: false
-    };
+    });
     // Registry bookkeeping only — nothing here renders, so a stub stands in for the
     // component the registry now insists on having.
     const mockComponent = {} as unknown as AppComponent;
@@ -118,6 +129,7 @@ describe('App Registry Store', () => {
       id: 'dev_gate_fixture',
       name: 'Dev Gate Fixture',
       color: 'bg-red-500',
+      tile: { bg: 'bg-red-500' },
       icon: null,
       core: false
     };
@@ -151,6 +163,7 @@ describe('App Registry Store', () => {
       id: 'ad_hoc_addon',
       name: 'Ad Hoc',
       color: 'bg-teal-500',
+      tile: { bg: 'bg-teal-500' },
       icon: null,
       core: false
     };
@@ -171,6 +184,7 @@ describe('App Registry Store', () => {
         id: 'not_a_bundled_addon',
         name: 'Nope',
         color: 'bg-red-500',
+        tile: { bg: 'bg-red-500' },
         icon: null,
         core: false
       })
@@ -224,6 +238,7 @@ describe('App Registry Store', () => {
       id: 'blabber',
       name: 'Blabber',
       color: 'bg-sky-500',
+      tile: { bg: 'bg-sky-500' },
       icon: null,
       core: false
     });
@@ -244,6 +259,7 @@ describe('App Registry Store', () => {
       id: 'remote_gone',
       name: 'Gone',
       color: 'bg-gray-600',
+      tile: { bg: 'bg-gray-600' },
       icon: null,
       core: false,
       isRemote: true
@@ -530,6 +546,7 @@ describe('installed add-on persistence', () => {
       id: 'blabber',
       name: 'Blabber',
       color: 'bg-sky-500',
+      tile: { bg: 'bg-sky-500' },
       icon: null,
       core: false
     });
@@ -544,6 +561,7 @@ describe('installed add-on persistence', () => {
       id: 'remote_installed_addons_test',
       name: 'Remote',
       color: 'bg-gray-600',
+      tile: { bg: 'bg-gray-600' },
       icon: null,
       core: false,
       isRemote: true

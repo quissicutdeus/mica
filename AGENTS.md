@@ -771,8 +771,19 @@ disclosure stays true at runtime.
 
 ## 9. Definition of done
 
-Run these from the repo root before reporting any code change complete (§2.8).
-All five, in any order, all passing:
+**Run `pnpm verify`.** One command, every gate, cheapest first — so a
+line-length error costs seconds instead of a minute behind the e2e suite — and
+it reports every failure rather than stopping at the first.
+`pnpm verify --quick` skips e2e (what `pre-push` runs); `--bail` stops at the
+first failure, for a tight edit loop.
+
+Ordering is not a nicety. Running these by hand, in the order they happen to be
+listed below, is how a two-second markdownlint failure ends up found after a
+one-minute Playwright run.
+
+What it runs, in order: `format:check`, `lint:md`, `lint:container`, `lint`,
+`typecheck`, `test:unit`, `test:e2e`, `build`, `deadcode`. Individually, and
+required before reporting any code change complete (§2.8):
 
 1. `pnpm typecheck` — all three targets. Not `typecheck:web` alone (§3).
 2. `pnpm test:unit` — server and web.
@@ -878,6 +889,13 @@ Three things worth knowing before you open the doc:
 - **`core` is required** and has teeth: `true` ships with the phone and can't be
   uninstalled; `false` is a Store add-on. Read `manifest.core` and nothing else
   — never infer it.
+- **`tile: { bg, fg }` is required too**, and both are utility classes rather
+  than colour values — they land in a `class` attribute, so a hex string paints
+  nothing. Omit `fg` on a dark tile; state it on a light one, or the glyph
+  inherits a near-white default and is illegible (MICA-88). `defineApp` throws
+  on either mistake, and `utilityClasses.test.ts` measures the contrast. The old
+  free-form `color` string is still accepted so a published add-on keeps
+  loading, but it is derived from `tile` now — do not author it.
 - **A NUI round trip touches three files** and fails silently if one is missing:
   `web/` (`fetchNui`), `shared/routes.ts` (a `route()` entry — **core apps
   only**; an add-on goes through the generic `useService(id).call(...)` instead

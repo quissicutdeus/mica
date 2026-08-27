@@ -2,6 +2,7 @@ import {
   appStorageBytes,
   useAppRegistry,
   fetchCatalog,
+  tileFromColorClasses,
   type AppManifest,
   type AppPermission,
   type CatalogEntry
@@ -51,6 +52,10 @@ const toAppManifest = (entry: CatalogEntry): AppManifest => ({
   description: entry.description,
   icon: entry.icon ?? null,
   color: entry.color,
+  // `isCatalogEntry` has already refused any row whose `color` names no `bg-` class, so the
+  // fallback is unreachable — it is there to keep the type honest rather than to invent a
+  // colour, since a catalog entry is remote data and this file does not get to throw.
+  tile: tileFromColorClasses(entry.color) ?? { bg: entry.color },
   core: false,
   isRemote: true,
   bundleUrl: entry.bundleUrl,

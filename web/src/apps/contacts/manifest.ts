@@ -3,7 +3,7 @@ import { defineApp } from '@gphone/sdk/app';
 
 export default defineApp({
   id: 'contacts',
-  color: 'bg-gray-500',
+  tile: { bg: 'bg-gray-500' },
   icon: Icon,
   preload: async () => {
     const { useContacts } = await import('@gphone/sdk');

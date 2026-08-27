@@ -91,7 +91,33 @@ export type AppComponent = Component<AppProps>;
  * Separate from `AppManifest` for one reason: `name` is optional here and guaranteed on the
  * way out, so everything downstream can read `manifest.name` without a fallback.
  */
-export type AppManifestInput = Omit<AppManifest, 'name'> & { name?: string };
+export type AppManifestInput = Omit<AppManifest, 'name' | 'tile' | 'color'> & {
+  name?: string;
+  tile?: AppTile;
+  /** @deprecated Author `tile` instead. Accepted so an add-on bundle predating it still loads. */
+  color?: string;
+};
+
+/**
+ * A launcher tile, as two named roles rather than one string with two jobs in it.
+ *
+ * Both are utility classes from `app-utilities.css`, not colour values — `AppIcon`
+ * interpolates them into a `class` attribute, so a hex string is a class name matching no
+ * rule and the tile renders with no background at all. That used to be a DEV-only
+ * `console.warn`, which is the weakest gate in the repo; `defineApp` throws on it now.
+ */
+export interface AppTile {
+  /** What the tile is painted — `bg-indigo-600`. */
+  bg: string;
+  /**
+   * What the glyph inherits — `text-gray-900`.
+   *
+   * Omit on a dark tile, where `--color-on-surface` from `Launcher` is already right. State
+   * it on a light one: Notes on `bg-yellow-400` inherited a near-white glyph at 1.19:1, and
+   * nothing in a single string could say whether that was a decision or an omission.
+   */
+  fg?: string;
+}
 
 /**
  * A default hotkey an app declares for itself.
@@ -130,12 +156,22 @@ export interface AppManifest {
    */
   name: string;
   /**
-   * Utility class for the launcher icon (from app-utilities.css) — `bg-indigo-600`.
+   * The launcher tile: what it is painted, and what the glyph on it inherits.
    *
-   * A **class**, not a color value. `AppIcon` interpolates this straight into a `class`
-   * attribute, so a hex string becomes a class name matching no rule and the icon renders
-   * with no background at all. The docstring here used to offer "or hex string", which is
-   * why that is worth stating outright.
+   * The authored field (MICA-91). It replaces a free-form `color` string that held both
+   * roles at once, positionally and unchecked — which is what let a tile and its glyph
+   * disagree, and what MICA-88 had to go and reconcile by hand across sixteen apps.
+   */
+  tile: AppTile;
+  /**
+   * `tile` flattened to the class string every consumer interpolates. **Derived — do not
+   * author it.**
+   *
+   * Still here because ten-odd call sites read it (`AppIcon`, `Launcher`, `Dock`,
+   * `AppDrawer`, `FolderPopup`, `DragGhost`, `ToastHost`, the Store and Settings listings)
+   * and because an add-on bundle published before `tile` existed still sets it. `defineApp`
+   * derives whichever of the two was not given, so both are always present and always
+   * agree; writing both is refused rather than merged.
    */
   color: string;
   /** A Svelte component, a snippet, or an image URL. Null renders no glyph, which
@@ -268,6 +304,97 @@ const titleCase = (id: string) =>
 /** What `pnpm new:app` enforces for a scaffolded app; a hand-written manifest bypassed it. */
 const ID_PATTERN = /^[a-z][a-z0-9_]*$/;
 
+/** One utility class, no whitespace — `bg-indigo-600`, `text-gray-900`. */
+const oneClass = (prefix: string) => new RegExp(`^${prefix}-[A-Za-z0-9/[\\]._-]+$`);
+const BG_CLASS = oneClass('bg');
+const FG_CLASS = oneClass('text');
+
+/**
+ * A legacy `color` string split back into the two roles it was always carrying, or `null`
+ * if it names no background at all.
+ *
+ * Exported because the Store's remote catalog is a wire format that still speaks `color`
+ * (`shell/state/catalog.ts`) and has to turn one into a tile without importing `defineApp`,
+ * which throws — a malformed row there is dropped and logged, not fatal.
+ */
+/** A tile as the one class string every consumer interpolates. */
+const flattenTile = (tile: AppTile) => (tile.fg ? `${tile.bg} ${tile.fg}` : tile.bg);
+
+export function tileFromColorClasses(color: string): AppTile | null {
+  const tokens = color.trim().split(/\s+/);
+  const bg = tokens.find((t) => BG_CLASS.test(t));
+  if (!bg) return null;
+  const fg = tokens.find((t) => FG_CLASS.test(t));
+  return fg === undefined ? { bg } : { bg, fg };
+}
+
+/**
+ * The tile, from whichever of the two fields the author used, validated either way.
+ *
+ * `tile` is the field to write. `color` is accepted because an add-on bundle published
+ * before `tile` existed still sets it, and refusing those would break every installed
+ * copy — so it is split back into its two roles here rather than carried around as a
+ * string nobody can check. Both together is refused: that is the one input where they can
+ * disagree, and picking a winner silently is how the original problem started.
+ */
+function resolveTile(id: string, input: { tile?: AppTile; color?: string }): AppTile {
+  const { tile, color } = input;
+
+  /**
+   * Both fields, disagreeing. Refused rather than resolved: picking a winner silently is
+   * how a tile and its glyph came apart in the first place.
+   *
+   * Agreeing is fine and routine — `defineApp` is not run once. `shell/state/registry.ts`
+   * re-runs it over every already-defined manifest to stamp `installedAt`, so a manifest
+   * arrives here carrying the `color` a previous pass derived. A rule that refused both
+   * outright would fail every app in the repo at boot.
+   */
+  if (tile && color !== undefined && color !== flattenTile(tile)) {
+    throw new Error(
+      `gPhone App Manifest error: '${id}' declares both 'tile' and 'color', and they ` +
+        `disagree ('${flattenTile(tile)}' vs '${color}'). They are the same thing — ` +
+        `'color' is the legacy spelling, derived from 'tile'. Keep 'tile'.`
+    );
+  }
+
+  if (tile) {
+    if (!BG_CLASS.test(tile.bg)) {
+      throw new Error(
+        `gPhone App Manifest error: '${id}' has tile.bg '${tile.bg}', which is not a single ` +
+          `'bg-' utility class from app-utilities.css. A hex value or a colour name is ` +
+          `interpolated into a 'class' attribute and matches no rule, so the tile renders ` +
+          `with no background at all.`
+      );
+    }
+    if (tile.fg !== undefined && !FG_CLASS.test(tile.fg)) {
+      throw new Error(
+        `gPhone App Manifest error: '${id}' has tile.fg '${tile.fg}', which is not a single ` +
+          `'text-' utility class. Omit it entirely for a dark tile, where the glyph inherits ` +
+          `'--color-on-surface' and is already legible.`
+      );
+    }
+    return tile.fg === undefined ? { bg: tile.bg } : { bg: tile.bg, fg: tile.fg };
+  }
+
+  if (typeof color !== 'string' || !color.trim()) {
+    throw new Error(
+      `gPhone App Manifest error: '${id}' must declare 'tile'. It is what the launcher ` +
+        `paints the icon with, and there is no sensible default — an app with no tile is ` +
+        `an invisible one.`
+    );
+  }
+
+  const split = tileFromColorClasses(color);
+  if (!split) {
+    throw new Error(
+      `gPhone App Manifest error: '${id}' has color '${color}', which names no 'bg-' ` +
+        `utility class. It is interpolated into a 'class' attribute, so a hex value or a ` +
+        `bare colour name renders no background at all. Prefer 'tile: { bg, fg }'.`
+    );
+  }
+  return split;
+}
+
 export function defineApp(manifest: AppManifestInput): AppManifest {
   if (!manifest.id || typeof manifest.id !== 'string') {
     throw new Error("gPhone App Manifest error: 'id' is required and must be a string.");
@@ -319,14 +446,6 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
           `'pnpm new:app' enforces ${ID_PATTERN}; a hand-written manifest does not.`
       );
     }
-
-    if (typeof manifest.color === 'string' && manifest.color.trim().startsWith('#')) {
-      console.warn(
-        `gPhone App Manifest: color '${manifest.color}' on '${id}' is a hex value, and ` +
-          `AppIcon interpolates it into a class attribute — the icon will have no ` +
-          `background. Use a utility class such as 'bg-indigo-600'.`
-      );
-    }
   }
 
   const isRemote = manifest.isRemote === true;
@@ -376,6 +495,14 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
 
   const author = manifest.author || 'gPhone';
 
+  /**
+   * Both spellings, always in step. `color` is the flattened form every consumer already
+   * interpolates; deriving it here is what makes `tile` a pure authoring change rather
+   * than a rewrite of ten call sites and every published add-on.
+   */
+  const tile = resolveTile(id, manifest);
+  const color = flattenTile(tile);
+
   return {
     version: MICA_VERSION,
     permissions: [],
@@ -392,6 +519,8 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
     id,
     name: manifest.name ?? titleCase(id),
     core,
-    author
+    author,
+    tile,
+    color
   };
 }

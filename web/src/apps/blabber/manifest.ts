@@ -3,7 +3,7 @@ import { defineApp, lazyBadge } from '@gphone/sdk/app';
 
 export default defineApp({
   id: 'blabber',
-  color: 'bg-sky-500',
+  tile: { bg: 'bg-sky-500' },
   icon: Icon,
   description: 'Post short updates and follow other players',
   author: 'gPhone',

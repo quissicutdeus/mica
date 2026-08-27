@@ -3,7 +3,7 @@ import { defineApp } from '@gphone/sdk/app';
 
 export default defineApp({
   id: 'media',
-  color: 'bg-blue-500 text-white',
+  tile: { bg: 'bg-blue-500', fg: 'text-white' },
   icon: Icon,
   preload: async () => {
     const { useMedia } = await import('@gphone/sdk');

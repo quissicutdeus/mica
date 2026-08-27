@@ -41,13 +41,20 @@ import { defineApp } from '@gphone/sdk';
 
 export default defineApp({
   id: 'journal',
-  color: 'bg-emerald-600',
+  tile: { bg: 'bg-emerald-600' },
   icon: Icon,
   description: 'Keep a diary',
   permissions: ['storage'],
   core: false
 });
 ```
+
+`tile` is the launcher icon: `bg` is what the tile is painted, `fg` what the
+glyph on it inherits. Both are utility classes from `app-utilities.css`, never
+colour values — they land in a `class` attribute, and `defineApp` throws on
+anything else. Omit `fg` on a dark tile; state it on a light one, or the glyph
+inherits a near-white default and comes out illegible. A guard in
+`web/src/lib/utilityClasses.test.ts` measures the contrast.
 
 Declare what you use — an undeclared hook now crashes your app with
 `AppPermissionError`; `renderApp(App, { permissions: [] })` is how to see it in

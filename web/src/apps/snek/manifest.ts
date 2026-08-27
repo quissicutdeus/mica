@@ -3,7 +3,7 @@ import { defineApp } from '@gphone/sdk/app';
 
 export default defineApp({
   id: 'snek',
-  color: 'bg-yellow-500',
+  tile: { bg: 'bg-yellow-500' },
   icon: Icon,
   description: 'Retro snake, gPhone style',
   permissions: ['highscores', 'storage'],

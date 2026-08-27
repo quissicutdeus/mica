@@ -16,8 +16,7 @@ import {
   useNotifications,
   onAppMount,
   onAppUnmount,
-  MICA_VERSION,
-  type AppManifest
+  MICA_VERSION
 } from './index';
 import { useNuiBridge } from './core';
 import { toast } from '../shell/state/toast';
@@ -32,19 +31,19 @@ describe('gPhone SDK (@gphone/sdk)', () => {
 
   describe('defineApp Manifest Helper', () => {
     it('creates a validated manifest with default values', () => {
-      const rawManifest: AppManifest = {
+      const app = defineApp({
         id: 'crypto_tracker',
         name: 'Crypto Tracker',
-        color: 'bg-yellow-500',
+        tile: { bg: 'bg-yellow-500' },
         icon: 'BitcoinIcon',
         author: 'Community',
         core: false
-      };
-
-      const app = defineApp(rawManifest);
+      });
 
       expect(app.id).toBe('crypto_tracker');
       expect(app.name).toBe('Crypto Tracker');
+      expect(app.tile).toEqual({ bg: 'bg-yellow-500' });
+      // Derived, so every consumer that interpolates one class string keeps working.
       expect(app.color).toBe('bg-yellow-500');
       expect(app.version).toBe(MICA_VERSION);
       expect(app.author).toBe('Community');
@@ -67,6 +66,70 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       expect(() => defineApp({ id: 'app1', name: '', color: 'red', icon: null } as any)).toThrow(
         "gPhone App Manifest error: 'name' must be a non-empty string"
       );
+    });
+
+    /**
+     * MICA-91. The tile used to be one free-form string holding two roles positionally,
+     * and the only thing standing behind it was a DEV-only `console.warn` about hex values
+     * — a warning in a browser console, for a tile that renders invisible.
+     */
+    describe('the launcher tile', () => {
+      const base = { id: 'probe', icon: null, core: false } as const;
+
+      it('refuses a background that is not a utility class', () => {
+        expect(() => defineApp({ ...base, tile: { bg: '#4ade80' } })).toThrow(
+          "tile.bg '#4ade80', which is not a single 'bg-' utility class"
+        );
+        expect(() => defineApp({ ...base, tile: { bg: 'green' } })).toThrow("tile.bg 'green'");
+        // Two classes in one field is the shape the structured tile exists to prevent.
+        expect(() => defineApp({ ...base, tile: { bg: 'bg-a bg-b' } })).toThrow('tile.bg');
+      });
+
+      it('refuses a foreground that is not a text class', () => {
+        expect(() =>
+          defineApp({ ...base, tile: { bg: 'bg-yellow-400', fg: 'bg-gray-900' } })
+        ).toThrow("tile.fg 'bg-gray-900', which is not a single 'text-' utility class");
+      });
+
+      it('refuses a manifest with no tile at all', () => {
+        expect(() => defineApp({ ...base })).toThrow("'probe' must declare 'tile'");
+      });
+
+      it('still accepts the legacy `color` string, and splits it into roles', () => {
+        // An add-on bundle published before `tile` existed has to keep loading.
+        const app = defineApp({ ...base, color: 'bg-green-400 text-gray-900' });
+        expect(app.tile).toEqual({ bg: 'bg-green-400', fg: 'text-gray-900' });
+        expect(app.color).toBe('bg-green-400 text-gray-900');
+      });
+
+      it('reads the roles by name, not by position', () => {
+        const app = defineApp({ ...base, color: 'text-gray-900 bg-green-400' });
+        expect(app.tile).toEqual({ bg: 'bg-green-400', fg: 'text-gray-900' });
+        // Normalised on the way out: background first, however it was written.
+        expect(app.color).toBe('bg-green-400 text-gray-900');
+      });
+
+      it('refuses both spellings when they disagree, rather than picking a winner', () => {
+        expect(() =>
+          defineApp({ ...base, tile: { bg: 'bg-sky-500' }, color: 'bg-rose-600' })
+        ).toThrow("declares both 'tile' and 'color', and they disagree");
+      });
+
+      it('is idempotent, because the registry re-runs it over its own output', () => {
+        // `shell/state/registry.ts` calls `defineApp` again on every already-defined
+        // manifest to stamp `installedAt`, so the second pass sees the `color` the first
+        // one derived. Refusing both outright failed every app in the repo at boot.
+        const once = defineApp({ ...base, tile: { bg: 'bg-green-400', fg: 'text-gray-900' } });
+        const twice = defineApp(once);
+        expect(twice.tile).toEqual(once.tile);
+        expect(twice.color).toBe(once.color);
+      });
+
+      it('refuses a legacy color naming no background', () => {
+        expect(() => defineApp({ ...base, color: '#f59e0b' })).toThrow(
+          "color '#f59e0b', which names no 'bg-' utility class"
+        );
+      });
     });
   });
 
