@@ -36,6 +36,7 @@
     "deadcode": "pnpm dlx knip",
     "lint:container": "node scripts/lint-container.js",
     "lint:md": "markdownlint-cli2",
+    "lint:actions": "node scripts/check-action-versions.js",
     "lint:ts": "oxlint .",
     "lint:web": "pnpm --filter web lint",
     "lint": "concurrently -c \"cyan,magenta\" -n \"ts,web\" \"pnpm:lint:ts\" \"pnpm:lint:web\"",

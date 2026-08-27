@@ -1,0 +1,39 @@
+name: Action drift
+
+# Replaces the github-actions half of .github/dependabot.yml, which was deleted because
+# merging its pull requests adds dependabot[bot] to the repository's contributor list.
+# This opens no pull request and authors no commit -- it fails the run, and the failure
+# notification is the signal. Bumping the tag afterwards stays a human decision, which it
+# should be: a major bump carries breaking changes and wants the release notes read.
+#
+# Weekly rather than per-push: a `@vN` tag is a moving target that nothing in the repo
+# changes, so checking it on every commit would burn API calls to re-answer a question
+# whose answer only moves when somebody else ships a major.
+#
+# GitHub disables a `schedule` trigger after 60 days without repository activity, and says
+# so by email. If this stops reporting, check that before trusting its silence.
+on:
+  schedule:
+    - cron: '17 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check action majors
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install Node.js 26
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      # No `pnpm install`: the script is node builtins and fetch, deliberately, so this
+      # job stays a few seconds and cannot be broken by a dependency it does not need.
+      - name: Check for a newer major
+        run: node scripts/check-action-versions.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -30,6 +30,7 @@ Run from the **repo root** unless noted.
 | Fast loop: format + typecheck + changed unit only | `pnpm check:fast`                            | Yes                      |
 | Fail fast if no dev server is warm                | `pnpm dev:check`                             | Yes                      |
 | Lint the Go server and the Dockerfile             | `pnpm lint:container`                        | Yes                      |
+| Check workflow actions for a newer major          | `pnpm lint:actions`                          | Yes                      |
 | Run the demo image locally                        | `pnpm demo` / `demo:up` / `demo:down`        | Yes                      |
 | Smoke-test a running demo image                   | `pnpm demo:smoke`                            | Yes                      |
 | Scaffold an app                                   | `pnpm new:app <id> [--service]`              | Yes                      |
@@ -806,6 +807,7 @@ does not need the e2e suite:
 | Markdown, config, `.github/`            | `format:check` + `lint:md`                  |
 | Shell (`scripts/**.sh`, `.githooks/`)   | `shellcheck -x` on the files                |
 | `docker/`, `Dockerfile`, `compose.yaml` | `lint:container` — a **skip is not a pass** |
+| `.github/workflows/`                    | `format:check` + `lint:md` + `lint:actions` |
 | `client/`, `server/`, `shared/`         | `typecheck` + `test:unit`                   |
 | `web/`                                  | `typecheck` + `test:unit` + `test:e2e`      |
 | Anything you cannot confidently bound   | `pnpm verify`                               |
