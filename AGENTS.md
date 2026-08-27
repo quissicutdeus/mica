@@ -784,8 +784,12 @@ listed below, is how a two-second markdownlint failure ends up found after a
 one-minute Playwright run.
 
 What it runs, in order: `format:check`, `lint:md`, `lint:container`, `lint`,
-`typecheck`, `test:unit`, `test:e2e`, `build`, `deadcode`. Individually, and
-required before reporting any code change complete (§2.8):
+`typecheck`, `test:unit`, `test:e2e`, `build:nocheck`, `deadcode`. The build
+gate runs `build:nocheck` rather than `build` because `pnpm build` typechecks
+first, and the `typecheck` gate three steps earlier already ran exactly that
+against exactly this tree. `pnpm build` on its own keeps its typecheck — outside
+this script nothing else has run one. Individually, and required before
+reporting any code change complete (§2.8):
 
 1. `pnpm typecheck` — all three targets. Not `typecheck:web` alone (§3).
 2. `pnpm test:unit` — server and web.

@@ -5,7 +5,8 @@
   "description": "An open-source TypeScript phone for FiveM",
   "type": "module",
   "scripts": {
-    "build": "pnpm clearbuild && node scripts/generate-barrels.js && pnpm typecheck && node build/build-bundle.js && pnpm build:web",
+    "build": "node scripts/generate-barrels.js && pnpm typecheck && pnpm build:nocheck",
+    "build:nocheck": "pnpm clearbuild && node scripts/generate-barrels.js && node build/build-bundle.js && pnpm build:web",
     "build:web": "pnpm --filter web build",
     "docs:sdk": "pnpm --filter web docs:sdk",
     "clearbuild": "node scripts/clear-build.js",

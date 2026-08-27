@@ -143,7 +143,13 @@ const main = async () => {
     await gate('e2e', 'pnpm', ['test:e2e']);
   }
 
-  if (!stop()) await gate('build', 'pnpm', ['build']);
+  // `build:nocheck`, not `build`: `pnpm build` runs `pnpm typecheck` itself, and the
+  // typecheck gate above already ran exactly that, on exactly this tree, seconds earlier.
+  // Paying for it twice cost ~10s of every run and every CI minute to prove a thing that
+  // was already proved. The gate is still named `build` because what it verifies is
+  // unchanged: that esbuild and Vite can actually produce the bundles. `pnpm build` on
+  // its own keeps its typecheck -- outside this script nothing else has run one.
+  if (!stop()) await gate('build', 'pnpm', ['build:nocheck']);
   if (!stop()) await gate('deadcode', 'pnpm', ['deadcode']);
 
   // Derived from the plan rather than tracked as it goes, so a gate skipped by `--quick`
