@@ -10,6 +10,22 @@ on:
     branches: [main, dev]
   pull_request:
 
+# Supersede a pull request's own in-flight runs; never a push's.
+#
+# Pushing three times in a minute to a PR branch started three full ~6m verifies, two of
+# them already answering a question about a commit nobody would ever merge. Cancelling
+# those costs nothing: the only run whose answer anybody wants is the one for the tip.
+#
+# Pushes are deliberately exempt, and the group expression is what exempts them.
+# `github.run_id` is unique per run, so every push lands in a group of its own and can be
+# neither cancelled nor queued behind a sibling. That matters twice over: deploy.yml keys
+# off this workflow's *completion*, so a cancelled run on main or dev is a deploy that
+# silently never happens -- and grouping pushes by ref instead would have serialised them,
+# trading a doubled run for a queued one rather than removing any work.
+concurrency:
+  group: verify-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   verify:
     name: Verify
@@ -130,12 +146,33 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Go
+        id: go
         uses: actions/setup-go@v7
         with:
           go-version: '1.27'
-          # docker/serve is stdlib-only, so there is no go.sum and nothing to cache.
-          # Without this the action warns about a missing dependency file on every run.
+          # setup-go's `cache` is the *module* cache, and docker/serve is stdlib-only:
+          # there is no go.sum, nothing to restore, and leaving it on only produces a
+          # missing-dependency-file warning every run. The build cache is a different
+          # directory and is very much worth keeping -- see the step below.
           cache: false
+
+      # The Go *build* cache, which is where the compiled stdlib lives. Recompiling that
+      # from scratch is nearly all of what `go vet ./...` and `go build ./...` cost on a
+      # cold runner, and until the `has('go')` fix in scripts/lint-container.js this step
+      # would have cached nothing anybody used -- every check was silently running inside
+      # golang:1-alpine instead of against the toolchain installed above.
+      #
+      # Keyed on the sources, falling back to any cache for the same Go version: editing
+      # main.go should still start from a cache with the stdlib already compiled and
+      # recompile only the package that changed. The version comes from setup-go's own
+      # output so this key cannot drift from the toolchain it describes.
+      - name: Cache the Go build cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('docker/serve/go.mod', 'docker/serve/*.go') }}
+          restore-keys: |
+            go-build-${{ runner.os }}-${{ steps.go.outputs.go-version }}-
 
       - name: Install hadolint
         run: |
@@ -149,10 +186,52 @@ jobs:
       - name: Lint the Go server and the Dockerfile
         run: node scripts/lint-container.js --require
 
-      # Passed explicitly because .dockerignore keeps .git out of the build context, so
-      # the version stamp cannot fall back to `git rev-parse` inside the container.
+      # A container-driver builder. `cache-to` needs one: the default `docker` driver
+      # cannot export a build cache at all, so without this the next step would warn and
+      # cache nothing.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # `bake` rather than `docker compose build`, so compose.yaml stays the single
+      # definition of how this image gets built -- bake reads it natively, and the `set`
+      # lines below add caching without writing a CI-only concern into a file `pnpm demo`
+      # also reads. The build args stay valueless there (pass through only if set), which
+      # is why they are supplied here instead; .dockerignore keeps .git out of the build
+      # context precisely so the version stamp cannot fall back to `git rev-parse` and
+      # produce a stale-but-plausible answer inside the container.
+      #
+      # The Dockerfile's own `--mount=type=cache` mounts -- the pnpm store, the Go build
+      # cache -- are worth having locally and worth exactly nothing here: BuildKit cache
+      # mounts do not survive across runners, so every CI build started stone cold. The
+      # server stage is most of the wall clock (`go build` ~19s and `upx --best` ~24s of a
+      # ~47s build) and docker/serve/main.go changes about never, so it should be a hit
+      # nearly every run.
+      #
+      # mode=max, not the default: the expensive layers are in the `web` and `server`
+      # stages, and the final stage is FROM scratch. The default caches only what the
+      # final stage ships -- one binary and one directory -- which would cache neither of
+      # the two steps actually worth caching.
+      #
+      # This shares the repo's 10GB Actions cache budget with the pnpm and build-state
+      # entries in the job above. Well inside it today (~1.9GB used); if that ever starts
+      # evicting, this is the entry to shrink first.
       - name: Build the image
-        run: GIT_BRANCH="${GITHUB_REF_NAME}" GIT_SHA="${GITHUB_SHA}" docker compose build
+        uses: docker/bake-action@v7
+        with:
+          # `source: .` is not a default and not a tidy-up. Left unset, bake-action builds
+          # from the *Git* context rather than the checkout -- which silently discards
+          # .dockerignore and every file any earlier step wrote. This job exists to test
+          # the tree that was checked out, and the Dockerfile depends on .dockerignore
+          # keeping .git out of the context (see the GIT_SHA note above).
+          source: .
+          files: compose.yaml
+          targets: demo
+          load: true
+          set: |
+            demo.cache-from=type=gha
+            demo.cache-to=type=gha,mode=max
+            demo.args.GIT_BRANCH=${{ github.ref_name }}
+            demo.args.GIT_SHA=${{ github.sha }}
 
       # `docker build` succeeding proves the image assembles, not that it serves.
       - name: Start it
