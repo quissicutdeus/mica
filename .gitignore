@@ -14,5 +14,6 @@ sql/dev-reset.sql
 .superpowers/
 .agent/
 .env*
-.claude/
+# Assistant config is shared, like AGENTS.md — see §2.10. Personal overrides are not.
+.claude/settings.local.json
 .worktrees/

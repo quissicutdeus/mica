@@ -11,12 +11,5 @@
     }
   },
   "globs": ["**/*.md"],
-  "ignores": [
-    "**/node_modules/**",
-    "**/dist/**",
-    "web/docs/**",
-    ".superpowers/**",
-    ".claude/**",
-    "CLAUDE.md"
-  ]
+  "ignores": ["**/node_modules/**", "**/dist/**", "web/docs/**", ".superpowers/**"]
 }

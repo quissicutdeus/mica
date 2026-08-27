@@ -249,10 +249,12 @@ not work around it.
     messages. It is a backstop, not permission to rely on it: it only ever sees
     a commit message, so a PR body or an issue comment is on you.
 
-    Assistant config (`.claude/`, `CLAUDE.md`, `.cursor/`, `.continue/`) is
-    globally gitignored; committing one needs `git add -f`, which means you are
-    doing something wrong. `AGENTS.md` is the deliberate exception —
-    hand-written, and it belongs in the repo.
+    Assistant config is **tracked**, deliberately: `AGENTS.md`, `CLAUDE.md`, and
+    `.claude/skills/` are hand-written and belong in the repo, so every
+    contributor gets the same rules. `.claude/settings.local.json` is the one
+    exception — it is where Claude Code writes per-machine permission grants,
+    and it stays gitignored. Config for other assistants (`.cursor/`,
+    `.continue/`) is nobody else's business; keep it out.
 
     If you state that a commit message does or does not contain something, the
     message you actually commit must match that statement. Any change to a
