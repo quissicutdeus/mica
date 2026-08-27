@@ -60,12 +60,18 @@ jobs:
       # tsc's incremental .tsbuildinfo and Vite's dep-optimization cache both key off
       # content hashes, so restoring last run's cache lets typecheck/build skip work for
       # anything unchanged instead of starting cold every run.
+      #
+      # `node_modules/.cache` is ESLint's and Prettier's, and it is the one that matters
+      # most: `lint` is type-aware across ~865 files and takes ~110s cold against ~1s warm.
+      # Both cache on content hash and mtime, so a restored cache can only ever skip a file
+      # that has not changed — a stale entry is not a way for a real error to get through.
       - name: Cache TypeScript/Vite build state
         uses: actions/cache@v6
         with:
           path: |
             **/*.tsbuildinfo
             web/node_modules/.vite
+            **/node_modules/.cache
           key: build-state-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
           restore-keys: |
             build-state-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-

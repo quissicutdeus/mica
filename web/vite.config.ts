@@ -192,15 +192,26 @@ export default defineConfig({
     // noticing on its own.
     environment: 'node',
     include: ['src/**/*.test.ts', 'src/**/*.spec.ts', '../shared/**/*.test.ts'],
-    // `registry.ts` eagerly globs every app manifest, which transitively pulls in the
-    // whole `sdk/components.ts` barrel (every UI primitive). Under Vitest's parallel
-    // file/worker model, one test file's jsdom environment can tear down while that
-    // module graph is still resolving for another file in the same worker, throwing
-    // an EnvironmentTeardownError that Vitest counts as an unhandled failure even
-    // though every assertion passed. Serializing test files removes the race. Only the
-    // `@vitest-environment jsdom` files pay this cost now, not all of them — see MICA-32
-    // before assuming this can just be turned back on.
-    fileParallelism: false,
+    /**
+     * Parallel again, and this is the single biggest cost in the local loop: the suite
+     * runs in ~12s against ~70s serialized.
+     *
+     * It was turned off for a real race. `registry.ts` eagerly globs every app manifest,
+     * which transitively pulls in the whole `sdk/components.ts` barrel, and one test
+     * file's jsdom environment could tear down while that module graph was still
+     * resolving for another file in the same worker — an EnvironmentTeardownError that
+     * Vitest counts as a failure even though every assertion passed (MICA-32).
+     *
+     * It does not reproduce on Vitest 4.1.11: five consecutive full runs, 127 files and
+     * 1063 tests, no teardown error and no unhandled rejection. Five runs is not a proof
+     * about a race, so what to do if it returns is written down rather than rediscovered:
+     * the failure is loud and names EnvironmentTeardownError, and the narrow fix is to
+     * split the ~69 `@vitest-environment jsdom` files into their own Vitest project with
+     * `fileParallelism: false` — the other ~57 are node-environment and were never
+     * exposed to it. Setting this back to `false` wholesale is the blunt version and
+     * costs the other minute.
+     */
+    fileParallelism: true,
     server: {
       deps: {
         // `@material/material-color-utilities@0.4.0` ships extensionless relative
