@@ -1,5 +1,11 @@
 name: Deploy
 
+# Both jobs live in one workflow, so every run was called plain "Deploy" in the runs list
+# and the only way to tell a main deploy from a dev one was to open it and see which job
+# had been skipped. Worse when both branches sit on the same commit, which is the normal
+# state here right after a fast-forward: two runs, same SHA, same name, seconds apart.
+run-name: Deploy - ${{ github.event.workflow_run.head_branch }}
+
 # Fires only after Verify finishes successfully on main or dev, never on a plain push --
 # a broken commit should never reach a live server, and this reuses Verify's own result
 # instead of re-running the whole test suite a second time just to gate a deploy.
