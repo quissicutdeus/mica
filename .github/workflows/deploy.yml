@@ -6,9 +6,12 @@ name: Deploy
 # state here right after a fast-forward: two runs, same SHA, same name, seconds apart.
 run-name: Deploy - ${{ github.event.workflow_run.head_branch }}
 
-# Fires only after Verify finishes successfully on main or dev, never on a plain push --
-# a broken commit should never reach a live server, and this reuses Verify's own result
-# instead of re-running the whole test suite a second time just to gate a deploy.
+# Fires after Verify finishes on main or dev, never on a plain push -- a broken commit
+# should never reach a live server, and this reuses Verify's own result instead of
+# re-running the whole test suite a second time just to gate a deploy.
+#
+# `types: [completed]` and not a filter on conclusion, deliberately: this workflow has to
+# see a red Verify in order to say so. See the gate step in each job below.
 on:
   workflow_run:
     workflows: [Verify]
@@ -31,6 +34,18 @@ concurrency:
 
 jobs:
   deploy-dev:
+    # This condition is *routing*, and routing only. The pass/fail gate is a step below.
+    #
+    # It used to carry `workflow_run.conclusion == 'success'` too, so one expression
+    # answered two unrelated questions: "does this Verify run concern me?" and "did it
+    # pass?". A no to the first should be silent -- a Verify on somebody's MICA-<n> PR is
+    # genuinely none of this workflow's business. A no to the second must not be, because
+    # it means a commit landed on `dev` and the server did not move. Folding them together
+    # made those two outcomes identical in the UI: both produced a skipped job, a skipped
+    # job is not a failure, so GitHub drew the run green and told nobody. On 2026-08-27 a
+    # flake (MICA-106) left dev.gphone.site a commit behind and the only thing that
+    # caught it was somebody going to look. MICA-107 is that half.
+    #
     # `event == 'push'` is load-bearing, not a tidy-up. Verify runs twice for every push
     # to `dev`: once for the push, and once as a `pull_request` synchronize, because the
     # long-lived "Release: sync dev into main" PR has `dev` as its head branch. Two Verify
@@ -38,11 +53,45 @@ jobs:
     # 2026-08-27, both green, both rebuilding the same checkout. A deploy should follow the
     # push that changed the branch, not every check that happened to look at it.
     if: >
-      github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'dev'
     runs-on: ubuntu-latest
     steps:
+      # The gate, and it is a failing step rather than half of the job's `if` precisely so
+      # that refusing to deploy is something a person is told about: a failed step reddens
+      # the job, the run, and the commit, and sends the failed-run notification to whoever
+      # pushed. `scripts/deploy/README.md` already states the principle for the far end of
+      # this same pipeline -- a reload that did not happen is a failure, not a warning --
+      # and so does AGENTS.md: a check that stays silent when it cannot run reads as a pass.
+      #
+      # Every non-success conclusion counts, not just `failure`. A cancelled Verify is the
+      # case build-test.yml's `concurrency` comment warns about by name, and `timed_out`,
+      # `action_required`, `stale` and `neutral` all leave the branch just as undeployed.
+      # `skipped` cannot reach here: Verify's jobs skip only for the standing dev->main
+      # sync PR, whose run is a `pull_request` and is routed away above.
+      #
+      # A green Verify for this SHA -- re-running that run, or a fresh push -- fires this
+      # workflow again and deploys normally. Nothing here needs to be re-run by hand.
+      - name: Require a green Verify
+        if: github.event.workflow_run.conclusion != 'success'
+        env:
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          message="Verify concluded '${CONCLUSION}' for ${HEAD_SHA} on dev, so"
+          message="${message} dev.gphone.site was NOT deployed and is still on the previous"
+          message="${message} commit. Verify run: ${RUN_URL}"
+          echo "::error title=Deploy blocked::${message}"
+          {
+            echo "### Deploy blocked: Verify was not green"
+            echo
+            echo "${message}"
+            echo
+            echo "A green Verify for this commit deploys it: re-run that run, or push again."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
       - name: Deploy dev.gphone.site + FiveM resource
         run: |
           mkdir -p ~/.ssh
@@ -56,18 +105,36 @@ jobs:
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
 
   deploy-main:
-    # `event == 'push'` is load-bearing, not a tidy-up. Verify runs twice for every push
-    # to `dev`: once for the push, and once as a `pull_request` synchronize, because the
-    # long-lived "Release: sync dev into main" PR has `dev` as its head branch. Two Verify
-    # completions meant two deploys, and they overlapped -- 04:08:57 and 04:09:37 on
-    # 2026-08-27, both green, both rebuilding the same checkout. A deploy should follow the
-    # push that changed the branch, not every check that happened to look at it.
+    # Routing only, exactly as on `deploy-dev` above, and for both of the reasons written
+    # out there: the conclusion is checked in a step so that a blocked deploy is loud, and
+    # `event == 'push'` keeps the dev->main sync PR's Verify from firing a second deploy.
     if: >
-      github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     steps:
+      # Same gate as `deploy-dev`, and it needs its own copy: an `if` is per-job, so a
+      # deploy job added without one silently goes back to skipping in silence.
+      - name: Require a green Verify
+        if: github.event.workflow_run.conclusion != 'success'
+        env:
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          message="Verify concluded '${CONCLUSION}' for ${HEAD_SHA} on main, so"
+          message="${message} gphone.site was NOT deployed and is still on the previous"
+          message="${message} commit. Verify run: ${RUN_URL}"
+          echo "::error title=Deploy blocked::${message}"
+          {
+            echo "### Deploy blocked: Verify was not green"
+            echo
+            echo "${message}"
+            echo
+            echo "A green Verify for this commit deploys it: re-run that run, or push again."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
       - name: Deploy gphone.site
         run: |
           mkdir -p ~/.ssh
