@@ -22,7 +22,8 @@
     useAppLevels,
     useScrollDetect,
     useTimer,
-    type AppProps
+    type AppProps,
+    fade
   } from '@gphone/sdk';
   import { useNotes } from './store';
 
@@ -30,7 +31,6 @@
   const notesLoaded = notes.loaded;
   const { busy, run } = useAppAction('notes');
   const { after } = useTimer();
-  import { fade } from 'svelte/transition';
 
   let { onback }: AppProps = $props();
 

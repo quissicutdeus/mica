@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fly } from 'svelte/transition';
+  import { fly } from '../../lib/motion';
   import CloseIcon from './icons/CloseIcon.svelte';
   import { EMOJI_PALETTE, EMOJI_CATALOG } from './emojiData';
 

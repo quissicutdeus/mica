@@ -19,6 +19,12 @@ import {
   HOME_GRID_ROWS_MAX
 } from '../../../../shell/state/homeGridSettings';
 import { compactGridToCurrentCapacity } from '../../../../shell/state/homeGrid';
+import {
+  motionPreference,
+  setMotionPreference,
+  reducedMotion,
+  MOTION_PREFERENCE_DEFAULT
+} from '../../../../shell/state/motion';
 
 /**
  * How big the phone is drawn on screen.
@@ -41,6 +47,22 @@ export function display() {
     phoneBox,
     /** True when the window is smaller than the setting asks for, and is winning. */
     isSizeLimited,
+
+    /**
+     * Motion. `motionPreference` is the player's three-way choice and is what Settings
+     * writes; `reducedMotion` is the resolved answer after the platform's own
+     * `prefers-reduced-motion` has been folded in, and is what an app would act on.
+     *
+     * Here rather than in a hook of its own for the same reason the size is: this is how
+     * the phone is *drawn*, which is what `useDisplay` means. An app has no business
+     * writing the preference — only Settings does — but reading the resolved value is
+     * exactly what an add-on with its own animation needs, and the iframe twin hands it
+     * back read-only regardless.
+     */
+    motionPreference,
+    setMotionPreference,
+    motionPreferenceDefault: MOTION_PREFERENCE_DEFAULT,
+    reducedMotion,
 
     /** Home Screen Grid — columns/rows, and their adjustable bounds. */
     homeGridColumns,

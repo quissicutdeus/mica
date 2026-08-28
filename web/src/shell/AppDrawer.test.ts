@@ -48,6 +48,39 @@ describe('App Drawer', () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
   });
 
+  /**
+   * MICA-66. The drawer claimed `role="dialog"` and then let Tab walk out into the home
+   * screen behind it — a claim a screen reader acts on, over a scrim the keyboard knows
+   * nothing about. The trap's own behaviour is covered in `lib/focusTrap.test.ts`; what
+   * is worth pinning here is that this surface still declares itself modal and still
+   * carries the trap, since both are one attribute away from being dropped in a refactor.
+   */
+  it('declares itself a modal dialog while open', () => {
+    openDrawer();
+    const { container } = render(AppDrawer, { props: { openApp: () => {} } });
+
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.getAttribute('aria-modal')).toBe('true');
+    expect(dialog?.getAttribute('aria-label')).toBe('App Drawer');
+  });
+
+  it('keeps Tab inside itself while open', async () => {
+    openDrawer();
+    const { container } = render(AppDrawer, { props: { openApp: () => {} } });
+
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    outside.focus();
+
+    const event = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true });
+    document.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(container.querySelector('[role="dialog"]')?.contains(document.activeElement)).toBe(true);
+    outside.remove();
+  });
+
   it('shows every installed app, alphabetically, while open', () => {
     openDrawer();
     const { container } = render(AppDrawer, { props: { openApp: () => {} } });

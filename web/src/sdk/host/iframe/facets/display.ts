@@ -2,6 +2,7 @@ import { registerFacet } from '../../current';
 import type { Facets } from '../../inProcess/facets';
 import { fn, store, type AsTwin } from './_shared';
 import { constants } from '../constants';
+import type { MotionPreference } from '../../../../shell/state/motion';
 
 type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/display').display>>;
 
@@ -15,6 +16,14 @@ export function display(): Twin {
     phoneScale: store('display', [], 'phoneScale', 1),
     phoneBox: store('display', [], 'phoneBox', { width: 0, height: 0 }),
     isSizeLimited: store('display', [], 'isSizeLimited', false),
+
+    // `AddOnConstants.display` is a `Record<string, number>` and this default is a string,
+    // so it is stated here rather than carried over the wire. It is the shipped default and
+    // changes only when `motion.ts` does; the live value arrives on the store above.
+    motionPreference: store<MotionPreference>('display', [], 'motionPreference', 'system'),
+    setMotionPreference: fn('display', [], 'setMotionPreference'),
+    motionPreferenceDefault: 'system',
+    reducedMotion: store('display', [], 'reducedMotion', false),
 
     homeGridColumns: store('display', [], 'homeGridColumns', c.homeGridColumnsDefault ?? 4),
     homeGridRows: store('display', [], 'homeGridRows', c.homeGridRowsDefault ?? 5),

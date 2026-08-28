@@ -33,9 +33,16 @@ describe('ToastHost hit area', () => {
     toast.clear();
   });
 
-  it('renders nothing, and blocks nothing, when there are no toasts', () => {
+  it('blocks nothing when there are no toasts', () => {
     const { container } = render(ToastHost);
-    expect(container.querySelector('[class*="pointer-events-none"]')).toBeNull();
+    const stack = container.querySelector('.pointer-events-none');
+
+    // The stack itself is now always mounted — it is the live region, and a live region
+    // has to pre-date its contents to be announced (MICA-66). What MICA-42 is about is
+    // unchanged and is asserted directly: nothing here is pressable, and there is no card.
+    expect(stack).not.toBeNull();
+    expect(stack!.querySelector('.pointer-events-auto')).toBeNull();
+    expect(stack!.textContent?.trim()).toBe('');
   });
 
   it('keeps the stack container click-through and only the card itself interactive', () => {
@@ -82,5 +89,71 @@ describe('ToastHost hit area', () => {
     const cardAfter = container.querySelector('.pointer-events-auto');
     expect(cardAfter).toBe(cardBefore);
     expect(cardAfter?.textContent).toContain('second');
+  });
+});
+
+/**
+ * MICA-66: a toast appears without focus moving, so without a live region a screen
+ * reader is told nothing at all — the notification is a purely visual event.
+ *
+ * These assertions cover what jsdom can answer: that the region exists before there is
+ * anything to announce, that it wraps the card rather than duplicating its text, and that
+ * its politeness follows the kind of toast. Whether a given screen reader then speaks it
+ * is the reader's own behaviour and is not testable here — nor is the ordering caveat in
+ * `ToastHost.svelte` about `aria-live` being set in the same update as the card.
+ */
+describe('ToastHost announcements', () => {
+  beforeEach(() => {
+    toast.clear();
+  });
+
+  const region = (container: HTMLElement) => container.querySelector('[aria-live]');
+
+  it('mounts the region before there is anything to announce', async () => {
+    const { container } = render(ToastHost);
+    await tick();
+
+    expect(region(container)).not.toBeNull();
+    expect(region(container)?.getAttribute('aria-live')).toBe('polite');
+    expect(region(container)?.getAttribute('role')).toBe('status');
+  });
+
+  it('wraps the toast rather than repeating it, so the text is in the document once', async () => {
+    const { container } = render(ToastHost);
+    toast.show({ id: 'm1', type: 'message', sender: 'Ava', message: 'on my way', duration: 0 });
+    await tick();
+
+    const matches = [...container.querySelectorAll('*')].filter((el) =>
+      [...el.childNodes].some(
+        (n) => n.nodeType === Node.TEXT_NODE && n.textContent?.includes('on my way')
+      )
+    );
+    expect(matches).toHaveLength(1);
+    expect(region(container)?.contains(matches[0])).toBe(true);
+  });
+
+  it('interrupts for an incoming call, and waits its turn for anything else', async () => {
+    const { container } = render(ToastHost);
+    toast.show({ id: 'c1', type: 'call', title: 'Incoming call', message: 'Ava', duration: 0 });
+    await tick();
+
+    expect(region(container)?.getAttribute('aria-live')).toBe('assertive');
+    expect(region(container)?.getAttribute('role')).toBe('alert');
+
+    toast.dismiss('c1');
+    toast.show({ id: 'm1', type: 'info', message: 'saved', duration: 0 });
+    await tick();
+
+    expect(region(container)?.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('is not atomic, so a re-render does not re-read the whole notification', async () => {
+    const { container } = render(ToastHost);
+    toast.show({ id: 'm1', type: 'info', message: 'first', duration: 0 });
+    await tick();
+
+    // With `aria-atomic="true"` every keystroke in a toast's reply box would read the
+    // whole card aloud again, over the player typing into it.
+    expect(region(container)?.hasAttribute('aria-atomic')).toBe(false);
   });
 });

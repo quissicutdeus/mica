@@ -27,6 +27,15 @@ export {
   setTrustedRemoteAppHosts,
   getTrustedRemoteAppHosts
 } from '../shell/state/remoteAppSecurity';
+/**
+ * `svelte/transition`'s `fade` and `fly`, wrapped so they honour Settings > Display >
+ * Motion (MICA-66). Exported here because an app may not import the shell by path
+ * (§2.7), and because a Svelte 5 transition runs on the Web Animations API — a `duration:`
+ * in an app's markup is invisible to CSS, `prefers-reduced-motion` included, so importing
+ * the originals would quietly opt that app out of the setting. `motion.test.ts` fails if
+ * anything does.
+ */
+export { fade, fly } from '../lib/motion';
 export { fetchCatalog, getRemoteCatalogUrl, setRemoteCatalogUrl } from '../shell/state/catalog';
 export type { CatalogEntry } from '../shell/state/catalog';
 /**

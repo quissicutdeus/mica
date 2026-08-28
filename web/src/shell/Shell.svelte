@@ -40,6 +40,7 @@
   import { clampedSignalLevel } from './state/signal';
   import { audio } from './state/audio';
   import { isLightMode } from './state/theme';
+  import { observeReducedMotion } from './state/motion';
   import AddOnFrame from './addon/AddOnFrame.svelte';
   import { isTrustedNuiSource } from './nuiGuard';
 
@@ -392,6 +393,10 @@
     // Sized from a measured viewport rather than `100vh` — see `state/display.ts` for why
     // that unit is wrong in a mobile browser and why `dvh` is not available to us.
     const stopObservingViewport = observeViewport();
+    // Publishes `data-reduced-motion` on the document, which `app.css` and `lib/motion.ts`
+    // both read. Not guarded by `isBrowser()`: the whole point is that it applies in game,
+    // where the player's own setting is the only reliable answer (`state/motion.ts`).
+    const stopObservingMotion = observeReducedMotion();
 
     seedBrowserPhone(new Date());
     installDevHarness();
@@ -402,6 +407,7 @@
       window.removeEventListener('focusin', handleFocusIn);
       window.removeEventListener('focusout', handleFocusOut);
       stopObservingViewport();
+      stopObservingMotion();
     };
   });
 

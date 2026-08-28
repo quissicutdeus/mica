@@ -27,4 +27,18 @@ export type { Host } from './host/protocol';
 export * from './types';
 export * from './version';
 /** @public */
+/**
+ * The motion-aware `fade`/`fly`, mirroring `index.ts` (MICA-66).
+ *
+ * An add-on builds against this file rather than `index.ts`, in its own bundle, so an
+ * export added only there is missing here — and nothing catches it until `pnpm build`,
+ * because typecheck and the unit suite both resolve the core surface. Notes reaching for
+ * `fade` is what found it.
+ *
+ * It matters more for an add-on than for a core app, not less: a `core: false` bundle
+ * cannot import `shell/` by any route, so this is the only way it can honour Settings >
+ * Display > Motion at all.
+ */
+export { fade, fly } from '../lib/motion';
+
 export { bootAddOn } from './host/iframe/boot';

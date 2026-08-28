@@ -1,6 +1,6 @@
 <script lang="ts">
   import { toast, type ToastMessage, type ToastAction } from './state/toast';
-  import { fly } from 'svelte/transition';
+  import { fly } from '../lib/motion';
   import CloseIcon from '../sdk/ui/icons/CloseIcon.svelte';
   import SendIcon from '../sdk/ui/icons/SendIcon.svelte';
   import Avatar from '../sdk/ui/Avatar.svelte';
@@ -8,6 +8,14 @@
   import SwipeableToast from './SwipeableToast.svelte';
 
   let toasts = $derived($toast);
+
+  /**
+   * How loudly the region below speaks. Assertive interrupts whatever the screen reader is
+   * currently saying, which is right for a phone that is ringing now and will stop ringing
+   * on its own, and rude for everything else — a sent reply, a failed save and a new
+   * message all wait their turn.
+   */
+  let isCall = $derived(toasts[0]?.type === 'call');
 
   // Track local reply input state per toast ID
   let replyInputs = $state<Record<string, string>>({});
@@ -91,17 +99,48 @@
   };
 </script>
 
-{#if toasts[0]}
-  {@const t = toasts[0]}
-  <!-- Rendered by `{#if}` on toasts[0], deliberately not a keyed `{#each}` — only one
-       toast is ever visible now (MICA-37), and a keyed list treats one toast replacing
-       another as remove-old/add-new, which plays the outgoing card's exit transition and
-       the incoming card's entrance transition at the same time: the old one visibly
-       "pushed down" by the new one for the duration of the crossfade. `{#if}` keeps the
-       same DOM node across a replacement — content updates in place with no transition —
-       and still plays the intro/outro transitions correctly on genuine appear/disappear
-       (no toast → one, or one → none). -->
-  <div class="pointer-events-none absolute top-12 right-3 left-3 z-50 flex flex-col gap-2">
+<!-- The stack is a live region, and it is mounted for the life of the phone (MICA-66).
+
+     A toast appears without focus moving, so nothing announces it: the screen reader is
+     still wherever the player left it, and the message they were just sent is silent. A
+     live region is the mechanism for exactly that, and it has to already exist when its
+     contents change — a region created in the same breath as its text is frequently not
+     announced at all, because the reader was never told to watch it. Empty and
+     `pointer-events-none`, it costs one node and blocks nothing (MICA-42).
+
+     **The region wraps the toast rather than holding a copy of its text.** The obvious
+     alternative — an `sr-only` div the host writes the message into — puts every
+     notification into the document twice, so a player browsing the card with a reader
+     hears it once from the region and again from the card itself. Wrapping announces the
+     card that is actually there, once.
+
+     **No `aria-atomic`.** Left at its default, only the nodes that changed are read, which
+     is what keeps this from being worse than nothing: the card re-renders on every
+     keystroke in its reply box and on every pause of its dismissal timer, and an atomic
+     region would read the whole notification aloud over the player typing into it. Text
+     insertions are announced; a dismissal, being a removal, is not.
+
+     `aria-live` moves with the toast's kind rather than being fixed. It is set in the same
+     DOM update as the card it describes, which is the one compromise the wrapping approach
+     forces — the alternative, a region per politeness, means rendering the card into one of
+     two containers, and a call arriving over a message would then be an unmount and a
+     remount rather than a content swap, which is the crossfade MICA-37 exists to
+     prevent. -->
+<div
+  class="pointer-events-none absolute top-12 right-3 left-3 z-50 flex flex-col gap-2"
+  role={isCall ? 'alert' : 'status'}
+  aria-live={isCall ? 'assertive' : 'polite'}
+>
+  {#if toasts[0]}
+    {@const t = toasts[0]}
+    <!-- Rendered by `{#if}` on toasts[0], deliberately not a keyed `{#each}` — only one
+         toast is ever visible now (MICA-37), and a keyed list treats one toast replacing
+         another as remove-old/add-new, which plays the outgoing card's exit transition and
+         the incoming card's entrance transition at the same time: the old one visibly
+         "pushed down" by the new one for the duration of the crossfade. `{#if}` keeps the
+         same DOM node across a replacement — content updates in place with no transition —
+         and still plays the intro/outro transitions correctly on genuine appear/disappear
+         (no toast → one, or one → none). -->
     <!-- Announced as a button only when tapping the body actually does something.
            A toast whose actions are its own inner buttons stays presentational, so it
            does not put an extra stop in the tab order that leads nowhere. -->
@@ -256,5 +295,5 @@
         {/if}
       </div>
     </SwipeableToast>
-  </div>
-{/if}
+  {/if}
+</div>

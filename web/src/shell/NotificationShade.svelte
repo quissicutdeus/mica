@@ -3,9 +3,10 @@
   import type { NotificationItem } from '@shared/types';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
-  import { fade, fly } from 'svelte/transition';
+  import { fade, fly } from '../lib/motion';
   import { attachDragGesture } from '../lib/pointerDrag';
   import { createSheetClose } from '../lib/sheetDrag';
+  import { focusTrap } from '../lib/focusTrap';
   import {
     groupNotificationsByConversation,
     type NotificationConversationGroup
@@ -381,7 +382,9 @@
         shadeDragPhase.set('idle');
       }
     }}
+    use:focusTrap
     role="dialog"
+    aria-modal="true"
     aria-label="Notification Shade"
   >
     <!-- Header Bar -->

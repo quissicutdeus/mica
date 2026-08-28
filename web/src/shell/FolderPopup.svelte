@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { fade } from 'svelte/transition';
+  import { fade } from '../lib/motion';
   import { get } from 'svelte/store';
   import { registerHandler } from './state/keybinds';
   import { attachLongPressDrag } from '../lib/longPressDrag';
+  import { focusTrap } from '../lib/focusTrap';
   import AppIcon from '../sdk/ui/AppIcon.svelte';
   import { appRegistryStore } from './state/registry';
   import { isAdmin } from '../services/admin';
@@ -32,6 +33,13 @@
   function close(): void {
     openFolderId.set(null);
   }
+
+  let dialogRef = $state<HTMLElement | null>(null);
+
+  /** Announce the folder on open, and start Tab inside it — see `sdk/ui/ConfirmDialog`. */
+  $effect(() => {
+    if ($openFolderId) dialogRef?.focus({ preventScroll: true });
+  });
 
   let unregisterBack: (() => void) | null = null;
   $effect(() => {
@@ -66,13 +74,24 @@
   <div
     transition:fade={{ duration: 150 }}
     class="bg-scrim absolute inset-0 z-56 flex items-center justify-center p-8 backdrop-blur-sm"
-    onclick={close}
+    onclick={(e) => {
+      // Only a click on the scrim itself closes. This used to be `onclick={close}` here
+      // and a `stopPropagation` handler on the card, which cost the card a
+      // `role="presentation"` it now needs for `role="dialog"` instead.
+      if (e.target === e.currentTarget) close();
+    }}
     role="presentation"
   >
+    <!-- Modal, like the drawer and the shade: the home screen's icons are still behind it
+         and still in the tab order. See `lib/focusTrap.ts`. -->
     <div
-      class="bg-surface-container shadow-elevation-5 w-full rounded-xl p-5"
-      onclick={(e) => e.stopPropagation()}
-      role="presentation"
+      bind:this={dialogRef}
+      use:focusTrap
+      role="dialog"
+      aria-modal="true"
+      aria-label={folder.name || 'Folder'}
+      tabindex="-1"
+      class="bg-surface-container shadow-elevation-5 w-full rounded-xl p-5 outline-none"
     >
       <input
         type="text"

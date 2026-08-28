@@ -1,9 +1,10 @@
 <script lang="ts">
   import { get } from 'svelte/store';
-  import { fade, fly } from 'svelte/transition';
+  import { fade, fly } from '../lib/motion';
   import { attachDragGesture } from '../lib/pointerDrag';
   import { createSheetClose } from '../lib/sheetDrag';
   import { attachLongPressDrag } from '../lib/longPressDrag';
+  import { focusTrap } from '../lib/focusTrap';
   import AppIcon from '../sdk/ui/AppIcon.svelte';
   import SearchIcon from '../sdk/ui/icons/SearchIcon.svelte';
   import { isAdmin } from '../services/admin';
@@ -194,7 +195,9 @@
         drawerDragPhase.set('idle');
       }
     }}
+    use:focusTrap
     role="dialog"
+    aria-modal="true"
     aria-label="App Drawer"
   >
     <!-- Top pill — the one grab handle this drawer has, at the edge it travels away

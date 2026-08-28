@@ -18,10 +18,11 @@
     useDeepLink,
     useMedia,
     usePhoneNotification,
-    type AppProps
+    type AppProps,
+    fade
   } from '@gphone/sdk';
   import type { MediaItem } from '@shared/types';
-  import { fade } from 'svelte/transition';
+
   import { SvelteSet } from 'svelte/reactivity';
 
   let {

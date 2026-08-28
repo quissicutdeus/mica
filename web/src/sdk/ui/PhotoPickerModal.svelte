@@ -6,6 +6,7 @@
   import CloseIcon from './icons/CloseIcon.svelte';
   import CheckCircleIcon from './icons/CheckCircleIcon.svelte';
   import Button from './Button.svelte';
+  import { focusTrap } from '../../lib/focusTrap';
 
   let {
     title = 'Select Photo',
@@ -37,10 +38,25 @@
 
   const isSelected = (id: number) => selectedIds.includes(id);
   const selectedCount = $derived(selectedIds.length);
+
+  let dialogRef = $state<HTMLElement | null>(null);
+
+  /** Announce the picker on open, and start Tab inside it — see `ConfirmDialog`. */
+  $effect(() => {
+    dialogRef?.focus({ preventScroll: true });
+  });
 </script>
 
+<!-- `inset-0` covers the app that opened it, but covering is not hiding: the screen
+     underneath keeps its buttons in the tab order. Hence the trap. -->
 <div
-  class="animate-in fade-in bg-surface-container-high duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col backdrop-blur-md"
+  bind:this={dialogRef}
+  use:focusTrap
+  role="dialog"
+  aria-modal="true"
+  aria-label={title}
+  tabindex="-1"
+  class="animate-in fade-in bg-surface-container-high duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col outline-none backdrop-blur-md"
 >
   <!-- Header -->
   <div class="border-outline-variant flex items-center justify-between border-b p-4">

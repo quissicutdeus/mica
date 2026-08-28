@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { fade } from 'svelte/transition';
+  import { fade } from '../../lib/motion';
   import Button from './Button.svelte';
   import { useReport } from '../host/useReport';
   import { usePhoneNotification } from '../host/usePhoneNotification';
   import type { ReportCategory } from '@shared/types';
   import { messageOf } from '../../lib/errors';
+  import { focusTrap } from '../../lib/focusTrap';
 
   interface Props {
     /** The gPhone table the content lives in. Validated again server-side. */
@@ -49,6 +50,13 @@
   /** Matches the server's cap, so the field cannot accept what would be silently cut. */
   const MAX_NOTE = 500;
 
+  let dialogRef = $state<HTMLElement | null>(null);
+
+  /** Announce the sheet on open, and start Tab inside it — see `ConfirmDialog`. */
+  $effect(() => {
+    dialogRef?.focus({ preventScroll: true });
+  });
+
   const submit = async () => {
     sending = true;
     try {
@@ -67,7 +75,17 @@
   class="bg-scrim absolute inset-0 z-50 flex items-end backdrop-blur-sm"
   transition:fade={{ duration: 150 }}
 >
-  <div class="bg-surface max-h-full w-full overflow-y-auto rounded-t-xl p-5">
+  <!-- A real dialog, and it has to be: this sheet covers the post it was opened from, and
+       the post's own buttons stay in the tab order behind it. See `lib/focusTrap.ts`. -->
+  <div
+    bind:this={dialogRef}
+    use:focusTrap
+    role="dialog"
+    aria-modal="true"
+    aria-label="Report content"
+    tabindex="-1"
+    class="bg-surface max-h-full w-full overflow-y-auto rounded-t-xl p-5 outline-none"
+  >
     <h3 class="text-on-surface mb-1 text-lg font-bold">Report content</h3>
     <p class="text-on-surface-variant text-body-medium mb-4">
       A moderator reviews this. The author is not told.

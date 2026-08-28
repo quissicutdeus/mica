@@ -1,6 +1,12 @@
 <script lang="ts">
-  import { fade } from 'svelte/transition';
-  import { Button, CloseIcon, formatCurrency, useBank, type SendMoneyOutcome } from '@gphone/sdk';
+  import {
+    Button,
+    CloseIcon,
+    formatCurrency,
+    useBank,
+    type SendMoneyOutcome,
+    fade
+  } from '@gphone/sdk';
 
   interface Props {
     balance: number;

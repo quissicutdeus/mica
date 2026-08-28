@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { SettingsSection, ToggleSwitch, useClock, useDisplay } from '@gphone/sdk';
+  import {
+    SegmentedControl,
+    SettingsSection,
+    ToggleSwitch,
+    useClock,
+    useDisplay
+  } from '@gphone/sdk';
   import ThemeAndWallpaper from '../components/ThemeAndWallpaper.svelte';
 
   // Appearance lives on this page rather than behind a row on it. It was briefly its own
@@ -20,8 +26,24 @@
     homeGridColumnsMax,
     homeGridRowsMin,
     homeGridRowsMax,
-    setHomeGridSize
+    setHomeGridSize,
+    motionPreference,
+    setMotionPreference,
+    reducedMotion
   } = useDisplay();
+
+  /**
+   * Three states rather than a switch, because "off" and "follow the system" are
+   * genuinely different answers and the phone cannot merge them honestly: in game the
+   * platform's `prefers-reduced-motion` may never report anything at all (see
+   * `shell/state/motion.ts`), so a player who needs the animations gone needs to be able
+   * to say so outright rather than hoping CEF passed the setting through.
+   */
+  const MOTION_OPTIONS = [
+    { id: 'system', label: 'System' },
+    { id: 'full', label: 'Full' },
+    { id: 'reduced', label: 'Reduced' }
+  ];
 
   const rendered = $derived(
     `${Math.round($phoneBox.width)} × ${Math.round($phoneBox.height)} pixels`
@@ -126,6 +148,27 @@
           >
         </div>
       </div>
+    </div>
+  </SettingsSection>
+
+  <SettingsSection
+    title="Motion"
+    footer="Reduced motion turns off the phone's animations. Swipes and drags still work — only the animation goes."
+  >
+    <div class="flex flex-col gap-3 p-4">
+      <SegmentedControl
+        options={MOTION_OPTIONS}
+        selected={$motionPreference}
+        aria-label="Motion"
+        onchange={(id: string) => setMotionPreference(id as 'system' | 'full' | 'reduced')}
+      />
+      <!-- What "System" resolved to, since the query is invisible from inside the phone and
+           a player who picks it deserves to know which way it went. -->
+      {#if $motionPreference === 'system'}
+        <p class="text-on-surface-variant text-body-small">
+          Following this device: animations are {$reducedMotion ? 'off' : 'on'}.
+        </p>
+      {/if}
     </div>
   </SettingsSection>
 

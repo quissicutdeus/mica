@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { MediaThumb, useLocation, useAppAction, useContacts } from '@gphone/sdk';
+  import { MediaThumb, useLocation, useAppAction, useContacts, fly } from '@gphone/sdk';
   import type { MediaPreview } from '@shared/types';
   import {
     CloseIcon,
@@ -13,7 +13,6 @@
     type UIMessage,
     type UIConversation
   } from '@gphone/sdk';
-  import { fly } from 'svelte/transition';
 
   /**
    * The message input: attachments tray, attach menu, photo picker, send.

@@ -362,3 +362,53 @@ a {
   paint-order: stroke fill;
   text-shadow: 0 1px 2px var(--color-surface);
 }
+
+/**
+ * Reduced motion (MICA-66).
+ *
+ * One block, keyed on an attribute rather than on `@media (prefers-reduced-motion)`.
+ * `shell/state/motion.ts` is the only reader of that media query and folds the player's
+ * own Settings > Display > Motion choice over it; `Shell.svelte` writes the result here.
+ * A second `@media` block in this file would be a second source of truth, and it would
+ * win over a player who explicitly asked to keep their animations.
+ *
+ * **This is only half of the feature, and it is not the half that stops the drawer.**
+ * It covers CSS: `transition-colors` and the other utilities, the `.animate-*` keyframes,
+ * the sheets' `transition-transform` while settling, the camera's inline `transition:`.
+ * It does **not** cover a Svelte `transition:` directive — Svelte 5 runs those through the
+ * Web Animations API, whose timing comes from a JavaScript options object that no CSS
+ * declaration can reach. Those go through the `fade`/`fly` wrappers in
+ * `shell/state/motion.ts`, which read the same store this attribute is written from.
+ *
+ * **`1ms`, not `0`.** A zero-duration transition fires no `transitionend`, and both
+ * `AppDrawer` and `NotificationShade` flip their drag phase back to `'idle'` on exactly
+ * that event. Both carry a 250ms timer as a fallback (MICA-45), so a zero here would
+ * not strand the sheet — it would just make every drag settle through the slow path for
+ * no reason. 1ms is imperceptible and keeps the event.
+ *
+ * Gesture *handlers* are untouched by design: a drag still tracks the finger, because the
+ * finger is the thing setting the position. Only the unattended animation goes.
+ *
+ * `.animate-spin` is put back afterwards, and it is the only exception. It is not
+ * decoration — it is the phone saying "still working" while a chunk loads, and a frozen
+ * spinner reads as a hang. `.animate-ping` and `.animate-pulse` get no such reprieve:
+ * a pulsing skeleton still shows its shape once stopped, and the ping is ornament.
+ *
+ * Everything here is Chromium-103-safe outright — an attribute selector and two
+ * animation longhands, no `:has()`, no `color-mix()` (§6).
+ */
+html[data-reduced-motion='true'] *,
+html[data-reduced-motion='true'] *::before,
+html[data-reduced-motion='true'] *::after {
+  animation-duration: 1ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+
+html[data-reduced-motion='true'] .animate-spin {
+  animation-duration: 1s !important;
+  animation-iteration-count: infinite !important;
+}
