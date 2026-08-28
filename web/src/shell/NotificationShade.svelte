@@ -42,6 +42,7 @@
   import { closeShade, isShadeOpen, shadeDragPhase, shadeDragProgress } from './state/shade';
   import SwipeableRow from './SwipeableRow.svelte';
   import NowPlaying from './NowPlaying.svelte';
+  import NearbyMusic from './NearbyMusic.svelte';
 
   interface QuickToggle {
     label: string;
@@ -486,6 +487,12 @@
          cannot hide it and Clear All cannot remove it) and it is not a toggle. It renders
          nothing at all when nothing is loaded. `NowPlaying.svelte` carries the reasoning. -->
     <NowPlaying />
+
+    <!-- Nearby music, directly under it and for the same reasons — with one of its own.
+         This is the switch somebody reaches for while being harassed by another player's
+         music, so it has to be reachable without knowing whose music it is or opening an
+         app. `NearbyMusic.svelte` carries the argument. -->
+    <NearbyMusic />
 
     <!-- Notification List Area -->
     <div bind:this={scrollContainerRef} class="flex-1 scrollbar-none overflow-y-auto px-5 pb-8">

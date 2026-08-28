@@ -149,6 +149,17 @@ export const ROUTES: readonly Route[] = [
   // Declared here anyway, for `routes.test.ts`'s completeness checks.
   route('shareLocation', 'media', 'shareLocation'),
 
+  // Music — proximity broadcast (MICA-111 phase 2). The service holds ephemeral
+  // now-playing state and nothing else: no table, no generic CRUD, and every action here is
+  // about the caller's own phone. What other people hear comes back the other way, on the
+  // shell-scoped push in `shared/musicBroadcast.ts`, rather than as a reply to any of these.
+  route('startMusicBroadcast', 'music', 'broadcastStart'),
+  // Pause, resume and seek. Separate from the start above because a track change is a
+  // replacement and these are not; folding them together would make "paused" a field a
+  // caller had to restate every time it named a track.
+  route('updateMusicBroadcast', 'music', 'broadcastUpdate'),
+  route('stopMusicBroadcast', 'music', 'broadcastStop'),
+
   // Notifications — persistent OS notification service
   route('getShadeNotifications', 'notifications', 'getShadeNotifications'),
   route('getNotificationHistory', 'notifications', 'getNotificationHistory'),

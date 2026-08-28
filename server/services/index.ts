@@ -15,6 +15,7 @@ import './Mail';
 import './Marketplace';
 import './Media';
 import './Messages';
+import './Music';
 import './Notes';
 import './Notifications';
 import './Phone';

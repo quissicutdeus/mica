@@ -30,6 +30,25 @@ interface Window {
     payload?: Record<string, unknown>,
     notify?: unknown
   ) => void;
+  /**
+   * Dev harness: put somebody else's music next to you, without a server or a game.
+   * See `devHarness.ts`. `volume` is invented here, because a browser has no distance.
+   */
+  pushNearbyMusic?: (
+    rows?: {
+      /** Server id, and the key the volume map goes out under. Defaults to 900 + index. */
+      source?: number;
+      /** The mute key, stable per person. Defaults to `dev<index>`. */
+      token?: string;
+      label?: string | null;
+      videoId?: string | null;
+      playlistId?: string | null;
+      startedAt?: number;
+      paused?: boolean;
+      /** 0..1, invented — a browser has no distance. Defaults to full. */
+      volume?: number;
+    }[]
+  ) => void;
   /** Present only inside CEF. Its absence is what `isBrowser()` checks. */
   invokeNative?: unknown;
   GetParentResourceName?: () => string;

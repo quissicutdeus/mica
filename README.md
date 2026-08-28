@@ -247,9 +247,11 @@ requirements:
 ## Configuration
 
 Everything a server owner can tune is a convar, set in `server.cfg` above
-`ensure gphone`. Every one of them is read on the server, so plain `set` is
-enough — `setr` works too and additionally replicates the value to clients,
-which nothing here needs.
+`ensure gphone`. All but one are read on the server, so plain `set` is enough.
+**`gphone_music_range` is the exception and needs `setr`**: both halves of
+proximity music read it — the server to decide who is on a listener's roster,
+the client to decide what that roster sounds like — and a plain `set` leaves
+every client on the default while the server fans out at your value.
 
 The values below are the defaults as written in the code, so a server that sets
 none of them behaves exactly as shown and this block is only worth pasting if
@@ -261,21 +263,25 @@ set gphone_rate_limit 60
 set gphone_bank_transfer_max 50000
 set gphone_max_accounts_per_app 3
 set gphone_bluetooth_range 15
+setr gphone_music_range 30
+set gphone_music_max_nearby 8
 set gphone_blabber_edit_window 900
 set gphone_notification_retention 30
 ```
 
-| Convar                          | Type                 | Default                | Controls                                         |
-| ------------------------------- | -------------------- | ---------------------- | ------------------------------------------------ |
-| `gphone_admin_aces`             | comma-separated aces | `gphone.admin,command` | Who counts as a gPhone admin                     |
-| `gphone_rate_limit`             | integer              | `60`                   | Requests per player, per action, per minute      |
-| `gphone_bank_transfer_max`      | integer              | `50000`                | Ceiling on one player-to-player send             |
-| `gphone_max_accounts_per_app`   | integer              | `3`                    | Identities one player may hold in one social app |
-| `gphone_bluetooth_range`        | integer, meters      | `15`                   | How far a proximity share reaches                |
-| `gphone_blabber_edit_window`    | integer, seconds     | `900`                  | How long a Blab stays editable by its author     |
-| `gphone_notification_retention` | integer, days        | `30`                   | How long notification rows are kept              |
+| Convar                          | Type                 | Default                | Controls                                           |
+| ------------------------------- | -------------------- | ---------------------- | -------------------------------------------------- |
+| `gphone_admin_aces`             | comma-separated aces | `gphone.admin,command` | Who counts as a gPhone admin                       |
+| `gphone_rate_limit`             | integer              | `60`                   | Requests per player, per action, per minute        |
+| `gphone_bank_transfer_max`      | integer              | `50000`                | Ceiling on one player-to-player send               |
+| `gphone_max_accounts_per_app`   | integer              | `3`                    | Identities one player may hold in one social app   |
+| `gphone_bluetooth_range`        | integer, meters      | `15`                   | How far a proximity share reaches                  |
+| `gphone_music_range`            | integer, meters      | `30`                   | How far music from a phone is heard (needs `setr`) |
+| `gphone_music_max_nearby`       | integer              | `8`                    | Broadcasters one listener is told about at once    |
+| `gphone_blabber_edit_window`    | integer, seconds     | `900`                  | How long a Blab stays editable by its author       |
+| `gphone_notification_retention` | integer, days        | `30`                   | How long notification rows are kept                |
 
-Five of the seven are read on every use rather than cached, so changing one with
+Seven of the nine are read on every use rather than cached, so changing one with
 `set` from the live console takes effect on the next request and needs no
 restart. `gphone_blabber_edit_window` and `gphone_notification_retention` are
 the two exceptions — both are read once at resource start, so a change to either
@@ -335,6 +341,22 @@ needs a restart, for the reasons given under them below.
   the one value gPhone does not sanity-check before using: it is passed through
   as given, so `0` disables proximity sharing outright — nobody is ever in range
   — rather than falling back to 15.
+- **`gphone_music_range`** — how far a phone playing music out loud is heard, in
+  meters. **Set this one with `setr`.** The server uses it to decide who is told
+  about a broadcast at all, and the client uses it to attenuate what it was told
+  about; a plain `set` leaves the client on 30 while the server fans out at your
+  value, so a broadcaster who should be fading in at the edge instead cuts in at
+  full volume the moment they are on the roster. Fan out at least as far as the
+  client attenuates — entries a client scores at zero are harmless, entries it
+  never hears about are silence. A non-numeric value falls back to 30.
+- **`gphone_music_max_nearby`** — how many broadcasters one listener is told
+  about at once, nearest first. This is a bound on the _roster_, not on what
+  plays: the phone picks the nearest few of them to actually sound, because only
+  the client knows the distances that ranking depends on. It exists because
+  every broadcast a client accepts is another live YouTube player decoding video
+  behind a running game, and a busy street corner is otherwise however many
+  people are standing in it. Raising it past 16 gets 16 — the ceiling is in the
+  code — and a non-numeric or non-positive value falls back to 8.
 - **`gphone_blabber_edit_window`** — how long after posting a Blab its author
   may still fix a typo; after it the post freezes and only deleting is left,
   since withdrawing your own words stays possible forever. One number does both

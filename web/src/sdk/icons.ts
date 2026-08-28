@@ -54,6 +54,7 @@ export { default as SignalIcon } from './ui/icons/SignalIcon.svelte';
 export { default as SkipNextIcon } from './ui/icons/SkipNextIcon.svelte';
 export { default as SkipPreviousIcon } from './ui/icons/SkipPreviousIcon.svelte';
 export { default as SpeakerIcon } from './ui/icons/SpeakerIcon.svelte';
+export { default as SpeakerOffIcon } from './ui/icons/SpeakerOffIcon.svelte';
 export { default as StarIcon } from './ui/icons/StarIcon.svelte';
 export { default as StopIcon } from './ui/icons/StopIcon.svelte';
 export { default as TrashIcon } from './ui/icons/TrashIcon.svelte';

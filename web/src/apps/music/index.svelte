@@ -8,14 +8,18 @@
     RepeatOneIcon,
     Screen,
     ShuffleIcon,
+    SpeakerIcon,
+    SpeakerOffIcon,
     SkipNextIcon,
     SkipPreviousIcon,
     StopIcon,
     TrashIcon,
+    UsersIcon,
     useAppLevels,
     useMusic,
     formatDuration,
     type AppProps,
+    type NearbyBroadcast,
     type QueueEntry
   } from '@gphone/sdk';
 
@@ -35,9 +39,12 @@
    * may never answer, and a row that says `dQw4w9WgXcQ` is still a row a person can
    * recognise and re-paste.
    *
-   * **Local playback only.** Nobody else can hear this yet — the proximity fan-out is
-   * phase 2 — and the screen says so rather than letting a person find out by asking a
-   * friend whether they heard anything.
+   * **People nearby can hear this** as of phase 2, and the screen says so rather than
+   * letting somebody find out by being asked to stop. The other half of that is the Nearby
+   * list below the queue: who around you is playing something, which of them this phone is
+   * actually rendering, and a mute for each. The *global* mute deliberately does not live
+   * only here — it is in the notification shade too (`shell/NearbyMusic.svelte`), because
+   * somebody being harassed by another player's music should not have to find an app first.
    */
 
   let { onback }: AppProps = $props();
@@ -68,7 +75,14 @@
     pauseMusic,
     resumeMusic,
     stopMusic,
-    setMusicVolume
+    setMusicVolume,
+    nearbyBroadcasts,
+    audibleBroadcasts,
+    maxAudibleBroadcasts,
+    mutedBroadcasters,
+    muteAllNearby,
+    toggleBroadcasterMute,
+    setMuteAllNearby
   } = useMusic();
 
   // No internal levels — the paste field, the transport, the queue and the volume are one
@@ -129,9 +143,37 @@
   const rowTitle = (entry: QueueEntry): string =>
     entry.title ?? entry.videoId ?? `Playlist ${entry.playlistId ?? ''}`.trim();
 
-  /** The id under the title, and only when the title is not already the id. */
+  /**
+   * The line under the name, and mostly there is not one.
+   *
+   * **A video id is shown only when it is the only thing identifying the row.** It used to
+   * be shown under every title, which read as an eleven-character hex-looking string
+   * beneath a perfectly good name, in the queue row and the now-playing card at once —
+   * twice on one screen, identifying nothing a person cares about.
+   *
+   * The case the id exists for is the one where there is no title: a blocked or
+   * unavailable video never pushes `videoData.title`, and `rowTitle` already falls back to
+   * the id there, so the id is on the row's *first* line and repeating it below would be
+   * the same duplication in miniature. Hence: with a title, nothing; without one, nothing
+   * either, because the name already is the id.
+   *
+   * A playlist keeps its line, because `PL…` is genuinely what the row is — the embed
+   * advances inside it and no single video names it.
+   */
   const rowSub = (entry: QueueEntry): string | null =>
-    entry.playlistId ? `Playlist ${entry.playlistId}` : entry.title ? entry.videoId : null;
+    entry.playlistId ? `Playlist ${entry.playlistId}` : null;
+
+  /**
+   * The id, for the one case that still wants it: a row that failed.
+   *
+   * `null` unless the id is genuinely hidden — a row with no title is already showing it
+   * as its name. When a track played long enough to be named and *then* refused, the name
+   * is a title and the id has nowhere else to appear, which is exactly when somebody wants
+   * it: it is what you paste into a bug report, or back into the field to check the link
+   * yourself.
+   */
+  const hiddenId = (entry: QueueEntry): string | null =>
+    entry.title && entry.videoId ? entry.videoId : null;
 
   const nowTitle = $derived.by(() => {
     if (!current) return '';
@@ -146,7 +188,9 @@
    * is the difference between a queue a person can follow and one that appears stuck.
    */
   const nowSub = $derived.by(() => {
-    if (!current?.playlistId) return current?.title ? current.videoId : null;
+    // Same rule as `rowSub`, and it has to be the same rule: two surfaces disagreeing
+    // about when an id is worth showing is only a smaller version of showing it twice.
+    if (!current?.playlistId) return null;
     const info = $musicNowPlaying;
     if (info && info.playlistIndex !== null && info.playlistCount !== null) {
       return `Playlist · ${info.playlistIndex + 1} of ${info.playlistCount}`;
@@ -180,6 +224,50 @@
   const toggle = () => {
     if (isPlaying) pauseMusic();
     else resumeMusic();
+  };
+
+  /**
+   * Who this phone is actually rendering, as a set of broadcaster tokens.
+   *
+   * A token, never a `source`: a mute is about the person and has to survive them
+   * reconnecting, which is the whole of mute evasion (`shell/state/nearbyMusic.ts`).
+   *
+   * Everything about a nearby row that is not its identity comes from comparing against
+   * this: a broadcaster who is nearby but not in here is either muted or has lost the cap,
+   * and those are different sentences to a person standing there wondering why they can
+   * only hear two of the three stereos around them.
+   */
+  const audibleTokens = $derived(new Set($audibleBroadcasts.map((b) => b.token)));
+  const mutedTokens = $derived(new Set($mutedBroadcasters));
+
+  const isMuted = (b: NearbyBroadcast) => $muteAllNearby || mutedTokens.has(b.token);
+
+  /**
+   * What to call somebody whose name the server did not send.
+   *
+   * Never the token, and never the server id. The token is opaque and identifies nobody;
+   * the server id is a connection slot that two different people can wear across a
+   * session. Printing either would be offering an identity the phone does not have.
+   * "Someone nearby" is less useful and true.
+   */
+  const who = (b: NearbyBroadcast) => b.label ?? 'Someone nearby';
+
+  /**
+   * The one line under a nearby row, and it has three jobs.
+   *
+   * Muted is the state that has to win, because it is the one the person chose. Below it,
+   * "out of range" and "not playing — closest N only" are genuinely different and both are
+   * worth saying: the first is distance and will fix itself when they walk over, the second
+   * is the cap (`maxAudibleBroadcasts`) and is a rule rather than a fault.
+   */
+  const nearbyStatus = (b: NearbyBroadcast): string => {
+    if ($muteAllNearby) return 'All nearby music muted';
+    if (mutedTokens.has(b.token)) return 'Muted';
+    if (audibleTokens.has(b.token)) return 'Playing';
+    if ($audibleBroadcasts.length >= maxAudibleBroadcasts) {
+      return `Not playing — closest ${maxAudibleBroadcasts} only`;
+    }
+    return 'Out of range';
   };
 </script>
 
@@ -227,17 +315,42 @@
               />
             {/if}
             <div class="min-w-0 flex-1">
-              <p class="text-body-small text-on-surface-variant">{statusLabel}</p>
+              <p class="text-body-small text-on-surface-variant flex items-center gap-1">
+                <span>{statusLabel}</span>
+                <!-- The disclosure, beside the status word rather than only in the
+                     standing line at the bottom of the screen. That line is below the
+                     volume slider and is off-screen the moment the queue is more than a
+                     few rows long — which is exactly when somebody has been playing for a
+                     while and is least likely to remember that a street can hear them.
+                     Shown only while sound is actually coming out: a paused phone is not
+                     broadcasting, and saying so then would be crying wolf. -->
+                {#if isPlaying}
+                  <span
+                    class="text-label-small text-on-surface-variant flex shrink-0 items-center gap-1"
+                  >
+                    <UsersIcon class="size-icon-sm" />
+                    Out loud
+                  </span>
+                {/if}
+              </p>
               <p class="text-body-medium text-on-surface truncate">
                 {nowTitle || 'Nothing loaded'}
               </p>
               {#if failure}
-                <!-- Not truncated, and above the id: this is the one line on the screen
-                     that explains why nothing is happening, and a person who cannot read
-                     all of it is back to guessing. -->
+                <!-- Not truncated: this is the one line on the screen that explains why
+                     nothing is happening, and a person who cannot read all of it is back
+                     to guessing. -->
                 <p class="text-body-small text-error">
                   {describeMusicError(failure.reason)} · skip or remove it
                 </p>
+                <!-- The id, and only on a failure, and only when the name above is a title
+                     rather than the id already. See `hiddenId`: this is the row somebody
+                     pastes into a bug report. -->
+                {#if current && hiddenId(current)}
+                  <p class="text-label-small text-on-surface-variant truncate font-mono">
+                    {hiddenId(current)}
+                  </p>
+                {/if}
               {:else if nowSub}
                 <p class="text-label-small text-on-surface-variant truncate">{nowSub}</p>
               {/if}
@@ -362,6 +475,11 @@
                   <span class="text-label-small text-error block truncate"
                     >{describeMusicError(entry.error.reason)}</span
                   >
+                  {#if hiddenId(entry)}
+                    <span class="text-label-small text-on-surface-variant block truncate font-mono"
+                      >{hiddenId(entry)}</span
+                    >
+                  {/if}
                 {:else if rowSub(entry)}
                   <span class="text-label-small text-on-surface-variant block truncate"
                     >{rowSub(entry)}</span
@@ -386,6 +504,91 @@
       />
     {/if}
 
+    <!-- Nearby, and only when there is somebody to list.
+
+         Below the queue rather than above it because it is not what a person opened Music
+         to do: the paste field and the transport are the app, and this is the thing you
+         come looking for when somebody else's music is the problem. It is a bounded
+         scroller of its own so that a crowded street cannot squeeze the queue off the
+         screen — everything above and below it is fixed chrome. -->
+    {#if $nearbyBroadcasts.length}
+      <div class="mt-3 px-4">
+        <div class="flex items-center justify-between">
+          <span class="text-label-small text-on-surface-variant flex items-center gap-1">
+            <UsersIcon class="size-icon-sm" />
+            Nearby · {$nearbyBroadcasts.length}
+          </span>
+          <!-- The global switch, and the same one the notification shade offers. Two places
+               for one setting is deliberate: this is where you find it, and the shade is
+               where you reach it when you are not already here. -->
+          <Button
+            onclick={() => setMuteAllNearby(!$muteAllNearby)}
+            variant="icon"
+            aria-pressed={$muteAllNearby}
+            aria-label={$muteAllNearby ? 'Unmute all nearby music' : 'Mute all nearby music'}
+            class={$muteAllNearby ? 'text-on-primary-container bg-primary-container' : ''}
+          >
+            {#if $muteAllNearby}
+              <SpeakerOffIcon class="h-5 w-5" />
+            {:else}
+              <SpeakerIcon class="h-5 w-5" />
+            {/if}
+          </Button>
+        </div>
+
+        <div class="max-h-32 overflow-y-auto pt-1">
+          {#each $nearbyBroadcasts as person (person.token)}
+            <div class="flex items-center gap-1">
+              <div class="flex min-w-0 flex-1 items-center gap-3 p-2">
+                {#if thumbnailUrlFor(person.videoId)}
+                  <img
+                    src={thumbnailUrlFor(person.videoId)}
+                    alt=""
+                    class="bg-surface-container-high h-10 w-16 shrink-0 rounded-md object-cover"
+                    class:opacity-40={isMuted(person)}
+                  />
+                {:else}
+                  <!-- A playlist has no video id to draw, and an `<img>` with an empty
+                       `src` re-requests the page rather than rendering a blank tile. -->
+                  <span class="bg-surface-container-high h-10 w-16 shrink-0 rounded-md"></span>
+                {/if}
+                <span class="min-w-0 flex-1">
+                  <span class="text-body-medium text-on-surface block truncate">{who(person)}</span>
+                  <!-- No title, ever, and that is not an omission. A title arrives on the
+                       `postMessage` channel of the frame playing it, and a stranger's frame
+                       is not talking to this phone — so a nearby row is a person and a
+                       thumbnail, and claiming to know the song would be inventing one. -->
+                  <span
+                    class="text-label-small block truncate {isMuted(person)
+                      ? 'text-on-surface-variant'
+                      : 'text-primary'}">{nearbyStatus(person)}</span
+                  >
+                </span>
+              </div>
+              <!-- Disabled under the global mute rather than hidden: the row is already
+                   silent, so a per-person toggle here would look like it had done nothing.
+                   Leaving it visible keeps the list the same shape either way. -->
+              <Button
+                onclick={() => toggleBroadcasterMute(person.token)}
+                variant="icon"
+                disabled={$muteAllNearby}
+                aria-pressed={mutedTokens.has(person.token)}
+                aria-label={mutedTokens.has(person.token)
+                  ? `Unmute ${who(person)}`
+                  : `Mute ${who(person)}`}
+              >
+                {#if mutedTokens.has(person.token)}
+                  <SpeakerOffIcon class="h-5 w-5" />
+                {:else}
+                  <SpeakerIcon class="h-5 w-5" />
+                {/if}
+              </Button>
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
+
     <div class="pb-home-indicator space-y-2 px-4 pt-3">
       <div class="text-body-medium flex items-center justify-between">
         <span class="text-on-surface font-medium">Volume</span>
@@ -400,11 +603,11 @@
         oninput={(e) => setMusicVolume(Number(e.currentTarget.value) / 100)}
         class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-blue-500"
       />
-      <!-- Said on the screen rather than left to be discovered. Phase 1 is local playback,
-           and a music app that looks like a boombox but is only ever heard by one person is
-           a bug report waiting to be filed. -->
+      <!-- Said on the screen rather than left to be discovered, and it is the sentence
+           that changed in phase 2. A music app that plays out loud without telling you it
+           does is how somebody gets shouted at in a bank they thought they were alone in. -->
       <p class="text-body-small text-on-surface-variant">
-        Only you can hear this. Playing out loud to people nearby is not built yet.
+        People nearby can hear this while it plays.
       </p>
     </div>
   </div>

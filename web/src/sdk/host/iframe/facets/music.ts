@@ -3,6 +3,7 @@ import type { Facets } from '../../inProcess/facets';
 import { fn, store, type AsTwin } from './_shared';
 import { isYouTubeSource, thumbnailUrlFor } from '@shared/youtube';
 import { describeMusicError } from '../../../../lib/musicErrors';
+import { MAX_AUDIBLE_BROADCASTS } from '../../../../lib/musicBroadcast';
 
 type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/music').music>>;
 
@@ -50,7 +51,23 @@ export function music(): Twin {
     pauseMusic: fn('music', [], 'pauseMusic'),
     resumeMusic: fn('music', [], 'resumeMusic'),
     stopMusic: fn('music', [], 'stopMusic'),
-    setMusicVolume: fn('music', [], 'setMusicVolume')
+    setMusicVolume: fn('music', [], 'setMusicVolume'),
+
+    // Nearby music (MICA-111 phase 2). `maxAudibleBroadcasts` is imported and read
+    // locally rather than sent over the wire, for the same reason `canPlay` is: it is a
+    // constant in a pure module, so it bundles into the sandbox unchanged and a screen can
+    // put the number in a sentence without awaiting anything.
+    nearbyBroadcasts: store('music', [], 'nearbyBroadcasts', []),
+    audibleBroadcasts: store('music', [], 'audibleBroadcasts', []),
+    maxAudibleBroadcasts: MAX_AUDIBLE_BROADCASTS,
+    mutedBroadcasters: store('music', [], 'mutedBroadcasters', []),
+    muteAllNearby: store('music', [], 'muteAllNearby', false),
+    muteBroadcaster: fn('music', [], 'muteBroadcaster'),
+    unmuteBroadcaster: fn('music', [], 'unmuteBroadcaster'),
+    toggleBroadcasterMute: fn('music', [], 'toggleBroadcasterMute'),
+    clearMutedBroadcasters: fn('music', [], 'clearMutedBroadcasters'),
+    setMuteAllNearby: fn('music', [], 'setMuteAllNearby'),
+    toggleMuteAllNearby: fn('music', [], 'toggleMuteAllNearby')
   };
 }
 

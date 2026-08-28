@@ -210,3 +210,77 @@ export function parseCallStatus(data: unknown): CallStatusPayload | null {
   const name = safeString(obj.name, 100) ?? number;
   return { status: rawStatus, number, name };
 }
+
+/**
+ * The two nearby-music pushes. MICA-111 phase 2.
+ *
+ * The wire types, the net event and both action names live in `shared/musicBroadcast.ts`,
+ * which is also where the reasoning is. What is here is the narrowing, because this is the
+ * file that narrows every other NUI payload and a second convention would be worse than a
+ * slightly awkward split.
+ *
+ * They arrive from **different senders on purpose**, which is why they are two payloads
+ * and not one. The roster is the server's, relayed by `client/services/Music.ts`: only it
+ * knows who is within range of whom and it holds the clock that makes `startedAt` mean
+ * anything. The volumes are the game client's alone: it is the only thing that knows how
+ * far away anybody is standing this frame, and it recomputes them on a tick far faster
+ * than the roster changes.
+ *
+ * Both are **snapshots, never deltas**. A delta protocol needs a removal message, and a
+ * lost removal is music that never stops — an empty roster is the ordinary way a broadcast
+ * ends, and a source absent from the volume map is somebody who has walked out of earshot.
+ *
+ * The two are **keyed differently, on purpose**: a roster row carries both a `token` (the
+ * person, and the mute key) and a `source` (a FiveM server id, a connection), and the
+ * volume map is keyed on `source` alone, because a server id is the only handle the game
+ * client can measure a distance to. The join happens in the shell, on the row that has
+ * both. `shared/musicBroadcast.ts` sets out at length why a mute must never key on the
+ * server id.
+ *
+ * Narrowing here is shallow on purpose. The rows carry YouTube ids that end up in an
+ * `<iframe src>`, and those are re-validated against `shared/youtube.ts`'s own shapes in
+ * `web/src/shell/state/nearbyMusic.ts` — the module that builds the URL, which is where
+ * that check belongs rather than two layers above it.
+ */
+
+/**
+ * The roster, or `null`.
+ *
+ * An **empty array is a valid payload and the most important one** — it is how "nobody
+ * nearby is playing anything" is said, so it must not be confused with a malformed
+ * message. `null` is reserved for a payload that was not a roster at all.
+ *
+ * A bare array is accepted alongside `{ broadcasts }` so the browser dev harness can post
+ * the obvious thing without wrapping it.
+ */
+export function parseMusicBroadcasts(data: unknown): unknown[] | null {
+  if (Array.isArray(data)) return data;
+  const obj = safeObject(data);
+  const list = obj?.broadcasts;
+  if (!Array.isArray(list)) return null;
+  return list;
+}
+
+/**
+ * The per-broadcaster volumes, keyed by `source`, or `null`.
+ *
+ * Values are left as they arrived and clamped where they are applied, for the same reason
+ * the ids are: one module owns what a volume may be, and it is the one that multiplies it
+ * into a player. What is enforced here is the *shape* — a plain object, never an array,
+ * and with the three keys that are not data stripped, since this map is looked up by a
+ * `source` that came off the same wire and `__proto__` reaching a lookup is the one way it
+ * could be more than data. Keys are server ids as strings; the shell drops anything that
+ * is not one rather than holding a volume no roster row can ever match.
+ */
+export function parseMusicBroadcastVolumes(data: unknown): Record<string, unknown> | null {
+  if (Array.isArray(data)) return null;
+  const obj = safeObject(data);
+  if (!obj) return null;
+  const raw = safeObject(obj.volumes) ?? obj;
+  const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+  for (const key of Object.keys(raw)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+    out[key] = raw[key];
+  }
+  return out;
+}

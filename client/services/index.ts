@@ -8,6 +8,7 @@ import './Contact';
 import './Location';
 import './Mail';
 import './Message';
+import './Music';
 import './Relay';
 import './Settings';
 import './Shell';

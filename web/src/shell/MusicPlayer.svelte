@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * The thing that actually makes noise. MICA-111 phase 1.
+   * The phone's *own* music. MICA-111 phase 1, and still only that.
    *
    * Mounted by `Shell.svelte` **outside** its `{#if visible}` block, which is the whole
    * reason this is a shell component rather than part of the Music app. Everything inside
@@ -9,67 +9,17 @@
    * an element inside it would be exactly wrong: the track would stop the moment the phone
    * was put away, which is the one behaviour the ticket rules out.
    *
-   * ## The embed decision, and what it accepts
+   * ## What this file is, now that it is not the only player
    *
-   * There are two ways to drive a YouTube embed, and this file takes the second.
+   * Phase 2 added other people's music, and it is not a variety of this. This file is the
+   * consumer that owns a queue, a position, a seek, a repeat mode and an error a person can
+   * act on — every one of which is meaningless for a broadcast coming out of somebody
+   * else's phone. That one lives in `NearbyMusicFrame.svelte` and holds none of it.
    *
-   * **Not taken: the IFrame Player API.** `<script src="https://www.youtube.com/iframe_api">`
-   * is the documented route, it hands you `player.playVideo()` and typed events, and it is
-   * unambiguously less work. It also executes Google's JavaScript **in the shell's own
-   * origin**, next to `window.invokeNative`. AGENTS.md §7 is specific about what that
-   * means here: injected script in CEF can `fetch` any registered NUI callback, including
-   * ones with server-side effects, so script execution in this page is privilege
-   * escalation rather than defacement. `iframe_api` is additionally a loader — the code
-   * that ends up running is `www-widgetapi.js`, fetched at runtime, versioned by Google
-   * and not by us, on every player's client. Accepting that would mean accepting that
-   * whatever Google ships tomorrow inherits the phone's full NUI reach, forever, and no
-   * review of ours ever sees it.
-   *
-   * **Taken: a plain cross-origin iframe, driven by `postMessage`.** The frame below runs
-   * the same player, but in `youtube-nocookie.com`'s origin, so the same-origin policy —
-   * the browser's boundary, not our discipline — keeps it away from this document, its
-   * storage, and the NUI bridge. The commands sent to it are the IFrame API's own wire
-   * format (`{ event: 'command', func, args }`); we speak the protocol without hosting the
-   * speaker.
-   *
-   * What that costs, stated plainly:
-   * - The command protocol is not a documented public API. If YouTube changes it, the
-   *   phone loses *control of the player* — it does not lose the security boundary, and
-   *   the failure is recoverable by fixing this file.
-   * - No typed events. State comes back as `onStateChange` `infoDelivery` messages, parsed
-   *   defensively below, and treated as advisory (`reportPlayerState` in `state/music.ts`).
-   *
-   * What it does **not** buy, so nobody reads more into it than is there: the player is
-   * still Google's code talking to Google's servers, it still serves ads, and
-   * `-nocookie` reduces rather than removes what it stores on its own origin. The claim is
-   * isolation of *our* context, not privacy.
-   *
-   * ## Why it is sandboxed as well
-   *
-   * A cross-origin iframe that is not sandboxed may still navigate the top-level browsing
-   * context given a user gesture, and the player has affordances that do exactly that (the
-   * video title, "Watch on YouTube"). In CEF a top-level navigation reloads the whole
-   * instance and drops every bit of phone state — the same failure AGENTS.md §6 bans
-   * `window.location` and `window.open` for. `sandbox` withholds `allow-top-navigation`
-   * and `allow-popups` by default, so it closes that.
-   *
-   * `allow-same-origin` is in the list and is safe *because the frame is cross-origin*: it
-   * preserves youtube-nocookie.com as the frame's origin rather than granting it ours. The
-   * dangerous pairing is `allow-scripts allow-same-origin` on a **same-origin** frame,
-   * which can reach out and remove its own sandbox; that is not this.
-   *
-   * `allow="autoplay"` is the Permissions Policy delegation the official API also performs.
-   * A click in this document does not grant user activation to a cross-origin child, so
-   * without it the frame is judged on its own activation alone — see the autoplay note at
-   * the bottom of this comment.
-   *
-   * ## Why it is invisible rather than absent
-   *
-   * A `display:none` iframe is a box with no layout, and Chromium has never guaranteed
-   * media in one keeps running. The frame is therefore laid out at a real size and made
-   * invisible with `opacity-0`, off the bottom-left corner and behind everything. In game
-   * the page is a transparent overlay on the world, so an opaque player at any visible
-   * size would paint over what the person is looking at.
+   * The element itself is shared: `MusicFrame.svelte` owns the iframe, the sandbox
+   * posture, the handshake, the origin check and the volume conversion, and it carries the
+   * reasoning for all of them. What is left here is the conversation between this phone's
+   * intent (`state/music.ts`) and one player.
    *
    * ## What is unproven, and only a game can prove it
    *
@@ -98,11 +48,17 @@
    * 4. Whether autoplay is permitted, which is *two* questions and not one. `allow` can
    *    only delegate a feature this document already has, and `autoplay`'s default
    *    allowlist is `self` — so if FiveM's root frame embeds the phone without delegating
-   *    it, the attribute below is void and no change here can rescue it. That is separate
-   *    from the client's `--autoplay-policy`, which is the gesture requirement.
+   *    it, the attribute in `MusicFrame.svelte` is void and no change here can rescue it.
+   *    That is separate from the client's `--autoplay-policy`, which is the gesture
+   *    requirement.
    * 5. Whether sound comes out. A player reporting `playing` with a frozen `currentTime`
    *    is an autoplay problem; one whose `currentTime` advances in silence is a codec or
    *    audio-routing problem, and they have different owners.
+   *
+   * Phase 2 adds a sixth that nothing local can answer: **whether a client stands up four
+   * of these at once** — three nearby broadcasts plus your own — without the framerate
+   * going. `MAX_AUDIBLE_BROADCASTS` in `lib/musicBroadcast.ts` is the number to lower if
+   * it does not, and it is a one-line change on purpose.
    *
    * If it half-works, change one attribute at a time and let the failure pick which: a URL
    * parameter cannot stop a document loading, so a frame that never loads can only be
@@ -120,9 +76,8 @@
    * cross into a cross-origin child.
    */
   import { get } from 'svelte/store';
+  import MusicFrame from './MusicFrame.svelte';
   import {
-    YOUTUBE_MESSAGE_ORIGINS,
-    YOUTUBE_EMBED_ORIGIN,
     embedUrlFor,
     musicOutputVolume,
     musicSeek,
@@ -135,7 +90,13 @@
     reportPlayerState
   } from './state/music';
 
-  let frame = $state<HTMLIFrameElement | undefined>();
+  /**
+   * The frame's imperative handle — its `send`, and nothing else it happens to have.
+   *
+   * Typed structurally rather than as the component, so this file depends on the one
+   * method it calls instead of on however `svelte2tsx` names an instance type this week.
+   */
+  let player = $state<{ send: (message: string) => void } | undefined>();
   /** True once the frame has loaded and been told to start reporting. */
   let ready = $state(false);
   /** The last transport command written to the frame, so an unchanged status is not resent. */
@@ -147,35 +108,12 @@
 
   const url = $derived($musicSource ? embedUrlFor($musicSource, origin) : null);
 
-  const send = (message: string) => {
-    // `targetOrigin` is the constant this repo wrote, never `'*'`: a wildcard would post
-    // the command to whatever document happens to be in the frame, which after an
-    // unexpected navigation is not necessarily YouTube's.
-    frame?.contentWindow?.postMessage(message, YOUTUBE_EMBED_ORIGIN);
-  };
-
   /**
-   * Ask the player to start reporting state.
+   * What a message from the player means to *this* phone's playback.
    *
-   * Without this handshake the frame answers nothing; it is the same `listening` message
-   * the official API's own bootstrap sends, and `id`/`channel` are the values it uses.
-   */
-  const startListening = () => {
-    send(JSON.stringify({ event: 'listening', id: 'gphone-music', channel: 'widget' }));
-  };
-
-  const onLoad = () => {
-    ready = true;
-    lastCommand = null;
-    startListening();
-    send(playerCommand('setVolume', [Math.round($musicOutputVolume * 100)]));
-  };
-
-  /**
-   * Messages from the player.
-   *
-   * Origin-checked first and shape-checked second: everything below this line was chosen
-   * by a cross-origin document. Three things are read out of it and nothing else — a state
+   * `MusicFrame` has already checked the origin, checked that the message came from its
+   * own frame, and parsed the JSON. Everything below this line was still chosen by a
+   * cross-origin document, and three things are read out of it and nothing else — a state
    * name from a fixed set of four, the identity of what is playing, and an error code.
    *
    * The identity is where the app's titles and thumbnails come from, and it is why the
@@ -190,19 +128,8 @@
    * that hang is *indistinguishable from CEF refusing the frame*, which is the one thing
    * the in-game procedure exists to test. See `reportPlayerError` in `state/music.ts`.
    */
-  const onMessage = (event: MessageEvent) => {
-    if (!YOUTUBE_MESSAGE_ORIGINS.includes(event.origin)) return;
-    if (!frame || event.source !== frame.contentWindow) return;
-
-    let payload: unknown;
-    try {
-      payload = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-    } catch {
-      return;
-    }
-    if (typeof payload !== 'object' || payload === null) return;
-
-    const { event: kind, info } = payload as { event?: unknown; info?: unknown };
+  const onMessage = (payload: { event?: unknown; info?: unknown }) => {
+    const { event: kind, info } = payload;
 
     // `onError` carries the code the way `onStateChange` carries the state: bare in
     // `info`. `infoDelivery` reports the same failure as an `errorCode` inside its blob,
@@ -243,7 +170,7 @@
 
     const raw =
       kind === 'onStateChange'
-        ? (payload as { info?: unknown }).info
+        ? info
         : (info as { playerState?: unknown } | undefined)?.playerState;
     if (typeof raw !== 'number') return;
 
@@ -254,17 +181,12 @@
     else if (raw === 3) reportPlayerState('buffering');
   };
 
-  $effect(() => {
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
-  });
-
   /**
    * Turn the phone's intent into a command.
    *
    * Guarded on the last command written rather than fired on every status read: the effect
-   * also re-runs when the volume changes, and re-sending `playVideo` on a volume nudge is
-   * at best noise and at worst a seek in some player versions.
+   * re-runs whenever `ready` changes too, and re-sending `playVideo` is at best noise and
+   * at worst a seek in some player versions.
    */
   $effect(() => {
     const status = $musicStatus;
@@ -273,15 +195,7 @@
     const command = status === 'playing' || status === 'loading' ? 'playVideo' : 'pauseVideo';
     if (command === lastCommand) return;
     lastCommand = command;
-    send(playerCommand(command));
-  });
-
-  // `musicOutputVolume`, not `musicVolume`: the setting after ducking. A ringing phone
-  // turns the music down through this and never through the persisted preference.
-  $effect(() => {
-    const volume = Math.round($musicOutputVolume * 100);
-    if (!ready || !url) return;
-    send(playerCommand('setVolume', [volume]));
+    player?.send(playerCommand(command));
   });
 
   /**
@@ -289,10 +203,9 @@
    *
    * One mechanism for three things that all mean "same track, different position":
    * scrubbing, `repeat: 'one'`, and advancing to a duplicate row. The last two leave the
-   * embed URL unchanged — so the `{#key url}` below does not rebuild the frame and the
-   * transport effect above sees no change to send — which is why a token exists at all.
-   * Guarded on its last value because this effect also re-runs when `ready` or `url`
-   * change.
+   * embed URL unchanged — so `MusicFrame` does not rebuild the element and the transport
+   * effect above sees no change to send — which is why a token exists at all. Guarded on
+   * its last value because this effect also re-runs when `ready` or `url` change.
    *
    * `resume` distinguishes them: a repeat starts playing, a scrub leaves a paused track
    * paused where you put it.
@@ -302,50 +215,30 @@
     if (!ready || !url || !request) return;
     if (request.token === lastSeek) return;
     lastSeek = request.token;
-    send(playerCommand('seekTo', [request.seconds, true]));
-    if (request.resume) send(playerCommand('playVideo'));
+    player?.send(playerCommand('seekTo', [request.seconds, true]));
+    if (request.resume) player?.send(playerCommand('playVideo'));
   });
 
-  // A source change means a new frame (see the `{#key}` below), so the handshake and the
-  // command guard both start over. `lastSeek` catches up to the outstanding request rather
-  // than resetting to zero: a fresh frame autoplays from the top already, and replaying a
-  // seek issued before it existed would be a second start of the same track.
+  // A source change means a new frame, so the command guard starts over. `lastSeek` catches
+  // up to the outstanding request rather than resetting to zero: a fresh frame autoplays
+  // from the top already, and replaying a seek issued before it existed would be a second
+  // start of the same track.
   $effect(() => {
     void url;
-    ready = false;
     lastCommand = null;
     lastSeek = get(musicSeek)?.token ?? 0;
   });
 </script>
 
 {#if url}
-  <!-- Keyed on the URL so a new track gets a fresh element and a fresh `load`, rather than
-       a `src` swap whose load event arrives against half-torn-down state. -->
-  {#key url}
-    <!-- `inert`, not `aria-hidden` — the same call `Shell.svelte` makes for a backgrounded
-         app, and for a sharper reason here. `aria-hidden` hides the frame from assistive
-         tech and does nothing to the tab order: an `<iframe>` is tabbable by default, so
-         Tab landed on an invisible 200x200 box with no focus ring, and then on whatever the
-         player document has inside it — a keyboard user stranded in a frame they cannot see.
-         Measured, not reasoned about: `music.spec.ts` walks a full Tab cycle and fails if
-         focus ever reaches this element. axe would call it `aria-hidden-focus` and never
-         does, because the sweep is scoped to `[data-testid="phone-frame"]` and this is
-         mounted outside it (`a11y.spec.ts`). `inert` covers the nested document too, which
-         `tabindex="-1"` on the frame would not. -->
-    <div
-      class="pointer-events-none fixed bottom-0 left-0 h-[200px] w-[200px] overflow-hidden opacity-0"
-      inert
-    >
-      <iframe
-        bind:this={frame}
-        title="gPhone music player"
-        src={url}
-        onload={onLoad}
-        class="h-full w-full border-0"
-        allow="autoplay; encrypted-media"
-        sandbox="allow-scripts allow-same-origin allow-presentation"
-        referrerpolicy="strict-origin-when-cross-origin"
-      ></iframe>
-    </div>
-  {/key}
+  <!-- `musicOutputVolume`, not `musicVolume`: the setting after ducking. A ringing phone
+       turns the music down through this and never through the persisted preference. -->
+  <MusicFrame
+    bind:this={player}
+    bind:ready
+    {url}
+    volume={$musicOutputVolume}
+    title="gPhone music player"
+    onmessage={onMessage}
+  />
 {/if}

@@ -2,6 +2,10 @@ import { debugData } from '../lib/debug';
 import { placeholderAvatar } from '../lib/placeholderImage';
 import { appRegistryStore } from './state/registry';
 import { openApp } from './state/navigation';
+import {
+  MUSIC_BROADCASTS_NUI_ACTION,
+  MUSIC_BROADCAST_VOLUMES_NUI_ACTION
+} from '@shared/musicBroadcast';
 
 /**
  * Browser-only scaffolding: seed the phone, and expose a console helper for firing
@@ -122,6 +126,42 @@ export function installDevHarness(): void {
       { action: 'appEvent', data: { app, event, payload, at: Date.now(), notify } },
       '*'
     );
+  };
+
+  /**
+   * Put somebody else's music next to you, without a server or a game.
+   *
+   * `window.pushNearbyMusic([{ id: 'a', videoId: 'dQw4w9WgXcQ', volume: 0.8 }])` from the
+   * console. The two real messages are posted down the real path — the roster the server
+   * sends and the volume map the game client sends — rather than reaching into the stores,
+   * for the same reason `pushAppEvent` does it that way: a harness that skipped the parsing
+   * would let a malformed payload look fine in `pnpm dev` and be dead in game.
+   *
+   * It also fills in the two identities so a caller does not have to think about them, and
+   * fills them in **separately**: `token` is the mute key and `source` is what the volume
+   * map is keyed on. Handing back one value for both would make the join in
+   * `state/nearbyMusic.ts` impossible to get wrong by hand, which is the opposite of what
+   * a harness is for.
+   *
+   * `volume` is the one field this invents, because in a browser there is no distance to
+   * compute one from. It defaults to full: the point of calling this is to hear something.
+   * Call with `[]` to make everybody walk away.
+   */
+  window.pushNearbyMusic = (rows = []) => {
+    const broadcasts = rows.map((row, i) => ({
+      source: row.source ?? 900 + i,
+      token: row.token ?? `dev${i}`,
+      label: row.label ?? null,
+      videoId: row.videoId ?? null,
+      playlistId: row.playlistId ?? null,
+      startedAt: row.startedAt ?? Date.now(),
+      paused: row.paused ?? false
+    }));
+    const volumes = Object.fromEntries(
+      broadcasts.map((b, i) => [String(b.source), rows[i].volume ?? 1])
+    );
+    window.postMessage({ action: MUSIC_BROADCASTS_NUI_ACTION, data: { broadcasts } }, '*');
+    window.postMessage({ action: MUSIC_BROADCAST_VOLUMES_NUI_ACTION, data: { volumes } }, '*');
   };
 
   if (!import.meta.env.DEV) return;

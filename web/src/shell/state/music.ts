@@ -640,6 +640,39 @@ function pickNext(): number | null {
   return others[Math.floor(Math.random() * others.length)];
 }
 
+/**
+ * Whether Next would go anywhere, so a control can refuse to offer a dead button.
+ *
+ * Derived over the four stores `pickNext` reads, and that is not the whole of its input —
+ * it also reads `playedThisCycle`, which is a module-scope `Set` and not reactive. It works
+ * because **every** mutation of that set is accompanied by a write to one of these:
+ * `goTo` adds a key and sets `indexStore`, `toggleShuffle` clears it and flips
+ * `shuffleStore`, `stopMusic` clears it and sets `indexStore`, `removeFromQueue` deletes
+ * from it and sets `queueStore`. So there is no state in which the cycle has moved and none
+ * of these has. Anything added later that touches the cycle silently must write one of them
+ * too, or this store goes stale and a disabled Next button lies.
+ *
+ * `pickNext` is called rather than reimplemented, because a second definition of "is there
+ * a next track" is a second definition that drifts — this one has to agree with the button
+ * exactly, or the control is enabled when pressing it does nothing.
+ */
+export const musicHasNext: Readable<boolean> = derived(
+  [queueStore, indexStore, repeatStore, shuffleStore],
+  () => pickNext() !== null
+);
+
+/**
+ * Whether Previous would go anywhere. Anything loaded, and it would.
+ *
+ * True rather than clever: from the first row `previousTrack` restarts it, which is what
+ * every music player does with that button and is a real thing to want. There is no state
+ * where something is playing and Previous does nothing, so there is nothing to disable.
+ */
+export const musicHasPrevious: Readable<boolean> = derived(
+  [queueStore, indexStore],
+  ([queue, index]) => queue.length > 0 && index >= 0
+);
+
 /** Skip forward. At the end of a queue that is not repeating, this stops. */
 export function nextTrack(): void {
   const next = pickNext();
@@ -873,8 +906,18 @@ export function reportNowPlaying(info: {
  *   navigation and the frame is not something the player can see to stop.
  * - `origin` is what the official IFrame API sets, and the player validates commands
  *   against it. Omitted when there is no http(s) origin to name rather than guessed.
+ * - `start`, when a caller asks for one, is how a **remote** broadcast joins in progress
+ *   (MICA-111 phase 2, `state/nearbyMusic.ts`). It is a URL parameter rather than a
+ *   `seekTo` after load on purpose: a seek is a second command racing the autoplay it is
+ *   trying to correct, and the audible failure mode is the first seconds of the track
+ *   playing before the jump. The phone's own playback never passes one — it starts where
+ *   it was told to and seeks by token.
  */
-export function embedUrlFor(source: MusicSource, origin?: string): string | null {
+export function embedUrlFor(
+  source: MusicSource,
+  origin?: string,
+  options: { start?: number } = {}
+): string | null {
   const videoId = source.videoId && isVideoId(source.videoId) ? source.videoId : null;
   const playlistId =
     source.playlistId && isPlaylistId(source.playlistId) ? source.playlistId : null;
@@ -897,6 +940,15 @@ export function embedUrlFor(source: MusicSource, origin?: string): string | null
     params.set('listType', 'playlist');
   }
   if (origin && /^https?:\/\//.test(origin)) params.set('origin', origin);
+
+  // Re-bounded here rather than trusted, for the same reason every id above is: this is
+  // the one place a value becomes part of a URL the browser navigates. A non-integer or a
+  // negative is dropped rather than coerced — `start=NaN` is a parameter YouTube is free
+  // to interpret however it likes.
+  const start = options.start;
+  if (typeof start === 'number' && Number.isFinite(start) && start > 0) {
+    params.set('start', String(Math.floor(start)));
+  }
 
   // `videoseries` is YouTube's own placeholder path for "a playlist with no entry video".
   const path = videoId ?? 'videoseries';
@@ -959,7 +1011,14 @@ export function resetMusicForTest(): void {
  * closed, which is exactly when music is still playing and nobody is watching.
  */
 callStore.subscribe(({ status }) => {
-  duckedStore.set(status === 'incoming' || status === 'dialing');
+  // Every state but idle, and the `connected` half of that is phase 2's doing. Your own
+  // music is *paused* on a connected call, so ducking it changes nothing audible here —
+  // but `musicOutputVolume` is also what nearby broadcasts are played at
+  // (`NearbyMusicFrame.svelte`), and somebody else's music running at full volume under a
+  // conversation is the failure this whole block exists to prevent. It is ducked rather
+  // than silenced because it is the world's sound and not your phone's content: a bar does
+  // not go quiet because you took a call in it.
+  duckedStore.set(status !== 'idle');
 
   if (status === 'connected') {
     if (!pausedForCall && (get(statusStore) === 'playing' || get(statusStore) === 'loading')) {

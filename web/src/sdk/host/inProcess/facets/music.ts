@@ -34,10 +34,26 @@ import {
   type MusicStatus,
   type QueueEntry
 } from '../../../../shell/state/music';
+import {
+  audibleBroadcasts,
+  clearMutedBroadcasters,
+  muteAllNearby,
+  muteBroadcaster,
+  mutedBroadcasters,
+  nearbyBroadcasts,
+  setMuteAllNearby,
+  toggleBroadcasterMute,
+  toggleMuteAllNearby,
+  unmuteBroadcaster,
+  type AudibleBroadcast,
+  type NearbyBroadcast
+} from '../../../../shell/state/nearbyMusic';
+import { MAX_AUDIBLE_BROADCASTS } from '../../../../lib/musicBroadcast';
 import { isYouTubeSource, thumbnailUrlFor } from '@shared/youtube';
 import { describeMusicError } from '../../../../lib/musicErrors';
 
 export type {
+  AudibleBroadcast,
   MusicError,
   MusicErrorReason,
   MusicNowPlaying,
@@ -45,6 +61,7 @@ export type {
   MusicRepeat,
   MusicSource,
   MusicStatus,
+  NearbyBroadcast,
   QueueEntry
 };
 
@@ -134,7 +151,36 @@ export function music() {
     pauseMusic,
     resumeMusic,
     stopMusic,
-    setMusicVolume
+    setMusicVolume,
+
+    /**
+     * Other people's music (MICA-111 phase 2), and everything an app may do about it.
+     *
+     * Read-and-mute, and nothing else, because there is nothing else to offer: a broadcast
+     * has no queue you can see, no position you may move and no error you could fix. The
+     * transport above is for this phone's own playback and deliberately does not accept a
+     * broadcaster id — an app that could pause a stranger's music would be an app that
+     * could pause a stranger's music.
+     */
+    nearbyBroadcasts,
+    /** The ones actually playing: not muted, in earshot, and inside the cap. */
+    audibleBroadcasts,
+    /**
+     * How many play at once. Exposed so a screen can *say* the rule — "playing the closest
+     * three" — rather than leaving a person to discover it by counting.
+     */
+    maxAudibleBroadcasts: MAX_AUDIBLE_BROADCASTS,
+    /** Broadcaster tokens this phone refuses to play. Never server ids — see `useMusic`. */
+    mutedBroadcasters,
+    /** Whether every nearby broadcast is silenced, whoever it belongs to. */
+    muteAllNearby,
+    muteBroadcaster,
+    unmuteBroadcaster,
+    toggleBroadcasterMute,
+    /** Forget every individual mute. Leaves `muteAllNearby` alone; it is its own switch. */
+    clearMutedBroadcasters,
+    setMuteAllNearby,
+    toggleMuteAllNearby
   };
 }
 

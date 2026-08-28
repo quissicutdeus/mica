@@ -44,9 +44,17 @@
   import { observeReducedMotion } from './state/motion';
   import AddOnFrame from './addon/AddOnFrame.svelte';
   import MusicPlayer from './MusicPlayer.svelte';
+  import NearbyMusicPlayer from './NearbyMusicPlayer.svelte';
   import { isTrustedNuiSource } from './nuiGuard';
+  import { installMusicBroadcast } from '../services/music';
 
   installSystemHost();
+
+  // Tell the server what this phone is playing out loud, so the people standing next to it
+  // hear it (MICA-111 phase 2). Installed here rather than imported for its side effect:
+  // `services/music.ts` exports nothing else, and an import that looks unused is what a
+  // tidy-up deletes. It watches shell state and is never called again.
+  installMusicBroadcast();
 
   /**
    * The phone starts closed everywhere, including a dev browser, and is opened by
@@ -477,6 +485,13 @@
      it is; `MusicPlayer.svelte` carries the reasoning, including why it is a bare
      cross-origin iframe rather than YouTube's own script. -->
 <MusicPlayer />
+
+<!-- Other people's, and it has to be out here for a stronger reason than your own does:
+     you asked for your track, and nobody asked for theirs. A broadcast audible only while
+     the phone was open would be a boombox you had to hold up to hear.
+     `NearbyMusicPlayer.svelte` renders one player per audible broadcaster and nothing when
+     nobody nearby is playing. -->
+<NearbyMusicPlayer />
 
 {#if !visible && isBrowser()}
   <button

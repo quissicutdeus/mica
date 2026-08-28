@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { tick } from 'svelte';
 import { render, fireEvent } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import NowPlaying from './NowPlaying.svelte';
@@ -37,6 +38,24 @@ beforeEach(() => {
   dndEnabled.set(false);
   appNotificationPolicies.set({});
 });
+
+/**
+ * Every control the card is offering, in DOM order.
+ *
+ * Takes an already-rendered row rather than rendering one, so a test can watch the set
+ * change without mounting a second card — two of them in the document is two
+ * `data-testid="now-playing"` nodes and every query after that is ambiguous.
+ */
+const labelsOf = (row: HTMLElement) =>
+  Array.from(row.querySelectorAll('button')).map(
+    (b) => b.getAttribute('aria-label') ?? b.getAttribute('title')
+  );
+
+/** Render, and read the controls off it once. */
+const controls = async () => {
+  const { findByTestId } = render(NowPlaying);
+  return labelsOf(await findByTestId('now-playing'));
+};
 
 describe('NowPlaying', () => {
   it('renders nothing at all when no music is loaded', () => {
@@ -103,30 +122,73 @@ describe('NowPlaying', () => {
 
   it('withholds play/pause on a refused track, and keeps stop', async () => {
     // `resumeMusic` early-returns in the error state, so the button would be dead. Absent
-    // beats disabled in a three-control row: stop is the thing that still works.
+    // beats disabled here: stop is the thing that still works, and previous is the way off
+    // the bad track. Next is absent because a one-row queue has no next — see
+    // `musicHasNext`, which is `pickNext()` itself rather than a second opinion about it.
     const { reportPlayerError } = await import('./state/music');
     playSource(`https://youtu.be/${VIDEO}`);
     reportPlayerError(150);
 
-    const { findByTestId } = render(NowPlaying);
-    const row = await findByTestId('now-playing');
-    const labels = Array.from(row.querySelectorAll('button')).map(
-      (b) => b.getAttribute('aria-label') ?? b.getAttribute('title')
-    );
-    expect(labels).toEqual(['Open Music', 'Stop music']);
+    expect(await controls()).toEqual(['Open Music', 'Previous track', 'Stop music']);
   });
 
   it('offers no way to dismiss it other than stopping the music', async () => {
     playSource(`https://youtu.be/${VIDEO}`);
+
+    // The exact set, and the assertion is exact on purpose: an extra button here would
+    // most likely be a close affordance, which is this ticket's bug in a different shape —
+    // a control you can swipe away while the music keeps playing.
+    expect(await controls()).toEqual(['Open Music', 'Previous track', 'Pause', 'Stop music']);
+  });
+
+  it('offers the whole transport once there is a queue to move through', async () => {
+    const { enqueue } = await import('./state/music');
+    playSource(`https://youtu.be/${VIDEO}`);
+    enqueue('https://youtu.be/M7lc1UVf-VE');
+
+    expect(await controls()).toEqual([
+      'Open Music',
+      'Previous track',
+      'Pause',
+      'Next track',
+      'Stop music'
+    ]);
+  });
+
+  it('moves through the queue without opening the app', async () => {
+    const { enqueue, musicSource } = await import('./state/music');
+    playSource(`https://youtu.be/${VIDEO}`);
+    enqueue('https://youtu.be/M7lc1UVf-VE');
+
+    const { findByLabelText } = render(NowPlaying);
+    await fireEvent.click(await findByLabelText('Next track'));
+    expect(get(musicSource)).toEqual({ videoId: 'M7lc1UVf-VE', playlistId: null });
+
+    await fireEvent.click(await findByLabelText('Previous track'));
+    expect(get(musicSource)).toEqual({ videoId: VIDEO, playlistId: null });
+  });
+
+  /**
+   * A button that does nothing is worse than one that is not offered, and this is the case
+   * where that is easy to get wrong: at the end of a queue that is not repeating,
+   * `nextTrack` stops the music rather than advancing. Offering Next there would be a
+   * control whose label says one thing and whose effect is another.
+   */
+  it('hides next at the end of a queue that is not repeating', async () => {
+    const { enqueue, nextTrack, setRepeat } = await import('./state/music');
+    playSource(`https://youtu.be/${VIDEO}`);
+    enqueue('https://youtu.be/M7lc1UVf-VE');
+    nextTrack();
+
     const { findByTestId } = render(NowPlaying);
     const row = await findByTestId('now-playing');
+    expect(labelsOf(row)).not.toContain('Next track');
 
-    // Three controls exactly: open the app, pause/play, stop. A fourth button here would
-    // most likely be a close affordance, which is the bug in a different shape.
-    const labels = Array.from(row.querySelectorAll('button')).map(
-      (b) => b.getAttribute('aria-label') ?? b.getAttribute('title')
-    );
-    expect(labels).toEqual(['Open Music', 'Pause', 'Stop music']);
+    // With repeat on it wraps, so there genuinely is a next and the button comes back.
+    // The same card, re-read: `musicHasNext` is a store and the control has to follow it.
+    setRepeat('all');
+    await tick();
+    expect(labelsOf(row)).toContain('Next track');
   });
 
   /**
@@ -199,5 +261,101 @@ describe('NowPlaying in the shade', () => {
     expect(row.compareDocumentPosition(list as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING
     );
+  });
+});
+
+describe('the scrubber', () => {
+  /**
+   * No duration, no scrubber, and that is not the same as a zero-length track: the player
+   * reports `0` until it knows, and forever for a live stream. A slider that cannot move
+   * is a lie about what is playing.
+   */
+  it('is absent until the player has reported a duration', async () => {
+    playSource(`https://youtu.be/${VIDEO}`);
+    const { queryByLabelText } = render(NowPlaying);
+    expect(queryByLabelText('Seek')).toBeNull();
+  });
+
+  it('appears once there is something to scrub, and moves the playhead', async () => {
+    const { reportPlayerProgress, musicPosition } = await import('./state/music');
+    playSource(`https://youtu.be/${VIDEO}`);
+    reportPlayerProgress({ currentTime: 10, duration: 240 });
+
+    const { findByLabelText } = render(NowPlaying);
+    const slider = (await findByLabelText('Seek')) as HTMLInputElement;
+
+    // A native range input, so it is keyboard-operable without any work of ours — which a
+    // div-and-pointer scrubber would not be, and axe would not have caught.
+    expect(slider.tagName).toBe('INPUT');
+    expect(slider.type).toBe('range');
+    expect(slider.max).toBe('240');
+
+    await fireEvent.change(slider, { target: { value: '90' } });
+    expect(get(musicPosition).current).toBe(90);
+  });
+
+  it('is withheld on a refused track, like the rest of the transport', async () => {
+    const { reportPlayerError, reportPlayerProgress } = await import('./state/music');
+    playSource(`https://youtu.be/${VIDEO}`);
+    reportPlayerProgress({ currentTime: 10, duration: 240 });
+    reportPlayerError(150);
+
+    const { queryByLabelText } = render(NowPlaying);
+    expect(queryByLabelText('Seek')).toBeNull();
+  });
+});
+
+describe('saying it is audible to other people', () => {
+  /**
+   * Broadcasting is on by default (MICA-111 phase 2): pressing Play makes you audible to
+   * the street and there is no toggle. Somebody who started a track and put the phone away
+   * is not looking at the Music app, so this row is the only thing that can tell them.
+   */
+  it('says so while sound is coming out', async () => {
+    playSource(`https://youtu.be/${VIDEO}`);
+    const { findByText } = render(NowPlaying);
+    expect(await findByText(/Out loud/)).toBeTruthy();
+  });
+
+  it('does not say so while paused, which would be crying wolf', async () => {
+    const { pauseMusic } = await import('./state/music');
+    playSource(`https://youtu.be/${VIDEO}`);
+    pauseMusic();
+
+    const { queryByText } = render(NowPlaying);
+    expect(queryByText(/Out loud/)).toBeNull();
+  });
+});
+
+describe("other people's music", () => {
+  /**
+   * The gate the lead asked for, and it is a test rather than a runtime branch.
+   *
+   * A transport control over a stranger's stereo would be absurd, and there is nothing in
+   * this component to guard against it: it reads `musicSource`, which is derived from the
+   * *local* queue, and `state/nearbyMusic.ts` neither writes that store nor shares one with
+   * it. A runtime check would be a branch that can never be true and would read as though
+   * it could — so what holds the property is this, which fails the day somebody wires a
+   * remote source into the local store.
+   */
+  it('renders nothing for a nearby broadcast, however loud it is', async () => {
+    const { receiveNearbyBroadcasts, receiveNearbyVolumes, audibleBroadcasts } =
+      await import('./state/nearbyMusic');
+    receiveNearbyBroadcasts([
+      {
+        source: 42,
+        token: 'someone',
+        label: 'Frank Nitti',
+        videoId: VIDEO,
+        playlistId: null,
+        startedAt: Date.now(),
+        paused: false
+      }
+    ]);
+    receiveNearbyVolumes({ 42: 1 });
+    expect(get(audibleBroadcasts)).toHaveLength(1);
+
+    const { queryByTestId } = render(NowPlaying);
+    expect(queryByTestId('now-playing')).toBeNull();
   });
 });

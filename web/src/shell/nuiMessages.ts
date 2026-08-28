@@ -11,10 +11,17 @@ import { bootstrapStores, resetBootstrapState } from './state/bootstrap';
 import { toast } from './state/toast';
 import { messageOf } from '../lib/errors';
 import { APP_EVENT_NUI_ACTION, parseAppEventEnvelope } from '@shared/appEvents';
+import {
+  MUSIC_BROADCASTS_NUI_ACTION,
+  MUSIC_BROADCAST_VOLUMES_NUI_ACTION
+} from '@shared/musicBroadcast';
 import { deliverAppEvent } from './state/appEvents';
 import { parseDeepLink } from '@shared/deepLink';
+import { receiveNearbyBroadcasts, receiveNearbyVolumes } from './state/nearbyMusic';
 import {
   parseContactShare,
+  parseMusicBroadcastVolumes,
+  parseMusicBroadcasts,
   parseNotify,
   parseOpenApp,
   parseReceiveMail,
@@ -283,6 +290,30 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
       const parsed = parseOpenApp(data);
       if (!parsed) return;
       bridge.openFromNotification(parsed.appId, parsed.props);
+    },
+    /**
+     * Who nearby is playing what, from the server. MICA-111 phase 2.
+     *
+     * Straight into `state/nearbyMusic.ts` with no toast and no notification, and that is
+     * the right amount of ceremony: somebody within earshot starting a song is not an
+     * event addressed to this player, it is a fact about the world. The phone's answer to
+     * it is audio, not an interruption — and the notification the person actually wants,
+     * if they want one, is silence, which is what the mute in the shade is for.
+     */
+    [MUSIC_BROADCASTS_NUI_ACTION]: (data: unknown) => {
+      const list = parseMusicBroadcasts(data);
+      if (list) receiveNearbyBroadcasts(list);
+    },
+    /**
+     * How loud each of them is, from the game client's distance tick.
+     *
+     * Separate from the roster above because it arrives from a different sender at a
+     * different rate — see `parseMusicBroadcasts` in `@shared/nui`. This is the hottest
+     * route in the table by some distance, so it does exactly one thing.
+     */
+    [MUSIC_BROADCAST_VOLUMES_NUI_ACTION]: (data: unknown) => {
+      const volumes = parseMusicBroadcastVolumes(data);
+      if (volumes) receiveNearbyVolumes(volumes);
     },
     installApp,
     uninstallApp,

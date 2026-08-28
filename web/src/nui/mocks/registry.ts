@@ -1878,7 +1878,21 @@ const mockRegistry: Record<string, MockHandler> = {
   setTyping: () => true,
   setBatteryLevel: () => true,
   // The browser has no ace list; the panel is unconditional there anyway.
-  checkAdmin: () => ({ isAdmin: true })
+  checkAdmin: () => ({ isAdmin: true }),
+
+  /**
+   * Broadcasting to people nearby (MICA-111 phase 2), which in a browser means nobody.
+   *
+   * Deliberately inert rather than fed back into `shell/state/nearbyMusic.ts` — echoing
+   * your own broadcast to yourself would put a second player of your own track on your own
+   * phone, a fraction out of sync with the first, which is a bug the real client is
+   * careful to avoid (`client/services/Music.ts` drops the local player from the roster).
+   * `window.pushNearbyMusic` in `shell/devHarness.ts` is how you hear somebody else in a
+   * browser.
+   */
+  startMusicBroadcast: () => ({ ok: true }),
+  updateMusicBroadcast: () => ({ ok: true }),
+  stopMusicBroadcast: () => ({ ok: true })
 };
 
 /**

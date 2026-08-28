@@ -39,8 +39,27 @@ import { guarded } from './guard';
  * the video is gone. `describeMusicError` is the shared wording. Do not render an errored
  * track as loading: the phone's own in-game test procedure depends on that distinction.
  *
- * **Phase 1 is local playback: the person hears their own music and nobody else does.**
- * There is no proximity broadcast behind this yet, and an app should not imply one.
+ * **Other people's music is a different thing, and the hook says so.** `nearbyBroadcasts`
+ * is who is playing something within earshot and `audibleBroadcasts` is the subset this
+ * phone is actually rendering — after the mute list, and after a cap of
+ * `maxAudibleBroadcasts` on how many play at once, nearest first. There is no transport
+ * for them and there never will be: a broadcast has no queue you can see, no position you
+ * may move, and no error you could do anything about. The two things an app may offer are
+ * `muteBroadcaster` (per person, persisted across sessions) and `setMuteAllNearby` (the
+ * standing switch somebody reaches for when they are being harassed and do not care by
+ * whom). Muting is local, is never sent anywhere, and the broadcaster is not told.
+ *
+ * **Mute against `token`, never `source`.** A row carries both: `token` is an opaque,
+ * stable handle on the person and is the only thing `muteBroadcaster` accepts; `source` is
+ * a FiveM server id, a connection the server reuses, and a mute keyed there is void the
+ * moment its target relogs. A `token` survives a reconnect and not a resource restart,
+ * which is the right trade — mute evasion is a relog, not an `ensure`.
+ *
+ * **A broadcast is anonymous unless the server named it.** `label` is optional and `null`
+ * is normal; neither `token` nor `source` is something to put on a screen. There is also
+ * no *title* for a remote source — the title channel is the local player's own frame, and
+ * a stranger's is not talking to this phone — so a nearby row is named by its person or by
+ * nothing, and the artwork from `thumbnailUrlFor` is often all there is to look at.
  */
 export function useMusic() {
   return guarded('useMusic').facets.music();
@@ -48,6 +67,7 @@ export function useMusic() {
 
 /** @public — SDK surface for add-ons; no in-repo app needs to name it. */
 export type {
+  AudibleBroadcast,
   MusicError,
   MusicErrorReason,
   MusicNowPlaying,
@@ -55,5 +75,6 @@ export type {
   MusicRepeat,
   MusicSource,
   MusicStatus,
+  NearbyBroadcast,
   QueueEntry
 } from './inProcess/facets/music';

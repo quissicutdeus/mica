@@ -182,6 +182,31 @@ describe('embedUrlFor', () => {
     ).toBeNull();
   });
 
+  it('carries a start offset only when one is asked for, and only a sane one', () => {
+    // How a remote broadcast joins in progress (MICA-111 phase 2). A URL parameter
+    // rather than a `seekTo` after load, because a seek races the autoplay it is
+    // correcting and the audible failure is the first seconds playing before the jump.
+    const at = (start: unknown) =>
+      new URL(
+        embedUrlFor({ videoId: VIDEO, playlistId: null }, undefined, {
+          start: start as number
+        })!
+      ).searchParams.get('start');
+
+    expect(at(90)).toBe('90');
+    expect(at(90.7)).toBe('90');
+    // The phone's own playback passes none, and starts where it was told to.
+    expect(
+      new URL(embedUrlFor({ videoId: VIDEO, playlistId: null })!).searchParams.get('start')
+    ).toBeNull();
+    // Dropped rather than coerced: `start=NaN` is a parameter YouTube may interpret
+    // however it likes.
+    expect(at(0)).toBeNull();
+    expect(at(-5)).toBeNull();
+    expect(at(Number.NaN)).toBeNull();
+    expect(at('60')).toBeNull();
+  });
+
   it('re-validates the ids rather than trusting the caller', () => {
     // The store cannot hold these — `playSource` would have refused them — which is the
     // point: this function does not depend on that having happened.
@@ -648,6 +673,21 @@ describe('a call', () => {
     // permanently at a fifth if the un-duck were ever missed.
     expect(get(musicVolume)).toBe(0.5);
     expect(get(musicStatus)).toBe('loading');
+
+    callStore.setStatus('idle');
+    expect(get(musicOutputVolume)).toBe(0.5);
+  });
+
+  it("ducks a connected call too, which is only audible on somebody else's music", () => {
+    // Your own track is *paused* on a connected call, so this changes nothing you can
+    // hear from this phone — but `musicOutputVolume` is also what nearby broadcasts play
+    // at (`NearbyMusicFrame.svelte`), and a stranger's music at full volume under a
+    // conversation is the failure this whole block exists to prevent. Ducked rather than
+    // silenced because it is the world's sound: a bar does not go quiet because you took
+    // a call in it.
+    playSource(A);
+    callStore.setStatus('connected');
+    expect(get(musicOutputVolume)).toBeCloseTo(0.1);
 
     callStore.setStatus('idle');
     expect(get(musicOutputVolume)).toBe(0.5);

@@ -11,6 +11,7 @@ import { charge } from './state/charge';
 import { signalLevel } from './state/signal';
 import { contacts } from '../services/contacts';
 import { appRegistryStore } from './state/registry';
+import { audibleBroadcasts, nearbyBroadcasts, resetNearbyMusicForTest } from './state/nearbyMusic';
 
 /**
  * These twelve branches previously lived inside `App.svelte` and had no unit tests at
@@ -269,5 +270,74 @@ describe('contact share', () => {
   it('answers to both names the client has used', () => {
     expect(route(message('shareContact', { firstname: 'A', phone: '1' }))).toBe(true);
     expect(route(message('receiveContactShare', { firstname: 'A', phone: '1' }))).toBe(true);
+  });
+});
+
+/**
+ * The two nearby-music routes. MICA-111 phase 2.
+ *
+ * The transport half of the feature the ticket says must not be missing, and the one
+ * place both halves of it meet: a roster from the server and a volume map from the game
+ * client, arriving as separate messages at different rates. A missing route here is a
+ * feature that is silently dead in game while every other suite passes (AGENTS.md §8),
+ * which is exactly what this file exists to catch.
+ */
+describe('nearby music', () => {
+  const VIDEO = 'dQw4w9WgXcQ';
+  const broadcast = (token: string, source = 41) => ({
+    source,
+    token,
+    label: null,
+    videoId: VIDEO,
+    playlistId: null,
+    startedAt: Date.now(),
+    paused: false
+  });
+
+  beforeEach(() => resetNearbyMusicForTest());
+
+  it('routes a roster and the volumes that make it audible', () => {
+    expect(route(message('musicBroadcasts', { broadcasts: [broadcast('a')] }))).toBe(true);
+    expect(get(nearbyBroadcasts).map((b) => b.token)).toEqual(['a']);
+
+    // Nothing plays on the roster alone: a volume the game client has not sent is not
+    // permission to play at full. The volume map is keyed by `source`, which is the only
+    // handle the game client can measure a distance to.
+    expect(get(audibleBroadcasts)).toEqual([]);
+    expect(route(message('musicBroadcastVolumes', { volumes: { 41: 0.6 } }))).toBe(true);
+    expect(get(audibleBroadcasts).map((b) => b.token)).toEqual(['a']);
+  });
+
+  it('treats an empty roster as the end of a broadcast rather than a malformed message', () => {
+    route(message('musicBroadcasts', { broadcasts: [broadcast('a')] }));
+    route(message('musicBroadcastVolumes', { volumes: { 41: 0.6 } }));
+
+    route(message('musicBroadcasts', { broadcasts: [] }));
+    expect(get(nearbyBroadcasts)).toEqual([]);
+    expect(get(audibleBroadcasts)).toEqual([]);
+  });
+
+  it('leaves state alone when the payload is not a roster at all', () => {
+    route(message('musicBroadcasts', { broadcasts: [broadcast('a')] }));
+    route(message('musicBroadcasts', { nope: true }));
+    route(message('musicBroadcasts', 'a string'));
+    expect(get(nearbyBroadcasts).map((b) => b.token)).toEqual(['a']);
+  });
+
+  it('raises no toast and opens nothing — audio is the answer, not an interruption', () => {
+    route(message('musicBroadcasts', { broadcasts: [broadcast('a')] }));
+    expect(get(toast)).toHaveLength(0);
+    expect(opened).toHaveLength(0);
+  });
+
+  it('does not let a volume map poison the lookup it is used for', () => {
+    route(message('musicBroadcasts', { broadcasts: [broadcast('a')] }));
+    route(
+      message('musicBroadcastVolumes', {
+        volumes: JSON.parse('{"__proto__": {"polluted": 1}, "41": 0.5}')
+      })
+    );
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(get(audibleBroadcasts).map((b) => b.token)).toEqual(['a']);
   });
 });
