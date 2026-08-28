@@ -241,6 +241,124 @@ requirements:
 
 ---
 
+## Configuration
+
+Everything a server owner can tune is a convar, set in `server.cfg` above
+`ensure gphone`. Every one of them is read on the server, so plain `set` is
+enough — `setr` works too and additionally replicates the value to clients,
+which nothing here needs.
+
+The values below are the defaults as written in the code, so a server that sets
+none of them behaves exactly as shown and this block is only worth pasting if
+you intend to change something.
+
+```cfg
+set gphone_admin_aces "gphone.admin,command"
+set gphone_rate_limit 60
+set gphone_bank_transfer_max 50000
+set gphone_max_accounts_per_app 3
+set gphone_bluetooth_range 15
+set gphone_blabber_edit_window 900
+set gphone_notification_retention 30
+```
+
+| Convar                          | Type                 | Default                | Controls                                         |
+| ------------------------------- | -------------------- | ---------------------- | ------------------------------------------------ |
+| `gphone_admin_aces`             | comma-separated aces | `gphone.admin,command` | Who counts as a gPhone admin                     |
+| `gphone_rate_limit`             | integer              | `60`                   | Requests per player, per action, per minute      |
+| `gphone_bank_transfer_max`      | integer              | `50000`                | Ceiling on one player-to-player send             |
+| `gphone_max_accounts_per_app`   | integer              | `3`                    | Identities one player may hold in one social app |
+| `gphone_bluetooth_range`        | integer, meters      | `15`                   | How far a proximity share reaches                |
+| `gphone_blabber_edit_window`    | integer, seconds     | `900`                  | How long the UI offers Edit on a Blab            |
+| `gphone_notification_retention` | integer, days        | `30`                   | How long notification rows are kept              |
+
+Six of the seven are read on every use rather than cached, so changing one with
+`set` from the live console takes effect on the next request and needs no
+restart. `gphone_notification_retention` is the exception, for the reason given
+under it below.
+
+- **`gphone_admin_aces`** — which ace objects grant gPhone admin: the phone's
+  Developer Tools, and the `gphone*` console commands. The default recognises
+  two, and the second is the interesting one. `command` is the near-universal
+  proxy for "runs this server" (`add_ace group.admin command allow`), so an
+  owner who is already a full admin is not asked to grant themselves a second,
+  phone-specific ace before the phone will believe them — anyone holding
+  `command` can already do by console everything the phone's admin tools offer,
+  so recognising it grants nothing new. `gphone.admin` stays for the case the
+  dedicated ace actually exists for: giving phone admin to somebody who is not a
+  server admin. Change it to hand the phone to a staff group —
+  `set gphone_admin_aces "gphone.admin,mygroup.staff"` — but note that the value
+  **replaces** the list rather than adding to it, so dropping `command` revokes
+  anyone whose only qualification was that ace, quite possibly including you. An
+  empty or whitespace-only value falls back to the default rather than silently
+  locking everyone out. The server console is trusted whatever this says, and
+  `gphoneschema apply` takes the console and nobody else no matter how this is
+  set.
+- **`gphone_rate_limit`** — how many requests one player may make of one action
+  within a fixed 60-second window, enforced at the net-event boundary so custom
+  actions are covered and not just generic CRUD. Over the limit the request is
+  answered with "Too many … requests. Slow down and try again." rather than
+  dropped, so an honest client sees a reason instead of hanging. The window
+  length itself is not configurable. Sixty is measured against real bursts: the
+  heaviest legitimate pattern is a player clicking through conversations or
+  paging a feed, both a handful per minute, and the counter is keyed per action,
+  so opening the phone — several services preloading at once — spends one
+  request each rather than eight against one bucket. Raise it if players on a
+  busy server hit that message during ordinary use; lower it if you are being
+  spammed by a modified client. A non-numeric or non-positive value falls back
+  to 60.
+- **`gphone_bank_transfer_max`** — the ceiling on a single player-to-player send
+  from the Bank app; a larger amount is refused before any money moves. Per
+  transfer, not per day: there is no cumulative cap, so this bounds what one
+  request can do rather than what a session can. Set it against your economy's
+  scale — it is the main brake on a compromised client emptying an account in
+  one action. A non-numeric or non-positive value falls back to 50000.
+- **`gphone_max_accounts_per_app`** — how many identities one player may hold in
+  one social app; Blabber's `@handle`s are the only current consumer. Capped
+  because the handle namespace is public and finite: with no limit, one player
+  can claim every good name in an afternoon. Three is a main and a couple of
+  alts. The number is also reported to the app so the Claim button matches what
+  the server will accept, which means the UI follows the convar without a client
+  change. Lowering it takes nothing away — accounts already claimed keep
+  working; their holder simply cannot create another until they are back under
+  the cap. A non-numeric or non-positive value falls back to 3.
+- **`gphone_bluetooth_range`** — how far a Bluetooth proximity share reaches, in
+  meters, measured server-side from live in-game position; the client never
+  sends a distance and never receives a player list. Fifteen keeps it a "hand it
+  to the person next to you" gesture, which is what the feature is for. A large
+  value quietly turns every share into a broadcast across half the map and
+  undoes the point of the discoverability toggle in Settings > Network. This is
+  the one value gPhone does not sanity-check before using: it is passed through
+  as given, so `0` disables proximity sharing outright — nobody is ever in range
+  — rather than falling back to 15.
+- **`gphone_blabber_edit_window`** — how long after posting a Blab its author
+  may still fix a typo. **Read this before setting it.** The convar changes how
+  long the app offers an Edit button, and nothing else: the refusal itself comes
+  from `editWindow: 900` in Blabber's `defineService` declaration, a literal the
+  convar does not reach. So a value above 900 shows an Edit button whose save is
+  then refused, and a value below 900 hides one for an edit that would still
+  have succeeded. Until the two agree, leave it unset and Blabber behaves as
+  documented in Key Features — fifteen minutes, then the post freezes.
+- **`gphone_notification_retention`** — how many days of notification history to
+  keep. At resource start gPhone deletes every row in `gphone_notifications`
+  older than this, read or unread, cleared or not, and nothing else ever prunes
+  them: there is no timer, so a server that never restarts never prunes, and one
+  that restarts often prunes at each start. That is also why this is the one
+  convar here whose change needs a restart — it is read once, at the moment the
+  prune runs. Raise it if you want players to keep more history; lower it if the
+  table grows faster than you care to carry. A non-positive value falls back
+  to 30.
+
+One convar you may still find in an old config: `gphone_auto_migrate`. An
+earlier build added missing columns and indexes at start when it was set, and
+that behaviour is gone — nothing reads the name now. A boot that changes the
+schema by itself gives an operator no moment at which to take a backup and no
+say in whether today is the day, so schema changes are applied deliberately, by
+`gphoneschema apply` from the console. If the line is in your `server.cfg` it is
+inert, and can be deleted.
+
+---
+
 ## Development
 
 gPhone uses `pnpm` workspaces for concurrent frontend and client/server
