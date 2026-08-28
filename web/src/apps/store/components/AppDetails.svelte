@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { type AppManifest, formatDate } from '@gphone/sdk';
+  import { type AppManifest, type AppUpdate, formatDate } from '@gphone/sdk';
   import { formatPermission, getAppStorageSize } from '../appInfo';
 
   /**
@@ -13,15 +13,20 @@
   let {
     app,
     installed,
+    update = null,
     onback,
     oninstall,
+    onupdate,
     onuninstall,
     onopen
   }: {
     app: AppManifest;
     installed: boolean;
+    /** The pending update for this app, or `null` when it is current (or not a catalog install). */
+    update?: AppUpdate | null;
     onback: () => void;
     oninstall: (app: AppManifest) => void;
+    onupdate: (app: AppManifest) => void;
     onuninstall: (app: AppManifest) => void;
     onopen: (id: string) => void;
   } = $props();
@@ -96,6 +101,32 @@
             </div>
           </div>
         {:else if installed}
+          <!--
+            Above Open/Uninstall rather than beside them: this is the screen that lists the
+            permissions the new bundle will run with, so the player reads what they are
+            accepting in the same place they accept it — the same order a first install has.
+          -->
+          {#if update}
+            <div class="mb-2 space-y-2">
+              <p
+                class="bg-primary-container text-on-primary-container text-body-small rounded-lg px-3 py-2"
+              >
+                {#if update.kind === 'newer'}
+                  Version {update.availableVersion} is available. You have {update.installedVersion}.
+                {:else}
+                  The catalog offers version {update.availableVersion}, which cannot be ordered
+                  against the installed {update.installedVersion}. Updating installs the catalog's
+                  copy.
+                {/if}
+              </p>
+              <button
+                onclick={() => onupdate(app)}
+                class="bg-secondary text-on-secondary shadow-elevation-2 text-body-small duration-short ease-standard w-full rounded-xl py-2.5 transition active:scale-95"
+              >
+                Update to v{update.availableVersion}
+              </button>
+            </div>
+          {/if}
           <div class="flex gap-2">
             <button
               onclick={() => {

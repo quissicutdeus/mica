@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import manifest from './manifest';
-import { useAppRegistry, setTrustedRemoteAppHosts } from '@gphone/sdk';
+import { useAppRegistry, setTrustedRemoteAppHosts, setRemoteCatalogUrl } from '@gphone/sdk';
+import type { AppManifest } from '@gphone/sdk';
 import { renderApp } from '@gphone/sdk/testing';
 import { catalogApps, remoteCatalogApps, mergedCatalogApps } from './appInfo';
 import type { AppComponent } from '@gphone/sdk';
@@ -14,7 +15,7 @@ vi.mock('../../nui/fetchNui', () => ({
 
 import Store from './index.svelte';
 
-const { registryStore: appRegistryStore } = useAppRegistry();
+const { registryStore: appRegistryStore, refreshUpdates } = useAppRegistry();
 
 // The registry insists on a component now. These three cases are about bookkeeping —
 // registration, lookup, and the system-app guard — and never mount anything.
@@ -95,13 +96,10 @@ describe('Store, rendered', () => {
 describe('handleInstall routing', () => {
   /**
    * `handleInstall` in `index.svelte` branches on `app.isRemote && app.bundleUrl` to pick
-   * `installFromCatalog` over the bundled-add-on `registerAddOn` path. Only the bundled
-   * branch is reachable through a real render: `REMOTE_CATALOG_URL` is hard-coded to
-   * `undefined` in `index.svelte` (a deliberate non-goal — no operator configuration for
-   * the remote catalog URL yet), so `mergedCatalogApps` never returns a remote entry for
-   * `CatalogList` to render an Install button for, and there is no other exported seam to
-   * reach `handleInstall`'s remote branch directly. That branch stays untested until
-   * either an operator-configurable catalog URL or a test seam exists for it.
+   * `installFromCatalog` over the bundled-add-on `registerAddOn` path. This block covers
+   * the bundled branch; `setRemoteCatalogUrl` (MICA-74 moved the URL out of a `const` in
+   * `index.svelte` and into `shell/state/catalog.ts`, because the update check needs the
+   * same answer at phone-open) is the seam the remote branch was previously missing.
    */
   afterEach(() => {
     if (get(appRegistryStore).some((a) => a.id === 'notes')) {
@@ -210,5 +208,97 @@ describe('remote catalog', () => {
     expect(merged.length).toBeGreaterThan(0);
     expect(merged.some((a) => a.id === 'notes')).toBe(true);
     expect(merged.some((a) => a.id === 'remote_weather')).toBe(false);
+  });
+});
+
+describe('add-on updates (MICA-74)', () => {
+  const BUNDLE_URL = 'https://store.example.com/apps/weather.js';
+  const CATALOG_URL = 'https://store.example.com/catalog.json';
+
+  const catalogEntry = {
+    id: 'remote_weather',
+    name: 'Weather',
+    version: '2.0.0',
+    description: 'Live weather from a remote catalog.',
+    bundleUrl: BUNDLE_URL,
+    sha256: 'b'.repeat(64),
+    color: 'bg-blue-500',
+    permissions: []
+  };
+
+  const installedManifest = {
+    id: 'remote_weather',
+    name: 'Weather',
+    color: 'bg-blue-500',
+    tile: { bg: 'bg-blue-500' },
+    icon: null,
+    core: false,
+    isRemote: true,
+    bundleUrl: BUNDLE_URL,
+    version: '1.0.0'
+  } as unknown as AppManifest;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    setTrustedRemoteAppHosts(['store.example.com']);
+    setRemoteCatalogUrl(CATALOG_URL);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([catalogEntry])
+    } as Response);
+    appRegistryStore.registerAddOn(installedManifest, 'v1 bundle');
+  });
+
+  afterEach(async () => {
+    setRemoteCatalogUrl(undefined);
+    await refreshUpdates();
+    if (get(appRegistryStore).some((a) => a.id === 'remote_weather')) {
+      appRegistryStore.unregisterApp('remote_weather');
+    }
+  });
+
+  it('tells a player on either tab that an installed add-on is behind', async () => {
+    // The banner sits above the tabs on purpose: a player arriving from the launcher badge
+    // has no idea which tab the news is on.
+    const { findByText } = renderApp(Store, { id: 'store' });
+
+    expect(await findByText('1 add-on has an update available')).toBeTruthy();
+  });
+
+  it('offers Update on the installed row, naming both versions', async () => {
+    const { findByText, getByText } = renderApp(Store, { id: 'store' });
+    await findByText('1 add-on has an update available');
+
+    getByText('Installed (' + get(appRegistryStore).length + ')').click();
+
+    expect(await findByText('Update available · v1.0.0 → v2.0.0')).toBeTruthy();
+    expect(getByText('Update')).toBeTruthy();
+  });
+
+  it('updates through installFromCatalog rather than a second install path', async () => {
+    // Reuse is the whole rule here: the update re-fetches and re-verifies the entry's
+    // sha256 exactly as a first install does.
+    const installFromCatalog = vi
+      .spyOn(appRegistryStore, 'installFromCatalog')
+      .mockResolvedValue({ manifest: installedManifest });
+
+    const { findByText, getByText } = renderApp(Store, { id: 'store' });
+    await findByText('1 add-on has an update available');
+    getByText('Installed (' + get(appRegistryStore).length + ')').click();
+
+    (await findByText('Update')).click();
+
+    await vi.waitFor(() => expect(installFromCatalog).toHaveBeenCalledWith(catalogEntry));
+  });
+
+  it('says nothing when the catalog matches what is installed', async () => {
+    appRegistryStore.unregisterApp('remote_weather');
+    appRegistryStore.registerAddOn({ ...installedManifest, version: '2.0.0' }, 'v2 bundle');
+
+    const { queryByText, findByText } = renderApp(Store, { id: 'store' });
+    await findByText('Store Catalog');
+
+    await vi.waitFor(() => expect(queryByText(/update available/)).toBeNull());
   });
 });

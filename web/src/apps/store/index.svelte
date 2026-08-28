@@ -8,7 +8,10 @@
     SegmentedControl,
     useAppAction,
     type AppProps,
-    fetchCatalog
+    type AppUpdate,
+    fetchCatalog,
+    getRemoteCatalogUrl,
+    onAppForeground
   } from '@gphone/sdk';
   import { mergedCatalogApps } from './appInfo';
   import AppDetails from './components/AppDetails.svelte';
@@ -17,25 +20,34 @@
 
   let { onback }: AppProps = $props();
 
-  /**
-   * The operator's own catalog server, if they have one. Unset by default: `remoteCatalogApps`
-   * already returns an empty list for `undefined`, so the Store shows exactly what it showed
-   * before this shipped until an operator points this at a real, allowlisted host.
-   */
-  const REMOTE_CATALOG_URL: string | undefined = undefined;
-
   // Starts empty; `mergedCatalogApps` (bundled add-ons + whatever the configured catalog
-  // returns) fills it in once the effect below resolves. `catalogApps()` is not called
+  // returns) fills it in once the fetch below resolves. `catalogApps()` is not called
   // directly here any more — `mergedCatalogApps` already calls it internally.
   let catalogAppsList = $state<AppManifest[]>([]);
 
-  $effect(() => {
-    mergedCatalogApps(REMOTE_CATALOG_URL).then((apps) => (catalogAppsList = apps));
-  });
+  const {
+    registryStore,
+    unregisterApp,
+    registerAddOn,
+    installFromCatalog,
+    updatesStore,
+    refreshUpdates,
+    updateApp
+  } = useAppRegistry();
 
-  const { registryStore, unregisterApp, registerAddOn, installFromCatalog } = useAppRegistry();
   const { openApp: openPhoneApp } = useNavigation();
   const { run } = useAppAction('store');
+
+  /**
+   * `onAppForeground`, not `$effect`/`onMount` (§11): apps are resident, so a fetch that ran
+   * once per session would show whichever catalog was live the first time the Store was
+   * opened for the rest of the phone's life — and the whole point of the update check is
+   * that the catalog moves underneath you. Re-asked on every visit.
+   */
+  onAppForeground('store', () => {
+    void mergedCatalogApps(getRemoteCatalogUrl()).then((apps) => (catalogAppsList = apps));
+    void refreshUpdates();
+  });
 
   let activeTab = $state<'catalog' | 'installed'>('catalog');
   let installedFilter = $state<'all' | 'system' | 'addon'>('all');
@@ -44,6 +56,10 @@
   let appToUninstall = $state<AppManifest | null>(null);
 
   const isInstalled = (appId: string): boolean => $registryStore.some((a) => a.id === appId);
+
+  /** The pending update for an app, if the catalog has moved past what is installed. */
+  const updateFor = (appId: string): AppUpdate | null =>
+    $updatesStore.find((u) => u.appId === appId) ?? null;
 
   const filteredInstalledApps = $derived(
     $registryStore
@@ -76,7 +92,9 @@
       const target = app;
       void run(
         async () => {
-          const entries = await fetchCatalog(REMOTE_CATALOG_URL as string);
+          const catalogUrl = getRemoteCatalogUrl();
+          if (!catalogUrl) throw new Error('No add-on catalog is configured on this server.');
+          const entries = await fetchCatalog(catalogUrl);
           const entry = entries.find((e) => e.id === target.id);
           if (!entry) throw new Error(`'${target.name}' is no longer in the catalog.`);
           await installFromCatalog(entry);
@@ -92,6 +110,24 @@
     void run(() => registerAddOn(app), {
       title: 'Store',
       success: `${app.name} installed successfully!`
+    });
+  }
+
+  /**
+   * Install the catalog's copy of an app that has fallen behind.
+   *
+   * No confirmation dialog and no second install path: `updateApp` goes through
+   * `installFromCatalog`, so the bundle is re-fetched and re-verified against the entry's
+   * `sha256` exactly as it was on the first install. The permissions the player accepted are
+   * on screen while they tap this — the details view is one tap away from either surface
+   * that offers the button, and `AppDetails` lists them.
+   */
+  function handleUpdate(app: AppManifest) {
+    const pending = updateFor(app.id);
+    if (!pending) return;
+    void run(() => updateApp(app.id), {
+      title: 'Store',
+      success: `${app.name} updated to v${pending.availableVersion}`
     });
   }
 
@@ -120,14 +156,36 @@
     <AppDetails
       app={selectedApp}
       installed={isInstalled(selectedApp.id)}
+      update={updateFor(selectedApp.id)}
       onback={() => (selectedApp = null)}
       oninstall={handleInstall}
+      onupdate={handleUpdate}
       onuninstall={requestUninstall}
       onopen={openPhoneApp}
     />
   {:else}
     <Screen title="Store" {onback}>
       <div class="space-y-4 p-4">
+        <!--
+          Shown on both tabs, because a player who opened the Store from the launcher badge
+          has no idea which tab the news is on. Tapping it goes where the buttons are.
+        -->
+        {#if $updatesStore.length > 0}
+          <button
+            onclick={() => {
+              activeTab = 'installed';
+              installedFilter = 'addon';
+            }}
+            class="bg-primary-container text-on-primary-container text-body-small duration-short ease-standard flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left transition active:scale-95"
+          >
+            <span>
+              {$updatesStore.length}
+              {$updatesStore.length === 1 ? 'add-on has' : 'add-ons have'} an update available
+            </span>
+            <span aria-hidden="true">›</span>
+          </button>
+        {/if}
+
         <SegmentedControl
           aria-label="Store sections"
           selected={activeTab}
@@ -149,10 +207,12 @@
         {:else}
           <InstalledList
             apps={filteredInstalledApps}
+            updates={$updatesStore}
             bind:filter={installedFilter}
             bind:sortOrder={installedSortOrder}
             onselect={(app: AppManifest) => (selectedApp = app)}
             onopen={openPhoneApp}
+            onupdate={handleUpdate}
           />
         {/if}
       </div>

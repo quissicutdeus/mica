@@ -315,17 +315,25 @@ function getSavedRemoteApps(): SavedRemoteApp[] {
 }
 
 /**
- * Upsert by `url`. A later install of the same URL always wins: a catalog reinstall with
- * a fresh hash (the operator republished the bundle) replaces a now-stale one — pinned as
- * `entry.sha256`, so a later `saveRemoteApp` call naturally carries the fresh hash along
- * with the rest of the fresh entry. Without this upsert, rehydration would keep
- * re-verifying against whichever entry happened to be saved first, forever.
+ * Upsert by `url` **and by app id**. A later install of the same URL always wins: a catalog
+ * reinstall with a fresh hash (the operator republished the bundle) replaces a now-stale
+ * one — pinned as `entry.sha256`, so a later `saveRemoteApp` call naturally carries the
+ * fresh hash along with the rest of the fresh entry. Without this upsert, rehydration would
+ * keep re-verifying against whichever entry happened to be saved first, forever.
+ *
+ * The id half is what makes an *update* (MICA-74) safe. A url-only upsert assumes a
+ * republished bundle keeps its URL, and a versioned filename (`weather-2.0.0.js`) does not:
+ * the old row survived under its own URL, and the next boot's rehydration installed both,
+ * so whichever `Promise.all` resolved last decided which version the player was running.
+ * One install, one row.
  */
 function saveRemoteApp(entry: SavedRemoteApp) {
   if (typeof localStorage === 'undefined') return;
   try {
     const current = getSavedRemoteApps();
-    const withoutExisting = current.filter((e) => e.url !== entry.url);
+    const withoutExisting = current.filter(
+      (e) => e.url !== entry.url && e.entry.id !== entry.entry.id
+    );
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([...withoutExisting, entry]));
   } catch {
     // Ignore localStorage quota/access errors

@@ -1,3 +1,4 @@
+import { readable } from 'svelte/store';
 import { registerFacet } from '../../current';
 import type { Facets } from '../../inProcess/facets';
 import { fn, store, type AsTwin } from './_shared';
@@ -30,6 +31,15 @@ export function appRegistry(): Twin {
       [],
       'getFirstBootTime'
     ) as unknown as Twin['getFirstBootTime'],
+    /**
+     * Empty rather than a `store()` round trip: `MEMBER_ALLOWLIST` does not list these, so
+     * the wire call would be refused anyway, and an add-on has no business enumerating what
+     * else the player has installed or how far behind it is.
+     */
+    updatesStore: readable([]),
+    updateCount: readable(0),
+    refreshUpdates: refused,
+    updateApp: refused,
     installFromCatalog: refused,
     registerApp: refused,
     registerAddOn: refused,

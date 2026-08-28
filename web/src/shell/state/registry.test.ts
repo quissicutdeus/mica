@@ -515,6 +515,28 @@ describe('remote app persistence and rehydration', () => {
     expect(stored).toEqual([{ url: bundleUrl, entry: updatedEntry }]);
   });
 
+  it('keeps one saved row per app when an update republishes under a new bundleUrl', async () => {
+    // MICA-74: a url-only upsert assumed a republished bundle keeps its URL, and a
+    // versioned filename does not. The old row survived under its own URL, so the next
+    // boot rehydrated both and whichever resolved last decided which version was running.
+    const updatedCode = bundleCode + '// v2';
+    const updatedUrl = 'https://store.example.com/apps/rehydrate_app-2.0.0.js';
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    fetchSpy.mockResolvedValueOnce(fetchResponse(bundleCode));
+    await appRegistryStore.installFromCatalog(entryFor(await sha256Hex(bundleCode)));
+
+    fetchSpy.mockResolvedValueOnce(fetchResponse(updatedCode));
+    const updatedEntry = entryFor(await sha256Hex(updatedCode), {
+      version: '2.0.0',
+      bundleUrl: updatedUrl
+    });
+    await appRegistryStore.installFromCatalog(updatedEntry);
+
+    const stored = JSON.parse(localStorage.getItem('gphone_installed_remote_apps') ?? '[]');
+    expect(stored).toEqual([{ url: updatedUrl, entry: updatedEntry }]);
+  });
+
   it('drops a pre-existing saved install with no catalog entry, warning by URL, rather than crashing', async () => {
     // Shapes from before this task: a bare URL string, or `{ url, sha256 }` with nothing
     // to rebuild a manifest from. Neither can be rehydrated any more — this registry

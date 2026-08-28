@@ -25,6 +25,31 @@ export interface CatalogEntry {
   networkHosts?: readonly string[];
 }
 
+/**
+ * The operator's catalog server, if they have one. Unset by default, so a server that has
+ * not configured one sees exactly the bundled add-ons it saw before any of this shipped.
+ *
+ * It lives here rather than as a `const` inside the Store app, where it started, because
+ * two things need the same answer now: the Store's own listing, and `appUpdates.ts`, which
+ * has to check for a newer version at phone-open — before the Store has ever been opened,
+ * and therefore before any constant inside it has been evaluated. Two copies of the URL
+ * would be two things to configure, and a stale one would mean the Store listed a catalog
+ * the update check never looked at.
+ *
+ * Settable rather than a literal for the same reason `setTrustedRemoteAppHosts` is: an
+ * operator configures this at boot, and until they do it is honestly empty.
+ */
+let remoteCatalogUrl: string | undefined;
+
+/** Point the Store and the update check at an operator's catalog. Both read the one value. */
+export function setRemoteCatalogUrl(url: string | undefined): void {
+  remoteCatalogUrl = url || undefined;
+}
+
+export function getRemoteCatalogUrl(): string | undefined {
+  return remoteCatalogUrl;
+}
+
 const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
 
 /** Whether `value` has every field `CatalogEntry` requires, with the right primitive types. */

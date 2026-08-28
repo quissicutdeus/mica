@@ -27,8 +27,13 @@ export {
   setTrustedRemoteAppHosts,
   getTrustedRemoteAppHosts
 } from '../shell/state/remoteAppSecurity';
-export { fetchCatalog } from '../shell/state/catalog';
+export { fetchCatalog, getRemoteCatalogUrl, setRemoteCatalogUrl } from '../shell/state/catalog';
 export type { CatalogEntry } from '../shell/state/catalog';
+/**
+ * The Store renders the update rows; `useAppRegistry()` is what produces them. Only the
+ * type crosses the boundary here — the list itself comes from the permission-gated facet.
+ */
+export type { AppUpdate, AppUpdateKind } from '../shell/state/appUpdates';
 export { AppPermissionError } from './host/protocol';
 /** @public */
 export type { Host } from './host/protocol';

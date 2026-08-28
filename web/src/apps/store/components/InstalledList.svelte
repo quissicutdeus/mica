@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { type AppManifest, formatDate, formatRelativeTime } from '@gphone/sdk';
+  import { type AppManifest, type AppUpdate, formatDate, formatRelativeTime } from '@gphone/sdk';
   import { getAppStorageSize } from '../appInfo';
 
   /**
@@ -11,17 +11,25 @@
    */
   let {
     apps,
+    updates = [],
     filter = $bindable('all'),
     sortOrder = $bindable('newest'),
     onselect,
-    onopen
+    onopen,
+    onupdate
   }: {
     apps: AppManifest[];
+    /** Pending updates, whole list rather than per row — a row looks itself up below. */
+    updates?: AppUpdate[];
     filter: 'all' | 'system' | 'addon';
     sortOrder: 'newest' | 'oldest' | 'updated' | 'name';
     onselect: (app: AppManifest) => void;
     onopen: (id: string) => void;
+    onupdate: (app: AppManifest) => void;
   } = $props();
+
+  const updateFor = (appId: string): AppUpdate | undefined =>
+    updates.find((u) => u.appId === appId);
 </script>
 
 <!-- Installed Apps Filter & Sort Bar -->
@@ -81,6 +89,7 @@
 <!-- Installed Apps List -->
 <div class="grid w-full gap-2">
   {#each apps as app (app.id)}
+    {@const update = updateFor(app.id)}
     <div
       class="bg-surface-container border-outline-variant hover:bg-surface duration-short ease-standard flex w-full min-w-0 items-center justify-between gap-3 rounded-xl border p-3 transition"
     >
@@ -109,15 +118,42 @@
               <span title={formatDate(app.installedAt)}>{formatRelativeTime(app.installedAt)}</span>
             {/if}
           </div>
+          <!--
+            The row-level half of MICA-74. The launcher badge says *something* is behind;
+            this is the only place that says which app and by how much. An `unordered` update
+            says the versions differ and refuses to claim which is newer — `lib/semver.ts`
+            could not order them, and inventing a direction is what a string comparison did.
+          -->
+          {#if update}
+            <span
+              class="bg-primary-container text-on-primary-container text-label-small mt-1 block truncate rounded px-1.5 py-0.5"
+            >
+              {#if update.kind === 'newer'}
+                Update available · v{update.installedVersion} → v{update.availableVersion}
+              {:else}
+                Version differs · catalog has v{update.availableVersion}
+              {/if}
+            </span>
+          {/if}
         </div>
       </button>
 
-      <button
-        onclick={() => onopen(app.id)}
-        class="text-body-small duration-short ease-standard shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-white transition hover:bg-emerald-500 active:scale-95"
-      >
-        Open
-      </button>
+      <div class="flex shrink-0 flex-col gap-1.5">
+        {#if update}
+          <button
+            onclick={() => onupdate(app)}
+            class="bg-secondary text-on-secondary text-body-small duration-short ease-standard rounded-lg px-3 py-1.5 transition active:scale-95"
+          >
+            Update
+          </button>
+        {/if}
+        <button
+          onclick={() => onopen(app.id)}
+          class="text-body-small duration-short ease-standard rounded-lg bg-emerald-600 px-3 py-1.5 text-white transition hover:bg-emerald-500 active:scale-95"
+        >
+          Open
+        </button>
+      </div>
     </div>
   {/each}
 </div>
