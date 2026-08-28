@@ -189,15 +189,20 @@
       {:else}
         {#each $dmMessages as message (message.id)}
           {@const mine = message.to_account === peer}
+          <!-- The bubble's own `on-` role, handed to everything inside it. A sent bubble is a
+               tinted container, so `on-surface`/`on-surface-variant` are near-invisible on it
+               (MICA-102) — the timestamp measured about 1.07:1. -->
+          {@const onBubble = mine ? 'text-on-primary-container' : 'text-on-surface'}
+          {@const onBubbleVariant = mine ? 'text-on-primary-container' : 'text-on-surface-variant'}
           <div class="flex px-4 py-1.5" class:justify-end={mine}>
             <div
               class="max-w-[80%] rounded-lg px-3 py-2"
-              class:bg-primary={mine}
+              class:bg-primary-container={mine}
               class:bg-surface-container={!mine}
             >
-              <BlabBody body={message.body} {onhandle} {ontag} />
+              <BlabBody body={message.body} class={onBubble} {onhandle} {ontag} />
               <div class="mt-0.5 flex items-center gap-1">
-                <p class="text-on-surface-variant text-label-small">
+                <p class="text-label-small {onBubbleVariant}">
                   {formatDate(message.created_at)}
                 </p>
                 <!-- Theirs only. Reporting your own message is not moderation, and the

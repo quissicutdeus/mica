@@ -13,10 +13,18 @@
    */
   let {
     body,
+    class: className = 'text-on-surface',
     onhandle,
     ontag
   }: {
     body: string;
+    /**
+     * The `on-` role the text carries, because a body is not always on `surface`. A DM bubble
+     * sent by the player paints `bg-primary-container`, and a hardcoded `text-on-surface` there
+     * is near-white on a tinted container (MICA-102). The caller owns the pairing, since it
+     * is the only thing that knows which surface the body landed on.
+     */
+    class?: string;
     onhandle?: (handle: string) => void;
     ontag?: (tag: string) => void;
   } = $props();
@@ -24,7 +32,7 @@
   const tokens = $derived(tokenizeRichText(body));
 </script>
 
-<p class="text-on-surface text-body-medium leading-relaxed break-words whitespace-pre-wrap">
+<p class="text-body-medium leading-relaxed break-words whitespace-pre-wrap {className}">
   {#each tokens as token, i (i)}
     {#if token.kind === 'mention'}
       <button
