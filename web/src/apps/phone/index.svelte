@@ -117,11 +117,16 @@
              instead, so it sits properly whether or not the bar above it exists.
 
              `pb-14` rather than `pb-12`: the call button was landing on top of the frame's
-             own home-indicator pill (`h-6` at `bottom-0` in `PhoneFrame.svelte`). -->
-          <div class="flex min-h-0 flex-1 flex-col items-center p-8 pb-14">
+             own home-indicator pill (`h-6` at `bottom-0` in `PhoneFrame.svelte`).
+
+             `pt-4` rather than `pt-8`, and the favourites block below carries no `mt-4`
+             any more: the two stacked into a 48px drop from the segmented control to the
+             FAVORITES label, six times every other gap in the section and reading as a
+             stray margin rather than a section break (MICA-93). -->
+          <div class="flex min-h-0 flex-1 flex-col items-center px-8 pt-4 pb-14">
             <!-- Favorites Bar -->
             {#if $favoriteContacts.length > 0}
-              <div class="mt-4 w-full">
+              <div class="w-full">
                 <div class="text-on-surface-variant text-body-small mb-2 ml-1 uppercase">
                   Favorites
                 </div>
@@ -146,37 +151,50 @@
               </div>
             {/if}
 
-            <div class="flex w-full flex-1 flex-col items-center justify-center">
+            <!-- One `gap-6` for the whole dialler rather than a `mb-8` here and an `mt-8`
+                 there. The number display used to own a hard 32px below it and nothing at
+                 all above it — the only thing separating it from the favourites bar was
+                 that bar's own `pb-2` — so it read as the last row of Favorites instead of
+                 its own element between Favorites and the keypad (MICA-92). A single gap
+                 makes the two sides of it equal by construction. -->
+            <div class="flex w-full flex-1 flex-col items-center justify-center gap-6">
               <!-- Number Display -->
-              <div class="mb-8 flex h-12 items-center text-4xl font-light">
+              <div class="flex h-12 items-center text-4xl font-light">
                 {enteredNumber}
               </div>
 
-              <!-- Keypad -->
+              <!-- Keypad.
+
+                   `justify-self-center` on every key, the same way the in-call DTMF pad
+                   below does it. The columns are `1fr` and the keys are a fixed `w-16`, so
+                   without it each key sat at the *start* of a column 13px wider than
+                   itself: the grid's painted content ended ~7px short on the right and the
+                   whole pad hung left of the call button and number display, which are
+                   both centred on the screen axis (MICA-94). -->
               <div class="grid w-full max-w-[280px] grid-cols-3 gap-6">
                 {#each [1, 2, 3, 4, 5, 6, 7, 8, 9] as num (num)}
                   <button
-                    class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
+                    class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center justify-self-center rounded-full text-2xl font-medium transition-colors"
                     onclick={() => handleKeypad(num.toString())}
                   >
                     {num}
                   </button>
                 {/each}
                 <button
-                  class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
+                  class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center justify-self-center rounded-full text-2xl font-medium transition-colors"
                   onclick={() => handleKeypad('*')}>*</button
                 >
                 <button
-                  class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
+                  class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center justify-self-center rounded-full text-2xl font-medium transition-colors"
                   onclick={() => handleKeypad('0')}>0</button
                 >
                 <button
-                  class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full text-2xl font-medium transition-colors"
+                  class="bg-surface-container hover:bg-surface-container-low duration-short ease-standard flex h-16 w-16 items-center justify-center justify-self-center rounded-full text-2xl font-medium transition-colors"
                   onclick={() => handleKeypad('#')}>#</button
                 >
               </div>
 
-              <div class="relative mt-8 flex w-full max-w-[280px] items-center justify-center">
+              <div class="relative flex w-full max-w-[280px] items-center justify-center">
                 <!-- Place holder to center call button -->
                 <div class="w-16"></div>
 
