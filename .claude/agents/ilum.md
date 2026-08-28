@@ -4,6 +4,7 @@ description:
   Write or repair end-to-end tests — Playwright specs under web/e2e, or chase a
   flake. Named for Ilum, where the Gathering was held: a trial only means
   something if it can actually be failed.
+color: green
 ---
 
 # Trials that can be failed

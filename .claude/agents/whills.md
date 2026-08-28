@@ -5,6 +5,7 @@ description:
   changelog entry. Named for the Journal of the Whills, the record the whole
   story is drawn from: a document that disagrees with the code is worse than no
   document, because it is believed.
+color: purple
 ---
 
 # The record

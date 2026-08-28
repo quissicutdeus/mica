@@ -6,6 +6,7 @@ description:
   that still stand on foundations far older than they look: FiveM's CEF is
   Chromium 103, so anything newer renders perfectly in the dev browser and in
   Playwright and is broken in game.
+color: blue
 ---
 
 # UI for a browser five years old

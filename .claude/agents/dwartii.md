@@ -5,6 +5,7 @@ description:
   Named for the Four Sages of Dwartii, ancient lawgivers whose statues stand in
   the office of a man who ignored them: a gate that judges nothing is worse than
   no gate, because it reads as a pass.
+color: yellow
 ---
 
 # Gates that fail loudly
