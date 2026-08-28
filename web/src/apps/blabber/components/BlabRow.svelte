@@ -116,10 +116,10 @@
         {blab.display_name || blab.handle}
       </button>
       <span class="text-on-surface-variant truncate">@{blab.handle}</span>
-      <span class="text-outline">·</span>
+      <span class="text-on-surface-variant">·</span>
       <span class="text-on-surface-variant shrink-0">{formatDate(blab.created_at)}</span>
       {#if edited}
-        <span class="text-outline shrink-0 italic">edited</span>
+        <span class="text-on-surface-variant shrink-0 italic">edited</span>
       {/if}
 
       {#if hasOverflow}
@@ -207,7 +207,7 @@
       <div class="border-outline-variant mt-2 rounded-lg border p-2">
         <p class="text-on-surface-variant text-label-small">
           {blab.mouthed.display_name || blab.mouthed.handle}
-          <span class="text-outline">@{blab.mouthed.handle}</span>
+          <span class="text-on-surface-variant">@{blab.mouthed.handle}</span>
         </p>
         <BlabBody body={blab.mouthed.body ?? ''} {onhandle} {ontag} />
       </div>

@@ -169,6 +169,52 @@
       handleOperator('÷');
     }
   };
+  /**
+   * The keypad, and what each key is called out loud.
+   *
+   * `⌫` renders `BackspaceIcon` and no text at all, so it had no accessible name
+   * whatsoever — axe reports it `button-name`, critical, and a screen reader announces it
+   * as "button". The rest had a name only in the sense that a glyph is one: `±` and `÷`
+   * are spoken inconsistently between screen readers and not at all by some, so the
+   * spoken name is stated here rather than left to the character (MICA-109).
+   *
+   * Digits and `.` are their own label and are absent from the map on purpose — a row of
+   * `'7': 'Seven'` entries would be a second place for the keypad to be wrong.
+   */
+  const KEYS = [
+    'C',
+    '±',
+    '%',
+    '÷',
+    '7',
+    '8',
+    '9',
+    '×',
+    '4',
+    '5',
+    '6',
+    '-',
+    '1',
+    '2',
+    '3',
+    '+',
+    '0',
+    '.',
+    '⌫',
+    '='
+  ] as const;
+
+  const KEY_LABELS: Record<string, string> = {
+    C: 'Clear',
+    '±': 'Plus minus',
+    '%': 'Percent',
+    '÷': 'Divide',
+    '×': 'Multiply',
+    '-': 'Minus',
+    '+': 'Plus',
+    '⌫': 'Backspace',
+    '=': 'Equals'
+  };
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
@@ -182,15 +228,16 @@
 
     <!-- Keypad -->
     <div class="grid grid-cols-4 gap-3">
-      {#each ['C', '±', '%', '÷', '7', '8', '9', '×', '4', '5', '6', '-', '1', '2', '3', '+', '0', '.', '⌫', '='] as btn (btn)}
+      {#each KEYS as btn (btn)}
         <button
           class="flex aspect-square items-center justify-center rounded-full text-2xl font-medium transition-all active:scale-95
           {btn === '='
-            ? 'bg-primary hover:brightness-110'
+            ? 'bg-primary text-on-primary hover:brightness-110'
             : ['C', '±', '%', '÷', '×', '-', '+'].includes(btn)
               ? 'bg-surface-container-low hover:bg-surface'
               : 'bg-surface-container hover:bg-surface-container-low'} duration-short ease-standard"
           onclick={() => handleInput(btn)}
+          aria-label={KEY_LABELS[btn] ?? btn}
         >
           {#if btn === '⌫'}
             <BackspaceIcon class="text-on-surface size-icon-lg" />

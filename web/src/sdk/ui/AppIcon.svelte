@@ -12,6 +12,7 @@
     color,
     badge = 0,
     badgeStore,
+    badgeSuppressed = false,
     onclick
   }: {
     name: string;
@@ -20,6 +21,16 @@
     color: string;
     badge?: number;
     badgeStore?: Readable<number>;
+    /**
+     * Hide the badge, whatever it counts — the player has switched it off for this app or for
+     * the phone (MICA-63).
+     *
+     * A decided boolean rather than an app id, because the decision belongs to the shell and
+     * this component is kit: `sdk/ui` may not reach `shell/state`, and `seam.test.ts` enforces
+     * it (an add-on bundle has no shell to import). The four launcher surfaces pass
+     * `!$badgeAllowed(id)` from `shell/state/notificationPolicy.ts`.
+     */
+    badgeSuppressed?: boolean;
     onclick: () => void;
   } = $props();
 
@@ -34,7 +45,7 @@
     }
   });
 
-  let displayBadge = $derived(badgeStore ? storeBadge : badge);
+  let displayBadge = $derived(badgeSuppressed ? 0 : badgeStore ? storeBadge : badge);
 
   const handleClick = () => {
     useSound().play('click');

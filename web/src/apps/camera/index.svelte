@@ -467,7 +467,7 @@
             onclick={() => (cameraMode = mode as 'PHOTO' | 'VIDEO' | 'LANDSCAPE')}
             class="text-body-small duration-medium ease-standard rounded-full px-3.5 py-1 tracking-wider uppercase transition-all {cameraMode ===
             mode
-              ? 'shadow-elevation-1 scale-105 border border-yellow-400/40 bg-black/60 text-yellow-400'
+              ? 'shadow-elevation-1 scale-105 border border-yellow-400/40 bg-black/60 text-yellow-300'
               : mode === 'VIDEO'
                 ? 'text-on-surface-variant cursor-not-allowed opacity-40'
                 : 'text-on-surface hover:text-on-surface cursor-pointer'}"

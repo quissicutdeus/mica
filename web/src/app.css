@@ -364,6 +364,54 @@ a {
 }
 
 /**
+ * The keyboard focus ring (MICA-109).
+ *
+ * One rule, on the bare pseudo-class, so every focusable thing in the phone — shell
+ * button, list row, app control, add-on inside its iframe — inherits it without a sweep
+ * through components. Before this the phone showed Chromium's own UA ring, which is not
+ * themed and, more to the point, is only there in the places nothing had suppressed it:
+ * nineteen files carry `outline-none` or `focus:outline-none`, and most of them replace it
+ * with nothing at all.
+ *
+ * That mattered less while the phone was mouse-driven. MICA-66 added focus *trapping* to
+ * every modal surface, so a keyboard user is now held inside a dialog — and being held
+ * inside one whose focus is invisible is worse than not being trapped.
+ *
+ * **`:focus-visible`, not `:focus`.** The browser's own heuristic is what keeps a ring off
+ * every mouse click on a list row while still showing one for Tab, and it is the reason
+ * this can be a blanket rule rather than a per-component decision.
+ *
+ * **`--color-focus-ring`, which is `primary`.** Measured against every surface tier it can
+ * land on, in both schemes and across eight seeds: 5.01:1 at worst (`primary` on
+ * `surface-container-highest`, light), 10.87:1 at best. WCAG wants 3:1 for a non-text
+ * indicator, so the margin holds for any seed a player picks.
+ *
+ * **`:not(.outline-none)` is load-bearing, and it is not the same thing as the pointer-only
+ * rewrite of `.focus\:outline-none` in `app-utilities.css`.** Two different opt-outs:
+ *
+ * - `.focus\:outline-none` means "no ring when this is clicked". That one is rewritten to
+ *   `:focus:not(:focus-visible)` so it stops covering the keyboard, and it is *not*
+ *   excluded here — an element carrying it should ring for Tab.
+ * - `.outline-none`, unconditional, means "this element never draws an outline", and it is
+ *   what a `tabindex="-1"` dialog container uses. Chromium propagates `:focus-visible`
+ *   through programmatic focus when the previously focused element matched it, so a dialog
+ *   opened with Enter *does* match — measured, not assumed. Without the exclusion the whole
+ *   sheet gets a ring round it on open, which is exactly what that class was added to stop.
+ *
+ * The exclusion has to be spelled out because specificity will not do it: `.outline-none`
+ * is `(0,1,0)`, `:focus-visible` is `(0,1,0)`, and `app.css` is imported *after*
+ * `app-utilities.css` — so a bare `:focus-visible` here silently wins the tie. This one is
+ * `(0,2,0)` and loses to nothing it should lose to.
+ *
+ * CEF-wise this is comfortable: `:focus-visible` is Chrome 86 against the 103 floor in §6,
+ * and `:not()`, `outline` and `outline-offset` predate everything.
+ */
+:focus-visible:not(.outline-none) {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/**
  * Reduced motion (MICA-66).
  *
  * One block, keyed on an attribute rather than on `@media (prefers-reduced-motion)`.

@@ -58,7 +58,7 @@
         />
         {#if conv.unreadCount > 0}
           <div
-            class="border-surface bg-primary shadow-elevation-2 text-label-small absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full border-2 px-1"
+            class="border-surface bg-primary text-on-primary shadow-elevation-2 text-label-small absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full border-2 px-1"
           >
             {conv.unreadCount}
           </div>

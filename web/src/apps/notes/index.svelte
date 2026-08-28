@@ -313,13 +313,13 @@
             onclick={() => (selectedNote = note)}
           >
             <div class="flex w-full flex-col">
-              <h3 class="truncate text-lg font-bold text-yellow-500">
+              <h2 class="text-on-surface truncate text-lg font-bold">
                 {note.title || 'Untitled'}
-              </h3>
+              </h2>
               <p class="text-on-surface-variant text-body-medium mt-1 line-clamp-2">
                 {note.content}
               </p>
-              <span class="text-outline text-body-small mt-2 block">
+              <span class="text-on-surface-variant text-body-small mt-2 block">
                 {formatDate(note.updated_at)}
               </span>
             </div>

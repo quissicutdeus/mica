@@ -181,20 +181,20 @@
 
             <div class="min-w-0 flex-1">
               <div class="mb-0.5 flex items-baseline justify-between">
-                <h3
+                <h2
                   class={`truncate text-sm font-medium ${!email.read ? 'text-on-surface font-bold' : 'text-on-surface'}`}
                 >
                   {email.sender}
-                </h3>
+                </h2>
                 <span class="text-on-surface-variant text-body-small ml-2 whitespace-nowrap">
                   {formatRelativeTime(email.created_at)}
                 </span>
               </div>
-              <h4
+              <h3
                 class={`mb-1 truncate text-xs ${!email.read ? 'text-primary font-semibold' : 'text-on-surface-variant'}`}
               >
                 {email.subject}
-              </h4>
+              </h3>
               <p class="text-on-surface-variant text-body-small line-clamp-2 leading-relaxed">
                 {email.content}
               </p>

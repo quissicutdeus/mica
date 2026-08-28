@@ -30,6 +30,7 @@
   import Search from './Search.svelte';
   import { fetchNui } from '../nui/fetchNui';
   import { toast } from './state/toast';
+  import { callBreaksThrough } from './state/notificationPolicy';
   import { bootstrapStores } from './state/bootstrap';
   import ToastContainer from './ToastHost.svelte';
   import ErrorBoundary from './ErrorBoundary.svelte';
@@ -42,6 +43,7 @@
   import { isLightMode } from './state/theme';
   import { observeReducedMotion } from './state/motion';
   import AddOnFrame from './addon/AddOnFrame.svelte';
+  import MusicPlayer from './MusicPlayer.svelte';
   import { isTrustedNuiSource } from './nuiGuard';
 
   installSystemHost();
@@ -136,9 +138,14 @@
         const known = get(contacts).find((c) => c.phone === call.number);
         const displayName = known ? `${known.firstname} ${known.lastname || ''}`.trim() : call.name;
         callStore.setIncoming(call.number, displayName);
+        // Called exactly once per ring, and it records as well as reports — a second call
+        // for the same ring would read back the timestamp this one wrote and count itself
+        // as the repeat (`state/notificationPolicy.ts`).
+        const breakThrough = callBreaksThrough(call.number);
         incomingToastId = toast.showCall({
           name: displayName,
           number: call.number,
+          breakThrough,
           onAccept: () => {
             visible = true;
             openApp('phone');
@@ -460,6 +467,16 @@
     setFreelook(isCameraApp);
   });
 </script>
+
+<!-- Outside `{#if visible}`, and that is the whole point of it being here.
+
+     Everything in that block — the frame, `ToastContainer`, every resident app — is
+     destroyed when the player lowers the phone. Music is expected to keep playing when the
+     phone is down (MICA-111), so the element producing it cannot live anywhere the close
+     tears down. It renders nothing at all until something is loaded, and is invisible when
+     it is; `MusicPlayer.svelte` carries the reasoning, including why it is a bare
+     cross-origin iframe rather than YouTube's own script. -->
+<MusicPlayer />
 
 {#if !visible && isBrowser()}
   <button

@@ -57,7 +57,7 @@
     <Button class="mb-6 w-full" onclick={() => (showSendMoney = true)}>Send Money</Button>
 
     <!-- Transactions -->
-    <h3 class="mb-4 text-lg font-semibold">Recent Transactions</h3>
+    <h2 class="mb-4 text-lg font-semibold">Recent Transactions</h2>
     <div class="space-y-4">
       {#if !$transactionsLoaded}
         <Skeleton count={3} height="h-14" />

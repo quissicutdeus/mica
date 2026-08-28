@@ -16,6 +16,7 @@ import Mail from '../apps/mail/index.svelte';
 import Marketplace from '../apps/marketplace/index.svelte';
 import Media from '../apps/media/index.svelte';
 import Messages from '../apps/messages/index.svelte';
+import Music from '../apps/music/index.svelte';
 import Notes from '../apps/notes/index.svelte';
 import Phone from '../apps/phone/index.svelte';
 import Settings from '../apps/settings/index.svelte';
@@ -49,6 +50,7 @@ const APPS: Record<string, AppComponent> = {
   marketplace: Marketplace,
   media: Media,
   messages: Messages,
+  music: Music,
   notes: Notes,
   phone: Phone,
   settings: Settings,

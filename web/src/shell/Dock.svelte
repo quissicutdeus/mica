@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { badgeAllowed } from './state/notificationPolicy';
   import { get } from 'svelte/store';
   import { attachDragGesture } from '../lib/pointerDrag';
   import { createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/sheetDrag';
@@ -109,6 +110,7 @@
       {#if slot.manifest}
         <AppIcon
           name={slot.manifest.name}
+          badgeSuppressed={!$badgeAllowed(slot.appId)}
           color={slot.manifest.color}
           icon={slot.manifest.icon}
           badgeStore={slot.manifest.badgeStore}

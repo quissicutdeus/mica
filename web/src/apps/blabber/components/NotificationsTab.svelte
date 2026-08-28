@@ -77,34 +77,40 @@
             {#if item.avatar}
               <Avatar src={item.avatar} size="md" />
             {:else}
+              <!-- The `on-` role travels with the `bg-` it pairs with, rather than one
+                   `text-on-surface` covering all three branches (MICA-109). It used to
+                   be the latter, which is 1.31:1 in dark and 2.64:1 in light against
+                   either accent fill — `secondary` and `primary` are tone-80 pastels in a
+                   dark scheme, so light glyph on light fill. The icons carry no colour of
+                   their own now and inherit this one through `currentColor`. -->
               <div
-                class="text-on-surface shadow-elevation-1 flex h-10 w-10 items-center justify-center rounded-full font-bold {kind ===
+                class="shadow-elevation-1 flex h-10 w-10 items-center justify-center rounded-full font-bold {kind ===
                 'follow'
-                  ? 'bg-secondary'
+                  ? 'bg-secondary text-on-secondary'
                   : kind === 'mention'
-                    ? 'bg-primary'
-                    : 'bg-surface-container-high'}"
+                    ? 'bg-primary text-on-primary'
+                    : 'bg-surface-container-high text-on-surface'}"
               >
                 {#if kind === 'follow'}
-                  <UsersIcon class="text-on-surface size-icon-md" />
+                  <UsersIcon class="size-icon-md" />
                 {:else if kind === 'mention'}
                   <span class="text-body-medium">@</span>
                 {:else if kind === 'dm'}
-                  <MessageIcon class="text-on-surface size-icon-md" />
+                  <MessageIcon class="size-icon-md" />
                 {:else}
-                  <BellIcon class="text-on-surface size-icon-md" />
+                  <BellIcon class="size-icon-md" />
                 {/if}
               </div>
             {/if}
 
             <!-- Kind Badge Overlay -->
             <div
-              class="border-surface text-on-surface text-label-small absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full border-2 {kind ===
+              class="border-surface text-label-small absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full border-2 {kind ===
               'follow'
-                ? 'bg-secondary'
+                ? 'bg-secondary text-on-secondary'
                 : kind === 'mention'
-                  ? 'bg-primary'
-                  : 'bg-surface-container-highest'}"
+                  ? 'bg-primary text-on-primary'
+                  : 'bg-surface-container-highest text-on-surface'}"
             >
               {#if kind === 'follow'}
                 +

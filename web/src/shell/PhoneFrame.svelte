@@ -40,8 +40,9 @@
     drawerDragPhase
   } from './state/appDrawer';
   import { unreadCounts } from '../services/notifications';
+  import { badgeAllowed } from './state/notificationPolicy';
   import { appRegistryStore } from './state/registry';
-  import { wallpaperBackground } from './state/wallpaper';
+  import { wallpaperBackground, wallpaperNeedsContrast } from './state/wallpaper';
   import { themeStyleStore } from './state/theme';
 
   let {
@@ -53,6 +54,21 @@
   let statusBarRef = $state<HTMLElement | null>(null);
   let homeBarRef = $state<HTMLElement | null>(null);
   const wallpaper = $derived($wallpaperBackground);
+  /**
+   * Whether the status bar's text is being drawn onto the player's own photograph.
+   *
+   * `on-surface` against an arbitrary picture is a ratio nobody can state, which is
+   * exactly the hazard `.text-on-wallpaper` exists for (MICA-109) and what `AppIcon`'s
+   * label already uses. With the stroke, the clock is read against `surface` instead of
+   * against the photo: 14.30:1 dark, 16.28:1 light, whatever the picture.
+   *
+   * Scoped to the home screen because an open app paints its own `surface` under this
+   * bar, where the stroke would be a halo in the colour it already sits on — inert, but a
+   * thing to reason about on every screen rather than on the one that needs it.
+   * `$currentApp` is always an object (`{ id: 'home' }` when nothing is open), so this is
+   * a check on the id and never a truthiness test.
+   */
+  const onWallpaper = $derived($wallpaperNeedsContrast && $currentApp.id === 'home');
   const themeStyle = $derived($themeStyleStore);
 
   /**
@@ -64,6 +80,10 @@
   const pendingNotificationApps = $derived(
     Object.entries($unreadCounts)
       .filter(([, count]) => count > 0)
+      // The same switch that governs a launcher badge governs this row: both are the
+      // "something is waiting for you" indicator, and honouring one while ignoring the
+      // other would leave a muted app still flagging itself in the status bar (MICA-63).
+      .filter(([appId]) => $badgeAllowed(appId))
       .map(([appId]) => $appRegistryStore.find((app) => app.id === appId))
       .filter((app): app is NonNullable<typeof app> => Boolean(app))
   );
@@ -279,6 +299,12 @@
 
     <!-- Status Bar -->
     {#if !transparent && !$isBatteryDead}
+      <!-- `onWallpaper` below, on each text run and never on this button: `.text-on-wallpaper`
+           is three inherited properties, and app.css spells out what putting it on a
+           container costs — `paint-order` reaches SVG, so the stroke would land on the
+           signal, bluetooth and battery glyphs as well as on the clock. Those are the one
+           part of this bar the stroke technique cannot help; they stay `on-surface` over
+           an unknown photo, and that is recorded in MICA-109 rather than papered over. -->
       <button
         bind:this={statusBarRef}
         type="button"
@@ -287,13 +313,23 @@
         aria-label={$isShadeOpen ? 'Close notification shade' : 'Open notification shade'}
       >
         <div class="flex items-center gap-2">
-          <span>{$formattedTime}</span>
+          <span class:text-on-wallpaper={onWallpaper}>{$formattedTime}</span>
           {#if $isShadeOpen}
             <!-- Only once fully open, not mid-drag — a half-open bar reading "1:12 AM
                  Thu, Aug 20" while the icons are also mid-fade would be two things
-                 changing size and content at once. -->
-            <span class="text-body-small opacity-80" transition:fade={{ duration: 150 }}
-              >{$formattedDate}</span
+                 changing size and content at once.
+
+                 `text-on-surface-variant`, not the `opacity-80` this carried (MICA-109).
+                 Dimming themed text with an opacity utility puts the glyph at a colour no
+                 token names and nothing measures: composited over the shade it came out at
+                 3.28:1 in light, under the 4.5 it needs. M3 has a second on-surface text
+                 role for exactly this job — "the same text, quieter" — and it is 8.06:1
+                 there. Same rule as the ban on opacity modifiers for role *backgrounds* in
+                 app.css, one utility further along. -->
+            <span
+              class="text-body-small text-on-surface-variant"
+              class:text-on-wallpaper={onWallpaper}
+              transition:fade={{ duration: 150 }}>{$formattedDate}</span
             >
           {/if}
           {#if pendingNotificationApps.length > 0}
@@ -336,7 +372,9 @@
                      the type scale and the only one that fits the remaining run before the
                      cutout; it inherits the bar's own `text-on-surface` like the icons do,
                      so it reads as one row rather than as a badge stuck on the end. -->
-                <span class="text-label-small">+{hiddenNotificationCount}</span>
+                <span class="text-label-small" class:text-on-wallpaper={onWallpaper}
+                  >+{hiddenNotificationCount}</span
+                >
               {/if}
             </div>
           {/if}
@@ -348,8 +386,10 @@
           <SignalIcon level={$clampedSignalLevel} />
 
           <div class="flex items-center gap-1.5">
-            <span class="text-body-small" class:text-error={$displayCharge <= 20}
-              >{$displayCharge}%</span
+            <span
+              class="text-body-small"
+              class:text-error={$displayCharge <= 20}
+              class:text-on-wallpaper={onWallpaper}>{$displayCharge}%</span
             >
             <BatteryIcon class="h-3 w-6" charge={$displayCharge} />
           </div>

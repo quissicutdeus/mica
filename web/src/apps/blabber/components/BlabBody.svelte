@@ -43,7 +43,7 @@
     {:else if token.kind === 'tag'}
       <button
         type="button"
-        class="font-semibold text-sky-300 hover:underline"
+        class="text-primary font-semibold hover:underline"
         onclick={() => ontag?.(token.value)}>#{token.value}</button
       >
     {:else}{token.value}{/if}

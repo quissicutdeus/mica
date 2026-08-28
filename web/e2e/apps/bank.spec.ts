@@ -12,8 +12,12 @@ test.describe('Bank App E2E', () => {
   });
 
   test('renders Bank screen title and recent transactions section', async ({ page }) => {
-    const recentTxHeading = page.locator('h3', { hasText: 'Recent Transactions' });
-    await expect(recentTxHeading).toBeVisible();
+    // By role, not by tag. This read `h3` and broke when the heading became `h2` — the
+    // level was wrong (`Screen` renders the only `h1`, so the first heading under it is
+    // `h2`) and axe's `heading-order` is what said so, MICA-109. What the test means is
+    // "the section is announced as a heading", and that is what `getByRole` asserts;
+    // pinning the level here would make the next correction break it again.
+    await expect(page.getByRole('heading', { name: 'Recent Transactions' })).toBeVisible();
   });
 
   /**

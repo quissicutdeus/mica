@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { badgeAllowed } from './state/notificationPolicy';
   import { fade } from '../lib/motion';
   import { get } from 'svelte/store';
   import { registerHandler } from './state/keybinds';
@@ -93,12 +94,16 @@
       tabindex="-1"
       class="bg-surface-container shadow-elevation-5 w-full rounded-xl p-5 outline-none"
     >
+      <!-- No `outline-none` here, unlike the container above (MICA-109). This is the
+           only control in the popup and the only thing Tab can reach inside the trap
+           MICA-66 put round it, so it is the one place a ring is not optional. It also
+           has room for one: `p-5` on the card clears the 2px offset. -->
       <input
         type="text"
         placeholder="Unnamed"
         value={folder.name}
         onblur={(e) => folder && renameFolder(folder.folderId, e.currentTarget.value)}
-        class="text-on-surface placeholder:text-on-surface-variant text-title-medium mb-4 w-full bg-transparent text-center outline-none"
+        class="text-on-surface placeholder:text-on-surface-variant text-title-medium mb-4 w-full bg-transparent text-center"
       />
 
       <div class="grid grid-cols-4 gap-y-5">
@@ -106,6 +111,7 @@
           <div use:attachIcon={app.id}>
             <AppIcon
               name={app.name}
+              badgeSuppressed={!$badgeAllowed(app.id)}
               color={app.color}
               icon={app.icon}
               badgeStore={app.badgeStore}

@@ -108,7 +108,7 @@
                 : 'bg-black/20 backdrop-blur-sm'}"
             >
               {#if selectedIds.has(photo.id)}
-                <CheckIcon class="text-on-surface size-icon-sm" />
+                <CheckIcon class="text-on-primary size-icon-sm" />
               {/if}
             </div>
           {/if}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { badgeAllowed } from './state/notificationPolicy';
   import { get } from 'svelte/store';
   import { fade, fly } from '../lib/motion';
   import { attachDragGesture } from '../lib/pointerDrag';
@@ -221,8 +222,13 @@
 
     <!-- Empty query shows the app grid below; typing swaps it for a filtered list. -->
     <div class="mb-4 px-4">
+      <!-- The ring is on the pill, not on the `<input>` (MICA-109). The input keeps its
+           own `outline-none`: an outline traces the *input's* box, which is a bare
+           rectangle sitting inside this rounded-full container, so the focus affordance
+           would be a rectangle in a pill. `focus-within` moves it out to the shape the
+           player actually sees, the same way `ToastHost`'s reply field does it. -->
       <div
-        class="bg-surface-container-highest text-on-surface flex h-11 shrink-0 items-center gap-2 rounded-full px-4"
+        class="bg-surface-container-highest text-on-surface focus-within:ring-focus-ring flex h-11 shrink-0 items-center gap-2 rounded-full px-4 focus-within:ring-1"
       >
         <SearchIcon class="text-on-surface-variant h-4 w-4" />
         <input
@@ -251,6 +257,7 @@
             <div use:attachIcon={app.id} class="flex items-center justify-center">
               <AppIcon
                 name={app.name}
+                badgeSuppressed={!$badgeAllowed(app.id)}
                 color={app.color}
                 icon={app.icon}
                 badgeStore={app.badgeStore}

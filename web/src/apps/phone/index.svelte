@@ -421,7 +421,7 @@
           }}
           aria-label="End Call"
         >
-          <PhoneIcon class="text-on-surface h-8 w-8 rotate-135" />
+          <PhoneIcon class="text-on-error h-8 w-8 rotate-135" />
         </button>
       </div>
     </div>

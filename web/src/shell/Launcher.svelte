@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { badgeAllowed } from './state/notificationPolicy';
   import { get } from 'svelte/store';
   import { isAdmin } from '../services/admin';
   import AppIcon from '../sdk/ui/AppIcon.svelte';
@@ -8,6 +9,7 @@
   import { appRegistryStore } from './state/registry';
   import { homeGridColumns, homeGridRows } from './state/homeGridSettings';
   import { homeGridItems, openFolderId, type HomeGridItem } from './state/homeGrid';
+  import { wallpaperNeedsContrast } from './state/wallpaper';
   import {
     iconDragState,
     resolveDropAtPoint,
@@ -208,7 +210,15 @@
        status bar above and the first icon row below, instead of sitting flush against
        whichever edge it happens to be closest to. -->
   <div class="mb-4 flex h-16 items-center justify-center">
-    <h1 class="text-4xl font-bold tracking-tight">gPhone</h1>
+    <!-- Stroked over a photo wallpaper, like an `AppIcon` label (MICA-109). It is drawn
+         straight onto whatever picture the player chose, and `text-on-surface` against an
+         unknown photograph is a ratio nobody can state. `.text-on-wallpaper` makes the
+         question answerable instead of guessed: the glyph keeps `on-surface` and gains a
+         3px `surface`-coloured stroke, so what it is really read against is `surface` —
+         16.28:1 in light and 14.30:1 in dark, whatever is behind it. -->
+    <h1 class="text-4xl font-bold tracking-tight" class:text-on-wallpaper={$wallpaperNeedsContrast}>
+      gPhone
+    </h1>
   </div>
 
   <!-- `grid-auto-rows` keeps a row of entirely empty cells the same height as one with an
@@ -231,6 +241,7 @@
             <div use:attachAppIcon={cell.position}>
               <AppIcon
                 name={manifest.name}
+                badgeSuppressed={!$badgeAllowed(appId)}
                 color={manifest.color}
                 icon={manifest.icon}
                 badgeStore={manifest.badgeStore}

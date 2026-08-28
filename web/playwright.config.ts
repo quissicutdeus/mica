@@ -21,7 +21,11 @@ const PORT = process.env.E2E_PORT || 4173;
  * exercised in one scheme only, which is the gap the old two-project matrix closed by
  * brute force. Keep the entries as plain single-quoted globs, one per line.
  */
-const THEME_SPECS = ['**/theme-modes.spec.ts', '**/settings-persistence.spec.ts'];
+const THEME_SPECS = [
+  '**/theme-modes.spec.ts',
+  '**/settings-persistence.spec.ts',
+  '**/a11y.spec.ts'
+];
 
 export default defineConfig({
   testDir: './e2e',

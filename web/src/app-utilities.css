@@ -229,6 +229,12 @@
 .bg-red-500\/80 {
   background-color: rgba(239, 68, 68, 0.8);
 }
+/* Music's launcher tile. A step darker than `bg-red-500`, which is the obvious choice for
+   a music app and lands at 2.91:1 against the inherited near-white glyph — under the 3:1
+   floor `lib/utilityClasses.test.ts` measures. This one is 5.19:1. */
+.bg-red-700 {
+  background-color: #b91c1c;
+}
 .bg-red-900\/50 {
   background-color: rgba(127, 29, 29, 0.5);
 }
@@ -595,7 +601,25 @@
 .focus\:border-yellow-500:focus {
   border-color: #eab308;
 }
-.focus\:outline-none:focus {
+/**
+ * Suppresses the outline for the pointer, and only for the pointer (MICA-109).
+ *
+ * Fifteen call sites write `focus:outline-none`, and what every one of them means is
+ * "don't put Chromium's ring round this when it is clicked" — a text field that styles
+ * its own border, a bubble that scales on press. None of them means "make this
+ * unreachable by keyboard", but that is what the class used to do, because a plain
+ * `:focus` covers the keyboard too.
+ *
+ * `:not(:focus-visible)` is the whole fix, and it is one line rather than fifteen edits:
+ * the pointer keeps its clean press, Tab gets the ring from `app.css`. A component that
+ * genuinely does draw its own keyboard affordance says so with the `focus-visible:`
+ * variants below and is untouched by this.
+ *
+ * `.outline-none` above stays unconditional on purpose — it is what a `tabindex="-1"`
+ * dialog container uses, and a ring round the whole sheet when it takes programmatic
+ * focus is exactly the thing that class was added to stop.
+ */
+.focus\:outline-none:focus:not(:focus-visible) {
   outline: none;
 }
 .focus\:ring-1:focus {
@@ -792,6 +816,12 @@
 }
 .h-\[2px\] {
   height: 2px;
+}
+/* The hidden YouTube frame in `shell/MusicPlayer.svelte`. A real laid-out box, because a
+   `display:none` iframe has never been guaranteed to keep playing media; 200px because
+   that is the size below which YouTube's own docs stop guaranteeing the player behaves. */
+.h-\[200px\] {
+  height: 200px;
 }
 .h-3 {
   height: 0.75rem;
@@ -2144,6 +2174,10 @@
 }
 .w-\[132px\] {
   width: 132px;
+}
+/* Pairs with `.h-[200px]` above — see the note there. */
+.w-\[200px\] {
+  width: 200px;
 }
 .w-14 {
   width: 3.5rem;
