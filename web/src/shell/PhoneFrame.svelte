@@ -10,7 +10,7 @@
   import { stepVolume } from './state/audio';
   import { enableDragScroll } from '../lib/dragScroll';
   import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
-  import { createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/sheetDrag';
+  import { abandonSheetDrag, createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/sheetDrag';
   import {
     PHONE_HEIGHT,
     PHONE_WIDTH,
@@ -129,7 +129,9 @@
         } else {
           shadeDragProgress.set(0);
         }
-      }
+      },
+      // Written inline rather than through `createSheetOpen`, so the abandon is too.
+      onCancel: () => abandonSheetDrag(shadeDragPhase)
     });
   });
 
@@ -150,7 +152,8 @@
       axis: 'y',
       crossAxisCancel: false,
       onMove: openDrag.onMove,
-      onEnd: openDrag.onEnd
+      onEnd: openDrag.onEnd,
+      onCancel: openDrag.abandon
     });
   });
 </script>

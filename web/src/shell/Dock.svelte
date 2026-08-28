@@ -43,7 +43,8 @@
     return attachDragGesture(dockElement, {
       axis: 'y',
       onMove: openDrag.onMove,
-      onEnd: openDrag.onEnd
+      onEnd: openDrag.onEnd,
+      onCancel: openDrag.abandon
     });
   });
 </script>

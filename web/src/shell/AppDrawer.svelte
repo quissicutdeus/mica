@@ -113,7 +113,8 @@
       axis: 'y',
       crossAxisCancel: false,
       onMove: closeDrag.onMove,
-      onEnd: closeDrag.onEnd
+      onEnd: closeDrag.onEnd,
+      onCancel: closeDrag.abandon
     });
   });
 
@@ -124,7 +125,8 @@
       shouldStart: (e) =>
         !(e.target as HTMLElement | null)?.closest('input') && closeDrag.bodyShouldStart(e),
       onMove: closeDrag.onMove,
-      onEnd: closeDrag.onEnd
+      onEnd: closeDrag.onEnd,
+      onCancel: closeDrag.abandon
     });
   });
 

@@ -304,7 +304,8 @@
       axis: 'y',
       shouldStart: closeDrag.bodyShouldStart,
       onMove: closeDrag.onMove,
-      onEnd: closeDrag.onEnd
+      onEnd: closeDrag.onEnd,
+      onCancel: closeDrag.abandon
     });
   });
 

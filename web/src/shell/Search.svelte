@@ -25,7 +25,8 @@
       axis: 'y',
       crossAxisCancel: false,
       onMove: openDrag.onMove,
-      onEnd: openDrag.onEnd
+      onEnd: openDrag.onEnd,
+      onCancel: openDrag.abandon
     });
   });
 </script>

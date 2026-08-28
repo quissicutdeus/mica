@@ -184,6 +184,66 @@ describe('attachDragGesture', () => {
     expect(onMove).toHaveBeenCalledWith(40, expect.anything());
   });
 
+  describe('a gesture detached while a drag is still in flight', () => {
+    // The listeners that would have ended the drag live on `window` and are removed by
+    // the cleanup, so the eventual `pointerup` lands on nothing and `onEnd` never comes.
+    // Consumers that write state on `onMove` need telling, or they hold it forever
+    // (MICA-106).
+    it('cancels the drag so the consumer can abandon its half-applied state', () => {
+      const onMove = vi.fn();
+      const onEnd = vi.fn();
+      const onCancel = vi.fn();
+      const detach = attachDragGesture(element, { axis: 'y', onMove, onEnd, onCancel });
+
+      firePointerEvent(element, 'pointerdown', { clientX: 0, clientY: 0, timeMs: 0 });
+      firePointerEvent(window, 'pointermove', { clientX: 0, clientY: 30, timeMs: 10 });
+      expect(onMove).toHaveBeenCalled();
+
+      detach();
+
+      expect(onCancel).toHaveBeenCalledTimes(1);
+      // Not `onEnd`: nothing was released, so there is no delta or velocity to report and
+      // no release for a consumer to read as intent to commit.
+      expect(onEnd).not.toHaveBeenCalled();
+    });
+
+    it('stays silent when no drag had committed, so a plain detach is not a cancel', () => {
+      const onCancel = vi.fn();
+      const detach = attachDragGesture(element, {
+        axis: 'y',
+        onMove: vi.fn(),
+        onEnd: vi.fn(),
+        onCancel
+      });
+
+      // Pressed, but never moved past the axis threshold.
+      firePointerEvent(element, 'pointerdown', { clientX: 0, clientY: 0, timeMs: 0 });
+      firePointerEvent(window, 'pointermove', { clientX: 0, clientY: 2, timeMs: 5 });
+      detach();
+
+      expect(onCancel).not.toHaveBeenCalled();
+    });
+
+    it('does not resurrect the drag when the pointer finally comes up', () => {
+      const onEnd = vi.fn();
+      const onCancel = vi.fn();
+      const detach = attachDragGesture(element, {
+        axis: 'y',
+        onMove: vi.fn(),
+        onEnd,
+        onCancel
+      });
+
+      firePointerEvent(element, 'pointerdown', { clientX: 0, clientY: 0, timeMs: 0 });
+      firePointerEvent(window, 'pointermove', { clientX: 0, clientY: 30, timeMs: 10 });
+      detach();
+      firePointerEvent(window, 'pointerup', { clientX: 0, clientY: 30, timeMs: 20 });
+
+      expect(onEnd).not.toHaveBeenCalled();
+      expect(onCancel).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('cancels without ever calling onMove when movement locks to the other axis', () => {
     const onMove = vi.fn();
     const onEnd = vi.fn();

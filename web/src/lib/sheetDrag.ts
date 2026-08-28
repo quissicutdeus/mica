@@ -47,6 +47,8 @@ export interface SheetCloseHandlers {
   onEnd: (deltaY: number, velocity: number) => void;
   /** Pass as `shouldStart` when attaching to the sheet body; the handle needs no gate. */
   bodyShouldStart: (e: PointerEvent) => boolean;
+  /** Pass as `onCancel`. See `abandonSheetDrag`. */
+  abandon: () => void;
 }
 
 /**
@@ -89,6 +91,26 @@ export interface SheetOpenOptions {
 export interface SheetOpenHandlers {
   onMove: (deltaY: number) => void;
   onEnd: (deltaY: number, velocity: number) => void;
+  /** Pass as `onCancel`. See `abandonSheetDrag`. */
+  abandon: () => void;
+}
+
+/**
+ * Hand the sheet back to whatever its open flag says, after a drag that will never end.
+ *
+ * Both sheets render on `open || phase !== 'idle'` and, while the phase is anything but
+ * `'idle'`, position themselves from `progress` rather than from the flag. That is right
+ * mid-drag and a trap afterwards: a phase left at `'dragging'` pins the sheet on screen
+ * with **no** route back. `'settling'` at least has the 250ms `transitionend` fallback
+ * both sheets carry (MICA-45); `'dragging'` has nothing, so the sheet simply stays up
+ * for the rest of the session (MICA-106).
+ *
+ * Only the phase is reset. `progress` is deliberately left alone: at `'idle'` neither
+ * sheet reads it — each derives its position from its own open flag — so writing a value
+ * here would be inventing one, and the next drag sets it before it is read again.
+ */
+export function abandonSheetDrag(phase: Writable<SheetDragPhase>): void {
+  phase.set('idle');
 }
 
 /** Open-drag counterpart to `createSheetClose`. Shared by the Dock, the home indicator
@@ -112,6 +134,9 @@ export function createSheetOpen(options: SheetOpenOptions): SheetOpenHandlers {
       } else {
         progress.set(0);
       }
+    },
+    abandon() {
+      abandonSheetDrag(phase);
     }
   };
 }
@@ -158,6 +183,10 @@ export function createSheetClose(options: SheetCloseOptions): SheetCloseHandlers
       // No list to compete with: a body drag is unambiguous.
       if (!el) return true;
       return atClosingEdge(el);
+    },
+
+    abandon() {
+      abandonSheetDrag(phase);
     }
   };
 }

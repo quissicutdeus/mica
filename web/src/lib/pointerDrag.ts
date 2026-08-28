@@ -129,7 +129,21 @@ export interface DragGestureConfig {
   onMove: (delta: number, e: PointerEvent) => void;
   /** Called once on release, with the final delta and a rolling velocity estimate (units/ms). Only fires if the gesture committed to an axis. */
   onEnd: (delta: number, velocityPerMs: number) => void;
-  /** Fired once if movement locks to the *other* axis (only possible for a fixed `'x'`/`'y'` config) — the gesture never captures the pointer or calls `onMove`/`onEnd`. */
+  /**
+   * Fired once when a gesture ends without ever reaching `onEnd`. Two ways that happens:
+   *
+   * - movement locks to the *other* axis (a fixed `'x'`/`'y'` config with
+   *   `crossAxisCancel`), before the pointer is captured or `onMove` has run; and
+   * - **the gesture is detached while a committed drag is still in flight** — the effect
+   *   that attached it re-ran, or the element was unmounted, and the cleanup tore the
+   *   `window` listeners down. That drag will never see its own `pointerup`, so `onEnd`
+   *   is never coming.
+   *
+   * The second case is why this is not merely informational. A consumer that writes
+   * half-applied state on `onMove` and only resolves it in `onEnd` — every sheet here
+   * sets a `'dragging'` phase that way — is otherwise left holding that state for the
+   * life of the page, with no event that can ever clear it (MICA-106).
+   */
   onCancel?: () => void;
   /**
    * Whether movement that locks to the other axis kills the gesture. Default true.
@@ -337,6 +351,12 @@ export function attachDragGesture(element: HTMLElement, config: DragGestureConfi
 
   return () => {
     element.removeEventListener('pointerdown', handlePointerDown);
+    // A committed drag that is torn down here has already had `onMove` applied and will
+    // never reach `onEnd`: `stopTracking` drops the `window` listeners, so the eventual
+    // `pointerup` lands on nothing. Read the flag before that, and tell the consumer to
+    // abandon the gesture rather than leaving it half-applied forever.
+    const wasCommitted = committed;
     stopTracking();
+    if (wasCommitted) onCancel?.();
   };
 }

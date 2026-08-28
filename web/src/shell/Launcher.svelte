@@ -4,7 +4,7 @@
   import AppIcon from '../sdk/ui/AppIcon.svelte';
   import { attachLongPressDrag } from '../lib/longPressDrag';
   import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
-  import { DRAWER_OPEN_COMMIT } from '../lib/sheetDrag';
+  import { abandonSheetDrag, DRAWER_OPEN_COMMIT } from '../lib/sheetDrag';
   import { appRegistryStore } from './state/registry';
   import { homeGridColumns, homeGridRows } from './state/homeGridSettings';
   import { homeGridItems, openFolderId, type HomeGridItem } from './state/homeGrid';
@@ -182,6 +182,11 @@
         }
       },
       onCancel: () => {
+        // This one drives whichever sheet the swipe chose, so it has to undo the same one.
+        // Left alone, that sheet stays at `'dragging'` and pins itself on screen for the
+        // rest of the session (MICA-106).
+        if (swipeTarget === 'shade') abandonSheetDrag(shadeDragPhase);
+        else if (swipeTarget === 'drawer') abandonSheetDrag(drawerDragPhase);
         swipeTarget = null;
       }
     });

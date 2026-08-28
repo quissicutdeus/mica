@@ -108,6 +108,29 @@ describe('App Drawer', () => {
     expect(get(drawerDragPhase)).toBe('idle');
   }, 10000);
 
+  it('abandons a handle drag torn down mid-flight rather than pinning the sheet open (MICA-106)', async () => {
+    openDrawer();
+    const { getByTestId, unmount } = render(AppDrawer, { props: { openApp: () => {} } });
+
+    // A real drag rather than a tap: past `attachDragGesture`'s 4px axis threshold, which
+    // is what commits the gesture and writes `'dragging'`.
+    const handle = getByTestId('drawer-top-handle');
+    await fireEvent.pointerDown(handle, { pointerId: 1, clientX: 100, clientY: 100 });
+    await fireEvent.pointerMove(window, { pointerId: 1, clientX: 100, clientY: 140 });
+    expect(get(drawerDragPhase)).toBe('dragging');
+
+    // The effect that attached the gesture tears it down — the `{#if}` re-created the
+    // handle, or the drawer unmounted. The listeners that would have ended this drag are
+    // on `window` and go with it, so the finger's eventual `pointerup` reaches nothing.
+    unmount();
+
+    // `'dragging'` is the phase with no way back: the 250ms fallback above only covers
+    // `'settling'`, and `{#if $isDrawerOpen || $drawerDragPhase !== 'idle'}` keeps the
+    // sheet mounted and visible for as long as it holds. Left stuck, that is the drawer
+    // sitting open over the phone for the rest of the session.
+    expect(get(drawerDragPhase)).toBe('idle');
+  });
+
   it('shows the app grid when the query is empty, a filtered list once typing starts', async () => {
     openDrawer();
     render(AppDrawer, { props: { openApp: () => {} } });
