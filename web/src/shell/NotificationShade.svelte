@@ -41,6 +41,7 @@
   import { cellServiceEnabled, toggleCellService } from './state/signal';
   import { closeShade, isShadeOpen, shadeDragPhase, shadeDragProgress } from './state/shade';
   import SwipeableRow from './SwipeableRow.svelte';
+  import NowPlaying from './NowPlaying.svelte';
 
   interface QuickToggle {
     label: string;
@@ -477,6 +478,14 @@
         </button>
       {/each}
     </div>
+
+    <!-- Now Playing.
+
+         Between the tiles and the list on purpose, and it is neither of them: it is not a
+         notification (nothing about it goes through `state/notificationPolicy.ts`, so DND
+         cannot hide it and Clear All cannot remove it) and it is not a toggle. It renders
+         nothing at all when nothing is loaded. `NowPlaying.svelte` carries the reasoning. -->
+    <NowPlaying />
 
     <!-- Notification List Area -->
     <div bind:this={scrollContainerRef} class="flex-1 scrollbar-none overflow-y-auto px-5 pb-8">

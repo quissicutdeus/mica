@@ -1,7 +1,8 @@
 import { registerFacet } from '../../current';
 import type { Facets } from '../../inProcess/facets';
 import { fn, store, type AsTwin } from './_shared';
-import { isYouTubeSource } from '@shared/youtube';
+import { isYouTubeSource, thumbnailUrlFor } from '@shared/youtube';
+import { describeMusicError } from '../../../../lib/musicErrors';
 
 type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/music').music>>;
 
@@ -9,11 +10,13 @@ type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/music').musi
  * Implementation of the `useMusic` facet for a sandboxed add-on — see the inProcess twin
  * for the usage contract.
  *
- * `canPlay` is imported and run locally rather than sent over the wire, the way `theme`'s
- * `sanitizeSeed` is: `shared/youtube.ts` is pure and does no I/O, so it bundles into the
- * sandbox unchanged and stays synchronous. That is the whole reason `playSource` reports
- * nothing back — over this transport it could only ever answer with a promise, so the
- * "is this a link" question is answered before the call rather than by it.
+ * `canPlay`, `thumbnailUrlFor` and `describeMusicError` are imported and run locally
+ * rather than sent over the wire, the way `theme`'s `sanitizeSeed` is: `shared/youtube.ts`
+ * and `lib/musicErrors.ts` are pure and do no I/O, so they bundle into the sandbox
+ * unchanged and stay synchronous. That is the whole reason
+ * `playSource` reports nothing back — over this transport it could only ever answer with a
+ * promise, so the "is this a link" question is answered before the call rather than by it,
+ * and a thumbnail an app has to `await` is a thumbnail that arrives after the row is drawn.
  *
  * The stores are read-only here, as everywhere across this seam: an add-on watches what is
  * playing and asks for changes, and the shell decides.
@@ -23,8 +26,27 @@ export function music(): Twin {
     musicSource: store('music', [], 'musicSource', null),
     musicStatus: store('music', [], 'musicStatus', 'idle'),
     musicVolume: store('music', [], 'musicVolume', 0.5),
+    musicQueue: store('music', [], 'musicQueue', []),
+    musicIndex: store('music', [], 'musicIndex', -1),
+    musicNowPlaying: store('music', [], 'musicNowPlaying', null),
+    musicError: store('music', [], 'musicError', null),
+    musicPosition: store('music', [], 'musicPosition', { current: 0, duration: 0 }),
+    musicRepeat: store('music', [], 'musicRepeat', 'off'),
+    musicShuffle: store('music', [], 'musicShuffle', false),
     canPlay: isYouTubeSource,
+    thumbnailUrlFor,
+    describeMusicError,
     playSource: fn('music', [], 'playSource'),
+    enqueue: fn('music', [], 'enqueue'),
+    playQueueIndex: fn('music', [], 'playQueueIndex'),
+    removeFromQueue: fn('music', [], 'removeFromQueue'),
+    clearQueue: fn('music', [], 'clearQueue'),
+    nextTrack: fn('music', [], 'nextTrack'),
+    previousTrack: fn('music', [], 'previousTrack'),
+    seekMusic: fn('music', [], 'seekMusic'),
+    cycleRepeat: fn('music', [], 'cycleRepeat'),
+    setRepeat: fn('music', [], 'setRepeat'),
+    toggleShuffle: fn('music', [], 'toggleShuffle'),
     pauseMusic: fn('music', [], 'pauseMusic'),
     resumeMusic: fn('music', [], 'resumeMusic'),
     stopMusic: fn('music', [], 'stopMusic'),

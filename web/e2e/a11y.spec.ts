@@ -217,6 +217,86 @@ test('the home screen, the drawer and the shade have no accessibility violations
 });
 
 /**
+ * The two Music surfaces the sweep above cannot reach (MICA-111).
+ *
+ * `openApp` visits every app with nothing loaded, so Music is only ever scanned as a paste
+ * field over an empty state — never as a loaded player, with a now-playing card, queue rows
+ * carrying artwork, and a six-button transport. And `NowPlaying` renders only
+ * `{#if $musicSource}`, so the shade scan above, which runs with nothing playing, never sees
+ * the one control that stops audio without opening the app. Both are the app's normal state
+ * rather than an edge of it, and neither was swept.
+ *
+ * The embed is stubbed, not loaded. An accessibility gate must not go red because YouTube is
+ * slow (`retries: 0`), and the frame's own document is outside `.include()` regardless — the
+ * player is mounted outside the phone frame entirely, which is why `music.spec.ts` rather
+ * than axe is what holds it out of the tab order.
+ */
+test('Music has no accessibility violations with a track loaded, in the app and in the shade', async ({
+  page
+}) => {
+  await page.route(/https:\/\/www\.youtube(-nocookie)?\.com\//, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      // Enough of a stub to refuse a video on demand — the refusal state paints
+      // `text-error` on two surfaces and is scanned below. `apps/music.spec.ts` owns the
+      // protocol itself; all this has to do is load and answer.
+      body:
+        '<!doctype html><title>s</title><script>window.__error=(c)=>' +
+        "parent.postMessage(JSON.stringify({event:'onError',info:c}),'*')</script>"
+    })
+  );
+
+  const frame = page.getByTestId('phone-frame');
+  const settled = async () =>
+    expect
+      .poll(async () => frame.evaluate((el) => el.getAnimations({ subtree: true }).length), {
+        timeout: 5000
+      })
+      .toBe(0);
+
+  const openMusicWithATrack = async () => {
+    await page.goto('/?app=music');
+    await settlePhoneOpen(page);
+    const field = page.getByLabel('YouTube link');
+    await field.fill('dQw4w9WgXcQ');
+    await field.press('Enter');
+    await expect(page.locator('button[aria-label="Stop"]')).toBeVisible();
+    await settled();
+  };
+
+  await openMusicWithATrack();
+  const app = await scan(page, 'music');
+  expect(summarise(app), `music (loaded):\n  ${summarise(app).join('\n  ')}`).toEqual([]);
+
+  await page.getByRole('button', { name: 'Open notification shade' }).click();
+  await expect(page.getByRole('group', { name: 'Now playing' })).toBeVisible();
+  await settled();
+  const shade = await scan(page, 'shade');
+  expect(summarise(shade), `shade (playing):\n  ${summarise(shade).join('\n  ')}`).toEqual([]);
+
+  // The refusal state, which is its own palette: `text-error` on the now-playing card and
+  // again on the queue row, neither of which appears on any other screen this file sweeps.
+  // `error` is a role token so it should follow the scheme — the claim worth measuring
+  // rather than assuming, and the one the `bank` entry in `KNOWN_OPEN` above is the
+  // cautionary tale for.
+  //
+  // Reached by starting over rather than by closing the shade: the shade is opened and
+  // closed by a drag (`notifications.spec.ts` owns that gesture) and has no close button to
+  // click, so a second pass is both cheaper and less of a lie about what is being tested.
+  await openMusicWithATrack();
+  await page
+    .frameLocator('iframe[title="gPhone music player"]')
+    .locator('body')
+    .evaluate(() => (window as unknown as { __error: (code: number) => void }).__error(101));
+  await expect(page.getByText("Can't play this", { exact: true })).toBeVisible();
+  await settled();
+
+  const failed = await scan(page, 'music');
+  expect(summarise(failed), `music (refused):\n  ${summarise(failed).join('\n  ')}`).toEqual([]);
+});
+
+/**
  * The focus ring, measured rather than assumed (MICA-109 item 2).
  *
  * There is no axe rule for this: a focusable element with an invisible ring is perfectly

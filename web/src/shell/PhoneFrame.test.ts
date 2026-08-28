@@ -342,3 +342,98 @@ describe('status bar notification icons', () => {
     expect(rowEnd).toBeLessThan(cutoutStart);
   });
 });
+
+/**
+ * The music indicator (MICA-111 phase 4).
+ *
+ * It is on the right-hand side of the bar rather than beside the notification icons, and
+ * that is a measurement: the left run has under four pixels of headroom before the camera
+ * cutout (`STATUS_BAR_MAX_NOTIFICATION_ICONS` in `state/display.ts` shows the working) and
+ * the right one has room to spare. The last case below is the same pixel-budget assertion
+ * the notification row already carries, from the other edge.
+ */
+describe('PhoneFrame music indicator', () => {
+  beforeEach(async () => {
+    const { resetMusicForTest } = await import('./state/music');
+    resetMusicForTest();
+    charge.set(100);
+  });
+
+  it('is absent while nothing is loaded', async () => {
+    const { queryByTestId } = renderFrame(false);
+    expect(queryByTestId('status-music-indicator')).toBeNull();
+  });
+
+  it('appears while something is playing', async () => {
+    const { playSource } = await import('./state/music');
+    playSource('https://youtu.be/dQw4w9WgXcQ');
+
+    const { findByTestId } = renderFrame(false);
+    expect(await findByTestId('status-music-indicator')).toBeTruthy();
+  });
+
+  it('stays up while paused, quieter', async () => {
+    // Paused still means the phone is holding a track, which is the thing a person who
+    // put the phone down needs to be able to see. `text-on-surface-variant` is the "same
+    // text, quieter" role — never an opacity modifier on a themed role (AGENTS.md §6).
+    const { playSource, pauseMusic } = await import('./state/music');
+    playSource('https://youtu.be/dQw4w9WgXcQ');
+    pauseMusic();
+
+    const { findByTestId } = renderFrame(false);
+    const indicator = await findByTestId('status-music-indicator');
+    expect(indicator.className).toMatch(/text-on-surface-variant/);
+  });
+
+  it('marks a refused track as an error rather than dimming it', async () => {
+    // Dimmed is what paused looks like. A failure that renders as a pause leaves somebody
+    // waiting for audio that is never coming, so it takes `text-error` — the same idiom
+    // the charge percentage two elements along already uses at 20%.
+    const { playSource, reportPlayerError } = await import('./state/music');
+    playSource('https://youtu.be/dQw4w9WgXcQ');
+    reportPlayerError(150);
+
+    const { findByTestId } = renderFrame(false);
+    const indicator = await findByTestId('status-music-indicator');
+    expect(indicator.className).toMatch(/text-error/);
+    expect(indicator.className).not.toMatch(/text-on-surface-variant/);
+  });
+
+  it('sits outside the notification row, which has no room for it', async () => {
+    const { playSource } = await import('./state/music');
+    playSource('https://youtu.be/dQw4w9WgXcQ');
+
+    const { findByTestId } = renderFrame(false);
+    const indicator = await findByTestId('status-music-indicator');
+
+    // Not inside the capped tray, and not a sibling of the clock either: the whole point
+    // is that it costs the left run nothing.
+    expect(indicator.closest('[data-testid="status-notification-icons"]')).toBeNull();
+    const statusBar = indicator.closest('button');
+    const [leftGroup, rightGroup] = Array.from(statusBar?.children ?? []);
+    expect(leftGroup.contains(indicator)).toBe(false);
+    expect(rightGroup.contains(indicator)).toBe(true);
+  });
+
+  it('clears the cutout on the right-hand run', async () => {
+    const { PHONE_WIDTH } = await import('./state/display');
+
+    const BAR_PADDING_RIGHT = 32; // px-8
+    const GAP = 8; // gap-2, between each glyph in the right group
+    const BATTERY_ICON = 24; // h-3 w-6
+    const BATTERY_GAP = 6; // gap-1.5
+    const CHARGE_WIDTH = 33; // "100%" at text-body-small (12px)
+    const SIGNAL = 16; // size-icon-sm
+    const BLUETOOTH = 14; // h-3.5 w-3.5
+    const MUSIC = 16; // size-icon-sm
+    const CUTOUT = 24; // size-icon-lg
+
+    // Everything on at once, measured leftward from the content edge.
+    const width =
+      BATTERY_ICON + BATTERY_GAP + CHARGE_WIDTH + GAP + SIGNAL + GAP + BLUETOOTH + GAP + MUSIC;
+    const rowStart = PHONE_WIDTH - BAR_PADDING_RIGHT - width;
+    const cutoutEnd = PHONE_WIDTH / 2 + CUTOUT / 2;
+
+    expect(rowStart).toBeGreaterThan(cutoutEnd);
+  });
+});

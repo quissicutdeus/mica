@@ -90,6 +90,22 @@ export const isVideoId = (value: string): boolean => VIDEO_ID.test(value);
 export const isPlaylistId = (value: string): boolean => PLAYLIST_ID.test(value);
 
 /**
+ * The still frame for a video, or `null` when there is no id to build one from.
+ *
+ * A plain image on YouTube's own thumbnail host — no script, no API key, and no request
+ * the phone makes that the embed beside it was not already making. It lives here rather
+ * than beside the player for two reasons: it is another string built by interpolating a
+ * player-supplied value into a URL the browser will fetch, so it belongs next to the
+ * validation that makes that safe; and it is pure, so it crosses the add-on seam into a
+ * sandboxed bundle unchanged the way `isYouTubeSource` does.
+ *
+ * `mqdefault` (320x180) rather than `hqdefault`: the row it is drawn in is 64px wide on a
+ * 400px screen, and the larger file buys nothing but bandwidth on a game client.
+ */
+export const thumbnailUrlFor = (videoId: string | null | undefined): string | null =>
+  videoId && isVideoId(videoId) ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : null;
+
+/**
  * Reduce whatever the player pasted to ids, or `null` if it is not a YouTube source.
  *
  * Accepts a bare id as well as a link — people paste both, and a bare id has already been

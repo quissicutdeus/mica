@@ -7,6 +7,7 @@
   import { displayCharge, isBatteryDead } from './state/charge';
   import { clampedSignalLevel } from './state/signal';
   import { bluetoothEnabled } from './state/bluetooth';
+  import { musicSource, musicStatus } from './state/music';
   import { stepVolume } from './state/audio';
   import { enableDragScroll } from '../lib/dragScroll';
   import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
@@ -20,6 +21,7 @@
   import LightningWarningIcon from '../sdk/ui/icons/LightningWarningIcon.svelte';
   import SignalIcon from '../sdk/ui/icons/SignalIcon.svelte';
   import BluetoothIcon from '../sdk/ui/icons/BluetoothIcon.svelte';
+  import MusicNoteIcon from '../sdk/ui/icons/MusicNoteIcon.svelte';
   import BatteryIcon from '../sdk/ui/icons/BatteryIcon.svelte';
   import VolumeHud from './VolumeHud.svelte';
   import NotificationShade from './NotificationShade.svelte';
@@ -380,6 +382,55 @@
           {/if}
         </div>
         <div class="flex items-center gap-2">
+          <!-- Music (MICA-111 phase 4).
+
+               **In the right-hand group, not the left, and that is a measurement rather
+               than a preference.** The left run — clock, then the per-app notification
+               icons — is the one `STATUS_BAR_MAX_NOTIFICATION_ICONS` in `state/display.ts`
+               budgets, and its worst case already ends at 183.7px with 3.8px to spare
+               before the hole-punch camera at 187.5px. There is no room there for a
+               fourth glyph of any kind; that comment says to treat the row as full, and
+               this does.
+
+               The right group runs leftward from the content edge at 368px and stops
+               where the cutout ends, at 212px — 156px of run. Its worst case, everything
+               on at once, is: battery icon 24 (`h-3 w-6`) + `gap-1.5` 6 + "100%" at
+               `text-body-small` (12px, ~33px) + `gap-2` 8 + signal 16 (`size-icon-sm`) +
+               `gap-2` 8 + bluetooth 14 = 109px, ending at 259px. This glyph is 16px plus
+               its own `gap-2`, so 24px more, ending at 235px and clearing the cutout by
+               23px. Arithmetic rather than a browser measurement, unlike the left run's —
+               the margin here is six times the whole quantity that had to be measured
+               there, so it does not turn on a sub-pixel.
+
+               It is device state, so it belongs with the device-state glyphs on this side
+               rather than with the notification icons opposite, and it does not fade as
+               the shade opens the way those do — the shade's own now-playing row is a
+               control, not a repeat of this, and the battery and signal beside it stay up
+               too.
+
+               Shown whenever anything is loaded, paused included: the point of the glyph
+               is that a person who put the phone down can tell the phone still has music
+               in hand, and where to go about it.
+
+               Three states, three colours, because two of them would otherwise collide.
+               Playing inherits the bar's own `text-on-surface`. Paused is
+               `text-on-surface-variant` — the "quieter, still legible" role the date
+               beside the clock uses, and not an opacity modifier on a themed role (§6).
+               A track the player refused is `text-error` rather than dimmed, because
+               dimmed is precisely what paused looks like, and a failure that renders as a
+               pause leaves a person waiting for audio that is never coming. The charge
+               percentage two elements along already turns `text-error` at 20%, so this is
+               the bar's existing idiom for "something is wrong" and not a new one. -->
+          {#if $musicSource}
+            <span
+              data-testid="status-music-indicator"
+              class="flex items-center"
+              class:text-on-surface-variant={$musicStatus === 'paused'}
+              class:text-error={$musicStatus === 'error'}
+            >
+              <MusicNoteIcon class="size-icon-sm" />
+            </span>
+          {/if}
           {#if $bluetoothEnabled}
             <BluetoothIcon class="h-3.5 w-3.5 opacity-90" />
           {/if}

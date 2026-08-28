@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isPlaylistId, isVideoId, isYouTubeSource, parseYouTubeSource } from '@shared/youtube';
+import {
+  isPlaylistId,
+  isVideoId,
+  isYouTubeSource,
+  parseYouTubeSource,
+  thumbnailUrlFor
+} from '@shared/youtube';
 
 /**
  * MICA-111. The parser is the sanitisation boundary — everything downstream interpolates
@@ -129,5 +135,21 @@ describe('parseYouTubeSource — what it refuses', () => {
   it('does not read an 11-character video id as a playlist', () => {
     expect(isPlaylistId(VIDEO)).toBe(false);
     expect(isVideoId(VIDEO)).toBe(true);
+  });
+});
+
+describe('thumbnailUrlFor', () => {
+  it("builds a still frame on YouTube's thumbnail host", () => {
+    expect(thumbnailUrlFor(VIDEO)).toBe(`https://img.youtube.com/vi/${VIDEO}/mqdefault.jpg`);
+  });
+
+  it('re-validates the id rather than trusting the caller', () => {
+    // The same rule `embedUrlFor` follows: this string is fetched by the browser, and the
+    // value in it started life as a paste.
+    expect(thumbnailUrlFor('../../evil')).toBeNull();
+    expect(thumbnailUrlFor(PLAYLIST)).toBeNull();
+    expect(thumbnailUrlFor(null)).toBeNull();
+    expect(thumbnailUrlFor(undefined)).toBeNull();
+    expect(thumbnailUrlFor('')).toBeNull();
   });
 });

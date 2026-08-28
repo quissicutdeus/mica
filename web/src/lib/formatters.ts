@@ -57,3 +57,22 @@ export function formatDate(isoString?: string | number | Date): string {
     year: 'numeric'
   });
 }
+
+/**
+ * Seconds as `m:ss`, or `h:mm:ss` past an hour. MICA-111.
+ *
+ * Here rather than inline in the Music app because a "how long" readout is not
+ * app-specific — `MediaThumb` and the Phone app's call timer each wrote their own, and a
+ * third copy is how three surfaces end up disagreeing about what 90 seconds looks like.
+ * Those two are left alone rather than refactored mid-flight; this is the one to reach for
+ * next time.
+ */
+export function formatDuration(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '0:00';
+  const whole = Math.floor(totalSeconds);
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const seconds = whole % 60;
+  const mm = hours > 0 ? String(minutes).padStart(2, '0') : String(minutes);
+  return `${hours > 0 ? `${hours}:` : ''}${mm}:${String(seconds).padStart(2, '0')}`;
+}

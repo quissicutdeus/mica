@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { formatCurrency, formatTimestamp, formatTime, formatRelativeTime } from './formatters';
+import {
+  formatCurrency,
+  formatDuration,
+  formatTimestamp,
+  formatTime,
+  formatRelativeTime
+} from './formatters';
 
 describe('formatters utility module', () => {
   describe('formatCurrency', () => {
@@ -52,5 +58,27 @@ describe('formatters utility module', () => {
       const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
       expect(formatRelativeTime(threeHoursAgo)).toBe('3h ago');
     });
+  });
+});
+
+describe('formatDuration', () => {
+  it('reads as a track length, not a timestamp', () => {
+    expect(formatDuration(0)).toBe('0:00');
+    expect(formatDuration(9)).toBe('0:09');
+    expect(formatDuration(95)).toBe('1:35');
+    expect(formatDuration(600)).toBe('10:00');
+  });
+
+  it('grows an hours field only when there is one', () => {
+    expect(formatDuration(3599)).toBe('59:59');
+    expect(formatDuration(3600)).toBe('1:00:00');
+    expect(formatDuration(3725)).toBe('1:02:05');
+  });
+
+  it('refuses to render nonsense as a time', () => {
+    // The value arrives from the embed (`reportPlayerProgress`), so it is checked here too.
+    expect(formatDuration(-1)).toBe('0:00');
+    expect(formatDuration(Number.NaN)).toBe('0:00');
+    expect(formatDuration(Number.POSITIVE_INFINITY)).toBe('0:00');
   });
 });

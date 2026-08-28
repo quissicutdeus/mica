@@ -14,6 +14,7 @@ export { filterByQuery } from '../lib/filterByQuery';
 export {
   formatCurrency,
   formatDate,
+  formatDuration,
   formatRelativeTime,
   formatTime,
   formatTimestamp
