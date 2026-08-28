@@ -77,6 +77,23 @@
     if (ids.length > 0) void loadDmReactions(ids);
   });
 
+  /** The thread's scroller, bound so the newest message can be brought into view. */
+  let list: HTMLDivElement | undefined = $state();
+
+  /**
+   * Pin the thread to the bottom whenever its length changes — opening it, and every send.
+   *
+   * The store is oldest-first now (MICA-101), so the newest message is the one furthest down
+   * and a thread longer than the screen would otherwise open showing its oldest message. Reading
+   * `.length` rather than the array is deliberate: a reaction refresh replaces objects in place
+   * and must not yank the player back down while they are reading upward. `$effect` runs after
+   * the DOM is updated, so `scrollHeight` here already includes the message just appended.
+   */
+  $effect(() => {
+    void $dmMessages.length;
+    if (list) list.scrollTop = list.scrollHeight;
+  });
+
   const thread = $derived($dmThreads.find((row) => row.peer_account_id === peer));
   /** The inbox's row wins once it exists; the handed-down account covers the first message. */
   const active = $derived(
@@ -160,8 +177,11 @@
       </button>
     </div>
 
-    <!-- Newest first, so the list needs no scroll-to-bottom and the composer sits above it. -->
-    <div class="flex-1 overflow-y-auto">
+    <!-- Oldest first, newest last, and scrolled to the bottom on arrival — standard chat order
+         (MICA-101). Scrolling the list rather than reversing the flex direction on purpose:
+         `flex-col-reverse` would order it visually while leaving the column sized by its content,
+         which is the shape MICA-89 was. -->
+    <div class="flex-1 overflow-y-auto" bind:this={list}>
       {#if loading && $dmMessages.length === 0}
         <div class="p-4"><Skeleton count={3} height="h-12" /></div>
       {:else if $dmMessages.length === 0}

@@ -419,6 +419,39 @@ describe('blabber service', () => {
       );
     });
 
+    /**
+     * MICA-101. `blabber_dms:get` is keyset-paged on `id DESC`, so the wire order is
+     * newest-first and the thread was rendering it straight through — a new message landed
+     * above the older ones instead of below them.
+     */
+    it('loadDmMessages reverses the id DESC page into chronological order', async () => {
+      activeAccountId.set(1);
+      myAccounts.set([{ id: 1 } as Account]);
+      const dm = (id: number, body: string): BlabberDm => ({
+        id,
+        from_account: 2,
+        to_account: 1,
+        body,
+        created_at: '2026-01-01',
+        updated_at: '2026-01-01'
+      });
+      // As the server returns it: newest first.
+      const wire = [dm(3, 'newest'), dm(2, 'middle'), dm(1, 'oldest')];
+
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation((name, payload) => {
+        const action = actionOf(name, payload);
+        if (action === 'blabber_dms:get') return Promise.resolve({ rows: wire } as any);
+        if (action === 'blabber_dms:threads') return Promise.resolve([] as any);
+        return Promise.resolve(undefined as any);
+      });
+
+      await loadDmMessages(2);
+
+      expect(get(dmMessages).map((m) => m.id)).toEqual([1, 2, 3]);
+      // The reply is not mutated in place — it is somebody else's array.
+      expect(wire.map((m) => m.id)).toEqual([3, 2, 1]);
+    });
+
     it('sendDm throws if no active account', async () => {
       activeAccountId.set(null);
       await expect(sendDm(2, 'Hello')).rejects.toThrow('Claim a handle first.');
@@ -447,6 +480,42 @@ describe('blabber service', () => {
       await sendDm(2, 'Hello Bob');
 
       expect(get(dmMessages)).toContainEqual(mockDm);
+    });
+
+    /** MICA-101, the other half: a send appends, so the newest message is last. */
+    it('sendDm appends the new message to the end of the thread', async () => {
+      activeAccountId.set(1);
+      myAccounts.set([{ id: 1 } as Account]);
+
+      const existing: BlabberDm = {
+        id: 10,
+        from_account: 2,
+        to_account: 1,
+        body: 'earlier',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z'
+      };
+      dmMessages.set([existing]);
+
+      const created: BlabberDm = {
+        id: 11,
+        from_account: 1,
+        to_account: 2,
+        body: 'later',
+        created_at: '2026-01-01T00:01:00Z',
+        updated_at: '2026-01-01T00:01:00Z'
+      };
+
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation((name, payload) => {
+        const action = actionOf(name, payload);
+        if (action === 'blabber_dms:send') return Promise.resolve(created as any);
+        if (action === 'blabber_dms:threads') return Promise.resolve([] as any);
+        return Promise.resolve(undefined as any);
+      });
+
+      await sendDm(2, 'later');
+
+      expect(get(dmMessages).map((m) => m.id)).toEqual([10, 11]);
     });
   });
 

@@ -514,6 +514,17 @@ export const loadDmThreads = async (): Promise<void> => {
   dmThreads.set(await dmService().call<BlabberDmThread[]>('threads', {}, []));
 };
 
+/**
+ * `dmMessages` is **chronological — oldest first, newest last** — and the thread renders it in
+ * that order, so a new message appends at the bottom like every other chat on the phone
+ * (MICA-101).
+ *
+ * The wire order is the opposite and stays that way: `blabber_dms:get` is keyset-paged on
+ * `id DESC`, so the newest page is the one a cursor-less read returns, and reversing the query
+ * instead would mean paging from the wrong end of the thread. The reversal belongs here, once,
+ * rather than in the component — `sendDm` has to agree with it, and a component-side `reverse()`
+ * would leave the store's own order a thing every future reader has to rediscover.
+ */
 export const loadDmMessages = async (peerAccountId: number): Promise<void> => {
   const accountId = getActiveAccountId();
   if (accountId === null) return;
@@ -522,7 +533,7 @@ export const loadDmMessages = async (peerAccountId: number): Promise<void> => {
     { account_id: accountId, peer_account_id: peerAccountId },
     { rows: [] }
   );
-  dmMessages.set(reply.rows ?? []);
+  dmMessages.set([...(reply.rows ?? [])].reverse());
 
   // Opening the thread is what marks it read, so the badge falls for the same reason the player
   // would expect it to.
@@ -539,7 +550,9 @@ export const sendDm = async (peerAccountId: number, body: string): Promise<void>
     peer_account_id: peerAccountId,
     body
   });
-  dmMessages.update((current) => [created, ...current]);
+  // Appended, not prepended: the store is oldest-first (see `loadDmMessages`), so the message
+  // just sent is the last one in the thread.
+  dmMessages.update((current) => [...current, created]);
   await loadDmThreads();
 };
 
