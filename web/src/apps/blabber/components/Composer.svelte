@@ -32,7 +32,12 @@
     busy?: boolean;
     initial?: string;
     allowAttachments?: boolean;
-    onsubmit: (body: string, attachments?: { photo_id: number }[]) => void;
+    /**
+     * May return a promise, and this composer awaits it — that is what tells it the post
+     * landed and the draft can be cleared. A caller that unmounts the composer instead
+     * (`index.svelte` closes the overlay before posting) can keep returning `void`.
+     */
+    onsubmit: (body: string, attachments?: { photo_id: number }[]) => void | Promise<void>;
     oncancel?: () => void;
   } = $props();
 
@@ -47,17 +52,50 @@
   let text = $state(untrack(() => initial));
   let attachments = $state<{ photo_id: number; media: MediaPreview }[]>([]);
   let showPicker = $state(false);
+
+  /**
+   * A submit of this composer's own, in flight.
+   *
+   * Not the same thing as `busy`. `busy` is the app-level `useAppAction` flag, and the reply
+   * path does not go through `run` — `BlabDetail.submitReply` calls `postBlab` directly — so
+   * `busy` never rises for a reply and cannot gate one. This flag is what actually stops the
+   * second tap (MICA-100).
+   */
+  let submitting = $state(false);
+
   const remaining = $derived(LIMIT - text.length);
   // A picture post needs no text: the same rule the server enforces in `create`.
   const canPost = $derived(
-    (text.trim().length > 0 || attachments.length > 0) && remaining >= 0 && !busy
+    (text.trim().length > 0 || attachments.length > 0) && remaining >= 0 && !busy && !submitting
   );
 
-  const submit = () => {
-    onsubmit(
-      text.trim(),
-      attachments.length > 0 ? attachments.map((a) => ({ photo_id: a.photo_id })) : undefined
-    );
+  /**
+   * Clear on success, keep the draft on failure.
+   *
+   * The reply composer is mounted for the life of the thread — unlike the post composer, which
+   * `index.svelte` unmounts on submit and so never had to clear itself. Leaving the text in
+   * place after a successful reply meant a second tap of Post filed an identical duplicate
+   * (MICA-100); clearing it unconditionally would instead throw away a player's words when
+   * the send failed.
+   */
+  const submit = async () => {
+    if (!canPost) return;
+    submitting = true;
+    try {
+      await onsubmit(
+        text.trim(),
+        attachments.length > 0 ? attachments.map((a) => ({ photo_id: a.photo_id })) : undefined
+      );
+    } catch {
+      // Swallowed rather than rethrown: this runs from an `onclick`, so a rejection here is an
+      // unhandled one and reports nothing to anybody. The draft survives, which is the part the
+      // player can act on. Surfacing the reason is `useAppAction`'s job, on the caller's side.
+      return;
+    } finally {
+      submitting = false;
+    }
+    text = '';
+    attachments = [];
   };
 </script>
 
@@ -122,8 +160,8 @@
       {#if oncancel}
         <Button variant="secondary" onclick={oncancel}>Cancel</Button>
       {/if}
-      <Button disabled={!canPost} onclick={submit}>
-        {busy ? '…' : 'Post'}
+      <Button disabled={!canPost} onclick={() => void submit()}>
+        {busy || submitting ? '…' : 'Post'}
       </Button>
     </div>
   </div>
