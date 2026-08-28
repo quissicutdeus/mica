@@ -1,9 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   asDataUri,
   encodeCrop,
   CAPTURE_QUALITY,
   CAPTURE_MAX_DIMENSION,
+  LANDSCAPE_ASPECT,
+  centerCropToAspect,
   computeCropGeometry
 } from './capture';
 
@@ -188,5 +193,94 @@ describe('computeCropGeometry', () => {
     expect(
       computeCropGeometry({ left: 0, top: 0, width: 1, height: 1 }, 1000, 800, 1000, 800)
     ).toBeNull();
+  });
+});
+
+/**
+ * MICA-79. The camera's LANDSCAPE mode reframes what the photo is cut from rather than
+ * rotating the phone, so "is it really landscape?" is a question about geometry — which is
+ * exactly the part nobody can check by looking at the viewfinder.
+ */
+describe('LANDSCAPE framing', () => {
+  it('agrees with the .aspect-video rule the frame is actually laid out by', () => {
+    // The frame's shape is CSS and the browser mock's crop is arithmetic. If they drift,
+    // the dev viewfinder frames one shape and saves another — silently, and only in the
+    // mode this whole feature is about.
+    const webSrc = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
+    const css = fs.readFileSync(path.join(webSrc, 'app-utilities.css'), 'utf8');
+    const rule = /\.aspect-video\s*\{\s*aspect-ratio:\s*(\d+)\s*\/\s*(\d+)\s*;?\s*\}/.exec(css);
+
+    expect(rule, '.aspect-video declared in app-utilities.css').not.toBeNull();
+    expect(Number(rule![1]) / Number(rule![2])).toBeCloseTo(LANDSCAPE_ASPECT, 5);
+    expect(LANDSCAPE_ASPECT).toBeGreaterThan(1);
+  });
+
+  it('turns the framed region into a genuinely wider-than-tall photo', () => {
+    // The in-game path: the crop rect is the frame's own on-screen box, so a 16:9 frame
+    // has to come out of `computeCropGeometry` still 16:9 and still landscape.
+    const height = 225;
+    const geometry = computeCropGeometry(
+      { left: 0, top: 312, width: Math.round(height * LANDSCAPE_ASPECT), height },
+      3840,
+      2160,
+      1920,
+      1080
+    );
+
+    expect(geometry).not.toBeNull();
+    expect(geometry!.outWidth).toBeGreaterThan(geometry!.outHeight);
+    expect(geometry!.outWidth / geometry!.outHeight).toBeCloseTo(LANDSCAPE_ASPECT, 1);
+  });
+
+  describe('centerCropToAspect', () => {
+    it('trims the top and bottom of a source taller than the target', () => {
+      // The browser stand-in is a square SVG, which is this case.
+      expect(centerCropToAspect(160, 160, LANDSCAPE_ASPECT)).toEqual({
+        left: 0,
+        top: 35,
+        width: 160,
+        height: 90
+      });
+    });
+
+    it('trims the sides of a source wider than the target', () => {
+      expect(centerCropToAspect(400, 100, LANDSCAPE_ASPECT)).toEqual({
+        left: 111,
+        top: 0,
+        width: 178,
+        height: 100
+      });
+    });
+
+    it('keeps the crop centred, so the framing does not drift to one edge', () => {
+      const rect = centerCropToAspect(1000, 1000, LANDSCAPE_ASPECT)!;
+      expect(rect.top).toBe(Math.round((1000 - rect.height) / 2));
+      // Equal margins top and bottom, to within the rounding of a whole pixel.
+      expect(Math.abs(1000 - rect.height - 2 * rect.top)).toBeLessThanOrEqual(1);
+    });
+
+    it('never returns a crop larger than the source', () => {
+      for (const [w, h] of [
+        [160, 160],
+        [400, 100],
+        [1920, 1080],
+        [7, 900]
+      ]) {
+        const rect = centerCropToAspect(w, h, LANDSCAPE_ASPECT)!;
+        expect(rect.width).toBeLessThanOrEqual(w);
+        expect(rect.height).toBeLessThanOrEqual(h);
+        expect(rect.left).toBeGreaterThanOrEqual(0);
+        expect(rect.top).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    it('returns null rather than a degenerate rect for an image with no intrinsic size', () => {
+      // An SVG data URI carrying only a `viewBox` reports no natural size in some engines.
+      // The caller falls back to the uncropped image, which is the old behaviour.
+      expect(centerCropToAspect(0, 0, LANDSCAPE_ASPECT)).toBeNull();
+      expect(centerCropToAspect(160, 0, LANDSCAPE_ASPECT)).toBeNull();
+      expect(centerCropToAspect(160, 160, 0)).toBeNull();
+      expect(centerCropToAspect(Number.NaN, 160, LANDSCAPE_ASPECT)).toBeNull();
+    });
   });
 });

@@ -56,6 +56,12 @@
 .aspect-square {
   aspect-ratio: 1 / 1;
 }
+/* The camera's LANDSCAPE frame. Mirrored by `LANDSCAPE_ASPECT` in
+   `apps/camera/capture.ts`, which cuts the browser mock's photo to the same shape;
+   `apps/camera/capture.test.ts` reads this rule and fails if the two drift apart. */
+.aspect-video {
+  aspect-ratio: 16 / 9;
+}
 .backdrop-blur {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);

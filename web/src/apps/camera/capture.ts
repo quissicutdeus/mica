@@ -43,6 +43,16 @@ export const encodeCrop = (canvas: HTMLCanvasElement): string => {
   return canvas.toDataURL('image/jpeg', CAPTURE_QUALITY);
 };
 
+/**
+ * The aspect ratio of the camera's LANDSCAPE frame.
+ *
+ * It is duplicated in CSS as `.aspect-video` in `app-utilities.css`, because the frame the
+ * player composes through is laid out by the stylesheet while the browser mock's photo is
+ * cut by the maths below — and the two must agree or the browser viewfinder frames one
+ * thing and saves another. `capture.test.ts` reads the stylesheet and fails if they drift.
+ */
+export const LANDSCAPE_ASPECT = 16 / 9;
+
 export interface CropRect {
   left: number;
   top: number;
@@ -161,4 +171,62 @@ export const cropViewportToCanvas = (
 
   const cropped = encodeCrop(canvas);
   return cropped && cropped.length > 30 && cropped !== 'data:,' ? cropped : null;
+};
+
+/**
+ * The largest centred rect of a given aspect ratio that fits inside a source image.
+ *
+ * The in-game capture does not need this — there the crop rect is the on-screen box of the
+ * frame the player composed through, so a landscape frame yields a landscape crop with no
+ * further maths (`computeCropGeometry` already caps whichever edge is longer). The browser
+ * mock has no world behind it and no meaningful geometry: it saves the viewfinder's
+ * stand-in image whole, which would come out square in LANDSCAPE mode and quietly make the
+ * dev viewfinder a liar. This cuts the stand-in to the same shape the frame drew.
+ */
+export const centerCropToAspect = (
+  naturalWidth: number,
+  naturalHeight: number,
+  aspect: number
+): CropRect | null => {
+  if (!(naturalWidth > 0) || !(naturalHeight > 0) || !(aspect > 0)) return null;
+
+  if (naturalWidth / naturalHeight > aspect) {
+    // Wider than the target: keep the full height and trim the sides.
+    const width = Math.round(naturalHeight * aspect);
+    return { left: Math.round((naturalWidth - width) / 2), top: 0, width, height: naturalHeight };
+  }
+
+  // Taller than (or equal to) the target: keep the full width and trim top and bottom.
+  const height = Math.round(naturalWidth / aspect);
+  return { left: 0, top: Math.round((naturalHeight - height) / 2), width: naturalWidth, height };
+};
+
+/**
+ * Centre-crop a loaded image to `aspect`, at its own resolution.
+ *
+ * Returns `null` rather than throwing on anything it cannot do — an image with no intrinsic
+ * size (an SVG data URI carrying only a `viewBox` reports none in some engines), a canvas
+ * the engine refuses to read back. Every caller falls back to the uncropped source, so the
+ * worst case is the old behaviour rather than a photo that fails to save.
+ */
+export const cropImageToAspect = (img: HTMLImageElement, aspect: number): string | null => {
+  const rect = centerCropToAspect(img.naturalWidth, img.naturalHeight, aspect);
+  if (!rect || rect.width < 1 || rect.height < 1) return null;
+
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(img, rect.left, rect.top, rect.width, rect.height, 0, 0, rect.width, rect.height);
+
+    const cropped = encodeCrop(canvas);
+    return cropped && cropped.length > 30 && cropped !== 'data:,' ? cropped : null;
+  } catch {
+    return null;
+  }
 };

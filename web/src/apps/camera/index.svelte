@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { asDataUri, cropViewportToCanvas } from './capture';
+  import { asDataUri, cropImageToAspect, cropViewportToCanvas, LANDSCAPE_ASPECT } from './capture';
   import {
     useCamera,
     useMedia,
@@ -32,6 +32,22 @@
   const captureZoomBoost = useCaptureZoomBoost();
 
   let cameraMode = $state<'PHOTO' | 'VIDEO' | 'LANDSCAPE'>('PHOTO');
+
+  /**
+   * LANDSCAPE reframes the camera, not the phone.
+   *
+   * A real phone shoots landscape by turning over; this one cannot — the screen is a fixed
+   * 400x850 and an app must never try to be responsive (AGENTS.md §5). Rotating the frame
+   * with a transform would leave the DOM box model portrait underneath it, so every control
+   * would be hit-tested where it is *not* drawn, and the phone would still have to be
+   * un-rotated on close. So the camera keeps its portrait body and narrows what it is
+   * pointing at: a 16:9 frame across the middle of the viewfinder, with the world above and
+   * below it matted off.
+   *
+   * The frame is not decoration. `captureRef` below is the element the photo is cropped to,
+   * so what the mattes leave visible is exactly what gets saved.
+   */
+  const isLandscape = $derived(cameraMode === 'LANDSCAPE');
   let isFrontCamera = $state(false);
   let isFlashing = $state(false);
   let isThumbnailBouncing = $state(false);
@@ -40,7 +56,7 @@
   let currentViewfinderImage = $derived(sampleAvatars[mockPhotoIndex % sampleAvatars.length]);
 
   let containerRef = $state<HTMLElement | null>(null);
-  let viewfinderRef = $state<HTMLElement | null>(null);
+  let captureRef = $state<HTMLElement | null>(null);
   let thumbnailRef = $state<HTMLElement | null>(null);
 
   /**
@@ -63,7 +79,10 @@
    */
   const flyToThumbnail = (src: string) => {
     const container = containerRef?.getBoundingClientRect();
-    const from = viewfinderRef?.getBoundingClientRect();
+    // The framed region rather than the whole viewfinder: it is what was photographed,
+    // so in LANDSCAPE the frame that flies to the thumbnail is the shape of the photo
+    // inside it. In PHOTO the two boxes are the same, so nothing changes.
+    const from = captureRef?.getBoundingClientRect();
     const to = thumbnailRef?.getBoundingClientRect();
     if (!container || !from || !to || from.width === 0) {
       // No geometry to animate with (jsdom, or a hidden pane). Skip straight to the
@@ -148,6 +167,29 @@
     else isFrontCamera = next;
   };
 
+  /**
+   * Cut the browser stand-in image down to the landscape frame.
+   *
+   * Falls back to the uncropped image on anything that does not work — an engine that
+   * reports no intrinsic size for the mock's SVG data URI, a canvas it will not read back.
+   * A slightly wrong dev photo beats a shutter press that saves nothing.
+   */
+  const framedMockPhoto = async (src: string): Promise<string> => {
+    try {
+      const img = new Image();
+      img.src = src;
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        setTimeout(() => reject(new Error('Mock viewfinder load timeout')), 1000);
+      });
+      return cropImageToAspect(img, LANDSCAPE_ASPECT) ?? src;
+    } catch (err) {
+      console.warn('Landscape mock crop fallback used:', err);
+      return src;
+    }
+  };
+
   const takePhoto = async () => {
     isTakingPhoto.set(true);
 
@@ -171,8 +213,11 @@
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     }
 
-    // Get the phone dimensions from the container before hiding it
-    const rect = containerRef?.getBoundingClientRect();
+    // The region the photo is cut from, measured after the zoom boost above and before
+    // the chrome is hidden. This is the framing element itself, not the whole phone, so a
+    // LANDSCAPE frame produces a genuinely wider-than-tall crop — `computeCropGeometry`
+    // already caps whichever edge is longer, so no further maths is needed here.
+    const rect = captureRef?.getBoundingClientRect();
 
     // The chrome fades out over `duration-short` (100ms), and the screenshot is a crop
     // of this exact region — so the capture has to wait for the fade to finish or the
@@ -185,7 +230,13 @@
 
         if (isBrowser()) {
           // In browser mode, capture the EXACT image currently shown on the big viewfinder screen!
-          capturedImage = currentViewfinderImage;
+          // There is no world behind the viewfinder here and the stand-in is square, so a
+          // LANDSCAPE shot has to be cut to the frame explicitly — otherwise the browser
+          // viewfinder frames 16:9 and saves a square, which is the one failure this mode
+          // cannot have.
+          capturedImage = isLandscape
+            ? await framedMockPhoto(currentViewfinderImage)
+            : currentViewfinderImage;
           // Advance viewfinder screen to the next scene for the next photo
           mockPhotoIndex++;
         } else {
@@ -286,7 +337,6 @@
 >
   <!-- Live Viewfinder / Camera View -->
   <div
-    bind:this={viewfinderRef}
     class="rounded-frame-inner relative flex flex-1 flex-col justify-between overflow-hidden p-4"
     class:bg-black={isBrowser()}
   >
@@ -341,20 +391,53 @@
       </button>
     </div>
 
-    <!-- Grid Overlay Guide -->
-    <div
-      class="duration-short ease-standard pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-20 transition-opacity"
-      class:opacity-0={$isTakingPhoto}
-    >
-      <div class="border-r border-b border-white"></div>
-      <div class="border-r border-b border-white"></div>
-      <div class="border-b border-white"></div>
-      <div class="border-r border-b border-white"></div>
-      <div class="border-r border-b border-white"></div>
-      <div class="border-b border-white"></div>
-      <div class="border-r border-white"></div>
-      <div class="border-r border-white"></div>
-      <div></div>
+    <!-- The frame, and the crop. Every photo is cut to `captureRef`'s own box rather than
+         to the whole phone, so the two cannot disagree: in PHOTO it fills the viewfinder,
+         in LANDSCAPE it is a 16:9 band across the middle with the world above and below it
+         matted off. A viewfinder that frames one thing and saves another would be worse
+         than having no landscape mode, so the framing element *is* the crop rect.
+
+         The mattes sit outside that box and so never reach the photo, which is why they
+         stay lit through the capture while the chrome fades. -->
+    <div class="pointer-events-none absolute inset-0 flex flex-col justify-center">
+      {#if isLandscape}
+        <div class="min-h-0 flex-1 bg-black opacity-60"></div>
+      {/if}
+
+      <div
+        bind:this={captureRef}
+        data-testid="camera-capture-region"
+        class="relative w-full"
+        class:h-full={!isLandscape}
+        class:aspect-video={isLandscape}
+        class:shrink-0={isLandscape}
+      >
+        <!-- Grid Overlay Guide. Inside the frame, so it rules off what is actually being
+             composed. The visible opacity is a directive rather than a second static
+             class: two `opacity-*` classes on one element is not a fade, it is whichever
+             rule sorts later in `app-utilities.css` winning outright — `.opacity-20` sorts
+             after `.opacity-0`, so the grid never dimmed for the capture and every photo
+             had faint white rules baked into it. -->
+        <div
+          class="duration-short ease-standard absolute inset-0 grid grid-cols-3 grid-rows-3 transition-opacity"
+          class:opacity-20={!$isTakingPhoto}
+          class:opacity-0={$isTakingPhoto}
+        >
+          <div class="border-r border-b border-white"></div>
+          <div class="border-r border-b border-white"></div>
+          <div class="border-b border-white"></div>
+          <div class="border-r border-b border-white"></div>
+          <div class="border-r border-b border-white"></div>
+          <div class="border-b border-white"></div>
+          <div class="border-r border-white"></div>
+          <div class="border-r border-white"></div>
+          <div></div>
+        </div>
+      </div>
+
+      {#if isLandscape}
+        <div class="min-h-0 flex-1 bg-black opacity-60"></div>
+      {/if}
     </div>
 
     <!-- Bottom Controls. Hidden during capture along with the rest of the chrome: the
@@ -364,21 +447,21 @@
       class="bg-surface-container border-outline-variant text-on-surface rounded-b-frame-inner shadow-elevation-5 duration-short ease-standard relative z-10 mx-[-1rem] mb-[-1rem] flex transform-gpu flex-col items-center gap-4 overflow-hidden border-t px-4 pt-4 pb-10 backdrop-blur-lg transition-opacity"
       class:opacity-0={$isTakingPhoto}
     >
-      <!-- Mode Toggle Buttons. VIDEO and LANDSCAPE are disabled: neither is wired to
-           anything yet (no recording pipeline, no rotated crop geometry — see
-           MICA-80/79), so letting a player pick one produced a mode that silently did
-           nothing, which read as broken rather than unfinished. -->
+      <!-- Mode Toggle Buttons. VIDEO is still disabled — there is no recording pipeline
+           behind it (MICA-80), and a mode that silently does nothing reads as broken
+           rather than unfinished. LANDSCAPE is live as of MICA-79: it reframes the
+           capture region above, which is the box the photo is cut from. -->
       <div class="flex items-center gap-4">
         {#each ['PHOTO', 'VIDEO', 'LANDSCAPE'] as mode (mode)}
           <button
             type="button"
-            disabled={mode !== 'PHOTO'}
-            title={mode !== 'PHOTO' ? 'Coming soon' : undefined}
+            disabled={mode === 'VIDEO'}
+            title={mode === 'VIDEO' ? 'Coming soon' : undefined}
             onclick={() => (cameraMode = mode as 'PHOTO' | 'VIDEO' | 'LANDSCAPE')}
             class="text-body-small duration-medium ease-standard rounded-full px-3.5 py-1 tracking-wider uppercase transition-all {cameraMode ===
             mode
               ? 'shadow-elevation-1 scale-105 border border-yellow-400/40 bg-black/60 text-yellow-400'
-              : mode !== 'PHOTO'
+              : mode === 'VIDEO'
                 ? 'text-on-surface-variant cursor-not-allowed opacity-40'
                 : 'text-on-surface hover:text-on-surface cursor-pointer'}"
           >
