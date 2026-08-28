@@ -11,5 +11,14 @@
     }
   },
   "globs": ["**/*.md"],
+  // `gitignore` covers every generated path at once, which the explicit list below could
+  // not keep up with: a failed Playwright run drops an `error-context.md` into
+  // `web/test-results/`, and the next `pnpm verify` then failed `lint:md` on an artifact
+  // rather than on anything anyone wrote. A gate that reports a failure the change did not
+  // cause is the same problem as one that stays silent — it stops being read.
+  //
+  // The explicit entries stay for the paths that are NOT gitignored: `web/docs/` is
+  // generated but committed, and `.superpowers/` is not this repo's to lint.
+  "gitignore": true,
   "ignores": ["**/node_modules/**", "**/dist/**", "web/docs/**", ".superpowers/**"]
 }
