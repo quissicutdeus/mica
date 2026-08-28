@@ -259,3 +259,86 @@ describe('PhoneFrame transparency', () => {
     expect(getByRole('button', { name: /Return to home screen/i })).toBeTruthy();
   });
 });
+
+/**
+ * MICA-103: the tray of per-app notification icons runs left-to-right into the
+ * hole-punch camera, which is a fixed point on a fixed-width frame. It used to be capped
+ * at five, a number picked without counting the `gap-1` between the icons, so the fifth
+ * icon ended exactly where the cutout begins and was drawn half underneath it.
+ *
+ * The arithmetic behind the cap is in `state/display.ts`. What is asserted here is the
+ * behaviour it exists for: the tray never draws more than the cap, and the remainder is
+ * still reported rather than silently dropped.
+ */
+describe('status bar notification icons', () => {
+  beforeEach(async () => {
+    charge.set(100);
+    const { unreadCounts } = await import('../services/notifications');
+    unreadCounts.set({});
+  });
+
+  /** Real registry ids, so the manifest lookup in `PhoneFrame` actually resolves. */
+  const appIds = async (count: number) => {
+    const { appRegistryStore } = await import('./state/registry');
+    const { get } = await import('svelte/store');
+    const ids = get(appRegistryStore)
+      .filter((app) => Boolean(app.icon))
+      .map((app) => app.id)
+      .slice(0, count);
+    expect(ids, 'registry has too few apps to exercise the cap').toHaveLength(count);
+    return ids;
+  };
+
+  const setUnread = async (ids: string[]) => {
+    const { unreadCounts } = await import('../services/notifications');
+    unreadCounts.set(Object.fromEntries(ids.map((id) => [id, 1])));
+  };
+
+  it('caps the icons and counts the rest into an overflow chip', async () => {
+    const { STATUS_BAR_MAX_NOTIFICATION_ICONS } = await import('./state/display');
+    const overflow = 3;
+    await setUnread(await appIds(STATUS_BAR_MAX_NOTIFICATION_ICONS + overflow));
+
+    const { findByTestId } = renderFrame(false);
+    const tray = await findByTestId('status-notification-icons');
+
+    // Direct children, not a `querySelectorAll('svg')`: an app icon is free to nest as
+    // many elements as it likes, and what is being bounded here is how many slots the row
+    // occupies, one per child.
+    expect(tray.children).toHaveLength(STATUS_BAR_MAX_NOTIFICATION_ICONS + 1);
+    expect(tray.textContent?.trim()).toBe(`+${overflow}`);
+  });
+
+  it('draws no chip when everything fits', async () => {
+    const { STATUS_BAR_MAX_NOTIFICATION_ICONS } = await import('./state/display');
+    await setUnread(await appIds(STATUS_BAR_MAX_NOTIFICATION_ICONS));
+
+    const { findByTestId } = renderFrame(false);
+    const tray = await findByTestId('status-notification-icons');
+
+    expect(tray.children).toHaveLength(STATUS_BAR_MAX_NOTIFICATION_ICONS);
+    expect(tray.textContent?.trim()).toBe('');
+  });
+
+  it('leaves room for the chip beside the cutout', async () => {
+    // The cap is a pixel budget, so assert it as one rather than as a magic number: the
+    // widest the row can get must still land left of the cutout's own edge. Kept in the
+    // same units the classes are written in — see `state/display.ts` for the derivation.
+    const { STATUS_BAR_MAX_NOTIFICATION_ICONS, PHONE_WIDTH } = await import('./state/display');
+
+    const BAR_PADDING_LEFT = 32; // px-8
+    const CLOCK_WIDTH = 62; // "12:34 AM" at text-body-medium
+    const GAP = 4; // gap-1, between icons and before the chip
+    const CLOCK_GAP = 8; // gap-2, after the clock
+    const ICON = 14; // h-3.5 w-3.5
+    const CHIP_WIDTH = 24; // "+10" at text-label-small, the widest realistic chip
+    const CUTOUT = 24; // size-icon-lg
+
+    const icons =
+      STATUS_BAR_MAX_NOTIFICATION_ICONS * ICON + (STATUS_BAR_MAX_NOTIFICATION_ICONS - 1) * GAP;
+    const rowEnd = BAR_PADDING_LEFT + CLOCK_WIDTH + CLOCK_GAP + icons + GAP + CHIP_WIDTH;
+    const cutoutStart = PHONE_WIDTH / 2 - CUTOUT / 2;
+
+    expect(rowEnd).toBeLessThan(cutoutStart);
+  });
+});

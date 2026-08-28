@@ -11,7 +11,12 @@
   import { enableDragScroll } from '../lib/dragScroll';
   import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
   import { createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/sheetDrag';
-  import { PHONE_HEIGHT, PHONE_WIDTH, SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
+  import {
+    PHONE_HEIGHT,
+    PHONE_WIDTH,
+    SHADE_DRAG_REVEAL_DISTANCE,
+    STATUS_BAR_MAX_NOTIFICATION_ICONS
+  } from './state/display';
   import LightningWarningIcon from '../sdk/ui/icons/LightningWarningIcon.svelte';
   import SignalIcon from '../sdk/ui/icons/SignalIcon.svelte';
   import BluetoothIcon from '../sdk/ui/icons/BluetoothIcon.svelte';
@@ -52,8 +57,7 @@
 
   /**
    * Which apps' icons show in the status bar as a "you have something waiting" row —
-   * one per app with an unread notification, not one per notification, and capped at 5
-   * so a busy phone can't push the clock into the hole-punch camera. Dereferences
+   * one per app with an unread notification, not one per notification. Dereferences
    * `$appRegistryStore` directly rather than `.getManifest()` — see `Launcher.svelte`'s
    * own fix for why a one-shot `get()` read is the wrong tool here.
    */
@@ -62,7 +66,22 @@
       .filter(([, count]) => count > 0)
       .map(([appId]) => $appRegistryStore.find((app) => app.id === appId))
       .filter((app): app is NonNullable<typeof app> => Boolean(app))
-      .slice(0, 5)
+  );
+
+  /**
+   * The row is drawn against a fixed run of pixels that ends at the hole-punch camera, so
+   * it is capped and the remainder is counted rather than drawn (MICA-103). The cap and
+   * the arithmetic behind it live in `state/display.ts` with the frame's other dimensions.
+   *
+   * The overflow chip is not itself in the budget when nothing overflows: at exactly the
+   * cap there is no chip, so the row is shorter than the number was chosen for. That is the
+   * right way round — the tight case is the one with the chip.
+   */
+  const visibleNotificationApps = $derived(
+    pendingNotificationApps.slice(0, STATUS_BAR_MAX_NOTIFICATION_ICONS)
+  );
+  const hiddenNotificationCount = $derived(
+    pendingNotificationApps.length - visibleNotificationApps.length
   );
 
   /**
@@ -296,8 +315,12 @@
                  the shade is open, so they fade out across the first half of the pull,
                  clear of the way by the point the real notifications start being
                  legible underneath. -->
-            <div class="flex items-center gap-1" style="opacity: {pendingIconsOpacity}">
-              {#each pendingNotificationApps as app (app.id)}
+            <div
+              data-testid="status-notification-icons"
+              class="flex items-center gap-1"
+              style="opacity: {pendingIconsOpacity}"
+            >
+              {#each visibleNotificationApps as app (app.id)}
                 {#if typeof app.icon === 'string'}
                   <img src={app.icon} alt="" class="h-3.5 w-3.5 object-contain" />
                 {:else if app.icon}
@@ -305,6 +328,13 @@
                   <Icon class="h-3.5 w-3.5" />
                 {/if}
               {/each}
+              {#if hiddenNotificationCount > 0}
+                <!-- Counted, not drawn. `text-label-small` (11px) is the smallest step on
+                     the type scale and the only one that fits the remaining run before the
+                     cutout; it inherits the bar's own `text-on-surface` like the icons do,
+                     so it reads as one row rather than as a badge stuck on the end. -->
+                <span class="text-label-small">+{hiddenNotificationCount}</span>
+              {/if}
             </div>
           {/if}
         </div>

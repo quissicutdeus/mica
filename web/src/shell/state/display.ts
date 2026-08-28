@@ -35,6 +35,40 @@ export const PHONE_HEIGHT = PHONE_DESIGN_HEIGHT;
 export const SHADE_DRAG_REVEAL_DISTANCE = PHONE_DESIGN_HEIGHT;
 
 /**
+ * How many per-app notification icons the status bar will draw before collapsing the rest
+ * into a `+N` chip (MICA-103).
+ *
+ * The number is the frame's geometry, not a taste call, so it belongs next to the frame's
+ * other dimensions rather than in `PhoneFrame.svelte`. Measured left to right across the
+ * 400px-wide bar, in the classes that row actually carries:
+ *
+ * - the bar is `px-8`, so the left group starts at **32px**
+ * - the clock is `text-body-medium` (14px); "12:34 AM", its widest reading, is about
+ *   **62px** — 24-hour time is narrower, so this is the case that has to fit
+ * - `gap-2` (**8px**) before the icon row
+ * - each icon is `h-3.5 w-3.5` (14px) with `gap-1` (4px) between, so `n` of them measure
+ *   `18n - 4` — **50px** at three
+ * - `gap-1` again (**4px**), then the `+N` chip at `text-label-small` (11px), about
+ *   **18px** at two glyphs and 24 at three
+ *
+ * That lands the row's right edge at 174px with a two-glyph chip. The hole-punch camera is
+ * `size-icon-lg` (24px) centred on the frame, so its left edge is at **188px**.
+ *
+ * Measured in the browser rather than left as arithmetic, because the margin is smaller
+ * than the estimate suggests. The cutout's left edge is 187.5px. The clock's widest
+ * reading measures 62.2px, and a three-glyph `+10` chip is 19.4px rather than 18 — so the
+ * genuine worst case, widest clock and three-glyph chip together, ends at **183.7px and
+ * clears by 3.8px**. It clears, which is why 3 is the cap; but the headroom is under four
+ * pixels, so treat this row as full. A fourth icon ends past 200px and is inside the hole.
+ *
+ * It was 5, chosen the same way but without accounting for the icons' own gaps: five icons
+ * end at exactly 188px, which is why the fifth was reported half-swallowed by the cutout.
+ * A fourth icon would fit on its own, but not alongside the chip that has to sit after it,
+ * and a cap that changes with the count is a rule nobody can check by looking at the bar.
+ */
+export const STATUS_BAR_MAX_NOTIFICATION_ICONS = 3;
+
+/**
  * Breathing room between the phone and the edge of the window, in CSS pixels.
  *
  * Two values rather than one because the large one is a third of a phone-sized viewport.
