@@ -31,6 +31,7 @@ import type { deepLink } from './deepLink.svelte';
 import type { devTools } from './devTools';
 import type { display } from './display';
 import type { keybinds } from './keybinds';
+import type { music } from './music';
 import type { navigation } from './navigation';
 import type { notificationSettings } from './notificationSettings';
 import type { phoneNotification } from './phoneNotification';
@@ -74,6 +75,7 @@ export interface Facets {
   devTools: typeof devTools;
   display: typeof display;
   keybinds: typeof keybinds;
+  music: typeof music;
   navigation: typeof navigation;
   notificationSettings: typeof notificationSettings;
   phoneNotification: typeof phoneNotification;

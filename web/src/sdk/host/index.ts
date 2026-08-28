@@ -23,6 +23,7 @@ export * from './useMail';
 export * from './useMarketplace';
 export * from './useMedia';
 export * from './useMessages';
+export * from './useMusic';
 export * from './useNavigation';
 export * from './useNotificationSettings';
 export * from './useNotifications';

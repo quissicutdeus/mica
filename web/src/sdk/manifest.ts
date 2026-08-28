@@ -40,6 +40,10 @@ export const ALL_PERMISSIONS = [
   'devtools',
   'display',
   'keybinds',
+  // Load a track and start or stop it. Separate from `system-hardware`, which owns the
+  // phone's *UI sound* volume: an app that shows a battery level has no business also
+  // being able to start playing something out loud.
+  'music',
   'navigation',
   'notification-settings',
   // No 'sound': `useSound` is implicit (`PERMISSION_OF.useSound === null`). Its facet is one
