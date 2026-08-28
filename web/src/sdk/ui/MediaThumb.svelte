@@ -24,11 +24,27 @@
     item: MediaPreview;
     /** `grid` fills its container; `full` fits inside it. */
     fit?: 'cover' | 'contain';
+    /**
+     * Which source to reach for first.
+     *
+     * `'still'` — the default, and what a tile wants: the smallest thing that draws, so a
+     * grid does not pull originals to fill 123px squares (MICA-110).
+     *
+     * `'original'` — what a full-screen view wants: the actual bytes, falling back to the
+     * thumbnail only if there are none. Without this the precedence below silently defeats
+     * the detail fetch — the viewer pays a round trip for the original and then draws the
+     * same small still the grid already drew, upscaled, which looks like a working app.
+     *
+     * A prop rather than the caller handing over a row with `thumbnail` deleted: stripping
+     * a field to steer a fallback chain is a lie about the data, and the next person to read
+     * that row construction has no way to know why.
+     */
+    prefer?: 'still' | 'original';
     class?: string;
     alt?: string;
   }
 
-  let { item, fit = 'cover', class: className = '', alt }: Props = $props();
+  let { item, fit = 'cover', prefer = 'still', class: className = '', alt }: Props = $props();
 
   /**
    * Only schemes that cannot execute.
@@ -58,14 +74,21 @@
   /**
    * What to draw as a still.
    *
-   * `thumbnail` first: for a video it is the only thing that renders at all, and for a
-   * heavy GIF it is the cheaper frame. `data` next, because that is where a local capture
-   * puts its bytes. `url` last, and only where it is an image.
+   * At `prefer: 'still'`: `thumbnail` first — for a video it is the only thing that renders
+   * at all, and for a heavy GIF it is the cheaper frame. `data` next, because that is where
+   * a local capture puts its bytes. `url` last, and only where it is an image.
+   *
+   * At `prefer: 'original'` the first two swap, and only those two: `url` stays last and
+   * stays gated the same way, because which kinds have an image behind a URL is a fact
+   * about the row rather than a preference of the caller. A video asked for its original
+   * still resolves to its poster, since `data` is empty and its `url` is an `.mp4`.
    */
+  const bytes = $derived(safe(item.data));
+  const poster = $derived(safe(item.thumbnail));
+  const linked = $derived(URL_IS_AN_IMAGE.has(item.kind) ? safe(item.url) : undefined);
+
   let still = $derived(
-    safe(item.thumbnail) ??
-      safe(item.data) ??
-      (URL_IS_AN_IMAGE.has(item.kind) ? safe(item.url) : undefined)
+    prefer === 'original' ? (bytes ?? poster ?? linked) : (poster ?? bytes ?? linked)
   );
 
   let label = $derived(alt ?? item.alt_text ?? `${item.kind} ${item.id}`);

@@ -38,10 +38,66 @@ export class NuiTransportAdapter implements ITransportAdapter {
   }
 }
 
+/**
+ * One answered mock call, and a description of the reply's *shape* rather than the reply.
+ *
+ * `keys` and never the payload itself: a media reply carries base64, and a log holding it
+ * would be a second copy of the exact bytes MICA-110 exists to stop moving around.
+ */
+export interface MockCall {
+  event: string;
+  /**
+   * The union of the top-level keys of the rows in the reply — read the same way out of a
+   * bare array, a `{ rows, nextCursor }` page, and a single object, so a spec asserting on
+   * a read projection does not have to know which of the three shapes a given service
+   * happens to answer with today.
+   */
+  keys: string[];
+}
+
+/** Rows to describe, whatever container the reply put them in. */
+const replyRows = (reply: unknown): unknown[] => {
+  if (Array.isArray(reply)) return reply;
+  if (reply && typeof reply === 'object') {
+    const { rows } = reply as { rows?: unknown };
+    return Array.isArray(rows) ? rows : [reply];
+  }
+  return [];
+};
+
+const replyKeys = (reply: unknown): string[] => {
+  const keys = new Set<string>();
+  for (const row of replyRows(reply)) {
+    if (row && typeof row === 'object') for (const key of Object.keys(row)) keys.add(key);
+  }
+  return [...keys];
+};
+
+/**
+ * A log of what crossed the mock bridge, on `window.mockCalls`.
+ *
+ * The browser mock is **in-process** — `MockRegistry.handle` is a function call, not a
+ * request — so there is no `page.route` for Playwright to intercept and no network panel to
+ * read. An e2e assertion about the bridge itself ("how many times was the list fetched",
+ * "did the list reply carry a column it should not have") has nowhere to look without this.
+ *
+ * Purely an observer: it reads replies and never shapes them, so it cannot drift from what
+ * the server actually returns the way an invented fixture can. `import.meta.env.DEV` gates
+ * it out of a production bundle, and in CEF `getTransport()` picks `NuiTransportAdapter`,
+ * so this class never runs in game at all.
+ */
+const recordMockCall = (event: string, reply: unknown): void => {
+  if (!import.meta.env.DEV || typeof window === 'undefined') return;
+  const call: MockCall = { event, keys: replyKeys(reply) };
+  (window.mockCalls ??= []).push(call);
+};
+
 export class MockTransportAdapter implements ITransportAdapter {
   async send<T = unknown>(event: string, data?: unknown): Promise<T> {
     if (MockRegistry.has(event)) {
-      return (await MockRegistry.handle(event, data)) as T;
+      const reply = (await MockRegistry.handle(event, data)) as T;
+      recordMockCall(event, reply);
+      return reply;
     }
     return null as unknown as T;
   }

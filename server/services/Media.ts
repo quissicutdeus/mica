@@ -67,8 +67,17 @@ export const media = defineService<MediaItem>({
      * nothing writes them today. A column the client can set before any feature needs it
      * is surface with no caller to constrain it (§2.9). Flip one when the feature that
      * fills it arrives, which is a one-line, reviewable change.
+     *
+     * **`private: true` is a read-projection decision and changes nothing about writes**
+     * (MICA-110). `data` stays client-writable, because the camera creating a photo is
+     * exactly the caller that fills it. What it stops is the *list*: the generic `get`
+     * used to hand back every column, so drawing a grid of 123px tiles downloaded every
+     * original at full size — a few hundred kilobytes a row, tens of megabytes for a real
+     * library, every time the app came to the foreground. The full bytes are still the
+     * owner's to read; they come from the `item` action below, one row at a time, when a
+     * photo is actually opened.
      */
-    data: { type: 'mediumtext' },
+    data: { type: 'mediumtext', private: true },
     /** Hotlinks — a remote GIF or video that is not ours to store. */
     url: { type: 'string', length: 512, clientWritable: false },
     /** Poster frame for video and GIF, so a feed has something before the media loads. */
@@ -83,6 +92,20 @@ export const media = defineService<MediaItem>({
     alt_text: { type: 'string', length: 255, clientWritable: false }
   },
   indexes: [{ name: 'citizenid_status_created', columns: ['citizenid', 'status', 'created_at'] }],
+  /**
+   * Keyset on `id DESC`, like every other paged read here (§10).
+   *
+   * `read: 'owner'` does not *require* paging the way `read: 'public'` does — the ownership
+   * predicate already bounds the result to one player's rows — which is why this table never
+   * had it. That bound is a bound on whose rows, though, not on how many or how big, and a
+   * gallery is the one owner-scoped table where a single player's own list is unbounded and
+   * every row is heavy. Thirty thumbnails is a few screens of grid; sixty is the most a
+   * client may ask for at once.
+   *
+   * Note for the caller: declaring paging changes the generic `get` reply from a bare array
+   * to `{ rows, nextCursor }`, with `nextCursor: null` meaning end-of-list.
+   */
+  paging: { pageSize: 30, maxPageSize: 60 },
   options: { disableUpdate: true },
   /**
    * Depending on driver and column type, a `mediumtext` can come back as a Buffer — which
@@ -108,8 +131,55 @@ export const media = defineService<MediaItem>({
         return await this.create({ ...item, citizenid } as Partial<MediaItem>);
       }
 
-      async findAll(where: Partial<MediaItem> = {}): Promise<MediaItem[]> {
-        return (await super.findAll(where)).map(coerceBinaryText);
+      /**
+       * **Forwards `page` and `projection`, and that is the whole point of the signature.**
+       *
+       * This override took `where` alone until MICA-110, which was harmless only while
+       * the service declared neither paging nor a private column: `ServiceEndpoint` passes
+       * both positionally, and a narrower override drops them on the floor. Silently — the
+       * read still answers, with every column and every row, so the symptom is not an error
+       * but the exact cost this ticket exists to remove.
+       */
+      async findAll(
+        where: Partial<MediaItem> = {},
+        page?: { limit?: number; cursor?: number },
+        projection?: readonly string[]
+      ): Promise<MediaItem[]> {
+        return (await super.findAll(where, page, projection)).map(coerceBinaryText);
+      }
+
+      /**
+       * Persist a thumbnail for one of the caller's own rows that has none.
+       *
+       * **Not the cancelled backfill.** Two different things wore that word: a migration
+       * writing thumbnails onto legacy photos, which the owner cancelled because no legacy
+       * rows will exist; and this, which is how a thumbnail reaches the column *at all*
+       * after the fact. `AddMedia` (`lib/publicApi.ts`) is a published export whose
+       * `thumbnail` is optional, so other resources will keep creating thumbnail-less photo
+       * rows indefinitely — and without this every one of them is re-fetched at full size on
+       * every gallery open, forever, which is the exact cost MICA-110 exists to remove.
+       *
+       * A **named** method over hand-written SQL rather than `update`, for three predicates
+       * the generic path has no way to express (§2.9):
+       *
+       * - `citizenid` — ownership, the same rule every other write here obeys. A row id is
+       *   never authorization.
+       * - `status = 'active'` — a moderated or deleted row is not something an owner gets to
+       *   keep touching, and `findById` scopes by owner but not by status.
+       * - **`thumbnail IS NULL` — write-once.** The column is `clientWritable: false` and
+       *   stays so; this is the one door to it, and it opens only for a row that has none.
+       *   So it cannot be replayed to rewrite a thumbnail, and cannot grow a row that
+       *   already has one.
+       *
+       * The column names are literals in this file, never payload keys, so there is no
+       * identifier to check against an allowlist — only the three bound values.
+       */
+      async storeThumbnail(id: number, citizenid: string, thumbnail: string): Promise<boolean> {
+        return await Database.update(
+          `UPDATE \`${this.tableName}\` SET \`thumbnail\` = ? ` +
+            "WHERE `id` = ? AND `citizenid` = ? AND `status` = 'active' AND `thumbnail` IS NULL",
+          [thumbnail, id, citizenid]
+        );
       }
 
       async findById(id: number | string, citizenid?: string): Promise<MediaItem | null> {
@@ -131,6 +201,96 @@ const coerceBinaryText = (item: MediaItem): MediaItem => {
 
 const app = media.app;
 const repo = media.repo;
+
+/**
+ * The bytes for exactly one row the caller owns. MICA-110.
+ *
+ * The other half of `data`'s `private: true`. The list read draws a grid and needs nothing
+ * bigger than a thumbnail; opening a photo needs the original, and that is one row rather
+ * than the whole library — so it is one action, taking one id, rather than a flag on the
+ * list that would hand back everything again.
+ *
+ * Ownership-scoped exactly like `drop` below, and the status check is there for exactly the
+ * same reason: `findById` is the primitive `findById(id, citizenid?)`, which scopes by owner
+ * and knows nothing about this table's moderation state. Without the explicit check, a photo
+ * a moderator had pulled from every list would still be readable in full by anyone who had
+ * seen its id — which is the entire thing moderating it was for.
+ *
+ * The error text is the same sentence a missing row and a row belonging to somebody else
+ * both get, deliberately: distinguishing them would answer "does this id exist" for ids the
+ * caller does not own.
+ */
+app.registerEvent('item', async (_source, _cbId, data, citizenid) => {
+  const raw = data && typeof data === 'object' ? fields(data).id : data;
+  const id = requirePositiveInt(raw, 'media id');
+
+  const row = await repo.findById(id, citizenid);
+  if (!row || row.status !== 'active') throw new Error('That photo could not be found.');
+
+  return row;
+});
+
+/**
+ * The largest thumbnail this will accept, as a base64 data URI.
+ *
+ * A thumbnail is a few hundred pixels on its longest edge — ten to twenty kilobytes encoded,
+ * a third more again as base64 — so 64KB is several times the honest size and still an order
+ * of magnitude under the originals this ticket exists to stop shipping. The cap is what stops
+ * store-back becoming a second way to store a full-size photo: without it a client could
+ * "thumbnail" a row with its own original and reintroduce the whole problem through the door
+ * built to close it.
+ *
+ * Checked here rather than left to the column, because `mediumtext` holds 16MB and would
+ * accept every one of them.
+ */
+const MAX_THUMBNAIL_LENGTH = 64 * 1024;
+
+/**
+ * `data:image/` only — deliberately narrower than `publicApi.ts`'s `SAFE_URL`.
+ *
+ * That one also permits `http(s):`, which is right for `AddMedia`: a resource hotlinking a
+ * poster frame it hosts is a legitimate row. It is not right here. This action exists for a
+ * client persisting bytes it encoded locally, so a remote URL is never the honest answer —
+ * and storing one would point a gallery tile at a third-party host that the phone then
+ * requests on every render, which is a beacon rather than a thumbnail.
+ */
+const THUMBNAIL_DATA_URI = /^data:image\//i;
+
+/**
+ * Store a thumbnail a client generated for a row that had none. MICA-110.
+ *
+ * The server cannot do this work itself: the FiveM server runtime has no canvas, and giving
+ * it one means an image codec as a **runtime** dependency shipped to every server owner
+ * (§2.5) — native binaries per platform for `sharp`, or `jimp`, which cannot decode the WebP
+ * this codebase actually produces. It would also put a synchronous decode of a few hundred
+ * kilobytes on the server tick per call. The client already has a GPU-backed canvas and is
+ * where the work belongs; this is only how the result is kept.
+ *
+ * `thumbnail` stays `clientWritable: false`. This is not the generic write path and does not
+ * reopen it — every predicate that makes the write safe is in `storeThumbnail`'s single
+ * statement, so there is no gap between deciding and writing.
+ *
+ * Answers `{ stored }` rather than throwing when the row already has one. Two tiles, two
+ * sessions and the same photo race by nature, and "somebody got there first" is a normal
+ * outcome rather than a failure a player should be told about.
+ */
+app.registerEvent('thumbnail', async (_source, _cbId, data, citizenid) => {
+  const body = fields(data);
+  const id = requirePositiveInt(body.id, 'media id');
+
+  const thumbnail = body.thumbnail;
+  if (typeof thumbnail !== 'string' || !THUMBNAIL_DATA_URI.test(thumbnail.trim())) {
+    throw new Error('A thumbnail must be an image data URI.');
+  }
+  if (thumbnail.length > MAX_THUMBNAIL_LENGTH) {
+    throw new Error('That thumbnail is too large.');
+  }
+
+  const privileged = repo as unknown as {
+    storeThumbnail(id: number, citizenid: string, thumbnail: string): Promise<boolean>;
+  };
+  return { stored: await privileged.storeThumbnail(id, citizenid, thumbnail) };
+});
 
 /**
  * Bluetooth proximity drop: copy one of the caller's own media rows to everyone nearby

@@ -395,7 +395,11 @@ export interface MediaItem {
   data?: string;
   /** A remote GIF or video that is not ours to store. */
   url?: string;
-  /** Poster frame, so a feed has something to draw before the media loads. */
+  /**
+   * A small copy of the media: a poster frame for video and GIF, and for a photo the
+   * camera's own downscale, written at capture time so the gallery grid has something to
+   * draw that is not the original (MICA-110).
+   */
   thumbnail?: string;
   mime_type?: string;
   width?: number;

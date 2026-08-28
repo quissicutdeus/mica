@@ -40,6 +40,59 @@ describe('MediaThumb', () => {
     expect(container.querySelector('img')?.getAttribute('src')).toBe('https://x.test/poster.jpg');
   });
 
+  /**
+   * The half of the projection change that is easy to ship broken (MICA-110).
+   *
+   * A tile wants the smallest thing that draws; a full-screen view wants the original. With
+   * one precedence for both, the viewer fetches the bytes and then draws the thumbnail
+   * anyway, upscaled — which looks like a working app, so nothing catches it but a test that
+   * names the source it expects.
+   */
+  describe('prefer', () => {
+    const both = item({
+      thumbnail: 'data:image/webp;base64,SMALL',
+      data: 'data:image/png;base64,BIG'
+    });
+
+    it('draws the thumbnail by default, which is what a grid tile wants', () => {
+      const { container } = render(MediaThumb, { item: both });
+      expect(container.querySelector('img')?.getAttribute('src')).toBe(
+        'data:image/webp;base64,SMALL'
+      );
+    });
+
+    it('draws the bytes when the caller asks for the original', () => {
+      const { container } = render(MediaThumb, { item: both, prefer: 'original' });
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,BIG');
+    });
+
+    it('still falls back to the thumbnail when there are no bytes to prefer', () => {
+      // What the full view shows for the moment before its fetch lands, and for good if the
+      // row never had bytes of its own.
+      const { container } = render(MediaThumb, {
+        item: item({ thumbnail: 'data:image/webp;base64,SMALL' }),
+        prefer: 'original'
+      });
+      expect(container.querySelector('img')?.getAttribute('src')).toBe(
+        'data:image/webp;base64,SMALL'
+      );
+    });
+
+    it('does not promote a url that is not an image, even asked for the original', () => {
+      // A video's `url` is an .mp4 and passes a scheme check happily. Which kinds have an
+      // image behind a URL is a fact about the row, not a preference of the caller.
+      const { container } = render(MediaThumb, {
+        item: item({
+          kind: 'video',
+          thumbnail: 'https://x.test/poster.jpg',
+          url: 'https://x.test/v.mp4'
+        }),
+        prefer: 'original'
+      });
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('https://x.test/poster.jpg');
+    });
+  });
+
   it('falls back to a labelled placeholder when there is nothing to draw', () => {
     // An audio clip has neither bytes nor a poster. An <img> with no src is a broken image
     // icon, which reads as a bug rather than as a voice note.

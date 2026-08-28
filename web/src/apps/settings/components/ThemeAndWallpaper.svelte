@@ -6,7 +6,9 @@
     useClock,
     useDisplay,
     EmptyState,
-    SegmentedControl
+    MediaThumb,
+    SegmentedControl,
+    usePhoneNotification
   } from '@gphone/sdk';
   import ColorWheelPicker from './ColorWheelPicker.svelte';
 
@@ -23,7 +25,8 @@
     presets
   } = useWallpaper();
   const { themeStore, setThemeMode, schemeStore, seedFromRgbString } = useTheme();
-  const { media } = useMedia();
+  const { media, fullMedia } = useMedia();
+  const { toast } = usePhoneNotification();
   const { formattedTime } = useClock();
   const { phoneBox } = useDisplay();
 
@@ -79,9 +82,42 @@
     if (picked) setWallpaperSeed(picked);
   };
 
-  const applyPhoto = async (image: string) => {
-    const derivedSeed = await seedFromImage(image);
-    setWallpaperImage(`url('${image}')`, derivedSeed ?? undefined);
+  /**
+   * Photos a wallpaper can be made from.
+   *
+   * `kind === 'photo'` because that is what the heading above promises and what
+   * `seedFromImage` can read; a voice note or a shared location is in the same table and is
+   * not a wallpaper. `thumbnail` because that is what the grid below draws — the list read
+   * no longer carries `data` (MICA-110), so keying the filter off bytes selected nothing
+   * at all and reported an empty gallery to a player with a full one.
+   */
+  const wallpaperPhotos = $derived(
+    $media.filter((photo) => photo.kind === 'photo' && photo.thumbnail).slice(0, 6)
+  );
+
+  /**
+   * A wallpaper wants the original, so it is fetched when one is picked.
+   *
+   * The tile is drawn from the thumbnail and the wallpaper is not: this fills the whole
+   * phone and the scheme is generated from its pixels, so a 320px still would be both
+   * visibly soft and a worse seed. `media.full` is the one call that answers with `data`,
+   * and it is made here — once, for the photo actually chosen — rather than for all six.
+   */
+  const applyPhoto = async (mediaId: number) => {
+    try {
+      const full = await fullMedia(mediaId);
+      if (!full?.data) throw new Error('That photo has no image data.');
+
+      const derivedSeed = await seedFromImage(full.data);
+      setWallpaperImage(`url('${full.data}')`, derivedSeed ?? undefined);
+    } catch (e) {
+      console.warn(`Photo ${mediaId} could not be applied as a wallpaper.`, e);
+      toast.show({
+        type: 'error',
+        app: 'settings',
+        message: 'That photo could not be loaded. Try another.'
+      });
+    }
   };
 
   const SWATCHES = [
@@ -217,23 +253,23 @@
       From a Photo
     </h2>
     <div class="bg-surface-container rounded-xl p-4 text-center">
-      {#if $media.length === 0}
+      {#if wallpaperPhotos.length === 0}
         <EmptyState
           title="No photos in Gallery"
           description="Photos taken with the Camera app can be used as a wallpaper, and the phone takes its colors from them."
         />
       {:else}
         <div class="grid grid-cols-3 gap-2">
-          <!-- `data` is optional now: a hotlinked or link-preview row has a url and no
-               bytes. Nothing writes one yet, but a wallpaper needs actual bytes, so the
-               ones without are skipped rather than rendered as a broken tile. -->
-          {#each $media.filter((p) => p.data).slice(0, 6) as photo (photo.id)}
+          {#each wallpaperPhotos as photo (photo.id)}
             <button
               type="button"
-              onclick={() => applyPhoto(photo.data!)}
+              onclick={() => applyPhoto(photo.id)}
               class="border-outline-variant hover:border-primary relative aspect-square cursor-pointer overflow-hidden rounded-lg border"
             >
-              <img src={photo.data} alt="Use as wallpaper" class="h-full w-full object-cover" />
+              <!-- `MediaThumb` rather than a bare `<img src={photo.data}>`: the tile is a
+                   thumbnail now, and this is the one place that knows how to draw a media
+                   row — including refusing a source whose scheme could execute. -->
+              <MediaThumb item={photo} alt="Use as wallpaper" />
             </button>
           {/each}
         </div>

@@ -10,6 +10,8 @@
  * The client now sends a lossless PNG, so everything here is the single encode.
  */
 
+import { encodeCanvas, releaseCanvas } from '@gphone/sdk';
+
 /** Quality for the stored crop. */
 export const CAPTURE_QUALITY = 0.95;
 
@@ -28,20 +30,19 @@ export const asDataUri = (raw: string): string => {
 };
 
 /**
- * Encode the crop, preferring WebP.
+ * Encode the crop at capture quality.
  *
- * At matching quality WebP is meaningfully smaller than JPEG and, more to the point, it
- * does not produce JPEG's 8x8 block edges. CEF's Chromium 103 can encode it.
+ * The encoder itself is `encodeCanvas` in `lib/thumbnail.ts` — shared, because the
+ * thumbnail written beside every photo has to come out of the *same* one. Its WebP
+ * preference and its checked fall back to JPEG rather than an accidental PNG matter more
+ * for the small image than for the large one: a silent PNG thumbnail would be several
+ * times the size of the photo's own encode at 320px.
  *
- * `toDataURL` silently falls back to PNG when it does not recognize the type, so the
- * result is checked rather than assumed: an unexpected PNG would be lossless but many
- * times larger, and every one of those goes into a database column.
+ * This wrapper is what keeps `CAPTURE_QUALITY` here, in the camera, rather than in a
+ * module about thumbnails.
  */
-export const encodeCrop = (canvas: HTMLCanvasElement): string => {
-  const webp = canvas.toDataURL('image/webp', CAPTURE_QUALITY);
-  if (webp.startsWith('data:image/webp')) return webp;
-  return canvas.toDataURL('image/jpeg', CAPTURE_QUALITY);
-};
+export const encodeCrop = (canvas: HTMLCanvasElement): string =>
+  encodeCanvas(canvas, CAPTURE_QUALITY);
 
 /**
  * The aspect ratio of the camera's LANDSCAPE frame.
@@ -170,6 +171,9 @@ export const cropViewportToCanvas = (
   ctx.drawImage(img, physX, physY, physWidth, physHeight, 0, 0, outWidth, outHeight);
 
   const cropped = encodeCrop(canvas);
+  // The crop canvas is the big one — 508x1080 at four bytes a pixel — and nothing else
+  // refers to it once the data URI exists. See `releaseCanvas`.
+  releaseCanvas(canvas);
   return cropped && cropped.length > 30 && cropped !== 'data:,' ? cropped : null;
 };
 
@@ -225,6 +229,7 @@ export const cropImageToAspect = (img: HTMLImageElement, aspect: number): string
     ctx.drawImage(img, rect.left, rect.top, rect.width, rect.height, 0, 0, rect.width, rect.height);
 
     const cropped = encodeCrop(canvas);
+    releaseCanvas(canvas);
     return cropped && cropped.length > 30 && cropped !== 'data:,' ? cropped : null;
   } catch {
     return null;

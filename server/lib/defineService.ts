@@ -104,10 +104,25 @@ export interface ColumnDef {
    */
   values?: readonly string[];
   /**
-   * Withhold this column from a **public** read's projection.
+   * Withhold this column from the generic **list** read's projection — `get`, on either
+   * access axis.
    *
-   * For an app-specific secret on an otherwise public table. `citizenid` is excluded from
-   * every public projection automatically and does not need declaring — see `publicColumns`.
+   * Two reasons a column earns this, and they are not the same reason:
+   *
+   * - **Secrecy**, on a public table: an app-specific field no other player may see.
+   *   `citizenid` is excluded from every public projection automatically and does not need
+   *   declaring — see `publicColumns`.
+   * - **Weight**, on an owner-scoped one: a payload the list has no use for. `gphone_media`
+   *   is the case that forced this. Its `data` column holds a whole base64 photo, so an
+   *   unprojected owner read shipped a few hundred kilobytes per row to draw a 123px tile
+   *   (MICA-110), and the ownership predicate — which bounds *who* may read — does nothing
+   *   about *how much*.
+   *
+   * Withheld from the **list**, which is not the same as secret. `findById` still selects
+   * `*`, so a column private for weight stays reachable through an action that reads one
+   * row and says so. A column private for secrecy must not be handed out by such an action;
+   * that is the author's judgement, and the projection is what makes the list side of it
+   * structural rather than remembered.
    *
    * Enforced in the SELECT rather than by filtering rows afterwards, so a
    * `repositoryFactory` override cannot re-add a field the query never named.
@@ -395,6 +410,14 @@ export interface ResolvedService {
    * authorizes writes from the session either way.
    */
   publicColumns: string[];
+  /**
+   * What the generic owner-scoped list read selects — every column that is not `private`.
+   *
+   * Sibling of `publicColumns` and deliberately not the same list: an owner reading their
+   * own rows has every business seeing their `citizenid`, which no public reader does. The
+   * only thing the two agree on is that a `private` column is in neither.
+   */
+  listColumns: string[];
   statuses: readonly string[];
   /** Declared fields only, in declaration order — implicit columns excluded. */
   fields: { name: string; def: ColumnDef }[];
@@ -627,10 +650,11 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     }
   }
 
-  const publicColumns = columns.filter(
-    (column) =>
-      column !== 'citizenid' && !fields.some((f) => f.name === column && f.def.private === true)
-  );
+  const isPrivate = (column: string): boolean =>
+    fields.some((f) => f.name === column && f.def.private === true);
+
+  const publicColumns = columns.filter((column) => column !== 'citizenid' && !isPrivate(column));
+  const listColumns = columns.filter((column) => !isPrivate(column));
 
   const columnRules: Record<string, ColumnRule> = {};
   for (const { name, def } of fields) {
@@ -650,6 +674,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     paging,
     columnRules,
     publicColumns,
+    listColumns,
     statuses,
     fields,
     indexes,
@@ -772,6 +797,17 @@ export function defineService<T>(definition: ServiceDefinition): ServerAppHandle
     tableName: resolved.table,
     ...(resolved.access.read === 'public'
       ? { publicRead: true, publicColumns: resolved.publicColumns }
+      : {}),
+    /**
+     * Only when something is actually withheld.
+     *
+     * A service with no `private` column passes no projection at all, so `findAll` emits the
+     * byte-identical `SELECT *` it always did — which several `repositoryFactory` subclasses
+     * and `Repository.test.ts`'s exact query strings depend on. Narrowing is opt-in per
+     * column, and a table that opted into nothing pays nothing.
+     */
+    ...(resolved.listColumns.length !== resolved.columns.length
+      ? { listColumns: resolved.listColumns }
       : {}),
     ...(resolved.paging ? { paging: resolved.paging } : {}),
     ...accessLockdown,

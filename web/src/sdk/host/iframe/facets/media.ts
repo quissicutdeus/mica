@@ -9,7 +9,8 @@ export function media(): Twin {
     media: store('media', [], 'media', []),
     capturePhoto: fn('media', [], 'capturePhoto'),
     deletePhoto: fn('media', [], 'deletePhoto'),
-    dropNearby: fn('media', [], 'dropNearby')
+    dropNearby: fn('media', [], 'dropNearby'),
+    fullMedia: fn('media', [], 'fullMedia')
   };
 }
 // The Twin above is what an iframe can honestly offer (MICA-26) -- Readable in place of

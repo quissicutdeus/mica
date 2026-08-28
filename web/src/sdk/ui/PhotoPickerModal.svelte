@@ -2,6 +2,7 @@
   import MediaThumb from './MediaThumb.svelte';
   import type { MediaPreview } from '@shared/types';
   import { useMedia } from '../host/useMedia';
+  import { usePhoneNotification } from '../host/usePhoneNotification';
   import PhotoIcon from './icons/PhotoIcon.svelte';
   import CloseIcon from './icons/CloseIcon.svelte';
   import CheckCircleIcon from './icons/CheckCircleIcon.svelte';
@@ -34,10 +35,50 @@
     onclose: () => void;
   }>();
 
-  const { media } = useMedia();
+  const { media, fullMedia } = useMedia();
+  const { toast } = usePhoneNotification();
 
   const isSelected = (id: number) => selectedIds.includes(id);
   const selectedCount = $derived(selectedIds.length);
+
+  /** The row whose bytes are in flight, so its tile can say so and refuse a second tap. */
+  let picking = $state<number | null>(null);
+
+  /**
+   * Single-select hands over the **bytes**, so it has to fetch them.
+   *
+   * This used to read `photo.data` straight off the list row, which worked only because the
+   * list carried every column. It does not any more (MICA-110): `data` is `private` in the
+   * projection, so a row arrives with a thumbnail and nothing else and this passed
+   * `undefined` — clearing the avatar it was asked to set. Same-session captures hid it,
+   * because `createMedia` echoes back what the client sent; a reload made it universal.
+   *
+   * A thumbnail would be the wrong thing to hand over even when one is present. An avatar is
+   * displayed far larger than a 123px tile, and `fullMedia` is the one call that answers with
+   * the original — a facet member rather than a method on the store, because the store a
+   * sandboxed app gets is a `Readable` with no methods on it.
+   *
+   * Multi-select is unaffected and deliberately still passes the row: an attachment is
+   * referenced by id and drawn from its thumbnail, so it wants no bytes at all.
+   */
+  const pick = async (photo: MediaPreview) => {
+    if (picking !== null) return;
+    picking = photo.id;
+    try {
+      const full = await fullMedia(photo.id);
+      if (!full?.data) throw new Error('That photo has no image data.');
+      onselect?.(full.data);
+    } catch (e) {
+      console.warn(`Photo ${photo.id} could not be loaded for selection.`, e);
+      toast.show({
+        type: 'error',
+        app: 'media',
+        message: 'That photo could not be loaded. Try another.'
+      });
+    } finally {
+      picking = null;
+    }
+  };
 
   let dialogRef = $state<HTMLElement | null>(null);
 
@@ -97,8 +138,12 @@
       {:else}
         <button
           type="button"
-          class="group border-outline-variant bg-surface-container hover:border-primary duration-short ease-standard relative aspect-square overflow-hidden rounded-xl border transition-all"
-          onclick={() => onselect?.(photo.data)}
+          disabled={picking !== null}
+          class="group border-outline-variant bg-surface-container hover:border-primary duration-short ease-standard relative aspect-square overflow-hidden rounded-xl border transition-all {picking ===
+          photo.id
+            ? 'opacity-50'
+            : ''}"
+          onclick={() => pick(photo)}
         >
           <MediaThumb item={photo} />
         </button>

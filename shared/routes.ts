@@ -129,6 +129,16 @@ export const ROUTES: readonly Route[] = [
   // Media — no `updateMedia`: a stored row has no mutable fields, and the server does
   // not register the endpoint.
   route('getMedia', 'media', 'get'),
+  // One row, `data` and all. The list read is projected down to `thumbnail` plus metadata
+  // (MICA-110), so the bytes are asked for by id when a photo is opened — and by anything
+  // that needs the original rather than a tile, such as picking an avatar or a wallpaper.
+  route('getMediaItem', 'media', 'item'),
+  // Store-back for a row that arrived without a thumbnail — `AddMedia`'s `thumbnail` is
+  // optional, so other resources keep creating them. The client encodes one from the bytes
+  // it just fetched and hands it back, so the next open does not repeat the work. Named,
+  // ownership-scoped and write-once on the server; `thumbnail` stays `clientWritable: false`
+  // and this is not the generic write path.
+  route('setMediaThumbnail', 'media', 'thumbnail'),
   route('createMedia', 'media', 'create'),
   route('deleteMedia', 'media', 'delete'),
   // Bluetooth proximity: copy a media row the caller owns to everyone nearby and visible.

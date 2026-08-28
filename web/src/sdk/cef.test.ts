@@ -69,7 +69,11 @@ const GRANDFATHERED: Record<string, number> = {
   'src/apps/contacts/components/ContactDetails.svelte': 2,
   'src/apps/messages/components/MessageComposer.svelte': 2,
   'src/apps/messages/components/MessageThread.svelte': 1,
-  'src/apps/media/index.svelte': 2,
+  // Both inherited from `media/index.svelte`, which MICA-110 split into these two —
+  // `bg-black/80` on the full view's action bar and `bg-black/20` on the grid's
+  // unselected checkbox. Two before the split, two after.
+  'src/apps/media/components/PhotoDetail.svelte': 1,
+  'src/apps/media/components/PhotoGrid.svelte': 1,
   'src/apps/store/components/AppDetails.svelte': 1,
   'src/shell/PhoneFrame.svelte': 3,
   'src/shell/Shell.svelte': 1,

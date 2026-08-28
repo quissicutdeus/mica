@@ -11,8 +11,11 @@
     onAppForeground,
     CloseIcon,
     FlipCameraIcon,
+    MediaThumb,
     PhotoIcon,
     isBrowser,
+    loadImage,
+    makeThumbnail,
     type AppProps
   } from '@gphone/sdk';
   import { useNuiBridge, useCaptureZoomBoost } from '@gphone/sdk/core';
@@ -176,13 +179,7 @@
    */
   const framedMockPhoto = async (src: string): Promise<string> => {
     try {
-      const img = new Image();
-      img.src = src;
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        setTimeout(() => reject(new Error('Mock viewfinder load timeout')), 1000);
-      });
+      const img = await loadImage(src, { timeoutMs: 1000 });
       return cropImageToAspect(img, LANDSCAPE_ASPECT) ?? src;
     } catch (err) {
       console.warn('Landscape mock crop fallback used:', err);
@@ -257,14 +254,9 @@
             base64Data
           ) {
             try {
-              const img = new Image();
-              img.crossOrigin = 'Anonymous';
-              img.src = asDataUri(base64Data);
-
-              await new Promise((resolve, reject) => {
-                img.onload = resolve;
-                img.onerror = reject;
-                setTimeout(() => reject(new Error('Image load timeout')), 3000);
+              const img = await loadImage(asDataUri(base64Data), {
+                timeoutMs: 3000,
+                crossOrigin: 'Anonymous'
               });
 
               const cropped = cropViewportToCanvas(
@@ -292,9 +284,24 @@
           capturedImage = sampleAvatars[0];
         }
 
-        // Directly save captured photo to gallery
-        await capturePhoto(capturedImage);
-        await media.load();
+        // The gallery grid draws 123px tiles and was pulling the whole original down the
+        // NUI bridge to do it (MICA-110), so every photo is stored with a small copy
+        // beside it. Made from `capturedImage` — the picture actually being saved — so the
+        // thumbnail is the same framing in LANDSCAPE, where the photo and the screenshot
+        // it came out of are different shapes.
+        //
+        // A failure here is a warning, not a refusal: `MediaThumb` still falls back to
+        // `data`, and a photo saved without its small copy beats a shutter press that
+        // saves nothing.
+        const thumbnail = await makeThumbnail(capturedImage);
+        if (!thumbnail)
+          console.warn('No thumbnail for this capture; the gallery will use the original.');
+
+        // Directly save captured photo to gallery. No `media.load()` afterwards: the store
+        // prepends the row the server echoes back, so the recent-capture tile below is
+        // already showing this photo — and reloading the library to see a row we just put
+        // in it is the refetch MICA-110 exists to remove, one shutter press at a time.
+        await capturePhoto(capturedImage, thumbnail ?? undefined);
 
         // Send the frame down into the thumbnail, then bounce it on arrival.
         flyToThumbnail(capturedImage);
@@ -491,10 +498,14 @@
           aria-label="Open Media Gallery"
         >
           {#if $media.length > 0}
-            <img
-              src={$media[0].data}
+            <!-- `MediaThumb` rather than an `<img src={photo.data}>`: it prefers the small
+                 copy and falls back to the original, which is the same rule the gallery
+                 grid follows. Reading `data` directly here also stops working the moment
+                 the list read drops it from its projection (MICA-110). -->
+            <MediaThumb
+              item={$media[0]}
               alt="Recent capture"
-              class="duration-short ease-standard h-full w-full object-cover transition-opacity group-hover:opacity-90"
+              class="duration-short ease-standard transition-opacity group-hover:opacity-90"
             />
           {:else}
             <PhotoIcon class="text-on-surface-variant size-icon-lg" />

@@ -187,7 +187,12 @@ describe('route table', () => {
     // which moves down as well as up: Blabber's `followers`/`following` stores now read
     // through the `accounts` facet (MICA-16 step 4 — an add-on cannot name a NUI route
     // from inside the sandbox), so they declare no action name for this collector to find.
-    expect(CRUD_EVENTS.length).toBeGreaterThan(9);
+    // It moved down again for MICA-110: `gphone_media` declares `paging`, which changes
+    // the generic `get` reply from a bare array to `{ rows, nextCursor }`, so the gallery
+    // is a `createPagedStore` now and its three CRUD names are no longer declared in the
+    // shape this collector reads. They are still routed, still called, and still checked —
+    // by `collectFetchNuiCalls` and the paged-store scanner below.
+    expect(CRUD_EVENTS.length).toBeGreaterThan(7);
   });
 
   it('declares no duplicate NUI action names', () => {

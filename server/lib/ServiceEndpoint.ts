@@ -32,6 +32,16 @@ export interface ServiceOptions {
    * `citizenid` — with several accounts per player it is a de-anonymisation vector.
    */
   publicColumns?: readonly string[];
+  /**
+   * Columns the generic `get` may select when the read is **not** public. Set from
+   * `listColumns`, and absent unless the schema marks something `private`.
+   *
+   * An owner-scoped read narrows for a different reason than a public one: not because the
+   * caller may not see the column, but because a list has no use for it and it is expensive
+   * — `gphone_media.data` is a whole base64 photo per row (MICA-110). The row is still the
+   * caller's own, so what is withheld here is withheld from the *list*, not from them.
+   */
+  listColumns?: readonly string[];
 }
 
 export class ServiceEndpoint<T> {
@@ -186,9 +196,19 @@ export class ServiceEndpoint<T> {
             (filter as Record<string, unknown>).citizenid = citizenid;
           }
 
-          // Only a public read narrows the projection; an owner reading their own rows has
-          // every business seeing all of them.
-          const projection = this.options.publicRead ? this.options.publicColumns : undefined;
+          /**
+           * Both axes narrow, for different reasons, and each has its own list.
+           *
+           * A public read withholds what a stranger may not see — `citizenid` above all. An
+           * owner read withholds only what the schema marked `private`, which for an
+           * owner-scoped table means "too heavy for a list" rather than "secret": the rows
+           * are the caller's own and one of them is still readable in full through an
+           * action that asks for one. Absent a `private` column this is `undefined` and the
+           * query is the `SELECT *` it always was.
+           */
+          const projection = this.options.publicRead
+            ? this.options.publicColumns
+            : this.options.listColumns;
 
           const paging = this.options.paging;
           if (!paging) {

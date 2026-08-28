@@ -20,6 +20,24 @@ export {
 } from '../lib/formatters';
 export { renderMarkdown } from '../lib/markdown';
 export { useScrollDetect } from '../lib/useScrollDetect';
+/**
+ * Image encoding, and the downscale every photo is stored with (MICA-110).
+ *
+ * Here for the reason at the top of this file: the camera makes a thumbnail at capture
+ * time and cannot import `lib/` by path (§2.7), and `boundary.test.ts` enforces it. An
+ * app attaching an image has the same need, which is what makes this platform surface
+ * rather than one app's helper.
+ */
+export {
+  encodeCanvas,
+  releaseCanvas,
+  computeThumbnailSize,
+  loadImage,
+  thumbnailFromImage,
+  makeThumbnail,
+  THUMBNAIL_MAX_DIMENSION,
+  THUMBNAIL_QUALITY
+} from '../lib/thumbnail';
 
 /**
  * Split player-written text into styleable pieces — text, `@mention`, `#tag`.

@@ -9,7 +9,7 @@ import type {
   MediaPreview,
   PricePoint
 } from '@shared/types';
-import { placeholderAvatar, placeholderPhotos } from '../../lib/placeholderImage';
+import { placeholderAvatar, placeholderPhoto, placeholderPhotos } from '../../lib/placeholderImage';
 
 /** Inject created_at / updated_at timestamps into a mock object. Accepts an optional offset (ms before now). */
 const ts = (offsetMs: number = 0) => {
@@ -45,14 +45,77 @@ export const sampleAvatars = placeholderPhotos('gphone-gallery', 20);
  * this file enormous. Moving them to `url` would need every consumer to prefer one column
  * over the other, which is media work rather than migration work.
  */
+/**
+ * The same picture, declaring a smaller intrinsic size. What a thumbnail is (MICA-110).
+ *
+ * `placeholderPhoto` emits an SVG with a `viewBox` and no `width`/`height`, so an `<img>`
+ * drawing one has no intrinsic size of its own; adding them makes `naturalWidth` a real,
+ * readable number without changing a pixel of what is drawn. That is deliberately the
+ * property a test asserts on rather than the `src` string: a spec that compared URIs would
+ * pass just as happily if the two fixtures were unrelated images, whereas
+ * `naturalWidth === THUMBNAIL_SIZE` says the thing actually meant — *the grid drew the
+ * small one*.
+ *
+ * A real thumbnail re-encodes the bytes and this one does not, so it stands in for the
+ * shape rather than the size. The saving itself is unmeasurable here and the ticket says
+ * why: these fixtures are 0.9KB placeholders, where the rows this ticket is about are
+ * hundreds of kilobytes of base64.
+ */
+export const THUMBNAIL_SIZE = 96;
+
+const asThumbnail = (photo: string): string => {
+  const svg = decodeURIComponent(photo.replace(/^data:image\/svg\+xml,/, ''));
+  return `data:image/svg+xml,${encodeURIComponent(
+    svg.replace('<svg ', `<svg width="${THUMBNAIL_SIZE}" height="${THUMBNAIL_SIZE}" `)
+  )}`;
+};
+
 const mockCaptures: MediaItem[] = sampleAvatars.map((url, index) => ({
   id: index + 1,
   citizenid: 'mock-id',
   kind: 'photo' as const,
   data: url,
+  thumbnail: asThumbnail(url),
   status: 'active',
   ...ts()
 }));
+
+/**
+ * Two photos with bytes and no thumbnail — the row shape MICA-110 has to keep working.
+ *
+ * Every capture above carries a thumbnail because the camera writes one now. These do not,
+ * and until this ticket that was the *only* shape a photo came in: a library that predates
+ * the change is entirely made of these, and the list read no longer carries the `data` the
+ * grid used to draw them from. If the fallback is wrong they render as grey placeholders
+ * for every existing player and for nobody testing with fresh data.
+ *
+ * At the top of the id range rather than the bottom, which is not the distortion it looks
+ * like. `AddMedia` — how an external resource drops a photo into a gallery — has never gone
+ * through the camera's thumbnail path and still does not, so a thumbnail-less photo is
+ * something the newest row can be, not only the oldest. The row *shape* is identical either
+ * way, and that is what the fallback reads; putting them at the head just means the case
+ * that matters most is on the first page instead of behind twenty rows of paging.
+ */
+const mockThumbnaillessCaptures: MediaItem[] = [
+  {
+    id: 951,
+    citizenid: 'mock-id',
+    kind: 'photo',
+    data: placeholderPhoto('gphone-gallery-legacy-b'),
+    alt_text: 'Dropped in by another resource',
+    status: 'active',
+    ...ts()
+  },
+  {
+    id: 950,
+    citizenid: 'mock-id',
+    kind: 'photo',
+    data: placeholderPhoto('gphone-gallery-legacy-a'),
+    alt_text: 'Taken before thumbnails existed',
+    status: 'active',
+    ...ts()
+  }
+];
 
 /**
  * The fixed row `shareLocation`'s mock hands back — its own binding rather than an index
@@ -120,7 +183,11 @@ const mockOtherMedia: MediaItem[] = [
   mockLocationShare
 ];
 
-export const mockMedia: MediaItem[] = [...mockOtherMedia, ...mockCaptures];
+export const mockMedia: MediaItem[] = [
+  ...mockThumbnaillessCaptures,
+  ...mockOtherMedia,
+  ...mockCaptures
+];
 
 export const mockListings: Listing[] = [
   {

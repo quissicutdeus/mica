@@ -1,20 +1,14 @@
 <script lang="ts">
   import {
-    CheckIcon,
-    ConfirmDialog,
-    EmptyPhotoIcon,
-    EmptyState,
-    ReportButton,
     ReportDialog,
     Screen,
-    Skeleton,
+    ConfirmDialog,
     ShareSquareIcon,
     TrashIcon,
     onAppForeground,
     useAppAction,
     useAppEvents,
     useAppLevels,
-    MediaThumb,
     useDeepLink,
     useMedia,
     usePhoneNotification,
@@ -22,6 +16,8 @@
     fade
   } from '@gphone/sdk';
   import type { MediaItem } from '@shared/types';
+  import PhotoGrid from './components/PhotoGrid.svelte';
+  import PhotoDetail from './components/PhotoDetail.svelte';
 
   import { SvelteSet } from 'svelte/reactivity';
 
@@ -32,7 +28,6 @@
   }: AppProps & { initialPhoto?: MediaItem; initialPhotoId?: number } = $props();
 
   const { media, deletePhoto, dropNearby } = useMedia();
-  const mediaLoaded = media.loaded;
   const { busy, run } = useAppAction('media');
   const { toast } = usePhoneNotification();
 
@@ -42,15 +37,29 @@
   let showDeleteConfirm = $state(false);
   let reporting = $state(false);
 
+  /**
+   * A fresh first page on every foreground.
+   *
+   * `load` replaces the window rather than appending to it, so coming back to the app also
+   * drops however far the player had paged — which is the right trade: the top of the
+   * gallery is what they are returning to look at, and the pages below it are one scroll
+   * away. What it no longer does is pull the whole library, because the window is a page of
+   * thumbnails now instead of every row with its bytes attached (MICA-110).
+   */
   onAppForeground('media', () => {
     void media.load();
   });
 
-  // A drop landed while the gallery was already open — onAppForeground alone would miss
-  // it until the app is reopened. The push is the notice; the fetch is still what feeds
-  // the list, same as every other app's push contract.
-  useAppEvents('media').on('media_received', () => {
-    void media.load();
+  /**
+   * A drop landed while the gallery was open.
+   *
+   * This used to call `media.load()`, which refetched every photo the player was already
+   * looking at to show them one new one — half of what made this the slowest app on the
+   * phone. `receive` takes the notice for what it is: it reads the head of the list and
+   * prepends what it does not already hold, leaving the rest of the window alone.
+   */
+  useAppEvents('media').on<{ id?: number }>('media_received', (e) => {
+    void media.receive(e.payload?.id);
   });
 
   useDeepLink('media', () => {
@@ -219,113 +228,49 @@
 
 <Screen title={app.title} onback={app.back} actions={headerActions}>
   {#if selectedPhoto}
-    <!-- Full Screen Image View -->
-    <div class="relative flex flex-1 flex-col bg-black" transition:fade>
-      <div class="flex flex-1 items-center justify-center p-2">
-        <MediaThumb item={selectedPhoto} fit="contain" alt="Photo {selectedPhoto.id}" />
-      </div>
-
-      <div
-        class="border-outline-variant flex justify-between border-t bg-black/80 p-4 pb-8 backdrop-blur"
-      >
-        <button
-          class="text-primary hover:text-primary duration-short ease-standard p-2 transition-colors"
-          aria-label="Send to nearby devices"
-          disabled={$busy}
-          onclick={sendNearby}
-        >
-          <ShareSquareIcon class="size-icon-lg" />
-        </button>
-        <ReportButton subject="photo" size="header" onclick={() => (reporting = true)} />
-        <button
-          class="text-error hover:text-error duration-short ease-standard p-2 transition-colors"
-          aria-label="Delete photo"
-          onclick={() => (showDeleteConfirm = true)}
-        >
-          <TrashIcon class="size-icon-lg" />
-        </button>
-      </div>
-
-      {#if showDeleteConfirm}
-        <ConfirmDialog
-          title="Delete Photo?"
-          message="Are you sure you want to delete this photo?"
-          confirmText="Delete"
-          isLoading={$busy}
-          oncancel={() => (showDeleteConfirm = false)}
-          onconfirm={deleteSingle}
-        />
-      {/if}
-    </div>
+    <PhotoDetail
+      photo={selectedPhoto}
+      busy={$busy}
+      {showDeleteConfirm}
+      onsend={sendNearby}
+      onreport={() => (reporting = true)}
+      ondeleterequest={() => (showDeleteConfirm = true)}
+      ondeletecancel={() => (showDeleteConfirm = false)}
+      ondeleteconfirm={deleteSingle}
+    />
   {:else}
-    <!-- Grid View -->
-    <div class="no-scrollbar bg-surface relative min-h-0 flex-1 overflow-y-auto p-1">
-      {#if !$mediaLoaded}
-        <Skeleton count={4} height="h-24" rounded="rounded-none" />
-      {:else if $media.length === 0}
-        <EmptyState title="No photos yet">
-          {#snippet icon()}
-            <EmptyPhotoIcon class="h-16 w-16" />
-          {/snippet}
-        </EmptyState>
-      {:else}
-        <div class="grid grid-cols-3 gap-1">
-          {#each $media as photo (photo.id)}
-            <!-- A real button: the grid is the only way into a photo, and it was a bare
-                 div, so the gallery could not be opened from the keyboard at all. -->
-            <button
-              type="button"
-              class="group bg-surface-container relative aspect-square cursor-pointer"
-              onclick={() => handlePhotoClick(photo)}
-              aria-pressed={isSelectionMode ? selectedIds.has(photo.id) : undefined}
-              aria-label={isSelectionMode ? `Select photo ${photo.id}` : `Open photo ${photo.id}`}
-            >
-              <MediaThumb
-                item={photo}
-                alt="Capture {photo.id}"
-                class="transition-opacity {isSelectionMode && selectedIds.has(photo.id)
-                  ? 'opacity-50'
-                  : 'group-hover:opacity-80'} duration-short ease-standard"
-              />
-              {#if isSelectionMode}
-                <div
-                  class="absolute right-2 bottom-2 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white {selectedIds.has(
-                    photo.id
-                  )
-                    ? 'bg-primary'
-                    : 'bg-black/20 backdrop-blur-sm'}"
-                >
-                  {#if selectedIds.has(photo.id)}
-                    <CheckIcon class="text-on-surface size-icon-sm" />
-                  {/if}
-                </div>
-              {/if}
-            </button>
-          {/each}
-        </div>
-      {/if}
+    <!-- The grid scrolls; this wrapper does not. The selection bar below is positioned
+         against *this*, so it stays put instead of scrolling away with the tiles — which
+         is what it did while the grid was short enough never to scroll. -->
+    <div class="relative flex min-h-0 flex-1 flex-col">
+      <PhotoGrid {isSelectionMode} {selectedIds} onphotoclick={handlePhotoClick} />
 
       {#if isSelectionMode && selectedIds.size > 0}
-        <div
-          class="border-outline-variant bg-surface-container shadow-elevation-5 absolute right-4 bottom-4 left-4 flex items-center justify-between rounded-lg border p-4 backdrop-blur-md"
-          transition:fade
-        >
-          <span class="text-on-surface font-medium">{selectedIds.size} Selected</span>
-          <div class="flex gap-4">
-            <button
-              class="text-primary hover:text-primary"
-              aria-label="Share selected"
-              onclick={shareSelected}
-            >
-              <ShareSquareIcon class="size-icon-md" />
-            </button>
-            <button
-              class="text-error hover:text-error"
-              aria-label="Delete selected"
-              onclick={() => (showDeleteConfirm = true)}
-            >
-              <TrashIcon class="size-icon-md" />
-            </button>
+        <!-- The padding is on the wrapper, not the bar: the bar has a border and a rounded
+             corner, so growing *it* would put that border under the gesture bar rather than
+             above it. §5 — anything anchored to the bottom clears the home indicator. -->
+        <div class="pb-home-indicator pointer-events-none absolute right-4 bottom-4 left-4">
+          <div
+            class="border-outline-variant bg-surface-container shadow-elevation-5 pointer-events-auto flex items-center justify-between rounded-lg border p-4 backdrop-blur-md"
+            transition:fade
+          >
+            <span class="text-on-surface font-medium">{selectedIds.size} Selected</span>
+            <div class="flex gap-4">
+              <button
+                class="text-primary hover:text-primary"
+                aria-label="Share selected"
+                onclick={shareSelected}
+              >
+                <ShareSquareIcon class="size-icon-md" />
+              </button>
+              <button
+                class="text-error hover:text-error"
+                aria-label="Delete selected"
+                onclick={() => (showDeleteConfirm = true)}
+              >
+                <TrashIcon class="size-icon-md" />
+              </button>
+            </div>
           </div>
         </div>
       {/if}

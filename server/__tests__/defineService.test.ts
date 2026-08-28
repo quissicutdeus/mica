@@ -228,6 +228,63 @@ describe('buildRepository — inherits every Phase 1 guarantee', () => {
   });
 });
 
+/**
+ * `private` narrows the generic list read on **both** access axes (MICA-110).
+ *
+ * It began as a public-read rule — an app-specific secret on an otherwise public table —
+ * and the weight case is the second reason a column earns it: `gphone_media.data` is a
+ * whole base64 photo, so an unprojected owner read shipped hundreds of kilobytes a row to
+ * draw a grid of 123px tiles. The ownership predicate bounds *who* may read, and nothing
+ * about *how much*.
+ */
+describe('private columns and the list projection', () => {
+  const heavy: ServiceDefinition = {
+    id: 'heavy_list',
+    schema: {
+      caption: { type: 'string', length: 255 },
+      payload: { type: 'mediumtext', private: true }
+    }
+  };
+
+  it('withholds a private column from an owner read as well as a public one', () => {
+    const resolved = resolveAppSchema(heavy);
+
+    expect(resolved.listColumns).not.toContain('payload');
+    expect(resolved.publicColumns).not.toContain('payload');
+  });
+
+  it('keeps citizenid for the owner, which no public reader ever gets', () => {
+    // The two lists are siblings rather than the same list. An owner reading their own
+    // rows has every business seeing their own citizenid; a public reader correlating two
+    // deliberately-separate accounts back to one person does not.
+    const resolved = resolveAppSchema(heavy);
+
+    expect(resolved.listColumns).toContain('citizenid');
+    expect(resolved.publicColumns).not.toContain('citizenid');
+  });
+
+  it('leaves a table with nothing private selecting exactly what it always did', async () => {
+    // The property that keeps this change additive. Every other service passes no
+    // projection at all, so `findAll` emits the byte-identical `SELECT *` that several
+    // repositoryFactory subclasses and Repository.test.ts's exact query strings rely on.
+    const resolved = resolveAppSchema(notesDefinition);
+    expect(resolved.listColumns).toEqual(resolved.columns);
+
+    const repo = buildRepository(resolved);
+    dbMock.query.mockClear();
+    dbMock.query.mockResolvedValue([]);
+    await repo.findAll({} as any);
+
+    expect(String(dbMock.query.mock.calls[0][0])).toContain('SELECT * FROM');
+  });
+
+  it('is a read projection and not a write rule — a private column stays writable', () => {
+    // The distinction MICA-110 turns on: the camera still creates a row with its bytes.
+    // Marking the column private must not quietly close the path that fills it.
+    expect(resolveAppSchema(heavy).clientWritable).toContain('payload');
+  });
+});
+
 /** Capture the events ServiceEndpoint registers, so the wiring is observable. */
 const mountAndCapture = (definition: ServiceDefinition): string[] => {
   const registered: string[] = [];

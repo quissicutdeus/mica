@@ -49,4 +49,13 @@ interface Window {
    * tests passed having checked nothing.
    */
   appRegistryStore?: typeof import('./shell/state/registry').appRegistryStore;
+  /**
+   * Every call the browser mock has answered this session, in order — see `MockCall` in
+   * `nui/transport.ts`.
+   *
+   * The mock transport is in-process, so a NUI call makes no request for Playwright to
+   * intercept. This is the only way an e2e spec can assert on the bridge itself: how many
+   * times a list was fetched, or whether a list reply carried a column it should not.
+   */
+  mockCalls?: import('./nui/transport').MockCall[];
 }
