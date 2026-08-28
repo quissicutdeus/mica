@@ -52,6 +52,32 @@ export async function markNotificationsRead(ids: number[]): Promise<void> {
   await loadUnreadCounts();
 }
 
+/**
+ * The player opened these — mark them read *and* clear them out of Active.
+ *
+ * Tapping a card is an act of handling it: it deep-links straight into the thing the card
+ * was about, so leaving the card sitting in Active afterwards asks the player to dismiss a
+ * notification they have already acted on (MICA-96). Reading alone did not do it — Active
+ * is filtered on `cleared_at`, never on `read_at`, so a tapped card only stopped counting
+ * towards the launcher badge and otherwise sat there unchanged.
+ *
+ * Cleared rather than deleted, so it lands in Archived and the shade's existing restore path
+ * can put it back. Read is set *before* cleared, and both are sent, because the archived row
+ * should record that it was seen rather than dismissed unread — `restoreNotifications` puts a
+ * restored row back as unread, which is the state a restore should be undoing to.
+ *
+ * One `loadUnreadCounts` for the pair rather than one each: composing `markNotificationsRead`
+ * and `clearNotifications` would cost two extra NUI round trips per tap, and the first of
+ * them would report a count the second immediately invalidates.
+ */
+export async function markNotificationsOpened(ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  await fetchNui('markNotificationRead', { ids }, { defaultValue: true });
+  await fetchNui('clearNotifications', { ids }, { defaultValue: true });
+  shadeNotifications.update((items) => items.filter((item) => !ids.includes(item.id)));
+  await loadUnreadCounts();
+}
+
 export async function clearNotifications(ids: number[]): Promise<void> {
   if (ids.length === 0) return;
   await fetchNui('clearNotifications', { ids }, { defaultValue: true });

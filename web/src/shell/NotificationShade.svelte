@@ -26,7 +26,7 @@
     loadNotificationHistory,
     loadShadeNotifications,
     loadUnreadCounts,
-    markNotificationsRead,
+    markNotificationsOpened,
     restoreNotifications,
     shadeNotifications
   } from '../services/notifications';
@@ -220,9 +220,11 @@
   };
 
   const handleRowClick = async (item: NotificationItem) => {
-    if (!item.read_at) {
-      await markNotificationsRead([item.id]);
-    }
+    // Opened, not merely read: the card has done its job once it has been tapped, so it
+    // leaves Active for Archived rather than sitting there already-actioned (MICA-96).
+    // Unconditional — a card with no deep link is still acknowledged by the tap, and it
+    // would otherwise be the one kind of notification a tap could never clear.
+    await markNotificationsOpened([item.id]);
     // Parsed, never passed whole. `openApp` takes an app id, and handing it `mail/12`
     // registered a resident app by that name — no component resolves it, so the phone
     // went blank with no way back.
@@ -242,12 +244,9 @@
     await clearSingle(id);
   };
 
-  /** Opening a conversation reads every message in it, not just the one tapped. */
+  /** Opening a conversation handles every message in it, not just the one tapped. */
   const handleConversationClick = async (convo: NotificationConversationGroup) => {
-    const unreadIds = convo.items.filter((i) => !i.read_at).map((i) => i.id);
-    if (unreadIds.length > 0) {
-      await markNotificationsRead(unreadIds);
-    }
+    await markNotificationsOpened(convo.items.map((i) => i.id));
     const link = convo.latest.deep_link ? parseDeepLink(convo.latest.deep_link) : null;
     if (link) {
       openApp(link.app, link.props);
