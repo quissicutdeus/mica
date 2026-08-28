@@ -164,7 +164,23 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
    * members listed.
    */
   const MEMBER_ALLOWLIST: Partial<Record<string, readonly string[]>> = {
-    appRegistry: ['registryStore', 'getFirstBootTime']
+    appRegistry: ['registryStore', 'getFirstBootTime'],
+    /**
+     * `notificationSettings` reads, never writes (MICA-63). The facet's stores were always
+     * read-only across the wire — `remoteStore` addresses a member, so a `Writable`'s `.set`
+     * was never reachable — but the per-app policy needs *setters*, and those are top-level
+     * members that a raw `postMessage` could call. An add-on holding `notification-settings`
+     * would otherwise be able to mute a rival app, unmute itself, or switch off the player's
+     * Do Not Disturb. Deciding what interrupts the player is the player's, through Settings.
+     */
+    notificationSettings: [
+      'toastsEnabled',
+      'notificationSoundEnabled',
+      'badgesEnabled',
+      'dndEnabled',
+      'appNotificationPolicies',
+      'customisedNotificationApps'
+    ]
   };
 
   // `DENIED_FACETS` is imported from `sdk/permissions.ts`, not declared here (MICA-33):

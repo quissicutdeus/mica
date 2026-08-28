@@ -2,6 +2,7 @@ import { get, writable } from 'svelte/store';
 import { audio } from './audio';
 import { isBatteryDead } from './charge';
 import { addNotificationItem, clearNotifications } from '../../services/notifications';
+import { notificationAllows, type NotificationSource } from './notificationPolicy';
 
 type ToastType = 'info' | 'success' | 'warning' | 'error' | 'message' | 'call' | 'contact';
 
@@ -30,6 +31,17 @@ export interface ToastMessage {
   replyPlaceholder?: string;
   onReply?: (replyText: string) => void | Promise<void>;
   onClick?: () => void | Promise<void>;
+  /**
+   * What kind of interruption this is, which is what decides whether Do Not Disturb and the
+   * per-app mutes apply to it (`state/notificationPolicy.ts`).
+   *
+   * Defaults to `'feedback'` — a toast confirming something the player just did, which is never
+   * suppressed. Every *arrival* path has to say so, and they all live in `nuiMessages.ts` and
+   * the helpers at the bottom of this file.
+   */
+  source?: NotificationSource;
+  /** For a call: it rang despite DND, because of a favourite or a repeat. */
+  breakThrough?: boolean;
   /**
    * Run when the toast times out on its own, as opposed to being dismissed or actioned.
    *
@@ -115,10 +127,29 @@ function createToastStore() {
           })
         : undefined;
 
+    // The shade row is written above, unconditionally. Only the *banner* is subject to policy,
+    // so a muted app's notification is still there when the player goes looking — that is the
+    // whole of "suppress the interruption, never the record" (MICA-63).
+    //
+    // The id is returned either way. A caller holding one (`Shell.svelte`'s `incomingToastId`)
+    // can then dismiss or archive it without having to know whether it was ever painted;
+    // `dismiss` and `archive` are already no-ops for an id that is not in the store.
+    if (
+      !notificationAllows('banner', {
+        source: options.source,
+        app: options.app,
+        breakThrough: options.breakThrough
+      })
+    ) {
+      return id;
+    }
+
     const newToast: ToastMessage = {
       id,
       notificationId: notificationItem?.id,
       app: options.app,
+      source: options.source,
+      breakThrough: options.breakThrough,
       title: options.title,
       message: options.message,
       type: options.type || 'info',
@@ -214,8 +245,9 @@ function createToastStore() {
       onReply: (replyText: string) => void | Promise<void>;
       onClick?: () => void | Promise<void>;
     }) => {
-      audio.play('pop');
+      if (notificationAllows('sound', { source: 'app', app: 'messages' })) audio.play('pop');
       return show({
+        source: 'app',
         type: 'message',
         app: 'messages',
         title: options.sender,
@@ -239,8 +271,11 @@ function createToastStore() {
       onDecline?: () => void | Promise<void>;
       onClick?: () => void | Promise<void>;
     }) => {
-      audio.play('notification');
+      if (notificationAllows('sound', { source: 'app', app: 'contacts' })) {
+        audio.play('notification');
+      }
       return show({
+        source: 'app',
         type: 'contact',
         app: 'contacts',
         title: 'Contact Shared',
@@ -271,6 +306,8 @@ function createToastStore() {
     showCall: (options: {
       name?: string;
       number: string;
+      /** `callBreaksThrough(number)` — a favourite or a repeat, so it rings despite DND. */
+      breakThrough?: boolean;
       onAccept: () => void | Promise<void>;
       onDecline?: () => void | Promise<void>;
       onExpire?: () => void | Promise<void>;
@@ -278,10 +315,24 @@ function createToastStore() {
       // A dead phone renders no children (PhoneFrame skips them), so the toast is
       // invisible — playing the ringtone anyway meant a dead phone rang with nothing
       // on screen and no way to answer.
-      if (!get(isBatteryDead)) {
+      //
+      // Do Not Disturb silences the ringtone and nothing else: the banner below still
+      // appears, because it carries the only Accept button there is. See the long note in
+      // `notificationPolicy.ts` — a suppressed call banner is an unanswerable call, not a
+      // quiet one.
+      if (
+        !get(isBatteryDead) &&
+        notificationAllows('sound', {
+          source: 'call',
+          app: 'phone',
+          breakThrough: options.breakThrough
+        })
+      ) {
         audio.play('ringtone');
       }
       return show({
+        source: 'call',
+        breakThrough: options.breakThrough,
         type: 'call',
         app: 'phone',
         onExpire: options.onExpire,
@@ -309,8 +360,9 @@ function createToastStore() {
 
     // Helper for new emails
     showMail: (options: { sender: string; subject: string; onClick?: () => void }) => {
-      audio.play('notification');
+      if (notificationAllows('sound', { source: 'app', app: 'mail' })) audio.play('notification');
       return show({
+        source: 'app',
         type: 'info',
         app: 'mail',
         title: `New Email: ${options.sender}`,

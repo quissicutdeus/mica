@@ -19,6 +19,7 @@
   import ChevronDownIcon from '../sdk/ui/icons/ChevronDownIcon.svelte';
   import CloseIcon from '../sdk/ui/icons/CloseIcon.svelte';
   import FlashlightIcon from '../sdk/ui/icons/FlashlightIcon.svelte';
+  import MoonIcon from '../sdk/ui/icons/MoonIcon.svelte';
   import SignalIcon from '../sdk/ui/icons/SignalIcon.svelte';
   import TrashIcon from '../sdk/ui/icons/TrashIcon.svelte';
   import {
@@ -35,6 +36,7 @@
   import { bluetoothEnabled, toggleBluetooth } from './state/bluetooth';
   import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
   import { flashlightEnabled, toggleFlashlight } from './state/flashlight';
+  import { dndEnabled } from './state/notificationPolicy';
   import { openApp } from './state/navigation';
   import { cellServiceEnabled, toggleCellService } from './state/signal';
   import { closeShade, isShadeOpen, shadeDragPhase, shadeDragProgress } from './state/shade';
@@ -42,6 +44,8 @@
 
   interface QuickToggle {
     label: string;
+    /** Spelled out for the tooltip and the accessible name, when `label` is an abbreviation. */
+    name?: string;
     icon: typeof SignalIcon;
     enabled: boolean;
     disabled?: boolean;
@@ -68,6 +72,17 @@
       icon: AirplaneIcon,
       enabled: $airplaneModeEnabled,
       onToggle: toggleAirplaneMode
+    },
+    {
+      // Beside airplane mode because that is where people reach for it, and deliberately
+      // not the same thing: airplane mode takes the phone off the network so nothing
+      // arrives, while this delivers everything and interrupts about none of it
+      // (`state/notificationPolicy.ts`). Abbreviated because five tiles share one row.
+      label: 'DND',
+      name: 'Do Not Disturb',
+      icon: MoonIcon,
+      enabled: $dndEnabled,
+      onToggle: () => dndEnabled.update((on) => !on)
     },
     {
       label: 'Flashlight',
@@ -453,8 +468,8 @@
             : 'bg-surface text-on-surface-variant hover:bg-surface-container'}"
           onclick={toggle.onToggle}
           disabled={toggle.disabled}
-          title={toggle.label}
-          aria-label={toggle.label}
+          title={toggle.name ?? toggle.label}
+          aria-label={toggle.name ?? toggle.label}
           aria-pressed={toggle.enabled}
         >
           <toggle.icon class="size-icon-sm" />

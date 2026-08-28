@@ -3,6 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { toast } from './toast';
 import { get } from 'svelte/store';
 import { shadeNotifications } from '../../services/notifications';
+import { appNotificationPolicies, dndEnabled } from './notificationPolicy';
+import { toastsEnabled } from './notificationSettings';
+import { audio } from './audio';
 
 describe('toast store interactive notifications', () => {
   beforeEach(() => {
@@ -269,5 +272,81 @@ describe('a toast carries which app it came from', () => {
   ])('%s tags its own app', (_name, trigger, app) => {
     trigger();
     expect(get(toast)[0].app).toBe(app);
+  });
+});
+
+describe('toast policy enforcement (MICA-63)', () => {
+  beforeEach(() => {
+    toast.clear();
+    shadeNotifications.set([]);
+    dndEnabled.set(false);
+    appNotificationPolicies.set({});
+    toastsEnabled.set(true);
+  });
+
+  /**
+   * The claim the whole design rests on: a mute suppresses the *interruption* and never the
+   * *record*. The row is written before the banner is judged, so a muted app's notification is
+   * still in the shade when the player goes looking — which is what makes turning DND off
+   * non-destructive, and what a server-side mute could not have offered.
+   */
+  it.each([
+    [
+      'a per-app banner mute',
+      () => appNotificationPolicies.set({ blabber: { banner: false, sound: true, badge: true } })
+    ],
+    ['do not disturb', () => dndEnabled.set(true)],
+    ['the global banner switch', () => toastsEnabled.set(false)]
+  ])('still writes the shade row when the banner is suppressed by %s', (_label, mute) => {
+    mute();
+    toast.show({ source: 'app', app: 'blabber', message: '@you were mentioned' });
+
+    expect(get(toast)).toHaveLength(0);
+    expect(get(shadeNotifications)).toHaveLength(1);
+    expect(get(shadeNotifications)[0].body).toBe('@you were mentioned');
+  });
+
+  it('returns an id for a suppressed toast, so a caller can still dismiss it blind', () => {
+    dndEnabled.set(true);
+    const id = toast.show({ source: 'app', app: 'blabber', message: 'hi' });
+
+    expect(id).toBeTruthy();
+    expect(() => toast.dismiss(id)).not.toThrow();
+  });
+
+  it('shows a call banner under DND — it carries the only Accept button there is', () => {
+    dndEnabled.set(true);
+    appNotificationPolicies.set({ phone: { banner: false, sound: false, badge: false } });
+
+    toast.showCall({ number: '5551234', onAccept: () => {} });
+    expect(get(toast)).toHaveLength(1);
+    expect(get(toast)[0].type).toBe('call');
+  });
+
+  it('shows a system message under DND and every global switched off', () => {
+    dndEnabled.set(true);
+    toastsEnabled.set(false);
+
+    toast.show({ source: 'system', type: 'warning', message: 'You have been warned' });
+    expect(get(toast)).toHaveLength(1);
+  });
+
+  it('does not suppress an unclassified feedback toast', () => {
+    dndEnabled.set(true);
+    toastsEnabled.set(false);
+
+    toast.show({ app: 'contacts', message: 'Contact added to address book' });
+    expect(get(toast)).toHaveLength(1);
+  });
+
+  it('suppresses the arrival sound for a muted app but still shows the banner', () => {
+    appNotificationPolicies.set({ mail: { banner: true, sound: false, badge: true } });
+    const play = vi.spyOn(audio, 'play');
+
+    toast.showMail({ sender: 'HR', subject: 'Payslip' });
+
+    expect(play).not.toHaveBeenCalled();
+    expect(get(toast)).toHaveLength(1);
+    play.mockRestore();
   });
 });

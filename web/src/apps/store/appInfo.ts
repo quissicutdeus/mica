@@ -137,6 +137,7 @@ const LABELS: Record<AppPermission, { label: string; icon: string }> = {
   devtools: { label: 'Developer Tools', icon: '\u{1F6E0}\u{FE0F}' },
   display: { label: 'Display Settings', icon: '\u{1F4F1}' },
   keybinds: { label: 'Keyboard Shortcuts', icon: '\u{2328}\u{FE0F}' },
+  music: { label: 'Play Music Out Loud', icon: '\u{1F3B5}' },
   navigation: { label: 'Open Other Apps', icon: '\u{21AA}\u{FE0F}' },
   'notification-settings': { label: 'Notification Settings', icon: '\u{1F515}' },
   'system-hardware': { label: 'Battery, Signal & Bluetooth', icon: '\u{1F50B}' },

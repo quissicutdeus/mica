@@ -6,8 +6,10 @@
     ConfirmDialog,
     formatDate,
     SettingsSection,
+    ToggleSwitch,
     useAppAction,
     useAppRegistry,
+    useNotificationSettings,
     type AppManifest
   } from '@gphone/sdk';
 
@@ -34,6 +36,27 @@
 
   const { unregisterApp } = useAppRegistry();
   const { run, busy } = useAppAction('settings');
+
+  /**
+   * The second entry point to this app's notification switches (MICA-63).
+   *
+   * The same three values Settings > Notifications shows in its per-app list, on the pane a
+   * player is already looking at when they think "this app specifically". One store behind
+   * both, so the two surfaces cannot disagree.
+   *
+   * Only shown for an app that can actually notify — `permissions` is what the shell checks
+   * before raising a toast for a pushed event, so for anything else these would be three dead
+   * controls. `phone` is the exception: it owns the ringtone and the missed-call badge.
+   */
+  const { appNotificationPolicies, setAppNotificationPolicy, clearAppNotificationPolicy } =
+    useNotificationSettings();
+
+  const canNotify = $derived(
+    app.id === 'phone' || Boolean(app.permissions?.includes('notifications'))
+  );
+  const policy = $derived(
+    $appNotificationPolicies[app.id] ?? { banner: true, sound: true, badge: true }
+  );
 
   let confirming = $state<'clear' | 'uninstall' | null>(null);
 
@@ -67,6 +90,9 @@
     // `run` reports the failure for us — `unregisterApp` throws for a core app, and this button
     // is not rendered for one, so a throw here means something the player should be told about.
     if (await run(() => unregisterApp(app.id), { title: app.name, success: 'Uninstalled' })) {
+      // Forget the mutes along with the app, so a reinstall starts allowed rather than
+      // inheriting a silence the player set months ago and has no reason to remember.
+      clearAppNotificationPolicy(app.id);
       onremoved();
     }
   };
@@ -125,6 +151,38 @@
       </div>
     </div>
   </SettingsSection>
+
+  {#if canNotify}
+    <SettingsSection
+      title="Notifications"
+      footer="Combined with the master switches in Settings > Notifications — this app can be
+        quieter than the phone, never louder."
+    >
+      <div class="divide-outline-variant text-body-medium divide-y">
+        <div class="flex items-center justify-between p-4">
+          <span class="text-on-surface-variant">Banners</span>
+          <ToggleSwitch
+            checked={policy.banner}
+            onchange={(val: boolean) => setAppNotificationPolicy(app.id, { banner: val })}
+          />
+        </div>
+        <div class="flex items-center justify-between p-4">
+          <span class="text-on-surface-variant">Sound</span>
+          <ToggleSwitch
+            checked={policy.sound}
+            onchange={(val: boolean) => setAppNotificationPolicy(app.id, { sound: val })}
+          />
+        </div>
+        <div class="flex items-center justify-between p-4">
+          <span class="text-on-surface-variant">Badge</span>
+          <ToggleSwitch
+            checked={policy.badge}
+            onchange={(val: boolean) => setAppNotificationPolicy(app.id, { badge: val })}
+          />
+        </div>
+      </div>
+    </SettingsSection>
+  {/if}
 
   <div>
     <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">

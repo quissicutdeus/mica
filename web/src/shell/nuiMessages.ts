@@ -226,7 +226,11 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
       return;
     }
 
+    // The one unsolicited, app-attributed arrival in the phone, and so the path Do Not
+    // Disturb and the per-app mutes exist for (MICA-63). `deliverAppEvent` above has
+    // already run: the data lands regardless, and only the toast is subject to policy.
     toast.show({
+      source: 'app',
       type: envelope.notify.type ?? 'info',
       app: envelope.app,
       title: envelope.notify.title,
@@ -264,7 +268,12 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     notify: (data) => {
       const parsed = parseNotify(data);
       if (!parsed) return;
+      // `server/lib/shell.ts`'s `notifyPlayer` — the server speaking to a player directly
+      // rather than on any app's behalf, which is how moderation and the admin commands
+      // reach somebody. Exempt from Do Not Disturb and from every mute: a warning a player
+      // can silence is one they would never know had been sent (MICA-63).
       toast.show({
+        source: 'system',
         type: parsed.type,
         title: parsed.title,
         message: parsed.message
