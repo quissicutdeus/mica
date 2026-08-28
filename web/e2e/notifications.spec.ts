@@ -1,4 +1,6 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
+import { installAddOn } from './support/addon';
+import { seedHomeGrid } from './support/homeGrid';
 
 /**
  * Mirrors `web/src/shell/state/display.ts`'s `PHONE_WIDTH`/`SHADE_DRAG_REVEAL_DISTANCE`
@@ -551,5 +553,178 @@ test.describe('Notification shade gestures', () => {
 
     await page.getByRole('button', { name: 'Back to Active Notifications' }).click();
     await expect(shade.getByText('Developer Tools unlocked successfully.')).toBeVisible();
+  });
+});
+
+/**
+ * MICA-96. Tapping a card deep-linked into the thing it was about and marked it read, and
+ * that was all it did — the Active list filters on `cleared_at` and never on `read_at`, so
+ * the card the player had just acted on sat there unchanged and indefinitely. The launcher
+ * badge (which reads unread counts) and the shade disagreed about whether the notification
+ * had been dealt with, which is the shape of the bug as reported.
+ *
+ * `notifications.test.ts` already pins the store's action order — read, then clear, then
+ * refresh the counts. What only a real render can show is the pair of surfaces agreeing
+ * afterwards, and it is a real round trip: the browser mocks hold `read_at`/`cleared_at` on
+ * the fixture rows, and the archive is re-fetched from them (`getNotificationHistory`) every
+ * time it is opened. So a card appearing there is evidence `clearNotifications` reached the
+ * mock, not merely that a client-side store filtered it out of a list.
+ */
+test.describe('Tapping a notification is what handles it', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+  });
+
+  const openShade = async (page: Page) => {
+    await page.getByRole('button', { name: 'Open notification shade' }).click();
+    const shade = page.getByRole('dialog', { name: 'Notification Shade' });
+    await waitForSettled(shade);
+    return shade;
+  };
+
+  test('tapping a standalone notification takes it out of Active and files it in the archive', async ({
+    page
+  }) => {
+    // The settings fixture: standalone (nothing else is in its app group) and carrying the
+    // bare `settings` deep link, so the tap both navigates and has to clear.
+    const body = 'Developer Tools unlocked successfully.';
+
+    // Three apps have unread notifications the status bar can resolve a manifest for —
+    // settings, messages and mail. Blabber's is filtered out because it is an uninstalled
+    // add-on. Captured first so the drop below is measured against a known start rather
+    // than asserted in the abstract.
+    const tray = page.getByTestId('status-notification-icons');
+    await expect.poll(async () => tray.evaluate((el) => el.children.length)).toBe(3);
+
+    let shade = await openShade(page);
+    await expect(shade.getByText(body)).toBeVisible();
+
+    await shade.getByText(body).click();
+    // The deep link resolves, so the tap navigates into Settings and the shade closes
+    // behind it — the tap is not being swallowed by the clear.
+    await expect(shade).toBeHidden();
+
+    // Step 4 of the report, verbatim: reopen the shade and look at Active. This is what
+    // used to still be showing the card.
+    shade = await openShade(page);
+    await expect(shade.getByText(body)).toBeHidden();
+
+    // ...and it was cleared rather than deleted. The archive is fetched fresh on every
+    // open, so this is the assertion that reaches past the client store.
+    await page.getByRole('button', { name: 'Notification Archive' }).click();
+    await expect(shade.getByText(body)).toBeVisible();
+
+    // The two surfaces that disagreed now agree: the status bar has dropped Settings
+    // along with the card, rather than one clearing while the other holds on.
+    await expect.poll(async () => tray.evaluate((el) => el.children.length)).toBe(2);
+  });
+
+  test('tapping a conversation inside a group clears that conversation and leaves the rest', async ({
+    page
+  }) => {
+    // The second of the two handlers the fix changed. The three `messages` fixtures collapse
+    // into one app group, and its rows go through `handleConversationClick` rather than
+    // `handleRowClick` — which previously marked the conversation's unread items read and
+    // cleared nothing, so a tapped conversation stayed in Active exactly like a tapped
+    // standalone card did.
+    let shade = await openShade(page);
+
+    // The header is a disclosure, not a link: its `onclick` is `toggleGroupExpand`, and it
+    // renders `group.latest.title` — so the conversation rows only exist once it is open,
+    // and the name in the collapsed preview belongs to the header rather than to a row.
+    //
+    // Matched on the header's own accessible name, anchored at the app: the count alone is
+    // not unique (Mail also holds two), and the trailing timestamp in that name ages during
+    // a run, so the regex deliberately stops before it.
+    const messagesGroup = (count: number) =>
+      shade.getByRole('button', { name: new RegExp(`^messages ${count} notifications`) });
+    await expect(messagesGroup(3)).toBeVisible();
+    await messagesGroup(3).click();
+
+    // Trevor Philips is conversation 3, and appears only as a sub-row — Ursula is the
+    // group's latest and so is also in the header preview, which would match twice.
+    const row = shade.getByText('Trevor Philips');
+    await expect(row).toBeVisible();
+    await row.click();
+
+    // `messages?conversationId=3` resolves, so the tap navigates and the shade closes.
+    await expect(shade).toBeHidden();
+
+    shade = await openShade(page);
+    // One conversation left Active, and only one: the group is down to two, and the other
+    // two members are untouched. A handler that cleared the whole app group would fail here
+    // just as loudly as one that cleared nothing.
+    await expect(shade.getByText('Trevor Philips')).toBeHidden();
+    await expect(messagesGroup(2)).toBeVisible();
+
+    // Cleared, not deleted — and this half is read back out of the mock.
+    await page.getByRole('button', { name: 'Notification Archive' }).click();
+    await expect(shade.getByText('Trevor Philips')).toBeVisible();
+  });
+});
+
+/**
+ * MICA-103. The status bar draws one icon per app with something waiting, left to right,
+ * into a run of pixels that ends at the hole-punch camera. It was capped at five — a number
+ * derived without counting the `gap-1` between the icons — so the fifth icon began exactly
+ * where the cutout does and was drawn half inside a hole in the screen, and anything past
+ * five vanished with nothing to say it existed.
+ *
+ * `PhoneFrame.test.ts` covers the cap and the chip in jsdom, and its third case is a pixel
+ * budget built from hand-written constants (`CLOCK_WIDTH = 62`, `CHIP_WIDTH = 24`). Those
+ * constants are the part that can quietly stop being true: jsdom lays nothing out, so the
+ * budget is arithmetic checking arithmetic. This measures the row Chromium actually drew
+ * against the cutout Chromium actually drew, which is the only place the two can be
+ * compared.
+ *
+ * It measures the widest row this harness can produce — five sources and a two-glyph chip —
+ * not the worst case in `state/display.ts`, which is the widest clock reading beside a
+ * three-glyph `+10` and clears by under four pixels. The arithmetic for that case stays in
+ * the unit test; what is proved here is that the arithmetic describes the real layout.
+ */
+test.describe('Status bar notification icons', () => {
+  test('caps the row, counts the remainder, and stays clear of the camera cutout', async ({
+    page
+  }) => {
+    // Five sources, which is two past the cap. The fixtures supply settings, messages and
+    // mail outright; installing Blabber supplies the fourth (its mention fixture is already
+    // unread, and only the missing manifest was keeping it out of the row) and the Store's
+    // own "installed successfully" notification is the fifth. Store has to be on the grid
+    // first — the real home screen starts empty.
+    await seedHomeGrid(page, ['store']);
+    await page.goto('/');
+    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await installAddOn(page, 'Blabber');
+
+    const tray = page.getByTestId('status-notification-icons');
+    // Three icons and the chip. Counted as direct children rather than by tag: an app icon
+    // may nest whatever it likes, and what is bounded here is how many slots the row takes.
+    await expect.poll(async () => tray.evaluate((el) => el.children.length)).toBe(4);
+    // The remainder is reported rather than silently dropped, which was the worse half of
+    // the original bug — a cap with nowhere for the overflow to be.
+    await expect(tray).toHaveText('+2');
+
+    // Now the geometry, in the phone's own design pixels: the frame is drawn at whatever
+    // scale the window allows (`display.ts`), so on-screen numbers are meaningless until
+    // they are divided back out. Both boxes come from the same rendered frame, so the
+    // comparison itself would hold either way — expressing it in design px is what lets
+    // the numbers below be read against `state/display.ts`'s derivation.
+    const frame = await frameBox(page);
+    const scale = frame.width / PHONE_WIDTH;
+    const trayBox = await tray.boundingBox();
+    const cutoutBox = await page.getByTestId('camera-cutout').boundingBox();
+    if (!trayBox || !cutoutBox) throw new Error('the status bar is not on screen');
+
+    const rowEnd = (trayBox.x + trayBox.width - frame.x) / scale;
+    const cutoutStart = (cutoutBox.x - frame.x) / scale;
+
+    // The assertion that fails at the old cap of five: five icons end at 188px against a
+    // cutout starting at 187.5px. At three the row ends around 174px.
+    expect(rowEnd, `the notification row runs into the camera cutout`).toBeLessThan(cutoutStart);
+
+    // And the cutout really is where the derivation says it is — a cutout that had moved
+    // would make the assertion above pass for a reason that has nothing to do with the cap.
+    expect(cutoutStart).toBeCloseTo(PHONE_WIDTH / 2 - 12, 0);
   });
 });

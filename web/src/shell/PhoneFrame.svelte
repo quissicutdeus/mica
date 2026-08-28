@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, type Snippet } from 'svelte';
   import { get } from 'svelte/store';
-  import { fly, fade } from 'svelte/transition';
+  import { fly, fade } from '../lib/motion';
   import { formattedTime, formattedDate } from './state/time';
   import { goHome, currentApp } from './state/navigation';
   import { displayCharge, isBatteryDead } from './state/charge';
@@ -371,6 +371,7 @@
          would otherwise silently absorb the touch instead of letting it reach the
          button underneath. -->
     <div
+      data-testid="camera-cutout"
       class="size-icon-lg pointer-events-none absolute top-2 left-1/2 z-80 -translate-x-1/2 rounded-full bg-black ring-1 ring-gray-800"
     ></div>
 
