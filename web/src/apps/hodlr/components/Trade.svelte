@@ -1,40 +1,48 @@
 <script lang="ts">
-  import { Button } from '@gphone/sdk';
+  import { Button, useAppAction } from '@gphone/sdk';
   import { useHodlr } from '../store';
 
   let { side, onback }: { side: 'buy' | 'sell'; onback: () => void } = $props();
 
-  const { priceStore, portfolioStore, buy, sell } = useHodlr();
+  const { priceStore, portfolioStore, buy, sell, tradeFailureMessage } = useHodlr();
+  const { busy, run } = useAppAction('hodlr');
 
   let quantity = $state<number | ''>('');
-  let busy = $state(false);
-  let error = $state('');
 
   const price = $derived($priceStore.current);
   const total = $derived(quantity === '' ? 0 : Number(quantity) * price);
   const maxSell = $derived($portfolioStore.quantity);
 
-  const canSubmit = $derived(
-    quantity !== '' &&
-      Number.isInteger(Number(quantity)) &&
-      Number(quantity) > 0 &&
-      (side === 'buy' || Number(quantity) <= maxSell) &&
-      !busy
-  );
+  /**
+   * Why the message exists at all, and not just the `disabled` flag: a greyed-out Confirm
+   * with nothing beside it is indistinguishable from a broken one. MICA-99 was reported
+   * as "clicking Confirm silently does nothing" — the guard was already refusing the
+   * click, it just never said why.
+   */
+  const validation = $derived.by(() => {
+    if (quantity === '') return '';
+    const entered = Number(quantity);
+    if (!Number.isInteger(entered) || entered <= 0) return 'Enter a whole number of gCoin.';
+    if (side === 'sell' && entered > maxSell)
+      return tradeFailureMessage('insufficient_holdings', maxSell);
+    return '';
+  });
+
+  const canSubmit = $derived(quantity !== '' && validation === '' && !$busy);
 
   const submit = async () => {
-    busy = true;
-    error = '';
-    try {
-      const outcome = side === 'buy' ? await buy(Number(quantity)) : await sell(Number(quantity));
-      if (outcome.ok) {
-        onback();
-      } else {
-        error = outcome.reason;
-      }
-    } finally {
-      busy = false;
-    }
+    const amount = Number(quantity);
+    const traded = await run(
+      async () => {
+        const outcome = side === 'buy' ? await buy(amount) : await sell(amount);
+        // `buy`/`sell` answer with an outcome rather than throwing, so the refusal is
+        // turned into one here — that is what `run` toasts and what makes the server's
+        // own refusal visible when the guard above was bypassed or raced a price tick.
+        if (!outcome.ok) throw new Error(tradeFailureMessage(outcome.reason, maxSell));
+      },
+      { title: 'Hodlr' }
+    );
+    if (traded) onback();
   };
 </script>
 
@@ -59,8 +67,8 @@
     {side === 'buy' ? 'Cost' : 'Proceeds'}: ${total}
   </p>
 
-  {#if error}
-    <p class="text-error text-body-small">{error}</p>
+  {#if validation}
+    <p class="text-error text-body-small">{validation}</p>
   {/if}
 
   <div class="flex justify-end gap-2">

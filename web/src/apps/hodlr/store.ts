@@ -26,6 +26,34 @@ export type TradeOutcome =
   | { ok: true; quantity: number; price: number; cost?: number; proceeds?: number }
   | { ok: false; reason: string };
 
+/**
+ * A refusal from the server, in words a player can act on.
+ *
+ * `buy`/`sell` answer with a machine slug rather than a sentence, and Trade used to render
+ * that slug straight into the screen — so a rejected sell read `insufficient_holdings`
+ * (MICA-99). The server is the thing that refuses (a modified client can emit
+ * `gphone:server:hodlr:sell` with any quantity, AGENTS.md §2.9), so the slug always has to
+ * be translatable here rather than only being avoided by the button guard.
+ *
+ * An unrecognised slug falls through to a generic line instead of being shown raw: a new
+ * server-side reason should read as a failure, not as debug output.
+ */
+export const tradeFailureMessage = (reason: string, holding: number): string => {
+  switch (reason) {
+    case 'insufficient_holdings':
+      return `You only have ${holding} gCoin to sell.`;
+    case 'insufficient_funds':
+      return 'Your bank balance will not cover that.';
+    case 'debit_failed':
+    case 'credit_failed':
+      return 'The bank refused the transfer. Nothing changed.';
+    case 'request_failed':
+      return 'The market did not answer. Try again.';
+    default:
+      return 'That trade did not go through.';
+  }
+};
+
 const emptyPrice: PriceInfo = { current: 0, history: [] };
 const emptyPortfolio: Portfolio = { quantity: 0, currentPrice: 0, currentValue: 0 };
 
@@ -72,5 +100,5 @@ export const sell = async (quantity: number): Promise<TradeOutcome> => {
 };
 
 export function useHodlr() {
-  return { priceStore, portfolioStore, loadPrice, loadPortfolio, buy, sell };
+  return { priceStore, portfolioStore, loadPrice, loadPortfolio, buy, sell, tradeFailureMessage };
 }
