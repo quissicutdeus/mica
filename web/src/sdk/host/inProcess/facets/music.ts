@@ -10,6 +10,8 @@ import {
   musicPosition,
   musicRepeat,
   musicShuffle,
+  musicHasNext,
+  musicHasPrevious,
   playSource,
   enqueue,
   playQueueIndex,
@@ -110,6 +112,18 @@ export function music() {
     /** Whether a finished queue repeats, repeats one track, or stops. */
     musicRepeat,
     musicShuffle,
+    /**
+     * Whether `nextTrack`/`previousTrack` would go anywhere.
+     *
+     * Exposed because a transport that cannot ask this has to offer the control anyway,
+     * and at the end of a queue that is not repeating `nextTrack` *stops* rather than
+     * advancing — a button whose label says one thing and whose effect is another.
+     * `musicHasNext` is `pickNext() !== null`, the same function the button calls, rather
+     * than a second opinion about it; `musicHasPrevious` is true whenever anything is
+     * loaded, because from the first row Previous restarts the track.
+     */
+    musicHasNext,
+    musicHasPrevious,
     /** What the phone has been asked to do with it. */
     musicStatus,
     /** Music's own volume, 0–1 — not the phone's UI-sound volume. */

@@ -125,11 +125,20 @@ describe('NowPlaying', () => {
     // beats disabled here: stop is the thing that still works, and previous is the way off
     // the bad track. Next is absent because a one-row queue has no next — see
     // `musicHasNext`, which is `pickNext()` itself rather than a second opinion about it.
+    //
+    // Shuffle and repeat stay: they are settings on the queue rather than actions on the
+    // track, and neither is made meaningless by this one being unplayable.
     const { reportPlayerError } = await import('./state/music');
     playSource(`https://youtu.be/${VIDEO}`);
     reportPlayerError(150);
 
-    expect(await controls()).toEqual(['Open Music', 'Previous track', 'Stop music']);
+    expect(await controls()).toEqual([
+      'Open Music',
+      'Shuffle',
+      'Repeat off',
+      'Previous track',
+      'Stop music'
+    ]);
   });
 
   it('offers no way to dismiss it other than stopping the music', async () => {
@@ -138,7 +147,14 @@ describe('NowPlaying', () => {
     // The exact set, and the assertion is exact on purpose: an extra button here would
     // most likely be a close affordance, which is this ticket's bug in a different shape —
     // a control you can swipe away while the music keeps playing.
-    expect(await controls()).toEqual(['Open Music', 'Previous track', 'Pause', 'Stop music']);
+    expect(await controls()).toEqual([
+      'Open Music',
+      'Shuffle',
+      'Repeat off',
+      'Previous track',
+      'Pause',
+      'Stop music'
+    ]);
   });
 
   it('offers the whole transport once there is a queue to move through', async () => {
@@ -148,6 +164,8 @@ describe('NowPlaying', () => {
 
     expect(await controls()).toEqual([
       'Open Music',
+      'Shuffle',
+      'Repeat off',
       'Previous track',
       'Pause',
       'Next track',

@@ -34,6 +34,8 @@ export function music(): Twin {
     musicPosition: store('music', [], 'musicPosition', { current: 0, duration: 0 }),
     musicRepeat: store('music', [], 'musicRepeat', 'off'),
     musicShuffle: store('music', [], 'musicShuffle', false),
+    musicHasNext: store('music', [], 'musicHasNext', false),
+    musicHasPrevious: store('music', [], 'musicHasPrevious', false),
     canPlay: isYouTubeSource,
     thumbnailUrlFor,
     describeMusicError,

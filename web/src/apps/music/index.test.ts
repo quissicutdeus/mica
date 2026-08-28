@@ -92,10 +92,10 @@ describe('Music', () => {
     await type(getByLabelText, OTHER);
     await fireEvent.click(await findByText('Queue'));
 
-    await fireEvent.click(await findByLabelText('Next'));
+    await fireEvent.click(await findByLabelText('Next track'));
     expect(get(musicSource)).toEqual({ videoId: OTHER, playlistId: null });
 
-    await fireEvent.click(await findByLabelText('Previous'));
+    await fireEvent.click(await findByLabelText('Previous track'));
     expect(get(musicSource)).toEqual({ videoId: VIDEO, playlistId: null });
 
     await fireEvent.click(await findByLabelText(`Remove ${VIDEO} from the queue`));
@@ -128,7 +128,7 @@ describe('Music', () => {
     const { getByLabelText, findByLabelText } = renderApp(Music, { id: 'music' });
     await paste(getByLabelText, VIDEO);
 
-    await fireEvent.click(await findByLabelText('Stop'));
+    await fireEvent.click(await findByLabelText('Stop music'));
     expect(get(musicSource)).toBeNull();
     expect(get(musicStatus)).toBe('idle');
     expect(get(musicQueue)).toHaveLength(1);
@@ -153,10 +153,12 @@ describe('Music', () => {
     // Twice: the card explains it and offers the way out, the row is labelled so it still
     // says so once the queue has moved on.
     expect(await findAllByText(/Can't be played outside YouTube/)).toHaveLength(2);
-    expect(await findByText("Can't play this")).toBeTruthy();
-    // Nothing to press: the player has refused this video, and a Play button that does
-    // nothing is how a person concludes the phone is broken rather than the link.
-    expect((queryByLabelText('Play') as HTMLButtonElement | null)?.disabled).toBe(true);
+    expect(await findByText("Can't play")).toBeTruthy();
+    // Nothing to press, and nothing offered: the player has refused this video, so
+    // play/pause is absent rather than disabled — the same rule the card applies to
+    // previous and next, and the reason Stop is the one control that never goes away.
+    expect(queryByLabelText('Play')).toBeNull();
+    expect(queryByLabelText('Pause')).toBeNull();
   });
 
   it('leaves the reason on the row after moving past it', async () => {
@@ -166,7 +168,7 @@ describe('Music', () => {
     await fireEvent.click(await findByText('Queue'));
 
     reportPlayerError(100);
-    await fireEvent.click(await findByLabelText('Next'));
+    await fireEvent.click(await findByLabelText('Next track'));
     expect(await findByText(/Unavailable — removed or private/)).toBeTruthy();
   });
 

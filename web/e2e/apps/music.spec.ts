@@ -43,6 +43,13 @@ const PLAYLIST = 'PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI';
 const PLAYER = 'iframe[title="gPhone music player"]';
 
 /**
+ * Mirrors `state/display.ts` rather than importing it — a Playwright spec drives the built
+ * page rather than app source, and `display.spec.ts` and `notifications.spec.ts` both
+ * establish the same convention for this number.
+ */
+const PHONE_WIDTH = 400;
+
+/**
  * A document that speaks the player's half of the IFrame API wire format, and nothing else.
  *
  * It records every command posted into it and can post a state report back out, which is
@@ -176,6 +183,16 @@ const queue = async (page: Page, value: string): Promise<void> => {
 const loadedVideo = async (page: Page): Promise<string> =>
   new URL((await page.locator(PLAYER).getAttribute('src')) ?? 'https://x/').pathname;
 
+/**
+ * An 8x8 solid red PNG, served in place of every YouTube thumbnail.
+ *
+ * Red because the tint has to be *visibly* the artwork's colour rather than the phone's
+ * own blue, and a flat colour because the assertion is about the wiring, not about the
+ * quantizer — `lib/dominantColor.test.ts` owns the picking.
+ */
+const STUB_ARTWORK =
+  'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4oaGBFTEMLQkAgl1GAWqNFmsAAAAASUVORK5CYII=';
+
 /** Waits out the load handshake, so a test that asserts on commands starts from a known point. */
 const settleHandshake = async (page: Page): Promise<void> => {
   await expect.poll(async () => (await received(page))[0]?.event).toBe('listening');
@@ -187,6 +204,20 @@ test.describe('Music', () => {
     // that no request leaves the machine, not that the one we expect is intercepted.
     await page.route(/https:\/\/www\.youtube(-nocookie)?\.com\//, (route) =>
       route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: STUB_PLAYER })
+    );
+    // The artwork host is a *third* origin and it was the one request still leaving the
+    // machine — the now-playing card draws `img.youtube.com` and, since MICA-111's tint,
+    // reads the pixels back to seed the card's colours. Stubbed here with a solid red
+    // square and a permissive CORS header, so the tint is exercised for real and is the
+    // same colour on every run. Without the header the canvas is tainted and the card
+    // simply stays untinted, which is the in-game degrade path rather than a failure.
+    await page.route(/https:\/\/img\.youtube\.com\//, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'image/png',
+        headers: { 'access-control-allow-origin': '*' },
+        body: Buffer.from(STUB_ARTWORK, 'base64')
+      })
     );
     // `?app=` boots straight into the app (see `devHarness.ts`), which is the whole of what
     // these tests need from the launcher.
@@ -341,7 +372,7 @@ test.describe('Music', () => {
     await paste(page, VIDEO);
     await settleHandshake(page);
 
-    await page.locator('button[aria-label="Stop"]').click();
+    await page.locator('button[aria-label="Stop music"]').click();
     await expectNoPlayer(page);
   });
 
@@ -389,7 +420,7 @@ test.describe('Music', () => {
 
         // The status word first: a refused track must never read as "Playing", and the
         // reason line under it is the one line on the screen that explains the silence.
-        await expect(page.getByText("Can't play this", { exact: true })).toBeVisible();
+        await expect(page.getByText("Can't play", { exact: true })).toBeVisible();
         await expect(page.getByText(`${says} · skip or remove it`)).toBeVisible();
       });
     }
@@ -400,7 +431,7 @@ test.describe('Music', () => {
       await paste(page, VIDEO);
       await settleHandshake(page);
       await errorFrom(page, 101, 'infoDelivery');
-      await expect(page.getByText("Can't play this", { exact: true })).toBeVisible();
+      await expect(page.getByText("Can't play", { exact: true })).toBeVisible();
     });
 
     /**
@@ -422,11 +453,11 @@ test.describe('Music', () => {
       await queue(page, OTHER_VIDEO);
 
       await errorFrom(page, 101);
-      await expect(page.getByText("Can't play this", { exact: true })).toBeVisible();
+      await expect(page.getByText("Can't play", { exact: true })).toBeVisible();
       expect(await loadedVideo(page)).toBe(`/embed/${VIDEO}`);
 
       await report(page, 0);
-      await expect(page.getByText("Can't play this", { exact: true })).toBeVisible();
+      await expect(page.getByText("Can't play", { exact: true })).toBeVisible();
       expect(await loadedVideo(page)).toBe(`/embed/${VIDEO}`);
 
       // Counted rather than compared: entering the error state does send a `pauseVideo`,
@@ -446,12 +477,12 @@ test.describe('Music', () => {
       // Two places while it is loaded: the now-playing card and the row.
       await expect(page.getByText(/Can't be played outside YouTube/)).toHaveCount(2);
 
-      await page.locator('button[aria-label="Next"]').click();
+      await page.locator('button[aria-label="Next track"]').click();
       await expect.poll(async () => loadedVideo(page)).toBe(`/embed/${OTHER_VIDEO}`);
 
       // The card has moved on and the row has not: the list still says which track is bad,
       // which is the whole reason the failure is recorded twice (`reportPlayerError`).
-      await expect(page.getByText("Can't play this", { exact: true })).toHaveCount(0);
+      await expect(page.getByText("Can't play", { exact: true })).toHaveCount(0);
       await expect(page.getByText(/Can't be played outside YouTube/)).toHaveCount(1);
     });
 
@@ -460,13 +491,13 @@ test.describe('Music', () => {
       await settleHandshake(page);
       await errorFrom(page, 101);
 
-      // In the app the transport stays in place and is disabled — the other buttons around
-      // it (skip, remove) are still the point of the screen.
-      await expect(page.locator('button[aria-label="Play"]')).toBeDisabled();
+      // Absent rather than disabled, and now in both places: `resumeMusic` is a no-op on a
+      // refused track, and a button that does nothing is worse than one not offered. The
+      // app used to disable it instead, which was the two cards disagreeing about the same
+      // state — they are one component now (`sdk/ui/NowPlayingCard.svelte`). Stop is beside
+      // it and still works, which is what the card is for.
+      await expect(page.locator('button[aria-label="Play"]')).toHaveCount(0);
 
-      // In the shade it is absent rather than disabled: `resumeMusic` is a no-op on a
-      // refused track, and a button that does nothing is worse than one not offered. Stop
-      // is beside it and still works, which is what the row is for.
       await page.getByRole('button', { name: 'Open notification shade' }).click();
       const row = page.getByRole('group', { name: 'Now playing' });
       await expect(row).toBeVisible();
@@ -594,5 +625,109 @@ test.describe('Music', () => {
       window.postMessage({ action: 'setVisible', data: true }, '*');
     });
     await expect(page.getByText('Playing', { exact: true })).toBeVisible();
+  });
+
+  /**
+   * Where the status bar's music glyph lives, and the measurement that lets it live there
+   * (MICA-111).
+   *
+   * It sits in the left-hand notification tray rather than beside bluetooth, signal and
+   * battery on the right. The shade presents now-playing as a persistent notification —
+   * non-dismissible, untouched by Clear All — so an icon for it belongs where notification
+   * icons are; on the right it read as a hardware state, and somebody who cleared their
+   * notifications while music kept playing went looking for it on the left and found
+   * nothing.
+   *
+   * What made the move affordable is that it **takes one of the tray's capped slots**
+   * instead of adding a fourth glyph. `STATUS_BAR_MAX_NOTIFICATION_ICONS` is 3 and its
+   * worst case clears the hole-punch camera by 3.8px, so a fourth glyph of any kind is
+   * inside the hole. `PhoneFrame.test.ts` asserts the slot arithmetic, and
+   * `notifications.spec.ts` measures the row against the cutout for real — but with
+   * nothing playing, so it never sees the case one of those three glyphs is this one.
+   * This is that case, measured rather than reasoned about, because jsdom has no layout
+   * and the whole argument for the move is geometry.
+   */
+  test('puts the music glyph in the notification tray without widening it', async ({ page }) => {
+    const tray = page.getByTestId('status-notification-icons');
+    // The browser mocks answer `getUnreadCounts` with four apps, one of which (Blabber) is
+    // an uninstalled add-on the status bar cannot resolve a manifest for — so three icons
+    // and no chip, exactly at the cap. Polled rather than asserted outright: the shade
+    // fetches these on mount, on the mock transport's own timer.
+    await expect.poll(async () => tray.evaluate((el) => el.children.length)).toBe(3);
+
+    await paste(page, VIDEO);
+    await settleHandshake(page);
+
+    const indicator = page.getByTestId('status-music-indicator');
+    await expect(indicator).toBeVisible();
+
+    // In the tray, at its head, and displacing rather than extending: still three glyphs,
+    // now plus the chip that stands for the notification it pushed out. An ongoing thing
+    // has no arrival time to be sorted by, so it takes the one slot that does not move as
+    // notifications come and go.
+    await expect(tray).toContainText('+1');
+    await expect.poll(async () => tray.evaluate((el) => el.children.length)).toBe(4);
+    expect(
+      await tray.evaluate((el) =>
+        el.firstElementChild?.matches('[data-testid="status-music-indicator"]')
+      )
+    ).toBe(true);
+
+    // And it is on the left, not the right — the bug report in one assertion.
+    expect(
+      await indicator.evaluate((el) => {
+        const bar = el.closest('button');
+        return bar ? bar.children[0].contains(el) : null;
+      })
+    ).toBe(true);
+
+    // The geometry, in the phone's own design px: the frame is drawn at whatever zoom the
+    // window allows, so on-screen numbers mean nothing until the scale is divided back out
+    // (`state/display.ts`). This is the assertion that would fail if the glyph had been
+    // added to the row instead of placed in it.
+    const frame = page.getByTestId('phone-frame');
+    await expect
+      .poll(async () => frame.evaluate((el) => el.getAnimations().length), { timeout: 5000 })
+      .toBe(0);
+    const frameBox = await frame.boundingBox();
+    const trayBox = await tray.boundingBox();
+    const cutoutBox = await page.getByTestId('camera-cutout').boundingBox();
+    if (!frameBox || !trayBox || !cutoutBox) throw new Error('the status bar is not on screen');
+
+    const scale = frameBox.width / PHONE_WIDTH;
+    const rowEnd = (trayBox.x + trayBox.width - frameBox.x) / scale;
+    const cutoutStart = (cutoutBox.x - frameBox.x) / scale;
+
+    // Reported, not just asserted. The number is the point of this test — a green tick says
+    // the row fits, and what anyone maintaining the cap needs to know is by how much.
+    console.log(
+      `[MICA-111] notification row with music playing: ends at ${rowEnd.toFixed(1)}px, ` +
+        `cutout starts at ${cutoutStart.toFixed(1)}px, clearance ${(cutoutStart - rowEnd).toFixed(1)}px`
+    );
+
+    expect(rowEnd, 'the notification row runs into the camera cutout').toBeLessThan(cutoutStart);
+    // The cutout really is where the derivation says it is — one that had moved would make
+    // the assertion above pass for a reason that has nothing to do with the row.
+    expect(cutoutStart).toBeCloseTo(PHONE_WIDTH / 2 - 12, 0);
+
+    /**
+     * Written down before the first run, so that run checks a prediction rather than
+     * establishing a fact — and so a surprise is legible as one.
+     *
+     * The configuration here is structurally identical to the one `notifications.spec.ts`
+     * already measures at roughly 174px: three 14px glyphs, three 4px gaps, and a
+     * two-glyph chip. The only substitution is *which* three glyphs, and the music glyph
+     * is the Music app's own `Icon.svelte` at the same `h-3.5 w-3.5` as the rest. So this
+     * should land at ~174px, moving only with the width of the clock, which changes with
+     * the wall-clock time the run happens at.
+     *
+     * It cannot reach the 183.7px worst case in `state/display.ts`: that figure is the
+     * widest clock *and* a three-glyph `+10` chip, and this case has a two-glyph one. A
+     * reading materially above ~178px means a glyph is wider than the class says, which
+     * would be the finding rather than the failure.
+     *
+     * The bound is 187.5px and is asserted above; this is the expectation, not the gate.
+     */
+    expect(rowEnd, 'wider than the predicted ~174px — see the note below').toBeLessThan(180);
   });
 });

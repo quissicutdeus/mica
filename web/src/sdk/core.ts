@@ -13,6 +13,15 @@
  * `useCaptureZoomBoost` is here for the same reason, not because it needs the transport:
  * it is a lever on the shell's own rendering with no legitimate reason for a sandboxed
  * add-on to pull it.
+ *
+ * `NowPlayingCard` is the third kind: not dangerous, not general. It is the transport for
+ * the phone's *own* player, drawn by the Music app and by the notification shade, and it
+ * is the reason Music is `core: true` at all — the player is hardware. Putting it on the
+ * public `@gphone/sdk` would make a screen-sized component with one subject into an API
+ * commitment to every add-on; putting it here keeps it reachable by the two things that
+ * draw it. It grants nothing on its own: it is presentational, and the stores it renders
+ * from are `useMusic()`'s, which is permission-gated as it always was.
  */
 export { useNuiBridge } from './useNuiBridge';
 export { useCaptureZoomBoost } from './useCaptureZoomBoost';
+export { default as NowPlayingCard } from './ui/NowPlayingCard.svelte';

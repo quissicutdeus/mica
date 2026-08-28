@@ -2,26 +2,22 @@
   import {
     Button,
     EmptyState,
-    PauseIcon,
-    PlayIcon,
-    RepeatIcon,
-    RepeatOneIcon,
     Screen,
-    ShuffleIcon,
     SpeakerIcon,
     SpeakerOffIcon,
-    SkipNextIcon,
-    SkipPreviousIcon,
-    StopIcon,
     TrashIcon,
     UsersIcon,
     useAppLevels,
     useMusic,
-    formatDuration,
+    useTheme,
     type AppProps,
     type NearbyBroadcast,
     type QueueEntry
   } from '@gphone/sdk';
+  // The now-playing card is `core:`-only rather than public SDK — it draws the phone's own
+  // player, which is the same reason this app is `core: true`. `shell/NowPlaying.svelte`
+  // draws the identical component in its compact mode; see the component for why.
+  import { NowPlayingCard } from '@gphone/sdk/core';
 
   /**
    * MICA-111 phase 3 — a controller over the shell's queue, and nothing more.
@@ -49,16 +45,17 @@
 
   let { onback }: AppProps = $props();
 
+  /**
+   * Kept whole as well as destructured: `NowPlayingCard` takes the store bundle itself, so
+   * the transport is wired by handing it over rather than by threading fifteen props
+   * through. The shell's shade card is handed the same shape out of `shell/state/music`.
+   */
+  const music = useMusic();
+
   const {
     musicQueue,
     musicIndex,
-    musicNowPlaying,
-    musicError,
-    musicPosition,
-    musicStatus,
     musicVolume,
-    musicRepeat,
-    musicShuffle,
     canPlay,
     thumbnailUrlFor,
     describeMusicError,
@@ -67,14 +64,6 @@
     playQueueIndex,
     removeFromQueue,
     clearQueue,
-    nextTrack,
-    previousTrack,
-    seekMusic,
-    cycleRepeat,
-    toggleShuffle,
-    pauseMusic,
-    resumeMusic,
-    stopMusic,
     setMusicVolume,
     nearbyBroadcasts,
     audibleBroadcasts,
@@ -83,7 +72,15 @@
     muteAllNearby,
     toggleBroadcasterMute,
     setMuteAllNearby
-  } = useMusic();
+  } = music;
+
+  /**
+   * Only for which of the two generated schemes the card's album-art tint is built from —
+   * the card asks for a mode rather than reading the theme itself, because `sdk/ui` may not
+   * import `shell/` and a hook called inside it would resolve against whichever app was
+   * rendering. Hence `theme` on the manifest.
+   */
+  const { themeStore } = useTheme();
 
   // No internal levels — the paste field, the transport, the queue and the volume are one
   // screen — but the call is still what claims the physical Back key for this app. Without
@@ -98,40 +95,6 @@
 
   let link = $state('');
   let error = $state('');
-
-  const isPlaying = $derived($musicStatus === 'playing' || $musicStatus === 'loading');
-  const current = $derived($musicIndex >= 0 ? ($musicQueue[$musicIndex] ?? null) : null);
-
-  const failure = $derived($musicError);
-
-  /**
-   * The scrubber's own value while a finger is down on it.
-   *
-   * `null` when nobody is dragging, so the control follows the player. Without it every
-   * position report during a drag would yank the handle back out from under the person.
-   */
-  let scrub = $state<number | null>(null);
-  const scrubAt = $derived(scrub ?? $musicPosition.current);
-
-  /**
-   * No duration, no scrubber — and that is not the same as a zero-length track.
-   *
-   * The player reports `0` until it knows, and forever for a live stream. Drawing a slider
-   * that cannot move would be worse than drawing none.
-   */
-  const seekable = $derived($musicPosition.duration > 0 && $musicStatus !== 'error');
-
-  const statusLabel = $derived(
-    $musicStatus === 'error'
-      ? "Can't play this"
-      : $musicStatus === 'loading'
-        ? 'Starting…'
-        : $musicStatus === 'playing'
-          ? 'Playing'
-          : $musicStatus === 'paused'
-            ? 'Paused'
-            : 'Stopped'
-  );
 
   /**
    * What a row is called.
@@ -175,39 +138,6 @@
   const hiddenId = (entry: QueueEntry): string | null =>
     entry.title && entry.videoId ? entry.videoId : null;
 
-  const nowTitle = $derived.by(() => {
-    if (!current) return '';
-    return $musicNowPlaying?.title ?? rowTitle(current);
-  });
-
-  /**
-   * The second line of the now-playing card, which exists mostly for playlists.
-   *
-   * A playlist row is one queue entry and many tracks — the embed advances inside it and
-   * the phone does not choose what plays next — so saying where in the list it has got to
-   * is the difference between a queue a person can follow and one that appears stuck.
-   */
-  const nowSub = $derived.by(() => {
-    // Same rule as `rowSub`, and it has to be the same rule: two surfaces disagreeing
-    // about when an id is worth showing is only a smaller version of showing it twice.
-    if (!current?.playlistId) return null;
-    const info = $musicNowPlaying;
-    if (info && info.playlistIndex !== null && info.playlistCount !== null) {
-      return `Playlist · ${info.playlistIndex + 1} of ${info.playlistCount}`;
-    }
-    return `Playlist ${current.playlistId}`;
-  });
-
-  const nowArt = $derived(thumbnailUrlFor($musicNowPlaying?.videoId ?? current?.videoId ?? null));
-
-  const repeatLabel = $derived(
-    $musicRepeat === 'off'
-      ? 'Repeat off'
-      : $musicRepeat === 'all'
-        ? 'Repeat queue'
-        : 'Repeat one track'
-  );
-
   /** Both buttons parse first and report in their own words; see `canPlay` in the SDK. */
   const take = (add: (input: string) => void) => {
     const pasted = link.trim();
@@ -219,11 +149,6 @@
     add(pasted);
     link = '';
     error = '';
-  };
-
-  const toggle = () => {
-    if (isPlaying) pauseMusic();
-    else resumeMusic();
   };
 
   /**
@@ -301,138 +226,13 @@
     </div>
 
     {#if $musicQueue.length}
+      <!-- The now-playing card, and the notification shade draws the same component in its
+           compact mode (`shell/NowPlaying.svelte`). It used to be forty lines of markup
+           here and a smaller, differently-worded relative of it there; one of the two is
+           where shuffle, repeat and the artwork lived, and which one you got depended on
+           which surface you happened to be looking at. -->
       <div class="px-4">
-        <div class="bg-surface-container-low rounded-lg p-3">
-          <div class="flex items-center gap-3">
-            {#if nowArt}
-              <!-- A still frame, not a player: a plain image on YouTube's thumbnail host,
-                   which the embed beside it was already talking to. A failed load leaves
-                   the tile's own background, which is why it has one. -->
-              <img
-                src={nowArt}
-                alt=""
-                class="bg-surface-container-high h-10 w-16 shrink-0 rounded-md object-cover"
-              />
-            {/if}
-            <div class="min-w-0 flex-1">
-              <p class="text-body-small text-on-surface-variant flex items-center gap-1">
-                <span>{statusLabel}</span>
-                <!-- The disclosure, beside the status word rather than only in the
-                     standing line at the bottom of the screen. That line is below the
-                     volume slider and is off-screen the moment the queue is more than a
-                     few rows long — which is exactly when somebody has been playing for a
-                     while and is least likely to remember that a street can hear them.
-                     Shown only while sound is actually coming out: a paused phone is not
-                     broadcasting, and saying so then would be crying wolf. -->
-                {#if isPlaying}
-                  <span
-                    class="text-label-small text-on-surface-variant flex shrink-0 items-center gap-1"
-                  >
-                    <UsersIcon class="size-icon-sm" />
-                    Out loud
-                  </span>
-                {/if}
-              </p>
-              <p class="text-body-medium text-on-surface truncate">
-                {nowTitle || 'Nothing loaded'}
-              </p>
-              {#if failure}
-                <!-- Not truncated: this is the one line on the screen that explains why
-                     nothing is happening, and a person who cannot read all of it is back
-                     to guessing. -->
-                <p class="text-body-small text-error">
-                  {describeMusicError(failure.reason)} · skip or remove it
-                </p>
-                <!-- The id, and only on a failure, and only when the name above is a title
-                     rather than the id already. See `hiddenId`: this is the row somebody
-                     pastes into a bug report. -->
-                {#if current && hiddenId(current)}
-                  <p class="text-label-small text-on-surface-variant truncate font-mono">
-                    {hiddenId(current)}
-                  </p>
-                {/if}
-              {:else if nowSub}
-                <p class="text-label-small text-on-surface-variant truncate">{nowSub}</p>
-              {/if}
-            </div>
-          </div>
-
-          {#if seekable}
-            <div class="mt-3">
-              <input
-                type="range"
-                min="0"
-                max={$musicPosition.duration}
-                value={scrubAt}
-                aria-label="Seek"
-                aria-valuetext={formatDuration(scrubAt)}
-                oninput={(e) => (scrub = Number(e.currentTarget.value))}
-                onchange={(e) => {
-                  seekMusic(Number(e.currentTarget.value));
-                  scrub = null;
-                }}
-                class="bg-surface h-1 w-full cursor-pointer appearance-none rounded-lg accent-blue-500"
-              />
-              <div class="text-label-small text-on-surface-variant mt-1 flex justify-between">
-                <span>{formatDuration(scrubAt)}</span>
-                <span>{formatDuration($musicPosition.duration)}</span>
-              </div>
-            </div>
-          {/if}
-
-          <div class="mt-3 flex items-center justify-between">
-            <div class="flex items-center gap-1">
-              <Button
-                onclick={toggleShuffle}
-                variant="icon"
-                aria-pressed={$musicShuffle}
-                aria-label="Shuffle"
-                class={$musicShuffle ? 'text-on-primary-container bg-primary-container' : ''}
-              >
-                <ShuffleIcon class="h-5 w-5" />
-              </Button>
-              <Button
-                onclick={cycleRepeat}
-                variant="icon"
-                aria-label={repeatLabel}
-                class={$musicRepeat === 'off'
-                  ? ''
-                  : 'text-on-primary-container bg-primary-container'}
-              >
-                {#if $musicRepeat === 'one'}
-                  <RepeatOneIcon class="h-5 w-5" />
-                {:else}
-                  <RepeatIcon class="h-5 w-5" />
-                {/if}
-              </Button>
-            </div>
-
-            <div class="flex items-center gap-1">
-              <Button onclick={previousTrack} variant="icon" aria-label="Previous">
-                <SkipPreviousIcon class="h-6 w-6" />
-              </Button>
-              <Button
-                onclick={toggle}
-                variant="icon"
-                disabled={$musicStatus === 'error'}
-                class="bg-primary-container text-on-primary-container"
-                aria-label={isPlaying ? 'Pause' : 'Play'}
-              >
-                {#if isPlaying}
-                  <PauseIcon class="h-6 w-6" />
-                {:else}
-                  <PlayIcon class="h-6 w-6" />
-                {/if}
-              </Button>
-              <Button onclick={nextTrack} variant="icon" aria-label="Next">
-                <SkipNextIcon class="h-6 w-6" />
-              </Button>
-              <Button onclick={stopMusic} variant="icon" aria-label="Stop">
-                <StopIcon class="h-6 w-6" />
-              </Button>
-            </div>
-          </div>
-        </div>
+        <NowPlayingCard {music} mode={$themeStore.mode} />
       </div>
 
       <div class="mt-3 flex items-center justify-between px-4">

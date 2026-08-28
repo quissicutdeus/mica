@@ -98,13 +98,40 @@
    * The overflow chip is not itself in the budget when nothing overflows: at exactly the
    * cap there is no chip, so the row is shorter than the number was chosen for. That is the
    * right way round — the tight case is the one with the chip.
+   *
+   * **Music takes one of those slots rather than adding a fourth glyph (MICA-111).**
+   *
+   * The cap is a pixel budget with 3.8px of headroom, so "one more icon, only sometimes"
+   * is not available at any price — a fourth glyph ends inside the hole-punch camera. What
+   * is available is a slot: the row still draws at most `STATUS_BAR_MAX_NOTIFICATION_ICONS`
+   * children before the chip, so every measurement in `state/display.ts` holds unchanged
+   * and there is nothing to re-derive.
+   *
+   * **Music is never the hidden one.** It is subtracted before the slice rather than
+   * competing inside it, so what overflows into `+N` is always an unread app. A glyph
+   * whose entire job is to say "this is still making noise while you are elsewhere" cannot
+   * be the thing that gets counted instead of drawn; an unread app can, because the shade
+   * is one pull away and the count says how many are down there.
    */
+  const musicSlots = $derived($musicSource ? 1 : 0);
   const visibleNotificationApps = $derived(
-    pendingNotificationApps.slice(0, STATUS_BAR_MAX_NOTIFICATION_ICONS)
+    pendingNotificationApps.slice(0, STATUS_BAR_MAX_NOTIFICATION_ICONS - musicSlots)
   );
   const hiddenNotificationCount = $derived(
     pendingNotificationApps.length - visibleNotificationApps.length
   );
+
+  /**
+   * The Music app's own glyph, taken from the registry the way every other tray entry
+   * takes its own — the owner asked for "the app icon", and this row is per-app icons.
+   *
+   * Read through `$appRegistryStore` rather than imported: the shell may not import out of
+   * `apps/` (`sdk/boundary.test.ts`), and the registry is the sanctioned route it already
+   * uses two derivations above. `MusicNoteIcon` stays as the fallback for a registry that
+   * cannot answer — music is `core: true` so that should be unreachable, but a silent
+   * blank is the one outcome this indicator must not have.
+   */
+  const musicIcon = $derived($appRegistryStore.find((app) => app.id === 'music')?.icon);
 
   /**
    * Live pull-down progress, whether the shade is settled or mid-drag — mirrors
@@ -334,7 +361,7 @@
               transition:fade={{ duration: 150 }}>{$formattedDate}</span
             >
           {/if}
-          {#if pendingNotificationApps.length > 0}
+          {#if pendingNotificationApps.length > 0 || $musicSource}
             <!-- Monochrome, matching the status bar's own `text-on-surface` — an app's
                  own tile color (`AppIcon`'s `bg-*` background) would be too busy at this
                  size and would drift from the rest of the bar the moment a wallpaper
@@ -361,6 +388,53 @@
               class="flex items-center gap-1"
               style="opacity: {pendingIconsOpacity}"
             >
+              <!-- Music, and it is deliberately first (MICA-111).
+
+                   The icons after it are newest-first, which is an ordering music has no
+                   place in: it is ongoing rather than unread, so it has no arrival time to
+                   be sorted by and it would otherwise drift leftward through the row as
+                   older notifications cleared. Pinning it to the head gives it the one
+                   property the others cannot have — it is in the same place every time you
+                   look, which is what "still playing" needs to be readable at a glance.
+                   Adjacency to the clock says the same thing a second way: both are
+                   continuous state, and the icons past them are events.
+
+                   It fades with the rest of the row as the shade opens, unlike the battery
+                   and signal it used to sit beside. That is the tray's rule and it applies
+                   here for the tray's reason: what these icons point at is what the shade
+                   is about to show, and the shade's own now-playing card is a fuller
+                   version of this glyph exactly as the notification list is of the others.
+
+                   Shown whenever anything is loaded, paused included — `$musicSource` and
+                   never `$musicStatus === 'playing'`. The point of the glyph is that
+                   somebody who put the phone down can tell it still has music in hand, and
+                   where to go about it; a paused track is exactly that case.
+
+                   Three colours for three states, unchanged by the move. Playing inherits
+                   the bar's `text-on-surface`; paused is `text-on-surface-variant`, the
+                   "same text, quieter" role and never an opacity modifier on a themed role
+                   (§6); a refused track is `text-error` rather than dimmed, because dimmed
+                   is precisely what paused looks like and a failure that renders as a
+                   pause leaves somebody waiting for audio that is never coming. The charge
+                   percentage across the bar already turns `text-error` at 20%, so that is
+                   the bar's existing idiom for "something is wrong" and not a new one. -->
+              {#if $musicSource}
+                <span
+                  data-testid="status-music-indicator"
+                  class="flex items-center"
+                  class:text-on-surface-variant={$musicStatus === 'paused'}
+                  class:text-error={$musicStatus === 'error'}
+                >
+                  {#if typeof musicIcon === 'string'}
+                    <img src={musicIcon} alt="" class="h-3.5 w-3.5 object-contain" />
+                  {:else if musicIcon}
+                    {@const MusicAppIcon = musicIcon}
+                    <MusicAppIcon class="h-3.5 w-3.5" />
+                  {:else}
+                    <MusicNoteIcon class="h-3.5 w-3.5" />
+                  {/if}
+                </span>
+              {/if}
               {#each visibleNotificationApps as app (app.id)}
                 {#if typeof app.icon === 'string'}
                   <img src={app.icon} alt="" class="h-3.5 w-3.5 object-contain" />
@@ -382,55 +456,6 @@
           {/if}
         </div>
         <div class="flex items-center gap-2">
-          <!-- Music (MICA-111 phase 4).
-
-               **In the right-hand group, not the left, and that is a measurement rather
-               than a preference.** The left run — clock, then the per-app notification
-               icons — is the one `STATUS_BAR_MAX_NOTIFICATION_ICONS` in `state/display.ts`
-               budgets, and its worst case already ends at 183.7px with 3.8px to spare
-               before the hole-punch camera at 187.5px. There is no room there for a
-               fourth glyph of any kind; that comment says to treat the row as full, and
-               this does.
-
-               The right group runs leftward from the content edge at 368px and stops
-               where the cutout ends, at 212px — 156px of run. Its worst case, everything
-               on at once, is: battery icon 24 (`h-3 w-6`) + `gap-1.5` 6 + "100%" at
-               `text-body-small` (12px, ~33px) + `gap-2` 8 + signal 16 (`size-icon-sm`) +
-               `gap-2` 8 + bluetooth 14 = 109px, ending at 259px. This glyph is 16px plus
-               its own `gap-2`, so 24px more, ending at 235px and clearing the cutout by
-               23px. Arithmetic rather than a browser measurement, unlike the left run's —
-               the margin here is six times the whole quantity that had to be measured
-               there, so it does not turn on a sub-pixel.
-
-               It is device state, so it belongs with the device-state glyphs on this side
-               rather than with the notification icons opposite, and it does not fade as
-               the shade opens the way those do — the shade's own now-playing row is a
-               control, not a repeat of this, and the battery and signal beside it stay up
-               too.
-
-               Shown whenever anything is loaded, paused included: the point of the glyph
-               is that a person who put the phone down can tell the phone still has music
-               in hand, and where to go about it.
-
-               Three states, three colours, because two of them would otherwise collide.
-               Playing inherits the bar's own `text-on-surface`. Paused is
-               `text-on-surface-variant` — the "quieter, still legible" role the date
-               beside the clock uses, and not an opacity modifier on a themed role (§6).
-               A track the player refused is `text-error` rather than dimmed, because
-               dimmed is precisely what paused looks like, and a failure that renders as a
-               pause leaves a person waiting for audio that is never coming. The charge
-               percentage two elements along already turns `text-error` at 20%, so this is
-               the bar's existing idiom for "something is wrong" and not a new one. -->
-          {#if $musicSource}
-            <span
-              data-testid="status-music-indicator"
-              class="flex items-center"
-              class:text-on-surface-variant={$musicStatus === 'paused'}
-              class:text-error={$musicStatus === 'error'}
-            >
-              <MusicNoteIcon class="size-icon-sm" />
-            </span>
-          {/if}
           {#if $bluetoothEnabled}
             <BluetoothIcon class="h-3.5 w-3.5 opacity-90" />
           {/if}

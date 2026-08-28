@@ -6,7 +6,12 @@ export default defineApp({
   tile: { bg: 'bg-red-700' },
   icon: Icon,
   description: 'Play music from a YouTube link',
-  permissions: ['music'],
+  /**
+   * `theme` is for one thing: the now-playing card's album-art tint is built from an M3
+   * seed, and which of the two generated schemes it resolves to depends on whether the
+   * phone is in light or dark mode. The app reads the mode and hands it to the card.
+   */
+  permissions: ['music', 'theme'],
   /**
    * `core: true`, and not for the usual "ships in the box" reason alone.
    *

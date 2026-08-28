@@ -24,7 +24,15 @@ const PORT = process.env.E2E_PORT || 4173;
 const THEME_SPECS = [
   '**/theme-modes.spec.ts',
   '**/settings-persistence.spec.ts',
-  '**/a11y.spec.ts'
+  '**/a11y.spec.ts',
+  // The album-art tint on the now-playing card (MICA-111) reads a `--color-*` value back
+  // out of the DOM. It is a spec of its own rather than a test inside `music.spec.ts` for
+  // exactly this reason: every entry here runs a whole file twice.
+  //
+  // (No apostrophes in this comment, deliberately. `lib/e2eThemeCoverage.test.ts` reads
+  // this array out of the file with a naive single-quote scan, so one would look like the
+  // start of a glob and swallow the entry below it.)
+  '**/music-artwork.spec.ts'
 ];
 
 export default defineConfig({

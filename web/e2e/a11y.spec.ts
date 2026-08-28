@@ -247,6 +247,24 @@ test('Music has no accessibility violations with a track loaded, in the app and 
     })
   );
 
+  // The artwork host, for the same reason and with the same consequence if it were left
+  // out: since MICA-111 the now-playing card re-themes itself from the cover's dominant
+  // colour, so an unstubbed thumbnail would mean this sweep measured a different palette
+  // depending on whether YouTube answered — and axe's contrast rule is exactly the rule
+  // that would notice. A solid red square, with the CORS header the canvas read needs, so
+  // the card is tinted on every run and the M3 roles are what is being measured.
+  await page.route(/https:\/\/img\.youtube\.com\//, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'image/png',
+      headers: { 'access-control-allow-origin': '*' },
+      body: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4oaGBFTEMLQkAgl1GAWqNFmsAAAAASUVORK5CYII=',
+        'base64'
+      )
+    })
+  );
+
   const frame = page.getByTestId('phone-frame');
   const settled = async () =>
     expect
@@ -261,7 +279,7 @@ test('Music has no accessibility violations with a track loaded, in the app and 
     const field = page.getByLabel('YouTube link');
     await field.fill('dQw4w9WgXcQ');
     await field.press('Enter');
-    await expect(page.locator('button[aria-label="Stop"]')).toBeVisible();
+    await expect(page.locator('button[aria-label="Stop music"]')).toBeVisible();
     await settled();
   };
 
@@ -289,7 +307,7 @@ test('Music has no accessibility violations with a track loaded, in the app and 
     .frameLocator('iframe[title="gPhone music player"]')
     .locator('body')
     .evaluate(() => (window as unknown as { __error: (code: number) => void }).__error(101));
-  await expect(page.getByText("Can't play this", { exact: true })).toBeVisible();
+  await expect(page.getByText("Can't play", { exact: true })).toBeVisible();
   await settled();
 
   const failed = await scan(page, 'music');

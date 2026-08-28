@@ -23,6 +23,13 @@
 .accent-emerald-500 {
   accent-color: #10b981;
 }
+/* The themed one. Every other range input in the tree is `accent-blue-500`, a literal that
+   predates the token set; this exists for the now-playing card, whose whole role set is
+   re-seeded from the album art (MICA-111) — a hard blue thumb on a card tinted red is
+   the one part of it that would not follow. */
+.accent-primary {
+  accent-color: var(--color-primary);
+}
 .active\:bg-gray-600:active {
   background-color: #4b5563;
 }

@@ -61,6 +61,14 @@ export const SHADE_DRAG_REVEAL_DISTANCE = PHONE_DESIGN_HEIGHT;
  * clears by 3.8px**. It clears, which is why 3 is the cap; but the headroom is under four
  * pixels, so treat this row as full. A fourth icon ends past 200px and is inside the hole.
  *
+ * One of the three is spoken for while music is loaded (MICA-111). The status bar's music
+ * glyph moved out of the right-hand device-state group and into this row, because the shade
+ * presents now-playing as a persistent notification and an icon for a notification belongs
+ * with the notification icons. It **occupies a slot** rather than extending the row — at
+ * three glyphs and a chip the arithmetic above is untouched, which is the only reason the
+ * move was affordable at 3.8px of headroom. It is placed first and is never the one the
+ * `+N` chip stands in for; `PhoneFrame.svelte` argues both.
+ *
  * It was 5, chosen the same way but without accounting for the icons' own gaps: five icons
  * end at exactly 188px, which is why the fifth was reported half-swallowed by the cutout.
  * A fourth icon would fit on its own, but not alongside the chip that has to sit after it,

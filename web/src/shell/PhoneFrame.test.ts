@@ -274,7 +274,11 @@ describe('status bar notification icons', () => {
   beforeEach(async () => {
     charge.set(100);
     const { unreadCounts } = await import('../services/notifications');
+    const { resetMusicForTest } = await import('./state/music');
     unreadCounts.set({});
+    // Music occupies one of these slots when it is loaded (MICA-111), so a track left
+    // playing by an earlier suite would silently change every count below.
+    resetMusicForTest();
   });
 
   /** Real registry ids, so the manifest lookup in `PhoneFrame` actually resolves. */
@@ -324,13 +328,19 @@ describe('status bar notification icons', () => {
     // The cap is a pixel budget, so assert it as one rather than as a magic number: the
     // widest the row can get must still land left of the cutout's own edge. Kept in the
     // same units the classes are written in — see `state/display.ts` for the derivation.
+    //
+    // The music indicator is inside this budget rather than beside it (MICA-111): it
+    // takes one of the cap's slots and is drawn at the same `h-3.5 w-3.5` as an app icon,
+    // so the worst case is still `cap` glyphs and a chip whether or not a track is loaded,
+    // and this arithmetic is unchanged by the move. `takes a capped slot rather than
+    // adding a fourth glyph` below is what holds the component to that.
     const { STATUS_BAR_MAX_NOTIFICATION_ICONS, PHONE_WIDTH } = await import('./state/display');
 
     const BAR_PADDING_LEFT = 32; // px-8
     const CLOCK_WIDTH = 62; // "12:34 AM" at text-body-medium
     const GAP = 4; // gap-1, between icons and before the chip
     const CLOCK_GAP = 8; // gap-2, after the clock
-    const ICON = 14; // h-3.5 w-3.5
+    const ICON = 14; // h-3.5 w-3.5 — the music glyph too, at the tray's size and not its own
     const CHIP_WIDTH = 24; // "+10" at text-label-small, the widest realistic chip
     const CUTOUT = 24; // size-icon-lg
 
@@ -344,18 +354,26 @@ describe('status bar notification icons', () => {
 });
 
 /**
- * The music indicator (MICA-111 phase 4).
+ * The music indicator (MICA-111).
  *
- * It is on the right-hand side of the bar rather than beside the notification icons, and
- * that is a measurement: the left run has under four pixels of headroom before the camera
- * cutout (`STATUS_BAR_MAX_NOTIFICATION_ICONS` in `state/display.ts` shows the working) and
- * the right one has room to spare. The last case below is the same pixel-budget assertion
- * the notification row already carries, from the other edge.
+ * It lives in the left-hand notification tray, because the now-playing card in the shade
+ * is presented as a persistent notification — non-dismissible, untouched by Clear All —
+ * and an icon for a notification belongs where notification icons are. It used to sit on
+ * the right among bluetooth, signal and battery, where it read as a hardware state.
+ *
+ * What makes that move safe is that it **occupies one of the capped slots** rather than
+ * adding a fourth glyph. The left run has under four pixels of headroom before the camera
+ * cutout (`STATUS_BAR_MAX_NOTIFICATION_ICONS` in `state/display.ts` shows the working), so
+ * the pixel budget only holds if the drawn count is unchanged. The cases below assert both
+ * halves: music displaces a notification into the `+N` chip, and music is never itself the
+ * thing hidden by it.
  */
 describe('PhoneFrame music indicator', () => {
   beforeEach(async () => {
     const { resetMusicForTest } = await import('./state/music');
+    const { unreadCounts } = await import('../services/notifications');
     resetMusicForTest();
+    unreadCounts.set({});
     charge.set(100);
   });
 
@@ -399,23 +417,104 @@ describe('PhoneFrame music indicator', () => {
     expect(indicator.className).not.toMatch(/text-on-surface-variant/);
   });
 
-  it('sits outside the notification row, which has no room for it', async () => {
+  it('sits in the notification tray, at its head', async () => {
     const { playSource } = await import('./state/music');
     playSource('https://youtu.be/dQw4w9WgXcQ');
 
     const { findByTestId } = renderFrame(false);
-    const indicator = await findByTestId('status-music-indicator');
+    const tray = await findByTestId('status-notification-icons');
+    const indicator = tray.querySelector('[data-testid="status-music-indicator"]');
 
-    // Not inside the capped tray, and not a sibling of the clock either: the whole point
-    // is that it costs the left run nothing.
-    expect(indicator.closest('[data-testid="status-notification-icons"]')).toBeNull();
-    const statusBar = indicator.closest('button');
+    // In the tray, in the left group, and first — an ongoing thing has no arrival time to
+    // be sorted by, so it takes the one slot that does not move as notifications come and
+    // go. See `PhoneFrame.svelte` for the argument.
+    expect(indicator).toBeTruthy();
+    expect(tray.children[0]).toBe(indicator);
+
+    const statusBar = indicator?.closest('button');
     const [leftGroup, rightGroup] = Array.from(statusBar?.children ?? []);
-    expect(leftGroup.contains(indicator)).toBe(false);
-    expect(rightGroup.contains(indicator)).toBe(true);
+    expect(leftGroup.contains(indicator)).toBe(true);
+    expect(rightGroup.contains(indicator)).toBe(false);
   });
 
-  it('clears the cutout on the right-hand run', async () => {
+  it('draws the tray on its own when nothing is unread', async () => {
+    const { playSource } = await import('./state/music');
+    playSource('https://youtu.be/dQw4w9WgXcQ');
+
+    const { findByTestId } = renderFrame(false);
+    const tray = await findByTestId('status-notification-icons');
+
+    // The tray is otherwise conditional on there being something unread; music has to be
+    // able to bring it up by itself, or the glyph is invisible exactly when the phone is
+    // quiet and playing.
+    expect(tray.children).toHaveLength(1);
+    expect(tray.textContent?.trim()).toBe('');
+  });
+
+  /**
+   * Render, wait for the shade's own fetch to land, and only then set the unread counts.
+   *
+   * Not the other way round, which is what the cap suite above does and gets away with:
+   * `NotificationShade`'s `onMount` calls `loadUnreadCounts`, which overwrites the store
+   * with whatever the browser mock answers, on the mock transport's own timer. Counts set
+   * before the render are simply discarded by it, and a test that happens to await one
+   * element fewer reads the store at a different point in that sequence. Waiting for the
+   * mock's write and then making the last one is deterministic rather than lucky.
+   */
+  const renderWithUnread = async (count: number) => {
+    const { unreadCounts } = await import('../services/notifications');
+    const { appRegistryStore } = await import('./state/registry');
+    const { get } = await import('svelte/store');
+    const { tick } = await import('svelte');
+
+    const view = renderFrame(false);
+    const tray = await view.findByTestId('status-notification-icons');
+    await vi.waitFor(() => expect(Object.keys(get(unreadCounts)).length).toBeGreaterThan(0));
+
+    const ids = get(appRegistryStore)
+      .filter((app) => Boolean(app.icon))
+      .map((app) => app.id)
+      .slice(0, count);
+    expect(ids, 'registry has too few apps for this case').toHaveLength(count);
+    unreadCounts.set(Object.fromEntries(ids.map((id) => [id, 1])));
+    await tick();
+
+    return { tray, ids };
+  };
+
+  it('takes a capped slot rather than adding a fourth glyph', async () => {
+    const { STATUS_BAR_MAX_NOTIFICATION_ICONS } = await import('./state/display');
+    const { playSource } = await import('./state/music');
+    playSource('https://youtu.be/dQw4w9WgXcQ');
+
+    const { tray } = await renderWithUnread(STATUS_BAR_MAX_NOTIFICATION_ICONS);
+
+    // The whole safety argument for the move: the drawn count is what the pixel budget in
+    // `state/display.ts` was measured against, and it is unchanged. Music plus two icons
+    // and then the chip — four children, not five, exactly as without music playing.
+    expect(tray.children).toHaveLength(STATUS_BAR_MAX_NOTIFICATION_ICONS + 1);
+    expect(tray.textContent?.trim()).toBe('+1');
+  });
+
+  it('is never the icon the overflow chip hides', async () => {
+    const { STATUS_BAR_MAX_NOTIFICATION_ICONS } = await import('./state/display');
+    const { playSource } = await import('./state/music');
+    playSource('https://youtu.be/dQw4w9WgXcQ');
+
+    // Far more unread apps than slots, so the chip is doing real work. Music still draws:
+    // a glyph whose job is "this is still making noise while you are elsewhere" cannot be
+    // the one that gets counted instead of shown.
+    const { tray, ids } = await renderWithUnread(STATUS_BAR_MAX_NOTIFICATION_ICONS + 4);
+    const indicator = tray.querySelector('[data-testid="status-music-indicator"]');
+
+    expect(tray.children[0]).toBe(indicator);
+    expect(tray.children).toHaveLength(STATUS_BAR_MAX_NOTIFICATION_ICONS + 1);
+    expect(tray.textContent?.trim()).toBe(
+      `+${ids.length - (STATUS_BAR_MAX_NOTIFICATION_ICONS - 1)}`
+    );
+  });
+
+  it('leaves the right-hand run shorter than it was', async () => {
     const { PHONE_WIDTH } = await import('./state/display');
 
     const BAR_PADDING_RIGHT = 32; // px-8
@@ -425,12 +524,12 @@ describe('PhoneFrame music indicator', () => {
     const CHARGE_WIDTH = 33; // "100%" at text-body-small (12px)
     const SIGNAL = 16; // size-icon-sm
     const BLUETOOTH = 14; // h-3.5 w-3.5
-    const MUSIC = 16; // size-icon-sm
     const CUTOUT = 24; // size-icon-lg
 
-    // Everything on at once, measured leftward from the content edge.
-    const width =
-      BATTERY_ICON + BATTERY_GAP + CHARGE_WIDTH + GAP + SIGNAL + GAP + BLUETOOTH + GAP + MUSIC;
+    // Everything on at once, measured leftward from the content edge. The music glyph and
+    // its `gap-2` used to add 24px here; removing it is the one geometric effect of the
+    // move, and it is in the direction that has slack either way.
+    const width = BATTERY_ICON + BATTERY_GAP + CHARGE_WIDTH + GAP + SIGNAL + GAP + BLUETOOTH;
     const rowStart = PHONE_WIDTH - BAR_PADDING_RIGHT - width;
     const cutoutEnd = PHONE_WIDTH / 2 + CUTOUT / 2;
 

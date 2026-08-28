@@ -219,6 +219,50 @@ allowlist for `postMessage`, not a connection. The frame is loaded from
 `youtube-nocookie.com` only and nothing is fetched from `www.youtube.com`, so
 there is nothing to test there.
 
+## Check 2a — does the artwork host allow it to be _read_?
+
+A stricter question than check 2, and a separate one: the now-playing card tints
+itself from the cover's dominant colour, which means drawing that image into a
+canvas and reading the pixels back (`lib/dominantColor.ts`). Loading is a
+network question; reading back is a **CORS** question, and a host can answer the
+first and refuse the second. If `Access-Control-Allow-Origin` does not come back
+for a `cfx-nui-` origin, the canvas is tainted and `getImageData` throws
+`SecurityError`.
+
+Only worth running if check 2 passed. In the gPhone context:
+
+```js
+const probe = new Image();
+probe.crossOrigin = 'anonymous'; // the whole point — without it the canvas taints
+probe.onload = () => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 8;
+  c.getContext('2d').drawImage(probe, 0, 0, 8, 8);
+  try {
+    console.log(
+      '[art] readable',
+      c.getContext('2d').getImageData(0, 0, 1, 1).data
+    );
+  } catch (e) {
+    console.log('[art] tainted', e.name); // SecurityError
+  }
+};
+probe.onerror = () => console.log('[art] refused with crossOrigin set');
+probe.src = 'https://img.youtube.com/vi/dQw4w9WgXcQ/mqdefault.jpg';
+```
+
+Three outcomes and they are genuinely different. `readable` means the tint works
+in game. `tainted` means the host serves the image but not the header — the
+cover still draws and the card is simply the phone's own colour.
+`refused with crossOrigin set` while check 2 passed is the interesting one: the
+_anonymous_ request was rejected where the plain one was not, which is still
+only a missing tint, because the displayed `<img>` deliberately does not carry
+the attribute.
+
+**Nothing here can break the card**, and that is the design rather than luck:
+every one of these paths resolves `null` and the card renders in the phone's own
+theme. So this check is worth recording and is never worth blocking on.
+
 ## Check 3 — is the control channel answered?
 
 This is the one the whole `postMessage` design rests on. In the gPhone context:
