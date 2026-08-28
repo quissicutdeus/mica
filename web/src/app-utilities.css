@@ -144,6 +144,13 @@
     var(--gradient-to, transparent)
   );
 }
+.bg-gradient-to-br {
+  background-image: linear-gradient(
+    to bottom right,
+    var(--gradient-from, transparent),
+    var(--gradient-to, transparent)
+  );
+}
 .bg-gray-200 {
   background-color: #e5e7eb;
 }
@@ -632,6 +639,9 @@
 }
 .from-gray-800 {
   --gradient-from: #1f2937;
+}
+.from-purple-600 {
+  --gradient-from: #9333ea;
 }
 .gap-0\.5 {
   gap: 0.125rem;
@@ -1997,6 +2007,9 @@
 }
 .text-yellow-500 {
   color: #eab308;
+}
+.to-blue-600 {
+  --gradient-to: #2563eb;
 }
 .to-gray-900 {
   --gradient-to: #111827;

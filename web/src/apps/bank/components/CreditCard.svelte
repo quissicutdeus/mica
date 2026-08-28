@@ -5,9 +5,15 @@
   let { balance, citizenid }: { balance: number; citizenid: string } = $props();
 </script>
 
+<!-- The gradient is three utility classes, not an inline `style=`. PostCSS never sees a
+     markup attribute, so an inline gradient sits outside every CEF-103 transform in
+     `postcss.config.js`; and the two custom properties this used to reach for
+     (`--color-purple-600`, `--color-blue-600`) were Tailwind v4 theme variables holding
+     `oklch()` — Chromium 111 — which is why the card rendered in a dev browser and was
+     blank in game. They have been undefined since Tailwind was removed, which made the
+     whole declaration invalid at computed-value time in every engine. MICA-85. -->
 <div
-  class="text-on-surface shadow-elevation-3 mb-8 rounded-lg p-6"
-  style="background-image: linear-gradient(to bottom right, var(--color-purple-600), var(--color-blue-600));"
+  class="bg-gradient-to-br from-purple-600 to-blue-600 text-on-surface shadow-elevation-3 mb-8 rounded-lg p-6"
 >
   <div class="mb-8 flex items-start justify-between">
     <span class="text-on-surface font-medium">Total Balance</span>

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { ROLE_NAMES } from '../lib/m3';
+import { ROLE_NAMES, TOKEN_NAMES } from '../lib/m3';
 
 /**
  * The CEF capability baseline, enforced.
@@ -94,6 +94,45 @@ const FILES = SCAN.flatMap((dir) => walk(join(ROOT, dir))).map((f) => ({
 
 const countOf = (text: string, rx: RegExp) => (text.match(rx) ?? []).length;
 
+/** Every `--name` declared across the hand-written CSS layer. */
+const declaredProperties = (): Set<string> => {
+  const names = new Set<string>();
+  for (const file of ['app.css', 'app-utilities.css', 'app-reset.css']) {
+    const full = join(ROOT, 'src', file);
+    if (!existsSync(full)) continue;
+    for (const m of readFileSync(full, 'utf8').matchAll(/(--[a-zA-Z0-9-]+)\s*:/g)) names.add(m[1]);
+  }
+  return names;
+};
+
+/**
+ * What a `var()` in markup may resolve to: the declared layer above, plus every
+ * `--color-*` role `PhoneFrame` writes onto the screen element at runtime.
+ */
+const RESOLVABLE_PROPERTIES = new Set([
+  ...declaredProperties(),
+  ...TOKEN_NAMES.map((name) => `--color-${name}`)
+]);
+
+/** Colour syntax newer than Chromium 103, with no fallback once it is past PostCSS. */
+const POST_103_COLOR = /\b(?:color-mix|oklab|oklch)\(|\b(?:rgba?|hsla?|hwb|lab|lch)\(\s*from\b/g;
+
+/** Drops any `{...}` span, leaving only the statically-known text around it. */
+const stripInterpolations = (text: string): string => {
+  let depth = 0;
+  let out = '';
+  for (const ch of text) {
+    if (ch === '{') depth++;
+    else if (ch === '}') depth = Math.max(0, depth - 1);
+    else if (depth === 0) out += ch;
+  }
+  return out;
+};
+
+/** The statically-known text of every `style="..."` attribute in a component. */
+const inlineStyles = (text: string): string[] =>
+  [...text.matchAll(/\bstyle="([^"]*)"/g)].map((m) => stripInterpolations(m[1]));
+
 describe('CEF capability baseline (AGENTS.md §6)', () => {
   it('finds files to check', () => {
     // A walk that silently matched nothing would make every rule below vacuous.
@@ -161,6 +200,43 @@ describe('CEF capability baseline (AGENTS.md §6)', () => {
     expect(offenders, 'use a pre-composited state-layer token, not an opacity modifier').toEqual(
       []
     );
+  });
+
+  it('resolves every custom property an inline style= reaches for', () => {
+    // MICA-85, twice over. The Bank card's gradient lived in a `style=` attribute
+    // reaching for `--color-purple-600` / `--color-blue-600`. Those were Tailwind v4
+    // *theme* variables holding `oklch()` (Chromium 111), so the card painted in a dev
+    // browser and was blank in game; then Tailwind was removed and the class-scan that
+    // replaced it only ever looked at `class=`, so the two names have resolved to
+    // nothing since. An unresolvable `var()` makes the whole declaration invalid at
+    // computed-value time — `background-image` falls back to `none`, silently.
+    //
+    // The set below is everything a markup attribute may reach for: the properties
+    // declared in the hand-written CSS layer, plus the roles `PhoneFrame` writes onto
+    // the screen element at runtime from the player's seed.
+    const offenders = FILES.flatMap(({ path, text }) =>
+      inlineStyles(text)
+        .flatMap((style) => [...style.matchAll(/var\(\s*(--[a-zA-Z0-9-]+)/g)].map((m) => m[1]))
+        .filter((name) => !RESOLVABLE_PROPERTIES.has(name))
+        .map((name) => `${path}: var(${name})`)
+    );
+
+    expect(offenders, 'declare the property in app.css, or use a utility class').toEqual([]);
+  });
+
+  it('keeps an inline style= inside the CEF 103 floor', () => {
+    // `postcss.config.js` transpiles `oklab()`/`oklch()` and nesting — but PostCSS only
+    // ever sees `.css` files and `<style>` blocks. A markup attribute is not part of the
+    // pipeline, so a colour function newer than Chromium 103 written there reaches CEF
+    // untouched and drops the declaration. `lib/m3.ts` emits the wallpaper as plain
+    // `rgb()` for exactly this reason; a static attribute must do the same.
+    const offenders = FILES.flatMap(({ path, text }) =>
+      inlineStyles(text)
+        .flatMap((style) => [...style.matchAll(POST_103_COLOR)].map((m) => m[0]))
+        .map((hit) => `${path}: ${hit}`)
+    );
+
+    expect(offenders, 'an inline style bypasses PostCSS — write rgb()/rgba()').toEqual([]);
   });
 
   it('uses no :has() variant', () => {
