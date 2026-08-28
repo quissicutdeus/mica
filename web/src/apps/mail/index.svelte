@@ -129,6 +129,15 @@
             {#if selectedMail.sender_address}
               <p class="text-on-surface-variant text-body-small">{selectedMail.sender_address}</p>
             {/if}
+            <!--
+              Where a Reply button would sit, and the reason there isn't one (MICA-58).
+              Mail is receive-only by decision: a mail row carries a sender *name*, not a
+              sender identity, so there is nobody to deliver an answer to. Saying it here
+              is cheaper than the question being asked once per player.
+            -->
+            <p class="text-on-surface-variant text-body-small mt-1">
+              No-reply address &middot; answer in Messages
+            </p>
           </div>
           <span class="text-on-surface-variant text-body-small"
             >{formatRelativeTime(selectedMail.created_at)}</span
@@ -152,7 +161,7 @@
         <EmptyState
           title={activeTab === 'inbox' ? 'No inbox messages' : 'No archived messages'}
           description={activeTab === 'inbox'
-            ? 'System dispatches and official mail will appear here.'
+            ? 'Mail arrives from jobs, businesses and dispatches. This inbox only receives — conversations live in Messages.'
             : 'Archived messages will be stored here.'}
         >
           {#snippet icon()}

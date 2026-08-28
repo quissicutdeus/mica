@@ -15,6 +15,17 @@ import { buildDeepLink } from '@shared/deepLink';
  * closes the generic create/update path entirely, while reads and deletes stay
  * ownership-scoped because a mail row still belongs to exactly one citizenid.
  *
+ * **Receive-only is a decision, not an omission (MICA-58).** Two things would have to
+ * be invented before a player could compose or reply, and neither is small: an address
+ * namespace — the only way to name a player anywhere in this phone is the framework's
+ * phone number, and reusing it would make Mail a slower Messages with a subject line —
+ * and a sender identity on the row. `sender` and `sender_address` are display strings an
+ * external resource passes in; no mail that exists carries the citizenid a reply would
+ * be delivered to, and `SendSystemEmail`'s signature is published and frozen. So the
+ * inbox says it only receives rather than growing a compose button that could only ever
+ * answer a no-reply address. `reachability.test.ts` pins the reachable action set, so
+ * reopening this is a deliberate act rather than a drift.
+ *
  * `read` is a MySQL reserved word. Every generated and hand-written identifier here
  * is backtick-quoted, which is what makes the column usable at all.
  */

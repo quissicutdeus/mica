@@ -27,7 +27,10 @@ for players and seamless framework integration for server developers.
 - **Messages**: Individual and group messaging with support for image
   attachments directly linked to the photo gallery.
 - **Mail System**: Dedicated email application with full database integration
-  and unread status indicators.
+  and unread status indicators. **Receive-only by design** — mail arrives from
+  jobs, businesses and dispatches through the `SendSystemEmail` export, and
+  players hold conversations in Messages instead. There is no compose or reply,
+  and the server registers no action that would author one.
 - **Banking**: Dynamic bank card generation based on player citizen ID, live
   balance tracking, and transfer handling.
 - **Media & Camera**: In-game screenshot/camera integration, automatic image

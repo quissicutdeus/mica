@@ -37,6 +37,7 @@ import '../services/BlabberDms';
 import '../services/Battery';
 import '../services/Phone';
 import '../services/Signal';
+import '../services/Mail';
 import { __resetRateLimits } from '../lib/rateLimit';
 
 /**
@@ -89,6 +90,47 @@ describe('nothing registers an action the app does not use', () => {
     ]) {
       expect(handlers.has(event), event).toBe(true);
     }
+  });
+});
+
+describe('mail is receive-only (MICA-58)', () => {
+  /**
+   * The decision, in the only form that survives.
+   *
+   * `access: { write: 'server' }` closes the *generic* create and update path, and
+   * `defineService.test.ts` already proves that rule holds for any server-authored
+   * service. What it cannot see is a hand-written `registerEvent('sendMail', …)` added
+   * to `services/Mail.ts` later — a custom action bypasses the access axis entirely and
+   * is reachable the moment it is registered, whether or not the app grows a compose
+   * button (§2.9).
+   *
+   * So the reachable mail surface is pinned as a closed set rather than as an absence.
+   * Composing or replying is a product decision with a schema change behind it — mail
+   * rows carry a `sender` display string and no sender identity, so there is nothing to
+   * address a reply to — and this failing is the intended way to force that decision
+   * back into the open.
+   */
+  // All four are custom: `options: { disableGet, disableDelete }` closes the generic
+  // read and delete too, because the list needs an explicit ORDER BY and the deletes
+  // carry their own audit entries.
+  const MAIL_ACTIONS = ['getMail', 'markAsRead', 'archiveMail', 'deleteMail'];
+
+  it('registers nothing on mail but reading and filing', () => {
+    const registered = [...handlers.keys()]
+      .filter((event) => event.startsWith('gphone:server:mail:'))
+      .map((event) => event.slice('gphone:server:mail:'.length))
+      .toSorted();
+
+    expect(registered).toEqual(MAIL_ACTIONS.toSorted());
+  });
+
+  it.each([
+    ['gphone:server:mail:create', 'nobody writes mail from their own phone'],
+    ['gphone:server:mail:update', 'a delivered mail is not editable by its recipient'],
+    ['gphone:server:mail:send', 'there is no player-to-player mail'],
+    ['gphone:server:mail:reply', 'a system sender has no address to reply to']
+  ])('%s is not registered — %s', (event) => {
+    expect(handlers.has(event)).toBe(false);
   });
 });
 
