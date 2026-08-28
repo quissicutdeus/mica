@@ -483,11 +483,30 @@
 .disabled\:cursor-not-allowed:disabled {
   cursor: not-allowed;
 }
+/**
+ * The `disabled:hover:*` rules exist because this file is sorted alphabetically and the
+ * cascade is not: `.disabled\:bg-disabled-container:disabled` and
+ * `.hover\:bg-primary-container-hover:hover` have the same specificity, and `hover` sorts
+ * later, so a hovered disabled control repainted itself as if it were live. That is what
+ * MICA-99 was reported as — a Confirm button that "stays enabled/blue" and then does
+ * nothing when clicked; it was disabled all along and only looked otherwise under the
+ * pointer that was about to click it. `:disabled:hover` is one class heavier and wins
+ * wherever it sits in the file.
+ */
+.disabled\:hover\:bg-disabled-container:disabled:hover {
+  background-color: var(--color-disabled-container);
+}
 .disabled\:hover\:bg-gray-800:disabled:hover {
   background-color: #1f2937;
 }
 .disabled\:hover\:bg-surface:disabled:hover {
   background-color: var(--color-surface);
+}
+.disabled\:hover\:bg-transparent:disabled:hover {
+  background-color: transparent;
+}
+.disabled\:hover\:text-disabled-content:disabled:hover {
+  color: var(--color-disabled-content);
 }
 .disabled\:opacity-40:disabled {
   opacity: 0.4;

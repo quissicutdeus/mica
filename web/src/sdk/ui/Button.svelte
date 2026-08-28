@@ -9,10 +9,22 @@
 
   let { variant = 'primary', class: className = '', children, ...rest }: Props = $props();
 
+  /**
+   * The `disabled:hover:*` half is not redundant with the `disabled:*` half.
+   *
+   * `app-utilities.css` is sorted alphabetically, so `.hover\:bg-primary-container-hover:hover`
+   * sits after `.disabled\:bg-disabled-container:disabled` at the same specificity and won
+   * the cascade — a disabled button repainted itself as live under the pointer that was
+   * about to click it, and then swallowed the click. MICA-99 was reported as exactly
+   * that: "Confirm stays enabled/blue and silently does nothing". `:disabled:hover` is one
+   * class heavier, so it wins wherever the rule lands in the file. `PhoneFrame` and
+   * Settings > Display had each already worked this out locally; the shared primitive had
+   * not, which is why it reached a player.
+   */
   let baseClass = $derived(
     variant === 'icon'
-      ? 'p-2 rounded-full transition-colors disabled:text-disabled-content flex items-center justify-center'
-      : 'p-3 rounded-lg font-medium transition-colors disabled:bg-disabled-container disabled:text-disabled-content flex items-center justify-center'
+      ? 'p-2 rounded-full transition-colors disabled:text-disabled-content disabled:hover:bg-transparent disabled:hover:text-disabled-content disabled:cursor-not-allowed flex items-center justify-center'
+      : 'p-3 rounded-lg font-medium transition-colors disabled:bg-disabled-container disabled:text-disabled-content disabled:hover:bg-disabled-container disabled:hover:text-disabled-content disabled:cursor-not-allowed flex items-center justify-center'
   );
 
   /**
