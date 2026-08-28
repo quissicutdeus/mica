@@ -18,3 +18,21 @@ the work calls for it:
   migration. Pulls in `docs/schema-and-services.md`.
 - `ticket-flow` — before writing a branch name, commit message, PR body, or
   issue comment.
+
+Work that is farmed out to a subagent picks an **agent type** from
+`.claude/agents/`, so the rules for that kind of work arrive with the agent
+rather than being pasted into each prompt. Each is named for something old in
+the setting, on the grounds that a name you remember is a name you route to:
+
+- `massassi` — the phone's UI: any component, CSS, utility class or layout under
+  `web/src`. Carries the Chromium 103 floor and the `Screen` sizing rules.
+- `rakata` — the server half: a service, table, column, index, migration or net
+  event. Carries §2.9 and the `defineService` rules.
+- `dwartii` — CI, workflows, the deploy, git hooks, shell. Carries the rule that
+  a check which stays silent when it cannot run reads as a pass.
+- `whills` — documentation. Carries "write from the code, not from the docs".
+- `ilum` — end-to-end tests and flake. Carries `retries: 0` and what e2e cannot
+  prove.
+
+Pick the one whose directory the work lives in; `general-purpose` is the right
+answer when a task genuinely spans several.
