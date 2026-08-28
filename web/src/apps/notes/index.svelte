@@ -4,6 +4,7 @@
     Button,
     ConfirmDialog,
     EmptyState,
+    FloatingActionButton,
     ListItem,
     Screen,
     SearchBar,
@@ -19,6 +20,7 @@
     renderMarkdown,
     useAppAction,
     useAppLevels,
+    useScrollDetect,
     useTimer,
     type AppProps
   } from '@gphone/sdk';
@@ -37,6 +39,7 @@
   let isEditing = $state(false);
   let isAdding = $state(false);
   let searchQuery = $state('');
+  let isScrolled = $state(false);
   let showDeleteConfirm = $state(false);
   let showHeadingDropdown = $state(false);
   let textAreaRef: HTMLTextAreaElement | null = $state(null);
@@ -120,6 +123,11 @@
     void notes.load();
   });
 
+  // Collapses the FAB to its icon once the list has scrolled, the same as Contacts and
+  // Messages. The detector watches any `.overflow-y-auto` in the app, which here is the
+  // note list's own scroller rather than `Screen`'s.
+  useScrollDetect((scrolled) => (isScrolled = scrolled));
+
   const focus = (node: HTMLElement) => {
     node.focus();
   };
@@ -173,15 +181,10 @@
 </script>
 
 {#snippet headerActions()}
-  {#if !selectedNote && !isAdding}
-    <button
-      class="hover:bg-surface-container-high duration-short ease-standard ml-auto rounded-full p-2 transition-colors"
-      onclick={() => (isAdding = true)}
-      aria-label="Add note"
-    >
-      <AddIcon />
-    </button>
-  {:else if selectedNote && !isEditing}
+  <!-- No "add" action here. Creating a note is the bottom-right FAB below (MICA-104),
+       which is where every other content-creating app in the phone puts it — and, being
+       the shared primitive, is what picks up FAB-wide fixes like MICA-84's. -->
+  {#if selectedNote && !isEditing}
     <button
       class="hover:bg-surface-container-high duration-short ease-standard ml-auto rounded-full p-2 transition-colors"
       onclick={startEditing}
@@ -192,7 +195,17 @@
   {/if}
 {/snippet}
 
-<Screen title={app.title} onback={app.back} actions={headerActions}>
+{#snippet fabOverlay()}
+  {#if !selectedNote && !isAdding}
+    <FloatingActionButton label="New Note" collapsed={isScrolled} onclick={() => (isAdding = true)}>
+      {#snippet icon()}
+        <AddIcon class="text-on-surface size-icon-sm shrink-0" />
+      {/snippet}
+    </FloatingActionButton>
+  {/if}
+{/snippet}
+
+<Screen title={app.title} onback={app.back} actions={headerActions} overlay={fabOverlay}>
   {#if !selectedNote}
     {#if isAdding}
       <div
