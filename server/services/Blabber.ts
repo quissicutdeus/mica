@@ -15,6 +15,37 @@ import { buildDeepLink } from '@shared/deepLink';
 /** The app id, which is also the handle namespace accounts are claimed in. */
 const APP = 'blabber';
 
+const EDIT_WINDOW_CONVAR = 'gphone_blabber_edit_window';
+const DEFAULT_EDIT_WINDOW = 900;
+
+/**
+ * How long after posting an author may still fix a typo, in seconds.
+ *
+ * One number, and it governs both halves of the rule: `access.editWindow` below turns it into
+ * the recency predicate on the `UPDATE` that actually refuses a late edit (§2.9), and `create`
+ * echoes the same value so the app hides its Edit button at the same moment the server stops
+ * accepting the save.
+ *
+ * It used to be two numbers — a literal `900` in the declaration and this convar read per
+ * request for the echo alone — so raising the convar moved the button without moving the rule,
+ * which produced exactly the "a button that appears and then fails" the echo exists to prevent
+ * (MICA-108).
+ *
+ * **Read once, here, at resource start**, so a change to the convar needs a restart. That is
+ * forced rather than chosen: `defineService` resolves `access.editWindow` at declaration time,
+ * and the alternative — widening the resolver to a per-request thunk — buys a live tunable for
+ * a policy nobody adjusts mid-session, at the cost of a core API every service pays for.
+ * `gphone_notification_retention` makes the same deal, and the README says so for both.
+ *
+ * A non-numeric or non-positive value falls back to fifteen minutes rather than removing the
+ * window: a typo in `server.cfg` should not make every Blab editable forever.
+ */
+const EDIT_WINDOW_SECONDS = ((): number => {
+  if (typeof GetConvar !== 'function') return DEFAULT_EDIT_WINDOW;
+  const raw = Number.parseInt(GetConvar(EDIT_WINDOW_CONVAR, String(DEFAULT_EDIT_WINDOW)), 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_EDIT_WINDOW;
+})();
+
 /**
  * Blabber: short public posts.
  *
@@ -39,10 +70,12 @@ export const blabber = defineService<Blab>({
     read: 'public',
     write: 'owner',
     /**
-     * Fifteen minutes to fix a typo, then the post freezes. Tunable per server by convar
-     * below; the declaration is the default.
+     * Fifteen minutes to fix a typo, then the post freezes — `gphone_blabber_edit_window`
+     * seconds, in fact, since `EDIT_WINDOW_SECONDS` above is the one number behind both this
+     * predicate and the window `create` reports to the UI. Read at resource start, so a change
+     * takes effect on the next restart.
      */
-    editWindow: 900
+    editWindow: EDIT_WINDOW_SECONDS
   },
   paging: { pageSize: 30, maxPageSize: 60 },
   statuses: ['active', 'deleted', 'moderated'],
@@ -246,24 +279,6 @@ if (!paging) {
   throw new Error("defineService('blabber'): a public read must declare paging.");
 }
 
-const EDIT_WINDOW_CONVAR = 'gphone_blabber_edit_window';
-
-/**
- * Reported to the client so the UI can hide the Edit button once the window has closed.
- *
- * A courtesy, not the boundary — the predicate in the `UPDATE` is what actually refuses a late
- * edit (§2.9). Sent because a button that appears and then fails is worse than one that was
- * never there.
- *
- * Note for whoever wires the UI: compare against `Date.now()`, **not** `useClock()`. That store
- * is fed by the client's `setTime`, which is in-game time of day, and comparing a row's
- * `created_at` to it is nonsense.
- */
-const editWindowSeconds = (): number => {
-  const raw = Number.parseInt(GetConvar(EDIT_WINDOW_CONVAR, '900'), 10);
-  return Number.isFinite(raw) && raw > 0 ? raw : 900;
-};
-
 /**
  * Notify every account mentioned in a Blab, once per owner.
  *
@@ -445,7 +460,16 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
       mouthed: mouthedEcho,
       attachments: attachmentsById.get(id) ?? [],
       status: 'active',
-      editWindow: editWindowSeconds()
+      /**
+       * The same number the declaration above enforces, so the UI hides Edit exactly when the
+       * server would start refusing the save. A courtesy, not the boundary — the predicate in
+       * the `UPDATE` is what refuses a late edit (§2.9).
+       *
+       * Note for whoever wires the UI: compare against `Date.now()`, **not** `useClock()`. That
+       * store is fed by the client's `setTime`, which is in-game time of day, and comparing a
+       * row's `created_at` to it is nonsense.
+       */
+      editWindow: EDIT_WINDOW_SECONDS
     };
   } catch (error) {
     // The unique index refusing a second mouth of the same Blab. Translated, because the raw

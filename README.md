@@ -269,13 +269,14 @@ set gphone_notification_retention 30
 | `gphone_bank_transfer_max`      | integer              | `50000`                | Ceiling on one player-to-player send             |
 | `gphone_max_accounts_per_app`   | integer              | `3`                    | Identities one player may hold in one social app |
 | `gphone_bluetooth_range`        | integer, meters      | `15`                   | How far a proximity share reaches                |
-| `gphone_blabber_edit_window`    | integer, seconds     | `900`                  | How long the UI offers Edit on a Blab            |
+| `gphone_blabber_edit_window`    | integer, seconds     | `900`                  | How long a Blab stays editable by its author     |
 | `gphone_notification_retention` | integer, days        | `30`                   | How long notification rows are kept              |
 
-Six of the seven are read on every use rather than cached, so changing one with
+Five of the seven are read on every use rather than cached, so changing one with
 `set` from the live console takes effect on the next request and needs no
-restart. `gphone_notification_retention` is the exception, for the reason given
-under it below.
+restart. `gphone_blabber_edit_window` and `gphone_notification_retention` are
+the two exceptions — both are read once at resource start, so a change to either
+needs a restart, for the reasons given under them below.
 
 - **`gphone_admin_aces`** — which ace objects grant gPhone admin: the phone's
   Developer Tools, and the `gphone*` console commands. The default recognises
@@ -332,13 +333,16 @@ under it below.
   as given, so `0` disables proximity sharing outright — nobody is ever in range
   — rather than falling back to 15.
 - **`gphone_blabber_edit_window`** — how long after posting a Blab its author
-  may still fix a typo. **Read this before setting it.** The convar changes how
-  long the app offers an Edit button, and nothing else: the refusal itself comes
-  from `editWindow: 900` in Blabber's `defineService` declaration, a literal the
-  convar does not reach. So a value above 900 shows an Edit button whose save is
-  then refused, and a value below 900 hides one for an edit that would still
-  have succeeded. Until the two agree, leave it unset and Blabber behaves as
-  documented in Key Features — fifteen minutes, then the post freezes.
+  may still fix a typo; after it the post freezes and only deleting is left,
+  since withdrawing your own words stays possible forever. One number does both
+  jobs: it becomes the recency predicate on the server's `UPDATE`, which is what
+  actually refuses a late edit, and the same value is reported to the app so the
+  Edit button disappears at the moment the save would start failing rather than
+  before or after it. **This one needs a restart.** Blabber's service
+  declaration resolves the window when the resource starts, so `set` from a live
+  console changes nothing until `ensure gphone` runs again. A non-numeric or
+  non-positive value falls back to 900 rather than removing the window — a typo
+  here should not make every Blab editable forever.
 - **`gphone_notification_retention`** — how many days of notification history to
   keep. At resource start gPhone deletes every row in `gphone_notifications`
   older than this, read or unread, cleared or not, and nothing else ever prunes
