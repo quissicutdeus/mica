@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { seedHomeGrid } from '../support/homeGrid';
-import { addOnFrame, dismissToasts } from '../support/addon';
+import { addOnFrame, dismissToasts, installAddOn } from '../support/addon';
 
 /**
  * Blabber, end to end against the browser mock.
@@ -16,12 +16,7 @@ test.describe('Blabber', () => {
     // within this page, so it also covers this describe's own mid-test `page.goto`.
     await seedHomeGrid(page, ['store']);
     await page.goto('/');
-    await page.locator('button', { hasText: 'Store' }).first().click();
-    await page
-      .locator('div.rounded-xl', { hasText: 'Blabber' })
-      .locator('button', { hasText: 'Install' })
-      .click();
-    await page.locator("button[aria-label='Return to home screen']").click();
+    await installAddOn(page, 'Blabber');
     await page.getByRole('button', { name: /Blabber/ }).click();
     // The install above leaves a toast over the top of the phone screen for 4.5s, and a
     // toast in the *shell's* document is invisible to the actionability check for a click

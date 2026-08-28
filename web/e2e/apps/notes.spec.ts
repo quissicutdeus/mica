@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { seedHomeGrid } from '../support/homeGrid';
-import { addOnFrame } from '../support/addon';
+import { addOnFrame, installAddOn } from '../support/addon';
 
 test.describe('Notes App E2E', () => {
   test.beforeEach(async ({ page }) => {
@@ -8,19 +8,13 @@ test.describe('Notes App E2E', () => {
     // to reach the install path below.
     await seedHomeGrid(page, ['store']);
     await page.goto('/');
-    // Install Notes from the Store.
-    //
-    // Scoped to the Notes card. This used to be `.last()` with the note "Notes is last
-    // catalog app", which was true only while Notes happened to sort last: the catalog is
-    // ordered by name and derived from whatever add-ons exist, so the next add-on named
-    // after "Notes" silently installed *that* instead and every assertion below timed out
-    // on an app that was never installed.
-    await page.locator('button', { hasText: 'Store' }).first().click();
-    await page
-      .locator('div.rounded-xl', { hasText: 'Notes' })
-      .locator('button', { hasText: 'Install' })
-      .click();
-    await page.locator("button[aria-label='Return to home screen']").click();
+    // Install Notes from the Store, through the shared helper — which is scoped to the
+    // Notes card. This used to be `.last()` with the note "Notes is last catalog app",
+    // which was true only while Notes happened to sort last: the catalog is ordered by
+    // name and derived from whatever add-ons exist, so the next add-on named after "Notes"
+    // silently installed *that* instead and every assertion below timed out on an app that
+    // was never installed.
+    await installAddOn(page, 'Notes');
 
     // Role-based, so the backgrounded Store's own catalog row — still in the DOM, but
     // `inert` — is not what gets clicked.
