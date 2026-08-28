@@ -570,6 +570,9 @@ gphone/
   and what it ships.
 - [docs/addon-catalog.md](docs/addon-catalog.md) — the `CatalogEntry` shape a
   Store backend serves to describe an installable `core: false` add-on.
+- [docs/cef-baseline.md](docs/cef-baseline.md) — every Chromium 103
+  accommodation in the tree, and what to do with each one when FiveM's CEF
+  finally moves.
 - [docs/architecture.md](docs/architecture.md),
   [docs/schema-and-services.md](docs/schema-and-services.md),
   [docs/security.md](docs/security.md), [docs/dev-loop.md](docs/dev-loop.md) —

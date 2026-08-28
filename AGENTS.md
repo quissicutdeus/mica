@@ -457,6 +457,12 @@ FiveM's CEF. The two are not equivalent, and the gap is wider than it looks:
 Your dev browser is current. Anything newer than Chromium 103 renders correctly
 in `pnpm dev`, passes Playwright, and is broken in-game.
 
+Every accommodation this repo makes for that baseline — what it is, which file
+it lives in, which Chromium version retires it, and whether to delete it or keep
+it — is inventoried in [`docs/cef-baseline.md`](docs/cef-baseline.md), the
+MICA-67 watch item. Read it before deleting anything here as obsolete; several
+entries that look version-gated are not.
+
 ### Why `web/postcss.config.js` exists
 
 Two jobs, both load-bearing:
