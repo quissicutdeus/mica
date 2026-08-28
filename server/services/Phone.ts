@@ -154,6 +154,24 @@ onNet('gphone:server:phone:start', (rawTarget: unknown) => {
   const targetSrc = targetPlayer?.source || null;
 
   if (!targetSrc) {
+    // A number nobody answered is still a call the player placed, and a phone lists it.
+    // This path creates no `ActiveCall`, so `logCallEnd` — the only other writer — never
+    // runs for it and Recents was simply unchanged after dialling an unreachable number
+    // (MICA-95). Duration 0 and kind 'outgoing' is exactly what `logCallEnd` writes for
+    // a call that rang and was never answered, so the two paths agree.
+    //
+    // Issued before the `failed` push, which is what sends the caller's phone back to
+    // idle and makes it refetch the log, so the row is already on its way by then.
+    const callerCitizenid = FrameworkBridge.getCitizenId(src);
+    if (callerCitizenid) {
+      void phoneCallLog.repo.create({
+        citizenid: callerCitizenid,
+        kind: 'outgoing',
+        number: targetPhone,
+        duration: 0
+      });
+    }
+
     notifyPlayer(src, { type: 'error', message: 'Number unavailable' });
     // Tell client to reset
     emitNet('gphone:client:phone:failed', src);

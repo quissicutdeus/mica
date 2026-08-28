@@ -1,8 +1,19 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { tick } from 'svelte';
 import { render, fireEvent } from '@testing-library/svelte';
+
+// The app reaches `loadCallLog` through `useCall()`, which resolves to this same module,
+// so mocking it here covers the SDK facet too.
+const loadCallLogSpy = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('../../services/callLog', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  loadCallLog: loadCallLogSpy
+}));
+
 import Phone from './index.svelte';
 import { callLog } from '../../services/callLog';
+import { callStore } from '../../services/call';
 import { contacts } from '../../services/contacts';
 
 // jsdom has no Web Animations API and some SDK transitions call it on mount.
@@ -20,6 +31,8 @@ describe('Phone Recents tab', () => {
   beforeEach(() => {
     callLog.set([]);
     contacts.set([]);
+    callStore.setStatus('idle');
+    loadCallLogSpy.mockClear();
   });
 
   it('defaults to the Keypad tab', () => {
@@ -67,5 +80,38 @@ describe('Phone Recents tab', () => {
     await fireEvent.click(getByText('Recents'));
 
     expect(getByText('Ada Lovelace')).toBeTruthy();
+  });
+});
+
+describe('Phone Recents refresh', () => {
+  beforeEach(() => {
+    callLog.set([]);
+    contacts.set([]);
+    callStore.setStatus('idle');
+    loadCallLogSpy.mockClear();
+  });
+
+  it('does not refetch on a plain mount, which is already idle', async () => {
+    render(Phone, { props: { onback: () => {} } });
+    await tick();
+
+    expect(loadCallLogSpy).not.toHaveBeenCalled();
+  });
+
+  it('refetches when a call ends, including when the server ends it (MICA-95)', async () => {
+    render(Phone, { props: { onback: () => {} } });
+    await tick();
+    loadCallLogSpy.mockClear();
+
+    // The peer hanging up, a decline, and an unreachable number all reach the store as a
+    // `callStatus: idle` push rather than through the hang-up button, and used to refresh
+    // nothing — the row the server had just written stayed invisible until the app was
+    // backgrounded and reopened.
+    callStore.setIncoming('555-0100');
+    await tick();
+    callStore.setStatus('idle');
+    await tick();
+
+    expect(loadCallLogSpy).toHaveBeenCalledTimes(1);
   });
 });

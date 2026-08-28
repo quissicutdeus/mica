@@ -215,6 +215,29 @@ describe('start: refusals', () => {
     expect(failedTo(1)).toHaveLength(1);
   });
 
+  it('still logs an unreachable number as an outgoing call of zero duration', async () => {
+    await fire(START, 1, '555-9999');
+
+    // MICA-95: nothing else writes this row — no `ActiveCall` is created on this path,
+    // so `logCallEnd` never runs for it and Recents used to be unchanged after dialling
+    // a number nobody was on.
+    const inserts = createCalls();
+    expect(inserts).toHaveLength(1);
+    const [sql, params] = inserts[0];
+    expect(sql).toMatch(/gphone_phone_call_log/);
+    expect(params).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', '555-9999', 0]));
+  });
+
+  it('logs nothing for a self-call or a busy line — neither call was ever placed', async () => {
+    await fire(START, 1, '555-0001');
+    expect(createCalls()).toHaveLength(0);
+
+    await fire(START, 1, '555-0002'); // caller now on a call
+    (dbMock.insert as any).mockClear();
+    await fire(START, 1, '555-0003');
+    expect(createCalls()).toHaveLength(0);
+  });
+
   it('refuses when the caller is already on a call', async () => {
     await fire(START, 1, '555-0002');
     (globalThis as any).emitNet.mockClear();

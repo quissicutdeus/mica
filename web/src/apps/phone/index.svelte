@@ -43,11 +43,28 @@
     callStore.startCall(number, name);
   };
 
+  /**
+   * The status this effect last saw. A plain `let`, deliberately not `$state`: it is a
+   * latch for the effect below, and making it reactive would re-run the effect on its own
+   * write.
+   */
+  let previousCallStatus: string = 'idle';
+
   $effect(() => {
-    if ($callStore.status === 'idle') {
+    const status = $callStore.status;
+    if (status === 'idle') {
       showInCallKeypad = false;
       dtmfEntered = '';
+      // Recents is written when a call *ends*, and every way it can end lands here: the
+      // hang-up button below, the peer hanging up first, a decline, and a number that was
+      // never reachable — the last three arrive as a `callStatus: idle` push and used to
+      // refresh nothing at all, so the row the server had just written stayed invisible
+      // until the app was backgrounded and reopened (MICA-95). Guarded on the
+      // *transition* out of a call, so a plain mount — already idle — does not refetch
+      // what `onAppForeground` loaded a moment ago.
+      if (previousCallStatus !== 'idle') void loadCallLog();
     }
+    previousCallStatus = status;
   });
 
   const formatDuration = (seconds: number) => {
@@ -396,12 +413,11 @@
 
         <button
           class="bg-error shadow-call-end duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full transition-colors hover:bg-red-400"
-          onclick={async () => {
-            // `endCall` writes the log row server-side, and nothing else refetches it —
-            // `loadCallLog` only otherwise runs once, on foreground. Without this a hang-up
-            // is invisible in Recents until the player leaves and reopens the app.
-            await callStore.endCall();
-            void loadCallLog();
+          onclick={() => {
+            // `endCall` returns the store to idle, and the effect at the top of this file
+            // refetches Recents off that transition — for this button and for every other
+            // way a call ends alike. It used to refetch here and nowhere else.
+            void callStore.endCall();
           }}
           aria-label="End Call"
         >

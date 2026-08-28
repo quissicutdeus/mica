@@ -24,6 +24,9 @@ vi.mock('../lib/FrameworkBridge', () => ({
     // bridge without this throws on the first call and the loop never reaches the limit.
     getPlayerPhone: () => '555-0000',
     getPlayerByPhone: () => undefined,
+    // An unreachable number is still logged as an outgoing call (MICA-95), and that
+    // needs the caller's citizenid — same reason as `getPlayerPhone` above.
+    getCitizenId: () => (bridge.loaded ? 'CID' : null),
     registerUsableItem: () => {}
   }
 }));
