@@ -2040,6 +2040,9 @@
 .top-\[250px\] {
   top: 250px;
 }
+.top-full {
+  top: 100%;
+}
 .touch-none {
   touch-action: none;
 }

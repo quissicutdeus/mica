@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { ReportButton } from '@gphone/sdk';
   import type { BlabEngagement } from '@shared/types';
 
   /**
@@ -8,20 +7,23 @@
    * Counts come from the batched engagement read rather than columns on the Blab — an
    * `ear_count` would be a second copy of a fact the ears table already holds, and it drifts
    * the first time something removes an ear without decrementing.
+   *
+   * **Three actions, and report is not one of them** (MICA-97). It used to sit here as a
+   * `ReportButton`, which is `size-icon-md` and filled where these three are `size-icon-sm`
+   * outlines — so the one action a player almost never wants was the heaviest thing in the row,
+   * on every post in the feed. It lives behind `BlabRow`'s overflow menu now, which only the
+   * detail view offers: reporting is a thing you decide about a post you have stopped to read.
    */
   let {
     stats,
     onreply,
     onmouth,
-    onear,
-    onreport
+    onear
   }: {
     stats?: BlabEngagement;
     onreply?: () => void;
     onmouth?: () => void;
     onear?: () => void;
-    /** Absent on the player's own Blab — reporting yourself is not moderation. */
-    onreport?: () => void;
   } = $props();
 
   const count = (n?: number) => (n && n > 0 ? String(n) : '');
@@ -97,10 +99,4 @@
     </svg>
     {count(stats?.ears)}
   </button>
-
-  {#if onreport}
-    <!-- Pushed to the end rather than sitting among reply/mouth/ear: those are things you
-         do with a post, and this is a thing you do about one. -->
-    <ReportButton subject="post" onclick={onreport} class="-my-2 ml-auto" />
-  {/if}
 </div>

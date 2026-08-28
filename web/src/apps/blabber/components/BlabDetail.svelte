@@ -140,8 +140,11 @@
   {:else}
     <div class="border-outline-variant border-b">
       {#if root}
+        <!-- `menu` here and on the replies below, and nowhere else: this is the screen you reach
+             by stopping on a post, which is where Report belongs (MICA-97). -->
         <BlabRow
           blab={root}
+          menu
           stats={$engagement[root.id]}
           {onhandle}
           {ontag}
@@ -173,6 +176,7 @@
           <div data-blab-id={reply.id}>
             <BlabRow
               blab={reply}
+              menu
               stats={$engagement[reply.id]}
               {onhandle}
               {ontag}

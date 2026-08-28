@@ -7,6 +7,7 @@
   let {
     blab,
     editable = false,
+    menu = false,
     stats,
     onhandle,
     ontag,
@@ -19,6 +20,15 @@
   }: {
     blab: Blab;
     editable?: boolean;
+    /**
+     * Offer the "•••" overflow, which is where Report lives (MICA-97).
+     *
+     * False in the feed, on a profile and in search results — a list you are scrolling past.
+     * True in `BlabDetail`, the screen you reach by stopping on one post. Report was previously
+     * a filled flag in every row's action bar, larger than reply/mouth/ear beside it, which made
+     * the least-used action the most prominent thing on every post a player scrolled past.
+     */
+    menu?: boolean;
     stats?: BlabEngagement;
     onhandle?: (handle: string) => void;
     ontag?: (tag: string) => void;
@@ -39,6 +49,20 @@
    * knows both whether to offer it and what to report.
    */
   let reporting = $state(false);
+
+  /** Whether this row's "•••" menu is open. */
+  let overflowOpen = $state(false);
+
+  /**
+   * Nothing to put in the menu on your own post, so no menu.
+   *
+   * Report is its only item, and reporting yourself is not moderation — the server refuses it,
+   * and an affordance that always fails is worse than none. Edit and Delete stay where they
+   * are, as labelled text under the row: they are the two things a player actually reaches for
+   * on their own post, and burying them behind a menu to keep company with Report would cost
+   * more than it saves.
+   */
+  const hasOverflow = $derived(menu && !editable);
 
   /** A mouth with no body of its own is a plain repeat; with one it is a quote. */
   const isPlainMouth = $derived(blab.mouth_of != null && !blab.body);
@@ -97,6 +121,60 @@
       {#if edited}
         <span class="text-outline shrink-0 italic">edited</span>
       {/if}
+
+      {#if hasOverflow}
+        <!-- Dismissed on focus leaving the wrapper rather than with a full-screen scrim.
+             `BlabRow` renders deep inside `Screen`'s scroll region, so an `inset-0` scrim would
+             size to the scrolled content rather than the screen and cover only part of it. A
+             mousedown on any other element moves focus out of this subtree, which is the same
+             gesture, and it costs nothing on the keyboard path. -->
+        <span
+          class="relative ml-auto self-start"
+          onfocusout={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              overflowOpen = false;
+            }
+          }}
+        >
+          <button
+            type="button"
+            class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface focus-visible:ring-focus-ring duration-short ease-standard flex h-7 w-7 cursor-pointer items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none"
+            aria-haspopup="menu"
+            aria-expanded={overflowOpen}
+            aria-label="More actions"
+            title="More actions"
+            onclick={() => (overflowOpen = !overflowOpen)}
+          >
+            <!-- Drawn here rather than added to `sdk/ui/icons`: the three action glyphs in
+                 `BlabActions` are inline for the same reason, and one add-on wanting a "•••"
+                 is not yet an argument for a shared icon. -->
+            <svg class="size-icon-sm" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="5" cy="12" r="1.75" />
+              <circle cx="12" cy="12" r="1.75" />
+              <circle cx="19" cy="12" r="1.75" />
+            </svg>
+          </button>
+
+          {#if overflowOpen}
+            <div
+              role="menu"
+              class="animate-in fade-in border-outline-variant bg-surface shadow-elevation-4 duration-short ease-standard absolute top-full right-0 z-40 mt-1 w-40 overflow-hidden rounded-lg border"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                class="text-on-surface hover:bg-surface-container hover:text-error duration-short ease-standard text-body-small w-full cursor-pointer px-3 py-2.5 text-left transition-colors"
+                onclick={() => {
+                  overflowOpen = false;
+                  reporting = true;
+                }}
+              >
+                Report post
+              </button>
+            </div>
+          {/if}
+        </span>
+      {/if}
     </div>
 
     {#if blab.mouth_of != null}
@@ -140,7 +218,6 @@
       onreply={() => onreply?.(blab)}
       onmouth={() => onmouth?.(blab)}
       onear={() => onear?.(blab)}
-      onreport={editable ? undefined : () => (reporting = true)}
     />
 
     <!-- A separate affordance rather than wrapping the body: BlabBody renders mention buttons,
