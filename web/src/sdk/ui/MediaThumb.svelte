@@ -14,9 +14,9 @@
    * this look like". Four copies of that answer is four places to forget `kind` exists,
    * which is how a video ends up rendering as a broken `<img>`.
    *
-   * **No `<video>` element, deliberately.** The game runs Chromium 103 and a video would
-   * have to arrive as base64 through the NUI bridge, which §-the-roadmap already records
-   * as not viable. So video renders as its poster frame with a play affordance — honest
+   * **No `<video>` element, deliberately.** A clip has no route to the phone except as
+   * base64 through the NUI bridge, and that is not viable at video sizes. So this renders
+   * a video as its poster frame with a play affordance — honest
    * about what it is without promising playback that does not exist yet. When a real
    * playback path arrives, this is the one file that changes.
    */
