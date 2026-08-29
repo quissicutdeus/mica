@@ -69,6 +69,36 @@ function createMessagesStore() {
     return { target, targetName, targetAvatar };
   };
 
+  /**
+   * Re-derive a conversation's list preview from the thread as it now stands.
+   *
+   * Editing or unsending the newest message changes what the inbox row should say, and
+   * the row keeps its own denormalised copy (`lastMessage`, `last_message`) so the list
+   * can render without every thread being loaded. Without this, unsending your last text
+   * leaves the inbox quoting a message that is no longer in the conversation.
+   *
+   * The sort order is deliberately left alone: `lastMessageAt` still names when the last
+   * message was *sent*, and fixing a typo is not a reason for a thread to jump the list.
+   */
+  const syncConversationPreview = (conversationId: number) => {
+    const list = get(messagesByConversation)[conversationId];
+    if (!list) return;
+    const last = list[list.length - 1];
+
+    update((convs) =>
+      convs.map((c) =>
+        c.id === conversationId
+          ? {
+              ...c,
+              lastMessage: last?.message ?? '',
+              lastMessageAt: (last?.created_at as string) ?? c.lastMessageAt,
+              last_message: last
+            }
+          : c
+      )
+    );
+  };
+
   return {
     subscribe,
     loaded: { subscribe: loaded.subscribe },
@@ -198,6 +228,66 @@ function createMessagesStore() {
         console.error('Failed to send message:', e);
         throw e;
       }
+    },
+
+    /**
+     * Rewrite a message you sent.
+     *
+     * Server first, then the store — the opposite of `archiveConversation` and friends
+     * above, and deliberately. Those change what only the caller sees, so an optimistic
+     * write that later fails is a cosmetic lie; this one changes what the *other party*
+     * reads, and showing the corrected text before the server has taken it would be
+     * claiming a thing was fixed when it may not have been.
+     *
+     * `edited` is applied only when the reply says so. The server omits it when the text
+     * came back unchanged — saving the same words is not an edit and must not raise the
+     * marker.
+     */
+    editMessage: async (conversationId: number, messageId: number, message: string) => {
+      const saved = await fetchNui<{ message: string; edited?: boolean }>('editMessage', {
+        id: messageId,
+        message
+      });
+      if (!saved) return null;
+
+      messagesByConversation.update((msgs) => {
+        const list = msgs[conversationId];
+        if (!list) return msgs;
+        return {
+          ...msgs,
+          [conversationId]: list.map((m) =>
+            m.id === messageId
+              ? { ...m, message: saved.message, edited: m.edited || saved.edited === true }
+              : m
+          )
+        };
+      });
+
+      syncConversationPreview(conversationId);
+      return saved;
+    },
+
+    /**
+     * Unsend a message you sent — for everyone, not just for you.
+     *
+     * The row is soft-deleted server-side and filtered out of every participant's fetch,
+     * so removing it from the local thread is the same outcome the next reload produces
+     * rather than a local-only hide. Nothing is optimistic here for the same reason as
+     * `editMessage`: a message that reappears on the next open is worse than one that
+     * takes a moment to go.
+     */
+    deleteMessage: async (conversationId: number, messageId: number) => {
+      const removed = await fetchNui<boolean>('deleteMessage', { id: messageId });
+      if (!removed) return false;
+
+      messagesByConversation.update((msgs) => {
+        const list = msgs[conversationId];
+        if (!list) return msgs;
+        return { ...msgs, [conversationId]: list.filter((m) => m.id !== messageId) };
+      });
+
+      syncConversationPreview(conversationId);
+      return true;
     },
 
     startConversation: async (phone: string, isGroup: boolean = false) => {

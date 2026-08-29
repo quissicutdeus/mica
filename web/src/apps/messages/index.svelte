@@ -62,6 +62,15 @@
   let showPhotoPicker = $state(false);
   let selectedAttachments = $state<{ photo_id: number; media: MediaPreview }[]>([]);
   let replyingToMsg = $state<UIMessage | null>(null);
+  /**
+   * The message currently being rewritten, and the draft it displaced.
+   *
+   * `draftBeforeEdit` exists because the composer is one box: starting an edit puts the
+   * old message's text in it, and a player who cancels should get back whatever they had
+   * been typing rather than an empty field or, worse, the edited message's words.
+   */
+  let editingMsg = $state<UIMessage | null>(null);
+  let draftBeforeEdit = '';
   let viewingArchive = $state(false);
   let showDetailsModal = $state(false);
   let showSearch = $state(false);
@@ -162,8 +171,43 @@
     recipientQuery = '';
     selectedAttachments = [];
     replyingToMsg = null;
+    editingMsg = null;
+    draftBeforeEdit = '';
     unreadDividerIndex = -1;
     page.reset();
+  };
+
+  /**
+   * Start rewriting one of your own messages.
+   *
+   * Replying and editing are mutually exclusive — the composer sends to one destination —
+   * so beginning an edit drops a pending reply rather than leaving two banners stacked
+   * above a single box, each claiming the next Send.
+   */
+  const startEdit = (msg: UIMessage) => {
+    draftBeforeEdit = editingMsg ? draftBeforeEdit : newMessageText;
+    editingMsg = msg;
+    replyingToMsg = null;
+    newMessageText = msg.message;
+  };
+
+  const cancelEdit = () => {
+    editingMsg = null;
+    newMessageText = draftBeforeEdit;
+    draftBeforeEdit = '';
+  };
+
+  /**
+   * Unsend, which is a delete for everyone rather than a hide for the sender — see the
+   * `delete` action in `server/services/Messages.ts`. The bubble has already asked.
+   */
+  const handleUnsendMessage = async (msg: UIMessage) => {
+    if (!selectedConversationId) return;
+    if (editingMsg?.id === msg.id) cancelEdit();
+    await run(() => conversationsStore.deleteMessage(selectedConversationId!, msg.id), {
+      success: 'Message unsent',
+      error: 'Could not unsend that message'
+    });
   };
 
   const app = useAppLevels({
@@ -186,6 +230,9 @@
           inChatSearchQuery = '';
         }
       },
+      // Above the conversation level, so Back out of an edit returns you to the thread
+      // with your original draft rather than closing the thread outright.
+      { open: () => !!editingMsg, close: cancelEdit },
       { open: () => !!selectedConversationId || isComposing, close: closeConversation },
       {
         open: () => showSearch,
@@ -292,8 +339,32 @@
   };
 
   const handleSendMessage = async () => {
-    if ((!newMessageText.trim() && selectedAttachments.length === 0) || !selectedConversationId)
+    if (!selectedConversationId) return;
+
+    /**
+     * The same Send button, two destinations.
+     *
+     * Splitting them into two rows was the alternative and it is worse: a second composer
+     * would need its own attachment gate, its own home-indicator clearance and its own
+     * Enter handling, and the player would be looking at two text boxes with one draft
+     * between them.
+     */
+    if (editingMsg) {
+      const text = newMessageText.trim();
+      if (!text) return;
+      const target = editingMsg;
+      const saved = await run(
+        () => conversationsStore.editMessage(selectedConversationId!, target.id, text),
+        { success: 'Message edited', error: 'Could not edit that message' }
+      );
+      if (!saved) return;
+      editingMsg = null;
+      newMessageText = draftBeforeEdit;
+      draftBeforeEdit = '';
       return;
+    }
+
+    if (!newMessageText.trim() && selectedAttachments.length === 0) return;
 
     // The draft survives a failure: clearing it before the server has taken the message
     // would lose what the player typed with nothing to show for it.
@@ -534,6 +605,8 @@
         isReadByOther={isMessageReadByOther}
         onreply={(msg: UIMessage) => (replyingToMsg = msg)}
         onscrollto={handleScrollToMessage}
+        onedit={startEdit}
+        ondelete={handleUnsendMessage}
         onloadmore={page.loadMore}
         onscroll={page.onScroll}
         unreadCount={initialUnreadCount}
@@ -544,11 +617,13 @@
         bind:text={newMessageText}
         bind:attachments={selectedAttachments}
         replyingTo={replyingToMsg}
+        editing={editingMsg}
         {currentConv}
         busy={$busy}
         onsend={handleSendMessage}
         onopenphotos={openPhotoPicker}
         oncancelreply={() => (replyingToMsg = null)}
+        oncanceledit={cancelEdit}
       />
     </div>
   {:else}

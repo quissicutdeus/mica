@@ -983,6 +983,9 @@
 .hover\:text-error:hover {
   color: var(--color-error);
 }
+.hover\:text-on-error-container:hover {
+  color: var(--color-on-error-container);
+}
 .hover\:text-on-primary:hover {
   color: var(--color-on-primary);
 }

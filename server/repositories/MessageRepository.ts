@@ -39,9 +39,29 @@ export class MessageRepository extends SchemaRepository<Message> {
   }
 
   async findByConversation(conversationId: number): Promise<Message[]> {
-    // Fetch messages
+    /**
+     * Messages, plus the one derived column the thread cannot render without.
+     *
+     * `edited` is `updated_at > created_at`, computed by MySQL rather than by comparing two
+     * timestamps in TypeScript. Not a style preference: the driver hands these back as a
+     * `Date` on one column type and a `'YYYY-MM-DD HH:MM:SS'` string on another, and a
+     * comparison that has to guess which is a comparison that is wrong on somebody's
+     * server. Doing it in the statement means one definition of "this was edited", in the
+     * same clock the write used.
+     *
+     * It is derived rather than stored because `gphone_messages.updated_at` already carries
+     * `ON UPDATE CURRENT_TIMESTAMP` — the trace falls out of the edit itself, so there is no
+     * column to add, no migration, and no way for the flag and the row to disagree.
+     *
+     * A `deleted` message is filtered out for **every** participant, not just its sender:
+     * unsending is a withdrawal from the conversation, and the soft delete is what keeps the
+     * row available to moderation afterwards.
+     */
     const messages = await Database.query<Message[]>(
-      "SELECT * FROM gphone_messages WHERE conversation_id = ? AND status != 'deleted' ORDER BY created_at ASC",
+      `SELECT m.*, (m.updated_at > m.created_at) AS edited
+         FROM gphone_messages m
+        WHERE m.conversation_id = ? AND m.status != 'deleted'
+        ORDER BY m.created_at ASC`,
       [conversationId]
     );
 
@@ -100,6 +120,9 @@ export class MessageRepository extends SchemaRepository<Message> {
 
     for (const msg of messages) {
       msg.attachments = attachmentMap.get(msg.id) || [];
+      // MySQL answers a boolean expression with 1 or 0, which crosses NUI as a number and
+      // would make `edited === true` false everywhere it is checked.
+      msg.edited = Boolean(msg.edited);
     }
 
     return messages;

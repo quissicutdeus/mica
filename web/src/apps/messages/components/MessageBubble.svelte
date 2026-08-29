@@ -8,9 +8,12 @@
     MessageStatusIcon,
     formatTime,
     Avatar,
+    ConfirmDialog,
     ReportButton,
     ReportDialog,
-    ReplyIcon
+    EditIcon,
+    ReplyIcon,
+    TrashIcon
   } from '@gphone/sdk';
   import type { Contact, MediaPreview } from '@shared/types';
 
@@ -26,12 +29,46 @@
     isReadByOther: boolean;
     onreply?: (msg: UIMessage) => void;
     onscrollto?: (msgId: number) => void;
+    /** Load this message back into the composer for a rewrite. Own messages only. */
+    onedit?: (msg: UIMessage) => void;
+    /** Take the message back, for everyone. Own messages only, and confirmed first. */
+    ondelete?: (msg: UIMessage) => Promise<void> | void;
   }
 
-  let { msg, currentConv, isLastReadMyMessage, isReadByOther, onreply, onscrollto }: Props =
-    $props();
+  let {
+    msg,
+    currentConv,
+    isLastReadMyMessage,
+    isReadByOther,
+    onreply,
+    onscrollto,
+    onedit,
+    ondelete
+  }: Props = $props();
 
   let showActions = $state(false);
+
+  /**
+   * Editing and unsending are offered on your own messages only.
+   *
+   * The server says the same thing — `requireOwnMessage` scopes by the sender's citizenid
+   * — so this is which buttons to draw, never the rule itself.
+   */
+  const isMine = $derived(msg.sender === 'me');
+
+  let confirmingUnsend = $state(false);
+  let unsending = $state(false);
+
+  const handleUnsend = async () => {
+    unsending = true;
+    try {
+      await ondelete?.(msg);
+    } finally {
+      unsending = false;
+      confirmingUnsend = false;
+      showActions = false;
+    }
+  };
 
   const getSenderInfo = (targetMsg: UIMessage = msg) => {
     if (targetMsg.sender === 'me') {
@@ -78,6 +115,17 @@
     );
   };
 </script>
+
+{#if confirmingUnsend}
+  <ConfirmDialog
+    title="Unsend message?"
+    message="This removes the message from the conversation for everyone in it, not just for you. It cannot be undone."
+    confirmText="Unsend"
+    isLoading={unsending}
+    onconfirm={handleUnsend}
+    oncancel={() => (confirmingUnsend = false)}
+  />
+{/if}
 
 {#if reporting}
   <ReportDialog
@@ -203,18 +251,50 @@
     </button>
 
     {#if showActions}
-      <button
-        type="button"
-        class="bg-surface-container-high text-on-surface-variant hover:bg-primary-container hover:text-on-primary-container shadow-elevation-2 duration-short ease-standard flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all active:scale-95"
-        onclick={(e) => {
-          e.stopPropagation();
-          onreply?.(msg);
-        }}
-        title="Reply to message"
-        aria-label="Reply to message"
-      >
-        <ReplyIcon class="size-icon-sm" />
-      </button>
+      <div class="flex shrink-0 items-center gap-1.5">
+        <button
+          type="button"
+          class="bg-surface-container-high text-on-surface-variant hover:bg-primary-container hover:text-on-primary-container shadow-elevation-2 duration-short ease-standard flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all active:scale-95"
+          onclick={(e) => {
+            e.stopPropagation();
+            onreply?.(msg);
+          }}
+          title="Reply to message"
+          aria-label="Reply to message"
+        >
+          <ReplyIcon class="size-icon-sm" />
+        </button>
+
+        {#if isMine}
+          <button
+            type="button"
+            class="bg-surface-container-high text-on-surface-variant hover:bg-primary-container hover:text-on-primary-container shadow-elevation-2 duration-short ease-standard flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all active:scale-95"
+            onclick={(e) => {
+              e.stopPropagation();
+              showActions = false;
+              onedit?.(msg);
+            }}
+            title="Edit message"
+            aria-label="Edit message"
+          >
+            <EditIcon class="size-icon-sm" />
+          </button>
+          <!-- "Unsend", not "Delete". The message goes from everyone's thread, and the
+               word has to say so before the confirmation does. -->
+          <button
+            type="button"
+            class="bg-surface-container-high text-on-surface-variant hover:bg-error-container hover:text-on-error-container shadow-elevation-2 duration-short ease-standard flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all active:scale-95"
+            onclick={(e) => {
+              e.stopPropagation();
+              confirmingUnsend = true;
+            }}
+            title="Unsend message"
+            aria-label="Unsend message"
+          >
+            <TrashIcon class="size-icon-sm" />
+          </button>
+        {/if}
+      </div>
     {/if}
   </div>
 
@@ -225,6 +305,13 @@
     <span class="text-on-surface-variant text-label-small">
       {formatTime(msg.created_at)}
     </span>
+    <!-- Shown to *both* sides, and that is the point: an edit the recipient cannot see is
+         a rewrite of what they already read. `edited` is derived server-side from
+         `updated_at > created_at`, so it survives a reload rather than living only in the
+         sender's session. -->
+    {#if msg.edited}
+      <span class="text-on-surface-variant text-label-small italic">Edited</span>
+    {/if}
     {#if msg.sender === 'me' && currentConv}
       {#if isLastReadMyMessage}
         <MessageStatusIcon status="read" class="h-3.5 w-3.5" />

@@ -22,6 +22,8 @@
     searching,
     onreply,
     onscrollto,
+    onedit,
+    ondelete,
     onloadmore,
     onscroll
   }: {
@@ -39,6 +41,10 @@
     isReadByOther: (msg: UIMessage) => boolean;
     onreply?: (msg: UIMessage) => void;
     onscrollto?: (msgId: number) => void;
+    /** Rewrite one of your own messages — handled by the app, in the composer. */
+    onedit?: (msg: UIMessage) => void;
+    /** Unsend one of your own messages, for everyone. */
+    ondelete?: (msg: UIMessage) => Promise<void> | void;
     onloadmore: () => void;
     onscroll: (event: Event) => void;
   } = $props();
@@ -88,6 +94,8 @@
         isReadByOther={isReadByOther(msg)}
         {onreply}
         {onscrollto}
+        {onedit}
+        {ondelete}
       />
     {/if}
   {/each}

@@ -3,6 +3,7 @@
   import type { MediaPreview } from '@shared/types';
   import {
     CloseIcon,
+    EditIcon,
     LocationIcon,
     PaperclipIcon,
     PhotoIcon,
@@ -25,20 +26,33 @@
     text = $bindable(''),
     attachments = $bindable([]),
     replyingTo = null,
+    editing = null,
     currentConv = null,
     busy,
     onsend,
     onopenphotos,
-    oncancelreply
+    oncancelreply,
+    oncanceledit
   }: {
     text: string;
     attachments: { photo_id: number; media: MediaPreview }[];
     replyingTo?: UIMessage | null;
+    /**
+     * The message being rewritten, if any.
+     *
+     * Editing happens in this row rather than inside the bubble: the bubble is itself a
+     * `<button>` (tapping it reveals the actions), and a textarea nested inside a button is
+     * invalid and unfocusable in places. It also means an edit gets the same growing
+     * textarea, the same Enter-to-submit and the same home-indicator clearance a new
+     * message does, for free.
+     */
+    editing?: UIMessage | null;
     currentConv?: UIConversation | null;
     busy: boolean;
     onsend: () => void;
     onopenphotos: () => void;
     oncancelreply?: () => void;
+    oncanceledit?: () => void;
   } = $props();
 
   let showAttachMenu = $state(false);
@@ -81,10 +95,39 @@
 <MessageBar
   bind:value={text}
   {busy}
-  canSend={!busy && (!!text.trim() || attachments.length > 0)}
+  placeholder={editing ? 'Edit message' : 'Message'}
+  canSend={!busy && (editing ? !!text.trim() : !!text.trim() || attachments.length > 0)}
   {onsend}
 >
   {#snippet above()}
+    <!-- An edit is not a reply and not a new message, so it says which it is. Without the
+         banner the only difference between rewriting a message and sending a new one is
+         that the box already had words in it. -->
+    {#if editing}
+      <div
+        class="bg-surface-container-high border-primary shadow-elevation-1 text-body-small mb-2 flex items-center justify-between rounded-xl border-l-4 p-2"
+        transition:fly={{ y: 10, duration: 150 }}
+      >
+        <div class="flex min-w-0 flex-1 flex-col pr-2">
+          <div class="text-primary flex items-center gap-1.5 font-semibold">
+            <EditIcon class="h-3.5 w-3.5 shrink-0" />
+            <span class="text-label-small truncate">Editing message</span>
+          </div>
+          <p class="text-on-surface-variant text-label-small mt-0.5 truncate">
+            Everyone in the chat will see it was edited.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard shrink-0 cursor-pointer rounded-full p-1 transition-colors"
+          onclick={oncanceledit}
+          aria-label="Cancel edit"
+          title="Cancel edit"
+        >
+          <CloseIcon class="size-icon-sm" />
+        </button>
+      </div>
+    {/if}
     {#if replyingTo}
       {@const replySender = getSenderInfo(replyingTo)}
       <div
@@ -138,14 +181,19 @@
   {/snippet}
 
   {#snippet leading()}
-    <button
-      type="button"
-      class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary duration-short ease-standard flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors"
-      onclick={() => (showAttachMenu = !showAttachMenu)}
-      aria-label="Attachments"
-    >
-      <PaperclipIcon class="size-icon-md" />
-    </button>
+    <!-- Hidden while editing. An edit rewrites the body and nothing else — the server's
+         `edit` action takes `message` alone — so offering the attach menu here would be a
+         button that appears to work and changes nothing. -->
+    {#if !editing}
+      <button
+        type="button"
+        class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary duration-short ease-standard flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors"
+        onclick={() => (showAttachMenu = !showAttachMenu)}
+        aria-label="Attachments"
+      >
+        <PaperclipIcon class="size-icon-md" />
+      </button>
+    {/if}
   {/snippet}
 </MessageBar>
 

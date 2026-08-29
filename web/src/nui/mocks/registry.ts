@@ -1442,6 +1442,50 @@ const mockRegistry: Record<string, MockHandler> = {
 
     return msg;
   },
+  /**
+   * Editing and unsending, mocked against the same fixture array the thread reads.
+   *
+   * Both mutate `mockMessages` rather than answering `true` and leaving the fixture alone:
+   * the store applies the server's reply optimistically, so a mock that only said "fine"
+   * would still look right on screen and hide a reload that disagreed with it. The
+   * ownership rule is mirrored too — `citizenid !== 'my-id'` is refused here exactly as the
+   * server refuses a message the caller did not send.
+   */
+  editMessage: async (data?: { id?: number; message?: string }) => {
+    await delay(150);
+    const text = (data?.message ?? '').trim();
+    if (!text) throw new Error('A message needs some text. Unsend it instead of emptying it.');
+    for (const list of Object.values(mockMessages)) {
+      const msg = list.find((m) => m.id === data?.id);
+      if (!msg) continue;
+      if (msg.citizenid !== 'my-id') throw new Error('That message is not yours to change.');
+      if (msg.message === text)
+        return { id: msg.id, conversation_id: msg.conversation_id, message: text };
+      msg.message = text;
+      msg.edited = true;
+      msg.updated_at = new Date().toISOString();
+      return { id: msg.id, conversation_id: msg.conversation_id, message: text, edited: true };
+    }
+    throw new Error('That message is not yours to change.');
+  },
+  deleteMessage: async (data?: { id?: number }) => {
+    await delay(150);
+    for (const [convId, list] of Object.entries(mockMessages)) {
+      const index = list.findIndex((m) => m.id === data?.id);
+      if (index === -1) continue;
+      if (list[index].citizenid !== 'my-id')
+        throw new Error('That message is not yours to change.');
+      list.splice(index, 1);
+      const conv = mockConversations.find((c) => c.id === Number(convId));
+      // The list preview follows the thread: unsending the newest message must not leave
+      // the conversation row quoting something nobody can open any more.
+      if (conv && conv.last_message?.id === data?.id) {
+        conv.last_message = list[list.length - 1];
+      }
+      return true;
+    }
+    return false;
+  },
   startConversation: async ({ is_group }: { phone?: string; is_group?: boolean }) => {
     await delay(300);
     return {

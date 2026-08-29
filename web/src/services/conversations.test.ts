@@ -84,6 +84,14 @@ vi.mock('../nui/fetchNui', () => ({
     if (method === 'readConversation') {
       return Promise.resolve(true);
     }
+    // Shaped like the real `edit` action: it echoes the saved body, and only claims
+    // `edited` when the text actually changed.
+    if (method === 'editMessage') {
+      return Promise.resolve({ id: data.id, message: data.message, edited: true });
+    }
+    if (method === 'deleteMessage') {
+      return Promise.resolve(true);
+    }
     return Promise.resolve(null);
   })
 }));
@@ -123,6 +131,39 @@ describe('messages store', () => {
     // Ursula (id 1) should now be #1 because of newest message
     expect(updatedConvs[0].id).toBe(1);
     expect(updatedConvs[0].lastMessage).toBe('Fine I am calling now');
+  });
+
+  /**
+   * Editing and unsending (MICA-68).
+   *
+   * Both change the thread *and* the inbox row's preview, because the conversation keeps a
+   * denormalised copy of its last message so the list can render without loading every
+   * thread. Unsending your newest text and leaving the list quoting it was the failure
+   * these two assertions exist for.
+   */
+  it('applies an edit to the thread and raises the edited marker', async () => {
+    await conversationsStore.loadConversations();
+    await conversationsStore.loadMessages(2);
+
+    await conversationsStore.editMessage(2, 201, 'Stash is very secure.');
+
+    const msgs = get(conversationsStore.messages)[2];
+    expect(msgs[0].message).toBe('Stash is very secure.');
+    expect(msgs[0].edited).toBe(true);
+
+    const conv = get(conversationsStore).find((c) => c.id === 2);
+    expect(conv?.lastMessage).toBe('Stash is very secure.');
+  });
+
+  it('unsends a message and drops it out of the conversation preview', async () => {
+    await conversationsStore.loadConversations();
+    await conversationsStore.loadMessages(2);
+
+    await conversationsStore.deleteMessage(2, 201);
+
+    expect(get(conversationsStore.messages)[2]).toEqual([]);
+    // The thread is empty, so the inbox row must stop quoting the message that is gone.
+    expect(get(conversationsStore).find((c) => c.id === 2)?.lastMessage).toBe('');
   });
 
   it('marks conversation as read', async () => {

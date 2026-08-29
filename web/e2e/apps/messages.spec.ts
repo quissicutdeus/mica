@@ -151,6 +151,63 @@ test.describe('Messages App E2E', () => {
   });
 
   /**
+   * Editing and unsending your own message (MICA-68).
+   *
+   * Driven end to end rather than asserted on the store, because the wiring is where this
+   * feature can break silently: the bubble reveals its actions on tap, an edit borrows the
+   * one composer the thread already has, and Send has two destinations depending on whether
+   * an edit is in progress. None of that is visible to a unit test of the store.
+   *
+   * A fresh message is sent first so the test owns its subject — the seeded thread's rows
+   * are shared with the virtualization and attachment specs above.
+   */
+  test('edits a sent message, marks it edited, then unsends it for everyone', async ({ page }) => {
+    await page
+      .locator('[role="button"]')
+      .filter({ hasText: 'Trevor' })
+      .first()
+      .click({ force: true });
+
+    const messagesContainer = page.locator('#messages-container');
+    await expect(messagesContainer).toBeVisible();
+
+    await page.getByRole('textbox').last().fill('Meet me at the docs');
+    await page.getByRole('button', { name: 'Send' }).click();
+
+    const bubble = messagesContainer.locator('button', { hasText: 'Meet me at the docs' }).last();
+    await expect(bubble).toBeVisible();
+
+    // Tapping the bubble reveals the per-message actions; Edit and Unsend appear only on
+    // your own messages.
+    await bubble.click();
+    await page.getByRole('button', { name: 'Edit message' }).click();
+
+    await expect(page.locator('text=Editing message')).toBeVisible();
+    await page.getByRole('textbox').last().fill('Meet me at the docks');
+    await page.getByRole('button', { name: 'Send' }).click();
+
+    const edited = messagesContainer.locator('button', { hasText: 'Meet me at the docks' }).last();
+    await expect(edited).toBeVisible();
+    await expect(messagesContainer.locator('text=Meet me at the docs').first()).toHaveCount(0);
+    // The trace the recipient sees. Without it an edit is a silent rewrite of what they read.
+    await expect(
+      messagesContainer.locator('span', { hasText: 'Edited' }).last(),
+      'an edited message says so'
+    ).toBeVisible();
+
+    await edited.click();
+    await page.getByRole('button', { name: 'Unsend message' }).click();
+
+    // The confirmation names the consequence: this is a delete for everyone, not a hide.
+    await expect(page.locator('text=for everyone in it')).toBeVisible();
+    await page.getByRole('button', { name: 'Unsend', exact: true }).click();
+
+    await expect(
+      messagesContainer.locator('button', { hasText: 'Meet me at the docks' })
+    ).toHaveCount(0);
+  });
+
+  /**
    * `PhoneFrame`'s home-indicator gesture bar is a real full-width button at `z-60` sitting
    * across the bottom of the screen, so a composer flush to that edge has its lower third
    * inside a target that leaves the app. It was invisible for as long as the thread column

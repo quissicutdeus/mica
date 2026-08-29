@@ -104,9 +104,16 @@ export const ROUTES: readonly Route[] = [
   route('archiveMail', 'mail', 'archiveMail'),
   route('deleteMail', 'mail', 'deleteMail'),
 
-  // Messages
+  // Messages. All four are custom actions: `access.write: 'members'` registers no generic
+  // CRUD at all, because a membership check needs the parent conversation id and that is
+  // not part of the generic payload contract.
   route('getMessages', 'messages', 'get'),
   route('sendMessage', 'messages', 'send'),
+  // Fix or take back one message you sent. `editMessage` rewrites the body and the thread
+  // marks the result as edited; `deleteMessage` is an **unsend** — a soft delete that
+  // removes the message from every participant's thread, not a hide-for-me.
+  route('editMessage', 'messages', 'edit'),
+  route('deleteMessage', 'messages', 'delete'),
 
   // Notes
   // Notes is `core: false` and reaches its service through the generic route instead, so

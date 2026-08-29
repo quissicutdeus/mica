@@ -46,6 +46,15 @@ export interface Message {
   message: string;
   created_at: Date | string;
   updated_at: Date | string;
+  /**
+   * Whether the sender has rewritten this since sending it.
+   *
+   * Derived, never stored — `MessageRepository.findByConversation` computes
+   * `updated_at > created_at` in SQL, off the `ON UPDATE CURRENT_TIMESTAMP` the column
+   * already carries. Optional because a freshly-sent row has never been edited and the
+   * send path has no reason to say so.
+   */
+  edited?: boolean;
   reply_to_id?: number | null;
   /**
    * `photo_id` on the way in, `media` on the way back.
