@@ -107,10 +107,10 @@ nothing to do with the handlers.
 
 `server/__tests__/netGuardCensus.test.ts` holds both copies to the tree: it
 reads the numbers out of `netGuard.ts`'s comment **and out of the four claims on
-this page** — the bold count above, the printed-lines sentence above it, and the
-two category headings below — then compares each against a fresh scan. The
-assertion is "this is true" rather than a third copy of the count living in the
-test, which is the copy nobody would think to check.
+this page** — the bold count opening this section, the printed-lines sentence
+just above, and the two category headings below — then compares each against a
+fresh scan. The assertion is "this is true" rather than a third copy of the
+count living in the test, which is the copy nobody would think to check.
 
 It reads those sentences rather than asking this page to carry a table of digits
 for the test's benefit, because a table would be one more copy sitting beside
