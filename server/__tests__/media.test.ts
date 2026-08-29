@@ -31,6 +31,7 @@ vi.mock('../lib/proximity', () => ({
 
 import '../services/Media';
 
+const CREATE_EVENT = 'gphone:server:media:create';
 const DROP_EVENT = 'gphone:server:media:drop';
 const SHARE_LOCATION_EVENT = 'gphone:server:media:shareLocation';
 const GET_EVENT = 'gphone:server:media:get';
@@ -46,6 +47,7 @@ const call = async (event: string, data: unknown) => {
   return (globalThis.emitNet as any).mock.calls.at(-1)?.[3];
 };
 
+const callCreate = (data: unknown) => call(CREATE_EVENT, data);
 const callDrop = (data: unknown) => call(DROP_EVENT, data);
 const callShareLocation = (data: unknown) => call(SHARE_LOCATION_EVENT, data);
 const callGet = (data: unknown) => call(GET_EVENT, data);
@@ -498,5 +500,62 @@ describe('media:thumbnail — storing a thumbnail a client generated', () => {
 
     expect(reply).toEqual({ stored: false });
     expect(reply.error).toBeUndefined();
+  });
+});
+
+/**
+ * MICA-116. `data` is `mediumtext`, and that was the only bound `assertWritableValue`
+ * had to check a photo against — 16,777,215 characters, sixty times a minute per player
+ * under the default `gphone_rate_limit`, into a table with no retention. `thumbnail` next
+ * door has had an explicit cap for exactly this reason; the column holding the megabytes
+ * had none.
+ *
+ * The number is sized from the capture path — 1080 on the longer edge, one lossy encode at
+ * `gphone_camera_quality`, base64 — and never from what the column tolerates.
+ */
+describe('media:create — the size a photo may actually be (MICA-116)', () => {
+  const MAX_DATA_LENGTH = 4 * 1024 * 1024;
+  const photoOf = (bytes: number) => `data:image/webp;base64,${'A'.repeat(bytes)}`;
+
+  it('accepts an ordinary capture', async () => {
+    // A few hundred kilobytes is what a real photo measures — the size MICA-110 found
+    // the gallery downloading per tile.
+    const reply = await callCreate({ kind: 'photo', data: photoOf(400 * 1024) });
+
+    expect(reply.error).toBeUndefined();
+    expect(dbMock.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it('still accepts one several times larger than the camera has ever produced', async () => {
+    // The cap is a backstop, not a compression target: it must never refuse a real photo
+    // taken on a server that set `gphone_camera_quality 100`.
+    const reply = await callCreate({ kind: 'photo', data: photoOf(3 * 1024 * 1024) });
+
+    expect(reply.error).toBeUndefined();
+    expect(dbMock.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a payload larger than the capture path could produce', async () => {
+    const reply = await callCreate({ kind: 'photo', data: photoOf(MAX_DATA_LENGTH) });
+
+    expect(reply.error).toMatch(/too large/i);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('refuses one the column would happily have taken', async () => {
+    // The exact hole: `mediumtext` holds 16MB, so this row was written and reported as a
+    // success before the cap existed.
+    const reply = await callCreate({ kind: 'photo', data: 'A'.repeat(12 * 1024 * 1024) });
+
+    expect(reply.error).toMatch(/too large/i);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('tells the player something a player can read', async () => {
+    // §2.9: this message reaches a toast, so no `[Repository]` prefix and no table name.
+    const reply = await callCreate({ kind: 'photo', data: photoOf(MAX_DATA_LENGTH) });
+
+    expect(reply.error).not.toContain('[Repository]');
+    expect(reply.error).not.toContain('gphone_media');
   });
 });

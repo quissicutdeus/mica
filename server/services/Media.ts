@@ -39,6 +39,53 @@ import { notifyPlayer } from '../lib/shell';
  * status = 'active', and delete is an ownership-scoped soft delete that writes the audit
  * entry.
  */
+
+/**
+ * The largest `data` a client may write through the generic `create`, as a base64 payload.
+ *
+ * Sized from what the capture path can actually produce, never from what the column
+ * tolerates (MICA-116). `mediumtext` holds 16MB and `assertWritableValue` has nothing
+ * narrower to check it against, so before this the honest answer to "how big may a photo
+ * be" was "sixteen megabytes, sixty times a minute, per player, into a table with no
+ * retention" — a gigabyte a minute from one modified client.
+ *
+ * The arithmetic, from the camera's own constants:
+ *
+ * - `CAPTURE_MAX_DIMENSION` is 1080 and caps the **longer** edge, so the largest frame the
+ *   crop math can emit is a square 1080x1080 — 1.17 megapixels. Today's viewfinder is
+ *   portrait inside a 400x850 screen, so a real capture is nearer half that; the square is
+ *   the ceiling a future landscape crop could reach under the same rule.
+ * - One lossy encode at `gphone_camera_quality`, which a server owner may set as high as
+ *   100. Dense game content at that setting runs around two bytes a pixel worst case, so
+ *   roughly 2.3MB of encoded bytes.
+ * - Base64 and the data-URI prefix add a third: about 3.1MB on the wire.
+ *
+ * Four mebibytes is that worst case with room above it, so no legitimate photo is ever
+ * refused. Against a real capture — a few hundred kilobytes, the size MICA-110 measured
+ * — it is roughly a tenfold margin; against the column it is a quarter. It is a backstop
+ * for a payload nothing in this codebase could have produced, not a compression target:
+ * `gphone_camera_quality` is the knob for how big photos actually get.
+ *
+ * Checked at the boundary rather than in the schema for the same reason
+ * `MAX_THUMBNAIL_LENGTH` is: a text column's only bound is its type. Making `maxLength` a
+ * first-class schema field, so the next `mediumtext` column inherits a sane bound without
+ * anyone remembering to write one, is the better fix and belongs to `defineService` rather
+ * than to this file.
+ */
+const MAX_MEDIA_DATA_LENGTH = 4 * 1024 * 1024;
+
+/**
+ * Refuse a payload far larger than the camera could have produced.
+ *
+ * The message reaches a **player** as a toast, so it carries no `[Repository]` prefix and
+ * no table name (§2.9) — the same rule `assertWritableValue`'s own messages obey.
+ */
+const assertStorableData = (value: unknown): void => {
+  if (typeof value === 'string' && value.length > MAX_MEDIA_DATA_LENGTH) {
+    throw new Error('That photo is too large to store.');
+  }
+};
+
 export const media = defineService<MediaItem>({
   id: 'media',
   table: 'gphone_media',
@@ -126,9 +173,29 @@ export const media = defineService<MediaItem>({
        * `AddMedia` export, which is how an external resource gets a GIF, a video poster
        * or a voice clip into a player's gallery — the camera can only ever produce a
        * `photo`.
+       *
+       * `super.create`, deliberately: the `create` override below bounds `data` to what
+       * this phone's own camera can emit, and that number has no authority over a resource
+       * handing the gallery a voice clip or a video poster. Nothing reaching this method is
+       * a client payload — a server owner installed whatever is calling it — so it keeps
+       * the column's bound rather than the camera's.
        */
       async addForPlayer(citizenid: string, item: Partial<MediaItem>): Promise<number> {
-        return await this.create({ ...item, citizenid } as Partial<MediaItem>);
+        return await super.create({ ...item, citizenid } as Partial<MediaItem>);
+      }
+
+      /**
+       * The generic `create`, with the one bound `mediumtext` does not give it. MICA-116.
+       *
+       * Every other caller of this class reaches the table through a **named** method
+       * (`addForPlayer`, `storeThumbnail`), so this override is exactly the client-writable
+       * path and nothing else. `ServiceEndpoint` has already reduced the payload to
+       * `clientWritable` columns by the time it arrives; what is left to check is the one
+       * thing the schema cannot say.
+       */
+      async create(item: Partial<MediaItem>): Promise<number> {
+        assertStorableData(item.data);
+        return await super.create(item);
       }
 
       /**

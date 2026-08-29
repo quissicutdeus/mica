@@ -28,7 +28,13 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ## Unreleased
 
-Nothing yet that a server owner needs to act on.
+Nothing to do, but a limit now exists that did not before.
+
+- **A photo larger than 4MB is refused** rather than stored. The column holds
+  16MB and nothing checked against anything smaller, so a modified client could
+  fill `gphone_media` far faster than any camera can. Nothing the phone's own
+  camera produces comes close to the cap — `gphone_camera_quality` is still the
+  knob for how big stored photos actually get.
 
 ## 2026-08-27
 
