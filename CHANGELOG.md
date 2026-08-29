@@ -51,6 +51,25 @@ where it previously appeared to succeed, and the console will name the call that
 answered oddly. That is the safer of the two failures, but it is visible, and
 the log line is what tells you which resource to look at.
 
+**If you run ESX, a player has one phone — not one per character.** gPhone keys
+every row it owns on one identity column, `citizenid`, and on ESX that column
+holds the player's own identifier — the license or steam string the framework
+knows them by. On qbx_core and qb-core it holds the character's id, so each
+character carries its own contacts, messages and gallery. The asymmetry is
+deliberate rather than a gap: ESX has no character system to hang a separate
+phone on, and giving gPhone a second notion of identity would have put the
+question into every ownership check in the resource instead of one place
+(MICA-150).
+
+**Moving an existing server between ESX and a qb core re-keys every phone, and
+gPhone ships no migration for it.** The rows written under the old identity stay
+in the tables, but nobody resolves to them any more, so players arrive to empty
+phones rather than to merged ones — and if changing framework means dropping and
+recreating the framework's own `players` table, the foreign keys described in
+the README take every one of those rows with it. Neither direction is a
+conversion. Plan a framework switch as a data migration you write, or as a
+deliberate reset your players are told about.
+
 Nothing else. No versioned migration has landed and no table has gained a
 column, so nothing here needs `gphoneschema apply`. Every convar below defaults
 to the behaviour a server already had, so an update that sets none of them
