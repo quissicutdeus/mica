@@ -1607,6 +1607,10 @@ const mockRegistry: Record<string, MockHandler> = {
     supported: true,
     isFrontCamera: !!data?.isFrontCamera
   }),
+  // The default `gphone_camera_quality`. A browser has no convars, so answering with the
+  // number the client would answer with on an unconfigured server keeps the two paths
+  // encoding the same bytes.
+  cameraQuality: async () => ({ quality: 95 }),
   onCameraApp: async () => true,
   // Media and mail are soft-deleted, as the server does it: a removed row is still
   // there to be moderated.

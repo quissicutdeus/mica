@@ -91,3 +91,39 @@ on('__cfx_nui:flipCamera', (data: { isFrontCamera?: boolean }, cb: Function) => 
   PhoneCamera.setFrontFacing(Boolean(data?.isFrontCamera));
   cb({ supported: true, isFrontCamera: PhoneCamera.isFrontFacing() });
 });
+
+/**
+ * Encoding quality for the stored photo, as a percentage.
+ *
+ * `gphone_camera_quality`, and it needs `setr` — the NUI cannot read a convar at all, so
+ * the value is read here and handed over. Replication is what makes that possible, the
+ * same reason `gphone_music_range` is a `setr` (README).
+ *
+ * The default is the number the encode was tuned at. It is worth turning down: measured
+ * through libwebp on a detail-dense plate, 90 is roughly 30% fewer bytes for about a
+ * decibel of PSNR, and every photo lives in `mediumtext` forever until MICA-71's
+ * retention lands. Below about 80 the game's dark sky gradients start to band.
+ */
+const DEFAULT_CAMERA_QUALITY = 95;
+
+/**
+ * Clamp rather than reject.
+ *
+ * A convar is a free-form string, so `GetConvarInt` answers 0 for anything it cannot
+ * parse — and 0 is a legal-looking number that would encode every photo as mud. Out of
+ * range means the owner meant *something*, so the nearest usable value is a better answer
+ * than silently shipping the garbage or silently ignoring them.
+ */
+export const cameraQuality = (): number => {
+  const raw =
+    typeof GetConvarInt === 'function'
+      ? GetConvarInt('gphone_camera_quality', DEFAULT_CAMERA_QUALITY)
+      : DEFAULT_CAMERA_QUALITY;
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_CAMERA_QUALITY;
+  return Math.min(100, Math.max(1, Math.round(raw)));
+};
+
+RegisterNuiCallbackType('cameraQuality');
+on('__cfx_nui:cameraQuality', (_: any, cb: Function) => {
+  cb({ quality: cameraQuality() });
+});

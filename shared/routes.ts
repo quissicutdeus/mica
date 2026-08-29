@@ -213,6 +213,9 @@ export const CLIENT_ONLY_ACTIONS: readonly string[] = [
   'takePhoto',
   // Front/rear toggle on the scripted camera.
   'flipCamera',
+  // `gphone_camera_quality`. The NUI cannot read a convar, so the client reads it and
+  // answers with it — a hardware read like the four above, not a service call.
+  'cameraQuality',
   // Setting a GPS waypoint from a location a message already carries is purely local —
   // `SetNewWaypoint` fires on the recipient's own client with no server round trip.
   'setWaypoint'

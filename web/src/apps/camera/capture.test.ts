@@ -12,7 +12,9 @@ import { fileURLToPath } from 'node:url';
 import {
   asDataUri,
   encodeCrop,
-  CAPTURE_QUALITY,
+  captureQuality,
+  setCaptureQuality,
+  DEFAULT_CAPTURE_QUALITY,
   CAPTURE_MAX_DIMENSION,
   LANDSCAPE_ASPECT,
   centerCropToAspect,
@@ -52,7 +54,7 @@ describe('encodeCrop', () => {
   it('encodes as WebP when the engine supports it', () => {
     const canvas = canvasThatSupports(['image/webp', 'image/jpeg']);
     expect(encodeCrop(canvas)).toMatch(/^data:image\/webp/);
-    expect(canvas.toDataURL).toHaveBeenCalledWith('image/webp', CAPTURE_QUALITY);
+    expect(canvas.toDataURL).toHaveBeenCalledWith('image/webp', captureQuality());
   });
 
   it('falls back to JPEG rather than shipping the silent PNG', () => {
@@ -66,10 +68,47 @@ describe('encodeCrop', () => {
     expect(out).not.toMatch(/^data:image\/png/);
   });
 
-  it('asks for high quality — this is the only lossy step left', () => {
+  it('asks for high quality by default — this is the only lossy step left', () => {
     const canvas = canvasThatSupports(['image/webp']);
     encodeCrop(canvas);
-    expect(CAPTURE_QUALITY).toBeGreaterThanOrEqual(0.92);
+    expect(DEFAULT_CAPTURE_QUALITY).toBeGreaterThanOrEqual(0.92);
+  });
+
+  it('encodes at the quality the server asked for', () => {
+    setCaptureQuality(90);
+    const canvas = canvasThatSupports(['image/webp']);
+    encodeCrop(canvas);
+
+    expect(canvas.toDataURL).toHaveBeenCalledWith('image/webp', 0.9);
+    setCaptureQuality(DEFAULT_CAPTURE_QUALITY * 100);
+  });
+});
+
+describe('setCaptureQuality', () => {
+  // Restored after each case: the value is module scope on purpose (it outlives the
+  // component), so a test that changed it would leak into every later one.
+  const restore = () => setCaptureQuality(DEFAULT_CAPTURE_QUALITY * 100);
+
+  it('takes a percentage and stores a fraction', () => {
+    expect(setCaptureQuality(80)).toBeCloseTo(0.8, 10);
+    expect(captureQuality()).toBeCloseTo(0.8, 10);
+    restore();
+  });
+
+  it('keeps the current value for anything outside 1-100', () => {
+    // 0 is the one that matters: `GetConvarInt` answers 0 for a convar it cannot parse,
+    // and 0 would encode every photo as mud.
+    for (const bad of [0, -5, 101, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(setCaptureQuality(bad)).toBe(DEFAULT_CAPTURE_QUALITY);
+    }
+    expect(captureQuality()).toBe(DEFAULT_CAPTURE_QUALITY);
+  });
+
+  it('keeps the current value for a reply that is not a number at all', () => {
+    // The reply crosses the NUI bridge as JSON, and a missing field arrives as undefined.
+    for (const bad of [undefined, null, '90', {}]) {
+      expect(setCaptureQuality(bad)).toBe(DEFAULT_CAPTURE_QUALITY);
+    }
   });
 });
 

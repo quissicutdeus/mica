@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { asDataUri, cropImageToAspect, cropViewportToCanvas, LANDSCAPE_ASPECT } from './capture';
+  import {
+    asDataUri,
+    cropImageToAspect,
+    cropViewportToCanvas,
+    setCaptureQuality,
+    LANDSCAPE_ASPECT
+  } from './capture';
   import {
     useCamera,
     useMedia,
@@ -139,8 +145,18 @@
     key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key;
 
   // The thumbnail shows the newest photo, which may have arrived from anywhere.
+  //
+  // The encode quality is asked for here too. It is a convar, so it can change under a
+  // running client (`setr gphone_camera_quality 90` from the console), and foreground is
+  // both often enough to notice and rare enough to cost nothing. A failure is not
+  // reported: `setCaptureQuality` keeps the default, which is what the camera used before
+  // the convar existed, and a toast about an encoder setting would mean nothing to the
+  // player holding the shutter.
   onAppForeground('camera', () => {
     void media.load();
+    void fetchNui<{ quality?: number }>('cameraQuality', {}, { defaultValue: {} }).then((res) =>
+      setCaptureQuality(res?.quality)
+    );
   });
 
   onDestroy(() => {

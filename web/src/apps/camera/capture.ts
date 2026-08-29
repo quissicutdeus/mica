@@ -12,8 +12,46 @@
 
 import { encodeCanvas, releaseCanvas } from '@gphone/sdk';
 
-/** Quality for the stored crop. */
-export const CAPTURE_QUALITY = 0.95;
+/**
+ * Quality for the stored crop when the server has not said otherwise.
+ *
+ * The number the encode was tuned at, and the one `gphone_camera_quality` defaults to.
+ */
+export const DEFAULT_CAPTURE_QUALITY = 0.95;
+
+/**
+ * The quality actually in force, as a 0-1 fraction.
+ *
+ * A module-level value rather than a store, because the only reader is `encodeCrop` and
+ * it is called from a plain function, not from a component. Module scope outlives the
+ * camera's component (the CEF page never unloads), so this survives the app closing and
+ * is asked for again on foreground rather than on every shutter press.
+ *
+ * It starts at the default, so a capture taken before the client has answered — or on a
+ * server that never set the convar, or in the browser — encodes at exactly the quality it
+ * always did. There is no state in which this is undefined.
+ */
+let currentQuality = DEFAULT_CAPTURE_QUALITY;
+
+/** What `encodeCrop` will use, for the tests and for anything that wants to report it. */
+export const captureQuality = (): number => currentQuality;
+
+/**
+ * Adopt the server's number, or keep the default.
+ *
+ * The client clamps too, and this clamps again, because the value crosses the NUI bridge
+ * as JSON and §2.9's reflex applies in both directions: a payload is a payload. A quality
+ * of 0 is what `GetConvarInt` answers for an unparseable convar and would encode every
+ * photo as mud, so anything outside 1-100 is refused rather than clamped to an edge — the
+ * client already did the clamping for values a person plausibly meant.
+ */
+export const setCaptureQuality = (percent: unknown): number => {
+  if (typeof percent !== 'number' || !Number.isFinite(percent) || percent < 1 || percent > 100) {
+    return currentQuality;
+  }
+  currentQuality = percent / 100;
+  return currentQuality;
+};
 
 /**
  * Wrap raw base64 in a data URI, naming the type from the payload's own magic bytes.
@@ -38,11 +76,12 @@ export const asDataUri = (raw: string): string => {
  * for the small image than for the large one: a silent PNG thumbnail would be several
  * times the size of the photo's own encode at 320px.
  *
- * This wrapper is what keeps `CAPTURE_QUALITY` here, in the camera, rather than in a
- * module about thumbnails.
+ * This wrapper is what keeps the quality here, in the camera, rather than in a module
+ * about thumbnails. It reads `currentQuality` at call time rather than closing over it,
+ * so a convar that arrives while the app is open applies to the next photo.
  */
 export const encodeCrop = (canvas: HTMLCanvasElement): string =>
-  encodeCanvas(canvas, CAPTURE_QUALITY);
+  encodeCanvas(canvas, currentQuality);
 
 /**
  * The aspect ratio of the camera's LANDSCAPE frame.

@@ -247,11 +247,17 @@ requirements:
 ## Configuration
 
 Everything a server owner can tune is a convar, set in `server.cfg` above
-`ensure gphone`. All but one are read on the server, so plain `set` is enough.
-**`gphone_music_range` is the exception and needs `setr`**: both halves of
-proximity music read it — the server to decide who is on a listener's roster,
-the client to decide what that roster sounds like — and a plain `set` leaves
-every client on the default while the server fans out at your value.
+`ensure gphone`. Most are read on the server, so plain `set` is enough. **Two
+need `setr`**, because a client reads them and a plain `set` never leaves the
+server:
+
+- **`gphone_music_range`** — both halves of proximity music read it: the server
+  to decide who is on a listener's roster, the client to decide what that roster
+  sounds like. A plain `set` leaves every client on the default while the server
+  fans out at your value.
+- **`gphone_camera_quality`** — the photo is encoded in the phone's own UI,
+  which cannot read a convar at all, so the client reads it and hands it over. A
+  plain `set` leaves every photo at the default.
 
 The values below are the defaults as written in the code, so a server that sets
 none of them behaves exactly as shown and this block is only worth pasting if
@@ -265,6 +271,7 @@ set gphone_max_accounts_per_app 3
 set gphone_bluetooth_range 15
 setr gphone_music_range 30
 set gphone_music_max_nearby 8
+setr gphone_camera_quality 95
 set gphone_blabber_edit_window 900
 set gphone_notification_retention 30
 ```
@@ -280,12 +287,16 @@ set gphone_notification_retention 30
 | `gphone_music_max_nearby`       | integer              | `8`                    | Broadcasters one listener is told about at once    |
 | `gphone_blabber_edit_window`    | integer, seconds     | `900`                  | How long a Blab stays editable by its author       |
 | `gphone_notification_retention` | integer, days        | `30`                   | How long notification rows are kept                |
+| `gphone_camera_quality`         | integer, 1-100       | `95`                   | Encode quality of a stored photo (needs `setr`)    |
 
-Seven of the nine are read on every use rather than cached, so changing one with
+Eight of the ten are read on every use rather than cached, so changing one with
 `set` from the live console takes effect on the next request and needs no
 restart. `gphone_blabber_edit_window` and `gphone_notification_retention` are
 the two exceptions — both are read once at resource start, so a change to either
-needs a restart, for the reasons given under them below.
+needs a restart, for the reasons given under them below. `gphone_camera_quality`
+is read on every use as well, but the phone only asks for it when the Camera app
+comes to the foreground, so a change reaches a player the next time they open
+the camera rather than the next time they take a photo.
 
 - **`gphone_admin_aces`** — which ace objects grant gPhone admin: the phone's
   Developer Tools, and the `gphone*` console commands. The default recognises
@@ -377,6 +388,19 @@ needs a restart, for the reasons given under them below.
   prune runs. Raise it if you want players to keep more history; lower it if the
   table grows faster than you care to carry. A non-positive value falls back
   to 30.
+
+- **`gphone_camera_quality`** — how hard the phone squeezes a photo before it is
+  stored, 1 to 100. Every capture is a single lossy encode (WebP where the
+  browser has it, JPEG where it does not), and the result lives in a database
+  column, so this is the knob that decides how fast your `gphone_media` table
+  grows. 95 is the default and is close to visually lossless. 90 is worth
+  considering: measured through libwebp on a detail-dense plate it is roughly a
+  third fewer bytes for about a decibel, which is not a difference a player
+  finds on a phone screen. Below about 80 the dark sky gradients this game is
+  full of start to band, which is the first thing anyone notices. Needs `setr`,
+  and applies from the next time a player opens the Camera app. A value the
+  server cannot parse reads as 0, which would be unusable, so 0 and anything
+  negative fall back to 95; anything above 100 is clamped to 100.
 
 One convar you may still find in an old config: `gphone_auto_migrate`. An
 earlier build added missing columns and indexes at start when it was set, and

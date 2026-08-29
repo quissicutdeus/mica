@@ -18,7 +18,8 @@
  * times larger, and every one of those goes into a database column.
  *
  * `quality` is required rather than defaulted, because the two callers want genuinely
- * different answers — 0.95 for the archival capture, `THUMBNAIL_QUALITY` for the small
+ * different answers — the camera's own, which the server sets with
+ * `gphone_camera_quality` and defaults to 0.95, and `THUMBNAIL_QUALITY` for the small
  * copy — and a default would quietly make one of them wrong.
  */
 /**
@@ -73,7 +74,7 @@ export const encodeCanvas = (canvas: HTMLCanvasElement, quality: number): string
 export const THUMBNAIL_MAX_DIMENSION = 320;
 
 /**
- * Quality for the thumbnail, and deliberately not `CAPTURE_QUALITY`.
+ * Quality for the thumbnail, and deliberately not the capture's.
  *
  * 0.95 is right for an original a player may open full-screen; at 320px it is mostly
  * wasted bytes. Measured through libwebp on a detail-dense 607x1080 plate: the same
@@ -81,7 +82,10 @@ export const THUMBNAIL_MAX_DIMENSION = 320;
  * never reaches a 123px tile. Below about 0.6 the ringing starts to show on exactly the
  * dark gradients the game is full of, which is the other end of the range.
  *
- * The archival copy is untouched: `data` is still the single 0.95 encode it was.
+ * The archival copy is untouched: `data` is still a single encode, at whatever
+ * `gphone_camera_quality` says (0.95 unless a server owner turned it down). This number
+ * is fixed and does not follow it — the reasoning above is about a 123px tile, which is
+ * 123px whatever the original was stored at.
  */
 export const THUMBNAIL_QUALITY = 0.7;
 
