@@ -104,11 +104,11 @@ changes nothing for your players.
   `gphone:server:media:characterDeleted` is not optional there the way it is on
   a qb core. Phone numbers are not part of core ESX, so a player whose number
   lives somewhere gPhone does not look will have no number and no number-based
-  lookup. Looking up an **offline** player does not resolve at all. And the
-  battery level gPhone mirrors onto the framework player, for other resources to
-  read, degrades on older ESX builds and is dropped with a logged warning on
-  builds offering nowhere to put it — the phone's own battery is unaffected in
-  every case.
+  lookup — and an **offline** player is found by identifier but never by number,
+  core ESX having nowhere to keep one. And the battery level gPhone mirrors onto
+  the framework player, for other resources to read, degrades on older ESX
+  builds and is dropped with a logged warning on builds offering nowhere to put
+  it — the phone's own battery is unaffected in every case.
 
 - Proximity music, which lets a phone play out loud to the people standing
   around it, is bounded by two new convars: `gphone_music_range` for how far it

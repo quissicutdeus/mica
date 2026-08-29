@@ -298,22 +298,31 @@ else leaves players without a number and without number-based lookup. Names
 degrade more gently: `esx_identity`'s first and last name are used when present,
 otherwise the framework's own `getName()` split at the first space.
 
-**Looking up an offline player does not work.** Resolving someone who is not
-connected reads the qb `players` table and its `charinfo` JSON, and ESX has
-neither. Online players are unaffected. In practice that means an offline player
-renders without a display name, and messaging an offline player by number does
-not resolve at all. This is a known limitation rather than a bug being hidden: a
-replacement query would have to assume one community phone resource's schema,
-and gPhone does not pick one for you.
+**An offline player resolves by identifier but never by phone number.** gPhone
+reads es_extended's own `users` table for someone who is not connected, so an
+offline player renders with their name as they would on a qb core. Core `users`
+has no phone column, though, so messaging an offline player _by number_ does not
+resolve on ESX — and gPhone declines to guess, because the number lives in
+whichever community resource you installed and picking one would be right for
+that population and quietly wrong for everyone else.
+
+That read degrades rather than throws. `users` is a table gPhone neither creates
+nor migrates, so if it is missing a column your build does not have, the lookup
+returns nothing — a nameless offline player, which is exactly the behaviour
+before it existed — instead of failing the conversation being built around it.
+It logs once per distinct failure per resource start, so a genuinely broken
+table says so without filling your console.
 
 **Other resources may not see the battery level.** gPhone mirrors a player's
 charge onto the framework player object so other scripts can read it. ESX Legacy
 1.10+ takes that mirror exactly as a qb core does. Older builds accept it only
 as a session value that does not survive a reconnect, and a build offering
-neither drops it and logs one warning naming the player. The phone is unaffected
-in every case — gPhone's own `gphone_battery` table is the source of truth and
-is written either way — so what degrades is a third-party integration reading
-the mirror, never the battery itself.
+neither drops it and warns once per resource start — once for the server, not
+once per player, since it is a property of the build rather than of anyone
+playing on it. The phone is unaffected in every case — gPhone's own
+`gphone_battery` table is the source of truth and is written either way — so
+what degrades is a third-party integration reading the mirror, never the battery
+itself.
 
 ---
 

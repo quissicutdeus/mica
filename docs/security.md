@@ -80,7 +80,7 @@ client-only actions that never reach the server. All of them land in
 
 ### 2. Raw `onNet` handlers
 
-**Twelve, across six files**, and they fall into two categories that need
+**Ten, across five files**, and they fall into two categories that need
 different things said about them. They sit outside `ServiceEndpoint` because
 they answer fire-and-forget events with no callback id, so they cannot go
 through it.
@@ -135,23 +135,30 @@ existed so the client could tell the server something the server now decides for
 itself, and deleting an entry point beats hardening one. `Signal.ts` has no
 `onNet` left at all.
 
-#### Framework-named — three, and this is the category that was missing
+#### Framework-named — one, and this is the category that was missing
 
-| Event                          | Handler                           |
-| ------------------------------ | --------------------------------- |
-| `QBCore:Server:OnPlayerLoaded` | `server/lib/shell.ts:164`         |
-| `QBCore:Server:OnPlayerLoaded` | `server/services/Settings.ts:223` |
-| `QBCore:Server:OnPlayerLoaded` | `server/services/Battery.ts:341`  |
+| Event                          | Handler                   |
+| ------------------------------ | ------------------------- |
+| `QBCore:Server:OnPlayerLoaded` | `server/lib/shell.ts:188` |
 
-They are easy to miss precisely because they do not look like gPhone's surface:
-the name belongs to the framework, the event is one gPhone listens to rather
-than defines, and `eventNames.test.ts` — which scans for `gphone:` names — has
-nothing to say about them. **A registered net event is reachable no matter whose
+**This was three until ESX support landed, and the drop is a real reduction in
+surface rather than a recount.** `Settings.ts` and `Battery.ts` each registered
+this name themselves, pasted from `shell.ts` — which is why MICA-136's payload
+bug had to be fixed in three places at once. `shell.ts` now owns every
+player-loaded event and exposes `onPlayerLoaded(name, handler)`; the other two
+are one-line subscribers that are handed an already-resolved source and are
+never shown a payload to misread. Adding ESX would otherwise have made it a
+fourth listener in each of three files, and the next framework a fifth.
+
+It is easy to miss precisely because it does not look like gPhone's surface: the
+name belongs to the framework, the event is one gPhone listens to rather than
+defines, and `eventNames.test.ts` — which scans for `gphone:` names — has
+nothing to say about it. **A registered net event is reachable no matter whose
 name is on it.**
 
-Each is `onNet`, not `on`, and that is deliberate rather than sloppy: this name
-is fired **from the client**, so a plain `on()` throws "was not safe for net"
-the moment a player loads. Network-safety is per-resource, so another resource
+It is `onNet`, not `on`, and that is deliberate rather than sloppy: this name is
+fired **from the client**, so a plain `on()` throws "was not safe for net" the
+moment a player loads. Network-safety is per-resource, so another resource
 declaring it net-safe does nothing for gPhone's own handler.
 
 Verified against `qbx_core` 1.24.0 as vendored, because the reasoning here was
@@ -167,8 +174,8 @@ Player-object_ trigger for this name, and justified trusting the payload on that
 basis. It does not. The local Player-object trigger is
 `QBCore:Server:PlayerLoaded` — a **different event** — at
 `qbx_core/server/player.lua:1064`. The **matching `QBCore:Server:PlayerLoaded`
-listeners beside each one are `on()`, are local-only, and are not entry points**
-— which is why this count is three and not six.
+listener beside it is `on()`, is local-only, and is not an entry point** — which
+is why this category counts one and not two.
 
 Vanilla `qb-core` was not available to check. If it ever does fire this name
 locally, that arrives with `source` 0 and is refused, and the `on()` twin is
@@ -192,28 +199,28 @@ the name net-safe for gPhone and manufacture a client-reachable entry point
 es_extended does not itself have. §2.9's rule against registering an action the
 app does not use holds for a framework-named event exactly as for a gphone-named
 one — and this file is the record of what happens when a census organised by
-gPhone's own event names misses a category. **The count below is therefore still
-three, and the census still twelve.** If a fork is ever found firing this name
-from a client, the fix is an `onNet` twin routed through `loadedPlayerSource`,
-never a payload read.
+gPhone's own event names misses a category. **So ESX added a player-loaded
+handler and no entry point, and neither number above moved on its account.** If
+a fork is ever found firing this name from a client, the fix is an `onNet` twin
+routed through `loadedPlayerSource`, never a payload read.
 
-**All three derive the target from the connection**, via `loadedPlayerSource` in
+**It derives the target from the connection**, via `loadedPlayerSource` in
 `server/lib/shell.ts`. `source` is runtime-set and unforgeable; the payload may
 only _agree_ with it, and one naming anyone else is dropped. That function calls
-`guardNetEvent` itself, so these three are behind the same rate limit and the
-same loaded-character check as the nine above — counted before the comparison,
-so a flood is charged for every attempt rather than only the honest ones. Its
-bucket is keyed to the caller's own source, so an attacker cannot exhaust a
-victim's.
+`guardNetEvent` itself, so it is behind the same rate limit and the same
+loaded-character check as the nine above — counted before the comparison, so a
+flood is charged for every attempt rather than only the honest ones. Its bucket
+is keyed to the caller's own source, so an attacker cannot exhaust a victim's.
 
-Until MICA-136 landed, all three read `player?.PlayerData?.source` and none
-called `guardNetEvent`, so a modified client could drive a settings rehydrate, a
-shell rehydrate, or a battery push **against an arbitrary server id it named
-itself** — and could seed the battery maps with ids `playerDropped` would never
-clean, by a route those handlers never see. No write and no cross-player read
-resulted, so the cost was unsolicited state churn rather than disclosure, but
-the shape was wrong: identity comes from the connection, never from the payload,
-the same rule the exports contract states below.
+Until MICA-136 landed, the three listeners this one replaced each read
+`player?.PlayerData?.source` and none called `guardNetEvent`, so a modified
+client could drive a settings rehydrate, a shell rehydrate, or a battery push
+**against an arbitrary server id it named itself** — and could seed the battery
+maps with ids `playerDropped` would never clean, by a route those handlers never
+see. No write and no cross-player read resulted, so the cost was unsolicited
+state churn rather than disclosure, but the shape was wrong: identity comes from
+the connection, never from the payload, the same rule the exports contract
+states below.
 
 **A refusal is logged once per connection**, deduped and cleared on
 `playerDropped` so a recycled server id does not stay silenced. That matters
@@ -222,7 +229,8 @@ character loaded_: on a core that fires it before the framework has registered
 the character, settings and battery would otherwise never load and nothing would
 say so.
 
-The three are guarded, not eliminated, so the census below still counts twelve.
+It is guarded, not eliminated, so the census below still counts it — ten in
+total, nine gphone-named and this one.
 
 ### 3. Exports
 
