@@ -5,20 +5,29 @@ import { allow } from './rateLimit';
  * The preamble every `onNet` handler needs, in one place.
  *
  * `ServiceEndpoint` applies rate limiting and authentication to every action it registers.
- * Twelve handlers are raw `onNet` listeners instead — they answer fire-and-forget events
+ * Ten handlers are raw `onNet` listeners instead — they answer fire-and-forget events
  * with no callback id, so they cannot go through the endpoint — and they had neither.
  * A modified client could drive any of them in a loop, as an unauthenticated source.
  *
  * Nine are gphone-named, across `Phone.ts`, `Battery.ts`, `Contacts.ts` and
- * `PhoneOpenState.ts`. The other three are framework-named — `QBCore:Server:OnPlayerLoaded`
- * in `shell.ts`, `Settings.ts` and `Battery.ts` — which reach this preamble through
- * `loadedPlayerSource`. `docs/security.md` explains why that category was missed for so
- * long: an entry-point census organised by gphone event names has no row for an event
- * somebody else named.
+ * `PhoneOpenState.ts`. The tenth is framework-named — `QBCore:Server:OnPlayerLoaded` in
+ * `shell.ts` — and reaches this preamble through `loadedPlayerSource`. `docs/security.md`
+ * explains why that category was missed for so long: an entry-point census organised by
+ * gphone event names has no row for an event somebody else named.
+ *
+ * **That category used to have three rows, and the drop is a smaller attack surface rather
+ * than a recount.** `Settings.ts` and `Battery.ts` each registered the same framework event
+ * themselves, pasted from `shell.ts`, which is why all three carried MICA-136's payload
+ * bug at once. `shell.ts` now owns every player-loaded entry point and they subscribe to it
+ * through `onPlayerLoaded`, so they are handed a source that has already been established —
+ * a subscriber cannot misread an identity it is never shown. `esx:playerLoaded` is
+ * deliberately not in this list: it is registered with `on`, so it is not net-safe inside
+ * gPhone and no client can reach it.
  *
  * Recount rather than trusting this comment, which has been wrong before:
- * `grep -rn "onNet(" server --include="*.ts" | grep -v __tests__`. It also returns
- * `ServiceEndpoint.ts`'s own generic registrar and the example below, neither a handler.
+ * `grep -rn "onNet(" server --include="*.ts" | grep -v __tests__`. That returns twelve
+ * lines for ten handlers — the other two are `ServiceEndpoint.ts`'s own generic registrar
+ * and the example below, neither a handler.
  *
  * Rate limit **before** the player lookup, matching `ServiceEndpoint`: `getPlayer` walks
  * the framework's player table, and a flood should not get to make the server pay for
