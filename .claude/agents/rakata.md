@@ -1,6 +1,6 @@
 ---
 name: rakata
-description:
+description: >-
   Write or change server-side gPhone code — a service, a table, a column, an
   index, a migration, or a net event handler. Named for the Rakata, whose
   Infinite Empire left the infrastructure everything later was built on: this is

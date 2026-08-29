@@ -1,6 +1,6 @@
 ---
 name: whills
-description:
+description: >-
   Write or correct documentation — README, docs/, AGENTS.md, a design note, a
   changelog entry. Named for the Journal of the Whills, the record the whole
   story is drawn from: a document that disagrees with the code is worse than no
