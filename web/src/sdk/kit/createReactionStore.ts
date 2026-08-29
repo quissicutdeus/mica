@@ -5,7 +5,7 @@ import type { ReactionSummary } from '@shared/types';
  * What a target with nothing on it looks like.
  *
  * Exported because a caller reading the map directly (`$reactions[id]`) gets `undefined` for a
- * target nobody has reacted to yet, and every call site would otherwise write its own
+ * target no load has covered yet, and every call site would otherwise write its own
  * `?? { counts: {}, mine: [] }`. `ReactionBar` defaults to this, so a component that hands the
  * bar a raw lookup does not have to.
  */
@@ -32,7 +32,9 @@ export interface ReactionTransport {
    * ninety round trips through NUI, which is the thing the batched shape exists to avoid.
    *
    * A target absent from the reply is a target with no reactions; it does not have to be
-   * echoed back as an empty summary.
+   * echoed back as an empty summary. That is a promise about the *transport* only — the store
+   * fills the omission in as `NO_REACTIONS` rather than passing it on, so absence never reaches
+   * a caller as an answer. `ReactionStore.load` is where that half is written down.
    */
   load: (targetIds: number[]) => Promise<Record<number, ReactionSummary>>;
   /**
@@ -52,11 +54,23 @@ export interface ReactionTransport {
  * path by which a component can set a count the server has not agreed to.
  */
 export interface ReactionStore extends Readable<Record<number, ReactionSummary>> {
-  /** Merge a batched read for these targets into the map. A no-op for an empty list. */
+  /**
+   * Read these targets and merge the answer into the map. A no-op for an empty list.
+   *
+   * **Every id asked about is present when this resolves**, as `NO_REACTIONS` if the reply did
+   * not mention it — the transport may omit an empty summary, this may not. Ids nobody asked
+   * about are left alone, which is what makes a second page merge rather than replace.
+   *
+   * The invariant is load-bearing, not tidiness. Without it `undefined` means both "never
+   * asked" and "asked, and it has nothing", a target whose last reaction was removed keeps its
+   * chips forever, and `toggle` cannot roll back — merging a reply that omits the target leaves
+   * the entry optimism just painted exactly where it was.
+   */
   load: (targetIds: number[]) => Promise<void>;
   /**
    * Add the caller's reaction, or take it back if it is already theirs. Optimistic, then
    * reconciled: a failed write refetches the one target and rethrows, so the caller can toast.
+   * The optimistic entry does not outlive a refused write, whatever the refetch answers.
    */
   toggle: (targetId: number, emoji: string) => Promise<void>;
 }
@@ -90,10 +104,28 @@ export interface ReactionStore extends Readable<Record<number, ReactionSummary>>
 export function createReactionStore(transport: ReactionTransport): ReactionStore {
   const summaries = writable<Record<number, ReactionSummary>>({});
 
+  /** Every id in `targetIds`, gone from the map — the state before anything was known. */
+  const forget = (
+    current: Record<number, ReactionSummary>,
+    targetIds: number[]
+  ): Record<number, ReactionSummary> => {
+    const next = { ...current };
+    for (const id of targetIds) delete next[id];
+    return next;
+  };
+
   const load = async (targetIds: number[]): Promise<void> => {
     if (targetIds.length === 0) return;
     const reply = await transport.load(targetIds);
-    summaries.update((current) => ({ ...current, ...reply }));
+    summaries.update((current) => {
+      // Forgotten first, so what the map last said about a requested target cannot outlive a
+      // reply that no longer mentions it, then answered for everything that was asked about.
+      // An omitted target has no reactions, and saying so is what lets a stale count go and a
+      // rollback land; see `ReactionStore.load`.
+      const next = { ...forget(current, targetIds), ...reply };
+      for (const id of targetIds) next[id] ??= NO_REACTIONS;
+      return next;
+    });
   };
 
   const toggle = async (targetId: number, emoji: string): Promise<void> => {
@@ -124,8 +156,20 @@ export function createReactionStore(transport: ReactionTransport): ReactionStore
       else await transport.react(targetId, emoji);
     } catch (error) {
       // Put it back, from the server rather than by undoing the arithmetic — a second tap
-      // may have landed in between, and re-inverting would then be wrong twice.
-      await load([targetId]);
+      // may have landed in between, and re-inverting would then be wrong twice. `load` answers
+      // for every id it was given, so a refetch that omits this target resets it to
+      // `NO_REACTIONS` instead of leaving the optimistic entry standing.
+      //
+      // Dropped first all the same, because a refetch is not guaranteed to answer at all: a
+      // transport that throws would otherwise let the chip outlive the write it was painted
+      // for, which is the one thing this store exists to prevent. The refused write stays the
+      // error the caller toasts — a failed refetch must not take its place.
+      summaries.update((current) => forget(current, [targetId]));
+      try {
+        await load([targetId]);
+      } catch {
+        // Deliberately swallowed; the write's error is thrown below.
+      }
       throw error;
     }
   };

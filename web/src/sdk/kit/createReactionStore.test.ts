@@ -40,8 +40,10 @@ describe('createReactionStore', () => {
       expect(transport.load).toHaveBeenCalledTimes(1);
       expect(transport.load).toHaveBeenCalledWith([7, 8]);
       expect(get(store)[7]).toEqual(summary({ '👍': 2 }, ['👍']));
-      // A target the server said nothing about stays absent rather than becoming empty.
-      expect(get(store)[8]).toBeUndefined();
+      // A target the server said nothing about was still asked about, so it is answered: the
+      // transport may omit an empty summary, the store may not. `undefined` has to keep meaning
+      // "no load has covered this yet" and nothing else.
+      expect(get(store)[8]).toEqual(NO_REACTIONS);
     });
 
     it('keeps targets an earlier page loaded', async () => {
@@ -55,6 +57,23 @@ describe('createReactionStore', () => {
       await store.load([2]);
 
       expect(Object.keys(get(store)).sort()).toEqual(['1', '2']);
+    });
+
+    it('answers for every target it asked about, and clears one that has emptied out', async () => {
+      // The invariant the rollback rests on. A reply that omits a *requested* target says that
+      // target has nothing on it, so whatever the map last held for it is stale and goes —
+      // otherwise a chip nobody holds any more stays painted, and `toggle` has no way to tell
+      // its own optimistic entry from the truth.
+      let reply: Record<number, ReactionSummary> = { 5: summary({ '👍': 1 }, ['👍']) };
+      const { store } = stub({ load: vi.fn(async () => reply) });
+
+      await store.load([5]);
+      expect(get(store)[5]).toEqual(summary({ '👍': 1 }, ['👍']));
+
+      reply = {};
+      await store.load([5]);
+
+      expect(get(store)[5]).toEqual(NO_REACTIONS);
     });
 
     it('does not reach the server for an empty page', async () => {
@@ -132,13 +151,42 @@ describe('createReactionStore', () => {
       expect(get(store)[5]).toEqual(summary({ '👍': 9 }, []));
     });
 
-    it('rethrows so the caller can toast, rather than swallowing the failure', async () => {
+    it('rethrows so the caller can toast, and leaves no chip behind when it does', async () => {
+      // The default stub answers the refetch with `{}` — a transport exercising the documented
+      // permission to omit a target with no reactions, which is exactly what a target whose only
+      // write was just refused looks like. Asserting the throw alone passed while the optimistic
+      // entry survived the rollback that was supposed to remove it.
       const { store } = stub({
         react: vi.fn(async () => {
           throw new Error('nope');
         })
       });
+
       await expect(store.toggle(1, '👍')).rejects.toThrow('nope');
+
+      // The refetch answered — "nothing on this target" — so the entry is the empty summary,
+      // not the reaction that was refused.
+      expect(get(store)[1]).toEqual(NO_REACTIONS);
+    });
+
+    it('drops the optimistic chip even when the refetch fails too', async () => {
+      // The rollback cannot be conditional on the refetch answering. Blabber's `getReactionsFor`
+      // is a `fetchNui` with a default and never throws, but the store may not lean on that —
+      // the transport is the app's to write. The refused write stays the error the caller toasts.
+      const { store } = stub({
+        load: vi.fn(async () => {
+          throw new Error('the refetch is out too');
+        }),
+        react: vi.fn(async () => {
+          throw new Error('nope');
+        })
+      });
+
+      await expect(store.toggle(1, '👍')).rejects.toThrow('nope');
+
+      // Nothing answered, so the map claims nothing about this target rather than claiming it
+      // is empty. Either way the chip optimism painted is gone.
+      expect(get(store)[1]).toBeUndefined();
     });
   });
 
