@@ -171,3 +171,49 @@ on('QBCore:Server:PlayerLoaded', (player: unknown) => {
   const src = sourceOf(player);
   if (src) pushRehydrate(src);
 });
+
+/**
+ * The source out of `esx:playerLoaded`, whose signature is `(playerId, xPlayer, isNew)`.
+ *
+ * The first argument is the id and is what every es_extended build passes. The xPlayer is
+ * read as a fallback because it carries `source` itself, and an ESX fork that reorders or
+ * drops the first argument should degrade to working rather than to silence — which is the
+ * failure this whole file exists to avoid.
+ */
+const esxLoadedSource = (playerId: unknown, xPlayer: unknown): number | undefined => {
+  const direct = sourceOf(playerId);
+  if (direct !== undefined) return direct;
+  const carried = (xPlayer as { source?: unknown })?.source;
+  return typeof carried === 'number' ? carried : undefined;
+};
+
+/**
+ * ESX's player-loaded event — and why it is `on` rather than `onNet`.
+ *
+ * MICA-136's rule is that the connection is the authority and a packet naming somebody
+ * else is refused outright. This satisfies it more completely than a guard could, by not
+ * offering the packet a way in at all.
+ *
+ * es_extended fires this **server-side and locally**: `TriggerEvent('esx:playerLoaded',
+ * playerId, xPlayer, isNew)`. It is not a `TriggerServerEvent`, which is the whole reason
+ * qbx's `QBCore:Server:OnPlayerLoaded` had to be `onNet` and had to be hardened. And
+ * `RegisterNetEvent`'s network-safety flag is per-resource — the fact this file already
+ * relies on, one direction over — so gPhone registering only `on` means this name is *not*
+ * net-safe inside gPhone and a client emitting it reaches nothing here. There is no forged
+ * target to refuse, and so no `loadedPlayerSource` on this path.
+ *
+ * Adding an `onNet` twin "to be safe" would do the opposite: it would declare the name
+ * net-safe for gPhone and manufacture a client-reachable entry point that es_extended does
+ * not have. §2.9's rule against registering an action the app does not use applies to a
+ * framework-named event exactly as it does to a gphone-named one — `docs/security.md`
+ * records that a census organised by gphone event names is how this category got missed
+ * before. If a fork is ever found firing this name from a client, the fix is an `onNet`
+ * twin routed through `loadedPlayerSource`, not a payload read.
+ *
+ * The payload is therefore the identity here, on the same terms as the
+ * `QBCore:Server:PlayerLoaded` twin above.
+ */
+on('esx:playerLoaded', (playerId: unknown, xPlayer: unknown) => {
+  const src = esxLoadedSource(playerId, xPlayer);
+  if (src) pushRehydrate(src);
+});

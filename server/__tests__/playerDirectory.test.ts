@@ -147,3 +147,70 @@ describe('resolve', () => {
     await expect(resolve('CIT_NOBODY')).resolves.toBeNull();
   });
 });
+
+/**
+ * The same resolver on ESX (MICA-150).
+ *
+ * `PlayerDirectory` reads `rawPlayer.PlayerData.charinfo` and does not know which framework
+ * produced it. That is the point of normalising an `xPlayer` into the qb shape inside
+ * `FrameworkBridge`: this file needed no ESX branch, and these tests exist to prove that
+ * rather than to assume it.
+ *
+ * The online half works. The **offline half does not, and cannot yet** — see the last test.
+ */
+describe('on ESX', () => {
+  const LICENSE = 'license:0123456789abcdef';
+
+  const xPlayer = (identifier: string, source: number) => ({
+    identifier,
+    source,
+    variables: { firstName: 'Ada', lastName: 'Lovelace', phoneNumber: '555-0100' },
+    get: (key: string) =>
+      ({ firstName: 'Ada', lastName: 'Lovelace', phoneNumber: '555-0100' })[key],
+    getName: () => 'Ada Lovelace'
+  });
+
+  const installEsx = (players: Record<number, unknown>) =>
+    __setResourceLookup((name) =>
+      name === 'es_extended'
+        ? {
+            getSharedObject: () => ({
+              GetPlayerFromId: (src: number) => players[src] ?? null,
+              GetExtendedPlayers: () => Object.values(players)
+            })
+          }
+        : undefined
+    );
+
+  it('resolves an online ESX player by phone, with the identifier as the citizenid', () => {
+    installEsx({ 1: xPlayer(LICENSE, 1) });
+
+    return expect(resolveByPhone('555-0100')).resolves.toEqual({
+      citizenid: LICENSE,
+      displayName: 'Ada Lovelace',
+      phone: '555-0100'
+    });
+  });
+
+  it('resolves an online ESX player by identifier', async () => {
+    installEsx({ 1: xPlayer(LICENSE, 1) });
+
+    await expect(resolve(LICENSE)).resolves.toMatchObject({
+      citizenid: LICENSE,
+      displayName: 'Ada Lovelace'
+    });
+    expect(dbMock.single).not.toHaveBeenCalled();
+  });
+
+  it('finds nobody offline, because the SQL fallback reads qb tables — MICA-150 gap', () => {
+    // Both fallbacks here query `players` (`charinfo` JSON). ESX has neither: it has
+    // `users(identifier, firstname, lastname)`, and a phone number is not core ESX at all, so
+    // there is no column to substitute without knowing which community phone resource the
+    // operator runs. Pinned as a known limitation rather than guessed at: on ESX, an offline
+    // player renders with no name, and messaging an offline player by number does not resolve.
+    installEsx({});
+    dbMock.single.mockResolvedValue(null);
+
+    return expect(resolveByPhone('555-0100')).resolves.toBeNull();
+  });
+});

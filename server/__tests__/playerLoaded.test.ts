@@ -16,21 +16,30 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * per-listener coverage; this suite is the one that would notice a fourth listener being
  * added without the guard.
  */
-const { dbMock, bridgeMock, handlers } = vi.hoisted(() => {
+const { dbMock, bridgeMock, handlers, networked } = vi.hoisted(() => {
   // Inside `vi.hoisted` because ESM evaluates imports first: all three modules register at
   // module scope, so a plain assignment below the imports would capture nothing.
   // A list per event, not a single handler: three modules answer to this one name and a
   // `Map<string, Function>` would silently keep only the last of them.
   const captured = new Map<string, Function[]>();
+  const overNet = new Set<string>();
   const capture = (event: string, handler: Function) => {
     const list = captured.get(event) ?? [];
     list.push(handler);
     captured.set(event, list);
   };
   (globalThis as any).on = capture;
-  (globalThis as any).onNet = capture;
+  // Recorded separately, because which registrar a name went through *is* the security
+  // property here: `onNet` declares the name net-safe inside gPhone and makes it reachable by
+  // any connected client, and `on` does not. MICA-150 added an ESX listener that must stay
+  // on the `on` side, and nothing could tell the difference while both wrote to one map.
+  (globalThis as any).onNet = (event: string, handler: Function) => {
+    overNet.add(event);
+    capture(event, handler);
+  };
 
   return {
+    networked: overNet,
     dbMock: {
       query: vi.fn(),
       insert: vi.fn(),
@@ -230,6 +239,66 @@ describe('a refusal that nobody would otherwise notice', () => {
     expect(loadedPlayerSource(undefined)).toBe(ATTACKER);
 
     expect(warnings()).toEqual([]);
+  });
+});
+
+/**
+ * ESX's player-loaded path (MICA-150), and why it looks nothing like the three above.
+ *
+ * es_extended fires `TriggerEvent('esx:playerLoaded', playerId, xPlayer, isNew)` — server-side
+ * and **local**. It is not a `TriggerServerEvent`, which is the entire reason qbx's
+ * `QBCore:Server:OnPlayerLoaded` had to be `onNet` and then had to be hardened by MICA-136.
+ *
+ * So the property asserted here is stronger than "the guard refuses a forged target": there is
+ * no way in for a packet to be refused. gPhone registers this name with `on` only, and
+ * `RegisterNetEvent`'s net-safety flag is per-resource, so the name is not net-safe inside
+ * gPhone and a client emitting it reaches nothing. The first test below is the one that
+ * matters — it fails the moment somebody adds an `onNet` twin "to be safe" and quietly
+ * manufactures the client-reachable entry point es_extended does not have.
+ */
+describe("ESX's player-loaded event", () => {
+  const esxListeners = (): Function[] => handlers.get('esx:playerLoaded') ?? [];
+
+  it('is registered locally and is not reachable over the network', () => {
+    expect(esxListeners()).toHaveLength(1);
+    expect(networked.has('esx:playerLoaded')).toBe(false);
+    // For contrast, and to prove the harness can tell the two apart at all.
+    expect(networked.has('QBCore:Server:OnPlayerLoaded')).toBe(true);
+  });
+
+  it('rehydrates the shell for the player id ESX names', () => {
+    // The payload is the identity here on the same terms as the `QBCore:Server:PlayerLoaded`
+    // local twin: no connection to derive one from, and no client able to reach it.
+    for (const listener of esxListeners()) listener(VICTIM, { source: VICTIM });
+
+    expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', VICTIM]);
+  });
+
+  it('falls back to the xPlayer source when the first argument is not an id', () => {
+    // An ESX fork that reorders or drops the id should degrade to working rather than to
+    // silence, which is the failure mode this whole file exists to catch.
+    for (const listener of esxListeners()) listener(undefined, { source: ATTACKER });
+
+    expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', ATTACKER]);
+  });
+
+  it('does nothing when neither argument carries a source', () => {
+    for (const listener of esxListeners()) listener(undefined, undefined);
+    expect(emitted()).toHaveLength(0);
+  });
+
+  it('does not yet reach the settings and battery listeners — the known ESX gap', () => {
+    // `server/services/Settings.ts` and `server/services/Battery.ts` register their own
+    // player-loaded listeners and both still answer only to the qb event name. On ESX that
+    // means no settings rehydrate and no battery seed on character load: the phone works, but
+    // shows 100% for a player whose saved charge is 12. Pinned as a fact rather than left to
+    // be discovered in game, and deliberately not fixed here — MICA-150's server lane is
+    // scoped out of `server/services/`.
+    for (const listener of esxListeners()) listener(ATTACKER, { source: ATTACKER });
+
+    expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', ATTACKER]);
+    expect(emitted()).not.toContainEqual(['gphone:client:settings:rehydrate', ATTACKER]);
+    expect(emitted().some((call) => call[0] === 'gphone:client:battery:set')).toBe(false);
   });
 });
 

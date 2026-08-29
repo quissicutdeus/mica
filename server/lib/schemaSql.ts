@@ -78,13 +78,69 @@ const indexSql = ({ name, columns, unique }: ResolvedIndex): string => {
   return `    ${unique ? 'UNIQUE KEY' : 'KEY'} \`${name}\` (${list}),`;
 };
 
-const foreignKeySql = (table: string, column: string, def: ColumnDef): string | null => {
+/**
+ * The framework's own player table, which gPhone references but does not create.
+ *
+ * qb owns `players(citizenid)`. ESX has no such table — it has `users(identifier)` — so on a
+ * pure `es_extended` server every constraint pointing here fails at import.
+ */
+export const OWNER_TABLE = 'players';
+
+/**
+ * How much of the schema the framework underneath can support.
+ *
+ * The only axis so far is whether `players(citizenid)` exists, and it is expressed as an
+ * option rather than read from `FrameworkBridge` because this module runs in two places:
+ * inside the resource, and inside `scripts/generate-sql.js` under node, where there is no
+ * framework to ask. The generator decides; this only renders what it is told.
+ *
+ * **Defaults to the qb answer**, so every existing call site emits exactly the bytes it
+ * emitted before ESX was a thing. That is deliberate: the committed `gphone.sql` is the
+ * artifact server owners import by hand, and the ESX support is provably additive only if
+ * that file does not move.
+ */
+export interface SchemaSqlOptions {
+  /**
+   * Does this server have a `players(citizenid)` table for gPhone's rows to hang off?
+   *
+   * `false` omits every foreign key targeting it — the implicit `citizenid` one on each app
+   * table, and the three child tables that declare it explicitly (`Marketplace`, `Messages`,
+   * `Conversations`). **It omits the `ON DELETE CASCADE` with them**, which is the real cost
+   * of the option and not a detail: on qb, deleting a character removes their rows from 22
+   * tables for free, and on ESX nothing does. That gap is its own ticket, and the constraint
+   * cannot simply be kept — a schema that will not import is not a safer one.
+   */
+  ownerTable?: boolean;
+}
+
+const foreignKeySql = (
+  table: string,
+  column: string,
+  def: ColumnDef,
+  options: SchemaSqlOptions = {}
+): string | null => {
   if (!def.references) return null;
   const { table: refTable, column: refColumn, onDelete = 'CASCADE' } = def.references;
+  if (refTable === OWNER_TABLE && options.ownerTable === false) return null;
   return (
     `    CONSTRAINT \`fk_${table}_${column}\` FOREIGN KEY (\`${column}\`)\n` +
     `        REFERENCES \`${refTable}\` (\`${refColumn}\`) ON DELETE ${onDelete},`
   );
+};
+
+/**
+ * Strip the trailing comma a `CREATE TABLE` body's last line always carries.
+ *
+ * Every line emitter above ends its line with `,` because something normally follows.
+ * Dropping the owner foreign key can leave nothing following, and MySQL rejects a body that
+ * ends in a comma — a failure that only ever appears on a fresh ESX install, which is exactly
+ * the audience this branch exists for.
+ */
+const closeBody = (body: readonly string[]): string[] => {
+  if (body.length === 0) return [];
+  const lines = [...body];
+  lines[lines.length - 1] = lines[lines.length - 1].replace(/,$/, '');
+  return lines;
 };
 
 /** One column of a table, as data rather than as a line of SQL. */
@@ -161,25 +217,41 @@ export const indexDefinitionSql = (index: ResolvedIndex): string =>
  * cascade, and a `(citizenid, status)` index because every generic read filters on
  * both.
  */
-export function toCreateTableSql(resolved: ResolvedService): string {
+export function toCreateTableSql(
+  resolved: ResolvedService,
+  options: SchemaSqlOptions = {}
+): string {
   const { table, id, fields } = resolved;
   const shape = expectedShape(resolved);
 
   const declaredForeignKeys = fields
-    .map(({ name, def }) => foreignKeySql(table, name, def))
+    .map(({ name, def }) => foreignKeySql(table, name, def, options))
     .filter((line): line is string => line !== null);
 
-  const lines = [
-    `CREATE TABLE IF NOT EXISTS \`${table}\` (`,
+  const ownerForeignKey =
+    options.ownerTable === false
+      ? []
+      : [
+          `    CONSTRAINT \`fk_${id}_citizenid\` FOREIGN KEY (\`citizenid\`)`,
+          `        REFERENCES \`${OWNER_TABLE}\` (\`citizenid\`) ON DELETE CASCADE`
+        ];
+
+  const body = [
     '    `id` int(11) NOT NULL AUTO_INCREMENT,',
     ...shape.columns
       .filter((c) => !c.autoIncrement)
       .map(({ name, def }) => `${columnSql(name, def)},`),
     '    PRIMARY KEY (`id`),',
     ...shape.indexes.map(indexSql),
-    ...declaredForeignKeys,
-    `    CONSTRAINT \`fk_${id}_citizenid\` FOREIGN KEY (\`citizenid\`)`,
-    '        REFERENCES `players` (`citizenid`) ON DELETE CASCADE',
+    ...declaredForeignKeys
+  ];
+
+  const lines = [
+    `CREATE TABLE IF NOT EXISTS \`${table}\` (`,
+    // Only closed when the owner key is not following it. With the key present the body is
+    // emitted exactly as it always was, comma and all, so the qb file does not move a byte.
+    ...(ownerForeignKey.length > 0 ? body : closeBody(body)),
+    ...ownerForeignKey,
     ') ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;'
   ];
 
@@ -191,13 +263,16 @@ export function toCreateTableSql(resolved: ResolvedService): string {
  * auto-increment id — these tables disagree about whether they carry `status` or
  * timestamps, which is exactly why they cannot use the primary-table shape.
  */
-export function toChildTableSql(child: ChildTableDefinition): string {
+export function toChildTableSql(
+  child: ChildTableDefinition,
+  options: SchemaSqlOptions = {}
+): string {
   const entries = Object.entries(child.columns).map(
     ([name, spec]) => [name, normalize(spec)] as const
   );
 
   const foreignKeys = entries
-    .map(([name, def]) => foreignKeySql(child.name, name, def))
+    .map(([name, def]) => foreignKeySql(child.name, name, def, options))
     .filter((line): line is string => line !== null);
 
   const body = [
@@ -208,13 +283,10 @@ export function toChildTableSql(child: ChildTableDefinition): string {
     ...foreignKeys
   ];
 
-  // The last body line carries a trailing comma; strip it.
-  const last = body.length - 1;
-  body[last] = body[last].replace(/,$/, '');
-
   return [
     `CREATE TABLE IF NOT EXISTS \`${child.name}\` (`,
-    ...body,
+    // The last body line carries a trailing comma; strip it.
+    ...closeBody(body),
     ') ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;'
   ].join('\n');
 }
@@ -223,10 +295,10 @@ export function toChildTableSql(child: ChildTableDefinition): string {
  * A generated file's contents: the primary table, then every child table in
  * declaration order so foreign keys resolve.
  */
-export function toSqlFile(resolved: ResolvedService): string {
+export function toSqlFile(resolved: ResolvedService, options: SchemaSqlOptions = {}): string {
   const blocks = [
-    toCreateTableSql(resolved),
-    ...resolved.childTables.map((child) => toChildTableSql(child))
+    toCreateTableSql(resolved, options),
+    ...resolved.childTables.map((child) => toChildTableSql(child, options))
   ];
 
   return [

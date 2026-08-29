@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { FrameworkBridge, __setResourceLookup } from '../lib/FrameworkBridge';
+import {
+  FrameworkBridge,
+  __setResourceLookup,
+  citizenIdFromIdentifier
+} from '../lib/FrameworkBridge';
 
 /**
  * Every ownership check in gPhone resolves an identity through here, and it had no test.
@@ -266,5 +270,512 @@ describe('FrameworkBridge money is believed only when the framework says so plai
 
     expect(bridged.getMoney('bank') < 1).toBe(true);
     expect(bridged.addMoney('bank', 50)).toBe(false);
+  });
+});
+
+/**
+ * ESX (MICA-150).
+ *
+ * The third framework, and the first that does not share qb's shape. Two things are asserted
+ * here rather than one: that an `xPlayer` reaches the rest of the server wearing the qb shape
+ * everything downstream reads, and that MICA-133's fail-closed money rule survives a
+ * framework whose money calls return nothing at all to coerce.
+ */
+
+/** An `xPlayer`, with observable accounts and the ESX accessors the bridge reaches for. */
+const xPlayer = (
+  identifier: string,
+  opts: {
+    source?: number;
+    bank?: number;
+    cash?: number;
+    variables?: Record<string, string>;
+    getAccount?: (name: string) => unknown;
+    addAccountMoney?: (name: string, amount: number) => unknown;
+    removeAccountMoney?: (name: string, amount: number) => unknown;
+    omit?: readonly string[];
+  } = {}
+) => {
+  const accounts: Record<string, number> = { bank: opts.bank ?? 500, money: opts.cash ?? 20 };
+  const variables: Record<string, string> = {
+    firstName: 'Ada',
+    lastName: 'Lovelace',
+    phoneNumber: '5551000',
+    ...opts.variables
+  };
+
+  const player: Record<string, unknown> = {
+    identifier,
+    source: opts.source ?? 1,
+    variables,
+    get: (key: string) => variables[key],
+    getName: () => `${variables.firstName} ${variables.lastName}`.trim(),
+    getAccount: opts.getAccount ?? ((name: string) => ({ name, money: accounts[name] })),
+    addAccountMoney:
+      opts.addAccountMoney ??
+      ((name: string, amount: number) => {
+        accounts[name] += amount;
+      }),
+    removeAccountMoney:
+      opts.removeAccountMoney ??
+      ((name: string, amount: number) => {
+        accounts[name] -= amount;
+      }),
+    setMeta: vi.fn(),
+    removeInventoryItem: vi.fn(),
+    read: (name = 'bank') => accounts[name]
+  };
+
+  for (const key of opts.omit ?? []) delete player[key];
+  return player as any;
+};
+
+/** `es_extended` as an installed resource, exposing the shared object by export. */
+const esx = (players: Record<number, any>, extras: Record<string, unknown> = {}) => {
+  const shared = {
+    GetPlayerFromId: (src: number) => players[src] ?? null,
+    GetExtendedPlayers: () => Object.values(players),
+    ...extras
+  };
+  return { es_extended: { getSharedObject: () => shared } } as any;
+};
+
+const LICENSE = 'license:0123456789abcdef0123456789abcdef01234567';
+
+describe('FrameworkBridge on ESX — identity', () => {
+  it('keys the player on the ESX identifier, which is what citizenid means here', () => {
+    // The MICA-150 decision, pinned: an ESX identifier *is* the citizenid. ESX issues it per
+    // account rather than per character, so ESX gets one phone per player where qb gets one
+    // per character. That is the intended behaviour, and this is where it is asserted.
+    useResources(esx({ 1: xPlayer(LICENSE) }));
+
+    expect(FrameworkBridge.getCitizenId(1)).toBe(LICENSE);
+  });
+
+  it('exposes the mapping as one named function, so it can be changed in one place', () => {
+    // Every ownership predicate on this server is a citizenid comparison. An owner wanting
+    // per-character ESX identity edits this function and no call site.
+    expect(citizenIdFromIdentifier('steam:110000112345678')).toBe('steam:110000112345678');
+    expect(citizenIdFromIdentifier('  license:abc  ')).toBe('license:abc');
+  });
+
+  it.each([
+    ['nothing', undefined],
+    ['null', null],
+    ['an empty string', ''],
+    ['whitespace', '   '],
+    ['a number', 42]
+  ])('refuses to serve a player whose identifier is %s', (_label, identifier) => {
+    // The same rule as the qb branches: an identity gPhone cannot read is not one it invents.
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    useResources(esx({ 1: xPlayer(identifier as any) }));
+
+    expect(FrameworkBridge.getPlayer(1)).toBeNull();
+    expect(error).toHaveBeenCalled();
+    expect(String(error.mock.calls[0][0])).toContain('es_extended');
+  });
+
+  it('reads the identifier from getIdentifier() when the field is absent', () => {
+    const player = xPlayer(LICENSE, { omit: ['identifier'] });
+    player.getIdentifier = () => LICENSE;
+    useResources(esx({ 1: player }));
+
+    expect(FrameworkBridge.getCitizenId(1)).toBe(LICENSE);
+  });
+
+  it('is null when nobody is on that source, without logging', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    useResources(esx({}));
+
+    expect(FrameworkBridge.getPlayer(3)).toBeNull();
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it('prefers a qb core when both are installed, rather than switching identity schemes', () => {
+    // A live server changing which string it calls a citizenid is a data migration, not a
+    // fallback. Whichever core already owns the rows keeps them.
+    useResources({
+      ...qbx({ PlayerData: { citizenid: 'CIT_A' } }),
+      ...esx({ 1: xPlayer(LICENSE) })
+    });
+
+    expect(FrameworkBridge.getCitizenId(1)).toBe('CIT_A');
+  });
+
+  it('falls back to the esx:getSharedObject event on a build with no export', () => {
+    (globalThis as any).emit = (event: string, cb: (obj: unknown) => void) => {
+      if (event === 'esx:getSharedObject') cb({ GetPlayerFromId: () => xPlayer(LICENSE) });
+    };
+    __setResourceLookup((name) => (name === 'es_extended' ? {} : undefined));
+
+    expect(FrameworkBridge.getCitizenId(1)).toBe(LICENSE);
+    delete (globalThis as any).emit;
+  });
+});
+
+describe('FrameworkBridge on ESX — the qb shape everything downstream reads', () => {
+  it('presents charinfo, so names and phone lookups keep working unchanged', () => {
+    // `PlayerDirectory`, `Messages` and `Music` read PlayerData.charinfo off `rawPlayer`, and
+    // five callers read it off `getAllPlayers()`. Normalising here is what spares all eight a
+    // framework check of their own.
+    useResources(esx({ 1: xPlayer(LICENSE) }));
+    const player = FrameworkBridge.getPlayer(1)!;
+
+    expect(player.phone).toBe('5551000');
+    expect(player.rawPlayer.PlayerData).toMatchObject({
+      citizenid: LICENSE,
+      source: 1,
+      charinfo: { firstname: 'Ada', lastname: 'Lovelace', phone: '5551000' }
+    });
+  });
+
+  it('keeps the real xPlayer reachable rather than discarding it', () => {
+    useResources(esx({ 1: xPlayer(LICENSE) }));
+    expect(FrameworkBridge.getPlayer(1)!.rawPlayer.xPlayer.identifier).toBe(LICENSE);
+  });
+
+  it('takes a single-word getName() as a first name rather than reporting none', () => {
+    const player = xPlayer(LICENSE, { variables: { firstName: '', lastName: '' } });
+    player.getName = () => 'Ada';
+    useResources(esx({ 1: player }));
+
+    expect(FrameworkBridge.getPlayer(1)!.rawPlayer.PlayerData.charinfo).toMatchObject({
+      firstname: 'Ada',
+      lastname: ''
+    });
+  });
+
+  it('reports a blank name as blank rather than as a stray space', () => {
+    useResources(esx({ 1: xPlayer(LICENSE, { variables: { firstName: '', lastName: '' } }) }));
+
+    expect(FrameworkBridge.getPlayer(1)!.rawPlayer.PlayerData.charinfo).toMatchObject({
+      firstname: '',
+      lastname: ''
+    });
+  });
+
+  it('reports no phone when the build stores one nowhere, rather than guessing', () => {
+    // A phone number is not core ESX at all. Every reader already handles null.
+    useResources(esx({ 1: xPlayer(LICENSE, { variables: { phoneNumber: '' } }) }));
+    expect(FrameworkBridge.getPlayer(1)!.phone).toBeUndefined();
+  });
+
+  it('survives a variable accessor that throws', () => {
+    const player = xPlayer(LICENSE);
+    player.get = () => {
+      throw new Error('addon exploded');
+    };
+    useResources(esx({ 1: player }));
+
+    expect(FrameworkBridge.getPlayer(1)!.citizenid).toBe(LICENSE);
+  });
+
+  it('carries metadata through for the legacy battery read', () => {
+    const player = xPlayer(LICENSE);
+    player.getMeta = () => ({ gphone_battery: 42 });
+    useResources(esx({ 1: player }));
+
+    expect(FrameworkBridge.getPlayer(1)!.rawPlayer.PlayerData.metadata).toEqual({
+      gphone_battery: 42
+    });
+  });
+});
+
+describe('FrameworkBridge on ESX — listing players', () => {
+  const online = () => ({
+    5: xPlayer('license:aaa', { source: 5, variables: { phoneNumber: '5551000' } }),
+    9: xPlayer('license:bbb', { source: 9, variables: { phoneNumber: '5552000' } })
+  });
+
+  it('lists every connected player in the qb shape', () => {
+    useResources(esx(online()));
+    const players = FrameworkBridge.getAllPlayers() as Record<number, any>;
+
+    expect(Object.keys(players)).toEqual(['5', '9']);
+    expect(players[9].PlayerData.citizenid).toBe('license:bbb');
+  });
+
+  it('finds the source of an online player, and a player by phone', () => {
+    // Both walk `getAllPlayers()` reading `PlayerData.citizenid` / `.charinfo.phone`, so this
+    // asserts that the normalisation is exactly what those two already expect.
+    useResources(esx(online()));
+
+    expect(FrameworkBridge.getSourceByCitizenId('license:bbb')).toBe(9);
+    expect(FrameworkBridge.getSourceByCitizenId('license:nobody')).toBeNull();
+    expect(FrameworkBridge.getPlayerByPhone('5552000')?.citizenid).toBe('license:bbb');
+    expect(FrameworkBridge.getPlayerByPhone('5559999')).toBeNull();
+  });
+
+  it('falls back to ESX.Players when the build has no GetExtendedPlayers', () => {
+    const players = online();
+    __setResourceLookup((name) =>
+      name === 'es_extended'
+        ? { getSharedObject: () => ({ Players: players, GetPlayerFromId: () => null }) }
+        : undefined
+    );
+
+    expect(Object.keys(FrameworkBridge.getAllPlayers())).toEqual(['5', '9']);
+  });
+
+  it('falls back to GetPlayers ids on the oldest builds', () => {
+    const players = online() as Record<number, any>;
+    __setResourceLookup((name) =>
+      name === 'es_extended'
+        ? {
+            getSharedObject: () => ({
+              GetPlayers: () => ['5', '9'],
+              GetPlayerFromId: (src: number) => players[src] ?? null
+            })
+          }
+        : undefined
+    );
+
+    expect(Object.keys(FrameworkBridge.getAllPlayers())).toEqual(['5', '9']);
+  });
+
+  it('never lists a player it cannot name', () => {
+    // A nameless entry here would reach `proximity` and `pushMany` as a real recipient.
+    useResources(esx({ 5: xPlayer('', { source: 5 }), 9: xPlayer('license:bbb', { source: 9 }) }));
+
+    expect(Object.keys(FrameworkBridge.getAllPlayers())).toEqual(['9']);
+  });
+
+  it('is empty when es_extended is not installed', () => {
+    useResources({});
+    expect(FrameworkBridge.getAllPlayers()).toEqual({});
+  });
+});
+
+/**
+ * The MICA-133 rule, one framework over, and why it needed a different mechanism.
+ *
+ * qb answers a money call with a boolean, so `moved` has something to judge. ESX's
+ * `addAccountMoney` and `removeAccountMoney` **return nothing**: there is no answer to coerce.
+ * Refusing their `undefined` outright would break every honest ESX transfer; trusting the call
+ * because it did not throw is the fail-open MICA-133 closed. So the bridge reads the balance
+ * back, through the same `balanceOf` coercion `getMoney` uses, and the account is the witness.
+ */
+describe('FrameworkBridge on ESX — money is proved by the balance, never by the return', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  /** Everything a build might hand back where a number belongs. */
+  const notBalances: [string, unknown][] = [
+    ['a promise', Promise.resolve(500)],
+    ['an object', { money: 500 }],
+    ['undefined', undefined],
+    ['NaN', NaN],
+    ['Infinity', Infinity],
+    ['a numeric string', '500']
+  ];
+
+  it.each(notBalances)('reports a balance of %s as unaffordable', (_label, money) => {
+    useResources(esx({ 1: xPlayer(LICENSE, { getAccount: () => ({ money }) }) }));
+
+    const balance = FrameworkBridge.getPlayer(1)!.getMoney('bank');
+
+    expect(balance < 1).toBe(true);
+    expect(balance < Number.MIN_SAFE_INTEGER).toBe(true);
+    expect(console.error).toHaveBeenCalled();
+  });
+
+  it.each(notBalances)('refuses a debit when the balance reads as %s', (_label, money) => {
+    // Refused *before* the framework is called: a blind write followed by a read it cannot
+    // interpret manufactures the stranded case rather than avoiding it.
+    const removeAccountMoney = vi.fn();
+    useResources(
+      esx({ 1: xPlayer(LICENSE, { getAccount: () => ({ money }), removeAccountMoney }) })
+    );
+
+    expect(FrameworkBridge.getPlayer(1)!.removeMoney('bank', 50)).toBe(false);
+    expect(removeAccountMoney).not.toHaveBeenCalled();
+  });
+
+  it.each(notBalances)('refuses a credit when the balance reads as %s', (_label, money) => {
+    const addAccountMoney = vi.fn();
+    useResources(esx({ 1: xPlayer(LICENSE, { getAccount: () => ({ money }), addAccountMoney }) }));
+
+    expect(FrameworkBridge.getPlayer(1)!.addMoney('bank', 50)).toBe(false);
+    expect(addAccountMoney).not.toHaveBeenCalled();
+  });
+
+  it('refuses every way when getAccount returns nothing at all', () => {
+    useResources(esx({ 1: xPlayer(LICENSE, { getAccount: () => undefined }) }));
+    const player = FrameworkBridge.getPlayer(1)!;
+
+    expect(player.getMoney('bank') < 1).toBe(true);
+    expect(player.addMoney('bank', 50)).toBe(false);
+    expect(player.removeMoney('bank', 50)).toBe(false);
+  });
+
+  it.each([
+    ['a promise', () => Promise.resolve(true)],
+    ['a result object', () => ({ success: true })],
+    ['a status code', () => 1],
+    ['a truthy string', () => 'ok'],
+    ['nothing at all', () => undefined],
+    ['NaN', () => NaN]
+  ])(
+    'refuses a credit that answers with %s and does not move the balance',
+    (_label, addAccountMoney) => {
+      // The regression that matters. A truthy answer from a call that did nothing is exactly
+      // the shape that let money be invented on qb; here the balance is the only witness.
+      const player = xPlayer(LICENSE, { bank: 500, addAccountMoney });
+      useResources(esx({ 1: player }));
+
+      expect(FrameworkBridge.getPlayer(1)!.addMoney('bank', 50)).toBe(false);
+      expect(player.read('bank')).toBe(500);
+      expect(console.error).toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    ['a promise', () => Promise.resolve(true)],
+    ['a result object', () => ({ success: true })],
+    ['nothing at all', () => undefined],
+    ['NaN', () => NaN]
+  ])(
+    'refuses a debit that answers with %s and does not move the balance',
+    (_label, removeAccountMoney) => {
+      const player = xPlayer(LICENSE, { bank: 500, removeAccountMoney });
+      useResources(esx({ 1: player }));
+
+      expect(FrameworkBridge.getPlayer(1)!.removeMoney('bank', 50)).toBe(false);
+      expect(player.read('bank')).toBe(500);
+    }
+  );
+
+  it('believes a move that answers with nothing but did move the balance', () => {
+    // ESX's own contract: `addAccountMoney` returns nil and the account changes. Refusing this
+    // would refuse every honest ESX transfer, which is why the balance is the witness rather
+    // than the return value.
+    const player = xPlayer(LICENSE, { bank: 500 });
+    useResources(esx({ 1: player }));
+    const bridged = FrameworkBridge.getPlayer(1)!;
+
+    expect(bridged.addMoney('bank', 50)).toBe(true);
+    expect(player.read('bank')).toBe(550);
+    expect(bridged.removeMoney('bank', 100)).toBe(true);
+    expect(player.read('bank')).toBe(450);
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it('reads and moves cash on the money account, which is ESX for cash', () => {
+    const player = xPlayer(LICENSE, { cash: 75 });
+    useResources(esx({ 1: player }));
+    const bridged = FrameworkBridge.getPlayer(1)!;
+
+    expect(bridged.getMoney('cash')).toBe(75);
+    expect(bridged.addMoney('cash', 25)).toBe(true);
+    expect(player.read('money')).toBe(100);
+  });
+
+  it('reads cash through getMoney() on a build with no accounts', () => {
+    const player = xPlayer(LICENSE, { omit: ['getAccount'] });
+    player.getMoney = () => 75;
+    useResources(esx({ 1: player }));
+
+    expect(FrameworkBridge.getPlayer(1)!.getMoney('cash')).toBe(75);
+  });
+
+  it('fails closed when the build exposes no money handler at all', () => {
+    useResources(esx({ 1: xPlayer(LICENSE, { omit: ['addAccountMoney', 'removeAccountMoney'] }) }));
+    const bridged = FrameworkBridge.getPlayer(1)!;
+
+    expect(bridged.addMoney('bank', 50)).toBe(false);
+    expect(bridged.removeMoney('bank', 50)).toBe(false);
+  });
+
+  it('fails closed when a money call throws', () => {
+    useResources(
+      esx({
+        1: xPlayer(LICENSE, {
+          addAccountMoney: () => {
+            throw new Error('account locked');
+          }
+        })
+      })
+    );
+
+    expect(FrameworkBridge.getPlayer(1)!.addMoney('bank', 50)).toBe(false);
+  });
+
+  it('refuses, loudly, when the balance stops being readable mid-move', () => {
+    // Readable before and not after: the one case where the money may genuinely have moved and
+    // this cannot tell. It refuses, and says so, because a human has to reconcile it.
+    let reads = 0;
+    useResources(
+      esx({
+        1: xPlayer(LICENSE, { getAccount: () => ({ money: reads++ === 0 ? 500 : undefined }) })
+      })
+    );
+
+    expect(FrameworkBridge.getPlayer(1)!.addMoney('bank', 50)).toBe(false);
+    expect(
+      vi.mocked(console.error).mock.calls.some((call) => String(call[0]).includes('by hand'))
+    ).toBe(true);
+  });
+});
+
+describe('FrameworkBridge on ESX — items, metadata and usable items', () => {
+  it('consumes an item through the ESX inventory', () => {
+    const player = xPlayer(LICENSE);
+    useResources(esx({ 1: player }));
+
+    expect(FrameworkBridge.getPlayer(1)!.removeItem('battery_bank', 1)).toBe(true);
+    expect(player.removeInventoryItem).toHaveBeenCalledWith('battery_bank', 1);
+  });
+
+  it('falls through to ox_inventory when the player has no inventory call', () => {
+    const RemoveItem = vi.fn(() => true);
+    useResources({
+      ...esx({ 1: xPlayer(LICENSE, { omit: ['removeInventoryItem'] }) }),
+      ox_inventory: { RemoveItem }
+    });
+
+    expect(FrameworkBridge.getPlayer(1)!.removeItem('battery_bank', 1)).toBe(true);
+    expect(RemoveItem).toHaveBeenCalledWith(1, 'battery_bank', 1);
+  });
+
+  it('mirrors metadata through setMeta when the build has one', () => {
+    const player = xPlayer(LICENSE);
+    useResources(esx({ 1: player }));
+
+    FrameworkBridge.getPlayer(1)!.setMeta('gphone_battery', 42);
+    expect(player.setMeta).toHaveBeenCalledWith('gphone_battery', 42);
+  });
+
+  it('degrades to a session variable on a build with no setMeta', () => {
+    // Not persisted, and less than qb offers — but the only caller is Battery mirroring for
+    // *other* resources, and gPhone's own table is written either way.
+    const player = xPlayer(LICENSE, { omit: ['setMeta'] });
+    player.set = vi.fn();
+    useResources(esx({ 1: player }));
+
+    FrameworkBridge.getPlayer(1)!.setMeta('gphone_battery', 42);
+    expect(player.set).toHaveBeenCalledWith('gphone_battery', 42);
+  });
+
+  it('drops the write, once per player, on a build with neither — and never throws', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // A source of its own: the "said once" set is module state that outlives a test.
+    useResources(esx({ 11: xPlayer(LICENSE, { source: 11, omit: ['setMeta'] }) }));
+    const bridged = FrameworkBridge.getPlayer(11)!;
+
+    expect(() => {
+      bridged.setMeta('gphone_battery', 42);
+      bridged.setMeta('gphone_battery', 43);
+    }).not.toThrow();
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('registers a usable item through ESX', () => {
+    const RegisterUsableItem = vi.fn();
+    useResources(esx({}, { RegisterUsableItem }));
+    const cb = () => {};
+
+    FrameworkBridge.registerUsableItem('battery_bank', cb);
+    expect(RegisterUsableItem).toHaveBeenCalledWith('battery_bank', cb);
   });
 });

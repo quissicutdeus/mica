@@ -157,6 +157,153 @@ describe('transfer', () => {
   });
 });
 
+/**
+ * The same transfers on ESX (MICA-150).
+ *
+ * Worth running end to end rather than trusting the bridge unit tests, because ESX is where
+ * `transfer`'s assumptions are least obviously true. It debits, credits, and refunds the debit
+ * if the credit fails — and on ESX none of those three calls answers whether it worked. The
+ * bridge reads the balance back instead, so what is actually being asserted here is that
+ * `transfer`'s compensating logic still lands correctly when its booleans come from an
+ * observation rather than from the framework's word.
+ */
+describe('transfer on ESX', () => {
+  /** An `xPlayer` whose accounts move and whose money calls return nothing, like ESX's. */
+  const makeEsxPlayer = (
+    identifier: string,
+    balance: number,
+    opts: { canAdd?: boolean; source?: number } = {}
+  ) => {
+    const accounts: Record<string, number> = { bank: balance, money: 0 };
+    return {
+      identifier,
+      source: opts.source ?? 1,
+      variables: { firstName: 'Ada', lastName: 'Lovelace', phoneNumber: '555' },
+      get: (key: string) => ({ firstName: 'Ada', lastName: 'Lovelace', phoneNumber: '555' })[key],
+      getName: () => 'Ada Lovelace',
+      getAccount: (name: string) => ({ name, money: accounts[name] }),
+      // Returns nothing at all, which is ESX's real contract and the whole reason the bridge
+      // reads the balance back rather than believing an answer.
+      addAccountMoney: (name: string, amount: number) => {
+        if (opts.canAdd === false) return;
+        accounts[name] += amount;
+      },
+      removeAccountMoney: (name: string, amount: number) => {
+        accounts[name] -= amount;
+      },
+      read: () => accounts.bank
+    };
+  };
+
+  const installEsx = (players: Record<number, ReturnType<typeof makeEsxPlayer>>) =>
+    __setResourceLookup((name) =>
+      name === 'es_extended'
+        ? {
+            getSharedObject: () => ({
+              GetPlayerFromId: (src: number) => players[src] ?? null,
+              GetExtendedPlayers: () => Object.values(players)
+            })
+          }
+        : undefined
+    );
+
+  const PAYER = 'license:aaa';
+  const PAYEE = 'license:bbb';
+
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    __setResourceLookup();
+    vi.restoreAllMocks();
+  });
+
+  it('moves money between two ESX players', () => {
+    const payer = makeEsxPlayer(PAYER, 500, { source: 1 });
+    const payee = makeEsxPlayer(PAYEE, 100, { source: 2 });
+    installEsx({ 1: payer, 2: payee });
+
+    return expect(
+      transfer({ from: PAYER, to: PAYEE, amount: 250, reason: 'sale' })
+    ).resolves.toEqual({ ok: true, from: PAYER, to: PAYEE, amount: 250 });
+  });
+
+  it('leaves both accounts where the transfer put them', async () => {
+    const payer = makeEsxPlayer(PAYER, 500, { source: 1 });
+    const payee = makeEsxPlayer(PAYEE, 100, { source: 2 });
+    installEsx({ 1: payer, 2: payee });
+
+    await transfer({ from: PAYER, to: PAYEE, amount: 250, reason: 'sale' });
+
+    expect(payer.read()).toBe(250);
+    expect(payee.read()).toBe(350);
+  });
+
+  it('refunds the payer when the credit silently does nothing', async () => {
+    // The ESX-specific version of the MICA-133 failure: `addAccountMoney` returns nothing
+    // whether it worked or not, so the only thing that distinguishes a credit from a no-op is
+    // the balance. If the bridge trusted the call, this test would end with the payer down 250
+    // and the payee unchanged — money destroyed rather than moved.
+    const payer = makeEsxPlayer(PAYER, 500, { source: 1 });
+    const payee = makeEsxPlayer(PAYEE, 100, { source: 2, canAdd: false });
+    installEsx({ 1: payer, 2: payee });
+
+    const result = await transfer({ from: PAYER, to: PAYEE, amount: 250, reason: 'sale' });
+
+    expect(result).toEqual({ ok: false, reason: 'credit_failed' });
+    expect(payer.read()).toBe(500);
+    expect(payee.read()).toBe(100);
+  });
+
+  it('reports stranded money when the refund silently does nothing either', async () => {
+    const payer = makeEsxPlayer(PAYER, 500, { source: 1, canAdd: false });
+    const payee = makeEsxPlayer(PAYEE, 100, { source: 2, canAdd: false });
+    installEsx({ 1: payer, 2: payee });
+
+    const result = await transfer({ from: PAYER, to: PAYEE, amount: 250, reason: 'sale' });
+
+    expect(result).toEqual({ ok: false, reason: 'stranded' });
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('STRANDED'));
+  });
+
+  it('refuses rather than overdrawing, which ESX itself would allow', async () => {
+    // `removeAccountMoney` takes an ESX account negative without complaint — unlike qb's
+    // `RemoveMoney`, which answers false. `transfer` checks `getMoney` first for exactly this
+    // reason, so the refusal lands before anything moves.
+    const payer = makeEsxPlayer(PAYER, 100, { source: 1 });
+    const payee = makeEsxPlayer(PAYEE, 0, { source: 2 });
+    installEsx({ 1: payer, 2: payee });
+
+    const result = await transfer({ from: PAYER, to: PAYEE, amount: 250, reason: 'sale' });
+
+    expect(result).toEqual({ ok: false, reason: 'insufficient_funds' });
+    expect(payer.read()).toBe(100);
+  });
+
+  it('refuses a transfer to an offline ESX player', () => {
+    installEsx({ 1: makeEsxPlayer(PAYER, 500, { source: 1 }) });
+
+    return expect(
+      transfer({ from: PAYER, to: 'license:gone', amount: 50, reason: 'sale' })
+    ).resolves.toEqual({ ok: false, reason: 'recipient_offline' });
+  });
+
+  it('refuses everything when the balance cannot be read at all', async () => {
+    // A build whose `getAccount` has changed shape: the bridge reports the balance as
+    // undeterminable, which reads as unaffordable, so `transfer` stops at its existing
+    // insufficient-funds branch rather than debiting into the dark.
+    const broken = { ...makeEsxPlayer(PAYER, 500, { source: 1 }), getAccount: () => undefined };
+    installEsx({ 1: broken as any, 2: makeEsxPlayer(PAYEE, 0, { source: 2 }) });
+
+    await expect(transfer({ from: PAYER, to: PAYEE, amount: 50, reason: 'sale' })).resolves.toEqual(
+      { ok: false, reason: 'insufficient_funds' }
+    );
+  });
+});
+
 describe('addMoney on the bridge', () => {
   afterEach(() => __setResourceLookup());
 
