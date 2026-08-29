@@ -53,8 +53,8 @@ describe('Trade', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     action.errors.length = 0;
-    priceStore.set({ current: 10, history: [] });
-    portfolioStore.set({ quantity: 5, currentPrice: 10, currentValue: 50 });
+    priceStore.set({ ready: true, current: 10, history: [] });
+    portfolioStore.set({ ready: true, quantity: 5, currentPrice: 10, currentValue: 50 });
   });
 
   const enter = (value: string) =>
@@ -119,6 +119,26 @@ describe('Trade', () => {
     await fireEvent.click(confirm());
 
     expect(action.errors).toEqual(['That trade did not go through.']);
+  });
+
+  /**
+   * MICA-130: the server refuses every trade until it has restored the price from storage
+   * after a restart, and withholds the quote while it has not. Portfolio disables the
+   * buttons that reach this screen, but the screen stays mounted while the market state can
+   * change underneath it — and a greyed Confirm with nothing beside it is the exact shape
+   * MICA-99 was reported as.
+   */
+  it('will not trade, and says why, while the market has no price yet', async () => {
+    priceStore.set({ ready: false, current: 0, history: [] });
+    render(Trade, { props: { side: 'buy', onback: () => {} } });
+
+    await enter('1');
+
+    expect(confirm().disabled).toBe(true);
+    expect(screen.getByText('The market is still opening. Try again in a moment.')).toBeTruthy();
+    // Never the withheld quote dressed up as a real one.
+    expect(screen.queryByText(/at \$0 each/)).toBeNull();
+    expect(trades.buy).not.toHaveBeenCalled();
   });
 
   it('leaves the trade screen once the sell is accepted', async () => {

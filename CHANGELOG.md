@@ -109,9 +109,23 @@ they are replicated.
   holding at a constant anyone can read in the source, and buying under it was a
   risk-free bet on the next restart. The price is now restored from the newest
   row of the price history that was already being recorded for the chart. There
-  is nothing to run: the table and its rows already exist, and an install with
-  no history still opens at 500. A restart no longer resets your economy's coin
-  (MICA-130).
+  is nothing to run: the table and its rows already exist, and a brand-new
+  install — no history and nobody holding a coin — still opens at 500. A restart
+  no longer resets your economy's coin (MICA-130).
+- **Hodlr refuses to guess a price it cannot recover.** If the price history is
+  empty while players still hold coin, that is a lost history rather than a new
+  server, and reopening at 500 would re-value every holding at the number the
+  original exploit was built on. The market stays closed instead and says so in
+  the console and on the phone, retrying every 30 seconds, so restoring
+  `gphone_hodlr_price_history` from a backup reopens it with no restart. The
+  hourly pruning sweep also now keeps the newest row whatever its age — it is
+  the price, not a chart point, and a server that had been down longer than the
+  retention window used to delete it (MICA-130).
+- **A database that stops answering mid-restore no longer wedges the market
+  shut.** `restart oxmysql` while Hodlr was reading its price left a promise
+  that never resolved, and the market stayed closed for the life of the resource
+  — every trade refused, chart flat, only `restart gphone` to recover. An
+  unanswered read is now abandoned after a minute and retried (MICA-130).
 - **The coin no longer drifts downward on its own.** Its random walk multiplied
   the price by a symmetric percentage each tick, which decays by construction —
   simulated below its opening price about 60% of the time at every horizon, with

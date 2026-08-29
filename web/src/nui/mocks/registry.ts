@@ -1344,11 +1344,16 @@ const mockRegistry: Record<string, MockHandler> = {
   // Hodlr — also routes through the generic service path, but custom actions rather
   // than the generic CRUD helper: portfolio/price are reads, buy/sell mutate state
   // that the generic four-verb shape (get/create/update/delete) cannot express.
+  // `ready` is the market's own state rather than a loading flag: the server withholds the
+  // quote until it has restored the price from storage after a restart (MICA-130). The
+  // browser has no restart to survive, so the mock market is always open.
   'hodlr:price': () => ({
+    ready: true,
     current: mockHodlrPrice,
     history: mockHodlrPriceHistory
   }),
   'hodlr:portfolio': () => ({
+    ready: true,
     quantity: mockHodlrHolding.quantity,
     currentPrice: mockHodlrPrice,
     currentValue: mockHodlrHolding.quantity * mockHodlrPrice

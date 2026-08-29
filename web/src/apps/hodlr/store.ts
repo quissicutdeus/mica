@@ -11,12 +11,25 @@ import type { PricePoint } from '@shared/types';
  */
 const service = () => useService('hodlr');
 
+/**
+ * `ready` is the market's own state, not this store's loading flag.
+ *
+ * The server withholds the quote until it has checked the price against storage after a
+ * restart (MICA-130) — during that window `current` is 0 rather than the opening constant,
+ * because a confident wrong number is worse than none. `history` still arrives: it comes
+ * from storage rather than from the unrestored price, so the chart is correct throughout.
+ *
+ * It is also `false` on the `fetchNui` default below, which is the right reading — a request
+ * that never answered has not established a price either.
+ */
 export interface PriceInfo {
+  ready: boolean;
   current: number;
   history: PricePoint[];
 }
 
 export interface Portfolio {
+  ready: boolean;
   quantity: number;
   currentPrice: number;
   currentValue: number;
@@ -58,8 +71,8 @@ export const tradeFailureMessage = (reason: string, holding: number): string => 
   }
 };
 
-const emptyPrice: PriceInfo = { current: 0, history: [] };
-const emptyPortfolio: Portfolio = { quantity: 0, currentPrice: 0, currentValue: 0 };
+const emptyPrice: PriceInfo = { ready: false, current: 0, history: [] };
+const emptyPortfolio: Portfolio = { ready: false, quantity: 0, currentPrice: 0, currentValue: 0 };
 
 export const priceStore = writable<PriceInfo>({ ...emptyPrice });
 export const portfolioStore = writable<Portfolio>({ ...emptyPortfolio });

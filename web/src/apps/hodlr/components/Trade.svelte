@@ -10,6 +10,13 @@
   let quantity = $state<number | ''>('');
 
   const price = $derived($priceStore.current);
+  /**
+   * The market is closed until it has restored its price after a restart (MICA-130). The
+   * Portfolio screen already disables the buttons that reach here, so this is the second
+   * guard rather than the first — worth having because the screen stays mounted while the
+   * market state can change underneath it, and because the server refuses independently.
+   */
+  const open = $derived($priceStore.ready);
   const total = $derived(quantity === '' ? 0 : Number(quantity) * price);
   const maxSell = $derived($portfolioStore.quantity);
 
@@ -20,6 +27,7 @@
    * click, it just never said why.
    */
   const validation = $derived.by(() => {
+    if (!open) return tradeFailureMessage('market_unavailable', maxSell);
     if (quantity === '') return '';
     const entered = Number(quantity);
     if (!Number.isInteger(entered) || entered <= 0) return 'Enter a whole number of gCoin.';
@@ -28,7 +36,7 @@
     return '';
   });
 
-  const canSubmit = $derived(quantity !== '' && validation === '' && !$busy);
+  const canSubmit = $derived(open && quantity !== '' && validation === '' && !$busy);
 
   const submit = async () => {
     const amount = Number(quantity);
@@ -48,7 +56,11 @@
 
 <div class="flex flex-col gap-3 p-4">
   <p class="text-on-surface-variant text-body-medium">
-    {side === 'buy' ? 'Buy' : 'Sell'} gCoin at ${price} each
+    {#if open}
+      {side === 'buy' ? 'Buy' : 'Sell'} gCoin at ${price} each
+    {:else}
+      {side === 'buy' ? 'Buy' : 'Sell'} gCoin — no price yet
+    {/if}
   </p>
 
   <input

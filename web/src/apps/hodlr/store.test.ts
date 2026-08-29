@@ -46,8 +46,8 @@ import {
 describe('hodlr store', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    priceStore.set({ current: 0, history: [] });
-    portfolioStore.set({ quantity: 3, currentPrice: 500, currentValue: 1500 });
+    priceStore.set({ ready: true, current: 0, history: [] });
+    portfolioStore.set({ ready: true, quantity: 3, currentPrice: 500, currentValue: 1500 });
   });
 
   describe('a settled trade moves the holding without waiting for a refetch', () => {
@@ -59,7 +59,12 @@ describe('hodlr store', () => {
       expect(outcome).toEqual({ ok: true, quantity: 5, price: 500, cost: 1000 });
       // The server's `quantity` is absolute (the new holding), not a delta, and the value
       // is recomputed from the trade's own price rather than the stale `currentPrice`.
-      expect(get(portfolioStore)).toEqual({ quantity: 5, currentPrice: 500, currentValue: 2500 });
+      expect(get(portfolioStore)).toEqual({
+        ready: true,
+        quantity: 5,
+        currentPrice: 500,
+        currentValue: 2500
+      });
     });
 
     it('reprices off the trade price even when the stored price has moved under it', async () => {
@@ -81,7 +86,12 @@ describe('hodlr store', () => {
 
       expect(outcome).toEqual({ ok: false, reason: 'insufficient_holdings' });
       // A refusal that still moved the number would tell the player a trade happened.
-      expect(get(portfolioStore)).toEqual({ quantity: 3, currentPrice: 500, currentValue: 1500 });
+      expect(get(portfolioStore)).toEqual({
+        ready: true,
+        quantity: 3,
+        currentPrice: 500,
+        currentValue: 1500
+      });
     });
 
     it('reports a dropped reply as request_failed and holds the line', async () => {
@@ -109,19 +119,61 @@ describe('hodlr store', () => {
 
     it('publishes the price and its history', async () => {
       const history = [{ price: 480, recorded_at: '2026-08-27T00:00:00Z' }];
-      service.call.mockResolvedValue({ current: 520, history });
+      service.call.mockResolvedValue({ ready: true, current: 520, history });
 
       await loadPrice();
 
-      expect(get(priceStore)).toEqual({ current: 520, history });
+      expect(get(priceStore)).toEqual({ ready: true, current: 520, history });
     });
 
     it('publishes the portfolio as the server reports it', async () => {
-      service.call.mockResolvedValue({ quantity: 9, currentPrice: 500, currentValue: 4500 });
+      service.call.mockResolvedValue({
+        ready: true,
+        quantity: 9,
+        currentPrice: 500,
+        currentValue: 4500
+      });
 
       await loadPortfolio();
 
-      expect(get(portfolioStore)).toEqual({ quantity: 9, currentPrice: 500, currentValue: 4500 });
+      expect(get(portfolioStore)).toEqual({
+        ready: true,
+        quantity: 9,
+        currentPrice: 500,
+        currentValue: 4500
+      });
+    });
+  });
+
+  /**
+   * MICA-130: the market refuses every trade until it has checked its price against
+   * storage after a restart, and during that window the server sends no quote at all —
+   * `current` is 0 rather than the opening constant the exploit was built on. The store
+   * carries the state through so the screen can say so instead of confidently showing a
+   * number nothing will trade at.
+   */
+  describe('a market that has not opened', () => {
+    it('carries the closed state and the withheld quote through unchanged', async () => {
+      const history = [{ price: 480, recorded_at: '2026-08-27T00:00:00Z' }];
+      service.call.mockResolvedValue({ ready: false, current: 0, history });
+
+      await loadPrice();
+
+      expect(get(priceStore)).toEqual({ ready: false, current: 0, history });
+    });
+
+    it('reads a request that never answered as closed rather than as open at zero', async () => {
+      // `service().call` answers its `defaultValue` on a transport failure. A default of
+      // `ready: true, current: 0` would render a market that is open and free.
+      service.call.mockImplementation(
+        async (_action: string, _payload: unknown, fallback: unknown) => fallback
+      );
+
+      await loadPrice();
+      await loadPortfolio();
+
+      expect(get(priceStore).ready).toBe(false);
+      expect(get(portfolioStore).ready).toBe(false);
     });
   });
 

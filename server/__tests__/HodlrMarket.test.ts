@@ -81,8 +81,12 @@ describe('HodlrMarket price', () => {
     alwaysStep(MAX_UP);
     __tickMarket();
 
-    expect(getCurrentPrice()).toBeGreaterThan(STARTING_PRICE);
-    expect(getCurrentPrice()).toBeLessThanOrEqual(Math.round(STARTING_PRICE * (1 + MAX_STEP_PCT)));
+    // Exact, not a range. At the reference price the mean-reversion pull is
+    // `0.002 * ln(500/500)` = 0, so the log step is the whole move and
+    // `round(500 * e^0.03)` is 515 — the same number `round(500 * 1.03)` gives. A range
+    // here would stop noticing a change in step magnitude, which is the one thing this
+    // test exists to measure.
+    expect(getCurrentPrice()).toBe(Math.round(STARTING_PRICE * (1 + MAX_STEP_PCT)));
   });
 
   it('records a snapshot of the new price whenever the price moves', () => {
@@ -125,7 +129,7 @@ describe('HodlrMarket price', () => {
     alwaysStep(MAX_UP);
 
     expect(() => __tickMarket()).not.toThrow();
-    expect(getCurrentPrice()).toBeGreaterThan(STARTING_PRICE);
+    expect(getCurrentPrice()).toBe(Math.round(STARTING_PRICE * (1 + MAX_STEP_PCT)));
   });
 });
 
@@ -210,6 +214,46 @@ describe('HodlrMarket boundaries', () => {
     expect(snapshottedPrices()).toEqual([getCurrentPrice()]);
   });
 
+  /**
+   * The honest version of what reflection does at the boundary, pinned so the comment on
+   * `bounded` cannot quietly drift back to claiming symmetry.
+   *
+   * At exactly `FLOOR` every draw is an up-move or a rounding no-op — reflection turns a
+   * down-step into a paid up-move where the old clamp swallowed it, so a floor-sitter is
+   * *better* off after MICA-130 than before it. No bounding rule fixes that; a hard bound
+   * is one-way at the bound. The defence is the distance to it, which the test below pins.
+   */
+  it('is one-way at the floor itself, and no bounding rule makes it otherwise', () => {
+    const outcomes = new Set<string>();
+
+    for (let draw = 0; draw <= 100; draw++) {
+      __resetMarketState({ price: FLOOR });
+      alwaysStep(draw / 100);
+      __tickMarket();
+      const moved = getCurrentPrice();
+      outcomes.add(moved > FLOOR ? 'up' : moved < FLOOR ? 'down' : 'flat');
+    }
+
+    expect(outcomes).toEqual(new Set(['up', 'flat']));
+  });
+
+  it('keeps the walk clear of the floor, which is what makes that one-way boundary safe', () => {
+    // The invariant the floor is actually defended by, so a constant change fails loudly
+    // rather than silently arming the boundary above. Lowering `REVERSION_PER_TICK`,
+    // raising `MAX_STEP_PCT`, or moving `FLOOR` toward the band all land here. The minimum
+    // along the whole path, not the endpoint — one price at the end proves nothing about
+    // whether the walk ever visited the boundary.
+    seededRandom(130130);
+    let lowest = Infinity;
+
+    for (let i = 0; i < 20160; i++) {
+      __tickMarket();
+      lowest = Math.min(lowest, getCurrentPrice());
+    }
+
+    expect(lowest).toBeGreaterThan(FLOOR * 2);
+  });
+
   it('keeps a market pinned at the floor inside the band', () => {
     __resetMarketState({ price: FLOOR });
     alwaysStep(MAX_DOWN);
@@ -247,9 +291,11 @@ describe('HodlrMarket restore', () => {
     expect(sql).toMatch(/LIMIT 1/);
   });
 
-  it('opens a fresh install at the opening price when there is no history at all', async () => {
+  it('opens a fresh install at the opening price when nothing has ever traded', async () => {
     __resetMarketState({ restored: false });
-    dbMock.scalar.mockResolvedValue(null);
+    // Two reads now: no stored price, and nobody holding a coin. Both empty is the only
+    // shape that may open at the constant — see the pair of tests below.
+    dbMock.scalar.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
 
     await __restorePrice();
 
@@ -268,11 +314,12 @@ describe('HodlrMarket restore', () => {
 
   it('ignores a stored value that is not a price', async () => {
     __resetMarketState({ restored: false });
-    dbMock.scalar.mockResolvedValue('not a number');
+    dbMock.scalar.mockResolvedValueOnce('not a number').mockResolvedValueOnce(null);
 
     await __restorePrice();
 
     expect(getCurrentPrice()).toBe(STARTING_PRICE);
+    expect(isMarketReady()).toBe(true);
   });
 
   it('leaves the market closed when the read fails, rather than opening it at 500', async () => {
@@ -299,6 +346,130 @@ describe('HodlrMarket restore', () => {
     expect(dbMock.insert).not.toHaveBeenCalled();
     expect(getCurrentPrice()).toBe(200);
     expect(isMarketReady()).toBe(true);
+  });
+
+  /**
+   * MICA-130 again, through this fix's own front door: an empty history is not
+   * automatically a fresh install.
+   *
+   * `Math.round(Number(null))` is `NaN`, so a history that reads empty used to leave
+   * `currentPrice` at `STARTING_PRICE` and set `restored`. That reopens every holding at
+   * exactly the constant the original exploit was built on, with `gphone_hodlr.quantity`
+   * untouched — reachable by an operator truncating a table that still reads like a chart
+   * cache, and by the pruning sweep on a server that has been down longer than the
+   * retention window.
+   */
+  describe('an empty history', () => {
+    /** No stored price; then the holdings probe answers. */
+    const readsEmptyHistoryThen = (holdings: unknown) =>
+      dbMock.scalar.mockResolvedValueOnce(null).mockResolvedValueOnce(holdings);
+
+    it('stays closed when holdings exist, rather than reopening at the opening price', async () => {
+      __resetMarketState({ restored: false });
+      readsEmptyHistoryThen(1);
+
+      await __restorePrice();
+
+      expect(isMarketReady()).toBe(false);
+    });
+
+    it('opens at the opening price when nobody holds a coin', async () => {
+      __resetMarketState({ restored: false });
+      readsEmptyHistoryThen(null);
+
+      await __restorePrice();
+
+      expect(isMarketReady()).toBe(true);
+      expect(getCurrentPrice()).toBe(STARTING_PRICE);
+    });
+
+    it('asks about holdings only when there is no price to restore', async () => {
+      // The probe is a second indexed read on the restore path; a normal restore must not
+      // pay for it.
+      __resetMarketState({ restored: false });
+      dbMock.scalar.mockResolvedValue(172);
+
+      await __restorePrice();
+
+      expect(dbMock.scalar).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries rather than latching, so a restored history reopens the market', async () => {
+      __resetMarketState({ restored: false });
+      readsEmptyHistoryThen(1);
+      await __restorePrice();
+      expect(isMarketReady()).toBe(false);
+
+      // The operator puts the history back; the next tick picks it up with no restart.
+      dbMock.scalar.mockResolvedValue(240);
+      __tickMarket();
+      await vi.waitFor(() => expect(isMarketReady()).toBe(true));
+
+      expect(getCurrentPrice()).toBe(240);
+    });
+  });
+
+  /**
+   * MICA-130's worst failure mode, and the one `restart oxmysql` reaches.
+   *
+   * FiveM drops an export callback when the exporting resource restarts, so an outstanding
+   * `scalar_async` promise neither resolves nor rejects. `restoreInFlight` never cleared,
+   * so `tickMarket` returned at its `!restored` guard every 30 seconds for the life of the
+   * resource: every trade refused, no snapshots, a flat chart, and nothing short of
+   * `restart gphone` to recover. A *rejected* read was always fine and is covered above.
+   */
+  describe('a restore read that never settles', () => {
+    /** A promise that will never settle, exactly as a dropped export callback leaves one. */
+    const neverSettles = () => dbMock.scalar.mockReturnValueOnce(new Promise<never>(() => {}));
+
+    it('is abandoned and retried, rather than latching the market closed forever', async () => {
+      __resetMarketState({ restored: false });
+      neverSettles();
+
+      __tickMarket();
+      await Promise.resolve();
+      expect(isMarketReady()).toBe(false);
+
+      dbMock.scalar.mockResolvedValue(210);
+      __tickMarket(); // inside the budget: still waiting on the hung read
+      expect(dbMock.scalar).toHaveBeenCalledTimes(1);
+
+      __tickMarket(); // budget spent: abandon it and read again
+      await vi.waitFor(() => expect(isMarketReady()).toBe(true));
+
+      expect(getCurrentPrice()).toBe(210);
+    });
+
+    it('ignores the hung read if it ever answers, rather than rewinding the market', async () => {
+      __resetMarketState({ restored: false });
+      let answer: (value: number) => void = () => {};
+      dbMock.scalar.mockReturnValueOnce(
+        new Promise<number>((resolve) => {
+          answer = resolve;
+        })
+      );
+
+      __tickMarket();
+      await Promise.resolve();
+      dbMock.scalar.mockResolvedValue(210);
+      __tickMarket();
+      __tickMarket();
+      await vi.waitFor(() => expect(isMarketReady()).toBe(true));
+
+      // The market has opened at 210 and walked away from it.
+      alwaysStep(MAX_UP);
+      __tickMarket();
+      const moved = getCurrentPrice();
+      expect(moved).toBeGreaterThan(210);
+
+      // The abandoned read finally answers, with a price two restores out of date.
+      answer(99);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(getCurrentPrice()).toBe(moved);
+      expect(isMarketReady()).toBe(true);
+    });
   });
 
   it('does not read twice for one restore', async () => {
@@ -331,11 +502,39 @@ describe('HodlrMarket history', () => {
   });
 
   it('prunes snapshots older than the retention window', async () => {
+    dbMock.scalar.mockResolvedValue(88);
+
     await __pruneHistory();
 
     const [sql, params] = dbMock.update.mock.calls[0];
     expect(sql).toMatch(/DELETE FROM/);
-    expect(params).toEqual([7]);
+    expect(params).toEqual([7, 88]);
+  });
+
+  /**
+   * The newest row is not a chart point, it is the price — `restorePrice` reads exactly it.
+   * A server down longer than the retention window has *every* row past the window, so an
+   * unguarded sweep deletes the price along with the history and hands the next restore an
+   * empty table: MICA-130's precondition, reached through MICA-130's own retry path.
+   */
+  it('never prunes the newest row, which is the price rather than a chart point', async () => {
+    dbMock.scalar.mockResolvedValue(88);
+
+    await __pruneHistory();
+
+    const [sql, params] = dbMock.update.mock.calls[0];
+    expect(sql).toMatch(/`id` <> \?/);
+    expect(params[1]).toBe(88);
+  });
+
+  it('deletes nothing extra when the table is empty and there is no newest row', async () => {
+    // AUTO_INCREMENT starts at 1, so 0 excludes no real row — and an empty table has
+    // nothing to prune anyway.
+    dbMock.scalar.mockResolvedValue(null);
+
+    await __pruneHistory();
+
+    expect(dbMock.update.mock.calls[0][1]).toEqual([7, 0]);
   });
 
   it('swallows a failed prune rather than throwing into the sweep timer', async () => {

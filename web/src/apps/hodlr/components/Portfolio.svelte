@@ -10,6 +10,15 @@
 
   let loaded = $state(false);
 
+  /**
+   * The market refuses every trade until it has restored its price after a restart
+   * (MICA-130), and while it is closed the server sends no quote at all. Saying so is the
+   * point: an unlabelled `$0` reads as a broken app, and the old behaviour — quoting the
+   * opening constant with total confidence and then refusing to trade at it — was worse
+   * still. The chart is unaffected and keeps drawing; only the live quote is missing.
+   */
+  const open = $derived($priceStore.ready);
+
   const refresh = async () => {
     await Promise.all([loadPrice(), loadPortfolio()]);
     loaded = true;
@@ -31,7 +40,14 @@
   {:else}
     <div class="bg-surface-container rounded-xl p-4">
       <p class="text-on-surface-variant text-body-small">gCoin price</p>
-      <p class="text-on-surface text-title-large">${$priceStore.current}</p>
+      {#if open}
+        <p class="text-on-surface text-title-large">${$priceStore.current}</p>
+      {:else}
+        <p class="text-on-surface-variant text-title-large">Closed</p>
+        <p class="text-on-surface-variant text-body-small">
+          The market is still opening. Trading resumes in a moment.
+        </p>
+      {/if}
     </div>
 
     {#if $priceStore.history.length < 2}
@@ -43,21 +59,27 @@
     <div class="bg-surface-container rounded-xl p-4">
       <p class="text-on-surface-variant text-body-small">You hold</p>
       <p class="text-on-surface text-title-medium">{$portfolioStore.quantity} gCoin</p>
-      <p class="text-on-surface-variant text-body-medium">worth ${$portfolioStore.currentValue}</p>
+      {#if open}
+        <p class="text-on-surface-variant text-body-medium">
+          worth ${$portfolioStore.currentValue}
+        </p>
+      {/if}
     </div>
 
     <div class="flex gap-2">
       <button
         type="button"
+        disabled={!open}
         onclick={onbuy}
-        class="bg-primary text-on-primary text-label-large flex-1 rounded-full py-3"
+        class="bg-primary text-on-primary text-label-large disabled:bg-disabled-container disabled:text-disabled-content disabled:hover:bg-disabled-container disabled:hover:text-disabled-content disabled:cursor-not-allowed flex-1 rounded-full py-3"
       >
         Buy
       </button>
       <button
         type="button"
+        disabled={!open}
         onclick={onsell}
-        class="bg-surface-container-high text-on-surface text-label-large flex-1 rounded-full py-3"
+        class="bg-surface-container-high text-on-surface text-label-large disabled:bg-disabled-container disabled:text-disabled-content disabled:hover:bg-disabled-container disabled:hover:text-disabled-content disabled:cursor-not-allowed flex-1 rounded-full py-3"
       >
         Sell
       </button>

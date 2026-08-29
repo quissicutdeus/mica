@@ -36,10 +36,12 @@ vi.mock('../lib/FrameworkBridge', () => ({
 }));
 
 const market = vi.hoisted(() => ({ price: 10, ready: true }));
+/** Snapshot rows come from storage, so they are available whether the market is open or not. */
+const HISTORY = [{ price: 9, recorded_at: '2026-08-29T00:00:00Z' }];
 vi.mock('../services/HodlrMarket', () => ({
   getCurrentPrice: () => market.price,
   isMarketReady: () => market.ready,
-  getPriceHistory: async () => []
+  getPriceHistory: async () => HISTORY
 }));
 
 import { __resetRateLimits } from '../lib/rateLimit';
@@ -188,14 +190,20 @@ describe('hodlr: buy and sell', () => {
     });
   });
 
-  describe('portfolio', () => {
+  describe('portfolio and price', () => {
     it('creates an empty holding on first contact rather than reporting nothing', async () => {
       dbMock.query.mockResolvedValue([]);
       dbMock.insert.mockResolvedValue(42);
 
       const reply = await call('gphone:server:hodlr:portfolio', {});
 
-      expect(reply).toEqual({ quantity: 0, currentPrice: 10, currentValue: 0 });
+      expect(reply).toEqual({ ready: true, quantity: 0, currentPrice: 10, currentValue: 0 });
+    });
+
+    it('quotes the live price with the history behind it', async () => {
+      const reply = await call('gphone:server:hodlr:price', {});
+
+      expect(reply).toEqual({ ready: true, current: 10, history: HISTORY });
     });
   });
 
@@ -293,6 +301,31 @@ describe('hodlr: buy and sell', () => {
       expect(reply).toEqual({ ok: false, reason: 'market_unavailable' });
       expect(player.addMoney).not.toHaveBeenCalled();
       expect(dbMock.update).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Neither read settles money, so these are not the vulnerability `buy`/`sell` are. They
+     * were still wrong: while the market is closed `getCurrentPrice()` is the opening
+     * constant the whole MICA-130 exploit was built on, so the UI stated a price with
+     * total confidence that every trade would then be refused at, and an add-on reading
+     * `price` got the same number. The quote is withheld and the state named instead.
+     */
+    it('withholds the quote from price rather than answering with the opening constant', async () => {
+      const reply = await call('gphone:server:hodlr:price', {});
+
+      expect(reply).toEqual({ ready: false, current: 0, history: HISTORY });
+    });
+
+    it('withholds the valuation from portfolio but still discloses the holding', async () => {
+      const reply = await call('gphone:server:hodlr:portfolio', {});
+
+      expect(reply).toEqual({ ready: false, quantity: 5, currentPrice: 0, currentValue: 0 });
+    });
+
+    it('keeps serving the chart, which reads storage rather than the unrestored price', async () => {
+      const reply = (await call('gphone:server:hodlr:price', {})) as { history: unknown[] };
+
+      expect(reply.history).toEqual(HISTORY);
     });
   });
 });

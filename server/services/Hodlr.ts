@@ -81,10 +81,29 @@ const findOrCreateHolding = async (citizenid: string): Promise<HodlrHolding> => 
   return { id, citizenid, quantity: 0, status: 'active', created_at: now, updated_at: now };
 };
 
+/**
+ * Neither read settles money, so a closed market is not a vulnerability here the way it is
+ * on `buy`/`sell`. It is still wrong to answer with a number: while the market is closed
+ * `getCurrentPrice()` is `STARTING_PRICE` — the constant MICA-130 was built on — and
+ * quoting it means the UI states a price with total confidence that the server will refuse
+ * every trade at, and any add-on reading `price` gets the same. So the quote is withheld and
+ * the state is named instead, and the caller decides what to say.
+ *
+ * The history is *not* withheld: it comes from storage rather than from the unrestored
+ * module state, so the chart is correct even while the market is closed.
+ */
+const withoutAQuote = { ready: false as const, current: 0 };
+
 app.registerEvent('portfolio', async (source, cbId, data, citizenid) => {
   const holding = await findOrCreateHolding(citizenid);
+  // The holding itself is real and disclosed either way; only its valuation is unavailable.
+  if (!isMarketReady()) {
+    return { ready: false, quantity: holding.quantity, currentPrice: 0, currentValue: 0 };
+  }
+
   const currentPrice = getCurrentPrice();
   return {
+    ready: true,
     quantity: holding.quantity,
     currentPrice,
     currentValue: holding.quantity * currentPrice
@@ -93,7 +112,8 @@ app.registerEvent('portfolio', async (source, cbId, data, citizenid) => {
 
 app.registerEvent('price', async () => {
   const history = await getPriceHistory();
-  return { current: getCurrentPrice(), history };
+  if (!isMarketReady()) return { ...withoutAQuote, history };
+  return { ready: true, current: getCurrentPrice(), history };
 });
 
 app.registerEvent('buy', async (source, cbId, data, citizenid, player) => {

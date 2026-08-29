@@ -45,6 +45,12 @@ const MAX_STEP_PCT = 0.03;
  */
 const REVERSION_PER_TICK = 0.002;
 const PRICE_HISTORY_TABLE = 'gphone_hodlr_price_history';
+/**
+ * Read, never written, by this module: it is `Hodlr.ts`'s table. What it answers here is
+ * whether anybody holds a coin, which is what separates a fresh install from a lost history
+ * — see `restorePrice`.
+ */
+const HOLDINGS_TABLE = 'gphone_hodlr';
 /** How far back a chart request reads. Storage keeps more — see HISTORY_RETENTION_DAYS. */
 const CHART_WINDOW_HOURS = 24;
 /** How long a snapshot row survives before the pruning sweep removes it. */
@@ -64,6 +70,29 @@ let currentPrice = STARTING_PRICE;
  */
 let restored = false;
 let restoreInFlight = false;
+/**
+ * How many ticks a restore may stay in flight before the next tick abandons it and starts
+ * another.
+ *
+ * `restoreInFlight` stops two overlapping reads. On its own it also means a read that never
+ * *settles* latches the market closed for the life of the resource: `finally` never runs,
+ * the flag stays `true`, and `tickMarket`'s `!restored` guard returns immediately every 30
+ * seconds forever — every trade refused, no snapshots written, the chart flat, recoverable
+ * only by restarting gphone.
+ *
+ * That is not hypothetical. `restart oxmysql` — or an oxmysql crash — while `scalar_async`
+ * is outstanding drops the export callback, so the promise neither resolves nor rejects. A
+ * *rejected* read was always fine and always retried; an abandoned one is what this bounds.
+ * Two ticks is a minute of closed market against a read that normally lands in milliseconds.
+ */
+const MAX_RESTORE_TICKS = 2;
+let restoreTicksWaited = 0;
+/**
+ * Bumped whenever an attempt is abandoned, so a read that settles long after the tick loop
+ * gave up on it cannot write its stale answer over a market that has since reopened and
+ * moved on.
+ */
+let restoreGeneration = 0;
 
 /** Hard bounds. Used for a value read back from storage, which has no direction to reflect. */
 const clamp = (value: number): number => Math.max(FLOOR, Math.min(CEIL, value));
@@ -75,10 +104,23 @@ const clamp = (value: number): number => Math.max(FLOOR, Math.min(CEIL, value));
  * Clamping made the floor a free option (MICA-130): at 50 a down-step rounded back to 50,
  * `tickMarket`'s `next === currentPrice` guard made it a no-op, and a holder sitting there
  * had no downside at all while every up-step still paid. Reflection keeps the size of the
- * move and only turns it around, so the boundary is symmetric — a down-step at the floor is
- * a real up-move that is recorded, an up-step at the ceiling is a real down-move — and the
- * price can no longer sit in a state where only one direction registers. The clamp is kept
- * as a final backstop for a value that arrives outside the band some other way.
+ * move and only turns it around, so a step near the boundary is recorded as a real move in
+ * the direction it was turned rather than being swallowed. The clamp is kept as a final
+ * backstop for a value that arrives outside the band some other way.
+ *
+ * **The boundary itself is still one-way, and reflection makes it more so, not less.** At
+ * exactly `FLOOR` every draw resolves to an up-move or a rounding no-op — measured over
+ * 200,000 steps at 50: 133,033 up, 66,967 no-op, 0 down. Under the old clamp a down-step
+ * became a no-op; under reflection it becomes a real, recorded, paid up-move, so a
+ * floor-sitter is strictly better off after this fix than before it. No choice of rule
+ * removes that: any hard bound is one-way at the bound, and removing the bound is worse.
+ *
+ * What makes it unexploitable is the *distance* to the boundary, not the rule at it.
+ * `REVERSION_PER_TICK` pulls up by 0.46% per tick at 50 — over 200 simulated weeks of
+ * ticking the price never went below 145. So the floor is defended by never being reached.
+ * Lowering `REVERSION_PER_TICK`, raising `MAX_STEP_PCT`, or moving `FLOOR` toward the band
+ * re-arms this; `HodlrMarket.test.ts` pins both halves — that the boundary is one-way, and
+ * that the constants keep the walk clear of it — so such a change fails loudly.
  */
 const bounded = (value: number): number => {
   if (value < FLOOR) return clamp(2 * FLOOR - value);
@@ -111,6 +153,20 @@ const recordSnapshot = async (price: number): Promise<void> => {
 };
 
 /**
+ * Whether anybody on this server holds a coin.
+ *
+ * Only asked when the price history reads empty, and only to tell a fresh install apart
+ * from a lost one. `quantity > 0` rather than "a row exists": a player who bought and sold
+ * everything leaves a zero row behind, and that should not wedge the market closed forever.
+ */
+const hasHoldings = async (): Promise<boolean> => {
+  const held = await Database.scalar<number | null>(
+    `SELECT 1 FROM \`${HOLDINGS_TABLE}\` WHERE \`quantity\` > 0 LIMIT 1`
+  );
+  return Boolean(held);
+};
+
+/**
  * Reopen the market at the price it closed on.
  *
  * The newest snapshot is the price the last tick moved to, because a snapshot is written
@@ -118,26 +174,53 @@ const recordSnapshot = async (price: number): Promise<void> => {
  * resource stopped" are the same thing, and no new column or write cadence is needed. Read
  * by `id` rather than `recorded_at`, whose one-second resolution can tie.
  *
- * An empty table is a fresh install and opens at `STARTING_PRICE`; a stored value that is
- * not a sane price is clamped rather than trusted. A failed read leaves the market closed
- * and unrestored, which the next tick retries — a database that is briefly down must not
- * be able to open the market at 500.
+ * A stored value that is not a sane price is clamped rather than trusted. A failed read
+ * leaves the market closed and unrestored, which the next tick retries — a database that is
+ * briefly down must not be able to open the market at 500.
+ *
+ * **No usable price is only a fresh install if nobody holds a coin.** An empty history and
+ * an empty `gphone_hodlr` is a server that has never traded, and it opens at
+ * `STARTING_PRICE`. An empty history *while holdings exist* is a lost history, and opening
+ * at `STARTING_PRICE` there re-creates the exact MICA-130 precondition this commit exists
+ * to remove: every holding re-valued at the constant in the source, with `quantity`
+ * untouched. It is reachable two ways — an operator truncating a table that still reads like
+ * a chart cache, and the pruning sweep below — so the market stays closed and says why,
+ * rather than quoting a number it cannot stand behind.
  */
 const restorePrice = async (): Promise<void> => {
   if (restored || restoreInFlight) return;
   restoreInFlight = true;
+  restoreTicksWaited = 0;
+  const attempt = restoreGeneration;
+
   try {
     const stored = await Database.scalar<number | null>(
       `SELECT \`price\` FROM \`${PRICE_HISTORY_TABLE}\` ORDER BY \`id\` DESC LIMIT 1`
     );
     const price = Math.round(Number(stored));
-    if (Number.isFinite(price) && price > 0) currentPrice = clamp(price);
+    const usable = Number.isFinite(price) && price > 0;
+    const traded = usable ? false : await hasHoldings();
+
+    // Every await is behind us. An attempt the tick loop gave up on must not write its
+    // answer over a market that has since been restored and walked away from it.
+    if (attempt !== restoreGeneration) return;
+
+    if (traded) {
+      console.error(
+        `[gphone] hodlr has holdings but no price history; market stays closed rather than ` +
+          `reopening at ${STARTING_PRICE}. Restore \`${PRICE_HISTORY_TABLE}\` from a backup, ` +
+          `or clear \`${HOLDINGS_TABLE}\` if this economy is genuinely being reset.`
+      );
+      return;
+    }
+
+    if (usable) currentPrice = clamp(price);
     restored = true;
     console.log(`[gphone] hodlr market open at ${currentPrice}`);
   } catch (e) {
     console.error('[gphone] failed to restore the hodlr price; market closed until retried', e);
   } finally {
-    restoreInFlight = false;
+    if (attempt === restoreGeneration) restoreInFlight = false;
   }
 };
 
@@ -147,6 +230,13 @@ const tickMarket = (): void => {
   // newest row — overwriting the very value being restored. Retrying here rather than on a
   // timer of its own is what heals a start that raced a database still coming up.
   if (!restored) {
+    if (restoreInFlight) {
+      // A read that never settles, rather than one that failed — see MAX_RESTORE_TICKS.
+      if (++restoreTicksWaited < MAX_RESTORE_TICKS) return;
+      restoreInFlight = false;
+      restoreGeneration++;
+      console.error('[gphone] hodlr price restore did not settle; abandoning it and reading again');
+    }
     void restorePrice();
     return;
   }
@@ -158,11 +248,29 @@ const tickMarket = (): void => {
   void recordSnapshot(currentPrice);
 };
 
+/**
+ * Drop snapshots past the retention window — except the newest row, always.
+ *
+ * That row is not a chart point, it is the price: `restorePrice` reads exactly it to reopen
+ * the market. A server that has been down longer than `HISTORY_RETENTION_DAYS` has *every*
+ * row past the window, so the first hourly sweep after it comes up would delete the price
+ * along with the history, and hand the next restore an empty table — MICA-130's own
+ * precondition, reached through MICA-130's own retry path.
+ *
+ * Two statements rather than one self-referencing `DELETE`, because MySQL refuses a
+ * subquery against the table being deleted from (error 1093) and the derived-table dodge
+ * around it is harder to read than a second indexed lookup once an hour. An empty table
+ * yields no id and `0` matches no row, since AUTO_INCREMENT starts at 1.
+ */
 const pruneHistory = async (): Promise<void> => {
   try {
+    const newest = await Database.scalar<number | null>(
+      `SELECT \`id\` FROM \`${PRICE_HISTORY_TABLE}\` ORDER BY \`id\` DESC LIMIT 1`
+    );
     await Database.update(
-      `DELETE FROM \`${PRICE_HISTORY_TABLE}\` WHERE \`recorded_at\` < NOW() - INTERVAL ? DAY`,
-      [HISTORY_RETENTION_DAYS]
+      `DELETE FROM \`${PRICE_HISTORY_TABLE}\`
+       WHERE \`recorded_at\` < NOW() - INTERVAL ? DAY AND \`id\` <> ?`,
+      [HISTORY_RETENTION_DAYS, Number(newest) || 0]
     );
   } catch (e) {
     console.error('[gphone] failed to prune hodlr price history', e);
@@ -197,6 +305,8 @@ export const __resetMarketState = (options: { restored?: boolean; price?: number
   currentPrice = options.price ?? STARTING_PRICE;
   restored = options.restored ?? true;
   restoreInFlight = false;
+  restoreTicksWaited = 0;
+  restoreGeneration = 0;
 };
 
 /** What the server believes the coin is worth right now. */
