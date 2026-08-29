@@ -12,7 +12,9 @@ import {
   musicStatus,
   reportNowPlaying,
   reportPlayerError,
-  resetMusicForTest
+  resetMusicForTest,
+  setMusicMuted,
+  setMusicVolume
 } from '../../shell/state/music';
 import {
   audibleBroadcasts,
@@ -202,6 +204,34 @@ describe('Music', () => {
     reportPlayerError(150);
 
     expect(await findAllByText(VIDEO)).toHaveLength(2);
+  });
+
+  /**
+   * The bug: `musicMuted` (Settings > Sound) silenced the channel, but this slider kept
+   * reading a percentage it was not actually playing at. `Math.round($musicVolume * 100)%`
+   * was true of the stored level and false of the sound coming out — the same
+   * `musicMuted`-wins-over-the-number rule Settings' own two sliders already read by
+   * (`apps/settings/panes/Sound.svelte`), applied here rather than invented twice.
+   */
+  it('shows "Muted" instead of a volume it is not playing at', async () => {
+    const { getByLabelText, findByText, queryByText } = renderApp(Music, { id: 'music' });
+
+    setMusicVolume(0.4);
+    expect(await findByText('40%')).toBeTruthy();
+
+    // Muted the way Settings > Sound mutes it — the store, not the slider — and the label
+    // has to follow without anybody having touched this screen.
+    setMusicMuted(true);
+    expect(await findByText('Muted')).toBeTruthy();
+    expect(queryByText('40%')).toBeNull();
+
+    // The level survives the mute: the thumb sits where it was left, not at zero, so
+    // unmuting (from Settings, or by dragging here) lands back on 40 and not a default.
+    const slider = getByLabelText('Music volume') as HTMLInputElement;
+    expect(slider.value).toBe('40');
+
+    setMusicMuted(false);
+    expect(await findByText('40%')).toBeTruthy();
   });
 
   it('says out loud that other people can hear it', async () => {

@@ -56,6 +56,7 @@
     musicQueue,
     musicIndex,
     musicVolume,
+    musicMuted,
     canPlay,
     thumbnailUrlFor,
     describeMusicError,
@@ -392,7 +393,16 @@
     <div class="pb-home-indicator space-y-2 px-4 pt-3">
       <div class="text-body-medium flex items-center justify-between">
         <span class="text-on-surface font-medium">Volume</span>
-        <span class="text-on-surface font-mono">{Math.round($musicVolume * 100)}%</span>
+        <!-- Muted wins over the number, exactly as Settings > Sound reads its own two
+             sliders (`apps/settings/panes/Sound.svelte`) — one wording for one store,
+             rather than this screen inventing a second way to say the channel is off.
+             The slider below stays at the level `musicMuted` is protecting: mute does
+             not zero `musicVolume` (see `shell/state/music.ts`), so the thumb sits
+             where a person left it and dragging it — which unmutes, the same coupling
+             Settings' slider has — lands back on a number that was always true. -->
+        <span class="text-on-surface font-mono">
+          {$musicMuted ? 'Muted' : `${Math.round($musicVolume * 100)}%`}
+        </span>
       </div>
       <input
         type="range"
