@@ -105,11 +105,21 @@ docblock, which matches `onNet(` and is filtered out only because it also quotes
 `__tests__`. Drop `grep -v __tests__` and the total moves for a reason that has
 nothing to do with the handlers.
 
-`server/__tests__/netGuardCensus.test.ts` holds that docblock to the tree: it
-reads the numbers out of the comment and compares them to a fresh scan, so the
-assertion is "the comment is true" rather than a second copy of the count. **It
-does not read this file.** The numbers here are maintained by hand and are the
-half of the pair that can still go stale.
+`server/__tests__/netGuardCensus.test.ts` holds both copies to the tree: it
+reads the numbers out of `netGuard.ts`'s comment **and out of the four claims on
+this page** — the bold count above, the printed-lines sentence above it, and the
+two category headings below — then compares each against a fresh scan. The
+assertion is "this is true" rather than a third copy of the count living in the
+test, which is the copy nobody would think to check.
+
+It reads the sentences rather than asking this page to carry a table of digits
+for the test's benefit, because a table would be one more copy sitting beside
+prose saying the same thing in words, and the prose is the part you are actually
+reading. It anchors on headings and bold lead-ins only, so the narrative above —
+"used to read six", "three gphone-named handlers had been added", "this was
+three until ESX" — is never mistaken for a current claim. Reword one of the four
+and the suite fails with a message saying so; change a handler without touching
+either copy and it fails too.
 
 #### gphone-named — nine, every one guarded
 

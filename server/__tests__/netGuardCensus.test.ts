@@ -21,9 +21,19 @@ import path from 'path';
 
 const SERVER = path.join(__dirname, '..');
 const NET_GUARD = path.join(SERVER, 'lib', 'netGuard.ts');
+const SECURITY_DOC = path.join(SERVER, '..', 'docs', 'security.md');
+
 const docblock = fs.readFileSync(NET_GUARD, 'utf8');
+const securityDoc = fs.readFileSync(SECURITY_DOC, 'utf8');
 
 const WORDS: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
   eight: 8,
   nine: 9,
   ten: 10,
@@ -32,13 +42,32 @@ const WORDS: Record<string, number> = {
   thirteen: 13
 };
 
-const statedNumber = (pattern: RegExp): number => {
-  const match = docblock.match(pattern);
-  if (!match) throw new Error(`netGuard.ts docblock no longer states: ${pattern}`);
-  const word = match[1].toLowerCase();
-  if (!(word in WORDS)) throw new Error(`unhandled number word '${word}' in netGuard.ts`);
+/**
+ * A number the prose states, in words, pulled out of the prose itself.
+ *
+ * Both copies of the census are read this way rather than restated here, so what is asserted
+ * is "this file is true" — a third copy in the test could drift from both and would be the
+ * one nobody thinks to check.
+ *
+ * A pattern that stops matching **throws** rather than skipping. These are emptiness-shaped
+ * assertions, and an emptiness-shaped assertion that quietly finds nothing is a check that
+ * passes forever while guarding nothing.
+ */
+const stated = (text: string, where: string, pattern: RegExp, group = 1): number => {
+  const match = text.match(pattern);
+  if (!match) {
+    throw new Error(
+      `${where} no longer states its census in a checkable form. Expected to find ` +
+        `${pattern}. The count is gated because both copies have been wrong before; if the ` +
+        'wording has to change, change this pattern with it rather than deleting the check.'
+    );
+  }
+  const word = match[group].toLowerCase();
+  if (!(word in WORDS)) throw new Error(`unhandled number word '${word}' in ${where}`);
   return WORDS[word];
 };
+
+const statedNumber = (pattern: RegExp): number => stated(docblock, 'netGuard.ts', pattern);
 
 const sourceFiles = (dir: string): string[] =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -79,6 +108,26 @@ const registrations = (): { file: string; event: string }[] => {
 
 /** gPhone's own namespace. Anything else is named by a framework, which is the whole point. */
 const isGphoneNamed = (event: string) => event.startsWith('gphone:');
+
+/**
+ * What the documented command actually prints, reproduced including its second stage.
+ *
+ * `grep -v __tests__` is there to drop the test directory, and it also drops the copy of the
+ * command inside `netGuard.ts`'s own docblock, which matches `onNet(` and is filtered out only
+ * because it quotes `__tests__`. That is why the command reports twelve lines rather than
+ * thirteen. Reproducing the quirk is the point: both the docblock and `docs/security.md` tell
+ * a reader what they will see, so the number has to be what the pipeline really prints.
+ */
+const rawGrepLines = (): number =>
+  sourceFiles(SERVER).reduce(
+    (total, file) =>
+      total +
+      fs
+        .readFileSync(file, 'utf8')
+        .split('\n')
+        .filter((line) => line.includes('onNet(') && !line.includes('__tests__')).length,
+    0
+  );
 
 describe('the onNet census in netGuard.ts is true', () => {
   const handlers = registrations();
@@ -128,21 +177,99 @@ describe('the onNet census in netGuard.ts is true', () => {
     // handlers. If that gap changes, the instruction it gives becomes misleading.
     const stated = statedNumber(/That returns (\w+)/);
 
-    // The documented pipeline exactly, including its second stage. `grep -v __tests__` is
-    // there to drop the test directory, and it also drops this very instruction line out of
-    // netGuard's own docblock — which is why the command reports twelve rather than thirteen.
-    // Reproducing the quirk is the point: the number in the prose is what a reader will see.
-    const rawLines = sourceFiles(SERVER).reduce(
-      (total, file) =>
-        total +
-        fs
-          .readFileSync(file, 'utf8')
-          .split('\n')
-          .filter((line) => line.includes('onNet(') && !line.includes('__tests__')).length,
-      0
-    );
+    const rawLines = rawGrepLines();
 
     expect(rawLines).toBe(stated);
     expect(rawLines - handlers.length).toBe(2);
+  });
+});
+
+/**
+ * The same census, where a security auditor actually reads it.
+ *
+ * `docs/security.md` is the human-readable entry-point inventory and states these numbers
+ * too. Until now only `netGuard.ts` was gated, so the next drift would land silently in the
+ * page — the copy a reader treats as authoritative. `changelog.test.ts` already sets the
+ * precedent for a server test holding a markdown file to something, and for the same reason:
+ * some documents are load-bearing enough that being wrong is worse than being absent.
+ *
+ * **It reads the page's own sentences, and does not ask the page to carry a separate table
+ * of digits for the test's benefit.** A table would be a third copy of the census, sitting
+ * beside prose that says the same thing in words — and the gate would hold the table while
+ * the prose, which is the part anyone actually reads, drifted freely. That is the hole this
+ * suite exists to close, reintroduced one level down.
+ *
+ * **What makes the prose safe to read is that these four claims are structural, not
+ * narrative.** Two are `####` headings and two are bold lead-ins, and every number in the
+ * page's *narrative* is deliberately excluded by that anchoring — `docs/security.md:88-89`
+ * says the census "used to read six" and that "three gphone-named handlers had been added
+ * since it was written", and `:156` says "This was three until ESX support landed". All
+ * three are true sentences about the past. An unanchored scan for number-words would read
+ * them as current claims and punish the page for being well written; these patterns cannot
+ * match them, which is asserted below rather than asserted about.
+ */
+describe('the onNet census in docs/security.md is true', () => {
+  const handlers = registrations();
+  const gphoneNamed = handlers.filter((h) => isGphoneNamed(h.event));
+  const frameworkNamed = handlers.filter((h) => !isGphoneNamed(h.event));
+
+  const inDoc = (pattern: RegExp, group = 1) =>
+    stated(securityDoc, 'docs/security.md', pattern, group);
+
+  /** `**Ten, across five files**` — the section's opening claim. */
+  const TOTAL_AND_FILES = /\*\*(\w+), across (\w+) files\*\*/;
+  /** `**That prints twelve lines for ten handlers.**` */
+  const PRINTS = /\*\*That prints (\w+) lines for (\w+) handlers\.\*\*/;
+  /** `#### gphone-named — nine, every one guarded` */
+  const MICA_HEADING = /^#### gphone-named — (\w+)/m;
+  /** `#### Framework-named — one, and this is the category that was missing` */
+  const FRAMEWORK_HEADING = /^#### Framework-named — (\w+)/m;
+
+  it('opens the section with the handler total and file count the tree has', () => {
+    const files = new Set(handlers.map((h) => h.file));
+
+    expect(inDoc(TOTAL_AND_FILES)).toBe(handlers.length);
+    expect(inDoc(TOTAL_AND_FILES, 2)).toBe(files.size);
+  });
+
+  it('states what its own grep prints, and how many of those are handlers', () => {
+    // The page tells a reader to count from the tree and then says what they will see. If
+    // either number is wrong the instruction is worse than no instruction, because following
+    // it produces a mismatch the reader has no way to resolve.
+    expect(inDoc(PRINTS, 2)).toBe(handlers.length);
+    expect(inDoc(PRINTS)).toBe(rawGrepLines());
+  });
+
+  it('heads each category with the count the tree has', () => {
+    expect(inDoc(MICA_HEADING)).toBe(gphoneNamed.length);
+    expect(inDoc(FRAMEWORK_HEADING)).toBe(frameworkNamed.length);
+  });
+
+  it('agrees with netGuard.ts, so the two copies cannot drift apart', () => {
+    // Both are already checked against the tree, so this is redundant arithmetic — and it is
+    // the assertion whose failure message says the useful thing, because "the page and the
+    // comment disagree" is what a reader actually experiences.
+    expect(inDoc(TOTAL_AND_FILES)).toBe(statedNumber(/(\w+) handlers are raw `onNet` listeners/));
+    expect(inDoc(MICA_HEADING)).toBe(statedNumber(/(\w+) are gphone-named/));
+  });
+
+  it("anchors on current claims only, never on the page's own history", () => {
+    // The property that makes reading prose safe here, asserted rather than trusted. These
+    // are real sentences in the page; if a future anchor started matching them, the gate
+    // would begin failing for a page that is entirely correct.
+    const history = [
+      'This census used to read "six, in `Phone.ts` and `Battery.ts`", and it was wrong',
+      'in both directions: three gphone-named handlers had been added since it was',
+      '**This was three until ESX support landed, and the drop is a real reduction in'
+    ];
+
+    for (const line of history) {
+      for (const pattern of [TOTAL_AND_FILES, PRINTS, MICA_HEADING, FRAMEWORK_HEADING]) {
+        expect(pattern.test(line), `${pattern} should not match history: ${line}`).toBe(false);
+      }
+      // And the sentences are still in the page — so this test fails loudly if the page is
+      // reworded, rather than silently passing against history that no longer exists.
+      expect(securityDoc, 'docs/security.md no longer contains: ' + line).toContain(line);
+    }
   });
 });
