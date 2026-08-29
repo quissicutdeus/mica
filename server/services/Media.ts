@@ -87,6 +87,183 @@ const assertStorableData = (value: unknown): void => {
 };
 
 /**
+ * MICA-71, and the decision the rest of this section rests on: **the bytes stay in
+ * MySQL, base64, in `data`.**
+ *
+ * Written down because "should this be on disk instead" is the question anyone reading a
+ * `mediumtext` full of base64 asks first, and answering it silently by moving the storage
+ * is a far larger change than the ticket that prompted it. The reasons it stays:
+ *
+ * - **A FiveM resource has no static file host it can write to.** Files are served out of
+ *   the resource directory, which is deployed content — writing player data into it means
+ *   a resource that mutates its own install, and anything a `refresh`/`ensure` cycle or a
+ *   redeploy sweeps away takes the gallery with it. An external object store (S3, a CDN)
+ *   is a credential, a network dependency and a bill that a drop-in phone resource cannot
+ *   assume every server owner has.
+ * - **Backups already cover it.** A server owner backs up one MySQL database and has the
+ *   whole phone. Splitting the payload out means a gallery that can disagree with its own
+ *   rows — a restore that has the row and not the file, or the file and not the row.
+ * - **The delivery path is a data URI either way.** CEF renders `data:image/webp;base64,…`
+ *   directly, so nothing downstream is waiting on a URL. Moving to files buys a second
+ *   fetch per tile and an origin to configure, not less work.
+ * - **The cost was never the encoding, it was the absence of bounds.** Base64 is a 33%
+ *   tax; unbounded rows, no per-player ceiling and no retention were the actual problem,
+ *   and those are fixable in place. `gphone_camera_quality`, `MAX_MEDIA_DATA_LENGTH` and
+ *   the quota below are worth far more than a third off a number nobody was capping.
+ *
+ * What would change the answer: media that is not a still photo. A voice clip is tens of
+ * kilobytes, but video is not, and the day `kind: 'video'` stores real bytes rather than a
+ * hotlinked `url`, none of the above holds — a `mediumtext` cannot take a clip, and the
+ * `url` column is already the seam that lets a future storage backend arrive without
+ * touching the reads. That is a ticket of its own, not a side effect of this one.
+ */
+
+/**
+ * The default ceiling on one player's live media, in mebibytes.
+ *
+ * Sized from what a real gallery weighs rather than from what the table could survive.
+ * MICA-110 measured a capture at a few hundred kilobytes, so 64MiB is roughly 150-200
+ * photos — a library a player has to work at to fill, and one they would have to scroll a
+ * long way to see the end of. A hundred players at the ceiling is 6.4GB, which is a number
+ * a server owner can hold in their head and decide about.
+ *
+ * It composes with `MAX_MEDIA_DATA_LENGTH` rather than competing with it: the per-row cap
+ * bounds one write, this bounds the sum of them. The check runs *before* the insert, so a
+ * player sitting just under the line can still add one more row — the true worst case is
+ * the quota plus one capped row, 68MiB, and that overshoot is deliberate. Refusing a photo
+ * that would fit is worse than a bounded overshoot of a number the owner chose.
+ */
+const DEFAULT_QUOTA_MB = 64;
+
+const BYTES_PER_MB = 1024 * 1024;
+
+/**
+ * What one row costs, as SQL.
+ *
+ * One expression, used by the quota checks *and* by `mediaStorageStats`, so the number
+ * `gphonemedia` reports and the number a player is measured against cannot drift apart —
+ * a quota that disagrees with the report an owner uses to reason about it is worse than
+ * no quota. `byte_size` (the column) is still not the answer: nothing writes it.
+ *
+ * `LENGTH` is bytes, not characters, which is the honest unit here — `data` is base64 and
+ * therefore ASCII, so bytes and string length agree, and the same expression stays correct
+ * if a future column is not.
+ */
+const STORED_BYTES_SQL = 'IFNULL(LENGTH(data), 0) + IFNULL(LENGTH(thumbnail), 0)';
+
+/**
+ * The per-player ceiling in bytes, or `0` for no ceiling.
+ *
+ * **A bad value disables the quota rather than locking players out**, and that direction is
+ * chosen, not inherited. `GetConvarInt` answers `0` for anything it cannot parse, so a typo
+ * lands here as "off" — which leaves the phone behaving exactly as it did before this
+ * ticket. The opposite failure would refuse every photo on the server because of a stray
+ * character in `server.cfg`. It is loud rather than silent: `logMediaLimits` prints the
+ * resolved value at resource start, so "off" is something an owner reads rather than
+ * discovers.
+ */
+const quotaBytes = (): number => {
+  const raw =
+    typeof GetConvarInt === 'function'
+      ? GetConvarInt('gphone_media_quota_mb', DEFAULT_QUOTA_MB)
+      : DEFAULT_QUOTA_MB;
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return Math.trunc(raw) * BYTES_PER_MB;
+};
+
+/** What a row about to be written will cost, measured the same way SQL measures it. */
+const storedBytesOf = (item: Partial<MediaItem>): number =>
+  (typeof item.data === 'string' ? item.data.length : 0) +
+  (typeof item.thumbnail === 'string' ? item.thumbnail.length : 0);
+
+/**
+ * How much of their ceiling one player is already using.
+ *
+ * `status = 'active'` on purpose, and it is the one judgement call in the quota. Counting
+ * every status would make the table's total size the bound — tidier arithmetic — but it
+ * would also mean a player at the ceiling could delete every photo they own and still be
+ * refused, with nothing they could do about it. So the quota measures the library the
+ * player can actually see and manage.
+ *
+ * The consequence is stated rather than hidden: a soft-deleted row keeps its bytes and no
+ * longer counts against anyone, so capture-then-delete can still grow the table past the
+ * sum of every player's quota. `gphone_media_retention` is the owner's tool for that and
+ * `gphonemedia` is how they see whether they need it. Closing it properly means either
+ * hard-deleting on the player's own delete — which throws away the evidence a report of
+ * that photo is built on (`reportable.previewColumn`) — or a second grace-window knob, and
+ * both are bigger decisions than this ticket.
+ */
+const usedBytes = async (citizenid: string): Promise<number> => {
+  const row = await Database.single<{ bytes: number | string | null }>(
+    `SELECT SUM(${STORED_BYTES_SQL}) AS bytes
+     FROM gphone_media
+     WHERE citizenid = ? AND status = 'active'`,
+    [citizenid]
+  );
+  return Number(row?.bytes ?? 0) || 0;
+};
+
+/**
+ * The same figure for several players at once, in one round trip.
+ *
+ * A proximity drop writes every recipient their own full copy, so each of them has to be
+ * measured — and doing that one query per bystander is the shape `copyToPlayers` already
+ * exists to avoid. The citizenids are bound values, never interpolated; only the count of
+ * placeholders comes from the list length.
+ */
+const usedBytesByPlayer = async (citizenids: readonly string[]): Promise<Map<string, number>> => {
+  const used = new Map<string, number>();
+  if (citizenids.length === 0) return used;
+
+  const placeholders = citizenids.map(() => '?').join(', ');
+  const rows = await Database.query<{ citizenid: string; bytes: number | string | null }[]>(
+    `SELECT citizenid, SUM(${STORED_BYTES_SQL}) AS bytes
+     FROM gphone_media
+     WHERE citizenid IN (${placeholders}) AND status = 'active'
+     GROUP BY citizenid`,
+    [...citizenids]
+  );
+  for (const row of rows ?? []) used.set(row.citizenid, Number(row.bytes ?? 0) || 0);
+  return used;
+};
+
+/**
+ * Refuse a write that would put the caller over their ceiling.
+ *
+ * The message reaches a **player** as a toast, so it names no table and carries no
+ * `[Repository]` prefix (§2.9), and it names the remedy — deleting something frees the
+ * quota immediately, because the quota counts active rows.
+ */
+const assertWithinQuota = async (citizenid: unknown, incoming: number): Promise<void> => {
+  const limit = quotaBytes();
+  if (limit <= 0) return;
+  if (typeof citizenid !== 'string' || citizenid.length === 0) return;
+
+  const used = await usedBytes(citizenid);
+  if (used + incoming <= limit) return;
+
+  throw new Error('Your photo library is full. Delete something to make room.');
+};
+
+/**
+ * Which of these players can take one more copy of a given size.
+ *
+ * A bystander over their ceiling is skipped rather than told about it: they did not press
+ * anything, and the sender is answered with the number of copies that were actually
+ * written, which is the honest count either way.
+ */
+const acceptingCopies = async (
+  citizenids: readonly string[],
+  incoming: number
+): Promise<string[]> => {
+  const limit = quotaBytes();
+  if (limit <= 0) return [...citizenids];
+
+  const used = await usedBytesByPlayer(citizenids);
+  return citizenids.filter((citizenid) => (used.get(citizenid) ?? 0) + incoming <= limit);
+};
+
+/**
  * The columns a proximity drop copies onto each recipient's own row.
  *
  * Everything the sender's row carries except the three the copy must not inherit: `id` and
@@ -213,9 +390,16 @@ export const media = defineService<MediaItem>({
        * the client-writable path and nothing else. `ServiceEndpoint` has already reduced
        * the payload to `clientWritable` columns by the time it arrives; what is left to
        * check is the one thing the schema cannot say.
+       *
+       * The quota (MICA-71) is checked here for the same reason and in the same place:
+       * `ServiceEndpoint` supplies `citizenid` on the way in, so this is the first point
+       * that knows both who is writing and how much. `addForPlayer` deliberately does not
+       * check it — a resource a server owner installed is not a client payload, and the
+       * argument `super.create` already carries for the per-row cap applies unchanged.
        */
       async create(item: Partial<MediaItem>): Promise<number> {
         assertStorableData(item.data);
+        await assertWithinQuota(item.citizenid, storedBytesOf(item));
         return await super.create(item);
       }
 
@@ -454,7 +638,16 @@ app.registerEvent('drop', async (source, _cbId, data, citizenid) => {
   const nearby = await findNearbyVisiblePlayers(source, citizenid);
   // One person, not one phone: two sources resolving to the same character is one copy and
   // one toast, and `pushMany` deduplicates its own side regardless.
-  const recipients = [...new Set(nearby.map((target) => target.citizenid))];
+  const nearbyCitizenids = [...new Set(nearby.map((target) => target.citizenid))];
+  if (nearbyCitizenids.length === 0) return { count: 0 };
+
+  /**
+   * A drop writes each recipient a **full copy**, so it is the one path where one tap
+   * multiplies stored bytes — and a bystander whose own library is already at its ceiling
+   * must not be pushed over it by somebody else's gesture (MICA-71). Measured in one
+   * grouped query for the whole set, never one per recipient.
+   */
+  const recipients = await acceptingCopies(nearbyCitizenids, storedBytesOf(owned));
   if (recipients.length === 0) return { count: 0 };
 
   const privileged = repo as unknown as {
@@ -561,14 +754,14 @@ const TOP_HOLDER_COUNT = 10;
 export const mediaStorageStats = async (): Promise<MediaStorageStats> => {
   const totals = await Database.single<MediaTotalsRow>(
     `SELECT COUNT(*) AS rowCount,
-            SUM(IFNULL(LENGTH(data), 0) + IFNULL(LENGTH(thumbnail), 0)) AS totalBytes
+            SUM(${STORED_BYTES_SQL}) AS totalBytes
      FROM gphone_media`
   );
 
   const holders = await Database.query<MediaHolderRow[]>(
     `SELECT citizenid,
             COUNT(*) AS rowCount,
-            SUM(IFNULL(LENGTH(data), 0) + IFNULL(LENGTH(thumbnail), 0)) AS bytes
+            SUM(${STORED_BYTES_SQL}) AS bytes
      FROM gphone_media
      GROUP BY citizenid
      ORDER BY bytes DESC
@@ -598,10 +791,268 @@ const formatBytes = (bytes: number): string => {
 };
 
 /**
+ * How many rows a `DELETE` actually removed.
+ *
+ * `Database.query` hands back whatever the driver returned, and oxmysql's shape for a
+ * write is an object carrying `affectedRows`. Anything else counts as zero rather than
+ * `NaN` — a maintenance routine that reports nonsense is worse than one that reports
+ * nothing, because the number is the only evidence an owner has that it ran.
+ */
+const affectedRows = (result: unknown): number => {
+  if (result && typeof result === 'object' && 'affectedRows' in result) {
+    const value = Number((result as { affectedRows?: unknown }).affectedRows);
+    return Number.isFinite(value) ? value : 0;
+  }
+  return 0;
+};
+
+/**
+ * How many days of media are kept, or `0` for forever.
+ *
+ * **Off by default, and that is the conservative answer rather than a placeholder.** This
+ * is the only thing in this file that destroys a photo a player still expects to have, so
+ * an update that sets nothing must not start deleting anybody's gallery. An owner who
+ * wants the reclaim opts into it, having read what it does.
+ *
+ * The quota above is what bounds ordinary growth without deleting anything; retention is
+ * for the owner who has looked at `gphonemedia` and decided the table is still too big.
+ */
+const retentionDays = (): number => {
+  const raw = typeof GetConvarInt === 'function' ? GetConvarInt('gphone_media_retention', 0) : 0;
+  return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 0;
+};
+
+/**
+ * Delete every media row older than the retention window. **A hard delete.**
+ *
+ * Worth being exact about, because the word means two different things in this schema
+ * (MICA-75): a player deleting a photo writes `status = 'deleted'` and the row keeps
+ * every byte it had, which is why a soft delete reclaims nothing and why this exists. This
+ * removes the row.
+ *
+ * `created_at` rather than `updated_at`, and every status rather than a subset, so the
+ * sentence an owner is agreeing to has no exceptions in it: *media older than N days is
+ * removed*. A window that covered only some rows would be a window nobody could reason
+ * about, and the rule for a prune is that it never reaches a row the stated window does
+ * not clearly cover.
+ *
+ * Nothing is written unless the convar is set, so the default path here is a no-op that
+ * touches the database not at all.
+ */
+export const pruneExpiredMedia = async (): Promise<number> => {
+  const days = retentionDays();
+  if (days <= 0) return 0;
+
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  return affectedRows(
+    await Database.query('DELETE FROM gphone_media WHERE created_at < ?', [cutoff])
+  );
+};
+
+/**
+ * Delete media whose owner no longer exists. **A hard delete, and the character-deletion
+ * cleanup.**
+ *
+ * The first line of defence is not this: every gPhone table is generated with
+ * `FOREIGN KEY (citizenid) REFERENCES players (citizenid) ON DELETE CASCADE`
+ * (`lib/schemaSql.ts`), so on a table created from `gphone.sql` a deleted character takes
+ * its photos with it inside the same statement, with no resource involvement at all. That
+ * is the mechanism, and it is already correct.
+ *
+ * This is the backstop for the three ways that guarantee does not hold, none of which the
+ * database will tell you about:
+ *
+ * - A table created before the constraint existed. `SchemaMigrator` adds columns and keys
+ *   and deliberately never adds a foreign key, so an older install keeps the shape it was
+ *   created with.
+ * - A framework that retires a character without removing the `players` row.
+ * - A `players` table on an engine that accepts a foreign key and does not enforce one.
+ *
+ * **Guarded on `players` answering a non-zero count first**, and that guard is the whole
+ * safety argument: a missing, empty or unreadable `players` table would otherwise make
+ * every media row an orphan and delete the lot. It fails closed — anything it cannot
+ * confirm leaves the table alone and says so.
+ *
+ * `NOT EXISTS` rather than `NOT IN`, because `NOT IN` against a subquery containing a
+ * single NULL is unknown for every row and would silently delete nothing at all — a prune
+ * that quietly does nothing reads exactly like one that had nothing to do.
+ */
+export const pruneOrphanedMedia = async (): Promise<number> => {
+  const owners = await Database.single<{ total: number | string | null }>(
+    'SELECT COUNT(*) AS total FROM players'
+  );
+  const total = Number(owners?.total ?? 0);
+  if (!Number.isFinite(total) || total <= 0) {
+    console.warn(
+      '[gphonemedia] players is empty or unreadable — the orphan sweep was skipped rather ' +
+        'than treating every row as an orphan.'
+    );
+    return 0;
+  }
+
+  return affectedRows(
+    await Database.query(
+      'DELETE FROM gphone_media WHERE NOT EXISTS ' +
+        '(SELECT 1 FROM players p WHERE p.citizenid = gphone_media.citizenid)'
+    )
+  );
+};
+
+/**
+ * Remove one character's media outright. **A hard delete.**
+ *
+ * The immediate half of the cleanup above: a deletion flow that calls this reclaims the
+ * bytes at once instead of waiting for the next restart's sweep, and it works on an
+ * install whose `players` row survives the character.
+ */
+export const purgeMediaForCitizen = async (citizenid: string): Promise<number> => {
+  const owner = typeof citizenid === 'string' ? citizenid.trim() : '';
+  if (owner.length === 0) return 0;
+
+  return affectedRows(
+    await Database.query('DELETE FROM gphone_media WHERE citizenid = ?', [owner])
+  );
+};
+
+/**
+ * Told that a character is gone, purge its media.
+ *
+ * **`on`, never `onNet`, and the distinction is the security boundary.** `onNet` would
+ * register this as a net event, and a registered net event is reachable by a modified
+ * client (§2.9) — which would hand any player a one-argument delete of any other player's
+ * entire gallery. `on` registers a local handler only, so the sole way to reach it is a
+ * trigger from another **server** resource, which is code the owner installed.
+ *
+ * gPhone owns the name rather than listening for a framework's, deliberately. qb-core and
+ * qbx_core do not agree on what they emit when a character is deleted, and several
+ * multicharacter resources emit nothing at all — registering a handler for a guessed name
+ * would be cleanup that silently never runs, which reads exactly like cleanup that works.
+ * A name a server owner wires up on purpose either fires or visibly does not, and the FK
+ * cascade plus `pruneOrphanedMedia` cover the owner who wires up nothing.
+ */
+on('gphone:server:media:characterDeleted', (rawCitizenid: unknown) => {
+  const citizenid = typeof rawCitizenid === 'string' ? rawCitizenid.trim() : '';
+  if (citizenid.length === 0) return;
+
+  void purgeMediaForCitizen(citizenid)
+    .then((removed) => {
+      if (removed > 0) {
+        console.log(`[gphonemedia] purged ${removed} row(s) for deleted character ${citizenid}.`);
+      }
+    })
+    .catch((error) => {
+      console.error('[gphonemedia] purge for a deleted character failed:', error);
+    });
+});
+
+/**
+ * Say what the limits actually resolved to, once, at resource start.
+ *
+ * A quota that a typo turned off is the failure this line exists to make loud. Both knobs
+ * fall back rather than throw — the right behaviour for something that would otherwise
+ * refuse every photo on the server — and a fallback nobody is told about is a setting an
+ * owner believes is in force.
+ *
+ * (Both convar names are written as literals at their `GetConvarInt` call site rather than
+ * hoisted into a `const`. That is what `convars.test.ts` reads to check the name is
+ * documented in the README, and a literal is the form it resolves without guessing.)
+ */
+const logMediaLimits = (): void => {
+  const limit = quotaBytes();
+  const days = retentionDays();
+  console.log(
+    `[gphonemedia] per-player quota ${limit > 0 ? formatBytes(limit) : 'off'}, ` +
+      `retention ${days > 0 ? `${days} day(s)` : 'off'}.`
+  );
+};
+
+/**
+ * The prune, as it runs on its own: at resource start, and again on `gphonemedia prune`.
+ *
+ * The orphan sweep runs whether or not retention is configured, because it only ever
+ * reaches rows whose owner does not exist — data nothing in the phone can read, since
+ * every media read is citizenid-scoped. The retention sweep runs only when an owner has
+ * asked for it.
+ *
+ * Each half is caught separately. A `players` table this resource cannot read is a real
+ * configuration on some servers and must not stop retention from running, and neither
+ * failure may take down resource start.
+ */
+export const runMediaMaintenance = async (): Promise<{ expired: number; orphaned: number }> => {
+  let orphaned = 0;
+  try {
+    orphaned = await pruneOrphanedMedia();
+    if (orphaned > 0) {
+      console.log(`[gphonemedia] removed ${orphaned} row(s) whose character no longer exists.`);
+    }
+  } catch (error) {
+    console.error('[gphonemedia] orphan sweep failed:', error);
+  }
+
+  let expired = 0;
+  try {
+    expired = await pruneExpiredMedia();
+    if (expired > 0) {
+      console.log(`[gphonemedia] removed ${expired} row(s) older than ${retentionDays()} day(s).`);
+    }
+  } catch (error) {
+    console.error('[gphonemedia] retention sweep failed:', error);
+  }
+
+  return { expired, orphaned };
+};
+
+/**
+ * `gphonemedia prune` — run the sweeps now, and say exactly what went.
+ *
+ * **Console-only, the same gate `gphoneschema apply` carries and for the same reason**:
+ * it is the one command in this file that destroys rows. `isAdmin` is checked first so an
+ * ordinary player gets the same refusal they would get for the report, rather than being
+ * told a privileged subcommand exists.
+ *
+ * There is no dry run, deliberately — `gphonemedia` with no argument is the dry run. It
+ * reports the size and the top holders, changes nothing, and is what an owner should read
+ * before setting a retention window.
+ */
+export const runMediaPruneCommand = async (source: number): Promise<void> => {
+  if (!isAdmin(source)) {
+    notifyPlayer(source, {
+      type: 'error',
+      message: 'You do not have permission to use that.'
+    });
+    return;
+  }
+
+  if (source !== 0) {
+    notifyPlayer(source, {
+      type: 'error',
+      message: 'gphonemedia prune only runs from the server console.'
+    });
+    return;
+  }
+
+  const days = retentionDays();
+  if (days <= 0) {
+    console.log(
+      '[gphonemedia] gphone_media_retention is not set, so nothing is expired by age. ' +
+        'The orphan sweep still runs.'
+    );
+  }
+
+  const { expired, orphaned } = await runMediaMaintenance();
+  console.log(
+    `[gphonemedia] prune finished: ${expired} expired row(s), ${orphaned} orphaned row(s) removed.`
+  );
+};
+
+/**
  * `gphonemedia` — report-only, same shape as `gphoneschema` without an `apply` half:
  * nothing here writes anything. Console and any `isAdmin` caller both get the full
  * breakdown in the server console (a top-10 list does not fit a toast), plus a one-line
  * toast for whoever ran it in-game so they know it actually did something.
+ *
+ * `gphonemedia prune` is the one subcommand that writes, and it is gated harder — see
+ * `runMediaPruneCommand` above.
  */
 export const runMediaStatsCommand = async (source: number): Promise<void> => {
   if (!isAdmin(source)) {
@@ -638,10 +1089,38 @@ export const runMediaStatsCommand = async (source: number): Promise<void> => {
 
 RegisterCommand(
   'gphonemedia',
-  (source: number) => {
+  (source: number, args: string[]) => {
+    if ((args?.[0] ?? '').toLowerCase() === 'prune') {
+      void runMediaPruneCommand(source).catch((error) => {
+        console.error('[gphonemedia] prune failed:', error);
+      });
+      return;
+    }
+
     void runMediaStatsCommand(source).catch((error) => {
       console.error('[gphonemedia] failed:', error);
     });
   },
   false
 );
+
+/**
+ * Resource start: say what the limits are, then sweep once.
+ *
+ * `onResourceStart` rather than module scope, which is where `Notifications.ts` puts its
+ * own prune. Two reasons to be later: this reads `players`, a table gPhone does not own,
+ * and module evaluation is the earliest possible moment to ask oxmysql for anything; and
+ * a sweep that ran on import would run inside every server test suite that loads this
+ * file, filling their output with a warning about a `players` table no test has.
+ *
+ * Failure is logged, never thrown — maintenance must not be able to stop the resource
+ * starting. Nothing here blocks anything: no player is connected yet.
+ */
+on('onResourceStart', (resourceName: string) => {
+  if (resourceName !== GetCurrentResourceName()) return;
+
+  logMediaLimits();
+  void runMediaMaintenance().catch((error) => {
+    console.error('[gphonemedia] start-up maintenance failed:', error);
+  });
+});

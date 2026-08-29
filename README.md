@@ -276,6 +276,8 @@ set gphone_music_max_nearby 8
 setr gphone_camera_quality 95
 set gphone_blabber_edit_window 900
 set gphone_notification_retention 30
+set gphone_media_quota_mb 64
+set gphone_media_retention 0
 ```
 
 | Convar                          | Type                 | Default                | Controls                                           |
@@ -291,15 +293,20 @@ set gphone_notification_retention 30
 | `gphone_blabber_edit_window`    | integer, seconds     | `900`                  | How long a Blab stays editable by its author       |
 | `gphone_notification_retention` | integer, days        | `30`                   | How long notification rows are kept                |
 | `gphone_camera_quality`         | integer, 1-100       | `95`                   | Encode quality of a stored photo (needs `setr`)    |
+| `gphone_media_quota_mb`         | integer, MiB         | `64`                   | Storage one player's photo library may occupy      |
+| `gphone_media_retention`        | integer, days        | `0` (off)              | How long stored media is kept, if you want a limit |
 
-Nine of the eleven are read on every use rather than cached, so changing one
+Ten of the thirteen are read on every use rather than cached, so changing one
 with `set` from the live console takes effect on the next request and needs no
 restart. `gphone_blabber_edit_window` and `gphone_notification_retention` are
-the two exceptions — both are read once at resource start, so a change to either
-needs a restart, for the reasons given under them below. `gphone_camera_quality`
-is read on every use as well, but the phone only asks for it when the Camera app
-comes to the foreground, so a change reaches a player the next time they open
-the camera rather than the next time they take a photo.
+read once at resource start, so a change to either needs a restart, for the
+reasons given under them below. `gphone_media_retention` is the third exception
+and the mildest: it is read whenever the media prune runs, which is at resource
+start and again on `gphonemedia prune`, so a change takes effect on the next
+prune rather than needing a restart. `gphone_camera_quality` is read on every
+use as well, but the phone only asks for it when the Camera app comes to the
+foreground, so a change reaches a player the next time they open the camera
+rather than the next time they take a photo.
 
 - **`gphone_admin_aces`** — which ace objects grant gPhone admin: the phone's
   Developer Tools, and the `gphone*` console commands. The default recognises
@@ -416,6 +423,49 @@ the camera rather than the next time they take a photo.
   and applies from the next time a player opens the Camera app. A value the
   server cannot parse reads as 0, which would be unusable, so 0 and anything
   negative fall back to 95; anything above 100 is clamped to 100.
+- **`gphone_media_quota_mb`** — the most storage one player's photo library may
+  occupy, in mebibytes. Photos are base64 in a database column, so a gallery
+  nobody bounds is a table that only ever grows; this is the bound, and it is
+  the everyday one. It counts the rows a player can actually see — a photo they
+  delete frees their allowance immediately — and it is measured the same way
+  `gphonemedia` reports sizes, so the number a player is held to and the number
+  you read in the console are the same number. 64MiB is roughly 150 to 200
+  captures at the default quality, which is a library a player has to work at to
+  fill; a hundred players at the ceiling is 6.4GB. It works with the 4MB
+  per-photo cap rather than replacing it: that bounds one write, this bounds the
+  sum. The check runs before the write, so a player just under the line can
+  still add one more photo — the true worst case is your value plus one capped
+  photo. A proximity share checks each recipient too, and quietly skips anyone
+  with no room, since a bystander should not be pushed over their ceiling by
+  somebody else's gesture. **A value gPhone cannot parse turns the quota off
+  rather than refusing every photo on the server**, which is the safer direction
+  for something in the write path; the resolved value is printed at resource
+  start so "off" is something you read rather than discover. Set it to 0 for no
+  ceiling.
+- **`gphone_media_retention`** — how many days of stored media to keep. **Off by
+  default, and it deletes rows permanently when you turn it on**, so read this
+  before setting it. With a value, gPhone deletes every `gphone_media` row older
+  than that many days — at resource start, and again whenever you run
+  `gphonemedia prune` from the console. It covers every row, including ones a
+  player still has in their gallery, so the sentence to hold in mind is exactly
+  "photos older than N days are removed" with no exceptions in it. It is a
+  different thing from a player deleting a photo, which marks the row deleted
+  and keeps every byte it had — which is why a busy server can still grow past
+  the sum of every player's quota, and why this knob exists at all. Run
+  `gphonemedia` first: it reports the table's size and its biggest holders,
+  changes nothing, and is how you decide whether you need this. A non-numeric or
+  non-positive value means off.
+
+Two things about media storage that are not convars, since this is where you
+will be looking if the table is bigger than you expected. gPhone removes a
+deleted character's photos in three ways, in this order: the table is created
+with `ON DELETE CASCADE` onto `players`, so a framework that removes the
+character's row takes the photos with it; a sweep at every resource start
+deletes media whose owner no longer exists, which covers an install whose table
+predates that constraint; and a deletion script of your own can trigger the
+server event `gphone:server:media:characterDeleted` with a citizenid to reclaim
+the space immediately. That event is a local one — another server resource can
+fire it, a game client cannot.
 
 One convar you may still find in an old config: `gphone_auto_migrate`. An
 earlier build added missing columns and indexes at start when it was set, and

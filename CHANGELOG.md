@@ -53,6 +53,31 @@ nothing for your players.
   `gphone_media` far faster than any camera can. Nothing the phone's own camera
   produces comes close to the cap — `gphone_camera_quality` is still the knob
   for how big stored photos actually get (MICA-116).
+- Each player's photo library now has a ceiling, set by the new
+  `gphone_media_quota_mb` convar and defaulting to 64MiB — roughly 150 to 200
+  captures. Over it, a photo is refused with a message that says the library is
+  full; deleting something frees the room immediately. A proximity share checks
+  each recipient too and skips anyone with no space, so nobody is pushed over
+  their ceiling by somebody else's gesture (MICA-71).
+- `gphone_media_retention` deletes stored media older than a number of days you
+  choose. **It is off by default and it deletes rows permanently**, so it
+  changes nothing until you set it. It runs at resource start and on the new
+  `gphonemedia prune`, which is console-only for the same reason
+  `gphoneschema apply` is. `gphonemedia` with no argument still only reports
+  (MICA-71).
+- A deleted character's photos are cleaned up rather than left behind. The table
+  already cascades off `players`, and now a sweep at every resource start also
+  removes media whose owner no longer exists — for installs whose table predates
+  that constraint — while a deletion script of your own can trigger
+  `gphone:server:media:characterDeleted` with a citizenid to reclaim the space
+  at once (MICA-71).
+
+On the question behind all of that: **photos stay base64 in MySQL.** A FiveM
+resource has no static file host it can safely write to, one database backup
+still restores the whole phone, and CEF renders a data URI without a second
+fetch — so the fix for a table that grew forever is bounds on it, not a
+different place to put it. The day gPhone stores real video that answer changes,
+and that will be its own release note.
 
 Their defaults, and which of them need `setr` rather than `set`, are in the
 README's [Configuration](README.md#configuration) section — the distinction
