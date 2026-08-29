@@ -28,18 +28,27 @@ the work calls for it:
 
 Work that is farmed out to a subagent picks an **agent type** from
 `.claude/agents/`, so the rules for that kind of work arrive with the agent
-rather than being pasted into each prompt. Each is named for something old in
-the setting, on the grounds that a name you remember is a name you route to:
+rather than being pasted into each prompt. **Each is named for the directory its
+work lives in**, so routing needs no translation step and a pane title says what
+is running:
 
-- `massassi` — the phone's UI: any component, CSS, utility class or layout under
-  `web/src`. Carries the Chromium 103 floor and the `Screen` sizing rules.
-- `rakata` — the server half: a service, table, column, index, migration or net
-  event. Carries §2.9 and the `defineService` rules.
-- `dwartii` — CI, workflows, the deploy, git hooks, shell. Carries the rule that
-  a check which stays silent when it cannot run reads as a pass.
-- `whills` — documentation. Carries "write from the code, not from the docs".
-- `ilum` — end-to-end tests and flake. Carries `retries: 0` and what e2e cannot
-  prove.
+- `server` — `server/`: a service, table, column, index, migration or net event.
+  Carries §2.9 and the `defineService` rules.
+- `web` — `web/src/`: any component, CSS, utility class or layout. Carries the
+  Chromium 103 floor and the `Screen` sizing rules.
+- `sdk` — `web/src/sdk/`: a hook, a UI primitive, the permission table, the
+  manifest contract. Carries the rule that everything here is public and breaks
+  add-ons nobody in this repo can see.
+- `docs` — `docs/`, README, this file. Carries "write from the code, not from
+  the docs".
+- `e2e` — `web/e2e/`: Playwright specs and flake. Carries `retries: 0` and what
+  e2e cannot prove.
+- `ci` — `.github/`, hooks, shell, the deploy. Carries the rule that a check
+  which stays silent when it cannot run reads as a pass.
 
 Pick the one whose directory the work lives in; `general-purpose` is the right
 answer when a task genuinely spans several.
+
+The name is the routing key and stays boring. Each agent's `description:` keeps
+the reason it works the way it does — that is where a name from the setting
+earns its place, rather than in an identifier you have to translate first.

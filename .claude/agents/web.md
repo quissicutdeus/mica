@@ -1,5 +1,5 @@
 ---
-name: massassi
+name: web
 description: >-
   Build or change the phone's UI — any Svelte component, CSS, utility class,
   colour, or layout under web/src. Named for the Massassi, who raised temples

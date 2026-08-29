@@ -1,5 +1,5 @@
 ---
-name: whills
+name: docs
 description: >-
   Write or correct documentation — README, docs/, AGENTS.md, a design note, a
   changelog entry. Named for the Journal of the Whills, the record the whole

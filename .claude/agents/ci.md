@@ -1,5 +1,5 @@
 ---
-name: dwartii
+name: ci
 description: >-
   Change CI, a GitHub workflow, the deploy, a git hook, or a shell script. Named
   for the Four Sages of Dwartii, ancient lawgivers whose statues stand in the
