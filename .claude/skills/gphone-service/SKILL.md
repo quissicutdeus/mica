@@ -14,8 +14,10 @@ declared once via `server/lib/defineService.ts` — never a hand-written
 repository plus endpoint. One declaration derives the repository, the write
 allowlist, the CRUD net events, and the DDL.
 
-`docs/schema-and-services.md` is the authority. Read it before your first
-`read: 'public'` or `access.membership` service.
+`docs/schema-and-services.md` is the authority — every field, the
+accounts/identity model shared social apps build on, Blabber as the worked
+public-read example, and the `gphone.sql` generation and dev-reset mechanics.
+Read it before your first `read: 'public'` or `access.membership` service.
 
 ## The declaration
 

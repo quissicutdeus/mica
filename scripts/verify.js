@@ -55,6 +55,7 @@ const results = [];
 const GATES = [
   'format',
   'markdown',
+  'agents',
   'container',
   'lint',
   'typecheck',
@@ -122,6 +123,12 @@ const main = async () => {
 
   if (!stop()) await gate('format', 'pnpm', ['format:check']);
   if (!stop()) await gate('markdown', 'pnpm', ['lint:md']);
+
+  // AGENTS.md's size, in about a millisecond. It is here rather than in the unit suite for
+  // one reason: `check:fast` selects tests from the git diff, and Vitest would never pick a
+  // test file out of a change that only touched AGENTS.md — so the gate that exists to
+  // catch that change would be the one gate that change could not run.
+  if (!stop()) await gate('agents', 'pnpm', ['lint:agents']);
 
   // The Go server and the Dockerfile, which `format:check` cannot read — Prettier has no
   // parser for either. Cheap, and second only to `format` because a `gofmt` diff should

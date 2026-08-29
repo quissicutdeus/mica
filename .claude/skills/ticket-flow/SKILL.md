@@ -22,6 +22,12 @@ relabeled "done" in place.
 - A design doc or phased plan in this repo names the **issue key only**
   (`MICA-16`) — never the site URL, which identifies the owner.
 
+**A ticket is for what you would otherwise forget, not for everything.** A fix
+that ships within the hour does not need one; the commit is the record. Open an
+issue when the work is deferred, when it is worth doing but not now, or when you
+want the shape of it written down before starting. The rules above govern where
+a plan lives, not whether small work must have one.
+
 The Atlassian Rovo MCP tools reach it: `getAccessibleAtlassianResources` for the
 cloud id, then `searchJiraIssuesUsingJql` / `getJiraIssue` / `createJiraIssue` /
 `transitionJiraIssue`. Read the ticket before starting — the acceptance criteria
@@ -33,11 +39,19 @@ are frequently more specific than the request that pointed you at it.
 `feature/`, no `claude/`, no tool-generated name. A branch whose name doesn't
 say which ticket it serves is one nobody else can triage.
 
+Take the slugged form when the bare key is already checked out somewhere — git
+refuses a second checkout of one branch, so a stale worktree holding
+`MICA-136` makes the plain key unavailable. That is ordinary, not an error to
+route around; `docs/dev-loop.md` has the pruning procedure.
+
 Enforced in exactly one place: `scripts/pre-push.js` (via
 `scripts/check-branch-name.js`) judges the **remote** ref of each push, then
-runs `check:fast`. So `git push origin HEAD:refs/heads/MICA-56` is legal from
-a differently-named local branch. Deletions are exempt, and a delete-only push
-skips `check:fast`.
+runs `check:fast`. It is installed from `.githooks/` by
+`scripts/install-git-hooks.js`, which `pnpm install` runs. So
+`git push origin HEAD:refs/heads/MICA-56` is legal from a differently-named
+local branch. Deletions are exempt, and a delete-only push skips `check:fast` —
+running the full gate on a deletion took long enough to time out the push before
+git performed it.
 
 Nothing covers a push that never reaches a local hook — the web UI, or anything
 pushed by an app. A committed ruleset used to claim that job and was never
@@ -83,10 +97,17 @@ you have shown it gets called out **before** running git, not after.
 
 ## Running git
 
-AGENTS.md §2.1: mutating git is not yours to run unprompted — no `add`,
-`commit`, `push`, `checkout`, `reset`, `stash`, `rebase`, `branch` — unless the
-task asks for it. Reading (`status`, `diff`, `log`) is always fine. When you are
-asked to commit:
+AGENTS.md §2.1, which this page used to state backwards: **`add`, `commit`,
+`push`, `checkout`, `branch` and `stash` on `dev` or a ticket branch need no
+permission.** This is a solo repo and asking per-command cost more than it
+bought. Reading (`status`, `diff`, `log`) is always fine.
+
+**Stop and ask** before a force-push or any rewrite of pushed history, a
+`reset --hard` over uncommitted work, anything that moves `main`, a change to
+branch protection or repository settings, or `--no-verify`. Say what you are
+about to do and why, then wait.
+
+Either way:
 
 - **Untracked files are not staged.** New directories need an explicit
   `git add`; `git add -u` misses them. Check `git status` after staging.

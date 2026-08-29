@@ -82,6 +82,9 @@ The app subscribes with `useAppEvents(appId)`.
   log the rejection rather than throwing.
 - `pushMany` takes one `getAllPlayers()` snapshot; deduplicate by **owner**
   first where identity is an account, and drop self-mentions.
+- **`notifications` gates the toast, not the data.** Withholding the payload
+  would be theatre — the app can fetch the same rows through its own service —
+  but the disclosure stays true at runtime.
 
 ## Done
 

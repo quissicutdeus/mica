@@ -80,21 +80,44 @@ client-only actions that never reach the server. All of them land in
 
 ### 2. Raw `onNet` handlers
 
-**Six**, in `Phone.ts` and `Battery.ts`. They sit outside `ServiceEndpoint`
-because they answer fire-and-forget events with no callback id, so they cannot
-go through it, and they had no rate limit, no authentication and no payload
-validation.
+**Twelve, across six files**, and they fall into two categories that need
+different things said about them. They sit outside `ServiceEndpoint` because
+they answer fire-and-forget events with no callback id, so they cannot go
+through it.
 
-There were eight. `battery:save` and `signal:rules` are gone rather than guarded
-— both existed so the client could tell the server something the server now
-decides for itself, and deleting an entry point beats hardening one. `Signal.ts`
-has none left at all.
+This census used to read "six, in `Phone.ts` and `Battery.ts`", and it was wrong
+in both directions: three gphone-named handlers had been added since it was
+written, and the **framework-named** category below had no row at all — which is
+how an inventory that reads exhaustive never mentioned it. Count from the tree,
+not from this page:
 
-`guardNetEvent` in `server/lib/netGuard.ts` is the preamble for the remaining
-six, applying the same two checks in the same order the endpoint uses: rate
-limit first, then the authenticated player lookup — `getPlayer` walks the
-framework's player table and a flood should not make the server pay for that.
-Refused **silently**, because there is nobody waiting on a reply to be told;
+```sh
+grep -rn "onNet(" server --include="*.ts" | grep -v __tests__
+```
+
+That also returns `ServiceEndpoint.ts`'s generic registrar (the machinery behind
+category 1 of this document, not an entry point of its own) and the example in
+`netGuard.ts`'s doc comment.
+
+#### gphone-named — nine, every one guarded
+
+| Event                                  | Handler                           |
+| -------------------------------------- | --------------------------------- |
+| `gphone:server:phone:start`            | `server/services/Phone.ts:135`    |
+| `gphone:server:phone:answer`           | `server/services/Phone.ts:215`    |
+| `gphone:server:phone:end`              | `server/services/Phone.ts:233`    |
+| `gphone:server:phone:simulateIncoming` | `server/services/Phone.ts:327`    |
+| `gphone:server:battery:useItem`        | `server/services/Battery.ts:214`  |
+| `gphone:server:admin:setBattery`       | `server/services/Battery.ts:248`  |
+| `gphone:server:battery:load`           | `server/services/Battery.ts:320`  |
+| `gphone:server:contacts:share`         | `server/services/Contacts.ts:88`  |
+| `gphone:server:shell:setOpen`          | `server/lib/PhoneOpenState.ts:22` |
+
+`guardNetEvent` in `server/lib/netGuard.ts` is the preamble for all nine,
+applying the same two checks in the same order the endpoint uses: rate limit
+first, then the authenticated player lookup — `getPlayer` walks the framework's
+player table and a flood should not make the server pay for that. Refused
+**silently**, because there is nobody waiting on a reply to be told;
 `ServiceEndpoint` answers its refusals only because `fetchNui` would otherwise
 hang for fifteen seconds.
 
@@ -106,6 +129,48 @@ refusal.
 `gphone:server:admin:setBattery` is gated on `isAdmin(source)`, as are the
 moderation actions in `Reports.ts`. Privilege is checked against the ace list,
 never against which route was used.
+
+Two are gone rather than guarded — `battery:save` and `signal:rules`. Both
+existed so the client could tell the server something the server now decides for
+itself, and deleting an entry point beats hardening one. `Signal.ts` has no
+`onNet` left at all.
+
+#### Framework-named — three, and this is the category that was missing
+
+| Event                          | Handler                           |
+| ------------------------------ | --------------------------------- |
+| `QBCore:Server:OnPlayerLoaded` | `server/lib/shell.ts:63`          |
+| `QBCore:Server:OnPlayerLoaded` | `server/services/Settings.ts:220` |
+| `QBCore:Server:OnPlayerLoaded` | `server/services/Battery.ts:337`  |
+
+They are easy to miss precisely because they do not look like gPhone's surface:
+the name belongs to the framework, the event is one gPhone listens to rather
+than defines, and `eventNames.test.ts` — which scans for `gphone:` names — has
+nothing to say about them. **A registered net event is reachable no matter whose
+name is on it.**
+
+Each is `onNet`, not `on`, and that is deliberate rather than sloppy: qbx_core's
+compat shim `RegisterNetEvent`s this exact name and fires it from the client, so
+a plain `on()` throws "was not safe for net" the moment a qbx_core player loads.
+Network-safety is per-resource, so qbx_core declaring it net-safe does nothing
+for gPhone's own handler. The **matching `QBCore:Server:PlayerLoaded` listeners
+beside each one are `on()`, are local-only, and are not entry points** — which
+is why this count is three and not six.
+
+**As of `dev` today, all three take the target player from the payload**
+(`player?.PlayerData?.source`) and none calls `guardNetEvent`. So a modified
+client can trigger a settings rehydrate, a shell rehydrate, or a battery push
+**against an arbitrary server id it names itself**. No write and no cross-player
+read results — every one of these pushes a value the target already owns to the
+target's own client — so the practical cost is unsolicited state churn on
+another player's phone rather than disclosure. It is still the wrong shape:
+identity should come from the connection, never from the payload (the same rule
+the exports contract states below).
+
+**A fix is written and not yet merged.** Commit `a8f504e` on branch
+`MICA-136-player-loaded` derives the target from the connection instead. This
+page describes `dev` as it stands; when that lands, this paragraph is what needs
+updating, and the two paragraphs above it should survive unchanged.
 
 ### 3. Exports
 

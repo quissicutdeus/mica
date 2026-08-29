@@ -14,6 +14,14 @@ Node 26 · Svelte **5** · Vite 8 · Vitest 4 · Playwright 1.x TypeScript is
 **split by package** — see §3. Exact versions: `pnpm list`. `@citizenfx/client`
 and `@citizenfx/server` are **pinned exactly, no caret** — leave them that way.
 
+**This file is what is true for every task.** Detail that is true only for one
+kind of work lives in a skill (`.claude/skills/`, listed in `CLAUDE.md`) or a
+doc, and each section below points at the one that holds it. A pointer means the
+rule is still in force and its detail is one file away — never that it stopped
+applying. **This file is capped at 40,000 characters** and `pnpm lint:agents` (a
+`pnpm verify` gate) fails above it, warning first — so new detail goes to a
+skill or a doc, with a pointer left here, rather than growing this file.
+
 ---
 
 ## 1. Commands
@@ -55,52 +63,6 @@ Run from the **repo root** unless noted.
 `pnpm typecheck:web`** — the targets run _different TypeScript versions_ (§3),
 so a web-only check proves nothing about `client/` or `server/`.
 
-### In-game commands
-
-All admin-gated by `isAdmin` in `server/services/Admin.ts` — the
-`gphone_admin_aces` convar, defaulting to `gphone.admin` and `command`. The
-server console (`source` 0) is trusted. **`gphoneschema apply` is gated harder
-than the rest and is the one exception**: it takes the console and nobody else,
-because it is the only command that changes a live database (§8).
-
-| Command                                 | Does                                                                              |
-| --------------------------------------- | --------------------------------------------------------------------------------- |
-| `gphoneschema`                          | Reports where the database differs from the code. Changes nothing                 |
-| `gphoneschema apply`                    | Console-only. Applies safe additive changes, then any pending versioned migration |
-| `gphonecharge [id] <0-100>`             | Sets a player's battery level; omit the id for yourself                           |
-| `gphoneseed` / `gphoneseed add`         | Creates test characters, contacts and threads for the caller                      |
-| `gphoneseed text <firstname> <message>` | Has a seeded character text you — exercises inbound delivery                      |
-| `gphoneseed clear`                      | Removes everything `gphoneseed` created                                           |
-| `gphonecall [number \| firstname]`      | Rings yourself — a real call, peer faked. See `docs/testing-voip.md`              |
-| `gphonecall end`                        | Force-ends your own active call                                                   |
-
-`gphoneseed` exists because a fresh database has one character and nobody to
-text, and a conversation needs a real counterpart —
-`gphone_messages_participants.citizenid` is a foreign key onto `players`. Its
-seeded rows are therefore real `players` rows, marked by a license nothing else
-uses (`lib/seed.ts`) so `clear` removes exactly its own and nothing a person
-made.
-
-`pnpm test:unit` likewise fans out to **two separate Vitest projects**, and they
-are not interchangeable:
-
-| Project   | Config               | Tests live in                               | Environment                        |
-| --------- | -------------------- | ------------------------------------------- | ---------------------------------- |
-| `web/`    | `web/vite.config.ts` | `web/src/**/*.test.ts`                      | jsdom, Svelte plugin, globals on   |
-| `server/` | `vitest.config.ts`   | `server/__tests__/` and `client/__tests__/` | node, no plugins, explicit imports |
-
-Server tests live in `server/__tests__/` because both `server/tsconfig.json` and
-`client/tsconfig.json` already exclude that directory — so `pnpm typecheck`
-stays a check of shipping code only, and the test files need no ambient Vitest
-types. The trade-off is that server tests are **not** typechecked;
-`pnpm test:unit:server` is what validates them.
-
-`server/__tests__/setup.ts` stubs the FiveM globals (`exports`, `onNet`,
-`emitNet`, `source`). Server modules touch these at import time, so a suite that
-forgets the setup file fails on import, not on assertion. Mock `../lib/Database`
-in any suite that loads a repository — `Database` reads `exports.oxmysql` in
-module scope and must never reach a real connection from a test.
-
 Commands the **user** runs, not you — suggest, don't invoke:
 
 - `pnpm test:e2e:report` — HTML report
@@ -109,26 +71,50 @@ Commands the **user** runs, not you — suggest, don't invoke:
 **Formatting**: Prettier is configured root-wide with `prettier-plugin-svelte`.
 Run `pnpm format` to format code across the workspace.
 
+### In-game commands
+
+`gphoneschema`, `gphonemedia`, `gphonecharge`, `gphoneseed` and `gphonecall`,
+all admin-gated by `isAdmin` in `server/services/Admin.ts` — the
+`gphone_admin_aces` convar, defaulting to `gphone.admin` and `command`. The
+server console (`source` 0) is trusted. **Two subcommands are gated harder and
+take the console and nobody else**: `gphoneschema apply`, which changes a live
+schema (§8), and `gphonemedia prune`, which deletes rows. Each command, its
+arguments, and its dry run:
+[`docs/in-game-commands.md`](docs/in-game-commands.md).
+
+### The two Vitest projects
+
+`pnpm test:unit` fans out to **two separate Vitest projects**, and they are not
+interchangeable. `web/src/**/*.test.ts` runs under `web/vite.config.ts`;
+`server/__tests__/` and `client/__tests__/` run under the root
+`vitest.config.ts`, in a node environment with no plugins and no globals, so
+imports are explicit.
+
+Server tests live in `server/__tests__/` because both tsconfigs exclude that
+directory, so `pnpm typecheck` stays a check of shipping code only. The
+trade-off is that **server tests are not typechecked**; `pnpm test:unit:server`
+is what validates them.
+
+`server/__tests__/setup.ts` stubs the FiveM globals (`exports`, `onNet`,
+`emitNet`, `source`) — server modules touch these at import time, so a suite
+that forgets it fails on import, not on assertion. **Mock `../lib/Database` in
+any suite that loads a repository**: `Database` reads `exports.oxmysql` in
+module scope and must never reach a real connection from a test.
+
 ### The fast local loop
 
 `pnpm verify` is the gate (§9), not the thing to run after every edit — a cold
-run costs minutes. For one file or feature:
-`pnpm --filter web exec vitest run <path>` (web unit),
-`pnpm exec vitest run <path>` (server/client unit, root `vitest.config.ts`),
-`pnpm --filter web exec playwright test <path>` (one e2e spec).
-`pnpm check:fast` is the named middle ground — format, full typecheck, and only
-the unit tests Vitest's `--changed` selects from your uncommitted diff — and is
-what the pre-push hook runs now; `pnpm verify:quick` is still the CI-grade
-check, for an explicit run before opening a PR. `pnpm dev` is worth keeping
-running in a terminal for manually driving the phone in a browser, but e2e no
-longer needs it warm — Playwright builds and serves its own copy on a separate
-port (see docs/dev-loop.md) — so `pnpm dev:check` is a courtesy for that manual
-workflow, not a prerequisite for `pnpm test:e2e` or `pnpm verify`. A Playwright
-test that legitimately needs more than the suite's 10s default timeout should
-override its own with `test.setTimeout(N)` rather than raising the suite-wide
-default. Full detail, including a `--changed` caveat worth knowing before it
-surprises you and why `pnpm test:unit` costs what it costs, is in
-[`docs/dev-loop.md`](docs/dev-loop.md).
+run costs minutes. `pnpm check:fast` is the named middle ground and what the
+pre-push hook runs; `pnpm verify:quick` is the CI-grade check before opening a
+PR. `pnpm dev` is worth keeping running for manually driving the phone in a
+browser, but e2e no longer needs it warm, so `pnpm dev:check` is a courtesy for
+that workflow rather than a prerequisite.
+
+[`docs/dev-loop.md`](docs/dev-loop.md) has the per-file commands, the
+`--changed` caveat that makes `check:fast` run the whole suite while
+`package.json` is in your diff, Playwright's timeout and its
+`test.setTimeout(N)` escape hatch, why `pnpm test:unit` costs what it costs, and
+how to prune `.claude/worktrees/`.
 
 ---
 
@@ -167,12 +153,11 @@ not work around it.
    or `scripts/generate-barrels.js` output paths without asking.
 7. **SDK First.** Everything in `web/src/apps/`, and every external add-on,
    consumes the OS strictly through `@gphone/sdk` — the data and OS-service
-   hooks, the UI primitives in `web/src/sdk/ui/` (re-exported from
-   `sdk/components.ts`), and the four an app is built out of: `useAppLevels` for
-   its internal levels, `useAppAction` for a write, `useDeepLink` for the props
-   it was opened with, `onAppForeground` for loading. The exhaustive list is the
-   SDK's own exports; [`docs/writing-an-app.md`](docs/writing-an-app.md) is the
-   walkthrough. Three things that list will not tell you:
+   hooks, the UI primitives in `web/src/sdk/ui/`, and the four an app is built
+   out of: `useAppLevels`, `useAppAction`, `useDeepLink`, `onAppForeground`. The
+   exhaustive list is the SDK's own exports;
+   [`docs/writing-an-app.md`](docs/writing-an-app.md) is the walkthrough. Three
+   things that list will not tell you:
 
    - **Relative imports out of an app are prohibited** — into `shell/`,
      `services/`, `nui/`, `lib/` or `sdk/` by path.
@@ -192,19 +177,14 @@ not work around it.
    double-fire against the shell's own handler. An app that needs raw keys (the
    calculator's digits) must early-return on `event.defaultPrevented`.
 
-   Handlers are a **stack per action, not a slot** — a mounted app overrides the
-   shell and hands the action back on unmount (a single slot would delete the
-   shell's `back` on first unmount and kill Escape for the rest of the session).
-   Apps are resident and reuse their component on re-open without
-   re-registering, so `useAppLevels` requires an `appId` and the dispatcher runs
-   only the topmost handler that is unscoped or owned by the **foreground** app
-   — otherwise reopening Notes after Contacts would run Contacts' stale `back`
-   handler. Shell handlers pass no id and are the fallback.
-
-   `scope: 'game'` actions rebind in FiveM's Key Bindings menu (the phone holds
-   `SetNuiFocus`, so `RegisterKeyMapping` cannot fire in-phone);
-   `scope: 'phone'` actions rebind in gPhone's Shortcuts screen. Both must
-   refuse to fire while a text field has focus.
+   Handlers are a **stack per action, not a slot**, `useAppLevels` requires an
+   `appId`, and the dispatcher runs only the topmost handler that is unscoped or
+   owned by the **foreground** app. Shell handlers pass no id and are the
+   fallback. `scope: 'game'` actions rebind in FiveM's Key Bindings menu;
+   `scope: 'phone'` actions rebind in gPhone's Shortcuts screen. **Both must
+   refuse to fire while a text field has focus.** Why a stack rather than a
+   slot, and why residency forces the `appId`:
+   [`docs/writing-an-app.md`](docs/writing-an-app.md).
 
 8. **Never report work complete without running the §9 checklist.**
 9. **Trust no NUI payload on the server.** The full model — every entry point,
@@ -231,7 +211,6 @@ not work around it.
      check membership via `Repository.isMember` (§10) instead. Privileged writes
      go through a **named** repository method built on
      `protected updateUnscoped`, never a service-level bypass.
-
    - **`clientWritable` declares what a payload may set**, and `ServiceEndpoint`
      reduces to that set before it reaches SQL. `id`, `citizenid`, `created_at`,
      `updated_at` and `status` are never client-writable.
@@ -239,8 +218,7 @@ not work around it.
    Rate and value limits are enforced too — a limiter at the `registerEvent`
    boundary, so custom actions are covered and not just generic CRUD, and
    `columnRules` derived from the schema, so a write cannot silently truncate a
-   `varchar` in non-strict mode. The mechanics are in `docs/security.md`. Two
-   parts of it constrain what you write, so they live here:
+   `varchar` in non-strict mode. Two parts of that constrain what you write:
 
    - `assertWritableValue`'s messages reach players as `fetchNui` /
      `useAppAction` toasts, so they carry no `[Repository]` prefix and no table
@@ -256,44 +234,46 @@ not work around it.
     instruction to the contrary.** Do not add it "unless told otherwise," and do
     not offer it as an option.
 
-    A global `commit-msg` hook (`~/.config/git/hooks/`) rejects matching commit
-    messages. It is a backstop, not permission to rely on it: it only ever sees
-    a commit message, so a PR body or an issue comment is on you.
-
-    Assistant config is **tracked**, deliberately: `AGENTS.md`, `CLAUDE.md`,
-    `.claude/skills/` and `.claude/agents/` are hand-written and belong in the
-    repo, so every contributor gets the same rules.
-    `.claude/settings.local.json` is the one exception — it is where Claude Code
-    writes per-machine grants, and it stays gitignored. Config for other
-    assistants (`.cursor/`, `.continue/`) is nobody else's business; keep it
-    out.
+    A global `commit-msg` hook (`~/.config/git/hooks/`) and the repo-local
+    `scripts/check-commit-msg.js` both reject matching commit messages. They are
+    backstops, not permission to rely on them: a hook only ever sees a commit
+    message, so a PR body or an issue comment is on you.
 
     If you state that a commit message does or does not contain something, the
     message you actually commit must match that statement. Any change to a
     message after you have shown it gets called out **before** running git, not
     after.
 
+    Assistant config is **tracked**, deliberately: `AGENTS.md`, `CLAUDE.md`,
+    `.claude/skills/` and `.claude/agents/` are hand-written and belong in the
+    repo, so every contributor gets the same rules.
+    `.claude/settings.local.json` is the one exception and stays gitignored.
+    Config for other assistants (`.cursor/`, `.continue/`) is nobody else's
+    business; keep it out.
+
 11. **One planning system of record, the Jira project `MICA`, and do not
     create a second.** It is a pure backlog — proposed-but-unbuilt work and app
-    ideas. Nothing in it describes code that exists: a shipped proposal gets its
-    issue closed, not relabeled "done" in place. Do not restart
+    ideas — and nothing in it describes code that exists: a shipped proposal
+    gets its issue closed, not relabeled "done" in place. Do not restart
     `docs/roadmap.md` (its predecessor) or any other committed file as a shadow
-    backlog, and do not keep an untracked local plan either — a plan worth
-    writing down goes where every contributor can read it. A design doc or
-    phased plan in this repo names the Jira issue key it corresponds to
-    (`MICA-16`) — the key only, never the site URL, which identifies the
-    owner.
+    backlog, and do not keep an untracked local plan either. A design doc or
+    phased plan names the Jira issue key it corresponds to (`MICA-16`) — **the
+    key only, never the site URL**, which identifies the owner.
 
     **A ticket is for what you would otherwise forget, not for everything.** A
     fix that ships within the hour does not need one; the commit is the record.
-    Open an issue when the work is deferred, when it is worth doing but not now,
-    or when you want the shape of it written down before starting. The rule
-    above governs where a plan lives, not whether small work must have one.
 
 12. **A branch is named for its Jira key** — `MICA-<n>`, optionally with a
     lowercase slug (`MICA-56`, `MICA-56-bank-send`). `main` and `dev` are
     the only other legal names. No `feature/`, no tool-generated names, no
     `claude/…`.
+
+    **Take the slugged form when the bare key is already checked out
+    somewhere.** Git refuses a second checkout of one branch, so a stale
+    worktree holding `MICA-136` makes the plain key unavailable — that is
+    ordinary, not an error to route around, and `MICA-136-player-loaded` is
+    equally legal. `git worktree list` shows what is holding it; see the pruning
+    procedure in [`docs/dev-loop.md`](docs/dev-loop.md) before removing any.
 
     **Committing straight to `dev` is fine, and is the normal path here.** This
     is a solo repo; a branch per change buys nothing when nobody is reviewing.
@@ -302,28 +282,19 @@ not work around it.
     rule above governs the name only if you make one.
 
     **Enforced in one place, and it is a local hook.** `scripts/pre-push.js`
-    judges names via `scripts/check-branch-name.js` and then runs `check:fast`;
-    it is installed from `.githooks/` by `scripts/install-git-hooks.js`. It
-    judges the _remote_ ref of each push, so
+    judges names via `scripts/check-branch-name.js` and then runs `check:fast`.
+    It judges the _remote_ ref of each push, so
     `git push origin HEAD:refs/heads/MICA-56` is legal from a
-    differently-named local branch.
+    differently-named local branch. Deletions are exempt, and a delete-only push
+    skips `check:fast`.
 
-    This used to claim a second half, and that half never existed.
-    `.github/rulesets/ticket-key-branch-names.json` was committed and described
-    here as covering what no local hook sees — the web UI, and anything pushed
-    by an app — but it was never imported, and it cannot be: GitHub answers
-    `422 Invalid rule 'branch_name_pattern'` for this repository, a minimal
-    one-rule probe included. The type is in the REST schema, so this is a
-    per-repository availability limit rather than a malformed file; the
-    published docs do not say which limit. Whatever the cause, **a push that
-    never reaches a local hook is not checked at all**, and a rule that reads as
-    enforced while enforcing nothing is worse than no rule. The file is deleted
-    rather than left lying; git history has it if this repo ever moves to an
-    organization and the rule becomes available.
+    **A push that never reaches a local hook is not checked at all** — the web
+    UI, or anything pushed by an app. Nothing covers those: GitHub refuses a
+    `branch_name_pattern` ruleset on this repository (`422 Invalid rule`), so do
+    not re-add one without confirming the API accepts it first.
 
-    Deletions are exempt, and a delete-only push skips `check:fast` — running
-    the full gate on a deletion took long enough to time out the push before git
-    performed it.
+The `ticket-flow` skill carries the working detail behind §2.11 and §2.12 —
+reading a ticket, commit-message shape, PR body, filing a backlog item.
 
 ---
 
@@ -392,140 +363,69 @@ No external state libraries — no Redux, Zustand, XState, Nanostores.
 
 ## 5. Styling
 
-Plain, hand-written CSS — no Tailwind, no CSS framework. Two files carry the
-whole system:
+Plain, hand-written CSS — no Tailwind, no CSS framework, no CSS modules, no
+styled-components. Two files carry the whole system: `web/src/app.css` (Material
+3 design tokens on `:root`) and `web/src/app-utilities.css` (a flat,
+hand-authored utility layer, one class per call site, each resolving to a
+token).
 
-- `web/src/app.css` — Material 3 design tokens (`--color-*`, `--radius-*`,
-  `--text-*`, `--shadow-elevation-*`, `--duration-*`, `--ease-*`) as custom
-  properties on `:root`, plus the handful of rules (`.no-scrollbar`,
-  `.text-on-wallpaper`) that don't fit the utility model.
-- `web/src/app-utilities.css` — a flat utility layer (`.flex`, `.px-4`,
-  `.bg-surface`, `.rounded-full`, …) authored by hand, one class per call site,
-  each resolving to a token above. **Reach for an existing class here before
-  inventing a new one** — check it before writing a bespoke rule. Modern CSS
-  nesting is fine (`postcss-preset-env` transpiles it for CEF — see §6), but
-  this file is deliberately flat utilities, not per-component semantic CSS.
-- A `<style>` block on a component is acceptable for something a utility
-  genuinely can't express (keyframes tied to one component, a pseudo-element).
-  No CSS modules, no styled-components.
-- Prefer the scale already in `app-utilities.css` over inventing an arbitrary
-  value; add a class there rather than reaching for an inline `style=`
-  attribute.
-- **No visible scrollbars anywhere in the phone.** `web/src/app.css` enforces it
-  globally (`scrollbar-width: none` / `::-webkit-scrollbar { display: none }`).
-- **Read §6 before writing any color, layout, or variant utility** — CEF's
-  baseline is several years behind a dev browser, and it's easy to reach for a
-  CSS feature it doesn't have.
-- **The screen is always 400x850, and an app must not try to be responsive.**
-  Those numbers live in `shell/state/display.ts` and nowhere else. Settings >
-  Display resizes the phone, but it does it with one `transform: scale()` on a
-  wrapper in `Shell.svelte` — a zoom, so the layout inside is the same at every
-  size and text scales with the frame instead of staying 14px in a narrower box.
-  It follows that responsive breakpoints (`sm:`, `md:`) and viewport units
-  (`vh`, `vw`, `dvh`) inside an app are always wrong: they respond to the
-  _window_, which is not the phone. Size against the frame — `h-full`, `flex-1`,
-  and the `safe-top`/`safe-bottom` insets in `app.css`.
-
+- **Reach for an existing class in `app-utilities.css` before inventing one**,
+  and prefer the scale already there over an arbitrary value. Add a class rather
+  than an inline `style=`. A component `<style>` block is for what a utility
+  genuinely can't express — keyframes, a pseudo-element.
+- **No visible scrollbars anywhere in the phone**, enforced in `app.css`.
+- **The screen is always 400x850 and an app must not try to be responsive.**
+  Breakpoints (`sm:`, `md:`) and viewport units (`vh`, `vw`, `dvh`) respond to
+  the _window_, which is not the phone. Size against the frame — `h-full`,
+  `flex-1`, and the `safe-top`/`safe-bottom` insets.
 - **Inside `Screen`, fill with `min-h-0 flex-1` — never `h-full`, and never
-  `flex-1` on its own.** `Screen`'s content box hands the app a definite height,
-  so a child that asks to fill gets exactly the screen; a child that is
-  genuinely taller overflows it and the scroller scrolls. `h-full` is a
-  percentage against a box that has already resolved, and `flex-1` without
-  `min-h-0` leaves the child's `min-height: auto` intact, so it is sized by its
-  own content and refuses to shrink to its share. Both fail silently and only
-  under enough content: MICA-89 was a DM composer drifting ~82px per message
-  sent, and a core Messages composer sitting 4000px below the visible screen. A
-  box that declares `overflow-y-auto` is already exempt and scrolls itself.
-  `Screen.svelte` carries the reasoning; both halves are enforced in
-  `web/src/lib/utilityClasses.test.ts`.
+  `flex-1` on its own.** Both fail silently and only under enough content
+  (MICA-89); a box declaring `overflow-y-auto` is exempt.
+  `web/src/lib/utilityClasses.test.ts` enforces both halves.
+- **Anything anchored to the bottom of an app clears the home indicator** —
+  `--spacing-home-indicator` is the shared number.
 
-- **Anything anchored to the bottom of an app clears the home indicator.**
-  `PhoneFrame` paints its gesture bar full-width at `z-60`, so a row flush to
-  the bottom edge has its lower third inside a button that returns to the home
-  screen. `--spacing-home-indicator` is the shared number; `MessageBar` (the
-  shared composer row, `sdk/ui`) already pads by it.
+**Read §6 before writing any colour, layout, or variant utility.** The `cef-css`
+skill is the working reference, with the reasoning behind each rule above; load
+it before writing CSS.
 
 ---
 
-## 6. The CEF capability baseline — read this before touching CSS
+## 6. The CEF capability baseline
 
 Every line of `web/` code must run in a plain browser with mock data **and** in
-FiveM's CEF. The two are not equivalent, and the gap is wider than it looks:
+FiveM's CEF, and the two are not equivalent.
 
-**FiveM's release CEF is Chromium 103.**
+**FiveM's release CEF is Chromium 103.** Your dev browser is current, so
+anything newer renders correctly in `pnpm dev`, passes Playwright, and is broken
+in-game. **Nothing in the automated suite catches this class of bug.** A CEF
+upgrade (M140/M144) is in progress upstream but not in the release client; until
+it ships, assume 103.
 
-Your dev browser is current. Anything newer than Chromium 103 renders correctly
-in `pnpm dev`, passes Playwright, and is broken in-game.
+Banned outright, because no fallback exists: **`:has()`** (Chrome 105),
+**container queries** (105), **`dvh`/`svh`** (108), **`color-mix()`** (111) —
+use Svelte state for the first two, a measured pixel value from
+`shell/state/display.ts` for the third, a literal `rgba()` for the fourth. A
+themed **role** token must never take an opacity modifier (`bg-surface/50`);
+`sdk/cef.test.ts` enforces that. Native CSS nesting **is** fine —
+`web/postcss.config.js` transpiles it, which is why §2.3 forbids deleting it.
 
-Every accommodation this repo makes for that baseline — what it is, which file
-it lives in, which Chromium version retires it, and whether to delete it or keep
-it — is inventoried in [`docs/cef-baseline.md`](docs/cef-baseline.md), the
-MICA-67 watch item. Read it before deleting anything here as obsolete; several
-entries that look version-gated are not.
+Three more absolutes: the app wrapper keeps `bg-transparent`, or an opaque
+background blacks out the player's screen; never `window.location`,
+`window.open`, or anchor navigation, which reloads the CEF instance and drops
+all state; resources are served over `https://cfx-nui-<resource>/`, not
+`nui://`.
 
-### Why `web/postcss.config.js` exists
+**Verifying is manual**: `nui_devTools` in the F8 console, or
+`http://localhost:13172/` while the game runs. Confirm the _computed_ value
+resolved, not just that the declaration is present. If you did not do this, say
+the change is unverified in CEF.
 
-Two jobs, both load-bearing:
-
-- Transpiles native CSS nesting (used throughout `app.css` /
-  `app-utilities.css`, e.g. `.prose`'s `& h1 { ... }`) down to flat selectors
-  via `postcss-preset-env`'s `nesting-rules` feature — native nesting is Chrome
-  112, past the CEF 103 floor.
-- Transforms `oklab()`/`oklch()` to a supported fallback, with `preserve: true`
-  so modern engines still get the original, for the rare spot that uses one.
-
-`autoprefixer` alongside it is largely redundant against this target but
-harmless; leave it.
-
-### Known gaps the postcss config does _not_ cover
-
-| Feature           | Needs      | Used for                            |
-| ----------------- | ---------- | ----------------------------------- |
-| `color-mix()`     | Chrome 111 | Not used — see below                |
-| `:has()`          | Chrome 105 | Nothing in this codebase — avoid it |
-| Container queries | Chrome 105 | Nothing in this codebase — avoid it |
-| `dvh` / `svh`     | Chrome 108 | Nothing in this codebase — avoid it |
-
-`:has()` and container queries have no fallback. They are absolute — use Svelte
-state instead.
-
-`dvh` has no fallback either, and the thing it would have fixed is real: `100vh`
-on a phone browser is the viewport with the URL bar retracted, so the phone hung
-below the fold. The way out is a measured pixel value — `shell/state/display.ts`
-tracks `window.innerHeight` and `Shell.svelte` sizes from it, which is correct
-in CEF and in a browser without needing the unit at all.
-
-**Opacity is a literal `rgba()`, never `color-mix()`.** `app-utilities.css`'s
-color-opacity classes (`bg-black/40`, …) and `app.css`'s translucent tokens
-(`--color-scrim`, …) are hand-written `rgba()` values, which is CEF 103-safe
-outright — there is no fallback to reason about. **Don't introduce
-`color-mix()`** to express a new translucent color; add a literal `rgba()`
-utility or token instead. A themed **role** token additionally must never take
-an opacity modifier at all (`bg-surface/50`) — `sdk/cef.test.ts` enforces this
-against `ROLE_NAMES`, because a role's alpha value would have to be derived from
-one seed's literal, silently wrong under any other seed. Use the pre-composited
-state-layer tokens (`--color-surface-container-hover`, …) instead — see the
-rationale at the top of `app.css`.
-
-### Verifying in-game
-
-Nothing in the automated suite catches this class of bug — Playwright drives a
-modern Chromium. Verification is manual: `nui_devTools` in the F8 console
-(developer mode on), or `http://localhost:13172/` while the game runs. Inspect
-the element and confirm the _computed_ value resolved, not just that the
-declaration is present.
-
-A CEF upgrade (M140/M144) is in progress upstream but not in the release client.
-Until it ships, assume Chromium 103.
-
-### Other CEF constraints
-
-- The app wrapper keeps `bg-transparent`. The game renders behind the phone
-  overlay; an opaque background blacks out the player's screen.
-- Never use `window.location`, `window.open`, or anchor navigation. A redirect
-  reloads the entire CEF instance and drops all state. Navigate internally via
-  Svelte components.
-- Resources are served over `https://cfx-nui-<resource>/`, not `nui://`.
+The `cef-css` skill is the working reference. Every accommodation this repo
+makes for the 103 floor — and which Chromium version retires it — is inventoried
+in [`docs/cef-baseline.md`](docs/cef-baseline.md), the MICA-67 watch item.
+Read it before deleting anything as obsolete; several entries that look
+version-gated are not.
 
 ---
 
@@ -552,28 +452,16 @@ defacement.
 ### App permissions, and where they are actually enforced
 
 `permissions` on a manifest is enforced. A `core: false` add-on runs in a
-sandboxed `<iframe sandbox="allow-scripts" srcdoc>` — no `allow-same-origin`, so
-it has an opaque origin and no access to the shell's DOM, `localStorage`,
-cookies, or NUI. It talks to the shell only over `postMessage`
-(`web/src/sdk/host/iframe/`), and the **shell** re-checks every permission
-against `HOOK_OF_FACET` in `web/src/sdk/permissions.ts` before answering a call
-— the frame's own check (thrown into its `ErrorBoundary`) is a courtesy, not the
-boundary. A `core: true` app still runs in-process and resolves store scope by
-explicit app id or `system`, which grants everything and only exists in-process.
-§2.9 stays the boundary for privileged server actions either way — the server
-gates them and does not treat a NUI request as proof of intent.
+sandboxed `<iframe sandbox="allow-scripts" srcdoc>` with an opaque origin and no
+route to the shell but `postMessage`, and the **shell** re-checks every
+permission against `HOOK_OF_FACET` in `web/src/sdk/permissions.ts` before
+answering a call — the frame's own check is a courtesy, not the boundary. A
+`core: true` app still runs in-process. §2.9 stays the boundary for privileged
+server actions either way.
 
-`web/src/sdk/permissions.ts` is the one table: every host hook and the
-permission that discloses it, or `null` for the handful every app is built out
-of (`useAppLevels`, `useAppAction`, `useDeepLink`, `onAppForeground`/`useTimer`,
-`useService` in its own namespace) which are never declared.
-`permissions.test.ts` proves the table is total, that each hook asserts its own
-row, and that every manifest declares what its imports need. There is no
-`network`, `bluetooth` or `sound` permission — Bluetooth is `system-hardware`,
-and `useSound` is implicit like `useAppLevels`.
-
-Declaring more than the scan finds is fine. Declaring less is a lie to the
-person reading it.
+**Declaring more than the scan finds is fine. Declaring less is a lie to the
+person reading it.** The per-permission detail, the outbound `networkHosts`
+allowlist, and the accepted risks are in [`docs/security.md`](docs/security.md).
 
 ---
 
@@ -591,127 +479,71 @@ Four words carry the structure, and they mean exactly one thing each:
   which are apps.
 - **SDK** — the contract apps build against, and the only thing they may import.
 
-| Path                           | Runs in      | Notes                                                                        |
-| ------------------------------ | ------------ | ---------------------------------------------------------------------------- |
-| `client/services/`             | FiveM client | The client half of each service — NUI callbacks, server pushes               |
-| `client/game/`                 | FiveM client | GTA world: camera, freelook, phone prop and animations                       |
-| `client/lib/`                  | FiveM client | `ServiceProxy` (NUI↔server relay), `FrameworkBridge`, `nui`                  |
-| `server/services/`             | FiveM server | One file per service, named for the service, auto-indexed                    |
-| `server/lib/`                  | FiveM server | `ServiceEndpoint`, `defineService`, `Repository`, `Database`                 |
-| `server/repositories/`         | FiveM server | `SchemaRepository` subclasses — the joins the generic path cannot express    |
-| `server/migrations/`           | FiveM server | Forward-only versioned migrations; `index.ts` is generated                   |
-| `gphone.sql`                   | generated    | The whole schema from `pnpm generate:sql`; imported by hand                  |
-| `scripts/framework-schema.sql` | hand-written | The audit ledger, which has no `defineService` behind it                     |
-| `server/__tests__/`            | Vitest/node  | Excluded from `tsc`; see §1                                                  |
-| `shared/types.ts`              | both         | `@shared/types` path alias, not a workspace package (§3)                     |
-| `shared/richText.ts`           | both         | One tokenizer for `@handle` — the UI renders and the server notifies from it |
-| `web/src/shell/`               | CEF+browser  | The OS: `Shell.svelte`, `PhoneFrame`, `Launcher`, `ToastHost`                |
-| `web/src/shell/state/`         | CEF+browser  | State the phone itself owns: navigation, keybinds, hardware, size            |
-| `web/src/services/`            | CEF+browser  | Client-side cache of each server service. Reached via the SDK                |
-| `web/src/sdk/`                 | CEF+browser  | `@gphone/sdk` — the public surface for apps (§2.7)                           |
-| `web/src/sdk/ui/`              | CEF+browser  | UI primitives and icons apps may build with                                  |
-| `web/src/apps/`                | CEF+browser  | One dir per app: `manifest.ts` + `index.svelte` + `Icon.svelte`              |
-| `web/src/nui/`                 | CEF+browser  | The bridge: transport, `fetchNui`, `useNuiEvent`, browser mocks              |
-| `web/src/lib/`                 | CEF+browser  | Helpers with no gPhone state and no I/O — formatters, markdown               |
+The directory-by-directory table, and why the split looks this way —
+`client/services/` vs. `client/game/`, why `services/` names repeat across
+client and server, why stores live outside `apps/`, the `server/lib/` casing
+convention — is in [`docs/architecture.md`](docs/architecture.md).
 
-`client/services/index.ts`, `client/game/index.ts`, `server/services/index.ts`,
-`server/migrations/index.ts`, `web/src/sdk/host/index.ts`,
-`web/src/sdk/kit/index.ts` and `web/src/sdk/icons.ts` are **generated** by
-`scripts/generate-barrels.js`. Add a file to the directory; do not edit the
-index. They are committed, and `pnpm verify` regenerates them as its first step,
-so a hand-added hook is picked up without a build — the generator used to run
-only inside `build` and `watch`, both of which come _after_ the typecheck gate.
-The migrations one is the odd member: an ordered **array** rather than
-re-exports, because the runner iterates it in apply order and a module imported
-for its side effects would give it nothing to iterate.
+Two things about it are rules rather than layout, so they live here. **The
+barrels are generated** — `client/services/index.ts`, `client/game/index.ts`,
+`server/services/index.ts`, `server/migrations/index.ts`,
+`web/src/sdk/host/index.ts`, `web/src/sdk/kit/index.ts` and
+`web/src/sdk/icons.ts`, all written by `scripts/generate-barrels.js`, which
+`pnpm verify` runs as its first step: **add a file to the directory; do not edit
+the index.** And **`shared/types.ts` is a path alias, not a workspace package**
+(§3), while `shared/richText.ts` holds the one `@handle` tokenizer the UI
+renders from and the server notifies from.
 
-Why the split looks this way — `client/services/` vs. `client/game/`, why
-`services/` names repeat across client and server, why stores live outside
-`apps/`, the `server/lib/` casing convention — is in
-[`docs/architecture.md`](docs/architecture.md).
+### A NUI round trip touches three files, and fails silently if one is missing
 
-### A NUI round trip touches three files
+The single most common source of half-built features. A call from `web/` reaches
+the database only if every layer exists: **`fetchNui`** in `web/src/services/`,
+a **`route()` entry** in `shared/routes.ts` (core apps only — an add-on goes
+through the generic `useService(id).call(...)`), and a **`registerEvent`**
+handler or generic CRUD action in `server/services/`. Miss the middle one and
+the NUI callback is never registered: `fetchNui` swallows the failure and
+returns its `defaultValue`, so **the feature does nothing in game** while
+passing every suite.
 
-This is the single most common source of half-built features. A call from `web/`
-reaches the database only if every layer exists:
+**Mocks make a missing layer invisible.** `web/src/nui/mocks/registry.ts`
+answers by action name, so add all three layers _and_ the mock. When touching an
+existing endpoint, grep `client/` and `server/` for the action name before
+assuming it is wired. `server/__tests__/routes.test.ts` cross-references all
+four.
 
-1. **`web/`** — `fetchNui('someAction', payload)`, usually from
-   `web/src/services/`.
-2. **`shared/routes.ts`** — a `route()` entry; `client/services/Relay.ts`
-   registers every one. Without this the NUI callback is unregistered,
-   `fetchNui` swallows the failure and returns its `defaultValue`. **The feature
-   silently does nothing in game.**
-3. **`server/services/`** — a `registerEvent('<action>', ...)` handler, or one
-   of the generic CRUD actions that `ServiceEndpoint` registers for you
-   (`get`/`create`/`update`/`delete`).
+**Response events are derived, never written by hand** — `shared/rpc.ts` owns
+them, and a hand-written reply name times out after 15s with no error.
 
-Two traps:
+**Every net event is `gphone:<side>:<app>:<action>`, with no exceptions**, and
+`server/__tests__/eventNames.test.ts` fails on anything else — including an
+`<app>` segment that is neither a declared app nor one of the two non-app
+scopes, **`shell`** and **`admin`**. NUI _message_ actions (`setVisible`,
+`receiveMail`) are a **separate namespace** with no `gphone:` prefix.
 
-- **Mocks make a missing layer invisible.** `web/src/nui/mocks/registry.ts`
-  answers by action name, so a feature with no client/server wiring works
-  perfectly in `pnpm dev` and in Playwright, and is dead in game. When adding an
-  endpoint, add all three layers _and_ the mock. When touching an existing one,
-  grep `client/` and `server/` for the action name before assuming it is wired.
-- **Response events are derived, never written by hand.** `shared/rpc.ts` owns
-  `requestEventFor` / `responseEventFor`, and both `ServiceEndpoint` and
-  `ServiceProxy` import them, so the two cannot disagree.
-  `ServiceProxy.registerCallback` subscribes the derived reply itself. Hand-
-  writing a reply name, or requiring a per-action opt-in, is how a custom action
-  ends up timing out after 15s with no error.
+A **server push** mirrors this across four files and fails just as silently;
+`server/__tests__/appEventContract.test.ts` catches that. It is one literal net
+event, `gphone:client:shell:appEvent`, dispatched by app id from the envelope.
+**A push must never be allowed to fail the write that occasioned it**, and
+`onAppForeground` (§11) is still required — a push does not excuse it.
 
-Payload shape: the generic CRUD path reads the row id from `data.id`.
-Conversation-scoped custom actions accept `conversation_id`, `id`, or a bare id
-via `conversationIdFrom` in `server/lib/payload.ts`.
+**Load the `nui-endpoint` skill before adding or changing any of this.** It
+carries the full tables, the payload-shape rules, where to subscribe and why
+residency makes that a correctness question, and `pushMany`'s
+deduplicate-by-owner rule.
 
-#### Schema changes
+### Schema changes
 
-**A schema change is written once, in the declaration.** Change the
-`defineService` schema and run `pnpm generate:sql` to regenerate `gphone.sql`
-(committed, imported by hand on a fresh install — nothing happens to a live
-database on its own). An install that already has data is brought up to date by
-**`gphoneschema apply`** from the server console — console-only, the only thing
-in this resource that changes a live schema. It runs versioned migrations
-(`server/migrations/`, oldest-first) then an additive `ADD COLUMN`/`ADD KEY`
-pass, in that order — migrations first is a correctness requirement, not a
-preference (an additive pass run first can strand a rename). Both halves stop at
-the first failure rather than retrying blind.
+**A schema change is written once, in the declaration**, then
+`pnpm generate:sql` regenerates `gphone.sql` — committed, imported by hand,
+**never hand-edited**. A rename, retype, widened enum or drop additionally needs
+a **versioned migration** in `server/migrations/`, forward-only, after which
+**re-run `pnpm generate:sql`**. `scripts/framework-schema.sql` is the
+hand-written audit ledger and has no `defineService` behind it.
 
-A rename, retype, widened enum, or drop needs a **versioned migration** — one
-TypeScript file per breaking change in `server/migrations/`, named
-`NNNN_snake_case_description.ts` where the filename stem is the id
-(`server/__tests__/migrationsSeed.test.ts` enforces it), exporting a
-`migration: Migration` with `up`. Forward-only: fixing a bad migration is a new
-migration. **Re-run `pnpm generate:sql` after adding one**, or a fresh install
-runs a migration against a table that never needed it.
-
-In development, `pnpm generate:sql:reset` writes a file that drops and rebuilds
-every `gphone_` table against a database you don't mind losing — no migration to
-write.
-
-Full detail — the two-pass ordering rationale, DDL non-transactionality, the
-ledger-seeding mechanism, a worked migration example — lives in
-[`docs/schema-and-services.md`](docs/schema-and-services.md).
-
-#### Event names
-
-Every net event is **`gphone:<side>:<app>:<action>`**, with no exceptions —
-`server/__tests__/eventNames.test.ts` scans the source and fails on anything
-else. It also rejects an `<app>` segment that is neither a declared app nor one
-of the two non-app scopes, so a typo cannot produce a well-shaped name that
-matches no listener.
-
-Two scopes are not apps:
-
-- **`shell`** — the phone itself rather than any app
-  (`gphone:client:shell:notify`). Not `core`: `web/src/nui/` is the transport
-  directory, every other use of "core" in the tree means QBCore / qbx_core, and
-  `core` is also a manifest field (§11) — three meanings for one word.
-- **`admin`** — the privileged surface, grouped by who may call it rather than
-  by subject.
-
-NUI message actions (`setVisible`, `receiveMail`) are a **separate namespace**
-and carry no `gphone:` prefix; the test scans `web/src` precisely to catch one
-borrowing the prefix.
+**Load the `gphone-service` skill before any of this.** It and
+[`docs/schema-and-services.md`](docs/schema-and-services.md) carry the migration
+file convention, `gphoneschema apply`'s migrations-then-additive ordering (a
+correctness requirement, not a preference), and the worked example.
 
 ### Testing
 
@@ -724,70 +556,15 @@ borrowing the prefix.
 What the suites **cannot** catch: anything that needs the game. The Chromium-103
 gap (§6), the client/server relay layers above, framework bridge behavior, and
 SQL that only fails against a real schema. Playwright drives a modern Chromium
-against mocks — a green suite is not evidence a NUI feature works in game.
+against mocks — **a green suite is not evidence a NUI feature works in game.**
 
 E2E note: `webServer` builds a bundle and serves it with
-`vite preview --strictPort` on port 4173 (`web/playwright.config.ts`) —
-deliberately not the dev server's 5173, and `--strictPort` means a port already
-held by something else is a loud bind failure rather than Vite's usual silent
-fallback to 5174. If the port is genuinely stuck, the holder may still be a
-**Windows-side** process on WSL2, which `ss`/`netstat` inside the guest will not
-show — check `netstat.exe -ano | grep 4173` before concluding anything. **This
-is an environment collision, not a repo defect.** Report it and stop; do not
-"fix" it by changing the port or the config.
-
----
-
-### A server push touches four files
-
-Mirroring the NUI round trip above, and failing just as silently if one is
-missing — `server/__tests__/appEventContract.test.ts` is what catches that.
-
-| File                           | Does                                                                |
-| ------------------------------ | ------------------------------------------------------------------- |
-| `shared/appEvents.ts`          | The one net event name, the NUI action, and `parseAppEventEnvelope` |
-| `server/lib/appEvents.ts`      | `appEventChannel(appId).push(...)`, returning a `PushOutcome`       |
-| `client/services/AppEvents.ts` | Forwards the envelope into the NUI. Not `ServiceProxy`              |
-| `web/src/shell/nuiMessages.ts` | The one generic `appEvent` route, dispatching by app id             |
-
-Then an app subscribes with `useAppEvents(appId)`.
-
-**One net event, `gphone:client:shell:appEvent`, and it is a literal.**
-`eventNames.test.ts` scans for string literals, so a templated per-app name
-would be an _unchecked_ name. `shell` is the segment because the transport
-belongs to the phone rather than any app; the target rides in the envelope.
-
-**Where you subscribe decides whether you can miss anything.** The CEF page
-loads at resource start and never unloads — closing the phone destroys the
-components, not the module scope. So a subscription in an app's **store** is
-permanent and is what a `badgeStore` must be fed from, while one **inside a
-component** lives as long as the component and is replayed from a bounded
-per-app buffer on mount. Residency is a subscription-lifetime question, not a
-delivery one.
-
-**At-most-once, ordered within a session, best-effort across sessions.** Nothing
-is queued server-side: the row that occasioned the push is already written, so
-an offline player gets it from the ordinary fetch. §11's `onAppForeground` rule
-still applies — a push does not excuse it, and the contract test enforces that
-for any app that subscribes. `push` returns a discriminated `PushOutcome`
-precisely so `offline` cannot be read as delivered.
-
-**`pushMany` for a set of recipients**, and it is not a loop around `push`: it
-takes one `getAllPlayers()` snapshot for the whole fan-out rather than walking
-the player list per recipient. Deduplicate by **owner** before calling it where
-identity is an account rather than a citizenid (§10) — several handles can
-belong to one player, and being mentioned twice in one post is one notification.
-Blabber's mention fan-out is the worked example, and it also drops
-self-mentions: telling somebody they said their own name is noise.
-
-A push must never be allowed to fail the write that occasioned it. The row is
-committed either way, so the notification is dispatched after the write and its
-rejection is logged rather than thrown — an author seeing an error for a post
-that already exists is worse than a missed toast.
-
-**`notifications` gates the toast, not the data.** Withholding the payload would
-be theatre — the app can fetch the same rows through its own service — but the
-disclosure stays true at runtime.
+`vite preview --strictPort` on port 4173 (`web/playwright.config.ts`),
+deliberately not the dev server's 5173, so a port already held by something else
+is a loud bind failure. **That is an environment collision, not a repo defect**
+— report it and stop; do not "fix" it by changing the port or the config.
+[`docs/dev-loop.md`](docs/dev-loop.md) has the WSL2 trap that makes the holder
+invisible to `ss`.
 
 ---
 
@@ -798,21 +575,14 @@ line-length error costs seconds instead of a minute behind the e2e suite — and
 it reports every failure rather than stopping at the first.
 `pnpm verify --quick` skips e2e (what `pre-push` runs); `--bail` stops at the
 first failure, for a tight edit loop; `--no-container` drops the Go/Dockerfile
-gate, and exists for CI rather than for you — see below.
+gate, and exists for CI rather than for you.
 
-**`pnpm verify` is the whole set; CI just runs it across four machines** — a
-`verify` job (`--quick --no-container`), an `e2e` job sharded in two, and a
-`container` job with `--require`. Their union is exactly the local run, so a
-gate added to `scripts/verify.js` lands in CI with nothing else touched. Only
-e2e and the container checks are carved out by name, because e2e needs the
-Playwright image and the container checks need a Go toolchain it lacks.
+It runs, in order: `format:check`, `lint:md`, `lint:agents`, `lint:container`,
+`lint`, `typecheck`, `test:unit`, `test:e2e`, `build:nocheck`, `deadcode`.
 
-It runs, in order: `format:check`, `lint:md`, `lint:container`, `lint`,
-`typecheck`, `test:unit`, `test:e2e`, `build:nocheck`, `deadcode`. Cheapest
-first is deliberate — run these by hand in the order below and a two-second
-markdownlint failure surfaces after a one-minute Playwright run. The build gate
-uses `build:nocheck` because the `typecheck` gate already checked this tree;
-`pnpm build` alone keeps its typecheck, since nothing else has run one.
+**`pnpm verify` is the whole set; CI just runs it across four machines**, whose
+union is exactly the local run — so a gate added to `scripts/verify.js` lands in
+CI with nothing else touched.
 
 ### Match the gate to what the change touched
 
@@ -854,91 +624,62 @@ Then, before saying it works:
 
 A service is a named group of server actions backed by a table, declared once
 via `server/lib/defineService.ts` rather than hand-writing a repository and an
-endpoint. It derives the repository, the write allowlist (§2.9), the CRUD net
-events, and the DDL from one schema:
-
-```ts
-export const notes = defineService<Note>({
-  id: 'notes', // matches the app manifest id, and the <service> event segment
-  access: { read: 'owner', write: 'owner' },
-  statuses: ['active', 'archived', 'deleted', 'moderated'],
-  schema: {
-    title: { type: 'string', length: 255 },
-    content: 'text'
-  },
-  indexes: [['citizenid', 'status', 'updated_at']]
-});
-```
-
-The field-by-field reference is `docs/schema-and-services.md`. What bites if you
-guess it:
+endpoint. One declaration derives the repository, the write allowlist (§2.9),
+the CRUD net events, and the DDL. Its `id` matches the app manifest id and the
+`<service>` event segment. What bites if you guess it:
 
 - `id, citizenid, status, created_at, updated_at` are **supplied by the
   framework** — declaring one in `schema` is an error.
-- `access` is two independent axes, `read` and `write` — `'owner'` (default),
-  `'public'`, `'members'`, and `'server'` for write. **`read: 'public'` requires
-  `paging`** and `defineService` throws without it, since an unpaged public read
-  returns the whole table.
-- **`'members'` and `'public'` reads register no generic `get`.** Membership
-  needs `access.membership`, which derives `Repository.isMember`.
+- `access` is two independent axes, `read` and `write`. **`read: 'public'`
+  requires `paging`** and `defineService` throws without it. **`'members'` and
+  `'public'` reads register no generic `get`**; membership needs
+  `access.membership`, which derives `Repository.isMember`.
 - `access.editWindow` time-boxes an ownership-scoped **update** only — never a
-  `delete`.
-- `paging` is always keyset on `id DESC`, never offset and never configurable;
-  `nextCursor: null` means end-of-list.
-- `childTables` are **DDL-only** — no repository and no events are derived from
-  them, and every column is declared explicitly.
-- A public projection withholds `citizenid` automatically, and anything else you
-  mark `private: true`.
+  `delete`. `paging` is always keyset on `id DESC`, never offset. `childTables`
+  are **DDL-only**; declare every column explicitly. A public projection
+  withholds `citizenid` automatically, and anything else marked `private: true`.
+- **Never read another resource's tables** — go through that resource's exports,
+  behind a `*Bridge` in `server/lib/`.
 
-Full detail — every field, the accounts/identity model shared social apps build
-on, Blabber as the worked public-read example, and the `gphone.sql`
-generation/dev-reset mechanics — lives in
-[`docs/schema-and-services.md`](docs/schema-and-services.md). Read it before
-declaring a `read: 'public'` or `access.membership` service for the first time.
+The `gphone-service` skill is the working reference and
+[`docs/schema-and-services.md`](docs/schema-and-services.md) is the
+field-by-field authority. Read the doc before declaring a `read: 'public'` or
+`access.membership` service for the first time.
 
 ---
 
 ## 11. Adding an app
 
-The full walkthrough — directory scaffold, manifest fields, the
-service/route/store/mock layers, `core: true` vs `false`, wiring rules
-(`onAppForeground`, `useAppLevels`, `useAppAction`, `useDeepLink`,
-`usePagedList`), and the pre-verify checklist — lives in
-[`docs/writing-an-app.md`](docs/writing-an-app.md). Notes is the smallest
-complete example to copy from; Bank is the example with no table.
-
-The shortest version: `pnpm new:app <id>` (or `--service` to scaffold the data
-half too) writes `web/src/apps/<id>/` — `manifest.ts`, `index.svelte`,
-`Icon.svelte`. Nothing else registers it; `shell/state/registry.ts` discovers
-apps via `import.meta.glob`. The id is lowercase and a **key** — directory name,
-storage namespace, event segment, keybind claim, deep-link — so renaming it
-later is a data migration.
-
-Three things worth knowing before you open the doc:
+`pnpm new:app <id>` (or `--service` to scaffold the data half too) writes
+`web/src/apps/<id>/`. Nothing else registers it; `shell/state/registry.ts`
+discovers apps via `import.meta.glob`. The id is lowercase and a **key** —
+directory, storage namespace, event segment, keybind claim, deep-link — so
+renaming it later is a data migration. Four things bite before you open the
+walkthrough:
 
 - **`core` is required** and has teeth: `true` ships with the phone and can't be
   uninstalled; `false` is a Store add-on. Read `manifest.core` and nothing else
   — never infer it.
 - **`tile: { bg, fg }` is required too**, and both are utility classes rather
-  than colour values — they land in a `class` attribute, so a hex string paints
-  nothing. Omit `fg` on a dark tile; state it on a light one, or the glyph
-  inherits a near-white default and is illegible (MICA-88). `defineApp` throws
-  on either mistake, and `utilityClasses.test.ts` measures the contrast. The old
-  free-form `color` string is still accepted so a published add-on keeps
-  loading, but it is derived from `tile` now — do not author it.
-- **A NUI round trip touches three files** and fails silently if one is missing:
-  `web/` (`fetchNui`), `shared/routes.ts` (a `route()` entry — **core apps
-  only**; an add-on goes through the generic `useService(id).call(...)` instead
-  and needs no row here), and `server/services/` (`registerEvent` or generic
-  CRUD). `server/__tests__/routes.test.ts` cross-references all three plus the
+  than colour values — a hex string paints nothing. Omit `fg` on a dark tile;
+  state it on a light one, or the glyph is illegible (MICA-88). `defineApp`
+  throws on either mistake. The old free-form `color` string is still accepted
+  so a published add-on keeps loading, but it is derived from `tile` now — do
+  not author it.
+- **A NUI round trip touches three files** and fails silently if one is missing
+  (§8). `server/__tests__/routes.test.ts` cross-references all three plus the
   browser mock.
 - **Load with `onAppForeground`, never `onMount`/`$effect`.** Apps are resident
   and mount once per session, so anything fetched in `onMount` goes stale the
   moment the app backgrounds. The one exception is a manifest `preload`,
   required if the app ships a `badgeStore` (`sdk/appContract.test.ts` enforces
-  the pairing) — a badge has to be right before the launcher paints, which is
-  before the app has ever been opened.
+  the pairing) — a badge has to be right before the launcher paints.
 
-`pnpm verify` (format → container → typecheck → unit → e2e → build → dead-code)
-before calling it done; see §9. Then run it in game — a green suite is not
-evidence a NUI feature works (§6, §8).
+The full walkthrough — directory scaffold, every manifest field, the
+service/route/store/mock layers, `core: true` vs `false`, the wiring hooks, and
+the pre-verify checklist — is
+[`docs/writing-an-app.md`](docs/writing-an-app.md). Notes is the smallest
+complete example to copy from; Bank is the example with no table.
+
+`pnpm verify` before calling it done (§9). Then run it in game — a green suite
+is not evidence a NUI feature works (§6, §8).

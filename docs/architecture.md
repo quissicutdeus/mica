@@ -1,8 +1,50 @@
 # Why the repo is laid out this way
 
-The directory table in [`AGENTS.md` §8](../AGENTS.md) is the reference; this is
-why it looks the way it does, for when a layout choice seems arbitrary enough to
-"fix."
+The table below is the reference — every directory, what it runs in, and what
+belongs there. The rest of this page is why it looks the way it does, for when a
+layout choice seems arbitrary enough to "fix."
+
+[`AGENTS.md` §8](../AGENTS.md) carries the four words the structure is built out
+of (**app**, **shell**, **service**, **SDK**), and each means exactly one thing;
+read that before this.
+
+## The directories
+
+| Path                           | Runs in      | Notes                                                                        |
+| ------------------------------ | ------------ | ---------------------------------------------------------------------------- |
+| `client/services/`             | FiveM client | The client half of each service — NUI callbacks, server pushes               |
+| `client/game/`                 | FiveM client | GTA world: camera, freelook, phone prop and animations                       |
+| `client/lib/`                  | FiveM client | `ServiceProxy` (NUI↔server relay), `FrameworkBridge`, `nui`                  |
+| `server/services/`             | FiveM server | One file per service, named for the service, auto-indexed                    |
+| `server/lib/`                  | FiveM server | `ServiceEndpoint`, `defineService`, `Repository`, `Database`                 |
+| `server/repositories/`         | FiveM server | `SchemaRepository` subclasses — the joins the generic path cannot express    |
+| `server/migrations/`           | FiveM server | Forward-only versioned migrations; `index.ts` is generated                   |
+| `gphone.sql`                   | generated    | The whole schema from `pnpm generate:sql`; imported by hand                  |
+| `scripts/framework-schema.sql` | hand-written | The audit ledger, which has no `defineService` behind it                     |
+| `server/__tests__/`            | Vitest/node  | Excluded from `tsc`; see AGENTS.md §1                                        |
+| `shared/types.ts`              | both         | `@shared/types` path alias, not a workspace package (AGENTS.md §3)           |
+| `shared/richText.ts`           | both         | One tokenizer for `@handle` — the UI renders and the server notifies from it |
+| `web/src/shell/`               | CEF+browser  | The OS: `Shell.svelte`, `PhoneFrame`, `Launcher`, `ToastHost`                |
+| `web/src/shell/state/`         | CEF+browser  | State the phone itself owns: navigation, keybinds, hardware, size            |
+| `web/src/services/`            | CEF+browser  | Client-side cache of each server service. Reached via the SDK                |
+| `web/src/sdk/`                 | CEF+browser  | `@gphone/sdk` — the public surface for apps (AGENTS.md §2.7)                 |
+| `web/src/sdk/ui/`              | CEF+browser  | UI primitives and icons apps may build with                                  |
+| `web/src/apps/`                | CEF+browser  | One dir per app: `manifest.ts` + `index.svelte` + `Icon.svelte`              |
+| `web/src/nui/`                 | CEF+browser  | The bridge: transport, `fetchNui`, `useNuiEvent`, browser mocks              |
+| `web/src/lib/`                 | CEF+browser  | Helpers with no gPhone state and no I/O — formatters, markdown               |
+
+Seven `index.ts` files in that tree are **generated** by
+`scripts/generate-barrels.js` — `client/services/`, `client/game/`,
+`server/services/`, `server/migrations/`, `web/src/sdk/host/`,
+`web/src/sdk/kit/`, and `web/src/sdk/icons.ts`. Add a file to the directory; do
+not edit the index. They are committed, and `pnpm verify` regenerates them as
+its first step, so a hand-added hook is picked up without a build — the
+generator used to run only inside `build` and `watch`, both of which come
+_after_ the typecheck gate.
+
+The migrations barrel is the odd member: an ordered **array** rather than
+re-exports, because the runner iterates it in apply order and a module imported
+for its side effects would give it nothing to iterate.
 
 **`client/` splits by what a file talks to.** `client/services/` is the client
 half of a service and speaks NUI and net events; `client/game/` speaks to GTA

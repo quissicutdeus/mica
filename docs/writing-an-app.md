@@ -325,6 +325,39 @@ opaque origin. Practically:
   "you have nothing"; every list in the phone used to make the second one while
   still waiting for the first.
 
+## Keyboard shortcuts, and why handlers are a stack
+
+AGENTS.md §2.7 carries the rule: never a raw `keydown` listener or
+`<svelte:window on:keydown>` for a phone-level action — declare it in
+`shared/keybinds.ts` and claim it with `useKeybinds().onKeybind`. An app that
+listens directly cannot be rebound from Settings > Shortcuts and double-fires
+against the shell's own handler. An app that genuinely needs raw keys (the
+calculator's digits) early-returns on `event.defaultPrevented`.
+
+The part worth understanding rather than memorising is why registration is a
+**stack per action rather than a slot**, and why `useAppLevels` insists on an
+`appId`.
+
+A mounted app overrides the shell's handler and hands the action back when it
+unmounts. As a single slot that fails on the first unmount: the shell's `back`
+would be overwritten, then cleared, and Escape would do nothing for the rest of
+the session. A stack restores whatever was underneath.
+
+Residency is the second half. Apps are not destroyed when you leave them — they
+reuse their component on re-open without re-registering — so a claim outlives
+the app being on screen. Without an `appId` the dispatcher would run whichever
+app registered last, and reopening Notes after Contacts would run Contacts'
+stale `back` handler. So the dispatcher runs only the topmost handler that is
+either unscoped or owned by the **foreground** app. Shell handlers pass no id
+and are the fallback that is always underneath.
+
+Two scopes, and they rebind in different places. `scope: 'game'` actions rebind
+in FiveM's own Key Bindings menu, because the phone holds `SetNuiFocus` and
+`RegisterKeyMapping` cannot fire while it does. `scope: 'phone'` actions rebind
+in gPhone's Shortcuts screen. **Both must refuse to fire while a text field has
+focus** — the shell tracks that from `focusin`/`focusout`, since the server
+cannot see DOM focus (see [`security.md`](security.md)).
+
 ## The browser mock
 
 Add your app's fixtures to `web/src/nui/mocks/registry.ts`. Without a mock the

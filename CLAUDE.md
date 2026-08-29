@@ -1,5 +1,12 @@
 # CLAUDE.md
 
+> **Do not delete this file, and do not remove the `@AGENTS.md` line below.**
+> Claude Code reads `CLAUDE.md`; a root `AGENTS.md` is inert unless something
+> imports it. Deleting this file, or that one line, switches off every rule in
+> the repo at once — silently, with no error and nothing in any suite to notice.
+> This file looks like a two-line stub that only points at another file. That is
+> exactly what makes it load-bearing.
+
 The rules for this repo live in [`AGENTS.md`](AGENTS.md), one file for every
 assistant. It is imported below rather than restated here, so the two can never
 drift apart.

@@ -36,6 +36,7 @@
     "deadcode": "pnpm dlx knip",
     "lint:container": "node scripts/lint-container.js",
     "lint:md": "markdownlint-cli2",
+    "lint:agents": "node scripts/check-agents-size.js",
     "lint:actions": "node scripts/check-action-versions.js",
     "lint:ts": "oxlint .",
     "lint:web": "pnpm --filter web lint",
@@ -69,6 +70,7 @@
     "prettier": "^3.9.6",
     "prettier-plugin-svelte": "^4.1.1",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "yaml": "^2.9.0"
   }
 }

@@ -41,6 +41,23 @@ want to manually drive the phone in a browser. It has no effect on `pnpm test:e2
 or `pnpm verify`, which build and serve their own copy independently of this port.
 ```
 
+### When port 4173 is already held
+
+`--strictPort` means a port somebody else has is a loud bind failure rather than
+Vite's usual silent fallback to 4174, which is what you want: a suite quietly
+testing a stale build on another port is worse than one that refuses to start.
+
+If it is genuinely stuck, the holder may be a **Windows-side** process — under
+WSL2, `ss` and `netstat` inside the guest do not see those, so the port looks
+free from every tool you would reach for first:
+
+```sh
+netstat.exe -ano | grep 4173
+```
+
+**This is an environment collision, not a repo defect.** Report it and stop. Do
+not "fix" it by changing the port or `web/playwright.config.ts`.
+
 ## The fast loop for one file or feature
 
 None of these need the full suite:
@@ -208,6 +225,56 @@ Prettier was checked the same way and does not have the problem: cold 8.2s, warm
 believed rather than measured: a cache that fails to hit is silent by design —
 it just does the work — so "the cache is configured" and "the cache is working"
 are different claims and only one of them is checkable. Time the gate.
+
+## Pruning `.claude/worktrees/`
+
+Agent worktrees accumulate. Each one holds a branch checked out, which is why
+`git checkout MICA-136` can fail with "already checked out" on a ticket nobody
+is working on any more — and why AGENTS.md §2.12 says to take the slugged form
+(`MICA-136-player-loaded`) rather than fight it. That is the cheap fix.
+Removing the worktree is the real one, and it is the step to be careful about.
+
+**Never blanket-prune.** `git worktree prune` only removes entries whose
+directory is already gone; `git worktree remove` on a live directory throws away
+whatever is in it. Both are quiet about what they cost you. Walk them:
+
+```sh
+git worktree list
+
+for d in .claude/worktrees/*/; do
+  printf '\n== %s\n' "$d"
+  git -C "$d" status --porcelain
+  git -C "$d" log --oneline dev..HEAD
+done
+```
+
+Two questions per worktree, and both have to answer "nothing":
+
+- **Uncommitted work** — any output from `status --porcelain`. Save it before
+  removing anything: `git -C "$d" diff HEAD > /tmp/<branch>.patch`, and say
+  where you put it. An untracked file is not in `diff HEAD`; `status` is what
+  tells you one exists.
+- **Commits ahead of `dev`** — any output from `log dev..HEAD`.
+
+**A branch that was squash-merged still shows commits ahead of `dev`**, because
+a squash rewrites the commits into one with a different patch-id. `git cherry`
+and `git rebase` both compare patch-ids, so both will tell you the work has not
+landed when it has. Do not trust either on a stale branch: check whether **the
+content** is on `dev` — `git diff dev -- <the files it touched>`, or read the
+lines on `dev` directly. Empty diff, work landed.
+
+Only then:
+
+```sh
+git worktree remove .claude/worktrees/<name>
+git branch -d <branch>          # -d, never -D: it refuses if the work is unmerged
+git worktree prune              # tidies entries whose directory is already gone
+```
+
+`git branch -d` refusing is a signal, not an obstacle. It means the branch's
+commits are not reachable from anything else, and given the squash caveat above,
+it is the last check standing between you and losing work — go and look at
+`dev`'s content before reaching for `-D`.
 
 ## Testing calls without a second player
 
