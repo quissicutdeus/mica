@@ -20,9 +20,13 @@ entry.
 
 **A release with no entry means there was nothing for an owner to do**, not that
 nobody wrote it down. That silence is checked rather than assumed:
-`server/__tests__/changelog.test.ts` fails the build when a versioned migration
-lands in `server/migrations/` without being named here, so the one change that
-always demands action — running `gphoneschema apply` — cannot ship unannounced.
+`server/__tests__/changelog.test.ts` fails the build when either of the two
+changes that put `gphoneschema apply` in front of an owner lands without being
+named here — a versioned migration in `server/migrations/`, and a column or key
+added to a `defineService` declaration. The additive half compares the
+declarations against a frozen list of the schema as it stood on 2026-08-29, so
+anything the tables have grown since then has to be written down before the
+build goes green. What it still cannot see is listed at the top of that file.
 
 Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
@@ -30,10 +34,17 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
-None. No versioned migration has landed and no table has gained a column, so
-nothing here needs `gphoneschema apply`. Every convar below defaults to the
-behaviour a server already had, so an update that sets none of them changes
-nothing for your players.
+**If you run a third-party add-on that draws reactions, check it against this
+release.** `ReactionBar`, the SDK component an add-on draws a reaction row with,
+changed shape: it now takes `summary` and `ontoggle` in place of `counts`,
+`mine`, `onreact` and `onunreact`. An add-on written against the old props will
+not render its reactions until its author updates it. Nothing that ships with
+the phone is affected (MICA-98).
+
+Nothing else. No versioned migration has landed and no table has gained a
+column, so nothing here needs `gphoneschema apply`. Every convar below defaults
+to the behaviour a server already had, so an update that sets none of them
+changes nothing for your players.
 
 ### Added
 
