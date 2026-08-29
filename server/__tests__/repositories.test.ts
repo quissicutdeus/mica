@@ -23,6 +23,12 @@ import { media } from '../services/Media';
 import { reports } from '../services/Reports';
 import { batteryApp } from '../services/Battery';
 import { hodlr } from '../services/Hodlr';
+// The three declarations that carry a `clientFilterable` column, and the reason the filter
+// policy below has anything to assert. Absent from `ALL` until MICA-137, which is part of
+// why the derivation that dropped their filter columns went unnoticed.
+import { accounts } from '../services/Accounts';
+import { blabber } from '../services/Blabber';
+import { notifications } from '../services/Notifications';
 
 /**
  * The shipped write policy, table by table.
@@ -43,7 +49,10 @@ const ALL = [
   // one absent from it looked like one nobody used.
   { name: 'reports', repo: reports.repo },
   { name: 'battery', repo: batteryApp.repo },
-  { name: 'hodlr', repo: hodlr.repo }
+  { name: 'hodlr', repo: hodlr.repo },
+  { name: 'accounts', repo: accounts.repo },
+  { name: 'blabber', repo: blabber.repo },
+  { name: 'notifications', repo: notifications.repo }
 ] satisfies { name: string; repo: Repository<any> }[];
 
 describe('shipped repositories — declared client write policy', () => {
@@ -90,6 +99,75 @@ describe('shipped repositories — declared client write policy', () => {
       expect(repo.tableColumns).toContain('citizenid');
     }
   );
+});
+
+/**
+ * The shipped **filter** policy, which is not the write policy and was derived from it until
+ * MICA-137.
+ *
+ * Literal, for the same reason the write lists above are: every filterable column is one more
+ * thing an unmodified `get` will narrow by for any player who asks, so widening the set should
+ * be a visible diff rather than a consequence of editing a column definition. Nothing asserted
+ * `filterableColumns` before this block, which is why a derivation that silently emptied it
+ * shipped and only surfaced as a Blabber profile showing the wrong person.
+ */
+describe('shipped repositories — declared client filter policy', () => {
+  it.each([
+    /**
+     * The MICA-137 regression, pinned. Both are `clientWritable: false` on purpose — a
+     * handle is claimed once and never renamed or moved between apps — and the old derivation
+     * read that as "not filterable either". `sanitizeFilter` then returned `{}`, so the paged
+     * public read behind `getAccounts({ app: 'blabber', handle })` dropped both predicates and
+     * answered with the newest account on the server, in any app.
+     *
+     * Neither widens what a stranger can learn. `handle` becomes an exact-match existence
+     * check, and `searchAccounts` already answers a public substring `LIKE '%q%'` over the
+     * same column — equality is strictly weaker. `app` only narrows a set the unfiltered
+     * public read hands back in full, so it removes rows from a response rather than adding
+     * information to one.
+     */
+    ['accounts', ['app', 'handle']],
+    // Same shape, and the reason the bug was one re-enabled read away from spreading: each of
+    // these is set at create and frozen so a post cannot be reattributed or re-parented, and
+    // each is exactly what a profile feed or a thread narrows by. All four are already in
+    // `publicColumns`, so filtering re-derives linkage the reader was handed anyway — and
+    // `findAll`'s `IS NULL` branch exists for the top-level-feed filter, which is evidence
+    // these were meant to be filterable before anything made them so.
+    ['blabber', ['account_id', 'reply_to', 'mouth_of', 'root_id']],
+    // Owner-scoped, and unreachable today — `disableGet` registers no generic read. Safe if
+    // one is ever turned on: `ServiceEndpoint` forces `filter.citizenid` on every non-public
+    // read *after* `sanitizeFilter`, so `app` can only ever partition the caller's own rows.
+    ['notifications', ['app']],
+    // The address book looks a contact up by number and filters the favourites list.
+    ['contacts', ['phone', 'favorite']],
+    ['conversations', []],
+    ['mail', []],
+    ['messages', []],
+    ['notes', []],
+    ['media', []],
+    ['reports', []],
+    ['battery', []],
+    ['hodlr', []]
+  ])('%s exposes exactly the expected filterable columns', (name, expected) => {
+    const entry = ALL.find((candidate) => candidate.name === name)!;
+    expect(entry.repo.filterableColumns).toEqual(expected);
+  });
+
+  it.each(ALL)('$name never lets a client filter on citizenid', ({ repo }) => {
+    // The guarantee the decoupling had to keep, and it kept it without needing to try:
+    // `citizenid` is an `IMPLICIT_COLUMNS` name, so `resolveAppSchema` throws on a schema
+    // that declares it and no derivation can produce it. This asserts the property across the
+    // shipped tables rather than the mechanism — `publicColumns` withholds `citizenid` so two
+    // accounts cannot be correlated back to one player, and a filter would answer the same
+    // question from the row count without the column ever being selected.
+    expect(repo.filterableColumns).not.toContain('citizenid');
+  });
+
+  it.each(ALL)('$name never lets a client filter on status', ({ repo }) => {
+    // `findAll` only defaults `status` to `'active'` when the filter does not name it, so a
+    // filterable `status` hands soft-deleted and moderated rows back to any caller that asks.
+    expect(repo.filterableColumns).not.toContain('status');
+  });
 });
 
 describe('shipped repositories — inherited guarantees', () => {

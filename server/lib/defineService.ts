@@ -81,7 +81,14 @@ export interface ColumnDef {
    * Default true — a declared field is assumed to be app data the owner controls.
    */
   clientWritable?: boolean;
-  /** May a client filter on this column through the generic `get`? Default false. */
+  /**
+   * May a client filter on this column through the generic `get`? Default false.
+   *
+   * Orthogonal to `clientWritable`, and the two must not be reasoned about together: a
+   * handle is searchable *and* unrenamable, which is one column holding both answers. It
+   * answers to no access axis either — see `isClientFilterable`. It cannot be combined with
+   * `private`, which `resolveAppSchema` refuses.
+   */
   clientFilterable?: boolean;
   /** Index this column alongside citizenid. */
   index?: boolean;
@@ -386,6 +393,32 @@ const normalizeColumn = (spec: ColumnType | ColumnDef): ColumnDef =>
 const isClientWritable = (def: ColumnDef, write: AccessDefinition['write']): boolean =>
   write === 'owner' && def.clientWritable !== false;
 
+/**
+ * A field is filterable if it opted in, and **writability has nothing to do with it**.
+ *
+ * These two were one predicate until MICA-137, and the conflation was not academic:
+ * `handle` on `gphone_accounts` is `clientWritable: false` precisely because a handle must
+ * never be renamed, and `clientFilterable: true` precisely because looking an account up by
+ * handle is the only way to open a profile. Coupling them dropped `handle` from the filter
+ * allowlist, `sanitizeFilter` returned `{}`, and the paged public read answered a profile
+ * lookup with whatever row happened to be newest. An identity column that is searchable and
+ * immutable is not an edge case — it is the normal shape of an identity column.
+ *
+ * It answers to no access axis either, and the temptation is `read: 'members'` — which
+ * registers no generic `get`, so its filterable set is never consumed. Zeroing it here would
+ * be the same mistake in a nicer place: one derivation deciding two things, and a declared
+ * flag quietly not meaning what it says. Reachability is `accessLockdown`'s job, one
+ * `disableGet` away, and it does it in exactly one place.
+ *
+ * Two columns that must never be filterable are refused elsewhere, and neither needs a clause
+ * here. `citizenid` and `status` are `IMPLICIT_COLUMNS` names, so the field loop **throws** on
+ * a schema that so much as declares one — no derivation in this function could reach them,
+ * which was as true before this ticket as after. (`Repository.NEVER_CLIENT_FILTERABLE` catches
+ * the hand-written repositories that never pass through here.) And `private` is refused by the
+ * same loop when paired with this flag, so a column cannot be filterable-but-unreturnable.
+ */
+const isClientFilterable = (def: ColumnDef): boolean => def.clientFilterable === true;
+
 export interface ResolvedService {
   id: string;
   table: string;
@@ -422,7 +455,12 @@ export interface ResolvedService {
   /** Declared fields only, in declaration order — implicit columns excluded. */
   fields: { name: string; def: ColumnDef }[];
   columns: string[];
+  /** What a payload may set through the generic write path. See `isClientWritable`. */
   clientWritable: string[];
+  /**
+   * What a payload may narrow the generic `get` by. Independent of `clientWritable` — see
+   * `isClientFilterable` for why the two were one predicate and should never have been.
+   */
   clientFilterable: string[];
   indexes: readonly ResolvedIndex[];
   childTables: readonly ChildTableDefinition[];
@@ -571,7 +609,28 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
           'SQL identifier.'
       );
     }
-    fields.push({ name, def: normalizeColumn(spec) });
+    const def = normalizeColumn(spec);
+    /**
+     * `private` withholds a column from the read projection; `clientFilterable` accepts it
+     * as a `WHERE` predicate. Together they describe a column a caller may test for but
+     * never see — narrow by a guess, count the rows, and the value is known without it
+     * crossing the wire.
+     *
+     * A throw rather than a silent exclusion, because a silently-ignored flag is the exact
+     * failure this ticket exists to undo: `clientFilterable: true` was honoured everywhere
+     * except in the one derivation that mattered, and it read as working for months.
+     *
+     * Reachable only since filtering stopped implying writability. The pairing needed
+     * `clientWritable: false` to be interesting, and that used to zero the filter list.
+     */
+    if (def.private === true && def.clientFilterable === true) {
+      throw new Error(
+        `defineService('${id}'): '${name}' is both 'private' and 'clientFilterable'. A ` +
+          'column withheld from the read projection but accepted as a filter can be ' +
+          'tested for without ever being returned.'
+      );
+    }
+    fields.push({ name, def });
   }
 
   const columns = [...IMPLICIT_COLUMNS, ...fields.map((f) => f.name)] as string[];
@@ -681,9 +740,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     childTables,
     columns,
     clientWritable: fields.filter((f) => isClientWritable(f.def, access.write)).map((f) => f.name),
-    clientFilterable: fields
-      .filter((f) => f.def.clientFilterable === true && isClientWritable(f.def, access.write))
-      .map((f) => f.name)
+    clientFilterable: fields.filter((f) => isClientFilterable(f.def)).map((f) => f.name)
   };
 }
 

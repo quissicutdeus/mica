@@ -11,6 +11,33 @@ import type { ColumnRule, ResolvedMembership } from './defineService';
  */
 const NEVER_CLIENT_WRITABLE = new Set(['id', 'citizenid', 'created_at', 'updated_at']);
 
+/**
+ * Columns no client may filter on, whatever a repository declares. Subtracted last, exactly
+ * as `NEVER_CLIENT_WRITABLE` is, and here for the same reason that one is: **a hand-written
+ * repository sets `clientFilterable` directly** and passes through no declaration that could
+ * vet it. A `defineService` table is already covered upstream and does not need this — see
+ * below — so this set is aimed squarely at the other half of §2.9's "derived for declared
+ * apps, hand-written otherwise".
+ *
+ * Shorter than the never-writable set, and deliberately not a copy of it: filtering by `id`
+ * is an ordinary single-row lookup and a timestamp is not a secret. Two columns earn a
+ * blanket refusal, each for its own reason.
+ *
+ * - **`citizenid`** — the projection is what keeps an owner off a public row (see
+ *   `publicColumns`), and a filter walks straight around it. `WHERE citizenid = ?` plus a row
+ *   count answers "which of these accounts are the same person's" without the column ever
+ *   being selected, which is the alt-account correlation the projection exists to prevent.
+ * - **`status`** — `findAll` supplies `'active'` *only when the filter does not name it*, so a
+ *   filterable `status` is a client-supplied override: ask for `'deleted'` or `'moderated'`
+ *   and the soft-delete and the moderation sweep both read back.
+ *
+ * **What actually protects a derived table, so nobody mistakes this for it:** both names are
+ * in `IMPLICIT_COLUMNS`, and `resolveAppSchema` throws if a schema declares one. Neither can
+ * become a `field`, so no derivation in `defineService` can put it in `clientFilterable` —
+ * which was true before MICA-137 decoupled filtering from writing and is untouched by it.
+ */
+const NEVER_CLIENT_FILTERABLE = new Set(['citizenid', 'status']);
+
 export abstract class Repository<T> {
   protected abstract tableName: string;
 
@@ -30,7 +57,10 @@ export abstract class Repository<T> {
    */
   protected clientWritable: readonly string[] = [];
 
-  /** Columns a client payload may filter on through the generic `get` path. */
+  /**
+   * Columns a client payload may filter on through the generic `get` path.
+   * Independent of `clientWritable`; `NEVER_CLIENT_FILTERABLE` is subtracted last.
+   */
   protected clientFilterable: readonly string[] = [];
 
   /**
@@ -97,7 +127,9 @@ export abstract class Repository<T> {
   }
 
   public get filterableColumns(): readonly string[] {
-    return this.clientFilterable.filter((column) => this.columns.includes(column));
+    return this.clientFilterable.filter(
+      (column) => !NEVER_CLIENT_FILTERABLE.has(column) && this.columns.includes(column)
+    );
   }
 
   protected get hasStatusColumn(): boolean {

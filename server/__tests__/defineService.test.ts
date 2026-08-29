@@ -72,17 +72,40 @@ describe('resolveAppSchema — derived lists', () => {
     expect(resolved.columns).toContain('balance');
   });
 
-  it('keeps filterable opt-in, and never filterable-but-not-writable', () => {
+  it('keeps filterable opt-in, and independent of whether the column is writable', () => {
+    // This test asserted `['phone']` until MICA-137 — it pinned the coupling rather than
+    // the rule, and `immutable` below is the shape that made the coupling a live bug:
+    // searchable because it identifies the row, unwritable because it must never be renamed.
     const resolved = resolveAppSchema({
       id: 'x',
       schema: {
         phone: { type: 'string', clientFilterable: true },
         note: 'text',
-        secret: { type: 'string', clientWritable: false, clientFilterable: true }
+        immutable: { type: 'string', clientWritable: false, clientFilterable: true }
       }
     });
 
-    expect(resolved.clientFilterable).toEqual(['phone']);
+    expect(resolved.clientFilterable).toEqual(['phone', 'immutable']);
+    expect(resolved.clientWritable).toEqual(['phone', 'note']);
+  });
+
+  it('cannot make citizenid filterable, because it cannot be declared at all', () => {
+    /**
+     * Pins `IMPLICIT_COLUMNS`, **not** the derivation this ticket changed — and the
+     * distinction is the whole point of writing it here. `citizenid` is not filterable
+     * because `resolveAppSchema` throws on any schema naming it, so it never becomes a field
+     * and no derivation could reach it. It was never the write coupling that held this, and
+     * removing that coupling therefore costs nothing: a public read still cannot be pivoted
+     * into "which of these accounts belong to one player".
+     */
+    expect(() =>
+      resolveAppSchema({
+        id: 'z',
+        access: { read: 'public', write: 'owner' },
+        paging: { pageSize: 10, maxPageSize: 20 },
+        schema: { citizenid: { type: 'string', clientFilterable: true } }
+      })
+    ).toThrow(/supplied by the framework/);
   });
 
   it('makes nothing client-writable when the server authors the rows', () => {
@@ -96,7 +119,11 @@ describe('resolveAppSchema — derived lists', () => {
     });
 
     expect(resolved.clientWritable).toEqual([]);
-    expect(resolved.clientFilterable).toEqual([]);
+    // Also pinned the MICA-137 coupling: `write: 'server'` closed the write path and took
+    // the filter path with it, though the read is owner-scoped and the generic `get` is
+    // registered. Shutting writes says nothing about what an owner may search their own
+    // rows by.
+    expect(resolved.clientFilterable).toEqual(['subject']);
     expect(resolved.access).toEqual({ read: 'owner', write: 'server' });
     expect(resolved.columns).toContain('sender');
   });
@@ -104,6 +131,13 @@ describe('resolveAppSchema — derived lists', () => {
   it('shuts the generic write path when writes are member-scoped', () => {
     // Rows several players can see cannot be authorized by ownership, so nothing is
     // client-writable through the generic path — membership checks must be explicit.
+    //
+    // Its `clientFilterable` assertion is **vacuous** after MICA-137, and left that way on
+    // purpose: this schema declares nothing filterable, so it passes on that alone rather
+    // than on the coupling. Adding a `clientFilterable: true` column to "strengthen" it would
+    // fail, correctly — a members service now keeps its declared filterable set, and what
+    // makes that harmless is `accessLockdown` setting `disableGet`, which is one place rather
+    // than a second rule in the derivation.
     const resolved = resolveAppSchema({
       id: 'shared_rows',
       access: {
@@ -186,6 +220,39 @@ describe('resolveAppSchema — rejections', () => {
     expect(() =>
       resolveAppSchema({ id: 'x', schema: { citizenid: 'string', title: 'string' } })
     ).toThrow(/supplied by the framework/);
+  });
+
+  it('refuses a column that is both private and filterable', () => {
+    /**
+     * A column withheld from the read projection but accepted as a `WHERE` predicate can be
+     * tested for without ever being returned: guess, count the rows, read the value off the
+     * count. Only reachable since MICA-137 stopped filtering implying writability — the
+     * pairing needs `clientWritable: false` to be interesting, and that used to empty the
+     * filter list on its own.
+     *
+     * A throw rather than a quiet exclusion, because a flag honoured everywhere except the
+     * one derivation that mattered is exactly the bug this ticket fixed.
+     */
+    expect(() =>
+      resolveAppSchema({
+        id: 'x',
+        access: { read: 'public', write: 'owner' },
+        paging: { pageSize: 10, maxPageSize: 20 },
+        schema: { token: { type: 'string', private: true, clientFilterable: true } }
+      })
+    ).toThrow(/both 'private' and 'clientFilterable'/);
+  });
+
+  it('allows private and filterable separately, so the refusal is about the pairing', () => {
+    expect(() =>
+      resolveAppSchema({
+        id: 'x',
+        schema: {
+          heavy: { type: 'blob', private: true },
+          phone: { type: 'string', clientFilterable: true }
+        }
+      })
+    ).not.toThrow();
   });
 
   it('refuses a field name that is not a safe SQL identifier', () => {

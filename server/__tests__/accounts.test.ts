@@ -95,6 +95,53 @@ describe('the declaration', () => {
   it('declares paging, which a public read cannot go without', () => {
     expect(accounts.resolved.paging).not.toBeNull();
   });
+
+  it('keeps app and handle filterable despite being unwritable', () => {
+    // MICA-137. The two flags answer different questions and were derived from one
+    // predicate: `clientWritable: false` above silently took `clientFilterable: true` with
+    // it. An identity column that is searchable and immutable is the normal case, not a
+    // contradiction.
+    expect(accounts.resolved.clientFilterable).toEqual(['app', 'handle']);
+  });
+});
+
+/**
+ * The public `get`, which is how a profile is opened.
+ *
+ * `Profile.svelte` calls `getAccounts({ app, handle, limit: 1 })` and takes the first row. That
+ * only identifies an account if both predicates survive `sanitizeFilter` — and for the life of
+ * MICA-137 neither did, so the query degraded to "the newest active account in any app" and
+ * every profile showed one arbitrary stranger. Asserted against the SQL rather than the reply,
+ * because the reply looked entirely plausible while being about somebody else.
+ */
+describe('looking an account up by handle', () => {
+  it('narrows the public read by both app and handle', async () => {
+    dbMock.query.mockResolvedValueOnce([{ id: 4, app: 'blabber', handle: 'ada' }]);
+
+    await call('get', { app: 'blabber', handle: 'ada', limit: 1 }, 'CIT_B');
+
+    const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
+    const params = dbMock.query.mock.calls[0][1] as unknown[];
+    expect(sql).toContain('`app` = ?');
+    expect(sql).toContain('`handle` = ?');
+    expect(params).toEqual(expect.arrayContaining(['blabber', 'ada']));
+  });
+
+  it('still refuses to narrow a public read by owner', async () => {
+    // Unchanged by the decoupling, and worth pinning at this level anyway. `citizenid` is
+    // withheld from `publicColumns` so a stranger cannot trace a row to its player, and a
+    // filter would answer the same question from the row count instead — but what refuses it
+    // is `IMPLICIT_COLUMNS`, which never let the column be declared, not the write coupling
+    // MICA-137 removed. This asserts the behaviour the player sees, wherever it comes from.
+    dbMock.query.mockResolvedValueOnce([]);
+
+    await call('get', { app: 'blabber', citizenid: 'CIT_A' }, 'CIT_B');
+
+    const sql = String(dbMock.query.mock.calls[0][0]);
+    const params = dbMock.query.mock.calls[0][1] as unknown[];
+    expect(sql).not.toContain('citizenid');
+    expect(params).not.toContain('CIT_A');
+  });
 });
 
 describe('claiming a handle', () => {

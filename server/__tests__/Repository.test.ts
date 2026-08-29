@@ -62,7 +62,7 @@ class OverreachingRepo extends Repository<TestRow> {
     'title',
     'not_a_column'
   ];
-  protected clientFilterable = ['title', 'not_a_column'];
+  protected clientFilterable = ['citizenid', 'status', 'title', 'not_a_column'];
 }
 
 /** Collapse the whitespace the query builder inherits from template literals. */
@@ -290,6 +290,24 @@ describe('Repository — declared client policy', () => {
 
     expect(repo.writableColumns).not.toContain('not_a_column');
     expect(repo.filterableColumns).toEqual(['title']);
+  });
+
+  it('never lets a client filter on citizenid, whatever the repository declares', () => {
+    // A **hand-written** repository, which is the case this guards: it sets
+    // `clientFilterable` directly and passes through no declaration that could vet it, so
+    // `IMPLICIT_COLUMNS` — which is what stops a derived table, and did so before MICA-137
+    // as well as after — never sees it. `publicColumns` keeps `citizenid` out of the
+    // projection so a public row cannot be traced to its owner; accepting it in the WHERE
+    // answers the same question by row count instead. `OverreachingRepo` declares it
+    // filterable specifically so the rule has something to refuse.
+    expect(new OverreachingRepo().filterableColumns).not.toContain('citizenid');
+  });
+
+  it('never lets a client filter on status, which would undo the soft-delete default', () => {
+    // `findAll` supplies `status = 'active'` only when the filter does not name it. A
+    // client-supplied `status` is therefore an override, and `'deleted'` or `'moderated'`
+    // reads back exactly the rows both states exist to withhold.
+    expect(new OverreachingRepo().filterableColumns).not.toContain('status');
   });
 
   it('exposes the column list for callers that need to reason about the table', () => {
