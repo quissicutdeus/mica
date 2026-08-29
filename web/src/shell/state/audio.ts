@@ -18,6 +18,223 @@ export const soundMuted = usePersisted<boolean>('settings', 'soundMuted', false,
   sanitize: sanitizeMuted
 });
 
+/**
+ * Which noises the ring mode governs — the ones the phone makes *at* you.
+ *
+ * The line is between noise you caused and noise that arrives: a click is the feedback of
+ * the control under your finger and a shutter is the camera you just fired, so both stay
+ * on the system channel and answer to the volume alone. A ringtone, a notification chime
+ * and a message pop are the phone interrupting you, which is the whole of what a person
+ * means when they put a phone on silent.
+ */
+const ALERT_EFFECTS: ReadonlySet<SoundEffect> = new Set<SoundEffect>([
+  'ringtone',
+  'notification',
+  'pop'
+]);
+
+/**
+ * Silent is a mode, not a volume of zero. MICA-62.
+ *
+ * Turning `soundVolume` to zero was the only way to stop the phone ringing, and it took
+ * the clicks, the camera and every notification with it — a player who wanted to sit
+ * through a scene without their pocket chirping had to give up the interface's feedback
+ * too, and then remember what the level used to be. This is the switch that separates the
+ * two, stored beside `soundVolume` and `musicVolume` so all three of the phone's sound
+ * preferences travel with the character together.
+ *
+ * **Silent suppresses audio and nothing else.** The incoming-call banner still appears
+ * with its Accept button, and the in-game phone animation still plays: a call you cannot
+ * hear is a quiet call, but a call you cannot *see* is an unanswerable one — the same
+ * reasoning `notificationPolicy.ts` gives for why Do Not Disturb never withholds a call
+ * banner.
+ */
+export type RingMode = 'normal' | 'vibrate' | 'silent';
+
+export interface RingModeChoice {
+  readonly id: RingMode;
+  readonly label: string;
+  /** Shown under the label in Settings > Sound. Says what the mode actually does. */
+  readonly description: string;
+}
+
+/**
+ * **Vibrate is honest about being a label, for now.**
+ *
+ * There is no haptic device on the other side of this: gPhone renders in FiveM's CEF on a
+ * desktop, and the buzz a real phone makes would have to come from the game — a
+ * controller rumble or a prop animation out of `client/game/`, which is a native call and
+ * not this file's to make. So vibrate silences the ringer exactly as silent does, and
+ * differs from it only in being a *declared* state the client half can read when somebody
+ * builds that. Naming it anything else would promise a buzz the phone cannot produce, and
+ * the description below says so on screen rather than only in this comment.
+ */
+export const RING_MODE_CHOICES: readonly RingModeChoice[] = [
+  {
+    id: 'normal',
+    label: 'Ring',
+    description: 'Calls and notifications play out loud at the system volume.'
+  },
+  {
+    id: 'vibrate',
+    label: 'Vibrate',
+    description: 'Silences the ringer. The phone has no haptics here, so nothing buzzes yet.'
+  },
+  {
+    id: 'silent',
+    label: 'Silent',
+    description: 'No ring, no chime. Calls and banners still appear on screen.'
+  }
+];
+
+const sanitizeRingMode = (value: unknown): RingMode =>
+  value === 'vibrate' || value === 'silent' ? value : 'normal';
+
+export const ringMode = usePersisted<RingMode>('settings', 'ringMode', 'normal', {
+  sanitize: sanitizeRingMode
+});
+
+export const setRingMode = (mode: RingMode) => ringMode.set(sanitizeRingMode(mode));
+
+/**
+ * True while the phone must not make an alerting noise.
+ *
+ * Derived from the mode and consulted once, inside `SoundService.play`, rather than at
+ * each of the four call sites in `toast.ts` — the same reasoning `musicOutputVolume` in
+ * `shell/state/music.ts` gives for folding its mute into the output rather than checking
+ * it per player. Folding the switch into the path the sound already takes is what makes
+ * one control reach every consumer, the `useSound` facet an add-on plays through
+ * included. Four independent checks can disagree, and the one that gets forgotten is the
+ * ring nobody can turn off.
+ */
+const ringerSilenced = derived(ringMode, ($mode) => $mode !== 'normal');
+
+/** One ring's worth of steps, laid out against the moment playback starts. */
+interface RingtoneStep {
+  readonly freq: number;
+  readonly at: number;
+  readonly dur: number;
+}
+
+export type RingtoneId = 'classic' | 'chime' | 'beacon' | 'pulse' | 'ascent';
+
+interface RingtoneChoice {
+  readonly id: RingtoneId;
+  readonly label: string;
+  readonly wave: OscillatorType;
+  /**
+   * Peak gain as a fraction of the system volume. Per-tone, because a square wave at the
+   * level a sine wants is painful.
+   */
+  readonly level: number;
+  readonly steps: readonly RingtoneStep[];
+}
+
+/**
+ * Five ringtones and not one audio file. MICA-62.
+ *
+ * The ticket put the fork plainly: synthesize more, or ship samples. This repo ships no
+ * audio assets at all, and the reasons it does not are still true — a sample is weight in
+ * a resource every player downloads, a licence to account for, and one more thing between
+ * opening the phone and hearing it. A handful of oscillator sequences costs nothing, and
+ * they are distinguishable from each other across a crowded scene, which is the actual
+ * problem: telling your phone from the one next to you.
+ *
+ * They will all sound like a synthesizer. That is the trade, and it is the same one every
+ * other sound in this file already made.
+ *
+ * `classic` is first and is the default because it is the two-note chime the phone has
+ * always rung with — an upgrade must not change what somebody's phone already sounds like.
+ */
+const RINGTONE_CHOICES: readonly RingtoneChoice[] = [
+  {
+    id: 'classic',
+    label: 'Classic',
+    wave: 'sine',
+    level: 0.25,
+    steps: [
+      { freq: 523.25, at: 0, dur: 0.08 },
+      { freq: 659.25, at: 0.08, dur: 0.17 }
+    ]
+  },
+  {
+    id: 'chime',
+    label: 'Chime',
+    wave: 'triangle',
+    level: 0.22,
+    steps: [
+      { freq: 659.25, at: 0, dur: 0.12 },
+      { freq: 880.0, at: 0.12, dur: 0.12 },
+      { freq: 1108.73, at: 0.24, dur: 0.3 }
+    ]
+  },
+  {
+    id: 'beacon',
+    label: 'Beacon',
+    wave: 'square',
+    level: 0.1,
+    steps: [
+      { freq: 440.0, at: 0, dur: 0.12 },
+      { freq: 440.0, at: 0.2, dur: 0.12 },
+      { freq: 440.0, at: 0.44, dur: 0.2 }
+    ]
+  },
+  {
+    id: 'pulse',
+    label: 'Pulse',
+    wave: 'sawtooth',
+    level: 0.08,
+    steps: [
+      { freq: 320.0, at: 0, dur: 0.09 },
+      { freq: 320.0, at: 0.14, dur: 0.09 },
+      { freq: 320.0, at: 0.28, dur: 0.09 },
+      { freq: 320.0, at: 0.42, dur: 0.18 }
+    ]
+  },
+  {
+    id: 'ascent',
+    label: 'Ascent',
+    wave: 'sine',
+    level: 0.24,
+    steps: [
+      { freq: 392.0, at: 0, dur: 0.1 },
+      { freq: 493.88, at: 0.1, dur: 0.1 },
+      { freq: 587.33, at: 0.2, dur: 0.1 },
+      { freq: 783.99, at: 0.3, dur: 0.28 }
+    ]
+  }
+];
+
+const RINGTONE_BY_ID = new Map<RingtoneId, RingtoneChoice>(
+  RINGTONE_CHOICES.map((choice) => [choice.id, choice])
+);
+
+const sanitizeRingtone = (value: unknown): RingtoneId =>
+  RINGTONE_BY_ID.has(value as RingtoneId) ? (value as RingtoneId) : 'classic';
+
+export const ringtone = usePersisted<RingtoneId>('settings', 'ringtone', 'classic', {
+  sanitize: sanitizeRingtone
+});
+
+export const setRingtone = (id: RingtoneId) => ringtone.set(sanitizeRingtone(id));
+
+/** What a chooser needs, and nothing behind it. */
+export interface RingtoneOption {
+  readonly id: RingtoneId;
+  readonly label: string;
+}
+
+/**
+ * The list a picker renders, projected from the recipes above so the two cannot drift.
+ *
+ * Narrow on purpose: `wave`, `level` and the step table are how a tone is *made*, and a
+ * published add-on that read them would be depending on a shape this file expects to
+ * change every time a ringtone is retuned.
+ */
+export const RINGTONE_OPTIONS: readonly RingtoneOption[] = RINGTONE_CHOICES.map(
+  ({ id, label }) => ({ id, label })
+);
+
 export const volumeHudVisible = writable<boolean>(false);
 
 /**
@@ -162,6 +379,10 @@ class SoundService {
 
   public play(effect: SoundEffect): void {
     if (get(soundMuted)) return;
+    // The one gate. Every alerting sound in the phone reaches the speaker through here —
+    // `toast.ts`'s four call sites and the `useSound` facet alike — so silencing it here
+    // silences it everywhere, and no component has to know the mode exists.
+    if (get(ringerSilenced) && ALERT_EFFECTS.has(effect)) return;
     const volume = get(soundVolume);
     const ctx = this.getAudioContext();
     if (!ctx) return;
@@ -181,7 +402,7 @@ class SoundService {
           this.playNotificationSound(ctx, volume);
           break;
         case 'ringtone':
-          this.playNotificationSound(ctx, volume);
+          this.playRingtone(ctx, volume, get(ringtone));
           break;
       }
     } catch (e) {
@@ -232,6 +453,65 @@ class SoundService {
     whiteNoise.connect(gain);
     gain.connect(ctx.destination);
     whiteNoise.start();
+  }
+
+  /**
+   * Play a ringtone because somebody tapped it in Settings, rather than because a call
+   * arrived.
+   *
+   * Deliberately not routed through `play('ringtone')`: that would be silenced by the very
+   * mode the player is sitting in the Sound pane to configure, and a preview button that
+   * does nothing is worse than no preview button. It still answers to mute and to the
+   * system volume, because those are statements about the speaker rather than about
+   * whether the phone may interrupt you — which is how a real handset behaves when you
+   * audition a tone with the switch flipped.
+   */
+  public preview(id: RingtoneId): void {
+    if (get(soundMuted)) return;
+    const ctx = this.getAudioContext();
+    if (!ctx) return;
+
+    try {
+      this.playRingtone(ctx, get(soundVolume), id);
+    } catch (e) {
+      console.error('Audio playback error:', e);
+    }
+  }
+
+  /**
+   * One oscillator and one gain envelope per note, scheduled against `currentTime`.
+   *
+   * The short ramp up to peak is an attack rather than decoration: starting a gain at its
+   * full value produces an audible click at the top of every note, and five tones built
+   * out of a dozen notes between them would click a dozen times. `exponentialRampToValue`
+   * cannot reach or leave zero, hence the near-silent floor either side.
+   */
+  private playRingtone(ctx: AudioContext, volume: number, id: RingtoneId) {
+    const tone = RINGTONE_BY_ID.get(id) ?? RINGTONE_CHOICES[0];
+    const now = ctx.currentTime;
+    const FLOOR = 0.0001;
+
+    for (const step of tone.steps) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const start = now + step.at;
+      const end = start + step.dur;
+
+      osc.type = tone.wave;
+      osc.frequency.setValueAtTime(step.freq, start);
+
+      gain.gain.setValueAtTime(FLOOR, start);
+      gain.gain.exponentialRampToValueAtTime(
+        Math.max(FLOOR, volume * tone.level),
+        Math.min(start + 0.01, end)
+      );
+      gain.gain.exponentialRampToValueAtTime(FLOOR, end);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(end);
+    }
   }
 
   private playNotificationSound(ctx: AudioContext, volume: number) {

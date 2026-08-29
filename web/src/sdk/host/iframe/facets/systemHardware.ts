@@ -25,6 +25,16 @@ export function systemHardware(): Twin {
     toggleMute: fn('systemHardware', [], 'toggleMute'),
     volumeStep: store('systemHardware', [], 'volumeStep', 5),
     setVolumeStep: fn('systemHardware', [], 'setVolumeStep'),
+    ringMode: store('systemHardware', [], 'ringMode', 'normal'),
+    setRingMode: fn('systemHardware', [], 'setRingMode'),
+    // Empty until the shell's first store reply lands, which is honest: the frame has not
+    // been told the list yet. A constant would have to be hand-carried through
+    // `AddOnConstants`, and nothing paints a ringer picker on the first frame.
+    ringModeChoices: store('systemHardware', [], 'ringModeChoices', []),
+    ringtone: store('systemHardware', [], 'ringtone', 'classic'),
+    setRingtone: fn('systemHardware', [], 'setRingtone'),
+    ringtoneChoices: store('systemHardware', [], 'ringtoneChoices', []),
+    previewRingtone: fn('systemHardware', [], 'previewRingtone'),
     // Carried over the wire as `unknown` (`AddOnConstants`) — the shell can only promise
     // it hydrated whatever the inProcess side actually sent, not its literal shape.
     volumeStepChoices: c.volumeStepChoices as Twin['volumeStepChoices']

@@ -12,7 +12,15 @@ import {
   toggleMute,
   volumeStep,
   VOLUME_STEP_CHOICES,
-  VOLUME_STEP_DEFAULT
+  VOLUME_STEP_DEFAULT,
+  ringMode,
+  setRingMode,
+  RING_MODE_CHOICES,
+  ringtone,
+  setRingtone,
+  RINGTONE_OPTIONS,
+  type RingMode,
+  type RingtoneId
 } from './audio';
 import { get } from 'svelte/store';
 import { useStorage } from '../../sdk/host/useStorage';
@@ -217,5 +225,200 @@ describe('while the battery is dead', () => {
   it('refuses toggleMute', () => {
     toggleMute();
     expect(get(soundMuted)).toBe(false);
+  });
+});
+
+/**
+ * A stand-in for the Web Audio graph, counting the one thing that decides whether a sound
+ * happened: whether an oscillator was ever created.
+ *
+ * jsdom has no `AudioContext`, so `SoundService` normally gives up before it schedules
+ * anything and every `play()` assertion in this file above is only "it did not throw".
+ * That is not enough for a mute switch — a ring mode that silently failed to suppress
+ * would pass such a test — so these push a fake context into the service's cache and
+ * assert against the graph it builds.
+ */
+const param = () => ({
+  setValueAtTime: vi.fn(),
+  exponentialRampToValueAtTime: vi.fn()
+});
+
+const fakeAudioContext = () => ({
+  state: 'running',
+  currentTime: 0,
+  sampleRate: 44100,
+  destination: {},
+  resume: () => Promise.resolve(),
+  createOscillator: vi.fn(() => ({
+    type: 'sine',
+    frequency: param(),
+    connect: vi.fn(),
+    start: vi.fn(),
+    stop: vi.fn()
+  })),
+  createGain: vi.fn(() => ({ gain: param(), connect: vi.fn() })),
+  createBuffer: vi.fn(() => ({ getChannelData: () => new Float32Array(8) })),
+  createBufferSource: vi.fn(() => ({ buffer: null, connect: vi.fn(), start: vi.fn() }))
+});
+
+describe('ring mode', () => {
+  let ctx: ReturnType<typeof fakeAudioContext>;
+
+  beforeEach(() => {
+    soundMuted.set(false);
+    soundVolume.set(0.5);
+    setRingMode('normal');
+    setRingtone('classic');
+    ctx = fakeAudioContext();
+    // The service caches its context for the life of the module, so this is also what
+    // keeps a fake from leaking into the suites above — see the afterEach.
+    (audio as unknown as { audioCtx: unknown }).audioCtx = ctx;
+  });
+
+  afterEach(() => {
+    setRingMode('normal');
+    setRingtone('classic');
+    (audio as unknown as { audioCtx: unknown }).audioCtx = null;
+  });
+
+  it('rings normally by default', () => {
+    expect(get(ringMode)).toBe('normal');
+    audio.play('ringtone');
+    expect(ctx.createOscillator).toHaveBeenCalled();
+  });
+
+  it('silences the ringtone, the chime and the message pop on silent', () => {
+    setRingMode('silent');
+
+    audio.play('ringtone');
+    audio.play('notification');
+    audio.play('pop');
+
+    expect(ctx.createOscillator).not.toHaveBeenCalled();
+  });
+
+  it('silences the same three on vibrate, which has no haptics to offer instead', () => {
+    setRingMode('vibrate');
+
+    audio.play('ringtone');
+    audio.play('notification');
+    audio.play('pop');
+
+    expect(ctx.createOscillator).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The whole point of the mode existing rather than "turn the volume to zero": a phone on
+   * silent still answers the finger touching it.
+   */
+  it('leaves the interface alone — a click is noise you caused', () => {
+    setRingMode('silent');
+
+    audio.play('click');
+    expect(ctx.createOscillator).toHaveBeenCalledTimes(1);
+
+    audio.play('camera');
+    expect(ctx.createBufferSource).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers exactly the three modes, and refuses anything else', () => {
+    expect(RING_MODE_CHOICES.map((choice) => choice.id)).toEqual(['normal', 'vibrate', 'silent']);
+
+    for (const choice of RING_MODE_CHOICES) {
+      setRingMode(choice.id);
+      expect(get(ringMode)).toBe(choice.id);
+    }
+
+    // Persisted, so a hand-edited or stale entry must not leave the phone in a mode
+    // nothing in the pane can get it out of.
+    setRingMode('loud' as RingMode);
+    expect(get(ringMode)).toBe('normal');
+  });
+
+  it('writes the mode to storage so a reload keeps it', () => {
+    setRingMode('silent');
+    expect(useStorage('settings').getItem<string>('ringMode')).toBe('silent');
+  });
+});
+
+describe('ringtones', () => {
+  let ctx: ReturnType<typeof fakeAudioContext>;
+
+  beforeEach(() => {
+    soundMuted.set(false);
+    soundVolume.set(0.5);
+    setRingMode('normal');
+    setRingtone('classic');
+    ctx = fakeAudioContext();
+    (audio as unknown as { audioCtx: unknown }).audioCtx = ctx;
+  });
+
+  afterEach(() => {
+    setRingMode('normal');
+    setRingtone('classic');
+    (audio as unknown as { audioCtx: unknown }).audioCtx = null;
+  });
+
+  it('defaults to the tone the phone has always rung with', () => {
+    expect(get(ringtone)).toBe('classic');
+    expect(RINGTONE_OPTIONS[0]?.id).toBe('classic');
+  });
+
+  it('offers several distinguishable tones, each with a label and a unique id', () => {
+    expect(RINGTONE_OPTIONS.length).toBeGreaterThan(1);
+    expect(new Set(RINGTONE_OPTIONS.map((o) => o.id)).size).toBe(RINGTONE_OPTIONS.length);
+    for (const option of RINGTONE_OPTIONS) {
+      expect(option.label.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('publishes ids and labels only, never the oscillator recipe behind them', () => {
+    // An add-on that could read `notes` would be depending on a shape that changes every
+    // time a tone is retuned.
+    for (const option of RINGTONE_OPTIONS) {
+      expect(Object.keys(option).sort()).toEqual(['id', 'label']);
+    }
+  });
+
+  it('rings with whichever tone is chosen', () => {
+    audio.play('ringtone');
+    const classicNotes = ctx.createOscillator.mock.calls.length;
+    expect(classicNotes).toBeGreaterThan(0);
+
+    ctx.createOscillator.mockClear();
+    setRingtone('ascent');
+    audio.play('ringtone');
+    expect(ctx.createOscillator.mock.calls.length).not.toBe(classicNotes);
+  });
+
+  it('accepts every offered tone and refuses anything else', () => {
+    for (const option of RINGTONE_OPTIONS) {
+      setRingtone(option.id);
+      expect(get(ringtone)).toBe(option.id);
+    }
+
+    setRingtone('foghorn' as RingtoneId);
+    expect(get(ringtone)).toBe('classic');
+  });
+
+  it('writes the choice to storage so a reload keeps it', () => {
+    setRingtone('beacon');
+    expect(useStorage('settings').getItem<string>('ringtone')).toBe('beacon');
+  });
+
+  /**
+   * A preview button that does nothing while you are sitting in the pane that silenced it
+   * is worse than no preview button.
+   */
+  it('previews through silent, because you asked for it', () => {
+    setRingMode('silent');
+    audio.preview('chime');
+    expect(ctx.createOscillator).toHaveBeenCalled();
+  });
+
+  it('still respects mute, which is a statement about the speaker', () => {
+    soundMuted.set(true);
+    audio.preview('chime');
+    expect(ctx.createOscillator).not.toHaveBeenCalled();
   });
 });
