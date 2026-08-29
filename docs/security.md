@@ -112,14 +112,22 @@ two category headings below — then compares each against a fresh scan. The
 assertion is "this is true" rather than a third copy of the count living in the
 test, which is the copy nobody would think to check.
 
-It reads the sentences rather than asking this page to carry a table of digits
+It reads those sentences rather than asking this page to carry a table of digits
 for the test's benefit, because a table would be one more copy sitting beside
 prose saying the same thing in words, and the prose is the part you are actually
-reading. It anchors on headings and bold lead-ins only, so the narrative above —
-"used to read six", "three gphone-named handlers had been added", "this was
-three until ESX" — is never mistaken for a current claim. Reword one of the four
-and the suite fails with a message saying so; change a handler without touching
-either copy and it fails too.
+reading.
+
+**Only those four claims are held; the rest of this section is yours.** The
+narrative around them — that the census used to read six, that handlers had been
+added since, that the framework-named category was three until ESX — is checked
+for nothing, and can be reworded or removed freely. What the four claims reserve
+is their _shape_: the bold count opening this section, the bold sentence saying
+what the grep prints, and the two `####` category headings that end in a number.
+Each shape must occur exactly once on this page. Write a new sentence that
+happens to take one of those shapes and the suite fails rather than quietly
+reading its number out of the wrong sentence — which is the failure this whole
+section is about, so it is caught rather than trusted. Reword one of the four
+out of shape and it fails too, saying which.
 
 #### gphone-named — nine, every one guarded
 

@@ -253,23 +253,52 @@ describe('the onNet census in docs/security.md is true', () => {
     expect(inDoc(MICA_HEADING)).toBe(statedNumber(/(\w+) are gphone-named/));
   });
 
-  it("anchors on current claims only, never on the page's own history", () => {
-    // The property that makes reading prose safe here, asserted rather than trusted. These
-    // are real sentences in the page; if a future anchor started matching them, the gate
-    // would begin failing for a page that is entirely correct.
-    const history = [
-      'This census used to read "six, in `Phone.ts` and `Battery.ts`", and it was wrong',
-      'in both directions: three gphone-named handlers had been added since it was',
-      '**This was three until ESX support landed, and the drop is a real reduction in'
+  const ANCHORS = { TOTAL_AND_FILES, PRINTS, MICA_HEADING, FRAMEWORK_HEADING };
+
+  /** The same pattern, global, so every occurrence in the page can be counted. */
+  const occurrences = (pattern: RegExp) => [
+    ...securityDoc.matchAll(new RegExp(pattern.source, pattern.flags + 'g'))
+  ];
+
+  it('reserves each of the four shapes for exactly one place in the page', () => {
+    // This is what makes reading prose safe, and it replaces an earlier version that listed
+    // the three narrative sentences the anchors must avoid. That version was weaker and
+    // costlier at once. Weaker, because it only proved the anchors missed the narrative that
+    // existed when it was written: a *new* sentence taking one of these shapes would still
+    // have been matched, and `.match()` returns the first hit, so the gate would have begun
+    // reading its number out of a sentence about the past. Costlier, because it also
+    // asserted those three sentences were still present verbatim, which held them against
+    // rewording and made "the narrative is free to change" untrue.
+    //
+    // Counting occurrences in the real page fixes both at once. Any narrative that ever
+    // takes one of these shapes makes the count two and fails here, whatever it says; and
+    // nothing in the page is pinned except the four claims themselves.
+    for (const [name, pattern] of Object.entries(ANCHORS)) {
+      expect(
+        occurrences(pattern),
+        `${name} should match exactly one place in docs/security.md. Two means a sentence ` +
+          'has taken a reserved shape and the gate can no longer tell which one is the ' +
+          'claim; zero means the claim was reworded out of its shape.'
+      ).toHaveLength(1);
+    }
+  });
+
+  it('reserves the four shapes, and not the words around them', () => {
+    // Illustrative constructions, deliberately **not** quotations from the page: nothing
+    // here is pinned, and rewriting the narrative cannot fail this. They are the shapes most
+    // likely to collide - a sentence about a past count, a bold sentence carrying a number,
+    // and a count in plain prose without the bold markers the anchor requires.
+    const narrative = [
+      'The census used to read six, in two files, and it was wrong in both directions.',
+      'Two gphone-named handlers had been added since that paragraph was written.',
+      '**This was three until ESX support landed, and the drop was a real reduction.**',
+      'There are ten handlers here, across five files, if you would rather count by hand.'
     ];
 
-    for (const line of history) {
-      for (const pattern of [TOTAL_AND_FILES, PRINTS, MICA_HEADING, FRAMEWORK_HEADING]) {
-        expect(pattern.test(line), `${pattern} should not match history: ${line}`).toBe(false);
+    for (const line of narrative) {
+      for (const [name, pattern] of Object.entries(ANCHORS)) {
+        expect(pattern.test(line), `${name} must not match narrative: ${line}`).toBe(false);
       }
-      // And the sentences are still in the page — so this test fails loudly if the page is
-      // reworded, rather than silently passing against history that no longer exists.
-      expect(securityDoc, 'docs/security.md no longer contains: ' + line).toContain(line);
     }
   });
 });
