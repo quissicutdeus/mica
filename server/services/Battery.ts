@@ -43,8 +43,36 @@ export const batteryApp = defineService<PhoneBattery>({
  * The drain loop reports every 15 seconds but only moves the charge 0.25% in that time,
  * so most reports are the same whole percent as the last. Skipping those turns four
  * writes per player per minute into one.
+ *
+ * Bounded, because the key is a citizenid rather than a source: nothing removes an entry on
+ * the ordinary path, so a server that has been up for a week would hold every character
+ * that ever logged in. `Map` iterates in insertion order, so evicting the first key drops
+ * the character written longest ago — and a character that ages out simply pays one
+ * redundant write on its next report, which is the cost this cache exists to avoid, not a
+ * correctness problem.
  */
+const WRITE_CACHE_LIMIT = 512;
 const lastWritten = new Map<string, number>();
+
+const rememberWrite = (citizenid: string, level: number): void => {
+  lastWritten.set(citizenid, level);
+  while (lastWritten.size > WRITE_CACHE_LIMIT) {
+    const oldest = lastWritten.keys().next().value;
+    if (oldest === undefined) break;
+    lastWritten.delete(oldest);
+  }
+};
+
+/**
+ * Which character each connected source is playing.
+ *
+ * The live maps below are keyed by source and the write-skip cache is keyed by citizenid,
+ * so a disconnect can only forget the right cache entry if it knows which character that
+ * source belonged to. Recorded here rather than read back from `FrameworkBridge` on the way
+ * out, because by the time `playerDropped` fires the framework may already have unloaded
+ * the player and there would be nothing left to ask.
+ */
+const ownerOf = new Map<number, string>();
 
 /** Test seam: the write-skip cache is module state that would leak between cases. */
 export const __resetBatteryCache = () => lastWritten.clear();
@@ -104,8 +132,35 @@ export const __tickBattery = tickBattery;
 export const __resetBatteryState = (): void => {
   charge.clear();
   charging.clear();
+  ownerOf.clear();
   lastWritten.clear();
 };
+
+/**
+ * Forget everything keyed to a source when its player leaves.
+ *
+ * FiveM hands server ids straight back out, so every one of these maps is a booby trap for
+ * whoever lands on the id next: a charger left plugged in charges a stranger's phone, an
+ * entry left in `charge` keeps being ticked and written for somebody who is gone, and the
+ * write-skip entry makes the newcomer's first genuine save look like a duplicate and get
+ * dropped.
+ *
+ * The charge itself is not saved here. The tick already persists on every whole-percent
+ * move, so at most 1% is lost, and a save on the way out would race the framework unloading
+ * the player — which is exactly when `FrameworkBridge.getPlayer` starts answering nothing.
+ */
+const forgetSource = (src: number): void => {
+  charge.delete(src);
+  charging.delete(src);
+
+  const citizenid = ownerOf.get(src);
+  if (citizenid !== undefined) lastWritten.delete(citizenid);
+  ownerOf.delete(src);
+};
+
+on('playerDropped', () => {
+  forgetSource(source);
+});
 
 /** What the server believes this player's charge is. */
 export const currentCharge = (src: number): number => Math.round(charge.get(src) ?? 100);
@@ -132,9 +187,10 @@ export const savePlayerBattery = async (src: number, level: number): Promise<voi
   if (!player?.citizenid) return;
 
   const { citizenid } = player;
+  ownerOf.set(src, citizenid);
   const safeLevel = Math.max(0, Math.min(100, Math.round(level)));
   if (lastWritten.get(citizenid) === safeLevel) return;
-  lastWritten.set(citizenid, safeLevel);
+  rememberWrite(citizenid, safeLevel);
 
   // Mirrored into character metadata so other resources reading `gphone_battery` keep
   // working. Our table is the authority; this is a courtesy copy.
@@ -229,6 +285,10 @@ export const sendLoadedBatteryToClient = async (src: number): Promise<void> => {
     emitNet('gphone:client:battery:set', src, 100);
     return;
   }
+
+  // Recorded before the lookup, so a disconnect knows whose cache entry to forget even if
+  // this player's charge never moves far enough to be written.
+  ownerOf.set(src, citizenid);
 
   let savedCharge: number | null = null;
   try {
@@ -390,18 +450,16 @@ export const setBatteryLevel = async (src: number, level: number): Promise<numbe
 };
 
 /**
- * Charging, pushed to the client and held there.
+ * Charging, held here and mirrored to the client so the phone can show it.
  *
- * State rather than an event: the drain loop lives on the client and moves the charge
- * 0.25% every 15 seconds, so charging has to reverse *that* rather than race it with
- * repeated top-ups from outside.
+ * State rather than an event: the drain loop moves the charge a fraction of a percent every
+ * tick, so charging has to reverse *that* rather than race it with repeated top-ups from
+ * outside.
  *
- * Deliberately no server-side copy. The first version kept a `Set<source>` and cleared it
- * on `playerDropped`, reasoning that FiveM reuses server ids — but that reasoning belongs
- * to the rate limiter, not here. The flag lives in the client bundle, which is per player
- * and gone when they disconnect, so a set here would have been write-only state guarding
- * against a problem that cannot happen. Add one back only alongside a `GetCharging` that
- * needs to read it.
+ * The flag is held here, keyed by source, because the drain loop that reads it is the
+ * server's. That makes it exactly the kind of per-source state a reused server id inherits,
+ * so `playerDropped` clears it — a charger left plugged in would otherwise charge the phone
+ * of whoever lands on that id next, at ten percent a minute, from nothing they did.
  */
 export const setCharging = (src: number, isCharging: boolean): void => {
   // The loop is server-side now, so this flips a flag the loop reads rather than pushing a

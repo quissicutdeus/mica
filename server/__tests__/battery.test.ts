@@ -29,10 +29,14 @@ vi.mock('../lib/FrameworkBridge', () => ({ FrameworkBridge: bridgeMock }));
 
 import {
   batteryApp,
+  currentCharge,
   runChargeCommand,
   savePlayerBattery,
   sendLoadedBatteryToClient,
-  __resetBatteryCache
+  setCharging,
+  __resetBatteryCache,
+  __resetBatteryState,
+  __tickBattery
 } from '../services/Battery';
 
 const SRC = 7;
@@ -309,5 +313,93 @@ describe('character-loaded listeners', () => {
   it('does nothing when the source cannot be resolved', () => {
     handlers.get('QBCore:Server:OnPlayerLoaded')!({ PlayerData: {} });
     expect(bridgeMock.getPlayer).not.toHaveBeenCalled();
+  });
+});
+
+describe('a disconnect', () => {
+  /** `playerDropped` carries no argument; the handler reads the global `source`. */
+  const dropSource = (src: number) => {
+    (globalThis as any).source = src;
+    const handler = handlers.get('playerDropped');
+    if (!handler) throw new Error('no handler for playerDropped');
+    handler();
+  };
+
+  /** A minute of ticks — 12 x 5s, which is exactly 1% of drain or 10% of charge. */
+  const tickAMinute = () => {
+    for (let i = 0; i < 12; i += 1) __tickBattery();
+  };
+
+  beforeEach(() => {
+    __resetBatteryState();
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    dbMock.query.mockResolvedValue([{ id: 3, citizenid: CID, level: 50 }]);
+  });
+
+  it('unplugs the charger, so the next player on that id is not charging', async () => {
+    setCharging(SRC, true);
+    dropSource(SRC);
+
+    // The same source, a different person: FiveM hands server ids straight back out.
+    await sendLoadedBatteryToClient(SRC);
+    tickAMinute();
+
+    // Draining, not charging. With the flag left set this reads 60.
+    expect(currentCharge(SRC)).toBe(49);
+  });
+
+  it('stops ticking the source at all', async () => {
+    await sendLoadedBatteryToClient(SRC);
+    dropSource(SRC);
+    (globalThis.emitNet as any).mockClear();
+
+    tickAMinute();
+
+    // No entry left to iterate: nothing is pushed, and the map answers the absent default.
+    expect(chargeCalls()).toHaveLength(0);
+    expect(currentCharge(SRC)).toBe(100);
+  });
+
+  it('forgets the write-skip entry, so the same level is written again on a rejoin', async () => {
+    dbMock.query.mockResolvedValue([]);
+
+    await savePlayerBattery(SRC, 42);
+    expect(dbMock.insert).toHaveBeenCalledOnce();
+
+    dropSource(SRC);
+    await savePlayerBattery(SRC, 42);
+
+    expect(dbMock.insert).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the write-skip cache', () => {
+  const playerFor = (citizenid: string) => ({
+    citizenid,
+    source: SRC,
+    setMeta: vi.fn(),
+    rawPlayer: { PlayerData: { metadata: {} } }
+  });
+
+  it('is bounded, so a server that has seen thousands of characters does not hold them all', async () => {
+    // Mirrors WRITE_CACHE_LIMIT in Battery.ts. If that number moves, this fails loudly
+    // rather than quietly stopping being a test of the bound.
+    const limit = 512;
+    __resetBatteryState();
+    bridgeMock.getPlayer.mockReturnValue(playerFor(CID));
+
+    await savePlayerBattery(SRC, 42);
+    expect(dbMock.insert).toHaveBeenCalledOnce();
+
+    for (let i = 0; i < limit; i += 1) {
+      bridgeMock.getPlayer.mockReturnValue(playerFor(`CID_${i}`));
+      await savePlayerBattery(SRC, 42);
+    }
+
+    // The first character has aged out, so its next report is a write rather than a skip.
+    bridgeMock.getPlayer.mockReturnValue(playerFor(CID));
+    await savePlayerBattery(SRC, 42);
+
+    expect(dbMock.insert).toHaveBeenCalledTimes(limit + 2);
   });
 });
