@@ -198,9 +198,21 @@ requirements:
 1. **Clone Repository** Clone or download `gphone` into your server's
    `resources` directory (e.g., `resources/[standalone]/gphone`).
 
-2. **Database Setup** Import [`gphone.sql`](gphone.sql). That is the whole
-   schema — the moderation audit ledger and every app table, in dependency
-   order, so foreign keys resolve as it runs.
+2. **Database Setup** Import [`gphone.sql`](gphone.sql). That is the whole of
+   gPhone's schema — the moderation audit ledger and every app table, in
+   dependency order among themselves, so gPhone's own foreign keys resolve as it
+   runs.
+
+   **Import your framework's schema first.** Twenty-two of gPhone's twenty-nine
+   tables carry a foreign key onto `players` (`citizenid`), which belongs to
+   qbx_core or qb-core and which `gphone.sql` does not create. That is how a
+   deleted character takes its phone data with it rather than leaving orphaned
+   rows behind. Run it against a database that has no `players` table and the
+   first of those constraints fails with a foreign-key error part-way through
+   the file. The tables above it are already created by then, so importing the
+   framework and re-running `gphone.sql` is the fix and costs nothing — every
+   statement is `CREATE TABLE IF NOT EXISTS`. The error is easy to misread as a
+   broken file; it is a missing prerequisite.
 
    It is **generated** by `pnpm generate:sql` from each app's `defineService`
    declaration, which is the single source of truth: the same declaration drives
