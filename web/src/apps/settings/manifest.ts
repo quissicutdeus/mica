@@ -6,8 +6,10 @@ export default defineApp({
   tile: { bg: 'bg-gray-700' },
   icon: Icon,
   description: 'Configure phone settings and preferences',
-  // `storage` because the Apps pane reads and clears what other apps have stored, and `media`
-  // because Display/Wallpaper accesses photos for wallpaper previews.
+  // `storage` because the Apps pane reads and clears what other apps have stored, `media`
+  // because Display/Wallpaper accesses photos for wallpaper previews, and `music` because
+  // Sound owns the music channel's volume and mute — the level and the switch, never the
+  // transport.
   permissions: [
     'account',
     'admin',
@@ -20,6 +22,7 @@ export default defineApp({
     'mail',
     'media',
     'messages',
+    'music',
     'navigation',
     'notifications',
     'notification-settings',

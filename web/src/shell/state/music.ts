@@ -162,13 +162,45 @@ const sanitizeVolume = (value: unknown): number => {
  *
  * `shell/state/audio.ts` owns the phone's UI effects — clicks, the ringtone, the
  * notification chime — and turning those down to hear yourself think should not silence a
- * track, nor the other way round. The ticket puts a proper channel with a HUD in phase 4;
- * this is that channel's value, stored under `settings` beside `soundVolume` so the two
- * migrate together when it arrives.
+ * track, nor the other way round. This is that channel's level, stored under `settings`
+ * beside `soundVolume` so the two migrate together.
+ *
+ * Phase 4 finished the channel rather than started it. The level has been here since phase
+ * 1; what it lacked was a mute (below) and any way to reach either without opening the
+ * Music app, which is now Settings > Sound.
  */
 export const musicVolume: Writable<number> = usePersisted<number>('settings', 'musicVolume', 0.5, {
   sanitize: sanitizeVolume
 });
+
+/**
+ * The music channel's own off switch. MICA-111 phase 4.
+ *
+ * A level with no mute is half a channel, and the missing half is the one people reach
+ * for: somebody who wants quiet for a minute otherwise drags the slider to zero and then
+ * has to remember where it was. `soundMuted` in `shell/state/audio.ts` is that switch for
+ * the phone's UI effects and says nothing about a track — silencing one must not silence
+ * the other, which is the whole reason music has a channel of its own.
+ *
+ * **Folded into `musicOutputVolume`, not checked at each player.** That is what makes one
+ * switch reach both halves of the feature by the route the volume already takes: this
+ * phone's own track (`MusicPlayer.svelte`) and every audible nearby broadcast
+ * (`NearbyMusicFrame.svelte`). Two per-player checks could disagree, and the one that got
+ * forgotten would be the stranger's music nobody can turn off.
+ *
+ * **It mutes; it does not pause.** The queue keeps moving and the position keeps
+ * advancing, which is what a mute means on every other device — and it is the only honest
+ * behaviour for a *broadcast*, where a listener's mute cannot stop somebody else's stream
+ * and must not pretend to. `stopMusic` is the one that stops.
+ */
+export const musicMuted: Writable<boolean> = usePersisted<boolean>(
+  'settings',
+  'musicMuted',
+  false,
+  {
+    sanitize: (value) => value === true
+  }
+);
 
 /**
  * A title is a string a cross-origin document chose. Bounded before it reaches a layout.
@@ -402,14 +434,25 @@ export const musicSeek: Readable<MusicSeek | null> = { subscribe: seekStore.subs
 /**
  * The volume the frame is actually told, as opposed to the one the person set.
  *
- * `musicVolume` is persisted and is the setting; this is the setting after ducking. They
- * are separate stores precisely because a duck must never be written back into a persisted
- * preference — a phone that missed the un-duck would otherwise leave the person's volume
- * permanently at a fifth, with the slider agreeing that that is what they asked for.
+ * `musicVolume` is persisted and is the setting; this is the setting after the mute and
+ * the duck. They are separate stores precisely because a duck must never be written back
+ * into a persisted preference — a phone that missed the un-duck would otherwise leave the
+ * person's volume permanently at a fifth, with the slider agreeing that that is what they
+ * asked for.
+ *
+ * **The mute wins over the duck, and over the level.** Silence is silence: a fifth of
+ * nothing is still nothing, and the alternative orderings only differ in how they round.
+ * It is checked first so that reads plainly rather than being inferred from arithmetic.
+ *
+ * Every player element in the page is fed from here and from nowhere else, which is what
+ * lets a mute be one line rather than a rule each player has to remember.
  */
 export const musicOutputVolume: Readable<number> = derived(
-  [musicVolume, duckedStore],
-  ([volume, ducked]) => (ducked ? volume * DUCK_FACTOR : volume)
+  [musicVolume, musicMuted, duckedStore],
+  ([volume, muted, ducked]) => {
+    if (muted) return 0;
+    return ducked ? volume * DUCK_FACTOR : volume;
+  }
 );
 
 /** Whether music is currently turned down under a ringing phone. */
@@ -590,8 +633,38 @@ export function stopMusic(): void {
   playedThisCycle.clear();
 }
 
+/**
+ * Set the music level, 0–1.
+ *
+ * The mute follows the slider, exactly as `setVolume` does for the system channel in
+ * `shell/state/audio.ts`: dragging to zero mutes, and moving off zero unmutes. Without
+ * that, a slider at zero and a mute toggle that says "off" are two controls disagreeing
+ * about the same silence, and whichever one the person touches second appears not to work.
+ *
+ * A non-finite value is dropped to zero rather than written through. `musicOutputVolume`
+ * feeds a cross-origin player's `setVolume`, and a `NaN` there is a track that goes silent
+ * with every control still claiming it is at half.
+ */
 export function setMusicVolume(value: number): void {
-  musicVolume.set(Math.max(0, Math.min(1, value)));
+  const clamped = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+  musicVolume.set(clamped);
+  if (clamped === 0) musicMuted.set(true);
+  else if (get(musicMuted)) musicMuted.set(false);
+}
+
+/**
+ * Silence music, or bring it back.
+ *
+ * Deliberately does not touch `musicVolume`: the level is what the mute is protecting, and
+ * unmuting has to land back on the number the person chose rather than on a default.
+ */
+export function toggleMusicMute(): void {
+  musicMuted.update((muted) => !muted);
+}
+
+/** Set the mute directly, for a control that knows which state it wants. */
+export function setMusicMuted(muted: boolean): void {
+  musicMuted.set(muted === true);
 }
 
 /** Off → all → one → off. One control, three states, in the order people expect them. */
@@ -976,6 +1049,7 @@ export function resetMusicForTest(): void {
   positionStore.set({ current: 0, duration: 0 });
   seekStore.set(null);
   seekToken = 0;
+  musicMuted.set(false);
   duckedStore.set(false);
   pausedForCall = false;
   repeatStore.set('off');

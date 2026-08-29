@@ -27,6 +27,7 @@ export function music(): Twin {
     musicSource: store('music', [], 'musicSource', null),
     musicStatus: store('music', [], 'musicStatus', 'idle'),
     musicVolume: store('music', [], 'musicVolume', 0.5),
+    musicMuted: store('music', [], 'musicMuted', false),
     musicQueue: store('music', [], 'musicQueue', []),
     musicIndex: store('music', [], 'musicIndex', -1),
     musicNowPlaying: store('music', [], 'musicNowPlaying', null),
@@ -54,6 +55,8 @@ export function music(): Twin {
     resumeMusic: fn('music', [], 'resumeMusic'),
     stopMusic: fn('music', [], 'stopMusic'),
     setMusicVolume: fn('music', [], 'setMusicVolume'),
+    setMusicMuted: fn('music', [], 'setMusicMuted'),
+    toggleMusicMute: fn('music', [], 'toggleMusicMute'),
 
     // Nearby music (MICA-111 phase 2). `maxAudibleBroadcasts` is imported and read
     // locally rather than sent over the wire, for the same reason `canPlay` is: it is a

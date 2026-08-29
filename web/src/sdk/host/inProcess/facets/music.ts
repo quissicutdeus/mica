@@ -3,6 +3,7 @@ import {
   musicSource,
   musicStatus,
   musicVolume,
+  musicMuted,
   musicQueue,
   musicIndex,
   musicNowPlaying,
@@ -27,6 +28,8 @@ import {
   resumeMusic,
   stopMusic,
   setMusicVolume,
+  setMusicMuted,
+  toggleMusicMute,
   type MusicError,
   type MusicErrorReason,
   type MusicNowPlaying,
@@ -129,6 +132,11 @@ export function music() {
     /** Music's own volume, 0–1 — not the phone's UI-sound volume. */
     musicVolume,
     /**
+     * Whether the music channel is silenced. Independent of the phone's UI-sound mute, and
+     * of whether anything is playing — a mute stops the sound, never the queue.
+     */
+    musicMuted,
+    /**
      * Is this string a YouTube video or playlist link? Pure, synchronous, and answered
      * locally on both sides of the add-on seam — ask this before `playSource` so the app
      * can report a bad paste in its own words.
@@ -165,7 +173,11 @@ export function music() {
     pauseMusic,
     resumeMusic,
     stopMusic,
+    /** Set the level, 0–1. Zero mutes and moving off zero unmutes, like the system slider. */
     setMusicVolume,
+    setMusicMuted,
+    /** Silence music without disturbing the level it comes back to. */
+    toggleMusicMute,
 
     /**
      * Other people's music (MICA-111 phase 2), and everything an app may do about it.

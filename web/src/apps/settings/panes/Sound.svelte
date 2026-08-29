@@ -1,5 +1,20 @@
 <script lang="ts">
-  import { SettingsSection, ToggleSwitch, useSystemHardware } from '@gphone/sdk';
+  /**
+   * Sound, which is two channels and not one. MICA-111 phase 4.
+   *
+   * The phone has always had a system volume — clicks, the ringtone, the notification
+   * chime — and music has had a level of its own since the player landed
+   * (`shell/state/music.ts` says why turning one down must not silence the other). What
+   * was missing was any way to reach the music one from here: it lived on a slider inside
+   * the Music app, which is the wrong place for it twice over. Music keeps playing with
+   * the phone closed and the app backgrounded, so the moment somebody most wants the
+   * volume is the moment they are furthest from that screen — and a person who wants
+   * "turn the sound down" goes to Settings > Sound, not to the app making the noise.
+   *
+   * Music is drawn second because the system channel is the one that governs the phone
+   * itself; that ordering is the only thing the position means.
+   */
+  import { SettingsSection, ToggleSwitch, useSystemHardware, useMusic } from '@gphone/sdk';
 
   const {
     soundVolume,
@@ -10,6 +25,8 @@
     setVolumeStep,
     volumeStepChoices
   } = useSystemHardware();
+
+  const { musicVolume, musicMuted, setMusicVolume, toggleMusicMute } = useMusic();
 </script>
 
 <div class="space-y-6 p-4">
@@ -37,6 +54,36 @@
         description="Silence all phone sounds"
         checked={$soundMuted}
         onchange={toggleMute}
+      />
+    </div>
+  </SettingsSection>
+
+  <!-- Music's own channel. Reaches this phone's track and every nearby broadcast, because
+       both are fed from `musicOutputVolume` and nothing else. -->
+  <SettingsSection title="Music">
+    <div class="flex flex-col gap-3 p-4">
+      <div class="text-body-medium flex items-center justify-between">
+        <span class="text-on-surface font-medium">Music Volume</span>
+        <span class="text-on-surface font-mono">
+          {$musicMuted ? 'Muted' : `${Math.round($musicVolume * 100)}%`}
+        </span>
+      </div>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        value={Math.round($musicVolume * 100)}
+        aria-label="Music volume"
+        oninput={(e) => setMusicVolume(Number(e.currentTarget.value) / 100)}
+        class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-blue-500"
+      />
+    </div>
+    <div class="border-outline-variant border-t">
+      <ToggleSwitch
+        label="Mute Music"
+        description="Silence music without stopping it, yours and anyone nearby"
+        checked={$musicMuted}
+        onchange={toggleMusicMute}
       />
     </div>
   </SettingsSection>

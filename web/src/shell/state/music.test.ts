@@ -18,6 +18,10 @@ import {
   musicShuffle,
   musicSource,
   musicStatus,
+  musicMuted,
+  setMusicMuted,
+  setMusicVolume,
+  toggleMusicMute,
   nextTrack,
   pauseMusic,
   playQueueIndex,
@@ -741,6 +745,83 @@ describe('a call', () => {
   });
 });
 
+/**
+ * MICA-111 phase 4 — the channel's own controls.
+ *
+ * `musicOutputVolume` is the only thing any player element is fed from, on both halves of
+ * the feature, so every assertion here is about that number rather than about the two
+ * components reading it. What jsdom cannot prove is the last hop: that a `setVolume`
+ * command actually reached a cross-origin YouTube frame and that the sound stopped. That
+ * is in-game, and a green run here is not evidence of it.
+ */
+describe('the music channel', () => {
+  it('silences the output without disturbing the level it comes back to', () => {
+    playSource(A);
+    setMusicMuted(true);
+    expect(get(musicOutputVolume)).toBe(0);
+    // The point of a mute rather than a slider drag: the number is still there afterwards.
+    expect(get(musicVolume)).toBe(0.5);
+
+    setMusicMuted(false);
+    expect(get(musicOutputVolume)).toBe(0.5);
+  });
+
+  it('mutes rather than pauses, so a broadcast is not pretended to have stopped', () => {
+    playSource(A);
+    reportPlayerState('playing');
+    setMusicMuted(true);
+    expect(get(musicStatus)).toBe('playing');
+    expect(get(musicSource)).toEqual({ videoId: A, playlistId: null });
+  });
+
+  it('wins over the duck, because a fifth of nothing is still nothing', () => {
+    playSource(A);
+    setMusicMuted(true);
+    callStore.setIncoming('5550101');
+    expect(get(musicOutputVolume)).toBe(0);
+
+    // And the duck is still there underneath when the mute comes off.
+    setMusicMuted(false);
+    expect(get(musicOutputVolume)).toBeCloseTo(0.1);
+    callStore.setStatus('idle');
+    expect(get(musicOutputVolume)).toBe(0.5);
+  });
+
+  it('follows the slider to zero and back, so the two controls cannot disagree', () => {
+    setMusicVolume(0);
+    expect(get(musicMuted)).toBe(true);
+
+    // Moving off zero is the person asking to hear it again; a mute that survived that
+    // would read as the slider not working.
+    setMusicVolume(0.3);
+    expect(get(musicMuted)).toBe(false);
+    expect(get(musicOutputVolume)).toBeCloseTo(0.3);
+  });
+
+  it('toggles', () => {
+    toggleMusicMute();
+    expect(get(musicMuted)).toBe(true);
+    toggleMusicMute();
+    expect(get(musicMuted)).toBe(false);
+  });
+
+  it('refuses a level that is not a number', () => {
+    // `musicOutputVolume` is multiplied by an attenuation and rounded into a `setVolume`
+    // command for a cross-origin player. A NaN there is silence with every control still
+    // claiming half.
+    setMusicVolume(Number.NaN);
+    expect(get(musicVolume)).toBe(0);
+    expect(get(musicOutputVolume)).toBe(0);
+  });
+
+  it('clamps a level from outside the range', () => {
+    setMusicVolume(5);
+    expect(get(musicVolume)).toBe(1);
+    setMusicVolume(-1);
+    expect(get(musicVolume)).toBe(0);
+  });
+});
+
 describe('surviving a restart', () => {
   /**
    * A fresh module graph, which is what a resource restart produces.
@@ -831,6 +912,21 @@ describe('surviving a restart', () => {
     // drops the key entirely on the way to storage rather than storing a null.
     music.playQueueIndex(0);
     expect(get(music.musicQueue)[0].error).toBeUndefined();
+  });
+
+  it('brings the music channel back, level and mute together', async () => {
+    // Both are preferences and are stored under `settings` beside `soundVolume`, so they
+    // sync with the character rather than living on one machine. A mute that forgot itself
+    // across a restart would be somebody's music coming back on by itself.
+    const music = await restart({ musicVolume: 0.25, musicMuted: true });
+    expect(get(music.musicVolume)).toBe(0.25);
+    expect(get(music.musicMuted)).toBe(true);
+    expect(get(music.musicOutputVolume)).toBe(0);
+  });
+
+  it('refuses a stored mute that is not a boolean', async () => {
+    const music = await restart({ musicMuted: 'yes' });
+    expect(get(music.musicMuted)).toBe(false);
   });
 
   it('caps what a restart can be made to carry', async () => {
