@@ -55,10 +55,16 @@ test.describe('Hodlr', () => {
 
     await frame.getByRole('button', { name: 'Confirm' }).click();
 
-    // Back on the portfolio, with the holding moved: 3 + 2 gCoin at $500. This is the
-    // assertion the whole spec exists for — the trade screen closes itself only on a
-    // settled trade, and the new quantity is the server's answer travelling back through
-    // `portfolioStore` into a screen that never re-fetched.
+    // Back on the portfolio, with the holding moved: 3 + 2 gCoin at $500. The trade screen
+    // closes itself only on a settled trade, and the mock's buy really did mutate the
+    // fixture, so these two numbers are the arithmetic of a round trip.
+    //
+    // What this does *not* prove, despite reading as though it does: the optimistic write
+    // in `store.ts`'s `applyTrade`. Returning here swaps the `{#if}` in `index.svelte`,
+    // which destroys and re-creates `Portfolio.svelte`, and its `onMount` calls
+    // `loadPortfolio()` — so the quantity below is a fresh server read either way.
+    // `applyTrade` can be made a no-op and this spec stays green; that is measured, not
+    // assumed. `src/apps/hodlr/store.test.ts` is what covers it.
     await expect(frame.getByText('5 gCoin', { exact: true })).toBeVisible();
     await expect(frame.getByText('worth $2500', { exact: true })).toBeVisible();
   });
