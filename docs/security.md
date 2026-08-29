@@ -174,6 +174,29 @@ Vanilla `qb-core` was not available to check. If it ever does fire this name
 locally, that arrives with `source` 0 and is refused, and the `on()` twin is
 where such a core belongs.
 
+**ESX support added a fourth player-loaded handler and no fourth entry point,
+and the distinction is the whole reason this section counts what it counts.**
+`server/lib/shell.ts:216` listens for `esx:playerLoaded`, and it is registered
+with `on`, not `onNet`. es_extended raises that name server-side and locally —
+`TriggerEvent('esx:playerLoaded', playerId, xPlayer, isNew)`, not
+`TriggerServerEvent` — which is precisely the property
+`QBCore:Server:OnPlayerLoaded` lacks and had to be hardened for. Network-safety
+is per-resource, the fact this section already leans on one direction over, so
+registering only `on` leaves the name un-net-safe inside gPhone and a client
+emitting it reaches nothing here. There is no forged target to refuse, so there
+is no `loadedPlayerSource` on that path and the payload is the identity, on the
+same terms as the `QBCore:Server:PlayerLoaded` twin.
+
+Adding an `onNet` twin to it "to be safe" would invert that: it would declare
+the name net-safe for gPhone and manufacture a client-reachable entry point
+es_extended does not itself have. §2.9's rule against registering an action the
+app does not use holds for a framework-named event exactly as for a gphone-named
+one — and this file is the record of what happens when a census organised by
+gPhone's own event names misses a category. **The count below is therefore still
+three, and the census still twelve.** If a fork is ever found firing this name
+from a client, the fix is an `onNet` twin routed through `loadedPlayerSource`,
+never a payload read.
+
 **All three derive the target from the connection**, via `loadedPlayerSource` in
 `server/lib/shell.ts`. `source` is runtime-set and unforgeable; the payload may
 only _agree_ with it, and one naming anyone else is dropped. That function calls
