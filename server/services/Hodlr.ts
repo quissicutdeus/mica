@@ -133,7 +133,10 @@ app.registerEvent('buy', async (source, cbId, data, citizenid, player) => {
   // does not itself need to be race-free, since the increment that follows is.
   const holding = await findOrCreateHolding(citizenid);
 
-  if (player.getMoney('bank') < cost) {
+  // Not a bare `<`: a balance the bridge could not determine comes back as `-Infinity`, and
+  // anything that is not a number at all would compare as affordable. See `Payments.transfer`.
+  const balance = player.getMoney('bank');
+  if (!Number.isFinite(balance) || balance < cost) {
     return { ok: false, reason: 'insufficient_funds' };
   }
   if (!player.removeMoney('bank', cost)) {

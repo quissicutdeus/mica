@@ -41,6 +41,16 @@ changed shape: it now takes `summary` and `ontoggle` in place of `counts`,
 not render its reactions until its author updates it. Nothing that ships with
 the phone is affected (MICA-98).
 
+**If you have recently upgraded qb-core or qbx_core, watch your server console
+for `[FrameworkBridge]` errors after this update.** gPhone now refuses a money
+move its framework did not confirm with a plain `true`, and refuses to spend
+against a balance that did not come back as a number — see the first entry under
+Fixed. On a framework whose money calls answer the way they always have, nothing
+changes. On one whose contract has moved, players will find a payment refused
+where it previously appeared to succeed, and the console will name the call that
+answered oddly. That is the safer of the two failures, but it is visible, and
+the log line is what tells you which resource to look at.
+
 Nothing else. No versioned migration has landed and no table has gained a
 column, so nothing here needs `gphoneschema apply`. Every convar below defaults
 to the behaviour a server already had, so an update that sets none of them
@@ -103,6 +113,21 @@ they are replicated.
 
 ### Fixed
 
+- **A framework that stops answering money calls the way it used to can no
+  longer create currency.** gPhone asks your framework to debit and credit
+  players, and it believed whatever came back. If a qb-core or qbx_core release
+  made `RemoveMoney` asynchronous — an ordinary thing for a resource to do — the
+  pending answer read as a completed debit, and the person being paid was
+  credited whether or not the payer was ever charged. Same shape for a balance:
+  a lookup that answered with anything but a number compared as "can afford it",
+  and the spend went through. gPhone pins the FiveM runtime exactly and cannot
+  pin your framework, so this was one upgrade away on any server, with no
+  attacker involved and no error to see — the first sign would have been an
+  economy that no longer balanced. Every one of those branches now refuses
+  instead: only a literal `true` counts as money having moved, only a finite
+  number counts as a balance, and anything else is logged as a
+  `[FrameworkBridge]` error naming the call that answered oddly. Bank transfers
+  and Hodlr trades are the two places you would notice (MICA-133).
 - **Hodlr's coin price survives a restart.** It was module state that opened at
   500 every time the resource started, while the holdings it values are a real
   database column that came straight back — so every restart re-valued every

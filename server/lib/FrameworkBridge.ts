@@ -2,7 +2,14 @@ export interface FrameworkPlayer {
   citizenid: string;
   source: number;
   phone?: string;
+  /**
+   * A balance, or `-Infinity` when the framework answered with something that is not one.
+   *
+   * The sentinel is deliberately unaffordable rather than `0`, so a caller comparing
+   * `getMoney(...) < amount` refuses at its existing insufficient-funds branch. See `balanceOf`.
+   */
   getMoney(type: 'bank' | 'cash'): number;
+  /** `true` only when the framework said `true`. Anything else is a refusal — see `moved`. */
   removeMoney(type: 'bank' | 'cash', amount: number): boolean;
   /**
    * Credit a player.
@@ -11,10 +18,10 @@ export interface FrameworkPlayer {
    * and `removeMoney` existed and nothing could pay anyone. A marketplace could take from a
    * buyer and had no way to pay the seller, so it was a noticeboard.
    *
-   * Fails **closed** like `removeMoney` — returns false when the framework exposes no handler
-   * — rather than the fail-open pattern `removeInventoryItem` uses. That trade is defensible
-   * for a consumable whose effect already happened; it is not defensible for money, where
-   * fail-open means inventing currency.
+   * Fails **closed** like `removeMoney` — returns false when the framework exposes no handler,
+   * and equally when it answers with anything but a literal `true` — rather than the fail-open
+   * pattern `removeInventoryItem` uses. That trade is defensible for a consumable whose effect
+   * already happened; it is not defensible for money, where fail-open means inventing currency.
    */
   addMoney(type: 'bank' | 'cash', amount: number): boolean;
   setMeta(key: string, value: any): void;
@@ -39,6 +46,76 @@ export const __setResourceLookup = (fn?: ResourceLookup): void => {
   resource = fn ?? ((name) => (exports as any)[name]);
 };
 
+/**
+ * Everything below this line exists because `player` is `any` (MICA-133).
+ *
+ * The declarations on `FrameworkPlayer` — `removeMoney(): boolean`, `getMoney(): number` —
+ * were decorative until now. Whatever qbx_core or qb-core handed back was returned straight
+ * through, and `any` satisfies every signature, so TypeScript never objected. gPhone pins
+ * `@citizenfx/*` exactly and pins neither of those resources: they belong to the operator and
+ * move on the operator's schedule, which makes "RemoveMoney went async in the last release" an
+ * ordinary event rather than a hypothetical.
+ *
+ * Every branch of that failure ran fail-open. A promise is truthy, so `!removeMoney(...)` never
+ * tripped and `Payments` credited the payee whether or not the debit happened — money creation,
+ * with no attacker, no error and no modified client. `Promise < amount` and `undefined < amount`
+ * are both `false`, so the insufficient-funds check fell through to the debit the same way.
+ *
+ * `Payments` already declines to trust the framework's overdraw guard. These two coercions make
+ * it decline to trust the framework's *answers* as well, which is the same decision applied one
+ * level down.
+ */
+
+/** Enough of a description to make a framework upgrade recognisable in a server log. */
+const shapeOf = (value: unknown): string => {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (typeof (value as { then?: unknown }).then === 'function') return 'a promise';
+  if (typeof value === 'number') return Number.isNaN(value) ? 'NaN' : `the number ${value}`;
+  if (typeof value === 'object') return 'an object';
+  return `a ${typeof value} (${String(value)})`;
+};
+
+/**
+ * Did money actually move?
+ *
+ * Only a literal `true` says so. A result object, a status code, a promise or `undefined` from
+ * a renamed method all mean the same thing here — this code cannot tell — and the only safe
+ * reading of "cannot tell" is that the move did not happen. Guessing the other way invents
+ * currency, which is the one error no later correction fixes.
+ *
+ * A plain `false` is an ordinary refusal (an overdraw) and is not logged, for the same reason
+ * `getPlayer` shouts about a nameless player but not an absent one. Only a *shapeless* answer
+ * is evidence the contract moved.
+ */
+const moved = (result: unknown, call: string, src: number): boolean => {
+  if (typeof result === 'boolean') return result;
+  console.error(
+    `[FrameworkBridge] ${call} for source ${src} answered with ${shapeOf(result)} rather than ` +
+      `a boolean. Treating the move as refused — the framework's contract has changed and ` +
+      `this cannot tell whether the money moved.`
+  );
+  return false;
+};
+
+/**
+ * A balance, or a number that cannot be afforded.
+ *
+ * `-Infinity` rather than `0` or a throw: every caller asks `balance < amount`, and the sentinel
+ * has to make that true for *any* amount, including a zero-cost one, so the refusal lands at the
+ * existing insufficient-funds check instead of somewhere new. It is also not a balance anyone
+ * could arrive at honestly, so it cannot be confused for one.
+ */
+const balanceOf = (result: unknown, call: string, src: number): number => {
+  if (typeof result === 'number' && Number.isFinite(result)) return result;
+  console.error(
+    `[FrameworkBridge] ${call} for source ${src} answered with ${shapeOf(result)} rather than ` +
+      `a finite number. Reporting the balance as undeterminable, which reads as unaffordable ` +
+      `everywhere it is compared.`
+  );
+  return -Infinity;
+};
+
 export class FrameworkBridge {
   public static getPlayer(src: number): FrameworkPlayer | null {
     try {
@@ -54,18 +131,28 @@ export class FrameworkBridge {
           source: src,
           phone,
           getMoney: (type: 'bank' | 'cash') => {
-            if (player.Functions?.GetMoney) return player.Functions.GetMoney(type);
-            if (resource('qbx_core')?.GetMoney) return resource('qbx_core').GetMoney(src, type);
-            return player.PlayerData?.money?.[type] ?? 0;
+            if (player.Functions?.GetMoney)
+              return balanceOf(player.Functions.GetMoney(type), 'GetMoney', src);
+            if (resource('qbx_core')?.GetMoney)
+              return balanceOf(resource('qbx_core').GetMoney(src, type), 'qbx_core.GetMoney', src);
+            // The player table, which is data rather than a call, and just as capable of
+            // holding a string where a number is declared.
+            return balanceOf(player.PlayerData?.money?.[type] ?? 0, 'PlayerData.money', src);
           },
           removeMoney: (type: 'bank' | 'cash', amount: number) => {
-            if (player.Functions?.RemoveMoney) return player.Functions.RemoveMoney(type, amount);
+            if (player.Functions?.RemoveMoney)
+              return moved(player.Functions.RemoveMoney(type, amount), 'RemoveMoney', src);
             return false;
           },
           addMoney: (type: 'bank' | 'cash', amount: number) => {
-            if (player.Functions?.AddMoney) return player.Functions.AddMoney(type, amount);
+            if (player.Functions?.AddMoney)
+              return moved(player.Functions.AddMoney(type, amount), 'AddMoney', src);
             if (resource('qbx_core')?.AddMoney)
-              return resource('qbx_core').AddMoney(src, type, amount);
+              return moved(
+                resource('qbx_core').AddMoney(src, type, amount),
+                'qbx_core.AddMoney',
+                src
+              );
             return false;
           },
           setMeta: (key: string, value: any) => {
@@ -103,12 +190,16 @@ export class FrameworkBridge {
           phone,
           getMoney: (type: 'bank' | 'cash') =>
             player.Functions?.GetMoney
-              ? player.Functions.GetMoney(type)
-              : (player.PlayerData?.money?.[type] ?? 0),
+              ? balanceOf(player.Functions.GetMoney(type), 'GetMoney', src)
+              : balanceOf(player.PlayerData?.money?.[type] ?? 0, 'PlayerData.money', src),
           removeMoney: (type: 'bank' | 'cash', amount: number) =>
-            player.Functions?.RemoveMoney ? player.Functions.RemoveMoney(type, amount) : false,
+            player.Functions?.RemoveMoney
+              ? moved(player.Functions.RemoveMoney(type, amount), 'RemoveMoney', src)
+              : false,
           addMoney: (type: 'bank' | 'cash', amount: number) =>
-            player.Functions?.AddMoney ? player.Functions.AddMoney(type, amount) : false,
+            player.Functions?.AddMoney
+              ? moved(player.Functions.AddMoney(type, amount), 'AddMoney', src)
+              : false,
           setMeta: (key: string, value: any) => {
             if (player.Functions?.SetMetaData) {
               player.Functions.SetMetaData(key, value);

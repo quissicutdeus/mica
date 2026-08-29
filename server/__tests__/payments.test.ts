@@ -180,3 +180,76 @@ describe('addMoney on the bridge', () => {
     expect(FrameworkBridge.getPlayer(1)?.addMoney('bank', 50)).toBe(false);
   });
 });
+
+/**
+ * MICA-133: what `transfer` does when the framework's contract moves under it.
+ *
+ * gPhone pins `@citizenfx/*` exactly and pins neither qbx_core nor qb-core — those are the
+ * operator's own resources, upgraded on the operator's schedule. So "RemoveMoney went async"
+ * is not a hypothetical, it is a Tuesday. These drive `transfer` end to end through a bridge
+ * fed a framework that answers with something other than a boolean, and assert the refusal
+ * lands *before* anybody is credited.
+ */
+describe('transfer against a framework that changed its answers', () => {
+  const raw = (citizenid: string, Functions: Record<string, unknown>) => ({
+    PlayerData: { citizenid, charinfo: { phone: '555' } },
+    Functions
+  });
+
+  const install = (players: Record<number, unknown>) =>
+    __setResourceLookup((name) =>
+      name === 'qbx_core'
+        ? { GetPlayer: (src: number) => players[src] ?? null, GetQBPlayers: () => players }
+        : undefined
+    );
+
+  const pay = () => transfer({ from: 'CIT_A', to: 'CIT_B', amount: 250, reason: 'sale' });
+
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    __setResourceLookup();
+    vi.restoreAllMocks();
+  });
+
+  it('refuses the debit when RemoveMoney answers with a promise, and credits nobody', async () => {
+    // The headline case. A promise is truthy, so `if (!payer.removeMoney(...))` never tripped
+    // and the payee was credited whether or not the debit resolved. That is money creation.
+    const RemoveMoney = vi.fn(() => Promise.resolve(true));
+    const AddMoney = vi.fn(() => true);
+    install({
+      1: raw('CIT_A', { GetMoney: () => 500, RemoveMoney }),
+      2: raw('CIT_B', { GetMoney: () => 100, AddMoney })
+    });
+
+    await expect(pay()).resolves.toEqual({ ok: false, reason: 'debit_failed' });
+    expect(RemoveMoney).toHaveBeenCalled();
+    expect(AddMoney).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a promise', () => Promise.resolve(500)],
+    ['undefined', () => undefined],
+    ['NaN', () => NaN]
+  ])(
+    'refuses before debiting when GetMoney answers with %s',
+    async (_label, GetMoney: () => unknown) => {
+      // `Promise < 250` and `undefined < 250` are both `false`, so the insufficient-funds
+      // check passed and execution fell straight through to the debit.
+      const RemoveMoney = vi.fn(() => true);
+      const AddMoney = vi.fn(() => true);
+      install({
+        1: raw('CIT_A', { GetMoney, RemoveMoney }),
+        2: raw('CIT_B', { GetMoney: () => 100, AddMoney })
+      });
+
+      await expect(pay()).resolves.toEqual({ ok: false, reason: 'insufficient_funds' });
+      expect(RemoveMoney).not.toHaveBeenCalled();
+      expect(AddMoney).not.toHaveBeenCalled();
+    }
+  );
+});

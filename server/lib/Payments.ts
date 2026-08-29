@@ -108,7 +108,13 @@ export async function transfer(request: TransferRequest): Promise<PaymentOutcome
   // Checked before debiting rather than relying on removeMoney to refuse. Frameworks
   // disagree about whether an overdraw returns false or clamps to zero, and clamping would
   // move less than the credit adds.
-  if (payer.getMoney(account) < amount) {
+  //
+  // `Number.isFinite` rather than `balance < amount` alone: the bridge already answers an
+  // undeterminable balance with `-Infinity`, but a bare `<` reads as affordable for anything
+  // that is not a number at all, so the guard says what it means instead of leaning on the
+  // sentinel's sign. A balance nobody can state is not one anybody can spend.
+  const balance = payer.getMoney(account);
+  if (!Number.isFinite(balance) || balance < amount) {
     return { ok: false, reason: 'insufficient_funds' };
   }
 
