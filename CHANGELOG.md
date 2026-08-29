@@ -77,6 +77,39 @@ changes nothing for your players.
 
 ### Added
 
+- **gPhone runs on ESX.** `es_extended` joins `qbx_core` and `qb-core` as a
+  supported framework, detected at start with no convar to set. A player loads,
+  sees their own data, and makes a bank transfer (MICA-150).
+
+  Money is handled the way the rest of gPhone handles it — refuse what cannot be
+  proved — but it gets there differently, and the difference is one you may see
+  in your console. ESX's account calls return nothing at all, so there is no
+  answer to judge the way a qb core's `true` is judged. gPhone instead reads the
+  account balance before and after the call and refuses unless it moved by at
+  least what was asked. If the balance is unreadable beforehand it refuses
+  without calling the framework. If it was readable before and is not after —
+  rare, and it means something changed underneath — it refuses, logs a
+  `[FrameworkBridge]` line saying so, and tells you to **reconcile that account
+  by hand**, because in that one case the money may genuinely have moved.
+
+  **Import `gphone.esx.sql`, not `gphone.sql`.** There are now two schema files,
+  both generated and both creating the same twenty-nine tables. The ESX one
+  carries none of the foreign keys onto `players`, because ESX has no such table
+  — it keeps players in `users`, by `identifier`. Importing the wrong file fails
+  at the first foreign key rather than half-working.
+
+  Four ESX limitations are worth knowing before you install, all of them
+  documented under **Housekeeping on ESX** in the README. Nothing cleans up
+  after a deleted character, so wiring your deletion flow to
+  `gphone:server:media:characterDeleted` is not optional there the way it is on
+  a qb core. Phone numbers are not part of core ESX, so a player whose number
+  lives somewhere gPhone does not look will have no number and no number-based
+  lookup. Looking up an **offline** player does not resolve at all. And the
+  battery level gPhone mirrors onto the framework player, for other resources to
+  read, degrades on older ESX builds and is dropped with a logged warning on
+  builds offering nowhere to put it — the phone's own battery is unaffected in
+  every case.
+
 - Proximity music, which lets a phone play out loud to the people standing
   around it, is bounded by two new convars: `gphone_music_range` for how far it
   carries, and `gphone_music_max_nearby` for how many broadcasters one listener
