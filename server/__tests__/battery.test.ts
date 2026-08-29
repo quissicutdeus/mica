@@ -38,6 +38,7 @@ import {
   __resetBatteryState,
   __tickBattery
 } from '../services/Battery';
+import { __resetRateLimits } from '../lib/rateLimit';
 
 const SRC = 7;
 const CID = 'ABC12345';
@@ -61,6 +62,11 @@ beforeEach(() => {
   // The shared setup installs a plain noop; this suite needs to read the calls.
   globalThis.emitNet = vi.fn() as any;
   vi.clearAllMocks();
+  // MICA-136 put the player-loaded path behind the rate limiter, so this suite now
+  // consumes a window it never used to. Reset it rather than depending on this file running
+  // before whichever other suite shares the limiter's module state — an unstated ordering
+  // dependency fails later, for a reason unrelated to the assertion that reports it.
+  __resetRateLimits();
   __resetBatteryCache();
   dbMock.query.mockResolvedValue([]);
   dbMock.insert.mockResolvedValue(1);

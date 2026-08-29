@@ -4,11 +4,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * MICA-136 — the three `QBCore:Server:OnPlayerLoaded` listeners.
  *
  * `server/lib/shell.ts`, `server/services/Settings.ts` and `server/services/Battery.ts`
- * each register this name with `onNet` rather than `on`, because qbx_core's compat shim
- * fires it over the network (see the comment in `lib/shell.ts`). `onNet` is what makes it
- * reachable by *any* connected client, and all three used to take the target straight out
- * of the payload — the only place in the resource where a payload named somebody else and
- * was believed.
+ * each register this name with `onNet` rather than `on`, because qbx_core fires it from the
+ * client with `TriggerServerEvent` and no payload (`qbx_core/client/character.lua:280` and
+ * `:482`; see the comment in `lib/shell.ts`). `onNet` is what makes it reachable by *any*
+ * connected client, and all three used to take the target straight out of the payload — the
+ * only place in the resource where a payload named somebody else and was believed.
  *
  * All three now go through `loadedPlayerSource`, so they are tested together: the property
  * is that no listener for this event ever acts on an id the connection did not supply.
@@ -66,6 +66,23 @@ const loadedListeners = (): Function[] => handlers.get('QBCore:Server:OnPlayerLo
 
 const emitted = () => (globalThis.emitNet as any).mock.calls as unknown[][];
 
+/**
+ * Fire the real `playerDropped` cleanup for every id this suite uses.
+ *
+ * `lib/shell.ts` remembers which connections it has already warned about, so a test that
+ * refused earlier would otherwise silence the next one. Draining it through the handler the
+ * resource actually registers, rather than a reset seam, means the cleanup itself is under
+ * test on every run.
+ */
+const dropEveryone = () => {
+  const previous = (globalThis as any).source;
+  for (const dropped of [ATTACKER, VICTIM, GHOST]) {
+    (globalThis as any).source = dropped;
+    for (const handler of handlers.get('playerDropped') ?? []) handler();
+  }
+  (globalThis as any).source = previous;
+};
+
 const asPlayer = (src: number) => ({
   citizenid: `CID${src}`,
   source: src,
@@ -81,6 +98,7 @@ beforeEach(() => {
   (globalThis as any).source = ATTACKER;
   __resetRateLimits();
   __resetBatteryCache();
+  dropEveryone();
   dbMock.query.mockResolvedValue([]);
   dbMock.insert.mockResolvedValue(1);
   dbMock.update.mockResolvedValue(true);
@@ -115,7 +133,7 @@ describe('the network player-loaded listeners', () => {
     expect(emitted()).toHaveLength(0);
   });
 
-  it('still serves the qbx_core compat shim, which sends no payload at all', async () => {
+  it('still serves qbx_core, which sends no payload at all', async () => {
     for (const listener of loadedListeners()) {
       listener(undefined);
     }
@@ -150,6 +168,68 @@ describe('the network player-loaded listeners', () => {
     }
 
     await vi.waitFor(() => expect(emitted()).toHaveLength(0));
+  });
+});
+
+/**
+ * MICA-136 follow-up: a refusal nobody can see.
+ *
+ * `guardNetEvent` refuses silently by design — no callback id, so nobody is waiting to be
+ * told. Under stock qbx_core the ordering holds and it never refuses. Under a custom
+ * multichar, or a core that announces a character before the framework has registered it,
+ * gPhone would never rehydrate settings and never load battery, with no output anywhere and
+ * this whole file still green: silence that reads as success.
+ */
+describe('a refusal that nobody would otherwise notice', () => {
+  const warnings = () => vi.spyOn(console, 'warn').mock.calls.map((call) => String(call[0]));
+
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('names the connection and the reason when there is no character behind it', () => {
+    bridgeMock.getPlayer.mockReturnValue(null);
+
+    expect(loadedPlayerSource(undefined)).toBeUndefined();
+
+    expect(warnings()).toHaveLength(1);
+    expect(warnings()[0]).toContain('QBCore:Server:OnPlayerLoaded');
+    expect(warnings()[0]).toContain(String(ATTACKER));
+  });
+
+  it('names the id a forged payload claimed', () => {
+    expect(loadedPlayerSource({ PlayerData: { source: VICTIM } })).toBeUndefined();
+
+    expect(warnings()[0]).toContain(String(VICTIM));
+  });
+
+  it('says it once per connection, so a flood cannot grow the log without bound', () => {
+    // The reason `guardNetEvent` is silent in the first place: a line per packet is a log
+    // an attacker writes as much of as they like.
+    bridgeMock.getPlayer.mockReturnValue(null);
+
+    for (let i = 0; i < 50; i++) loadedPlayerSource(undefined);
+
+    expect(warnings()).toHaveLength(1);
+  });
+
+  it('forgets a dropped connection, so the next player on that id is not silenced', () => {
+    // FiveM recycles server ids — the same reason `rateLimit.forgetSource` exists. A
+    // remembered id would turn a real problem for the next player into no output at all.
+    bridgeMock.getPlayer.mockReturnValue(null);
+    loadedPlayerSource(undefined);
+    expect(warnings()).toHaveLength(1);
+
+    dropEveryone();
+    loadedPlayerSource(undefined);
+
+    expect(warnings()).toHaveLength(2);
+  });
+
+  it('stays quiet when the event is honest', () => {
+    expect(loadedPlayerSource(undefined)).toBe(ATTACKER);
+
+    expect(warnings()).toEqual([]);
   });
 });
 

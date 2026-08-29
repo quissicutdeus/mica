@@ -33,6 +33,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 }));
 
 import { settings, getSettingsRepository } from '../services/Settings';
+import { __resetRateLimits } from '../lib/rateLimit';
 
 const CID = 'ABC12345';
 const SRC = 3;
@@ -56,6 +57,11 @@ const call = async (action: string, data: unknown, citizenid = CID) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // MICA-136 put the player-loaded path behind the rate limiter, so this suite now
+  // consumes a window it never used to. Reset it rather than depending on this file running
+  // before whichever other suite shares the limiter's module state — an unstated ordering
+  // dependency fails later, for a reason unrelated to the assertion that reports it.
+  __resetRateLimits();
   dbMock.query.mockResolvedValue([]);
   (globalThis as any).GetConvar = (_n: string, f: string) => f;
 });

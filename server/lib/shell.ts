@@ -48,6 +48,41 @@ const sourceOf = (player: unknown): number | undefined =>
     : (player as { PlayerData?: { source?: number } })?.PlayerData?.source;
 
 /**
+ * Sources already told about, so one client emitting this in a loop produces one line and
+ * not one per packet. A log an attacker can grow without bound is its own denial of service,
+ * which is why `guardNetEvent` refuses silently in the first place.
+ *
+ * Cleared on drop for the reason `rateLimit.forgetSource` gives: FiveM recycles server ids,
+ * so a stale entry would silence a real problem for whoever is assigned this id next. That
+ * also bounds the set by the number of connected players.
+ */
+const refusalsLogged = new Set<number>();
+
+on('playerDropped', () => {
+  refusalsLogged.delete(source);
+});
+
+/**
+ * Refuse, and say so once.
+ *
+ * `guardNetEvent` refuses silently by design — these events carry no callback id, so there
+ * is nobody waiting to be told (`lib/netGuard.ts`). That is right for a flood and wrong for
+ * the ordering case: under a custom multichar, or a core that announces a character before
+ * the framework has registered it, gPhone would simply never rehydrate settings and never
+ * load battery, with no output anywhere and every suite still green. Silence that reads as
+ * success is the thing the house rules exist to prevent, so this one refusal is audible.
+ */
+const refuse = (connection: number, why: string): undefined => {
+  if (!refusalsLogged.has(connection)) {
+    refusalsLogged.add(connection);
+    console.warn(
+      `[gphone] ignored QBCore:Server:OnPlayerLoaded from source ${connection}: ${why}.`
+    );
+  }
+  return undefined;
+};
+
+/**
  * Who a network `QBCore:Server:OnPlayerLoaded` may be acted on for, or `undefined`.
  *
  * `onNet` means *any* connected client can emit this name themselves, and until MICA-136
@@ -60,10 +95,10 @@ const sourceOf = (player: unknown): number | undefined =>
  * Three checks, and none of them costs the legitimate path anything:
  *
  * - **The connection is the authority.** `source` is set by the runtime and cannot be
- *   forged. qbx_core's compat shim sends no payload at all, so there is nothing to read
- *   from it; vanilla QBCore's local Player object carries the same id the event arrived
- *   from. A payload that agrees is redundant, a payload that disagrees is a forgery, and
- *   both resolve to `source`.
+ *   forged, and no legitimate caller of this event name supplies an identity anyway: every
+ *   trigger of it on this server is a client-side `TriggerServerEvent` with no payload (see
+ *   the listener below). A payload that agrees is therefore redundant, one that disagrees is
+ *   a forgery, and both resolve to `source`.
  * - **`guardNetEvent`**, the preamble the other nine raw `onNet` handlers already have
  *   (`lib/netGuard.ts`). Without it the rate limiter was never consulted on this path, so
  *   one client could loop a database read per packet.
@@ -72,9 +107,10 @@ const sourceOf = (player: unknown): number | undefined =>
  *   seeded with an id `playerDropped` will never fire for — the unbounded-map condition
  *   MICA-113/114 closed, by a route those handlers never saw.
  *
- * The local `on('QBCore:Server:PlayerLoaded')` twins are not client-emittable and keep
- * reading the payload: vanilla QBCore triggers those in-process, where there is no
- * connection to derive an identity from.
+ * The local `on('QBCore:Server:PlayerLoaded')` twins are a different event name, are not
+ * client-emittable, and keep reading the payload: `qbx_core/server/player.lua:1064` triggers
+ * that one in-process with the Player object, where there is no connection to derive an
+ * identity from.
  */
 export const loadedPlayerSource = (player: unknown): number | undefined => {
   const connection = source;
@@ -82,10 +118,19 @@ export const loadedPlayerSource = (player: unknown): number | undefined => {
 
   // Rate limit and authenticate before comparing, so every invocation is counted rather
   // than only the ones that turn out to be honest.
-  if (!guardNetEvent(SHELL_SERVICE, 'playerLoaded')) return undefined;
+  if (!guardNetEvent(SHELL_SERVICE, 'playerLoaded')) {
+    return refuse(
+      connection,
+      'no loaded character behind it yet, or too many in one minute. If this player never ' +
+        'gets their settings or battery, their character is being announced before the ' +
+        'framework has registered it'
+    );
+  }
 
   const claimed = sourceOf(player);
-  if (claimed !== undefined && claimed !== connection) return undefined;
+  if (claimed !== undefined && claimed !== connection) {
+    return refuse(connection, `it named source ${claimed} instead of itself`);
+  }
 
   return connection;
 };
@@ -96,15 +141,25 @@ export const loadedPlayerSource = (player: unknown): number | undefined => {
  * is safe to assume. Kept here rather than duplicated a third time, since the push itself
  * is shell-scoped rather than owned by any one app's data.
  *
- * Network, not local: qbx_core's own compat shim `RegisterNetEvent`s this exact name and
- * fires it from the client with no payload, so a plain `on()` here throws "was not safe
- * for net" the moment a qbx_core player loads — `RegisterNetEvent`'s network-safety flag is
- * per-resource, not global, so qbx_core declaring it net-safe for itself does nothing for
- * gPhone's own handler. `onNet` still receives vanilla QBCore's local, Player-object
- * `TriggerEvent` for this same name unaffected — only the network case needed guarding.
+ * Network, not local, and `onNet` is the only listener this name ever needs.
  *
- * That reachability is the point of `onNet` and is preserved unchanged. What is not
- * preserved is believing the payload — see `loadedPlayerSource`.
+ * qbx_core fires `QBCore:Server:OnPlayerLoaded` with `TriggerServerEvent` from the client
+ * and passes nothing — `qbx_core/client/character.lua:280` and `:482` (v1.24.0, vendored
+ * here), and `qbx_spawn/client/main.lua:218` does the same. A plain `on()` here would throw
+ * "was not safe for net" the moment a player loads, because `RegisterNetEvent`'s
+ * network-safety flag is per-resource: qbx_core declaring the name net-safe for itself does
+ * nothing for gPhone's own handler.
+ *
+ * **Nothing fires this name locally with a Player object.** The local, Player-object
+ * trigger is a *different event* — `QBCore:Server:PlayerLoaded`, from
+ * `qbx_core/server/player.lua:1064` — and it is the `on()` twin below that handles it. So
+ * there is no legitimate caller of *this* name that supplies an identity, which is why
+ * taking the target from the connection costs the honest path nothing.
+ *
+ * Scoped to what is actually on this server: qbx_core is the only core vendored here, and
+ * vanilla `qb-core` is not, so its behaviour is not asserted. If it ever fires this name
+ * locally with a Player object, that call arrives with `source` 0 and
+ * `loadedPlayerSource` refuses it — the `on()` twin is where such a core belongs.
  */
 onNet('QBCore:Server:OnPlayerLoaded', (player: unknown) => {
   const src = loadedPlayerSource(player);
