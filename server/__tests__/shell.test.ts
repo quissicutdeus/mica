@@ -17,8 +17,27 @@ const captureHandler = (event: string, handler: (player: unknown) => void) => {
 globalThis.on = captureHandler as any;
 globalThis.onNet = captureHandler as any;
 
+/**
+ * `loadedPlayerSource` guards the network listener with `guardNetEvent`, which asks the
+ * framework whether the connection has a loaded character. Mocked rather than left to the
+ * real bridge, which would find no `qbx_core`/`qb-core` export and refuse everybody.
+ */
+vi.mock('../lib/FrameworkBridge', () => ({
+  FrameworkBridge: {
+    getPlayer: (src: number) => ({ citizenid: `CID${src}`, source: src, setMeta: () => {} }),
+    getCitizenId: () => 'CID',
+    registerUsableItem: () => {}
+  }
+}));
+
+/** The connection the network event arrived on. `source` is set by the runtime in game. */
+const CONNECTION = 7;
+
 beforeEach(async () => {
   globalThis.emitNet = vi.fn() as any;
+  (globalThis as any).source = CONNECTION;
+  const { __resetRateLimits } = await import('../lib/rateLimit');
+  __resetRateLimits();
   await import('../lib/shell');
 });
 
@@ -53,18 +72,31 @@ describe('character-loaded listeners', () => {
     expect(handlers.has('QBCore:Server:PlayerLoaded')).toBe(true);
   });
 
-  it('pushes a rehydrate to a bare numeric source from qbx_core (net, no payload)', () => {
-    handlers.get('QBCore:Server:OnPlayerLoaded')!(7);
-    expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:shell:rehydrate', 7);
+  it('pushes a rehydrate to the connection when qbx_core sends no payload', () => {
+    handlers.get('QBCore:Server:OnPlayerLoaded')!(undefined);
+    expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:shell:rehydrate', CONNECTION);
+  });
+
+  it('pushes a rehydrate for a bare numeric payload that agrees with the connection', () => {
+    handlers.get('QBCore:Server:OnPlayerLoaded')!(CONNECTION);
+    expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:shell:rehydrate', CONNECTION);
   });
 
   it('pushes a rehydrate to the resolved source from a QBCore player object', () => {
+    // The local twin, which no client can emit — it keeps reading the payload.
     handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: 9 } });
     expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:shell:rehydrate', 9);
   });
 
-  it('does nothing when the source cannot be resolved', () => {
-    handlers.get('QBCore:Server:OnPlayerLoaded')!({ PlayerData: {} });
+  it('ignores a network payload naming a third party', () => {
+    // MICA-136. `onNet` means any connected client can send this; the id in the payload
+    // is theirs to choose and the connection is not.
+    handlers.get('QBCore:Server:OnPlayerLoaded')!({ PlayerData: { source: 9 } });
+    expect(globalThis.emitNet).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the local twin cannot resolve a source', () => {
+    handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: {} });
     expect(globalThis.emitNet).not.toHaveBeenCalled();
   });
 });

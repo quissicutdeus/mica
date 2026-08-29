@@ -228,21 +228,32 @@ describe('character-loaded listeners', () => {
     expect(handlers.has('QBCore:Server:PlayerLoaded')).toBe(true);
   });
 
-  it('pushes a rehydrate to a bare numeric source from qbx_core (net, no payload)', () => {
+  it('pushes a rehydrate to the connection when qbx_core sends no payload', () => {
     (globalThis as any).emitNet = vi.fn();
-    handlers.get('QBCore:Server:OnPlayerLoaded')!(SRC);
+    (globalThis as any).source = SRC;
+    handlers.get('QBCore:Server:OnPlayerLoaded')!(undefined);
     expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:settings:rehydrate', SRC);
   });
 
   it('pushes a rehydrate to the resolved source from a QBCore player object', () => {
+    // The local twin, which no client can emit — it keeps reading the payload.
     (globalThis as any).emitNet = vi.fn();
     handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: SRC } });
     expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:settings:rehydrate', SRC);
   });
 
-  it('does nothing when the source cannot be resolved', () => {
+  it('ignores a network payload naming a third party', () => {
+    // MICA-136 — a forced rehydrate is a forced `settings:getAll` round trip, so one
+    // packet was one database read against any player the attacker cared to name.
     (globalThis as any).emitNet = vi.fn();
-    handlers.get('QBCore:Server:OnPlayerLoaded')!({ PlayerData: {} });
+    (globalThis as any).source = SRC;
+    handlers.get('QBCore:Server:OnPlayerLoaded')!({ PlayerData: { source: 99 } });
+    expect(globalThis.emitNet).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the local twin cannot resolve a source', () => {
+    (globalThis as any).emitNet = vi.fn();
+    handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: {} });
     expect(globalThis.emitNet).not.toHaveBeenCalled();
   });
 });

@@ -3,6 +3,7 @@ import { defineService, SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { PhoneSetting } from '@shared/types';
 import { fields } from '../lib/payload';
+import { loadedPlayerSource } from '../lib/shell';
 
 /**
  * Every preference the phone holds, owned by a citizenid.
@@ -216,9 +217,11 @@ const pushRehydrate = (src: number): void => {
 const sourceOf = (player: any): number | undefined =>
   typeof player === 'number' ? player : player?.PlayerData?.source;
 
-// Network, not local -- see the comment on the matching listener in lib/shell.ts.
+// Network, not local -- see the comment on the matching listener in lib/shell.ts, which
+// also owns `loadedPlayerSource`: the payload names the target on this path and any
+// connected client can send it, so the connection decides and the payload only agrees.
 onNet('QBCore:Server:OnPlayerLoaded', (player: any) => {
-  const src = sourceOf(player);
+  const src = loadedPlayerSource(player);
   if (src) pushRehydrate(src);
 });
 

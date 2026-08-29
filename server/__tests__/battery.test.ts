@@ -298,20 +298,32 @@ describe('character-loaded listeners', () => {
     expect(handlers.has('QBCore:Server:PlayerLoaded')).toBe(true);
   });
 
-  it('loads a bare numeric source from qbx_core (net, no payload)', () => {
+  it('loads the connection when qbx_core sends no payload', () => {
     bridgeMock.getPlayer.mockReturnValue(mockPlayer());
-    handlers.get('QBCore:Server:OnPlayerLoaded')!(SRC);
+    (globalThis as any).source = SRC;
+    handlers.get('QBCore:Server:OnPlayerLoaded')!(undefined);
     expect(bridgeMock.getPlayer).toHaveBeenCalledWith(SRC);
   });
 
   it('loads the resolved source from a QBCore player object', () => {
+    // The local twin, which no client can emit — it keeps reading the payload.
     bridgeMock.getPlayer.mockReturnValue(mockPlayer());
     handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: SRC } });
     expect(bridgeMock.getPlayer).toHaveBeenCalledWith(SRC);
   });
 
-  it('does nothing when the source cannot be resolved', () => {
-    handlers.get('QBCore:Server:OnPlayerLoaded')!({ PlayerData: {} });
+  it('ignores a network payload naming a third party', () => {
+    // MICA-136. This is the widest of the three: acting on a named id read that
+    // player's row, could write it, and overwrote their live server-side charge.
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    (globalThis as any).source = SRC;
+    handlers.get('QBCore:Server:OnPlayerLoaded')!({ PlayerData: { source: 99 } });
+    expect(bridgeMock.getPlayer).not.toHaveBeenCalledWith(99);
+    expect(globalThis.emitNet).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the local twin cannot resolve a source', () => {
+    handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: {} });
     expect(bridgeMock.getPlayer).not.toHaveBeenCalled();
   });
 });

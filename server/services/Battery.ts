@@ -3,7 +3,7 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { defineService } from '../lib/defineService';
 import { PhoneBattery } from '@shared/types';
 import { isAdmin } from './Admin';
-import { notifyPlayer } from '../lib/shell';
+import { loadedPlayerSource, notifyPlayer } from '../lib/shell';
 import { guardNetEvent, levelFrom } from '../lib/netGuard';
 
 /**
@@ -333,9 +333,13 @@ onNet('gphone:server:battery:load', () => {
  * Without this the loop has nothing to tick, and `currentCharge` would answer 100 for a
  * player whose saved charge is 12.
  */
-// Network, not local -- see the comment on the matching listener in lib/shell.ts.
+// Network, not local -- see the comment on the matching listener in lib/shell.ts, which
+// also owns `loadedPlayerSource`. This one had the widest blast radius of the three: a
+// payload naming a third party made the server read their row, possibly write it, and
+// overwrite their live `charge` -- and an id belonging to nobody seeded `charge`/`ownerOf`
+// with an entry `playerDropped` would never come back for.
 onNet('QBCore:Server:OnPlayerLoaded', (player: any) => {
-  const src = typeof player === 'number' ? player : player?.PlayerData?.source;
+  const src = loadedPlayerSource(player);
   if (src) {
     void sendLoadedBatteryToClient(src);
   }
