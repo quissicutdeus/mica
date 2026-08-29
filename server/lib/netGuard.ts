@@ -5,10 +5,20 @@ import { allow } from './rateLimit';
  * The preamble every `onNet` handler needs, in one place.
  *
  * `ServiceEndpoint` applies rate limiting and authentication to every action it registers.
- * Eight handlers in `Phone.ts`, `Battery.ts` and `Signal.ts` are raw `onNet` listeners
- * instead — they answer fire-and-forget events with no callback id, so they cannot go
- * through the endpoint — and they had neither. A modified client could drive any of them
- * in a loop, as an unauthenticated source.
+ * Twelve handlers are raw `onNet` listeners instead — they answer fire-and-forget events
+ * with no callback id, so they cannot go through the endpoint — and they had neither.
+ * A modified client could drive any of them in a loop, as an unauthenticated source.
+ *
+ * Nine are gphone-named, across `Phone.ts`, `Battery.ts`, `Contacts.ts` and
+ * `PhoneOpenState.ts`. The other three are framework-named — `QBCore:Server:OnPlayerLoaded`
+ * in `shell.ts`, `Settings.ts` and `Battery.ts` — which reach this preamble through
+ * `loadedPlayerSource`. `docs/security.md` explains why that category was missed for so
+ * long: an entry-point census organised by gphone event names has no row for an event
+ * somebody else named.
+ *
+ * Recount rather than trusting this comment, which has been wrong before:
+ * `grep -rn "onNet(" server --include="*.ts" | grep -v __tests__`. It also returns
+ * `ServiceEndpoint.ts`'s own generic registrar and the example below, neither a handler.
  *
  * Rate limit **before** the player lookup, matching `ServiceEndpoint`: `getPlayer` walks
  * the framework's player table, and a flood should not get to make the server pay for

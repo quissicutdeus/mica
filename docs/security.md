@@ -139,9 +139,9 @@ itself, and deleting an entry point beats hardening one. `Signal.ts` has no
 
 | Event                          | Handler                           |
 | ------------------------------ | --------------------------------- |
-| `QBCore:Server:OnPlayerLoaded` | `server/lib/shell.ts:63`          |
-| `QBCore:Server:OnPlayerLoaded` | `server/services/Settings.ts:220` |
-| `QBCore:Server:OnPlayerLoaded` | `server/services/Battery.ts:337`  |
+| `QBCore:Server:OnPlayerLoaded` | `server/lib/shell.ts:164`         |
+| `QBCore:Server:OnPlayerLoaded` | `server/services/Settings.ts:223` |
+| `QBCore:Server:OnPlayerLoaded` | `server/services/Battery.ts:341`  |
 
 They are easy to miss precisely because they do not look like gPhone's surface:
 the name belongs to the framework, the event is one gPhone listens to rather
@@ -149,28 +149,57 @@ than defines, and `eventNames.test.ts` — which scans for `gphone:` names — h
 nothing to say about them. **A registered net event is reachable no matter whose
 name is on it.**
 
-Each is `onNet`, not `on`, and that is deliberate rather than sloppy: qbx_core's
-compat shim `RegisterNetEvent`s this exact name and fires it from the client, so
-a plain `on()` throws "was not safe for net" the moment a qbx_core player loads.
-Network-safety is per-resource, so qbx_core declaring it net-safe does nothing
-for gPhone's own handler. The **matching `QBCore:Server:PlayerLoaded` listeners
-beside each one are `on()`, are local-only, and are not entry points** — which
-is why this count is three and not six.
+Each is `onNet`, not `on`, and that is deliberate rather than sloppy: this name
+is fired **from the client**, so a plain `on()` throws "was not safe for net"
+the moment a player loads. Network-safety is per-resource, so another resource
+declaring it net-safe does nothing for gPhone's own handler.
 
-**As of `dev` today, all three take the target player from the payload**
-(`player?.PlayerData?.source`) and none calls `guardNetEvent`. So a modified
-client can trigger a settings rehydrate, a shell rehydrate, or a battery push
-**against an arbitrary server id it names itself**. No write and no cross-player
-read results — every one of these pushes a value the target already owns to the
-target's own client — so the practical cost is unsolicited state churn on
-another player's phone rather than disclosure. It is still the wrong shape:
-identity should come from the connection, never from the payload (the same rule
-the exports contract states below).
+Verified against `qbx_core` 1.24.0 as vendored, because the reasoning here was
+wrong for a long time in a way that happened to reach the right answer. It is
+qbx_core's **own client character flow**, not its `bridge/qb/` compat shim:
+`client/character.lua:280` and `:482` fire `TriggerServerEvent` with **no
+payload**, and `qbx_spawn/client/main.lua:218` is a third emitter in a different
+resource. A sweep of every resource on a reference server found no local
+`TriggerEvent` of this name anywhere.
 
-**A fix is written and not yet merged.** Commit `a8f504e` on branch
-`MICA-136-player-loaded` derives the target from the connection instead. This
-page describes `dev` as it stands; when that lands, this paragraph is what needs
-updating, and the two paragraphs above it should survive unchanged.
+That matters because the old note claimed `onNet` also received a _local,
+Player-object_ trigger for this name, and justified trusting the payload on that
+basis. It does not. The local Player-object trigger is
+`QBCore:Server:PlayerLoaded` — a **different event** — at
+`qbx_core/server/player.lua:1064`. The **matching `QBCore:Server:PlayerLoaded`
+listeners beside each one are `on()`, are local-only, and are not entry points**
+— which is why this count is three and not six.
+
+Vanilla `qb-core` was not available to check. If it ever does fire this name
+locally, that arrives with `source` 0 and is refused, and the `on()` twin is
+where such a core belongs.
+
+**All three derive the target from the connection**, via `loadedPlayerSource` in
+`server/lib/shell.ts`. `source` is runtime-set and unforgeable; the payload may
+only _agree_ with it, and one naming anyone else is dropped. That function calls
+`guardNetEvent` itself, so these three are behind the same rate limit and the
+same loaded-character check as the nine above — counted before the comparison,
+so a flood is charged for every attempt rather than only the honest ones. Its
+bucket is keyed to the caller's own source, so an attacker cannot exhaust a
+victim's.
+
+Until MICA-136 landed, all three read `player?.PlayerData?.source` and none
+called `guardNetEvent`, so a modified client could drive a settings rehydrate, a
+shell rehydrate, or a battery push **against an arbitrary server id it named
+itself** — and could seed the battery maps with ids `playerDropped` would never
+clean, by a route those handlers never see. No write and no cross-player read
+resulted, so the cost was unsolicited state churn rather than disclosure, but
+the shape was wrong: identity comes from the connection, never from the payload,
+the same rule the exports contract states below.
+
+**A refusal is logged once per connection**, deduped and cleared on
+`playerDropped` so a recycled server id does not stay silenced. That matters
+because the check added here is a _precondition on the event that announces a
+character loaded_: on a core that fires it before the framework has registered
+the character, settings and battery would otherwise never load and nothing would
+say so.
+
+The three are guarded, not eliminated, so the census below still counts twelve.
 
 ### 3. Exports
 
