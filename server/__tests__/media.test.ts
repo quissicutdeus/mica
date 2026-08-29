@@ -14,12 +14,21 @@ const { dbMock, handlers } = vi.hoisted(() => {
 });
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
-const bridge = vi.hoisted(() => ({ citizenid: 'CID_A' }));
+const bridge = vi.hoisted(() => ({ citizenid: 'CID_A', online: {} as Record<string, number> }));
 vi.mock('../lib/FrameworkBridge', () => ({
   FrameworkBridge: {
     getPlayer: () => ({ citizenid: bridge.citizenid, source: 5, setMeta: () => {} }),
     getSourceByCitizenId: () => 5,
-    getSourcesByCitizenId: () => new Map(),
+    /**
+     * `pushMany` resolves the whole fan-out through this one call — that is the point of
+     * it (§8) — so a drop's notifications are only observable here if the recipients
+     * actually resolve to a source. An empty map is every recipient offline, which is a
+     * legitimate outcome and was silently the only one this suite could see.
+     */
+    getSourcesByCitizenId: (citizenids: readonly string[]) =>
+      new Map(
+        citizenids.filter((cid) => cid in bridge.online).map((cid) => [cid, bridge.online[cid]])
+      ),
     registerUsableItem: () => {}
   }
 }));
@@ -97,6 +106,7 @@ beforeEach(() => {
   dbMock.query.mockResolvedValue([]);
   dbMock.insert.mockResolvedValue(99);
   bridge.citizenid = 'CID_A';
+  bridge.online = { CID_B: 9, CID_C: 11 };
   proximity.nearby = [];
   natives.coords = [100, 200, 30];
   clearPlayerPed();
@@ -149,10 +159,63 @@ describe('media:drop', () => {
     const reply = await callDrop({ mediaId: 42 });
 
     expect(reply).toEqual({ count: 2 });
-    expect(dbMock.insert).toHaveBeenCalledTimes(2);
-    for (const [, params] of dbMock.insert.mock.calls) {
-      expect(params as unknown[]).not.toContain('CID_A');
+    const [, params] = dbMock.insert.mock.calls[0];
+    expect(params as unknown[]).toContain('CID_B');
+    expect(params as unknown[]).toContain('CID_C');
+    // The sender is never a recipient of their own drop.
+    expect(params as unknown[]).not.toContain('CID_A');
+  });
+
+  /**
+   * MICA-115. Every recipient used to be its own `await repo.create(...)` inside one net
+   * event, so a drop in a crowd was that many sequential round trips before the sender's
+   * tap answered — and the roster feeding that loop had no cap of its own.
+   */
+  it('writes every copy in one statement rather than one insert per recipient', async () => {
+    dbMock.single.mockResolvedValueOnce(OWNED_ROW);
+    proximity.nearby = [
+      { source: 9, citizenid: 'CID_B' },
+      { source: 11, citizenid: 'CID_C' }
+    ];
+
+    await callDrop({ mediaId: 42 });
+
+    expect(dbMock.insert).toHaveBeenCalledTimes(1);
+    const [sql, params] = dbMock.insert.mock.calls[0];
+    // One column list, one value tuple per recipient — the column list holds no `?`, so
+    // this counts tuples and nothing else.
+    expect((sql as string).match(/\(\?(, \?)*\)/g)).toHaveLength(2);
+    // Every placeholder is bound, which is what keeps a multi-row insert parameterized.
+    expect((sql as string).split('?').length - 1).toBe((params as unknown[]).length);
+  });
+
+  it('never lets a copy inherit the sender’s row id, status or timestamps', async () => {
+    dbMock.single.mockResolvedValueOnce(OWNED_ROW);
+    proximity.nearby = [{ source: 9, citizenid: 'CID_B' }];
+
+    await callDrop({ mediaId: 42 });
+
+    const [sql, params] = dbMock.insert.mock.calls[0];
+    for (const column of ['`id`', '`status`', '`created_at`', '`updated_at`']) {
+      expect(sql as string, column).not.toContain(column);
     }
+    expect(params as unknown[]).not.toContain(42);
+  });
+
+  it('writes one copy and sends one notification when two sources share a character', async () => {
+    dbMock.single.mockResolvedValueOnce(OWNED_ROW);
+    proximity.nearby = [
+      { source: 9, citizenid: 'CID_B' },
+      { source: 12, citizenid: 'CID_B' }
+    ];
+
+    const reply = await callDrop({ mediaId: 42 });
+
+    expect(reply).toEqual({ count: 1 });
+    const pushes = (globalThis.emitNet as any).mock.calls.filter(
+      (args: unknown[]) => args[0] === 'gphone:client:shell:appEvent'
+    );
+    expect(pushes).toHaveLength(1);
   });
 
   it('notifies each recipient', async () => {
@@ -557,5 +620,18 @@ describe('media:create — the size a photo may actually be (MICA-116)', () => {
 
     expect(reply.error).not.toContain('[Repository]');
     expect(reply.error).not.toContain('gphone_media');
+  });
+
+  it('bounds what a payload may set, not what the table may hold', async () => {
+    // A row an external resource added through `AddMedia` — a voice clip, a video poster —
+    // is not a client payload and is not held to the camera's number, so a drop must still
+    // copy it. The cap belongs to the write boundary.
+    dbMock.single.mockResolvedValueOnce({ ...OWNED_ROW, data: 'A'.repeat(8 * 1024 * 1024) });
+    proximity.nearby = [{ source: 9, citizenid: 'CID_B' }];
+
+    const reply = await callDrop({ mediaId: 42 });
+
+    expect(reply).toEqual({ count: 1 });
+    expect(dbMock.insert).toHaveBeenCalledTimes(1);
   });
 });

@@ -97,6 +97,82 @@ describe('findNearbyVisiblePlayers', () => {
   });
 
   /**
+   * MICA-115. Range was never a bound on how many: fifteen meters is a doorway on a
+   * quiet street and a full club on a busy one, and every caller fans out per recipient —
+   * Media's drop writes each of them a full copy of the payload. Proximity music already
+   * caps its roster with `gphone_music_max_nearby` for precisely this reason.
+   */
+  describe('the recipient cap (MICA-115)', () => {
+    const crowd = (count: number) => {
+      place(1, [0, 0, 0]);
+      const players: Record<string, unknown> = {};
+      for (let i = 0; i < count; i += 1) {
+        const src = i + 2;
+        // Each one a meter further out than the last, all inside the 15m default.
+        place(src, [i * 0.5 + 1, 0, 0]);
+        players[String(src)] = { PlayerData: { citizenid: `CID_${src}` } };
+      }
+      (FrameworkBridge.getAllPlayers as any).mockReturnValue(players);
+    };
+
+    it('stops at the default cap rather than returning everyone in range', async () => {
+      crowd(20);
+
+      expect(await findNearbyVisiblePlayers(1, 'CID_A')).toHaveLength(5);
+    });
+
+    it('keeps the nearest, so what falls off the end is who was furthest away', async () => {
+      crowd(20);
+
+      const reached = await findNearbyVisiblePlayers(1, 'CID_A');
+
+      // Sources were placed nearest-first from 2 outwards.
+      expect(reached.map((p) => p.source)).toEqual([2, 3, 4, 5, 6]);
+    });
+
+    it('respects gphone_bluetooth_max_nearby', async () => {
+      crowd(20);
+      (globalThis as any).GetConvarInt = (name: string, fallback: number) =>
+        name === 'gphone_bluetooth_max_nearby' ? 2 : fallback;
+
+      expect(await findNearbyVisiblePlayers(1, 'CID_A')).toHaveLength(2);
+    });
+
+    it('clamps a convar raised past the ceiling', async () => {
+      crowd(20);
+      (globalThis as any).GetConvarInt = (name: string, fallback: number) =>
+        name === 'gphone_bluetooth_max_nearby' ? 999 : fallback;
+
+      // A convar is a dial, not a licence: one tap writes one row per recipient.
+      expect(await findNearbyVisiblePlayers(1, 'CID_A')).toHaveLength(16);
+    });
+
+    it('falls back to the default on a value that is not a positive number', async () => {
+      crowd(20);
+      (globalThis as any).GetConvarInt = (name: string, fallback: number) =>
+        name === 'gphone_bluetooth_max_nearby' ? 0 : fallback;
+
+      // `gphone_bluetooth_range` is the knob that turns proximity sharing off; a typo in
+      // this one must not silently do the same thing by another route.
+      expect(await findNearbyVisiblePlayers(1, 'CID_A')).toHaveLength(5);
+    });
+
+    it('counts recipients, not candidates — invisible players never spend a slot', async () => {
+      crowd(20);
+      // The six nearest have Bluetooth Visibility off. Slicing before the visibility filter
+      // would answer with nobody; the cap has to decide who is reached.
+      settingsRepo.getValuesFor.mockResolvedValue(
+        new Map([2, 3, 4, 5, 6, 7].map((src) => [`CID_${src}`, 'false']))
+      );
+
+      const reached = await findNearbyVisiblePlayers(1, 'CID_A');
+
+      expect(reached).toHaveLength(5);
+      expect(reached.map((p) => p.source)).toEqual([8, 9, 10, 11, 12]);
+    });
+  });
+
+  /**
    * The same guard `signal.test.ts` pins for `pollSignal`: `GetPlayerPed` can hand back a
    * non-zero handle for a ped that is not yet synced server-side, and `GetEntityCoords`
    * throws a native argument error on it rather than returning something falsy.

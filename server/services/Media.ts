@@ -86,6 +86,27 @@ const assertStorableData = (value: unknown): void => {
   }
 };
 
+/**
+ * The columns a proximity drop copies onto each recipient's own row.
+ *
+ * Everything the sender's row carries except the three the copy must not inherit: `id` and
+ * the timestamps are the new row's own, and `citizenid` is supplied per recipient. `status`
+ * is deliberately absent too — a copy starts `active` by the table's default rather than
+ * inheriting anything, and `drop` has already refused to copy a row that is not.
+ */
+const COPIED_COLUMNS = [
+  'kind',
+  'data',
+  'url',
+  'thumbnail',
+  'mime_type',
+  'width',
+  'height',
+  'duration_ms',
+  'byte_size',
+  'alt_text'
+] as const;
+
 export const media = defineService<MediaItem>({
   id: 'media',
   table: 'gphone_media',
@@ -188,14 +209,56 @@ export const media = defineService<MediaItem>({
        * The generic `create`, with the one bound `mediumtext` does not give it. MICA-116.
        *
        * Every other caller of this class reaches the table through a **named** method
-       * (`addForPlayer`, `storeThumbnail`), so this override is exactly the client-writable
-       * path and nothing else. `ServiceEndpoint` has already reduced the payload to
-       * `clientWritable` columns by the time it arrives; what is left to check is the one
-       * thing the schema cannot say.
+       * (`addForPlayer`, `copyToPlayers`, `storeThumbnail`), so this override is exactly
+       * the client-writable path and nothing else. `ServiceEndpoint` has already reduced
+       * the payload to `clientWritable` columns by the time it arrives; what is left to
+       * check is the one thing the schema cannot say.
        */
       async create(item: Partial<MediaItem>): Promise<number> {
         assertStorableData(item.data);
         return await super.create(item);
+      }
+
+      /**
+       * Write one already-authorized row to several players in a single statement.
+       * MICA-115.
+       *
+       * A **named** method rather than a loop of `create` calls in the service, for the
+       * reason §2.9 gives named methods generally: the row being copied has already passed
+       * its ownership and status checks in `drop`, there is no payload here to reduce, every
+       * column named is a literal in this file and every value stays bound. A loop was also
+       * one round trip per bystander inside one net event — thirty sequential awaits on a
+       * busy corner, which the sender pays for by tapping Share.
+       *
+       * Recipients arrive deduplicated and already capped by `findNearbyVisiblePlayers`;
+       * this decides how the copies are written, never who gets one.
+       */
+      async copyToPlayers(citizenids: readonly string[], item: MediaItem): Promise<number> {
+        if (citizenids.length === 0) return 0;
+
+        const columns = ['citizenid', ...COPIED_COLUMNS];
+        // Literals rather than payload keys, and still held to the table's own allowlist:
+        // a column renamed out from under this list fails loudly instead of building SQL.
+        for (const column of columns) {
+          if (!this.tableColumns.includes(column)) {
+            throw new Error(`[Repository] copyToPlayers rejected unknown column '${column}'.`);
+          }
+        }
+
+        const columnList = columns.map((column) => `\`${column}\``).join(', ');
+        const placeholders = `(${columns.map(() => '?').join(', ')})`;
+        const values: unknown[] = [];
+        for (const citizenid of citizenids) {
+          values.push(citizenid);
+          for (const column of COPIED_COLUMNS) values.push(item[column] ?? null);
+        }
+
+        await Database.insert(
+          `INSERT INTO \`${this.tableName}\` (${columnList}) VALUES ` +
+            citizenids.map(() => placeholders).join(', '),
+          values
+        );
+        return citizenids.length;
       }
 
       /**
@@ -389,36 +452,36 @@ app.registerEvent('drop', async (source, _cbId, data, citizenid) => {
   if (!owned || owned.status !== 'active') throw new Error('That photo could not be found.');
 
   const nearby = await findNearbyVisiblePlayers(source, citizenid);
+  // One person, not one phone: two sources resolving to the same character is one copy and
+  // one toast, and `pushMany` deduplicates its own side regardless.
+  const recipients = [...new Set(nearby.map((target) => target.citizenid))];
+  if (recipients.length === 0) return { count: 0 };
 
-  let count = 0;
-  for (const target of nearby) {
-    await repo.create({
-      citizenid: target.citizenid,
-      kind: owned.kind,
-      data: owned.data,
-      url: owned.url,
-      thumbnail: owned.thumbnail,
-      mime_type: owned.mime_type,
-      width: owned.width,
-      height: owned.height,
-      duration_ms: owned.duration_ms,
-      byte_size: owned.byte_size,
-      alt_text: owned.alt_text
-    } as Partial<MediaItem>);
-    count += 1;
+  const privileged = repo as unknown as {
+    copyToPlayers(citizenids: readonly string[], item: MediaItem): Promise<number>;
+  };
+  const count = await privileged.copyToPlayers(recipients, owned);
 
-    const outcome = appEventChannel('media').push(
-      target.citizenid,
-      'media_received',
-      {},
-      {
-        notify: { title: 'Media received', message: 'A nearby phone sent you a photo.' }
-      }
-    );
-    if (!outcome.delivered && outcome.reason !== 'offline') {
-      console.error(
-        `[media] mediaReceived push to ${target.citizenid} was refused: ${outcome.reason}.`
-      );
+  /**
+   * `pushMany` rather than a `push` per recipient, and it is not a loop around one (§8):
+   * it takes a single `getAllPlayers()` snapshot for the whole fan-out instead of walking
+   * the player list once per bystander.
+   *
+   * The rows are already committed, so a refused notification is logged rather than thrown
+   * — telling a sender their share failed when every copy landed is the worse answer.
+   */
+  const { delivered, offline } = appEventChannel('media').pushMany(
+    recipients,
+    'media_received',
+    {},
+    {
+      notify: { title: 'Media received', message: 'A nearby phone sent you a photo.' }
+    }
+  );
+  const accounted = new Set([...delivered, ...offline]);
+  for (const recipient of recipients) {
+    if (!accounted.has(recipient)) {
+      console.error(`[media] mediaReceived push to ${recipient} was refused.`);
     }
   }
 

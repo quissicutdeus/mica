@@ -22,10 +22,51 @@ const BLUETOOTH_SETTINGS_KEY = 'bluetooth_enabled';
 /** Meters. Short-range, matching the roadmap's own framing of the feature. */
 const DEFAULT_RANGE = 15;
 
+/**
+ * How many phones one Bluetooth gesture reaches, when a server sets nothing.
+ *
+ * Range alone was never a bound on *how many*: fifteen meters is a doorway on a quiet
+ * street and a full nightclub on a busy one, and every caller here fans out per recipient
+ * — Media's drop writes each of them their own copy of the payload, Contacts emits each of
+ * them a packet. So an uncapped scan turns one tap into however many people happen to be
+ * standing there, which is the griefing surface `gphone_music_max_nearby` already exists
+ * to close on the music side.
+ *
+ * Five is the gesture the feature is actually for — handing something to the people around
+ * you — rather than a number chosen to be safe. Nearest first, so what falls off the end
+ * is whoever was furthest from the person who tapped.
+ */
+const DEFAULT_MAX_NEARBY = 5;
+
+/**
+ * The ceiling `gphone_bluetooth_max_nearby` cannot be raised past.
+ *
+ * A convar is a server owner's dial, not a licence, exactly as `MAX_NEARBY_BROADCASTS` is
+ * for music. The cost here is a database row per recipient holding a full copy of whatever
+ * was shared, so this is what bounds one tap's write amplification.
+ */
+const MAX_NEARBY = 16;
+
 const rangeMeters = (): number =>
   typeof GetConvarInt === 'function'
     ? GetConvarInt('gphone_bluetooth_range', DEFAULT_RANGE)
     : DEFAULT_RANGE;
+
+/**
+ * How many recipients one scan may name, clamped to `MAX_NEARBY`.
+ *
+ * A non-numeric or non-positive value falls back to the default rather than disabling the
+ * feature — `gphone_bluetooth_range` is the knob that turns proximity sharing off, and a
+ * typo in this one should not silently do the same thing by another route.
+ */
+const maxNearby = (): number => {
+  const raw =
+    typeof GetConvarInt === 'function'
+      ? GetConvarInt('gphone_bluetooth_max_nearby', DEFAULT_MAX_NEARBY)
+      : DEFAULT_MAX_NEARBY;
+  if (!Number.isFinite(raw) || raw < 1) return DEFAULT_MAX_NEARBY;
+  return Math.min(Math.trunc(raw), MAX_NEARBY);
+};
 
 /**
  * `true` unless the player explicitly turned visibility off.
@@ -70,11 +111,17 @@ export interface NearbyPlayer {
 }
 
 /**
- * Everyone within Bluetooth range of `senderSource` who is currently visible.
+ * The nearest few players within Bluetooth range of `senderSource` who are currently
+ * visible, closest first and no more than `gphone_bluetooth_max_nearby` of them.
  *
  * The sender's own visibility is not checked here — turning Bluetooth off hides a player
  * from being *found*, it does not stop them from initiating a share. Excludes the sender
  * regardless of citizenid duplication (a player cannot be their own nearby result).
+ *
+ * **The cap is applied after the visibility filter, not before it** (MICA-115). Slicing
+ * the candidate list first would let players who have opted out of proximity entirely
+ * consume the slots, so a crowd of invisible bystanders would silently shrink a share to
+ * nobody — the ordering has to decide who is *reached*, not who is considered.
  */
 export async function findNearbyVisiblePlayers(
   senderSource: number,
@@ -87,7 +134,7 @@ export async function findNearbyVisiblePlayers(
   const rangeSquared = range * range;
   const players = FrameworkBridge.getAllPlayers();
 
-  const candidates: NearbyPlayer[] = [];
+  const candidates: (NearbyPlayer & { distanceSquared: number })[] = [];
   for (const key of Object.keys(players)) {
     const src = Number(key);
     if (!Number.isFinite(src) || src === senderSource) continue;
@@ -101,13 +148,21 @@ export async function findNearbyVisiblePlayers(
     const dx = coords[0] - origin[0];
     const dy = coords[1] - origin[1];
     const dz = coords[2] - origin[2];
-    if (dx * dx + dy * dy + dz * dz > rangeSquared) continue;
+    const distanceSquared = dx * dx + dy * dy + dz * dz;
+    if (distanceSquared > rangeSquared) continue;
 
-    candidates.push({ source: src, citizenid });
+    candidates.push({ source: src, citizenid, distanceSquared });
   }
 
   if (candidates.length === 0) return [];
 
+  // Nearest wins, stated as a rule rather than left to iteration order — it decides who a
+  // share reaches once there are more people in range than the cap allows.
+  candidates.sort((a, b) => a.distanceSquared - b.distanceSquared);
+
   const visible = await filterVisible(candidates.map((c) => c.citizenid));
-  return candidates.filter((c) => visible.has(c.citizenid));
+  return candidates
+    .filter((c) => visible.has(c.citizenid))
+    .slice(0, maxNearby())
+    .map(({ source, citizenid }) => ({ source, citizenid }));
 }

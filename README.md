@@ -36,10 +36,11 @@ for players and seamless framework integration for server developers.
 - **Media & Camera**: In-game screenshot/camera integration, automatic image
   compression, gallery view, location sharing, and attachment sharing.
 - **Notes**: Full-featured note-taking app with instant saving.
-- **Bluetooth Proximity Sharing**: Share a contact or drop a photo to every
-  nearby, Bluetooth-visible player — computed server-side from live in-game
+- **Bluetooth Proximity Sharing**: Share a contact or drop a photo to the
+  nearest few Bluetooth-visible players — computed server-side from live in-game
   position, no external player list ever reaches the client. Range defaults to
-  15 meters, configurable via `gphone_bluetooth_range`. A player turns
+  15 meters (`gphone_bluetooth_range`) and one share reaches at most five
+  people, nearest first (`gphone_bluetooth_max_nearby`). A player turns
   discoverability off in Settings > Network; while off, they are invisible to a
   scan and receive nothing unsolicited.
 - **Calculator**: Full mathematical calculator with an optimized touchscreen
@@ -269,6 +270,7 @@ set gphone_rate_limit 60
 set gphone_bank_transfer_max 50000
 set gphone_max_accounts_per_app 3
 set gphone_bluetooth_range 15
+set gphone_bluetooth_max_nearby 5
 setr gphone_music_range 30
 set gphone_music_max_nearby 8
 setr gphone_camera_quality 95
@@ -283,14 +285,15 @@ set gphone_notification_retention 30
 | `gphone_bank_transfer_max`      | integer              | `50000`                | Ceiling on one player-to-player send               |
 | `gphone_max_accounts_per_app`   | integer              | `3`                    | Identities one player may hold in one social app   |
 | `gphone_bluetooth_range`        | integer, meters      | `15`                   | How far a proximity share reaches                  |
+| `gphone_bluetooth_max_nearby`   | integer              | `5`                    | How many phones one proximity share reaches        |
 | `gphone_music_range`            | integer, meters      | `30`                   | How far music from a phone is heard (needs `setr`) |
 | `gphone_music_max_nearby`       | integer              | `8`                    | Broadcasters one listener is told about at once    |
 | `gphone_blabber_edit_window`    | integer, seconds     | `900`                  | How long a Blab stays editable by its author       |
 | `gphone_notification_retention` | integer, days        | `30`                   | How long notification rows are kept                |
 | `gphone_camera_quality`         | integer, 1-100       | `95`                   | Encode quality of a stored photo (needs `setr`)    |
 
-Eight of the ten are read on every use rather than cached, so changing one with
-`set` from the live console takes effect on the next request and needs no
+Nine of the eleven are read on every use rather than cached, so changing one
+with `set` from the live console takes effect on the next request and needs no
 restart. `gphone_blabber_edit_window` and `gphone_notification_retention` are
 the two exceptions — both are read once at resource start, so a change to either
 needs a restart, for the reasons given under them below. `gphone_camera_quality`
@@ -352,6 +355,18 @@ the camera rather than the next time they take a photo.
   the one value gPhone does not sanity-check before using: it is passed through
   as given, so `0` disables proximity sharing outright — nobody is ever in range
   — rather than falling back to 15.
+- **`gphone_bluetooth_max_nearby`** — how many phones one proximity share
+  reaches, nearest first. Range was never a bound on _how many_: fifteen meters
+  is a doorway on a quiet street and a full nightclub on a busy one, and each
+  recipient of a photo drop is written their own full copy of it — so without
+  this one tap in a crowd is a row per bystander, which is a griefing surface
+  rather than a feature. Five is the gesture the feature is for, handing
+  something to the people around you; raise it if your server's idea of "nearby"
+  is a whole club. Anyone past the cap is simply not reached and is told
+  nothing, and because the sender's Share button reports how many phones took
+  it, they can see it happen. Raising it past 16 gets 16 — the ceiling is in the
+  code — and a non-numeric or non-positive value falls back to 5 rather than
+  disabling proximity sharing, which is `gphone_bluetooth_range 0`'s job.
 - **`gphone_music_range`** — how far a phone playing music out loud is heard, in
   meters. **Set this one with `setr`.** The server uses it to decide who is told
   about a broadcast at all, and the client uses it to attenuate what it was told

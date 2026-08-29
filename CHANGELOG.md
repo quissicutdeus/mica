@@ -28,8 +28,14 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ## Unreleased
 
-Nothing to do, but a limit now exists that did not before.
+Nothing to do, but two limits now exist that did not before, and both change
+what a busy server sees.
 
+- **A Bluetooth proximity share reaches at most five phones**, nearest first,
+  set by the new `gphone_bluetooth_max_nearby` convar. It was previously
+  everyone in range, however many that was, and a photo drop writes each of them
+  a full copy of the photo. Raise it if your server's idea of "nearby" is a
+  whole club; the ceiling is 16.
 - **A photo larger than 4MB is refused** rather than stored. The column holds
   16MB and nothing checked against anything smaller, so a modified client could
   fill `gphone_media` far faster than any camera can. Nothing the phone's own
