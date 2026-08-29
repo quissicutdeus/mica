@@ -28,19 +28,36 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ## Unreleased
 
-Nothing to do, but two limits now exist that did not before, and both change
-what a busy server sees.
+### Action required
 
-- **A Bluetooth proximity share reaches at most five phones**, nearest first,
+None. No versioned migration has landed and no table has gained a column, so
+nothing here needs `gphoneschema apply`. Every convar below defaults to the
+behaviour a server already had, so an update that sets none of them changes
+nothing for your players.
+
+### Added
+
+- Proximity music, which lets a phone play out loud to the people standing
+  around it, is bounded by two new convars: `gphone_music_range` for how far it
+  carries, and `gphone_music_max_nearby` for how many broadcasters one listener
+  is told about at once (MICA-111).
+- `gphone_camera_quality` sets how hard a photo is squeezed before it is stored,
+  for an owner trading picture quality against database size.
+- A Bluetooth proximity share now reaches at most five phones, nearest first,
   set by the new `gphone_bluetooth_max_nearby` convar. It was previously
   everyone in range, however many that was, and a photo drop writes each of them
   a full copy of the photo. Raise it if your server's idea of "nearby" is a
-  whole club; the ceiling is 16.
-- **A photo larger than 4MB is refused** rather than stored. The column holds
-  16MB and nothing checked against anything smaller, so a modified client could
-  fill `gphone_media` far faster than any camera can. Nothing the phone's own
-  camera produces comes close to the cap — `gphone_camera_quality` is still the
-  knob for how big stored photos actually get.
+  whole club; the ceiling is 16 (MICA-115).
+- A photo larger than 4MB is refused rather than stored. The column holds 16MB
+  and nothing checked against anything smaller, so a modified client could fill
+  `gphone_media` far faster than any camera can. Nothing the phone's own camera
+  produces comes close to the cap — `gphone_camera_quality` is still the knob
+  for how big stored photos actually get (MICA-116).
+
+Their defaults, and which of them need `setr` rather than `set`, are in the
+README's [Configuration](README.md#configuration) section — the distinction
+matters, because the two that the game client reads are silently ignored unless
+they are replicated.
 
 ## 2026-08-27
 
