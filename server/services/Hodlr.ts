@@ -1,7 +1,7 @@
 import { defineService } from '../lib/defineService';
 import type { HodlrHolding } from '@shared/types';
 import { fields, requirePositiveInt } from '../lib/payload';
-import { getCurrentPrice, getPriceHistory } from './HodlrMarket';
+import { getCurrentPrice, getPriceHistory, isMarketReady } from './HodlrMarket';
 import { Database } from '../lib/Database';
 
 /**
@@ -45,6 +45,32 @@ export const hodlr = defineService<HodlrHolding>({
 const app = hodlr.app;
 const repo = hodlr.repo;
 
+const TRADE_MAX_CONVAR = 'gphone_hodlr_trade_max';
+const DEFAULT_TRADE_MAX = 50_000;
+
+/**
+ * The ceiling on what one buy or sell may move, in money rather than in coins — a coin cap
+ * would mean something different at 50 than at 5000. Read per call, the way `Bank.ts` reads
+ * `gphone_bank_transfer_max`, and deliberately the same default: a Hodlr trade and a bank
+ * send are the same kind of hole in an economy, and until MICA-130 only one of them was
+ * bounded. `requirePositiveInt` accepts any positive integer, so the effective cap on a buy
+ * was the whole bank balance and on a sell the whole holding — one call, one position.
+ *
+ * Per trade, not per session: the rate limiter bounds how many calls a player makes, this
+ * bounds what one of them can be worth.
+ */
+const tradeMax = (): number => {
+  const raw = Number.parseInt(GetConvar(TRADE_MAX_CONVAR, String(DEFAULT_TRADE_MAX)), 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_TRADE_MAX;
+};
+
+/**
+ * Trades are refused while the market has not yet checked its price against storage.
+ * `HodlrMarket.isMarketReady` carries the reasoning; the short version is that an unrestored
+ * price is the opening constant, and settling money against it is the MICA-130 exploit.
+ */
+const MARKET_CLOSED = { ok: false, reason: 'market_unavailable' } as const;
+
 /** This player's holding row, creating an empty one on first contact. */
 const findOrCreateHolding = async (citizenid: string): Promise<HodlrHolding> => {
   const [existing] = await repo.findAll({ citizenid } as Partial<HodlrHolding>);
@@ -71,9 +97,17 @@ app.registerEvent('price', async () => {
 });
 
 app.registerEvent('buy', async (source, cbId, data, citizenid, player) => {
+  if (!isMarketReady()) return MARKET_CLOSED;
+
   const quantity = requirePositiveInt(fields(data).quantity, 'quantity');
   const price = getCurrentPrice();
   const cost = price * quantity;
+
+  // Before the holding is touched, so a refused trade does not create a row for a player
+  // who has never held a coin.
+  if (cost > tradeMax()) {
+    return { ok: false, reason: 'exceeds_limit' };
+  }
 
   // Ensures the row exists before the atomic increment below — findOrCreateHolding
   // does not itself need to be race-free, since the increment that follows is.
@@ -98,7 +132,19 @@ app.registerEvent('buy', async (source, cbId, data, citizenid, player) => {
 });
 
 app.registerEvent('sell', async (source, cbId, data, citizenid, player) => {
+  if (!isMarketReady()) return MARKET_CLOSED;
+
   const quantity = requirePositiveInt(fields(data).quantity, 'quantity');
+  // Quoted once, above the decrement, because the cap has to be checked before any coin
+  // moves — and settling at the price the request was priced against is the fairer of the
+  // two readings anyway.
+  const price = getCurrentPrice();
+  const proceeds = price * quantity;
+
+  if (proceeds > tradeMax()) {
+    return { ok: false, reason: 'exceeds_limit' };
+  }
+
   const holding = await findOrCreateHolding(citizenid);
 
   // Atomic conditional decrement: the `quantity >= ?` guard is re-checked by the
@@ -112,9 +158,6 @@ app.registerEvent('sell', async (source, cbId, data, citizenid, player) => {
   if (!decremented) {
     return { ok: false, reason: 'insufficient_holdings' };
   }
-
-  const price = getCurrentPrice();
-  const proceeds = price * quantity;
 
   if (!player.addMoney('bank', proceeds)) {
     // The decrement already committed — refund the coins rather than leave the

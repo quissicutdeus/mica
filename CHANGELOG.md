@@ -83,6 +83,12 @@ changes nothing for your players.
   `gphone:server:media:characterDeleted` with a citizenid to reclaim the space
   at once (MICA-71).
 
+- `gphone_hodlr_trade_max` caps what a single Hodlr buy or sell can be worth,
+  defaulting to 50,000 — the same number and the same shape as
+  `gphone_bank_transfer_max`, which was until now the only value cap on the
+  phone. Nothing bounded a trade before, so one request could convert a whole
+  bank balance into coin or a whole holding back into money (MICA-130).
+
 On the question behind all of that: **photos stay base64 in MySQL.** A FiveM
 resource has no static file host it can safely write to, one database backup
 still restores the whole phone, and CEF renders a data URI without a second
@@ -94,6 +100,31 @@ Their defaults, and which of them need `setr` rather than `set`, are in the
 README's [Configuration](README.md#configuration) section — the distinction
 matters, because the two that the game client reads are silently ignored unless
 they are replicated.
+
+### Fixed
+
+- **Hodlr's coin price survives a restart.** It was module state that opened at
+  500 every time the resource started, while the holdings it values are a real
+  database column that came straight back — so every restart re-valued every
+  holding at a constant anyone can read in the source, and buying under it was a
+  risk-free bet on the next restart. The price is now restored from the newest
+  row of the price history that was already being recorded for the chart. There
+  is nothing to run: the table and its rows already exist, and an install with
+  no history still opens at 500. A restart no longer resets your economy's coin
+  (MICA-130).
+- **The coin no longer drifts downward on its own.** Its random walk multiplied
+  the price by a symmetric percentage each tick, which decays by construction —
+  simulated below its opening price about 60% of the time at every horizon, with
+  a median of 172 after 72 hours of uptime. The step is now taken in log space
+  and pulled gently back toward 500, so a long-running server's coin stays in a
+  tradeable band instead of grinding toward the floor. **Expect prices on an
+  established server to look different after this update**: a coin that had
+  drifted far below 500 will climb back toward it over the following hours
+  (MICA-130).
+- **The price floor is no longer a free bet.** At the floor of 50 a downward
+  tick rounded back to 50 and was discarded, so a holder sitting there had no
+  downside at all. Both boundaries now turn a step around rather than swallowing
+  it (MICA-130).
 
 ## 2026-08-27
 

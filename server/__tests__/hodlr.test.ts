@@ -35,9 +35,10 @@ vi.mock('../lib/FrameworkBridge', () => ({
   }
 }));
 
-const market = vi.hoisted(() => ({ price: 10 }));
+const market = vi.hoisted(() => ({ price: 10, ready: true }));
 vi.mock('../services/HodlrMarket', () => ({
   getCurrentPrice: () => market.price,
+  isMarketReady: () => market.ready,
   getPriceHistory: async () => []
 }));
 
@@ -85,6 +86,7 @@ describe('hodlr: buy and sell', () => {
     vi.clearAllMocks();
     __resetRateLimits();
     market.price = 10;
+    market.ready = true;
     wallet.bank = 1000;
     player.getMoney.mockImplementation(() => wallet.bank);
     player.removeMoney.mockImplementation(() => true);
@@ -194,6 +196,103 @@ describe('hodlr: buy and sell', () => {
       const reply = await call('gphone:server:hodlr:portfolio', {});
 
       expect(reply).toEqual({ quantity: 0, currentPrice: 10, currentValue: 0 });
+    });
+  });
+
+  /**
+   * MICA-130, part 4: a trade is capped by value, the way `Bank.ts` caps a send.
+   *
+   * `requirePositiveInt` accepts any positive integer, so the effective ceiling on a buy was
+   * the player's whole bank balance and on a sell their whole holding — one call moved the
+   * entire position. The rate limiter bounds how many calls a modified client makes, never
+   * what one of them is worth.
+   */
+  describe('per-trade value cap', () => {
+    const withConvar = (value: string, run: () => Promise<void>) => {
+      const previous = (globalThis as any).GetConvar;
+      (globalThis as any).GetConvar = () => value;
+      return run().finally(() => {
+        (globalThis as any).GetConvar = previous;
+      });
+    };
+
+    it('refuses a buy worth more than the cap before any money or row is touched', async () => {
+      // 5001 x 10 is over the 50000 default. The bank balance is 1000, so a reply of
+      // `insufficient_funds` here would mean the cap was checked after the wallet — and the
+      // cap is the check that has to come first, since it is the one a rich player still hits.
+      const reply = await call(BUY, { quantity: 5001 });
+
+      expect(reply).toEqual({ ok: false, reason: 'exceeds_limit' });
+      expect(player.getMoney).not.toHaveBeenCalled();
+      expect(player.removeMoney).not.toHaveBeenCalled();
+      expect(dbMock.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a sell worth more than the cap before the decrement', async () => {
+      const reply = await call(SELL, { quantity: 5001 });
+
+      expect(reply).toEqual({ ok: false, reason: 'exceeds_limit' });
+      expect(dbMock.update).not.toHaveBeenCalled();
+      expect(player.addMoney).not.toHaveBeenCalled();
+    });
+
+    it('allows a trade worth exactly the cap', async () => {
+      wallet.bank = 1_000_000;
+
+      const reply = await call(BUY, { quantity: 5000 });
+
+      expect(reply).toEqual({ ok: true, quantity: 5005, price: 10, cost: 50_000 });
+    });
+
+    it('honours the convar rather than only the default', async () => {
+      await withConvar('100', async () => {
+        expect(await call(BUY, { quantity: 11 })).toEqual({ ok: false, reason: 'exceeds_limit' });
+        expect(await call(SELL, { quantity: 11 })).toEqual({ ok: false, reason: 'exceeds_limit' });
+        expect(await call(BUY, { quantity: 10 })).toMatchObject({ ok: true, cost: 100 });
+      });
+    });
+
+    it('falls back to the default when the convar is not a usable number', async () => {
+      await withConvar('nonsense', async () => {
+        expect(await call(BUY, { quantity: 5001 })).toEqual({ ok: false, reason: 'exceeds_limit' });
+        expect(await call(BUY, { quantity: 1 })).toMatchObject({ ok: true });
+      });
+    });
+
+    it('caps a quantity so large it would otherwise reach SQL as a number', async () => {
+      // `requirePositiveInt` is happy with 1e20; the cap is what stops it, and it stops it
+      // before the value is ever handed to the database or the framework's money API.
+      const reply = await call(SELL, { quantity: 1e20 });
+
+      expect(reply).toEqual({ ok: false, reason: 'exceeds_limit' });
+      expect(dbMock.update).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * MICA-130, part 1, at the service boundary: no trade settles against a price the market
+   * has not checked against storage yet. An unrestored price is the opening constant, which
+   * is the number the whole restart exploit was built on.
+   */
+  describe('a market that has not opened', () => {
+    beforeEach(() => {
+      market.ready = false;
+    });
+
+    it('refuses a buy without debiting anyone', async () => {
+      const reply = await call(BUY, { quantity: 1 });
+
+      expect(reply).toEqual({ ok: false, reason: 'market_unavailable' });
+      expect(player.removeMoney).not.toHaveBeenCalled();
+      expect(dbMock.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a sell without paying anyone', async () => {
+      const reply = await call(SELL, { quantity: 1 });
+
+      expect(reply).toEqual({ ok: false, reason: 'market_unavailable' });
+      expect(player.addMoney).not.toHaveBeenCalled();
+      expect(dbMock.update).not.toHaveBeenCalled();
     });
   });
 });

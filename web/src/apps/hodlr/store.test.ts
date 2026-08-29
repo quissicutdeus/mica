@@ -152,6 +152,14 @@ describe('hodlr store', () => {
       expect(tradeFailureMessage('request_failed', 3)).toBe(
         'The market did not answer. Try again.'
       );
+      // Both added with MICA-130's server-side limits: a trade over the per-trade cap,
+      // and one attempted before the market has restored its price after a restart.
+      expect(tradeFailureMessage('exceeds_limit', 3)).toBe(
+        'That is over the per-trade limit. Try a smaller amount.'
+      );
+      expect(tradeFailureMessage('market_unavailable', 3)).toBe(
+        'The market is still opening. Try again in a moment.'
+      );
     });
 
     it('falls through to a sentence rather than showing a slug it has no wording for', () => {

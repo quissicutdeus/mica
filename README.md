@@ -268,6 +268,7 @@ you intend to change something.
 set gphone_admin_aces "gphone.admin,command"
 set gphone_rate_limit 60
 set gphone_bank_transfer_max 50000
+set gphone_hodlr_trade_max 50000
 set gphone_max_accounts_per_app 3
 set gphone_bluetooth_range 15
 set gphone_bluetooth_max_nearby 5
@@ -285,6 +286,7 @@ set gphone_media_retention 0
 | `gphone_admin_aces`             | comma-separated aces | `gphone.admin,command` | Who counts as a gPhone admin                       |
 | `gphone_rate_limit`             | integer              | `60`                   | Requests per player, per action, per minute        |
 | `gphone_bank_transfer_max`      | integer              | `50000`                | Ceiling on one player-to-player send               |
+| `gphone_hodlr_trade_max`        | integer              | `50000`                | Ceiling on what one Hodlr buy or sell is worth     |
 | `gphone_max_accounts_per_app`   | integer              | `3`                    | Identities one player may hold in one social app   |
 | `gphone_bluetooth_range`        | integer, meters      | `15`                   | How far a proximity share reaches                  |
 | `gphone_bluetooth_max_nearby`   | integer              | `5`                    | How many phones one proximity share reaches        |
@@ -296,7 +298,7 @@ set gphone_media_retention 0
 | `gphone_media_quota_mb`         | integer, MiB         | `64`                   | Storage one player's photo library may occupy      |
 | `gphone_media_retention`        | integer, days        | `0` (off)              | How long stored media is kept, if you want a limit |
 
-Ten of the thirteen are read on every use rather than cached, so changing one
+Eleven of the fourteen are read on every use rather than cached, so changing one
 with `set` from the live console takes effect on the next request and needs no
 restart. `gphone_blabber_edit_window` and `gphone_notification_retention` are
 read once at resource start, so a change to either needs a restart, for the
@@ -344,6 +346,16 @@ rather than the next time they take a photo.
   request can do rather than what a session can. Set it against your economy's
   scale — it is the main brake on a compromised client emptying an account in
   one action. A non-numeric or non-positive value falls back to 50000.
+- **`gphone_hodlr_trade_max`** — the same ceiling for one Hodlr buy or sell,
+  measured in money rather than in coins: a coin cap would mean something very
+  different at 50 a coin than at 5000. A larger trade is refused before any
+  money or any coin moves. It exists for the same reason the bank one does — a
+  modified client can emit `gphone:server:hodlr:buy` with any quantity, and
+  without this the effective ceiling was the player's whole bank balance on a
+  buy and their whole holding on a sell, so one request moved an entire
+  position. Per trade, not per session: the rate limit bounds how many requests
+  a player makes, this bounds what one of them can be worth. A non-numeric or
+  non-positive value falls back to 50000.
 - **`gphone_max_accounts_per_app`** — how many identities one player may hold in
   one social app; Blabber's `@handle`s are the only current consumer. Capped
   because the handle namespace is public and finite: with no limit, one player

@@ -44,6 +44,10 @@ export const tradeFailureMessage = (reason: string, holding: number): string => 
       return `You only have ${holding} gCoin to sell.`;
     case 'insufficient_funds':
       return 'Your bank balance will not cover that.';
+    case 'exceeds_limit':
+      return 'That is over the per-trade limit. Try a smaller amount.';
+    case 'market_unavailable':
+      return 'The market is still opening. Try again in a moment.';
     case 'debit_failed':
     case 'credit_failed':
       return 'The bank refused the transfer. Nothing changed.';
