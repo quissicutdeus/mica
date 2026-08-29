@@ -28,6 +28,9 @@ import {
   loadDmThreads,
   loadDmMessages,
   sendDm,
+  dmReactions,
+  loadDmReactions,
+  toggleDmReaction,
   viewBlab,
   loadMoreReplies,
   accountResults,
@@ -516,6 +519,63 @@ describe('blabber service', () => {
       await sendDm(2, 'later');
 
       expect(get(dmMessages).map((m) => m.id)).toEqual([10, 11]);
+    });
+
+    /**
+     * Reactions run on the shared primitive now (MICA-98), so the mechanics — the
+     * optimistic paint, the rollback, the keyed map — are pinned in
+     * `sdk/kit/createReactionStore.test.ts`. What is Blabber's and belongs here is the wiring:
+     * which table, which identity, and the refusal that has to happen before the store paints
+     * anything.
+     */
+    describe('DM reactions', () => {
+      it('reads a page of DMs against the accounts service, by table', async () => {
+        activeAccountId.set(1);
+        myAccounts.set([{ id: 1 } as Account]);
+        const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({});
+
+        await loadDmReactions([10, 11]);
+
+        expect(spy).toHaveBeenCalledWith(
+          'getReactionsFor',
+          { app: 'blabber', target_table: 'gphone_blabber_dms', target_ids: [10, 11] },
+          { defaultValue: {} }
+        );
+      });
+
+      it('reacts as the active account, naming the DM row', async () => {
+        activeAccountId.set(4);
+        myAccounts.set([{ id: 4 } as Account]);
+        const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(undefined);
+
+        await toggleDmReaction(10, '\u{1F525}');
+
+        expect(spy).toHaveBeenCalledWith(
+          'reactToTarget',
+          {
+            app: 'blabber',
+            account_id: 4,
+            target_table: 'gphone_blabber_dms',
+            target_id: 10,
+            emoji: '\u{1F525}'
+          },
+          undefined
+        );
+        expect(get(dmReactions)[10]).toEqual({ counts: { '\u{1F525}': 1 }, mine: ['\u{1F525}'] });
+      });
+
+      it('refuses before painting anything when no handle is claimed', async () => {
+        activeAccountId.set(null);
+        myAccounts.set([]);
+        const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(undefined);
+
+        await expect(toggleDmReaction(12, '\u{1F44D}')).rejects.toThrow('Claim a handle first.');
+
+        // The check is in front of the store, not inside the transport: a chip that fills and
+        // then snaps back is worse than one that never moved.
+        expect(get(dmReactions)[12]).toBeUndefined();
+        expect(spy).not.toHaveBeenCalled();
+      });
     });
   });
 

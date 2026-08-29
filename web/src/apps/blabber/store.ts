@@ -5,10 +5,16 @@ import type {
   BlabEngagement,
   BlabberDm,
   BlabberDmThread,
-  FollowStats,
-  ReactionSummary
+  FollowStats
 } from '@shared/types';
-import { createPagedStore, useAccounts, useAppEvents, usePersisted, useService } from '@gphone/sdk';
+import {
+  createPagedStore,
+  createReactionStore,
+  useAccounts,
+  useAppEvents,
+  usePersisted,
+  useService
+} from '@gphone/sdk';
 
 /**
  * Blabber's own data layer, inside the app.
@@ -557,66 +563,64 @@ export const sendDm = async (peerAccountId: number, body: string): Promise<void>
 };
 
 /**
- * Reactions on a page of DMs. Keyed by message id, mirroring `engagement`'s shape — one
- * batched read for a page of messages rather than one per bubble.
+ * Reactions on a page of DMs, on the shared reactions primitive (MICA-98).
+ *
+ * The keyed map, the batched read, the optimistic toggle and its rollback used to be written
+ * out here. All four are properties of "a reaction" rather than of Blabber, and Messages wants
+ * the same behaviour (MICA-68), so they live in `createReactionStore` now and this file
+ * supplies only the part that is genuinely Blabber's: which table is being reacted to, and the
+ * fact that identity here is an **account** rather than a citizenid.
  *
  * `gphone_account_reactions` lives on the shared `accounts` service (§10's "the accounts
- * graph" framing), so this goes through named routes rather than `blabberService()`.
+ * graph" framing), so the transport goes through the `accounts` facet rather than
+ * `blabberService()` — an add-on reaches a *shared* service only through an enumerated facet.
  */
-export const dmReactions = writable<Record<number, ReactionSummary>>({});
+const DM_TARGET_TABLE = 'gphone_blabber_dms';
 
-const NO_REACTIONS: ReactionSummary = { counts: {}, mine: [] };
-
-export const loadDmReactions = async (ids: number[]): Promise<void> => {
-  if (ids.length === 0) return;
-  const reply = await accounts().getReactionsFor({
-    app: 'blabber',
-    target_table: 'gphone_blabber_dms',
-    target_ids: ids
-  });
-  dmReactions.update((current) => ({ ...current, ...reply }));
-};
-
-/** Optimistic, then reconciled — same discipline as `toggleEar`/`toggleFollow`. */
-export const toggleDmReaction = async (messageId: number, emoji: string): Promise<void> => {
+/**
+ * The write payload, rebuilt per call rather than closed over.
+ *
+ * The active account can change between one reaction and the next — a player with a main and
+ * an alt switches in the account sheet — and a payload captured when the store was created
+ * would keep reacting as whoever was active at import time.
+ */
+const dmReactionPayload = (targetId: number, emoji: string) => {
   const accountId = getActiveAccountId();
   if (accountId === null) throw new Error('Claim a handle first.');
-
-  let hadIt = false;
-  dmReactions.update((current) => {
-    const existing = current[messageId] ?? NO_REACTIONS;
-    hadIt = existing.mine.includes(emoji);
-    const counts = { ...existing.counts };
-    counts[emoji] = Math.max(0, (counts[emoji] ?? 0) + (hadIt ? -1 : 1));
-    return {
-      ...current,
-      [messageId]: {
-        counts,
-        mine: hadIt ? existing.mine.filter((e) => e !== emoji) : [...existing.mine, emoji]
-      }
-    };
-  });
-
-  const payload = {
+  return {
     app: 'blabber',
     account_id: accountId,
-    target_table: 'gphone_blabber_dms',
-    target_id: messageId,
+    target_table: DM_TARGET_TABLE,
+    target_id: targetId,
     emoji
   };
+};
 
-  try {
-    // Two literal calls, matching every other toggle here: a computed action name is
-    // invisible to `routes.test.ts`.
-    if (hadIt) {
-      await accounts().unreactToTarget(payload);
-    } else {
-      await accounts().reactToTarget(payload);
-    }
-  } catch (error) {
-    await loadDmReactions([messageId]);
-    throw error;
-  }
+export const dmReactions = createReactionStore({
+  load: (ids) =>
+    accounts().getReactionsFor({
+      app: 'blabber',
+      target_table: DM_TARGET_TABLE,
+      target_ids: ids
+    }),
+  // Two literal calls, matching every other toggle here: a computed action name is
+  // invisible to `routes.test.ts`.
+  react: (targetId, emoji) => accounts().reactToTarget(dmReactionPayload(targetId, emoji)),
+  unreact: (targetId, emoji) => accounts().unreactToTarget(dmReactionPayload(targetId, emoji))
+});
+
+export const loadDmReactions = (ids: number[]): Promise<void> => dmReactions.load(ids);
+
+/**
+ * Toggle, with the handle check in front of it.
+ *
+ * The check is here rather than inside the transport on purpose: the store paints its
+ * optimistic update *before* it calls the transport, so a player with no handle would see the
+ * chip fill and then snap back. Refusing up front means nothing moves.
+ */
+export const toggleDmReaction = async (messageId: number, emoji: string): Promise<void> => {
+  if (getActiveAccountId() === null) throw new Error('Claim a handle first.');
+  await dmReactions.toggle(messageId, emoji);
 };
 
 /**

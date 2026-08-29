@@ -218,10 +218,8 @@
                 {/if}
               </div>
               <ReactionBar
-                counts={$dmReactions[message.id]?.counts ?? {}}
-                mine={$dmReactions[message.id]?.mine ?? []}
-                onreact={(emoji: string) => toggleDmReaction(message.id, emoji)}
-                onunreact={(emoji: string) => toggleDmReaction(message.id, emoji)}
+                summary={$dmReactions[message.id]}
+                ontoggle={(emoji: string) => toggleDmReaction(message.id, emoji)}
                 class="mt-1"
               />
             </div>
