@@ -455,8 +455,26 @@ const esxRemoveItem = (xPlayer: any, src: number, item: string, count: number): 
   return FrameworkBridge.removeInventoryItem(src, {}, item, count);
 };
 
-/** Sources already warned about an ESX build with nowhere to put metadata. */
-const esxMetaWarned = new Set<number>();
+/**
+ * Whether this build has already been reported as having nowhere to put metadata.
+ *
+ * A single flag, not a set of sources. What is being reported is a property of the
+ * **es_extended build** — either it exposes `setMeta`/`set` or it does not — and that answer
+ * is the same for every player on the server, so there is nothing per-player to remember.
+ *
+ * It was a `Set<number>` first, and that was wrong twice over: nothing removed from it, so it
+ * grew for the life of the resource, and FiveM recycles server ids, so a recycled id would
+ * stay silenced for whoever was assigned it next. `lib/rateLimit.ts`'s `forgetSource` and
+ * `lib/shell.ts`'s `refusalsLogged` both clear on `playerDropped` for that second reason.
+ * The fix here is not to clear it but to stop keying it per player, which also spares this
+ * module a `playerDropped` handler it has never needed.
+ */
+let esxMetaUnsupportedReported = false;
+
+/** Test seam, like `__setResourceLookup`. */
+export const __resetEsxMetaWarning = (): void => {
+  esxMetaUnsupportedReported = false;
+};
 
 /**
  * `setMeta` on ESX **degrades; it is not unsupported.**
@@ -488,12 +506,13 @@ const esxSetMeta = (xPlayer: any, src: number, key: string, value: any): void =>
     return;
   }
 
-  if (!esxMetaWarned.has(src)) {
-    esxMetaWarned.add(src);
+  if (!esxMetaUnsupportedReported) {
+    esxMetaUnsupportedReported = true;
     console.warn(
-      `[FrameworkBridge] This es_extended build exposes neither setMeta nor set, so ` +
-        `'${key}' was not mirrored onto the framework player for source ${src}. gPhone's own ` +
-        `tables are unaffected.`
+      `[FrameworkBridge] This es_extended build exposes neither setMeta nor set, so gPhone ` +
+        `cannot mirror metadata onto the framework player — '${key}' was dropped, first seen ` +
+        `for source ${src}. gPhone's own tables are unaffected. Reported once per resource ` +
+        `start, because this is a property of the build rather than of a player.`
     );
   }
 };

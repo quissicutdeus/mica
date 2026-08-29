@@ -212,6 +212,16 @@ const esxLoadedSource = (playerId: unknown, xPlayer: unknown): number | undefine
  *
  * The payload is therefore the identity here, on the same terms as the
  * `QBCore:Server:PlayerLoaded` twin above.
+ *
+ * **This is one of three player-loaded listeners, and the only one with an ESX twin.**
+ * `server/services/Settings.ts` and `server/services/Battery.ts` register the other two and
+ * both still answer only to the qb event names, so on es_extended a character load rehydrates
+ * the shell and does *not* rehydrate settings or seed the battery — a player whose saved
+ * charge is 12 sees 100. That is a known gap rather than a decision: MICA-150 was scoped to
+ * `server/lib/`, and giving all three an ESX path is better done by having them subscribe to
+ * one registry here than by adding a fourth hand-written listener, which is the shape
+ * `playerLoaded.test.ts` already counts because it keeps going wrong. Said out loud because
+ * grepping `esx:playerLoaded` finds one of three and nothing explains why.
  */
 on('esx:playerLoaded', (playerId: unknown, xPlayer: unknown) => {
   const src = esxLoadedSource(playerId, xPlayer);

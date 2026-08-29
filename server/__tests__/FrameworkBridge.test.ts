@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   FrameworkBridge,
   __setResourceLookup,
-  citizenIdFromIdentifier
+  citizenIdFromIdentifier,
+  __resetEsxMetaWarning
 } from '../lib/FrameworkBridge';
 
 /**
@@ -757,9 +758,9 @@ describe('FrameworkBridge on ESX — items, metadata and usable items', () => {
     expect(player.set).toHaveBeenCalledWith('gphone_battery', 42);
   });
 
-  it('drops the write, once per player, on a build with neither — and never throws', () => {
+  it('drops the write on a build with neither, and never throws', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    // A source of its own: the "said once" set is module state that outlives a test.
+    __resetEsxMetaWarning();
     useResources(esx({ 11: xPlayer(LICENSE, { source: 11, omit: ['setMeta'] }) }));
     const bridged = FrameworkBridge.getPlayer(11)!;
 
@@ -767,6 +768,34 @@ describe('FrameworkBridge on ESX — items, metadata and usable items', () => {
       bridged.setMeta('gphone_battery', 42);
       bridged.setMeta('gphone_battery', 43);
     }).not.toThrow();
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the unsupported build once for the server, not once per player', () => {
+    /**
+     * This was a `Set<number>` of sources, and it was wrong twice over: nothing ever removed
+     * from it, so it grew for the life of the resource, and FiveM recycles server ids — so a
+     * recycled id stayed silenced and the next player on it never produced a warning. Both
+     * are invisible from a single-player test, which is why this one drives several.
+     *
+     * The fix was not to clear it on `playerDropped` like `rateLimit` and `shell` do, but to
+     * stop keying it per player: whether the build exposes `setMeta` is a fact about the
+     * build, identical for everyone connected.
+     */
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    __resetEsxMetaWarning();
+    useResources(
+      esx({
+        1: xPlayer('license:aaa', { source: 1, omit: ['setMeta'] }),
+        2: xPlayer('license:bbb', { source: 2, omit: ['setMeta'] }),
+        3: xPlayer('license:ccc', { source: 3, omit: ['setMeta'] })
+      })
+    );
+
+    for (const src of [1, 2, 3, 1, 2, 3]) {
+      FrameworkBridge.getPlayer(src)!.setMeta('gphone_battery', 42);
+    }
+
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
