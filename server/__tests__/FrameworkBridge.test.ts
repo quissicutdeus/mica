@@ -1,9 +1,27 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+/**
+ * `FrameworkBridge` reads the framework's own player table for the offline lookups, so it
+ * imports `Database` — which reads `exports.oxmysql` in module scope and must never reach a
+ * real connection from a test (AGENTS.md §1).
+ */
+const { dbMock } = vi.hoisted(() => ({
+  dbMock: {
+    query: vi.fn(),
+    insert: vi.fn(),
+    update: vi.fn(),
+    scalar: vi.fn(),
+    single: vi.fn()
+  }
+}));
+vi.mock('../lib/Database', () => ({ Database: dbMock }));
+
 import {
   FrameworkBridge,
   __setResourceLookup,
   citizenIdFromIdentifier,
-  __resetEsxMetaWarning
+  __resetEsxMetaWarning,
+  __resetOfflineLookupWarnings
 } from '../lib/FrameworkBridge';
 
 /**
@@ -806,5 +824,71 @@ describe('FrameworkBridge on ESX — items, metadata and usable items', () => {
 
     FrameworkBridge.registerUsableItem('battery_bank', cb);
     expect(RegisterUsableItem).toHaveBeenCalledWith('battery_bank', cb);
+  });
+});
+
+/**
+ * Which table an offline player is looked up in.
+ *
+ * `PlayerDirectory` covers both arms end to end; what is asserted here is the choice between
+ * them, which nothing else exercises. Getting it wrong is quiet and bad in a specific way: a
+ * server running a qb core would start reading `users`, find nothing, and render every
+ * offline player nameless — a regression with no error attached to it.
+ */
+describe('FrameworkBridge offline lookups pick a table by framework', () => {
+  beforeEach(() => {
+    __resetOfflineLookupWarnings();
+    dbMock.single.mockReset();
+    dbMock.single.mockResolvedValue(null);
+  });
+
+  const sqlOf = () => String(dbMock.single.mock.calls[0]?.[0] ?? '');
+
+  it('reads the qb players table when a qb core is present', async () => {
+    useResources(qbx({ PlayerData: { citizenid: 'CIT_A' } }));
+
+    await FrameworkBridge.findOfflineByCitizenId('CIT_A');
+
+    expect(sqlOf()).toContain('FROM players');
+  });
+
+  it('reads es_extended users when ESX is the only framework', async () => {
+    useResources(esx({}));
+
+    await FrameworkBridge.findOfflineByCitizenId(LICENSE);
+
+    expect(sqlOf()).toContain('FROM users');
+  });
+
+  it('keeps reading players when a qb core and es_extended are both installed', async () => {
+    // Identity precedence, applied to the offline path as well as to `getPlayer`. A live
+    // server does not change which string it calls a citizenid — or which table those strings
+    // live in — because a second framework resource happens to be running.
+    useResources({
+      ...qbx({ PlayerData: { citizenid: 'CIT_A' } }),
+      ...esx({})
+    });
+
+    await FrameworkBridge.findOfflineByCitizenId('CIT_A');
+
+    expect(sqlOf()).toContain('FROM players');
+  });
+
+  it('reads players when there is no framework at all, as it always did', async () => {
+    // The pre-ESX behaviour, kept: a frameworkless server still answers from `players` rather
+    // than silently switching table on the strength of a missing resource.
+    useResources({});
+
+    await FrameworkBridge.findOfflineByCitizenId('CIT_A');
+
+    expect(sqlOf()).toContain('FROM players');
+  });
+
+  it('asks nothing at all for an empty citizenid or phone', async () => {
+    useResources({});
+
+    await expect(FrameworkBridge.findOfflineByCitizenId('')).resolves.toBeNull();
+    await expect(FrameworkBridge.findOfflineByPhone('')).resolves.toBeNull();
+    expect(dbMock.single).not.toHaveBeenCalled();
   });
 });

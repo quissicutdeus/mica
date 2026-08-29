@@ -1,20 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 
 /**
- * MICA-136 — the three `QBCore:Server:OnPlayerLoaded` listeners.
+ * MICA-136, and the registry that stopped it happening a fourth time.
  *
- * `server/lib/shell.ts`, `server/services/Settings.ts` and `server/services/Battery.ts`
- * each register this name with `onNet` rather than `on`, because qbx_core fires it from the
- * client with `TriggerServerEvent` and no payload (`qbx_core/client/character.lua:280` and
- * `:482`; see the comment in `lib/shell.ts`). `onNet` is what makes it reachable by *any*
- * connected client, and all three used to take the target straight out of the payload — the
- * only place in the resource where a payload named somebody else and was believed.
+ * `QBCore:Server:OnPlayerLoaded` is registered with `onNet` rather than `on`, because qbx_core
+ * fires it from the *client* with `TriggerServerEvent` and no payload
+ * (`qbx_core/client/character.lua:280` and `:482`; see the comment in `lib/shell.ts`). `onNet`
+ * is what makes it reachable by **any** connected client.
  *
- * All three now go through `loadedPlayerSource`, so they are tested together: the property
- * is that no listener for this event ever acts on an id the connection did not supply.
- * `battery.test.ts`, `settings.test.ts` and `shell.test.ts` each keep their own
- * per-listener coverage; this suite is the one that would notice a fourth listener being
- * added without the guard.
+ * There were three listeners for it — `lib/shell.ts`, `services/Settings.ts` and
+ * `services/Battery.ts` — each pasted from the last, and all three took the target straight
+ * out of the payload: the only place in the resource where a payload named somebody else and
+ * was believed. MICA-136 fixed it in three files at once because the mistake had been made
+ * in three files at once, and adding ESX (MICA-150) would have meant a fourth listener per
+ * module.
+ *
+ * So `lib/shell.ts` now owns every player-loaded entry point and the other two subscribe.
+ * Three properties are asserted here, and the first is the one that makes the other two stay
+ * true: **no file but `lib/shell.ts` may register a player-loaded event at all**, checked
+ * against the source tree rather than against what this suite happens to import. Then: the
+ * resolved source never comes from a payload on the network path, and a subscriber cannot see
+ * an id the connection did not supply.
  */
 const { dbMock, bridgeMock, handlers, networked } = vi.hoisted(() => {
   // Inside `vi.hoisted` because ESM evaluates imports first: all three modules register at
@@ -59,7 +67,7 @@ const { dbMock, bridgeMock, handlers, networked } = vi.hoisted(() => {
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 vi.mock('../lib/FrameworkBridge', () => ({ FrameworkBridge: bridgeMock }));
 
-import { loadedPlayerSource } from '../lib/shell';
+import { loadedPlayerSource, onPlayerLoaded, PLAYER_LOADED_EVENTS } from '../lib/shell';
 import { __resetBatteryCache } from '../services/Battery';
 import '../services/Settings';
 import { __resetRateLimits } from '../lib/rateLimit';
@@ -117,10 +125,13 @@ beforeEach(() => {
 });
 
 describe('the network player-loaded listeners', () => {
-  it('registers exactly the three known listeners over the network', () => {
-    // If this number changes, the new listener needs `loadedPlayerSource` too — that is
-    // the whole reason the count is asserted rather than `toBeGreaterThan(0)`.
-    expect(loadedListeners()).toHaveLength(3);
+  it('registers exactly one listener over the network', () => {
+    // Three, once — one per module, each pasted from the last, and all three took the target
+    // out of the payload. `lib/shell.ts` now owns the entry point and `Settings`/`Battery`
+    // subscribe. The count is asserted rather than `toBeGreaterThan(0)` because a second
+    // registration means somebody hand-wrote a listener again, and the whole class of bug
+    // MICA-136 fixed is a hand-written listener resolving its own identity.
+    expect(loadedListeners()).toHaveLength(1);
   });
 
   it('ignores a payload naming a third party', () => {
@@ -256,6 +267,147 @@ describe('a refusal that nobody would otherwise notice', () => {
  * matters — it fails the moment somebody adds an `onNet` twin "to be safe" and quietly
  * manufactures the client-reachable entry point es_extended does not have.
  */
+/**
+ * The guard that makes the fragility structural rather than documented.
+ *
+ * Counting registrations only catches a listener in a module this suite happens to import, so
+ * a fifth module registering its own would slip past. This reads the source tree instead: no
+ * file but `lib/shell.ts` may register **any** player-loaded event name, whichever registrar
+ * it uses. Adding a listener the old way now fails the build, which is the difference between
+ * a rule and a comment — a guard that cannot fail is not a guard.
+ *
+ * Prose is deliberately allowed. `netGuard.ts` and `docs/security.md` both name these events
+ * in comments and should keep doing so; only a registration call is refused.
+ */
+describe('nothing outside lib/shell.ts registers a player-loaded event', () => {
+  const serverDir = path.join(__dirname, '..');
+
+  const sourceFiles = (dir: string): string[] =>
+    fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) return entry.name === '__tests__' ? [] : sourceFiles(full);
+      return entry.name.endsWith('.ts') ? [full] : [];
+    });
+
+  /** `on('name'` or `onNet('name'`, in either quote style, with or without whitespace. */
+  const registrationOf = (event: string) =>
+    new RegExp(String.raw`\bon(?:Net)?\(\s*['"]${event}['"]`);
+
+  it.each(Object.entries(PLAYER_LOADED_EVENTS))(
+    '%s (%s) is registered nowhere else',
+    (_key, event) => {
+      const registration = registrationOf(event);
+
+      const offenders = sourceFiles(serverDir)
+        .map((file) => path.relative(serverDir, file))
+        .filter((file) => file !== path.join('lib', 'shell.ts'))
+        .filter((file) => registration.test(fs.readFileSync(path.join(serverDir, file), 'utf8')));
+
+      expect(
+        offenders,
+        `'${event}' must only be registered in lib/shell.ts, which resolves the identity and ` +
+          'dispatches to subscribers. Use `onPlayerLoaded(name, handler)` instead — a ' +
+          'hand-written listener has to resolve the target itself, and that is what ' +
+          'MICA-136 had to fix in three files at once.'
+      ).toEqual([]);
+    }
+  );
+
+  it.each(Object.entries(PLAYER_LOADED_EVENTS))(
+    '%s (%s) has a pattern that still bites',
+    (_key, event) => {
+      /**
+       * The scan above is an emptiness assertion, so a pattern that stopped matching anything
+       * would pass it forever while guarding nothing — the "a check that fails open reads as a
+       * pass" failure this repo cares about, and the reason `lib/shell.ts` registers through
+       * `PLAYER_LOADED_EVENTS` rather than literals (so the scan cannot anchor on shell's own
+       * line). These are the shapes an offender would actually be written in.
+       */
+      const registration = registrationOf(event);
+
+      for (const offending of [
+        `on('${event}', (player) => {})`,
+        `onNet('${event}', (player) => {})`,
+        `on("${event}", handler)`,
+        `onNet( '${event}', handler )`
+      ]) {
+        expect(registration.test(offending), `should have matched: ${offending}`).toBe(true);
+      }
+
+      // And prose naming the event — which `netGuard.ts` and `docs/security.md` both do, and
+      // should keep doing — is not an offence.
+      expect(registration.test(`// see the ${event} listener in lib/shell.ts`)).toBe(false);
+    }
+  );
+});
+
+/**
+ * The registry, and the property that the two identity paths stay separate.
+ */
+describe('the player-loaded registry', () => {
+  it('runs every subscriber for one resolved source', () => {
+    // Shell, settings and battery all subscribe; one event feeds all three.
+    for (const listener of loadedListeners()) listener(undefined);
+
+    expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', ATTACKER]);
+    expect(emitted()).toContainEqual(['gphone:client:settings:rehydrate', ATTACKER]);
+  });
+
+  it('keeps running the others when one subscriber throws', async () => {
+    // A broken subscriber degrades rather than taking the character load with it — gPhone has
+    // no way to fail a framework's player load and must not invent one.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    onPlayerLoaded('exploding', () => {
+      throw new Error('subscriber exploded');
+    });
+
+    expect(() => {
+      for (const listener of loadedListeners()) listener(undefined);
+    }).not.toThrow();
+
+    expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', ATTACKER]);
+    await vi.waitFor(() =>
+      expect(emitted()).toContainEqual(['gphone:client:battery:set', ATTACKER, 100])
+    );
+  });
+
+  it('names the subscriber that threw, rather than failing silently', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    onPlayerLoaded('noisy', () => {
+      throw new Error('subscriber exploded');
+    });
+
+    for (const listener of loadedListeners()) listener(undefined);
+
+    expect(error.mock.calls.some((call) => String(call[0]).includes('noisy'))).toBe(true);
+  });
+
+  it('catches a rejected async subscriber too', async () => {
+    // `Battery`'s subscriber is async. A `void`-ed rejection would otherwise surface as an
+    // unhandled rejection with nothing naming the subscriber.
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    onPlayerLoaded('async-boom', () => Promise.reject(new Error('later')));
+
+    for (const listener of loadedListeners()) listener(undefined);
+
+    await vi.waitFor(() =>
+      expect(error.mock.calls.some((call) => String(call[0]).includes('async-boom'))).toBe(true)
+    );
+  });
+
+  it('never reaches a subscriber with a source the connection did not supply', () => {
+    // The MICA-136 property, now asserted one layer further in: the registry is handed an
+    // already-resolved source, so a forged payload is refused before any subscriber sees it.
+    onPlayerLoaded('watcher', (src) => {
+      throw new Error(`should not have run for ${src}`);
+    });
+
+    for (const listener of loadedListeners()) listener({ PlayerData: { source: VICTIM } });
+
+    expect(emitted()).toHaveLength(0);
+  });
+});
+
 describe("ESX's player-loaded event", () => {
   const esxListeners = (): Function[] => handlers.get('esx:playerLoaded') ?? [];
 
@@ -287,18 +439,18 @@ describe("ESX's player-loaded event", () => {
     expect(emitted()).toHaveLength(0);
   });
 
-  it('does not yet reach the settings and battery listeners — the known ESX gap', () => {
-    // `server/services/Settings.ts` and `server/services/Battery.ts` register their own
-    // player-loaded listeners and both still answer only to the qb event name. On ESX that
-    // means no settings rehydrate and no battery seed on character load: the phone works, but
-    // shows 100% for a player whose saved charge is 12. Pinned as a fact rather than left to
-    // be discovered in game, and deliberately not fixed here — MICA-150's server lane is
-    // scoped out of `server/services/`.
+  it('reaches settings and battery too, through the one registry', () => {
+    // The gap this closes: `Settings.ts` and `Battery.ts` used to register their own qb-named
+    // listeners, so an ESX character load rehydrated the shell and nothing else — a player
+    // whose saved charge was 12 saw 100. They subscribe now, so ESX costs them no code and
+    // cannot be forgotten for the next framework either.
     for (const listener of esxListeners()) listener(ATTACKER, { source: ATTACKER });
 
     expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', ATTACKER]);
-    expect(emitted()).not.toContainEqual(['gphone:client:settings:rehydrate', ATTACKER]);
-    expect(emitted().some((call) => call[0] === 'gphone:client:battery:set')).toBe(false);
+    expect(emitted()).toContainEqual(['gphone:client:settings:rehydrate', ATTACKER]);
+    return vi.waitFor(() =>
+      expect(emitted()).toContainEqual(['gphone:client:battery:set', ATTACKER, 100])
+    );
   });
 });
 

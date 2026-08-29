@@ -1,4 +1,5 @@
 import { citizenIdFromIdentifier } from '@shared/framework';
+import { Database } from './Database';
 
 export interface FrameworkPlayer {
   citizenid: string;
@@ -589,7 +590,175 @@ const esxAllPlayers = (core: any): Record<number, unknown> => {
   return out;
 };
 
+/**
+ * What a framework's own records say about a player, online or not.
+ *
+ * Names are separate rather than pre-joined because the two frameworks store them
+ * differently — qb inside a `charinfo` JSON column, ESX as two columns — and joining them is
+ * the caller's presentation decision. `phone` is nullable because on ESX it is genuinely
+ * absent from core.
+ */
+export interface FrameworkIdentity {
+  citizenid: string;
+  firstname: string | null;
+  lastname: string | null;
+  phone: string | null;
+}
+
+/**
+ * Is es_extended the framework answering for this server?
+ *
+ * A qb core wins when both are installed, matching `getPlayer`: a live server does not change
+ * which string it calls a citizenid on the strength of a second resource being present. With
+ * no framework at all this is false, so the offline lookups below fall through to the qb
+ * query — which is what they did before ESX existed, and what keeps a frameworkless test
+ * behaving as it always has.
+ */
+const usesEsx = (): boolean =>
+  !exposes('qbx_core', 'GetPlayer') && !exposes('qb-core', 'GetCoreObject') && esxCore() !== null;
+
+const trimmedOrNull = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+/**
+ * `charinfo` comes back as a string from some drivers and an object from others, depending on
+ * whether the column is `json` or `text` and on how oxmysql was configured. Both shapes reach
+ * here, so both are handled rather than one being assumed — the same reason `Photos` coerces
+ * its `image` column on the way out.
+ */
+const parseCharinfo = (raw: unknown): Record<string, unknown> | null => {
+  if (raw && typeof raw === 'object') return raw as Record<string, unknown>;
+  if (typeof raw !== 'string') return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+};
+
+const identityFromCharinfo = (citizenid: string, raw: unknown): FrameworkIdentity => {
+  const charinfo = parseCharinfo(raw);
+  return {
+    citizenid,
+    firstname: trimmedOrNull(charinfo?.firstname),
+    lastname: trimmedOrNull(charinfo?.lastname),
+    phone: trimmedOrNull(charinfo?.phone)
+  };
+};
+
+/**
+ * An offline lookup that answers nothing rather than throwing.
+ *
+ * These read another resource's table, which gPhone neither creates nor migrates. The column
+ * may be absent, the table may be absent, and on ESX the whole shape is a different framework
+ * away — so a query here can fail for reasons that are not bugs in gPhone and must not become
+ * an exception on a path that is only ever trying to render a name.
+ *
+ * Returning null degrades to exactly the pre-existing behaviour: an offline player with no
+ * display name. That is a worse phone and a working one, where a throw would take down the
+ * conversation being created around it. Logged once per distinct failure so a server owner
+ * with a genuinely broken table is not left guessing.
+ */
+const offlineLookupFailures = new Set<string>();
+
+const offlineLookup = async <T>(what: string, run: () => Promise<T | null>): Promise<T | null> => {
+  try {
+    return await run();
+  } catch (error) {
+    if (!offlineLookupFailures.has(what)) {
+      offlineLookupFailures.add(what);
+      console.error(
+        `[FrameworkBridge] ${what} failed. Offline players will render without a name until ` +
+          `this is fixed; nothing else is affected. Reported once per resource start.`,
+        error
+      );
+    }
+    return null;
+  }
+};
+
+/** Test seam, like `__setResourceLookup`. */
+export const __resetOfflineLookupWarnings = (): void => {
+  offlineLookupFailures.clear();
+};
+
 export class FrameworkBridge {
+  /**
+   * The framework's record of a player who may be offline, by citizenid.
+   *
+   * Behind the bridge rather than in `PlayerDirectory` because it is a framework question:
+   * qb keeps players in `players(citizenid)` with a `charinfo` JSON column, ESX keeps them in
+   * `users(identifier)` with `firstname`/`lastname` columns, and every other framework will
+   * keep them somewhere else again. `PlayerDirectory` asks who somebody is; this knows where
+   * to look.
+   *
+   * **ESX reads es_extended's own core `users` table and nothing else.** A phone number is
+   * not in it — that belongs to whichever community resource an operator installed — so ESX
+   * answers `phone: null` here rather than adopting one project's schema and being wrong for
+   * everyone who chose another.
+   */
+  public static async findOfflineByCitizenId(citizenid: string): Promise<FrameworkIdentity | null> {
+    if (!citizenid) return null;
+
+    if (usesEsx()) {
+      return await offlineLookup('the es_extended `users` lookup by identifier', async () => {
+        const row = await Database.single<{
+          identifier: string;
+          firstname: unknown;
+          lastname: unknown;
+        }>('SELECT identifier, firstname, lastname FROM users WHERE identifier = ? LIMIT 1', [
+          citizenid
+        ]);
+        if (!row?.identifier) return null;
+        return {
+          citizenid: row.identifier,
+          firstname: trimmedOrNull(row.firstname),
+          lastname: trimmedOrNull(row.lastname),
+          // Not in core ESX. See the note above.
+          phone: null
+        };
+      });
+    }
+
+    return await offlineLookup('the `players` lookup by citizenid', async () => {
+      const row = await Database.single<{ citizenid: string; charinfo: unknown }>(
+        'SELECT citizenid, charinfo FROM players WHERE citizenid = ? LIMIT 1',
+        [citizenid]
+      );
+      if (!row?.citizenid) return null;
+      return identityFromCharinfo(row.citizenid, row.charinfo);
+    });
+  }
+
+  /**
+   * The same, by phone number.
+   *
+   * **ESX cannot answer this, and says so by answering nothing.** Core `users` has no phone
+   * column, so there is nothing to match on; guessing at `esx_phone`'s or another resource's
+   * table would be right for one server population and silently wrong for the rest. The
+   * caller already handles null — an offline player is simply not found — which is the same
+   * outcome as an unknown number.
+   */
+  public static async findOfflineByPhone(phone: string): Promise<FrameworkIdentity | null> {
+    if (!phone) return null;
+    if (usesEsx()) return null;
+
+    return await offlineLookup('the `players` lookup by phone number', async () => {
+      const row = await Database.single<{ citizenid: string; charinfo: unknown }>(
+        `SELECT citizenid, charinfo FROM players
+     WHERE JSON_UNQUOTE(JSON_EXTRACT(charinfo, '$.phone')) = ?
+     LIMIT 1`,
+        [phone]
+      );
+      if (!row?.citizenid) return null;
+      return identityFromCharinfo(row.citizenid, row.charinfo);
+    });
+  }
+
   public static getPlayer(src: number): FrameworkPlayer | null {
     try {
       // QBX Core

@@ -42,6 +42,30 @@ export const pushRehydrate = (source: number): void => {
   emitNet(`gphone:client:${SHELL_SERVICE}:rehydrate`, source);
 };
 
+/**
+ * Every event name that means "a character finished loading", in one place.
+ *
+ * Exported so `playerLoaded.test.ts` can assert against the real list rather than a copy of
+ * it — including the scan that fails the build when one of these names is registered outside
+ * this file. Three names, and the difference between them is a security boundary rather than
+ * a naming detail:
+ *
+ * - **`network`** is raised by qbx from the *client*, with `TriggerServerEvent` and no
+ *   payload. `onNet`, therefore reachable by any connected client, therefore the connection
+ *   is the authority — see `loadedPlayerSource`.
+ * - **`qbLocal`** is raised in-process by `qbx_core/server/player.lua:1064` with the Player
+ *   object. No client can emit it, so the payload is the identity.
+ * - **`esxLocal`** is raised in-process by es_extended: `TriggerEvent('esx:playerLoaded',
+ *   playerId, xPlayer, isNew)`. Not a `TriggerServerEvent`, so registering only `on` leaves
+ *   the name un-net-safe inside gPhone and no client can reach it. An `onNet` twin added "to
+ *   be safe" would manufacture an entry point es_extended does not have.
+ */
+export const PLAYER_LOADED_EVENTS = {
+  network: 'QBCore:Server:OnPlayerLoaded',
+  qbLocal: 'QBCore:Server:PlayerLoaded',
+  esxLocal: 'esx:playerLoaded'
+} as const;
+
 const sourceOf = (player: unknown): number | undefined =>
   typeof player === 'number'
     ? player
@@ -161,15 +185,15 @@ export const loadedPlayerSource = (player: unknown): number | undefined => {
  * locally with a Player object, that call arrives with `source` 0 and
  * `loadedPlayerSource` refuses it — the `on()` twin is where such a core belongs.
  */
-onNet('QBCore:Server:OnPlayerLoaded', (player: unknown) => {
+onNet(PLAYER_LOADED_EVENTS.network, (player: unknown) => {
   const src = loadedPlayerSource(player);
-  if (src) pushRehydrate(src);
+  if (src) dispatchPlayerLoaded(src);
 });
 
 /** The local twin. No client can emit this one, so the payload is still the identity. */
-on('QBCore:Server:PlayerLoaded', (player: unknown) => {
+on(PLAYER_LOADED_EVENTS.qbLocal, (player: unknown) => {
   const src = sourceOf(player);
-  if (src) pushRehydrate(src);
+  if (src) dispatchPlayerLoaded(src);
 });
 
 /**
@@ -213,17 +237,91 @@ const esxLoadedSource = (playerId: unknown, xPlayer: unknown): number | undefine
  * The payload is therefore the identity here, on the same terms as the
  * `QBCore:Server:PlayerLoaded` twin above.
  *
- * **This is one of three player-loaded listeners, and the only one with an ESX twin.**
- * `server/services/Settings.ts` and `server/services/Battery.ts` register the other two and
- * both still answer only to the qb event names, so on es_extended a character load rehydrates
- * the shell and does *not* rehydrate settings or seed the battery — a player whose saved
- * charge is 12 sees 100. That is a known gap rather than a decision: MICA-150 was scoped to
- * `server/lib/`, and giving all three an ESX path is better done by having them subscribe to
- * one registry here than by adding a fourth hand-written listener, which is the shape
- * `playerLoaded.test.ts` already counts because it keeps going wrong. Said out loud because
- * grepping `esx:playerLoaded` finds one of three and nothing explains why.
+ * Like the two above it, this resolves a source and hands it to `dispatchPlayerLoaded`. It is
+ * the resolution that differs per entry point and the dispatch that is shared — see the
+ * registry's own note on why those two halves must not be merged.
  */
-on('esx:playerLoaded', (playerId: unknown, xPlayer: unknown) => {
+on(PLAYER_LOADED_EVENTS.esxLocal, (playerId: unknown, xPlayer: unknown) => {
   const src = esxLoadedSource(playerId, xPlayer);
-  if (src) pushRehydrate(src);
+  if (src) dispatchPlayerLoaded(src);
 });
+
+/** Anything that wants to know a character has loaded. */
+type PlayerLoadedRun = (src: number) => void | Promise<void>;
+
+interface PlayerLoadedSubscriber {
+  /** Named only so a throw can say which one threw. */
+  name: string;
+  run: PlayerLoadedRun;
+}
+
+const playerLoadedSubscribers: PlayerLoadedSubscriber[] = [];
+
+/**
+ * Be told when a character has loaded, without registering a framework event yourself.
+ *
+ * **Why a registry rather than three modules each writing their own listener.** There were
+ * three player-loaded listeners across `lib/shell.ts`, `services/Settings.ts` and
+ * `services/Battery.ts`, each pasted from the last. Every one of them took the target out of
+ * the payload, so a modified client could name a third party and have their state rehydrated,
+ * re-read and overwritten — MICA-136, fixed in three places at once because the mistake had
+ * been made in three places at once. Adding ESX meant a fourth listener per module, and the
+ * next framework a fifth. A subscriber cannot get the identity wrong because it is never
+ * shown anything to get wrong: it is handed a source that has already been established.
+ *
+ * **The two paths stay separate, and that is the point rather than an implementation
+ * detail.** Resolution belongs to each entry point — the network listener goes through
+ * `loadedPlayerSource`, where the connection is the authority and a payload naming somebody
+ * else is refused; the two local listeners read the payload, because no client can reach them
+ * and the payload is all there is. Only the already-resolved source reaches here. Collapsing
+ * those into one lenient resolver is precisely the bug MICA-136 fixed, and it would now be
+ * three subscribers deep instead of one.
+ *
+ * Registration order is import order, and nothing here depends on it: subscribers do
+ * unrelated work and none reads another's result.
+ */
+export const onPlayerLoaded = (name: string, run: PlayerLoadedRun): void => {
+  playerLoadedSubscribers.push({ name, run });
+};
+
+/**
+ * Run every subscriber for a source that has already been established.
+ *
+ * **One subscriber failing must not take the others with it, and must not fail the load.**
+ * A synchronous throw is caught here; a rejected promise is caught on the promise, because
+ * `Battery`'s subscriber is async and a `void`-ed rejection would otherwise surface as an
+ * unhandled rejection with nothing naming the subscriber. Either way the remaining
+ * subscribers still run, this returns normally, and the framework's own player-load path is
+ * untouched — gPhone has no way to fail a character load and must not invent one. The cost
+ * is that a broken subscriber is degraded rather than fatal, which is why it is logged with
+ * its name: silence that reads as success is the failure mode this repo cares most about.
+ */
+const dispatchPlayerLoaded = (src: number): void => {
+  for (const subscriber of playerLoadedSubscribers) {
+    try {
+      const pending = subscriber.run(src);
+      if (pending && typeof pending.then === 'function') {
+        void pending.catch((error: unknown) => {
+          console.error(
+            `[gphone] player-loaded subscriber '${subscriber.name}' rejected for source ${src}. ` +
+              `The other subscribers still ran.`,
+            error
+          );
+        });
+      }
+    } catch (error) {
+      console.error(
+        `[gphone] player-loaded subscriber '${subscriber.name}' threw for source ${src}. ` +
+          `The other subscribers still ran.`,
+        error
+      );
+    }
+  }
+};
+
+/**
+ * The shell's own subscription, registered here rather than called directly from the three
+ * listeners so that it goes through exactly the path `Settings` and `Battery` do. A special
+ * case for the owner of the registry is how the owner's path stops being tested.
+ */
+onPlayerLoaded('shell', pushRehydrate);

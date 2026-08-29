@@ -1,4 +1,3 @@
-import { Database } from './Database';
 import { FrameworkBridge } from './FrameworkBridge';
 
 /**
@@ -31,14 +30,29 @@ export interface DirectoryEntry {
   phone: string | null;
 }
 
-/** `charinfo` as both cores store it: a JSON column on `players`. */
+/**
+ * `Firstname Lastname`, or null when there is nothing to show.
+ *
+ * Null rather than a stray space: `${first} ${last}` on two empty strings is `" "`, which
+ * renders as a blank name that looks like a rendering bug instead of like missing data.
+ */
+const joinName = (first: string | null, last: string | null): string | null => {
+  const name = `${first ?? ''} ${last ?? ''}`.trim();
+  return name.length > 0 ? name : null;
+};
+
+/**
+ * `charinfo` as both qb cores store it: a JSON column on `players`, and the shape an ESX
+ * `xPlayer` is normalised into by `FrameworkBridge`. Used for the **online** path only — the
+ * offline path asks the bridge, which knows which table this server keeps players in.
+ */
 const nameFromCharinfo = (charinfo: unknown): string | null => {
   if (!charinfo || typeof charinfo !== 'object') return null;
   const info = charinfo as Record<string, unknown>;
-  const first = typeof info.firstname === 'string' ? info.firstname : '';
-  const last = typeof info.lastname === 'string' ? info.lastname : '';
-  const name = `${first} ${last}`.trim();
-  return name.length > 0 ? name : null;
+  return joinName(
+    typeof info.firstname === 'string' ? info.firstname : null,
+    typeof info.lastname === 'string' ? info.lastname : null
+  );
 };
 
 /**
@@ -65,17 +79,12 @@ export async function resolveByPhone(phone: string): Promise<DirectoryEntry | nu
     };
   }
 
-  const row = await Database.single<{ citizenid: string; charinfo: unknown }>(
-    `SELECT citizenid, charinfo FROM players
-     WHERE JSON_UNQUOTE(JSON_EXTRACT(charinfo, '$.phone')) = ?
-     LIMIT 1`,
-    [phone]
-  );
-  if (!row?.citizenid) return null;
+  const offline = await FrameworkBridge.findOfflineByPhone(phone);
+  if (!offline) return null;
 
   return {
-    citizenid: row.citizenid,
-    displayName: nameFromCharinfo(parseCharinfo(row.charinfo)),
+    citizenid: offline.citizenid,
+    displayName: joinName(offline.firstname, offline.lastname),
     phone
   };
 }
@@ -101,34 +110,12 @@ export async function resolve(citizenid: string): Promise<DirectoryEntry | null>
     }
   }
 
-  const row = await Database.single<{ citizenid: string; charinfo: unknown }>(
-    'SELECT citizenid, charinfo FROM players WHERE citizenid = ? LIMIT 1',
-    [citizenid]
-  );
-  if (!row?.citizenid) return null;
+  const offline = await FrameworkBridge.findOfflineByCitizenId(citizenid);
+  if (!offline) return null;
 
-  const charinfo = parseCharinfo(row.charinfo);
   return {
-    citizenid: row.citizenid,
-    displayName: nameFromCharinfo(charinfo),
-    phone:
-      charinfo && typeof (charinfo as Record<string, unknown>).phone === 'string'
-        ? ((charinfo as Record<string, unknown>).phone as string)
-        : null
+    citizenid: offline.citizenid,
+    displayName: joinName(offline.firstname, offline.lastname),
+    phone: offline.phone
   };
 }
-
-/**
- * `charinfo` comes back as a string from some drivers and an object from others, depending on
- * whether the column is `json` or `text` and on how oxmysql was configured. Both shapes reach
- * here, so both are handled rather than one being assumed — the same reason `Photos` coerces
- * its `image` column on the way out.
- */
-const parseCharinfo = (raw: unknown): unknown => {
-  if (typeof raw !== 'string') return raw;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-};

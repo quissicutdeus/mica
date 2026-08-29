@@ -12,7 +12,7 @@ const { dbMock } = vi.hoisted(() => ({
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import { resolve, resolveByPhone } from '../lib/PlayerDirectory';
-import { __setResourceLookup } from '../lib/FrameworkBridge';
+import { __setResourceLookup, __resetOfflineLookupWarnings } from '../lib/FrameworkBridge';
 
 /**
  * One resolver for "who is this citizenid", online or off.
@@ -151,12 +151,14 @@ describe('resolve', () => {
 /**
  * The same resolver on ESX (MICA-150).
  *
- * `PlayerDirectory` reads `rawPlayer.PlayerData.charinfo` and does not know which framework
- * produced it. That is the point of normalising an `xPlayer` into the qb shape inside
- * `FrameworkBridge`: this file needed no ESX branch, and these tests exist to prove that
- * rather than to assume it.
+ * `PlayerDirectory` has no ESX branch and should not get one — both halves are framework
+ * questions answered behind `FrameworkBridge`. Online, an `xPlayer` is normalised into the qb
+ * shape, so `rawPlayer.PlayerData.charinfo` reads the same either way. Offline, the bridge
+ * knows which table this server keeps players in: qb's `players(citizenid)` with its
+ * `charinfo` JSON, or es_extended's own core `users(identifier)`.
  *
- * The online half works. The **offline half does not, and cannot yet** — see the last test.
+ * These exist to prove that rather than assume it, and to pin the one thing ESX genuinely
+ * cannot do — resolve an offline player by phone number, which is not in core `users`.
  */
 describe('on ESX', () => {
   const LICENSE = 'license:0123456789abcdef';
@@ -202,15 +204,81 @@ describe('on ESX', () => {
     expect(dbMock.single).not.toHaveBeenCalled();
   });
 
-  it('finds nobody offline, because the SQL fallback reads qb tables — MICA-150 gap', () => {
-    // Both fallbacks here query `players` (`charinfo` JSON). ESX has neither: it has
-    // `users(identifier, firstname, lastname)`, and a phone number is not core ESX at all, so
-    // there is no column to substitute without knowing which community phone resource the
-    // operator runs. Pinned as a known limitation rather than guessed at: on ESX, an offline
-    // player renders with no name, and messaging an offline player by number does not resolve.
+  it('resolves an offline ESX player out of the es_extended users table', async () => {
+    // The offline half is a framework question — which table this server keeps players in —
+    // so it lives behind `FrameworkBridge` rather than here. qb reads `players(citizenid)`
+    // with its `charinfo` JSON; ESX reads es_extended's own core `users(identifier)`.
     installEsx({});
-    dbMock.single.mockResolvedValue(null);
+    dbMock.single.mockResolvedValueOnce({
+      identifier: LICENSE,
+      firstname: 'Ada',
+      lastname: 'Lovelace'
+    });
 
-    return expect(resolveByPhone('555-0100')).resolves.toBeNull();
+    await expect(resolve(LICENSE)).resolves.toEqual({
+      citizenid: LICENSE,
+      displayName: 'Ada Lovelace',
+      // Not in core ESX, so it is reported absent rather than guessed at from whichever
+      // community phone resource the operator happens to run.
+      phone: null
+    });
+
+    const [sql, params] = dbMock.single.mock.calls[0];
+    expect(sql).toContain('users');
+    expect(sql).toContain('identifier');
+    expect(params).toEqual([LICENSE]);
+  });
+
+  it('never queries the qb players table on ESX', async () => {
+    installEsx({});
+    dbMock.single.mockResolvedValueOnce(null);
+
+    await resolve(LICENSE);
+
+    expect(String(dbMock.single.mock.calls[0][0])).not.toContain('players');
+  });
+
+  it('cannot resolve an offline player by phone, and says so by finding nobody', async () => {
+    // Core `users` has no phone column, so there is nothing to match on. Matching against
+    // esx_phone's table would be right for one server population and silently wrong for the
+    // rest, so this asks nothing at all rather than guessing.
+    installEsx({});
+
+    await expect(resolveByPhone('555-0100')).resolves.toBeNull();
+    expect(dbMock.single).not.toHaveBeenCalled();
+  });
+
+  it('degrades to a nameless player when the users table is not what it expects', async () => {
+    // Another resource's table, which gPhone neither creates nor migrates: a missing column
+    // or a missing table is not a gPhone bug and must not become an exception on a path that
+    // is only trying to render a name. Returning null is exactly the pre-existing behaviour
+    // for an unknown player, so the failure mode is the status quo rather than a crash.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    __resetOfflineLookupWarnings();
+    installEsx({});
+    dbMock.single.mockRejectedValueOnce(new Error("Unknown column 'firstname'"));
+
+    await expect(resolve(LICENSE)).resolves.toBeNull();
+  });
+
+  it('degrades the qb lookup the same way, rather than throwing', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    __resetOfflineLookupWarnings();
+    __setResourceLookup(() => undefined);
+    dbMock.single.mockRejectedValueOnce(new Error('players table is gone'));
+
+    await expect(resolveByPhone('555-0100')).resolves.toBeNull();
+  });
+
+  it('reports a broken lookup once, not once per render', async () => {
+    // A feed rendering forty offline authors would otherwise write forty identical lines.
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    __resetOfflineLookupWarnings();
+    installEsx({});
+    dbMock.single.mockRejectedValue(new Error('Unknown column'));
+
+    for (let i = 0; i < 5; i++) await resolve(LICENSE);
+
+    expect(error).toHaveBeenCalledTimes(1);
   });
 });

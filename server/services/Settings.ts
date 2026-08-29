@@ -3,7 +3,7 @@ import { defineService, SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { PhoneSetting } from '@shared/types';
 import { fields } from '../lib/payload';
-import { loadedPlayerSource } from '../lib/shell';
+import { onPlayerLoaded } from '../lib/shell';
 
 /**
  * Every preference the phone holds, owned by a citizenid.
@@ -214,18 +214,13 @@ const pushRehydrate = (src: number): void => {
   emitNet('gphone:client:settings:rehydrate', src);
 };
 
-const sourceOf = (player: any): number | undefined =>
-  typeof player === 'number' ? player : player?.PlayerData?.source;
-
-// Network, not local -- see the comment on the matching listener in lib/shell.ts, which
-// also owns `loadedPlayerSource`: the payload names the target on this path and any
-// connected client can send it, so the connection decides and the payload only agrees.
-onNet('QBCore:Server:OnPlayerLoaded', (player: any) => {
-  const src = loadedPlayerSource(player);
-  if (src) pushRehydrate(src);
-});
-
-on('QBCore:Server:PlayerLoaded', (player: any) => {
-  const src = sourceOf(player);
-  if (src) pushRehydrate(src);
-});
+/**
+ * One subscription, not a listener per framework event.
+ *
+ * This file used to register `QBCore:Server:OnPlayerLoaded` and its local twin itself, and
+ * work out the target from the payload — the MICA-136 hole, made here and in two other
+ * files because it had been copied. `lib/shell.ts` now owns every player-loaded entry point
+ * and hands out a source it has already established, so this cannot get the identity wrong:
+ * it is never shown a payload. Adding ESX cost this file nothing, which is the point.
+ */
+onPlayerLoaded('settings', pushRehydrate);

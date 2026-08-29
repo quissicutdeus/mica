@@ -3,7 +3,7 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { defineService } from '../lib/defineService';
 import { PhoneBattery } from '@shared/types';
 import { isAdmin } from './Admin';
-import { loadedPlayerSource, notifyPlayer } from '../lib/shell';
+import { onPlayerLoaded, notifyPlayer } from '../lib/shell';
 import { guardNetEvent, levelFrom } from '../lib/netGuard';
 
 /**
@@ -326,32 +326,23 @@ onNet('gphone:server:battery:load', () => {
   void sendLoadedBatteryToClient(source);
 });
 
-// Listen for QBX / QBCore character load events
 /**
  * Seed the live value from the table when a character loads.
  *
  * Without this the loop has nothing to tick, and `currentCharge` would answer 100 for a
  * player whose saved charge is 12.
+ *
+ * One subscription, where there used to be a listener per framework event. This one had the
+ * widest blast radius of the three MICA-136 fixed: a payload naming a third party made the
+ * server read their row, possibly write it, and overwrite their live `charge` — and an id
+ * belonging to nobody seeded `charge`/`ownerOf` with an entry `playerDropped` would never
+ * come back for. `lib/shell.ts` now owns every player-loaded entry point and this is handed a
+ * source already established from the connection, so there is no payload here to get wrong.
+ *
+ * Returned rather than `void`-ed: the registry catches a rejection and names this subscriber,
+ * where a swallowed one would be an unhandled rejection with nothing pointing at battery.
  */
-// Network, not local -- see the comment on the matching listener in lib/shell.ts, which
-// also owns `loadedPlayerSource`. This one had the widest blast radius of the three: a
-// payload naming a third party made the server read their row, possibly write it, and
-// overwrite their live `charge` -- and an id belonging to nobody seeded `charge`/`ownerOf`
-// with an entry `playerDropped` would never come back for.
-onNet('QBCore:Server:OnPlayerLoaded', (player: any) => {
-  const src = loadedPlayerSource(player);
-  if (src) {
-    void sendLoadedBatteryToClient(src);
-  }
-});
-
-// Listen for QBX core player loaded event
-on('QBCore:Server:PlayerLoaded', (player: any) => {
-  const src = typeof player === 'number' ? player : player?.PlayerData?.source;
-  if (src) {
-    void sendLoadedBatteryToClient(src);
-  }
-});
+onPlayerLoaded('battery', (src) => sendLoadedBatteryToClient(src));
 
 /**
  * Out-of-band recharge: `gphonecharge [playerId] <0-100>`.

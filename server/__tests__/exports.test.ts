@@ -10,6 +10,12 @@ const { dbMock, bridgeMock } = vi.hoisted(() => ({
     // is the case these assertions mostly want anyway.
     getSourceByCitizenId: vi.fn(() => undefined),
     getPlayerByPhone: vi.fn(() => undefined),
+    // The offline half of `PlayerDirectory`. It used to query `players` here directly, so
+    // these cases drove it through `dbMock.single`; MICA-150 moved it behind the bridge,
+    // because which table an offline player lives in is a framework question and ESX keeps
+    // them in `users(identifier)`. Nobody is offline-resolvable unless a case says so.
+    findOfflineByCitizenId: vi.fn(async () => null),
+    findOfflineByPhone: vi.fn(async () => null),
     registerUsableItem: vi.fn()
   }
 }));
@@ -255,28 +261,38 @@ describe('AddContact', () => {
 describe('phone-directory exports', () => {
   it('GetPhoneNumber resolves a citizenid to a phone', async () => {
     // null, not undefined: `PlayerDirectory.resolve` treats only `null` as "offline" and
-    // falls through to the SQL lookup this test is exercising.
+    // falls through to the offline lookup this test is exercising.
     bridgeMock.getSourceByCitizenId.mockReturnValue(null);
-    dbMock.single.mockResolvedValue({ citizenid: CID, charinfo: { phone: '555-0100' } });
+    bridgeMock.findOfflineByCitizenId.mockResolvedValue({
+      citizenid: CID,
+      firstname: 'Ada',
+      lastname: 'Lovelace',
+      phone: '555-0100'
+    } as any);
     const result = (await publishedExport('GetPhoneNumber')!(CID)) as any;
     expect(result).toMatchObject({ ok: true, value: '555-0100' });
   });
 
   it('GetPhoneNumber refuses an unknown citizenid', async () => {
     bridgeMock.getSourceByCitizenId.mockReturnValue(null);
-    dbMock.single.mockResolvedValue(undefined);
+    bridgeMock.findOfflineByCitizenId.mockResolvedValue(null);
     const result = (await publishedExport('GetPhoneNumber')!('nobody')) as any;
     expect(result).toMatchObject({ ok: false, reason: 'unknown_player' });
   });
 
   it('GetCitizenId resolves a phone to a citizenid', async () => {
-    dbMock.single.mockResolvedValue({ citizenid: CID, charinfo: {} });
+    bridgeMock.findOfflineByPhone.mockResolvedValue({
+      citizenid: CID,
+      firstname: null,
+      lastname: null,
+      phone: '555-0100'
+    } as any);
     const result = (await publishedExport('GetCitizenId')!('555-0100')) as any;
     expect(result).toMatchObject({ ok: true, value: CID });
   });
 
   it('GetCitizenId refuses an unknown phone', async () => {
-    dbMock.single.mockResolvedValue(undefined);
+    bridgeMock.findOfflineByPhone.mockResolvedValue(null);
     const result = (await publishedExport('GetCitizenId')!('555-9999')) as any;
     expect(result).toMatchObject({ ok: false, reason: 'unknown_player' });
   });
