@@ -95,9 +95,21 @@ not from this page:
 grep -rn "onNet(" server --include="*.ts" | grep -v __tests__
 ```
 
-That also returns `ServiceEndpoint.ts`'s generic registrar (the machinery behind
-category 1 of this document, not an entry point of its own) and the example in
-`netGuard.ts`'s doc comment.
+**That prints twelve lines for ten handlers.** Two of them are not entry points:
+`ServiceEndpoint.ts`'s generic registrar, which is the machinery behind category
+1 of this document, and the worked example in `netGuard.ts`'s doc comment.
+
+Keep both stages of the pipe if you reproduce it. The second one silently drops
+a thirteenth line — the copy of this very command inside `netGuard.ts`'s
+docblock, which matches `onNet(` and is filtered out only because it also quotes
+`__tests__`. Drop `grep -v __tests__` and the total moves for a reason that has
+nothing to do with the handlers.
+
+`server/__tests__/netGuardCensus.test.ts` holds that docblock to the tree: it
+reads the numbers out of the comment and compares them to a fresh scan, so the
+assertion is "the comment is true" rather than a second copy of the count. **It
+does not read this file.** The numbers here are maintained by hand and are the
+half of the pair that can still go stale.
 
 #### gphone-named — nine, every one guarded
 
