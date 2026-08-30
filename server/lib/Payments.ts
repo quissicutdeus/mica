@@ -80,6 +80,21 @@ export interface TransferRequest {
  * which is legitimate precisely because the money would then be in *our* ledger and not
  * pretended into theirs. That is deliberately not built ahead of the app that needs it.
  */
+/**
+ * **`balance` through `removeMoney` must never yield (MICA-134).** Everything from the
+ * `getMoney` read below to the `removeMoney` debit that follows it has to stay one
+ * synchronous span with no `await` in between. This function is `async`, but that span
+ * contains none, which is what actually makes it atomic — not any SQL predicate. gPhone
+ * owns no money table here, and there is no transaction spanning `qbx_core`/`qb-core`'s own
+ * money system to lean on instead (see the file header). The framework's own atomic
+ * decrement was considered and rejected for the same reason: frameworks disagree about
+ * whether an overdraw refuses or clamps, so the affordability decision has to stay ours,
+ * which means it has to happen in a check this function controls rather than one buried in
+ * a single framework call. On a single-threaded server, "no yield" is what closes the
+ * window a concurrent `transfer` for the same payer would otherwise race through between
+ * the check and the debit. `server/__tests__/moneyAtomicity.test.ts` asserts this
+ * mechanically — an `await` inserted into that span fails the suite, not just this comment.
+ */
 export async function transfer(request: TransferRequest): Promise<PaymentOutcome> {
   const { from, to, reason } = request;
   const account = request.account ?? 'bank';

@@ -135,6 +135,13 @@ app.registerEvent('buy', async (source, cbId, data, citizenid, player) => {
 
   // Not a bare `<`: a balance the bridge could not determine comes back as `-Infinity`, and
   // anything that is not a number at all would compare as affordable. See `Payments.transfer`.
+  //
+  // **This check and the debit below must never have an `await` between them (MICA-134).**
+  // Same invariant `Payments.transfer` documents at its own top, for the same reason: no SQL
+  // predicate makes this atomic, only staying one synchronous span does, on a single-threaded
+  // server. `findOrCreateHolding` above is awaited *before* this span starts, which is fine —
+  // the race this closes is between reading the balance and debiting it, not before either
+  // has happened. `server/__tests__/moneyAtomicity.test.ts` asserts this mechanically.
   const balance = player.getMoney('bank');
   if (!Number.isFinite(balance) || balance < cost) {
     return { ok: false, reason: 'insufficient_funds' };
@@ -208,6 +215,10 @@ app.registerEvent('sell', async (source, cbId, data, citizenid, player) => {
     return { ok: false, reason: 'insufficient_holdings' };
   }
 
+  // `sell` has no `getMoney`/`removeMoney` pair to keep un-yielded (MICA-134): its
+  // "balance check" is the SQL-level `quantity >= ?` guard above, not a JS read-then-write,
+  // so there is nothing here for a stray `await` to race against. This is the only money
+  // call in the function, and a single call has no span to be atomic with.
   if (!player.addMoney('bank', proceeds)) {
     // The decrement already committed — refund the coins rather than leave the
     // player short with nothing to show for it.

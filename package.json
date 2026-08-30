@@ -72,6 +72,7 @@
     "prettier": "^3.9.6",
     "prettier-plugin-svelte": "^4.1.1",
     "typescript": "^7.0.2",
+    "typescript-ast-parser": "npm:typescript@~6.0.3",
     "vitest": "^4.1.11",
     "yaml": "^2.9.0"
   }
