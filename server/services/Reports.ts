@@ -26,6 +26,32 @@ class ReportRepository extends SchemaRepository<Report> {
   }
 
   /**
+   * Move a report from one resolution to another, **only if it is still on the one the
+   * caller read**. MICA-132.
+   *
+   * `resolve` above cannot express this: `updateUnscoped` writes the columns it is given
+   * with `id` as the whole predicate, which is right for a write that has already been
+   * authorized and wrong for one that is also a claim. Two admins hitting Resolve on the
+   * same queue entry both read `pending`, both passed the JavaScript check, and both
+   * moderated — two takedowns and two audit entries for one decision. Admin-gated, so
+   * this is a ledger-integrity bug rather than an attack, but a ledger that double-counts
+   * is the thing the ledger exists to prevent.
+   *
+   * Answering false *is* the outcome, not a failure: it means somebody else got there
+   * first, and the caller must not go on to act as though it had won.
+   */
+  async claimResolution(
+    id: number,
+    expected: ReportResolution,
+    next: ReportResolution
+  ): Promise<boolean> {
+    return await Database.update(
+      `UPDATE \`${this.tableName}\` SET \`resolution\` = ? WHERE \`id\` = ? AND \`resolution\` = ?`,
+      [next, id, expected]
+    );
+  }
+
+  /**
    * Everything already decided.
    *
    * A cross-owner read like the queue, so it is only reachable behind the `isAdmin`
@@ -172,16 +198,33 @@ app.registerEvent('reopen', async (source, cbId, data, citizenid) => {
   if (!report) throw new Error('No such report.');
   if (report.resolution === 'pending') throw new Error('That report is already open.');
 
-  if (report.resolution === 'actioned' && isReportableTable(report.target_table)) {
-    await restoreTarget(
-      report.target_table as ReportableTable,
-      report.target_id,
-      citizenid,
-      `report #${id} reopened`
-    );
+  /**
+   * Claim before restoring, not after. The claim carries the resolution this handler read,
+   * so it fails if a concurrent `reopen` or `resolve` moved the row — and only the winner
+   * goes on to restore the content, where before both did.
+   */
+  const previous = report.resolution;
+  if (!(await repo.claimResolution(id, previous, 'pending'))) {
+    throw new Error('That report is already open.');
   }
 
-  await repo.resolve(id, 'pending');
+  if (previous === 'actioned' && isReportableTable(report.target_table)) {
+    try {
+      await restoreTarget(
+        report.target_table as ReportableTable,
+        report.target_id,
+        citizenid,
+        `report #${id} reopened`
+      );
+    } catch (error) {
+      // The claim already committed, so put it back rather than leave a report showing
+      // open with the takedown it describes still in force — the same reasoning `Hodlr`
+      // sell gives for refunding coins when the bank credit fails.
+      await repo.resolve(id, previous);
+      throw error;
+    }
+  }
+
   return { ok: true, resolution: 'pending' };
 });
 
@@ -196,20 +239,40 @@ app.registerEvent('resolve', async (source, cbId, data, citizenid) => {
   if (!report) throw new Error('No such report.');
   if (report.resolution !== 'pending') throw new Error('That report is already resolved.');
 
-  if (action === 'moderate') {
-    if (!isReportableTable(report.target_table)) {
-      // Only reachable if the allowlist shrank after the report was filed.
-      throw new Error('That content is no longer moderatable.');
-    }
-    await moderateTarget(
-      report.target_table as ReportableTable,
-      report.target_id,
-      citizenid,
-      `report #${id}: ${report.category}`
-    );
+  // Checked before the claim, so a report that cannot be moderated is refused without
+  // being claimed and released again. Only reachable if the allowlist shrank after the
+  // report was filed.
+  if (action === 'moderate' && !isReportableTable(report.target_table)) {
+    throw new Error('That content is no longer moderatable.');
   }
 
   const resolution: ReportResolution = action === 'moderate' ? 'actioned' : 'dismissed';
-  await repo.resolve(id, resolution);
+
+  /**
+   * Claim the report *first*, then act on what it points at. Reading `resolution` and
+   * checking it in JavaScript decided nothing — two admins both saw `pending` and both
+   * moderated (MICA-132). Exactly one caller can move the row off `pending`, and only
+   * that one goes on to take the content down.
+   */
+  if (!(await repo.claimResolution(id, 'pending', resolution))) {
+    throw new Error('That report is already resolved.');
+  }
+
+  if (action === 'moderate') {
+    try {
+      await moderateTarget(
+        report.target_table as ReportableTable,
+        report.target_id,
+        citizenid,
+        `report #${id}: ${report.category}`
+      );
+    } catch (error) {
+      // The claim already committed. Release it rather than leave a report marked actioned
+      // over content that is still up — mirroring `reopen` above, and `Hodlr` sell's refund.
+      await repo.resolve(id, 'pending');
+      throw error;
+    }
+  }
+
   return { ok: true, resolution };
 });

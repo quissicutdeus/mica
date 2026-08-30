@@ -159,19 +159,27 @@ describe('media:drop', () => {
     const reply = await callDrop({ mediaId: 42 });
 
     expect(reply).toEqual({ count: 2 });
-    const [, params] = dbMock.insert.mock.calls[0];
-    expect(params as unknown[]).toContain('CID_B');
-    expect(params as unknown[]).toContain('CID_C');
+    // One statement per recipient since MICA-131 — see the test below for why.
+    const written = dbMock.insert.mock.calls.map((c: unknown[]) => (c[1] as unknown[])[0]);
+    expect(written).toContain('CID_B');
+    expect(written).toContain('CID_C');
     // The sender is never a recipient of their own drop.
-    expect(params as unknown[]).not.toContain('CID_A');
+    expect(written).not.toContain('CID_A');
   });
 
   /**
-   * MICA-115. Every recipient used to be its own `await repo.create(...)` inside one net
-   * event, so a drop in a crowd was that many sequential round trips before the sender's
-   * tap answered — and the roster feeding that loop had no cap of its own.
+   * MICA-115 made every recipient one row of a single multi-row `INSERT … VALUES`,
+   * because each had been its own `await repo.create(...)` — that many *sequential* round
+   * trips before the sender's tap answered.
+   *
+   * MICA-131 traded the single statement back for one per recipient, and the trade is
+   * the point: a `VALUES` list cannot carry a per-row predicate, so the recipient's own
+   * quota had to be measured in a separate statement beforehand — which is the race. These
+   * are issued concurrently rather than in a loop of awaits, so the objection MICA-115
+   * was written against does not come back with them, and the fan-out is capped at 16 by
+   * `proximity.MAX_NEARBY`.
    */
-  it('writes every copy in one statement rather than one insert per recipient', async () => {
+  it('writes one conditional statement per recipient, each carrying its own ceiling', async () => {
     dbMock.single.mockResolvedValueOnce(OWNED_ROW);
     proximity.nearby = [
       { source: 9, citizenid: 'CID_B' },
@@ -180,13 +188,39 @@ describe('media:drop', () => {
 
     await callDrop({ mediaId: 42 });
 
-    expect(dbMock.insert).toHaveBeenCalledTimes(1);
-    const [sql, params] = dbMock.insert.mock.calls[0];
-    // One column list, one value tuple per recipient — the column list holds no `?`, so
-    // this counts tuples and nothing else.
-    expect((sql as string).match(/\(\?(, \?)*\)/g)).toHaveLength(2);
-    // Every placeholder is bound, which is what keeps a multi-row insert parameterized.
-    expect((sql as string).split('?').length - 1).toBe((params as unknown[]).length);
+    expect(dbMock.insert).toHaveBeenCalledTimes(2);
+    for (const [sql, params] of dbMock.insert.mock.calls) {
+      // A stub cannot enforce a predicate, so what is asserted is that the statement
+      // carries one — the decision is in the write rather than in front of it.
+      expect(String(sql)).toContain('SUM(');
+      expect(String(sql).replace(/\s+/g, ' ')).toContain('WHERE quota.used + ? <= ?');
+      // Every placeholder is bound, which is what keeps the statement parameterized.
+      expect(String(sql).split('?').length - 1).toBe((params as unknown[]).length);
+    }
+  });
+
+  it('reports only the copies the database actually wrote', async () => {
+    // The interleaving the pre-check lost to: two senders both measured one bystander as
+    // having room, and both wrote. The predicate is what refuses the second, and the count
+    // has to come from that rather than from the length of the recipient list — otherwise
+    // a bystander with no row is still told a photo arrived.
+    dbMock.single.mockResolvedValueOnce(OWNED_ROW);
+    proximity.nearby = [
+      { source: 9, citizenid: 'CID_B' },
+      { source: 11, citizenid: 'CID_C' }
+    ];
+    dbMock.insert.mockImplementation(async (_sql: string, params: unknown[]) =>
+      params[0] === 'CID_B' ? 0 : 77
+    );
+
+    const reply = await callDrop({ mediaId: 42 });
+
+    expect(reply).toEqual({ count: 1 });
+    const pushed = (globalThis.emitNet as any).mock.calls
+      .filter((args: unknown[]) => args[0] === 'gphone:client:shell:appEvent')
+      .map((args: unknown[]) => args[1]);
+    // 9 is CID_B's source: refused a row, so refused a notification too.
+    expect(pushed).not.toContain(9);
   });
 
   it('never lets a copy inherit the sender’s row id, status or timestamps', async () => {
@@ -196,8 +230,13 @@ describe('media:drop', () => {
     await callDrop({ mediaId: 42 });
 
     const [sql, params] = dbMock.insert.mock.calls[0];
+    // The **inserted column list** specifically, not the whole statement: since MICA-131
+    // the quota subquery reads `status` legitimately, and asserting over the raw SQL would
+    // now be satisfied or broken by a predicate that has nothing to do with what a copy
+    // inherits.
+    const columnList = String(sql).slice(String(sql).indexOf('('), String(sql).indexOf(')'));
     for (const column of ['`id`', '`status`', '`created_at`', '`updated_at`']) {
-      expect(sql as string, column).not.toContain(column);
+      expect(columnList, column).not.toContain(column);
     }
     expect(params as unknown[]).not.toContain(42);
   });

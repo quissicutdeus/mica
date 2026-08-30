@@ -273,6 +273,119 @@ describe('resolving is admin-only', () => {
     expect(dbMock.update).not.toHaveBeenCalled();
   });
 
+  /**
+   * MICA-132. `findById`, a JavaScript check that `resolution === 'pending'`, then
+   * `moderateTarget` *and then* `repo.resolve` — so two admins hitting Resolve on the same
+   * queue entry both passed the check and both took the content down, leaving two audit
+   * entries for one decision. Admin-gated, so this is ledger integrity rather than an
+   * attack, but a double-counting ledger is the thing a ledger exists to prevent.
+   *
+   * Adding a predicate to the final `resolve` would not have been enough: the moderation
+   * ran *before* it. The order is inverted — claim the row, then act on what it points at.
+   */
+  it('claims the report before moderating, so the write decides and not the read', async () => {
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+    dbMock.single.mockResolvedValue(pending);
+
+    await call('resolve', { id: 9, action: 'moderate' }, ADMIN);
+
+    const claimIndex = dbMock.update.mock.calls.findIndex((c: any[]) =>
+      /UPDATE `gphone_reports`/.test(c[0])
+    );
+    const moderateIndex = dbMock.update.mock.calls.findIndex((c: any[]) =>
+      /UPDATE `gphone_messages`/.test(c[0])
+    );
+    expect(claimIndex).toBeGreaterThanOrEqual(0);
+    expect(moderateIndex).toBeGreaterThan(claimIndex);
+
+    // The claim carries the resolution it expects to find, which is what makes it a claim
+    // rather than a blind write. A stub cannot enforce that, so the statement is asserted.
+    const claim = dbMock.update.mock.calls[claimIndex];
+    expect(String(claim[0])).toContain('`resolution` = ?');
+    expect(String(claim[0])).toContain('`id` = ? AND `resolution` = ?');
+    expect(claim[1]).toEqual(['actioned', 9, 'pending']);
+  });
+
+  it('moderates nothing when a concurrent admin claimed the report first', async () => {
+    // The read still says pending — this is the interleaving. The claim matching no row is
+    // how the database says somebody else got there.
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+    dbMock.single.mockResolvedValue(pending);
+    dbMock.update.mockResolvedValue(false);
+
+    const reply = await call('resolve', { id: 9, action: 'moderate' }, ADMIN);
+
+    expect(reply).toMatchObject({ error: expect.stringMatching(/already resolved/i) });
+    const moderated = dbMock.update.mock.calls.some((c: any[]) =>
+      /UPDATE `gphone_messages`/.test(c[0])
+    );
+    expect(moderated, 'the loser must not take the content down too').toBe(false);
+  });
+
+  it('lets only one of two overlapping resolves moderate the target', async () => {
+    // Both admins read `pending` before either wrote — the shape the JavaScript check could
+    // never decide. Driven against one stub and released out of order.
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+    dbMock.single.mockResolvedValue(pending);
+
+    let claimed = false;
+    const gate: (() => void)[] = [];
+    dbMock.update.mockImplementation(async (sql: string) => {
+      if (!/UPDATE `gphone_reports`/.test(sql)) return true;
+      await new Promise<void>((resolve) => gate.push(resolve));
+      if (claimed) return false;
+      claimed = true;
+      return true;
+    });
+
+    const replies = new Map<string, any>();
+    bridge.current = ADMIN;
+    (globalThis as any).source = SRC;
+    (globalThis as any).emitNet = vi.fn((...args: any[]) => replies.set(String(args[2]), args[3]));
+    const handler = handlers.get('gphone:server:reports:resolve')!;
+    const running = Promise.all([
+      handler('cb-first', { id: 9, action: 'moderate' }),
+      handler('cb-second', { id: 9, action: 'moderate' })
+    ]);
+
+    await vi.waitFor(() => expect(gate).toHaveLength(2));
+    gate.pop()!();
+    gate.pop()!();
+    await running;
+
+    const outcomes = [replies.get('cb-first'), replies.get('cb-second')];
+    expect(outcomes.filter((reply) => reply?.ok === true)).toHaveLength(1);
+    expect(outcomes.filter((reply) => /already resolved/i.test(reply?.error ?? ''))).toHaveLength(
+      1
+    );
+    // One decision, one takedown.
+    const takedowns = dbMock.update.mock.calls.filter((c: any[]) =>
+      /UPDATE `gphone_messages`/.test(c[0])
+    );
+    expect(takedowns).toHaveLength(1);
+  });
+
+  it('releases the claim when the takedown itself fails', async () => {
+    // The claim has committed by then, so leaving it would mark a report actioned over
+    // content that is still up — the compensating path `Hodlr` sell has always had.
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+    dbMock.single.mockResolvedValue(pending);
+    dbMock.update.mockImplementation(async (sql: string) => {
+      if (/UPDATE `gphone_messages`/.test(sql)) throw new Error('takedown exploded');
+      return true;
+    });
+
+    const reply = await call('resolve', { id: 9, action: 'moderate' }, ADMIN);
+
+    expect(reply.error).toBeTruthy();
+    const reportWrites = dbMock.update.mock.calls.filter((c: any[]) =>
+      /UPDATE `gphone_reports`/.test(c[0])
+    );
+    // Claimed, then put back to pending so the queue still shows the work as undone.
+    expect(reportWrites).toHaveLength(2);
+    expect(reportWrites[1][1]).toEqual(expect.arrayContaining(['pending']));
+  });
+
   it('refuses a report pointing at a table no longer reportable', async () => {
     (globalThis as any).IsPlayerAceAllowed = () => true;
     dbMock.single.mockResolvedValue({ ...pending, target_table: 'players' });

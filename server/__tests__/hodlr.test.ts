@@ -182,6 +182,57 @@ describe('hodlr: buy and sell', () => {
       expect(reply).toEqual({ ok: true, quantity: 8, price: 10, cost: 30 });
     });
 
+    /**
+     * MICA-132, and the one item in that ticket that is not a race.
+     *
+     * `sell` has always refunded the coins when the bank credit fails after the decrement
+     * committed — the test a few lines above. `buy` is the mirror and had nothing: it
+     * awaited the increment, ignored the boolean it answered, and carried no `try`/`catch`,
+     * so a throw after the debit had committed left the player charged with no coins and a
+     * toast telling them the trade failed.
+     *
+     * Not attacker-profitable — it burns the player's own money — which is exactly why it
+     * would have arrived as a bug report rather than as an exploit.
+     */
+    it('refunds the debit when the increment throws after the money was taken', async () => {
+      dbMock.update.mockRejectedValueOnce(new Error('connection dropped'));
+
+      const reply = await call(BUY, { quantity: 3 });
+
+      expect(reply).toEqual({ ok: false, reason: 'credit_failed' });
+      expect(player.removeMoney).toHaveBeenCalledWith('bank', 30);
+      // The money comes back, and it is the same amount that was taken.
+      expect(player.addMoney).toHaveBeenCalledWith('bank', 30);
+    });
+
+    it('refunds the debit when the increment matched no row', async () => {
+      // A holding that vanished between `findOrCreateHolding` and the increment. The update
+      // answering false is not an error the driver raises, so ignoring the boolean lost the
+      // money just as silently as a throw did.
+      dbMock.update.mockResolvedValueOnce(false);
+
+      const reply = await call(BUY, { quantity: 3 });
+
+      expect(reply).toEqual({ ok: false, reason: 'credit_failed' });
+      expect(player.addMoney).toHaveBeenCalledWith('bank', 30);
+    });
+
+    it('says so loudly when it can neither credit coins nor give the money back', async () => {
+      // Nothing further the handler can do, so a server owner reading the log is the only
+      // remaining route to making the player whole. Swallowing it would hide the one case
+      // where money really is gone.
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+      dbMock.update.mockResolvedValueOnce(false);
+      player.addMoney.mockReturnValue(false);
+
+      const reply = await call(BUY, { quantity: 3 });
+
+      expect(reply).toEqual({ ok: false, reason: 'credit_failed' });
+      expect(logged).toHaveBeenCalled();
+      expect(String(logged.mock.calls.at(-1)?.[0])).toMatch(/refund/i);
+      logged.mockRestore();
+    });
+
     it('rejects a fractional quantity before pricing it', async () => {
       const reply = await call(BUY, { quantity: 0.5 });
 

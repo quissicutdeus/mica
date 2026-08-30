@@ -200,6 +200,75 @@ describe('claiming a handle', () => {
     expect(dbMock.insert).not.toHaveBeenCalled();
   });
 
+  /**
+   * MICA-132. `UNIQUE KEY app_handle` says which handle is taken; nothing says how many
+   * one citizenid holds, and the count above is a read with a yield between it and the
+   * insert. `rateLimit` bounds arrival rather than concurrency, so N creates with N distinct
+   * handles all counted `limit - 1` and all inserted — the cap is the only thing rationing a
+   * shared, public handle namespace, which makes this squatting at scale.
+   *
+   * A stub cannot enforce a predicate, so what is asserted is that the statement carries
+   * one, and that a refusal by the database is reported as a refusal.
+   */
+  it('puts the cap in the statement that inserts, not in a query before it', async () => {
+    await call('create', { app: 'blabber', handle: 'alt' });
+
+    const [sql, params] = dbMock.insert.mock.calls[0];
+    const flat = String(sql).replace(/\s+/g, ' ');
+    expect(flat).toContain('INSERT INTO `gphone_accounts`');
+    expect(flat).toContain('COUNT(*) AS held');
+    expect(flat).toContain('WHERE cap.held < ?');
+    // Owner, app and ceiling, bound after the inserted values.
+    expect((params as unknown[]).slice(-3)).toEqual(['CIT_A', 'blabber', 3]);
+  });
+
+  it('refuses when the last slot went to a concurrent create between count and insert', async () => {
+    // The count still says there is room — this is the interleaving where another create
+    // took the final slot after that read. Zero rows inserted is how the predicate says no.
+    dbMock.scalar.mockResolvedValueOnce(2);
+    dbMock.insert.mockResolvedValueOnce(0);
+
+    const reply = await call('create', { app: 'blabber', handle: 'alt' });
+
+    expect(reply.error).toMatch(/already hold 3 accounts/);
+  });
+
+  it('lets only one of two overlapping creates take the last slot', async () => {
+    // Both handlers count `limit - 1` before either inserts, and both use a distinct handle,
+    // so the unique index cannot decide it either. Driven against one stub, released out of
+    // order: the second insert finds the cap full because the first committed.
+    dbMock.scalar.mockResolvedValue(2);
+
+    let held = 2;
+    const gate: (() => void)[] = [];
+    dbMock.insert.mockImplementation(async (_sql: string, params: unknown[]) => {
+      await new Promise<void>((resolve) => gate.push(resolve));
+      const limit = params[params.length - 1] as number;
+      if (held >= limit) return 0;
+      held += 1;
+      return 7;
+    });
+
+    const replies = new Map<string, any>();
+    bridge.current = 'CIT_A';
+    (globalThis as any).source = SRC;
+    (globalThis as any).emitNet = vi.fn((...args: any[]) => replies.set(String(args[2]), args[3]));
+    const handler = handlers.get('gphone:server:accounts:create')!;
+    const running = Promise.all([
+      handler('cb-alpha', { app: 'blabber', handle: 'alpha' }),
+      handler('cb-beta', { app: 'blabber', handle: 'beta' })
+    ]);
+
+    await vi.waitFor(() => expect(gate).toHaveLength(2));
+    gate.pop()!();
+    gate.pop()!();
+    await running;
+
+    const outcomes = [replies.get('cb-alpha'), replies.get('cb-beta')];
+    expect(outcomes.filter((reply) => reply?.error === undefined)).toHaveLength(1);
+    expect(outcomes.filter((reply) => /already hold/.test(reply?.error ?? ''))).toHaveLength(1);
+  });
+
   it('honors a convar raising the cap', async () => {
     (globalThis as any).GetConvar = (name: string, f: string) =>
       name === 'gphone_max_accounts_per_app' ? '5' : f;

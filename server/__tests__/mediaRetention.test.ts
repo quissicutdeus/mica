@@ -109,9 +109,6 @@ const OWNED_ROW = {
 const lastQuery = (): string =>
   String(dbMock.query.mock.calls.at(-1)?.[0] ?? '').replace(/\s+/g, ' ');
 
-const queries = (): string[] =>
-  dbMock.query.mock.calls.map((c: unknown[]) => String(c[0]).replace(/\s+/g, ' '));
-
 beforeEach(() => {
   vi.clearAllMocks();
   dbMock.single.mockReset();
@@ -130,30 +127,59 @@ beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
-describe('the per-player quota (MICA-71)', () => {
-  it('measures the library the same way gphonemedia reports it', async () => {
-    dbMock.single.mockResolvedValue({ bytes: 0 });
+describe('the per-player quota (MICA-71, made atomic by MICA-131)', () => {
+  /**
+   * **What these can and cannot prove.** `Database` is a stub, so nothing here evaluates
+   * SQL — a mocked `insert` returns whatever it is told to and would happily "write" a row
+   * a real ceiling refuses. So the ceiling itself is asserted two ways and neither is the
+   * happy path: that the statement *carries* its predicate, since that is the only thing
+   * standing between a decision and a write; and that two overlapping writes driven against
+   * one stub end with the second refused, since a check made before the write cannot do
+   * that however the stub answers.
+   */
+  const lastInsert = (): { sql: string; params: unknown[] } => {
+    const written = dbMock.insert.mock.calls.at(-1)!;
+    return { sql: String(written[0]).replace(/\s+/g, ' '), params: written[1] as unknown[] };
+  };
 
+  it('measures the library the same way gphonemedia reports it', async () => {
     await call(CREATE_EVENT, { kind: 'photo', data: photoOf(1024) });
 
-    const sql = String(dbMock.single.mock.calls[0][0]).replace(/\s+/g, ' ');
+    const { sql, params } = lastInsert();
     expect(sql).toContain('LENGTH(data)');
     expect(sql).toContain('LENGTH(thumbnail)');
     // The bound, not the whole table: a quota that ignored the owner would be a global cap.
-    expect(sql).toContain('citizenid = ?');
-    expect(dbMock.single.mock.calls[0][1]).toEqual(['CID_A']);
+    expect(sql).toContain('`citizenid` = ?');
+    // The owner, the incoming size and the ceiling, after the inserted values.
+    expect(params.slice(-3)).toEqual(['CID_A', photoOf(1024).length, 64 * MB]);
   });
 
   it("counts only the player's active rows, so deleting a photo frees room at once", async () => {
-    dbMock.single.mockResolvedValue({ bytes: 0 });
-
     await call(CREATE_EVENT, { kind: 'photo', data: photoOf(1024) });
 
-    expect(String(dbMock.single.mock.calls[0][0])).toContain("status = 'active'");
+    expect(lastInsert().sql).toContain("`status` = 'active'");
+  });
+
+  /**
+   * The whole of MICA-131 in one assertion. The quota used to be a `SUM` awaited, compared
+   * in JavaScript, and followed by an unconditional `INSERT`; `ServiceEndpoint` awaits
+   * handlers with no serialization behind it and `rateLimit` bounds arrival rather than
+   * concurrency, so sixty of those could be in flight at once and each measured a library
+   * none of the others had written to yet.
+   */
+  it('decides in the statement that writes, not in a query before it', async () => {
+    await call(CREATE_EVENT, { kind: 'photo', data: photoOf(1024) });
+
+    const { sql } = lastInsert();
+    expect(sql).toContain('INSERT INTO `gphone_media`');
+    expect(sql).toContain('WHERE quota.used + ? <= ?');
+    // Nothing measures the library on its own any more, so there is no second opinion for
+    // the write to disagree with.
+    expect(dbMock.single).not.toHaveBeenCalled();
   });
 
   it('lets an ordinary capture through when the library has room', async () => {
-    dbMock.single.mockResolvedValue({ bytes: 10 * MB });
+    dbMock.insert.mockResolvedValue(99);
 
     const reply = await call(CREATE_EVENT, { kind: 'photo', data: photoOf(400 * 1024) });
 
@@ -161,18 +187,63 @@ describe('the per-player quota (MICA-71)', () => {
     expect(dbMock.insert).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses a capture that would cross the ceiling, and writes nothing', async () => {
-    dbMock.single.mockResolvedValue({ bytes: 64 * MB });
+  it('refuses a capture the ceiling turned away, and reports it as a refusal', async () => {
+    // Zero rows inserted, so no insert id — how a conditional insert says no.
+    dbMock.insert.mockResolvedValue(0);
 
     const reply = await call(CREATE_EVENT, { kind: 'photo', data: photoOf(400 * 1024) });
 
     expect(reply.error).toMatch(/full/i);
-    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The interleaving itself: two captures driven against one stub, both past every check
+   * the handler makes, resolved out of order. The stub plays the part the database plays —
+   * the second statement finds no room *because the first one committed* — and the point is
+   * that the second request is refused rather than answered with an id.
+   *
+   * The old shape cannot pass this. Both handlers read their `SUM` before either inserted,
+   * so both saw room and both inserted unconditionally; there was no later moment at which
+   * anything could say no.
+   */
+  it('refuses the second of two overlapping captures once the first has taken the room', async () => {
+    withConvars({ gphone_media_quota_mb: 1 });
+
+    let used = 900 * 1024;
+    const gate: (() => void)[] = [];
+    dbMock.insert.mockImplementation(async (_sql: string, params: unknown[]) => {
+      // Hold both statements open so they genuinely overlap, then settle them in the order
+      // they are released rather than the order they arrived.
+      await new Promise<void>((resolve) => gate.push(resolve));
+      const incoming = params[params.length - 2] as number;
+      const limit = params[params.length - 1] as number;
+      if (used + incoming > limit) return 0;
+      used += incoming;
+      return 99;
+    });
+
+    const replies = new Map<string, any>();
+    (globalThis as any).source = 5;
+    (globalThis as any).emitNet = vi.fn((...args: any[]) => replies.set(String(args[2]), args[3]));
+    const handler = handlers.get(CREATE_EVENT)!;
+    const running = Promise.all([
+      handler('cb-one', { kind: 'photo', data: photoOf(80 * 1024) }),
+      handler('cb-two', { kind: 'photo', data: photoOf(80 * 1024) })
+    ]);
+
+    await vi.waitFor(() => expect(gate).toHaveLength(2));
+    gate.pop()!();
+    gate.pop()!();
+    await running;
+
+    const outcomes = [replies.get('cb-one'), replies.get('cb-two')];
+    expect(outcomes.filter((reply) => reply?.error === undefined)).toHaveLength(1);
+    expect(outcomes.filter((reply) => /full/i.test(reply?.error ?? ''))).toHaveLength(1);
   });
 
   it('tells the player something a player can read', async () => {
     // §2.9: the message reaches a toast, so no `[Repository]` prefix and no table name.
-    dbMock.single.mockResolvedValue({ bytes: 64 * MB });
+    dbMock.insert.mockResolvedValue(0);
 
     const reply = await call(CREATE_EVENT, { kind: 'photo', data: photoOf(400 * 1024) });
 
@@ -182,23 +253,24 @@ describe('the per-player quota (MICA-71)', () => {
 
   it('honours the convar rather than the compiled-in default', async () => {
     withConvars({ gphone_media_quota_mb: 1 });
-    dbMock.single.mockResolvedValue({ bytes: 900 * 1024 });
 
-    const reply = await call(CREATE_EVENT, { kind: 'photo', data: photoOf(200 * 1024) });
+    await call(CREATE_EVENT, { kind: 'photo', data: photoOf(200 * 1024) });
 
-    expect(reply.error).toMatch(/full/i);
+    // The ceiling is a bound value, so the convar reaches the database rather than a
+    // comparison this process made and the database never saw.
+    expect(lastInsert().params.at(-1)).toBe(1 * MB);
   });
 
   it('is off at zero, and off rather than closed for a value it cannot parse', async () => {
     // `GetConvarInt` answers 0 for a non-numeric convar, so this is also the typo case:
     // the failure direction is "no quota", never "no photos on this server".
     withConvars({ gphone_media_quota_mb: 0 });
-    dbMock.single.mockResolvedValue({ bytes: 500 * MB });
 
     const reply = await call(CREATE_EVENT, { kind: 'photo', data: photoOf(400 * 1024) });
 
     expect(reply.error).toBeUndefined();
-    // Nothing is even measured when there is no ceiling to measure against.
+    // The plain insert, with no ceiling to compare against and nothing measured.
+    expect(lastInsert().sql).not.toContain('quota.used');
     expect(dbMock.single).not.toHaveBeenCalled();
   });
 
@@ -213,23 +285,15 @@ describe('the per-player quota (MICA-71)', () => {
   });
 });
 
-describe('a proximity drop respects the recipient’s quota', () => {
-  it('skips a bystander who has no room, and reports the copies actually written', async () => {
-    proximity.nearby = [
-      { source: 9, citizenid: 'CID_B' },
-      { source: 11, citizenid: 'CID_C' }
-    ];
-    dbMock.single.mockResolvedValue(OWNED_ROW);
-    dbMock.query.mockResolvedValue([{ citizenid: 'CID_B', bytes: 64 * MB }]);
-
-    const reply = await call(DROP_EVENT, { mediaId: 42 });
-
-    expect(reply).toEqual({ count: 1 });
-    const insertParams = dbMock.insert.mock.calls[0][1] as unknown[];
-    expect(insertParams[0]).toBe('CID_C');
-  });
-
-  it('measures every recipient in one grouped query, not one per bystander', async () => {
+describe('a proximity drop respects the recipient\u2019s quota', () => {
+  /**
+   * The bystander is the reason this site matters more than the create path: they pressed
+   * nothing. Two senders dropping onto one person both measured them as under their ceiling
+   * and both wrote, so the overshoot landed on a third party — and the fan-out cap bounds
+   * recipients per drop, never writes per recipient, so re-dropping is unbounded without a
+   * predicate on each write.
+   */
+  it('gives every recipient their own ceiling in their own statement', async () => {
     proximity.nearby = [
       { source: 9, citizenid: 'CID_B' },
       { source: 11, citizenid: 'CID_C' }
@@ -238,20 +302,42 @@ describe('a proximity drop respects the recipient’s quota', () => {
 
     await call(DROP_EVENT, { mediaId: 42 });
 
-    const grouped = queries().filter((q) => q.includes('GROUP BY citizenid'));
-    expect(grouped).toHaveLength(1);
-    expect(grouped[0]).toContain('citizenid IN (?, ?)');
+    expect(dbMock.insert).toHaveBeenCalledTimes(2);
+    for (const [sql, params] of dbMock.insert.mock.calls) {
+      const flat = String(sql).replace(/\s+/g, ' ');
+      expect(flat).toContain('WHERE quota.used + ? <= ?');
+      // The recipient is measured, not the sender: the citizenid bound into the subquery is
+      // the same one the row is written for.
+      expect((params as unknown[])[0]).toBe((params as unknown[]).at(-3));
+    }
+  });
+
+  it('skips a bystander who has no room, and reports the copies actually written', async () => {
+    proximity.nearby = [
+      { source: 9, citizenid: 'CID_B' },
+      { source: 11, citizenid: 'CID_C' }
+    ];
+    dbMock.single.mockResolvedValue(OWNED_ROW);
+    dbMock.insert.mockImplementation(async (_sql: string, params: unknown[]) =>
+      params[0] === 'CID_B' ? 0 : 77
+    );
+
+    const reply = await call(DROP_EVENT, { mediaId: 42 });
+
+    expect(reply).toEqual({ count: 1 });
   });
 
   it('writes nothing when every nearby player is already full', async () => {
     proximity.nearby = [{ source: 9, citizenid: 'CID_B' }];
     dbMock.single.mockResolvedValue(OWNED_ROW);
-    dbMock.query.mockResolvedValue([{ citizenid: 'CID_B', bytes: 64 * MB }]);
+    dbMock.insert.mockResolvedValue(0);
 
     const reply = await call(DROP_EVENT, { mediaId: 42 });
 
     expect(reply).toEqual({ count: 0 });
-    expect(dbMock.insert).not.toHaveBeenCalled();
+    // The statement is still issued — refusing is the database's job now, and that is the
+    // whole difference from the shape this replaced.
+    expect(dbMock.insert).toHaveBeenCalledTimes(1);
   });
 });
 

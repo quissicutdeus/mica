@@ -128,10 +128,29 @@ const assertStorableData = (value: unknown): void => {
  * a server owner can hold in their head and decide about.
  *
  * It composes with `MAX_MEDIA_DATA_LENGTH` rather than competing with it: the per-row cap
- * bounds one write, this bounds the sum of them. The check runs *before* the insert, so a
- * player sitting just under the line can still add one more row — the true worst case is
- * the quota plus one capped row, 68MiB, and that overshoot is deliberate. Refusing a photo
- * that would fit is worse than a bounded overshoot of a number the owner chose.
+ * bounds one write, this bounds the sum of them.
+ *
+ * **This used to claim a worst case of the quota plus one capped row — 68MiB — and call
+ * that overshoot deliberate. The claim was wrong (MICA-131), and it is worth saying why
+ * rather than quietly deleting it.** It assumed one write in flight per player. Nothing
+ * establishes that: `rateLimit.allow` increments a counter and returns, nothing decrements
+ * it on completion, and `ServiceEndpoint` awaits the handler with no queue or per-player
+ * serialization behind it. "60 per minute" therefore permits 60 *simultaneously*, and a
+ * check that read a `SUM` and then issued an unconditional `INSERT` was 60 × 4MiB past a
+ * 64MiB ceiling, not one row past it.
+ *
+ * **And 60 was itself the wrong number to reason with.** `rateLimit` keys on
+ * `source:service:action`, so the ceiling is per *action*, not per player: one client gets
+ * 60 concurrent `create` **and** 60 concurrent `drop`, and N clients get N times that. Any
+ * bound derived from the limiter is therefore a bound on one action from one connection and
+ * on nothing else — which is worth writing down, because it is the assumption that made the
+ * original comment wrong and it would make the next one wrong the same way.
+ *
+ * The bound is real now because the predicate is *in* the statement rather than in front of
+ * it — see `insertWithinQuota` — and it holds however many writes are in flight and whoever
+ * issued them. What survives of the original reasoning is only the direction of the
+ * rounding: a write is measured against the library as it stands, so a player sitting just
+ * under the line can still add a row that fits.
  */
 const DEFAULT_QUOTA_MB = 64;
 
@@ -177,7 +196,9 @@ const storedBytesOf = (item: Partial<MediaItem>): number =>
   (typeof item.thumbnail === 'string' ? item.thumbnail.length : 0);
 
 /**
- * How much of their ceiling one player is already using.
+ * How much of their ceiling one player is already using, as a subquery rather than as an
+ * answer — it is only ever embedded in the statement that acts on it, never awaited on its
+ * own, which is the whole of the MICA-131 fix.
  *
  * `status = 'active'` on purpose, and it is the one judgement call in the quota. Counting
  * every status would make the table's total size the bound — tidier arithmetic — but it
@@ -193,75 +214,66 @@ const storedBytesOf = (item: Partial<MediaItem>): number =>
  * that photo is built on (`reportable.previewColumn`) — or a second grace-window knob, and
  * both are bigger decisions than this ticket.
  */
-const usedBytes = async (citizenid: string): Promise<number> => {
-  const row = await Database.single<{ bytes: number | string | null }>(
-    `SELECT SUM(${STORED_BYTES_SQL}) AS bytes
-     FROM gphone_media
-     WHERE citizenid = ? AND status = 'active'`,
-    [citizenid]
+const USED_BYTES_SQL =
+  `SELECT COALESCE(SUM(${STORED_BYTES_SQL}), 0) AS used ` +
+  `FROM \`gphone_media\` WHERE \`citizenid\` = ? AND \`status\` = 'active'`;
+
+/**
+ * The quota as a **predicate on the insert**, not a question asked before it. MICA-131.
+ *
+ * `INSERT … SELECT … FROM (aggregate) WHERE used + ? <= ?`. The row is written only if the
+ * ceiling still has room *at the moment MySQL evaluates the statement*, so there is no gap
+ * between deciding and writing — the same reasoning `Repository.applyUpdate` gives for
+ * folding the edit window into the UPDATE's WHERE, and the same shape `Hodlr` sell uses
+ * with its `quantity >= ?` guard.
+ *
+ * The aggregate is wrapped in a derived table rather than left as a scalar subquery in the
+ * WHERE. Two reasons, and only the second is about taste: MySQL is prickly about naming the
+ * insert target inside the statement selecting into it, and a derived table is the standard
+ * way round that; and `used` reads as a value the WHERE compares, which is what it is.
+ *
+ * **What this does and does not guarantee, stated plainly, because the difference matters.**
+ * A `SUM` over other rows is not a row lock. Under InnoDB's default isolation an
+ * `INSERT … SELECT` takes shared locks on the rows it scans, so two concurrent captures by
+ * one player normally serialize or deadlock — either way one of them loses, which is the
+ * point. But a driver or isolation level that made the read non-locking would degrade this
+ * to *exactly the behaviour it replaces*, never to something worse: the arithmetic is still
+ * evaluated against committed rows one statement later than the old pre-check managed. This
+ * is the weakest of the six predicates in MICA-131/132 for that reason, and it is the only
+ * one whose strength depends on the engine rather than on a unique key or a single-row
+ * `WHERE`. A maintained counter column would be strictly stronger; it would also be a new
+ * column to keep in step with soft deletes, the retention prune, the orphan sweep and
+ * `AddMedia`, and a counter that drifts high locks a player out of their own camera with no
+ * way to see why. Refusing to add a second source of truth for a number the rows already
+ * hold is the trade being made here.
+ */
+const insertWithinQuota = async (
+  columns: readonly string[],
+  values: readonly unknown[],
+  citizenid: string,
+  incoming: number,
+  limit: number
+): Promise<number> => {
+  const columnList = columns.map((column) => `\`${column}\``).join(', ');
+  const selection = columns.map(() => '?').join(', ');
+
+  return await Database.insert(
+    `INSERT INTO \`gphone_media\` (${columnList})
+     SELECT ${selection}
+     FROM (${USED_BYTES_SQL}) AS quota
+     WHERE quota.used + ? <= ?`,
+    [...values, citizenid, incoming, limit]
   );
-  return Number(row?.bytes ?? 0) || 0;
 };
 
 /**
- * The same figure for several players at once, in one round trip.
+ * What a player is told when the ceiling refuses their write.
  *
- * A proximity drop writes every recipient their own full copy, so each of them has to be
- * measured — and doing that one query per bystander is the shape `copyToPlayers` already
- * exists to avoid. The citizenids are bound values, never interpolated; only the count of
- * placeholders comes from the list length.
+ * It reaches a **player** as a toast, so it names no table and carries no `[Repository]`
+ * prefix (§2.9), and it names the remedy — deleting something frees the quota immediately,
+ * because the quota counts active rows.
  */
-const usedBytesByPlayer = async (citizenids: readonly string[]): Promise<Map<string, number>> => {
-  const used = new Map<string, number>();
-  if (citizenids.length === 0) return used;
-
-  const placeholders = citizenids.map(() => '?').join(', ');
-  const rows = await Database.query<{ citizenid: string; bytes: number | string | null }[]>(
-    `SELECT citizenid, SUM(${STORED_BYTES_SQL}) AS bytes
-     FROM gphone_media
-     WHERE citizenid IN (${placeholders}) AND status = 'active'
-     GROUP BY citizenid`,
-    [...citizenids]
-  );
-  for (const row of rows ?? []) used.set(row.citizenid, Number(row.bytes ?? 0) || 0);
-  return used;
-};
-
-/**
- * Refuse a write that would put the caller over their ceiling.
- *
- * The message reaches a **player** as a toast, so it names no table and carries no
- * `[Repository]` prefix (§2.9), and it names the remedy — deleting something frees the
- * quota immediately, because the quota counts active rows.
- */
-const assertWithinQuota = async (citizenid: unknown, incoming: number): Promise<void> => {
-  const limit = quotaBytes();
-  if (limit <= 0) return;
-  if (typeof citizenid !== 'string' || citizenid.length === 0) return;
-
-  const used = await usedBytes(citizenid);
-  if (used + incoming <= limit) return;
-
-  throw new Error('Your photo library is full. Delete something to make room.');
-};
-
-/**
- * Which of these players can take one more copy of a given size.
- *
- * A bystander over their ceiling is skipped rather than told about it: they did not press
- * anything, and the sender is answered with the number of copies that were actually
- * written, which is the honest count either way.
- */
-const acceptingCopies = async (
-  citizenids: readonly string[],
-  incoming: number
-): Promise<string[]> => {
-  const limit = quotaBytes();
-  if (limit <= 0) return [...citizenids];
-
-  const used = await usedBytesByPlayer(citizenids);
-  return citizenids.filter((citizenid) => (used.get(citizenid) ?? 0) + incoming <= limit);
-};
+const QUOTA_FULL_MESSAGE = 'Your photo library is full. Delete something to make room.';
 
 /**
  * The columns a proximity drop copies onto each recipient's own row.
@@ -399,26 +411,83 @@ export const media = defineService<MediaItem>({
        */
       async create(item: Partial<MediaItem>): Promise<number> {
         assertStorableData(item.data);
-        await assertWithinQuota(item.citizenid, storedBytesOf(item));
-        return await super.create(item);
+
+        const limit = quotaBytes();
+        const citizenid = item.citizenid;
+
+        // No ceiling configured, or nobody to measure — the ordinary insert, byte for byte
+        // what it always was. `ServiceEndpoint` always supplies a citizenid on this path, so
+        // the second half is a guard against a caller that is not the client path at all.
+        if (limit <= 0 || typeof citizenid !== 'string' || citizenid.length === 0) {
+          return await super.create(item);
+        }
+
+        const columns = Object.keys(item);
+        // Payload keys, so the allowlist is not optional here (§2.9): MySQL cannot
+        // parameterize an identifier, and this method builds its own statement rather than
+        // going through `super.create`'s `prepareColumns`.
+        for (const column of columns) {
+          if (!this.tableColumns.includes(column)) {
+            throw new Error(`[Repository] create on '${this.tableName}' rejected '${column}'.`);
+          }
+        }
+
+        const id = await insertWithinQuota(
+          columns,
+          columns.map((column) => (item as Record<string, unknown>)[column]),
+          citizenid,
+          storedBytesOf(item),
+          limit
+        );
+
+        // Zero rows inserted, so no insert id: the predicate refused. This is the only way
+        // the quota says no now — there is no separate check that could disagree with it.
+        if (!id) throw new Error(QUOTA_FULL_MESSAGE);
+        return id;
       }
 
       /**
-       * Write one already-authorized row to several players in a single statement.
-       * MICA-115.
+       * Write one already-authorized row to each nearby player who has room for it.
+       * MICA-115, reworked by MICA-131.
        *
        * A **named** method rather than a loop of `create` calls in the service, for the
        * reason §2.9 gives named methods generally: the row being copied has already passed
        * its ownership and status checks in `drop`, there is no payload here to reduce, every
-       * column named is a literal in this file and every value stays bound. A loop was also
-       * one round trip per bystander inside one net event — thirty sequential awaits on a
-       * busy corner, which the sender pays for by tapping Share.
+       * column named is a literal in this file and every value stays bound.
        *
-       * Recipients arrive deduplicated and already capped by `findNearbyVisiblePlayers`;
-       * this decides how the copies are written, never who gets one.
+       * **It answers with the recipients it actually wrote, not a count**, and that is the
+       * change. A drop is the one path where one tap multiplies stored bytes across other
+       * people's libraries, so the recipient a copy is refused for is a **bystander who
+       * pressed nothing** — they must not be pushed over their own ceiling by somebody
+       * else's gesture, and they must not be told they received a photo that no row exists
+       * for. Both need the same thing: the set of writes that really happened.
+       *
+       * This used to be one multi-row `INSERT … VALUES` behind a `SUM` measured for the
+       * whole group beforehand, which is the MICA-131 shape exactly — the measurement and
+       * the write were separate statements, so two senders dropping onto one bystander both
+       * measured them as under the ceiling and both wrote. There is no way to give a
+       * multi-row `VALUES` a per-row predicate, so it becomes one conditional insert per
+       * recipient, and the count comes back from what the database did rather than from the
+       * length of the list handed in.
+       *
+       * **Concurrent, not sequential**, which is what makes that affordable: the objection
+       * the batch was written against was thirty *sequential* awaits on a busy corner, and
+       * these are one round trip in wall clock. The fan-out is bounded well below that
+       * anyway — `proximity.MAX_NEARBY` is 16 whatever a server owner sets, and the default
+       * is 5 — so this is at most sixteen pooled statements, never an unbounded fan-out.
+       *
+       * That cap bounds **recipients per drop and nothing else**, which is precisely why the
+       * predicate has to be per recipient rather than per call: re-dropping the same photo
+       * is a fresh call each time, so the bytes one bystander can be sent are bounded only
+       * by their own ceiling. The cap sizes the statement; the ceiling is what refuses.
+       *
+       * A recipient whose insert *throws* is logged and left out of the answer rather than
+       * failing the whole drop: the copies that did land are already committed, and losing
+       * every other recipient's notification because one statement failed is the worse
+       * outcome. Same reasoning `drop` gives for logging a refused push.
        */
-      async copyToPlayers(citizenids: readonly string[], item: MediaItem): Promise<number> {
-        if (citizenids.length === 0) return 0;
+      async copyToPlayers(citizenids: readonly string[], item: MediaItem): Promise<string[]> {
+        if (citizenids.length === 0) return [];
 
         const columns = ['citizenid', ...COPIED_COLUMNS];
         // Literals rather than payload keys, and still held to the table's own allowlist:
@@ -430,19 +499,36 @@ export const media = defineService<MediaItem>({
         }
 
         const columnList = columns.map((column) => `\`${column}\``).join(', ');
-        const placeholders = `(${columns.map(() => '?').join(', ')})`;
-        const values: unknown[] = [];
-        for (const citizenid of citizenids) {
-          values.push(citizenid);
-          for (const column of COPIED_COLUMNS) values.push(item[column] ?? null);
-        }
+        const placeholders = columns.map(() => '?').join(', ');
+        const copied = COPIED_COLUMNS.map((column) => item[column] ?? null);
+        const limit = quotaBytes();
+        const incoming = storedBytesOf(item);
 
-        await Database.insert(
-          `INSERT INTO \`${this.tableName}\` (${columnList}) VALUES ` +
-            citizenids.map(() => placeholders).join(', '),
-          values
+        const written = await Promise.all(
+          citizenids.map(async (citizenid) => {
+            try {
+              const id =
+                limit <= 0
+                  ? await Database.insert(
+                      `INSERT INTO \`${this.tableName}\` (${columnList}) VALUES (${placeholders})`,
+                      [citizenid, ...copied]
+                    )
+                  : await insertWithinQuota(
+                      columns,
+                      [citizenid, ...copied],
+                      citizenid,
+                      incoming,
+                      limit
+                    );
+              return id ? citizenid : null;
+            } catch (error) {
+              console.error(`[media] copy to ${citizenid} failed:`, error);
+              return null;
+            }
+          })
         );
-        return citizenids.length;
+
+        return written.filter((citizenid): citizenid is string => citizenid !== null);
       }
 
       /**
@@ -644,16 +730,20 @@ app.registerEvent('drop', async (source, _cbId, data, citizenid) => {
   /**
    * A drop writes each recipient a **full copy**, so it is the one path where one tap
    * multiplies stored bytes — and a bystander whose own library is already at its ceiling
-   * must not be pushed over it by somebody else's gesture (MICA-71). Measured in one
-   * grouped query for the whole set, never one per recipient.
+   * must not be pushed over it by somebody else's gesture (MICA-71).
+   *
+   * The ceiling is enforced *inside* each insert now rather than measured for the group
+   * first (MICA-131), so `copyToPlayers` is the only thing that decides who got a copy
+   * and this handler has no second opinion to disagree with it. That is also why the push
+   * below fans out to what came back rather than to `nearbyCitizenids`: a bystander with
+   * no room gets neither a row nor a toast about one.
    */
-  const recipients = await acceptingCopies(nearbyCitizenids, storedBytesOf(owned));
-  if (recipients.length === 0) return { count: 0 };
-
   const privileged = repo as unknown as {
-    copyToPlayers(citizenids: readonly string[], item: MediaItem): Promise<number>;
+    copyToPlayers(citizenids: readonly string[], item: MediaItem): Promise<string[]>;
   };
-  const count = await privileged.copyToPlayers(recipients, owned);
+  const recipients = await privileged.copyToPlayers(nearbyCitizenids, owned);
+  if (recipients.length === 0) return { count: 0 };
+  const count = recipients.length;
 
   /**
    * `pushMany` rather than a `push` per recipient, and it is not a loop around one (§8):

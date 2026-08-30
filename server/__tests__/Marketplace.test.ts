@@ -198,7 +198,85 @@ describe('Marketplace service', () => {
       dbMock.update.mockResolvedValue(true);
       const reply = await call('markSold', { id: 1 }, 'CIT_A');
       expect(reply.error).toBeUndefined();
-      expect(dbMock.update).toHaveBeenCalledWith(expect.stringMatching(/UPDATE.*'sold'/is), [1]);
+      const [sql, params] = dbMock.update.mock.calls[0];
+      // The transition is a parameter now; what the statement carries literally is the
+      // predicate that makes it a claim rather than a blind write (MICA-132).
+      expect(String(sql)).toContain("`status` = 'active'");
+      expect(String(sql)).toContain('`citizenid` = ?');
+      expect(params).toEqual(['sold', 1, 'CIT_A']);
+    });
+
+    it('refuses to report success when the listing moved out of active first', async () => {
+      // The guard read still says active — this is the interleaving where a concurrent
+      // `remove` won between that read and this write, so the UPDATE matches no row.
+      dbMock.single.mockResolvedValue({ id: 1, citizenid: 'CIT_A', status: 'active' });
+      dbMock.update.mockResolvedValue(false);
+
+      const reply = await call('markSold', { id: 1 }, 'CIT_A');
+
+      expect(reply.error).toMatch(/active listing/);
+    });
+
+    /**
+     * Two handlers driven against one stub, resolved out of order — the interleaving the
+     * check-then-write shape actually loses to, rather than the happy path.
+     *
+     * `call` cannot express this: it swaps the global `emitNet` per invocation, so a second
+     * overlapping call clobbers the first one's reply. Replies are keyed on the callback id
+     * here instead.
+     */
+    const bothAtOnce = async (
+      specs: { action: string; cbId: string }[],
+      citizenid = 'CIT_A'
+    ): Promise<Record<string, string | undefined>[]> => {
+      const replies = new Map<string, any>();
+      bridge.current = citizenid;
+      (globalThis as any).source = 5;
+      (globalThis as any).emitNet = vi.fn((...args: any[]) => {
+        replies.set(String(args[2]), args[3]);
+      });
+
+      await Promise.all(
+        specs.map((spec) => {
+          const handler = handlers.get(`gphone:server:marketplace:${spec.action}`);
+          if (!handler) throw new Error(`no handler for ${spec.action}`);
+          return handler(spec.cbId, { id: 1 });
+        })
+      );
+
+      return specs.map((spec) => replies.get(spec.cbId) ?? {});
+    };
+
+    it('lets only one of two concurrent transitions win on the same listing', async () => {
+      // Both handlers read `active` before either writes — the check-then-write shape, and
+      // the guard read alone cannot tell them apart. Only the first UPDATE finds a row
+      // still on `active`; the loser must be refused rather than told it succeeded.
+      dbMock.single.mockResolvedValue({ id: 1, citizenid: 'CIT_A', status: 'active' });
+
+      const gate: (() => void)[] = [];
+      let firstWrite = true;
+      dbMock.update.mockImplementation(async () => {
+        const won = firstWrite;
+        firstWrite = false;
+        // Hold the winner open until the loser has also read and reached its own write,
+        // so the two writes genuinely overlap rather than running back to back.
+        await new Promise<void>((resolve) => gate.push(resolve));
+        return won;
+      });
+
+      const running = bothAtOnce([
+        { action: 'markSold', cbId: 'cb-sold' },
+        { action: 'remove', cbId: 'cb-removed' }
+      ]);
+
+      // Release in the opposite order to the one they arrived in.
+      await vi.waitFor(() => expect(gate).toHaveLength(2));
+      gate.pop()!();
+      gate.pop()!();
+
+      const outcomes = await running;
+      expect(outcomes.filter((reply) => reply.error === undefined)).toHaveLength(1);
+      expect(outcomes.filter((reply) => /active listing/.test(reply.error ?? ''))).toHaveLength(1);
     });
 
     it('remove refuses a listing the caller does not own', async () => {
@@ -213,7 +291,9 @@ describe('Marketplace service', () => {
       dbMock.update.mockResolvedValue(true);
       const reply = await call('remove', { id: 1 }, 'CIT_A');
       expect(reply.error).toBeUndefined();
-      expect(dbMock.update).toHaveBeenCalledWith(expect.stringMatching(/UPDATE.*'removed'/is), [1]);
+      const [sql, params] = dbMock.update.mock.calls[0];
+      expect(String(sql)).toContain("`status` = 'active'");
+      expect(params).toEqual(['removed', 1, 'CIT_A']);
     });
   });
 });

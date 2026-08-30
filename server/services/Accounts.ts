@@ -1,4 +1,4 @@
-import { defineService } from '../lib/defineService';
+import { defineService, SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { isReactableTable } from '../lib/reactions';
@@ -29,6 +29,51 @@ import { buildDeepLink } from '@shared/deepLink';
  * an alt exists to prevent. It is excluded from every public projection automatically —
  * see `publicColumns`.
  */
+/**
+ * The per-app cap, as a predicate on the insert. MICA-132.
+ *
+ * `UNIQUE KEY app_handle` enforces **which** handle is taken and nothing enforces **how
+ * many** one citizenid holds, so counting first and inserting afterwards was two statements
+ * with a yield between them: N concurrent creates with N distinct handles each counted
+ * `limit - 1` held, each passed, and each inserted. The rate limiter does not close that —
+ * it bounds arrival, not concurrency, so sixty calls a minute permits sixty at once.
+ *
+ * This is the sharpest of the sites in that ticket because the cap is the only thing
+ * rationing a **shared social handle namespace**: without it, one player squats as many
+ * handles as they can issue requests for.
+ *
+ * `COUNT(*)` in a derived table, `INSERT` only if it is still under the ceiling. The handle
+ * race is untouched and still belongs to the unique index — the two guard different things
+ * and the index remains the better instrument for its one.
+ */
+class AccountRepository extends SchemaRepository<Account> {
+  async createWithinCap(account: Partial<Account>, limit: number): Promise<number> {
+    const columns = Object.keys(account);
+    // Built here rather than by `super.create`, so the identifier allowlist is this
+    // method's own responsibility (§2.9): MySQL cannot parameterize a column name.
+    for (const column of columns) {
+      if (!this.tableColumns.includes(column)) {
+        throw new Error(`[Repository] create on '${this.tableName}' rejected '${column}'.`);
+      }
+    }
+
+    const columnList = columns.map((column) => `\`${column}\``).join(', ');
+    const selection = columns.map(() => '?').join(', ');
+    const values = columns.map((column) => (account as Record<string, unknown>)[column]);
+
+    return await Database.insert(
+      `INSERT INTO \`${this.tableName}\` (${columnList})
+       SELECT ${selection}
+       FROM (
+         SELECT COUNT(*) AS held FROM \`${this.tableName}\`
+         WHERE \`citizenid\` = ? AND \`app\` = ? AND \`status\` = 'active'
+       ) AS cap
+       WHERE cap.held < ?`,
+      [...values, account.citizenid, account.app, limit]
+    );
+  }
+}
+
 export const accounts = defineService<Account>({
   id: 'accounts',
   /**
@@ -227,11 +272,12 @@ export const accounts = defineService<Account>({
      * that decides what happens to the content, not the generic row delete.
      */
     disableDelete: true
-  }
+  },
+  repositoryFactory: (resolved: ResolvedService) => new AccountRepository(resolved)
 });
 
 const app = accounts.app;
-const repo = accounts.repo;
+const repo = accounts.repo as AccountRepository;
 
 /**
  * The declared page bounds, for the custom paged reads below.
@@ -300,12 +346,18 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     throw new Error('A handle is 3–32 characters, using lowercase letters, numbers and _.');
   }
 
+  /**
+   * Counted here for the sake of the message, and `createWithinCap` is what actually
+   * enforces it — the same division of labour the handle check below has with the unique
+   * index, and for the same reason. A count read before an insert cannot hold a cap on its
+   * own (MICA-132); what it can do is tell the common case what went wrong in words.
+   */
+  const limit = maxPerApp();
   const held = await Database.scalar<number>(
     `SELECT COUNT(*) FROM \`gphone_accounts\`
      WHERE \`citizenid\` = ? AND \`app\` = ? AND \`status\` = 'active'`,
     [citizenid, appId]
   );
-  const limit = maxPerApp();
   if ((held ?? 0) >= limit) {
     throw new Error(`You already hold ${limit} accounts here. Delete one to make room.`);
   }
@@ -323,7 +375,15 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   if (taken) throw new Error(`@${handle} is taken.`);
 
   try {
-    const id = await repo.create({ citizenid, app: appId, handle, display_name: displayName });
+    const id = await repo.createWithinCap(
+      { citizenid, app: appId, handle, display_name: displayName },
+      limit
+    );
+    // Zero rows inserted, so no insert id: the cap predicate refused. Reached only when a
+    // concurrent create took the last slot between the count above and this statement.
+    if (!id) {
+      throw new Error(`You already hold ${limit} accounts here. Delete one to make room.`);
+    }
     return { id, citizenid, app: appId, handle, display_name: displayName, status: 'active' };
   } catch (error) {
     // The index did its job in a race. Translate it, because the raw driver error reaches a

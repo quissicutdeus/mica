@@ -259,6 +259,13 @@ app.registerEvent('mine', async (source, cbId, data, citizenid) => {
  * Shared guard for the two status-transition actions: must exist, must be owned
  * by the caller, must currently be `active`. A `sold`/`removed`/`moderated`
  * listing is a terminal state — no transition out of it through this action.
+ *
+ * **This decides what the player is told; `transitionActiveListing` decides what happens.**
+ * It reads the row, so between it and a write there is a yield, and both `markSold` and
+ * `remove` used to pass it concurrently and then write unconditionally — last writer wins,
+ * and a listing could go `sold` after it was `removed` (MICA-132). Keeping the read is
+ * still worth it: it is the only thing that can distinguish "not yours" from "already
+ * settled", and a toast that says which is worth one indexed lookup.
  */
 const requireOwnedActiveListing = async (id: number, citizenid: string): Promise<void> => {
   const row = await Database.single<{ id: number; citizenid: string; status: string }>(
@@ -273,18 +280,41 @@ const requireOwnedActiveListing = async (id: number, citizenid: string): Promise
   }
 };
 
+/**
+ * Move a listing out of `active`, with every condition the guard checked folded into the
+ * one statement that writes — ownership and the current status both, so there is no gap
+ * between deciding and writing (the phrasing `Repository.applyUpdate` uses for the edit
+ * window, and the same idea).
+ *
+ * `status` is a literal chosen by the caller in this file and never a payload value, so
+ * nothing here interpolates anything a client supplied; the id and the citizenid stay
+ * bound. Answers false when the row moved underneath us, which is the race losing.
+ */
+const transitionActiveListing = async (
+  id: number,
+  citizenid: string,
+  next: 'sold' | 'removed'
+): Promise<boolean> =>
+  await Database.update(
+    'UPDATE `gphone_marketplace` SET `status` = ? ' +
+      "WHERE `id` = ? AND `citizenid` = ? AND `status` = 'active'",
+    [next, id, citizenid]
+  );
+
 app.registerEvent('markSold', async (source, cbId, data, citizenid) => {
   const id = requirePositiveInt(fields(data).id, 'listing id');
   await requireOwnedActiveListing(id, citizenid);
-  await Database.update("UPDATE `gphone_marketplace` SET `status` = 'sold' WHERE `id` = ?", [id]);
+  if (!(await transitionActiveListing(id, citizenid, 'sold'))) {
+    throw new Error('Only an active listing can change status.');
+  }
   return true;
 });
 
 app.registerEvent('remove', async (source, cbId, data, citizenid) => {
   const id = requirePositiveInt(fields(data).id, 'listing id');
   await requireOwnedActiveListing(id, citizenid);
-  await Database.update("UPDATE `gphone_marketplace` SET `status` = 'removed' WHERE `id` = ?", [
-    id
-  ]);
+  if (!(await transitionActiveListing(id, citizenid, 'removed'))) {
+    throw new Error('Only an active listing can change status.');
+  }
   return true;
 });

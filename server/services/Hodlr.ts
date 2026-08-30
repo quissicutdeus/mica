@@ -146,10 +146,36 @@ app.registerEvent('buy', async (source, cbId, data, citizenid, player) => {
   // Atomic relative increment rather than read-modify-write off `holding.quantity` —
   // two concurrent buys reading the same stale quantity would otherwise let one
   // overwrite the other's credit (a lost update, not just a double-spend).
-  await Database.update('UPDATE `gphone_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ?', [
-    quantity,
-    holding.id
-  ]);
+  //
+  // The money is already gone by the time this runs, so its outcome is not optional
+  // (MICA-132). This ignored the returned boolean and carried no `try`/`catch`: a throw
+  // here — or a row that had vanished — left the debit committed and no coins credited, and
+  // the player was told the trade failed while being charged for it. `sell` has handled the
+  // mirror case since it was written, refunding the coins when the bank credit fails; this
+  // is the same care on the half that was missing it. It burns the player's own money rather
+  // than being attacker-profitable, which is exactly why it would have arrived as a bug
+  // report rather than as an exploit.
+  let credited = false;
+  try {
+    credited = await Database.update(
+      'UPDATE `gphone_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ?',
+      [quantity, holding.id]
+    );
+  } catch (error) {
+    console.error(`[hodlr] buy could not credit ${citizenid}:`, error);
+  }
+
+  if (!credited) {
+    // Put the money back. If even that fails there is nothing further this handler can do,
+    // so it is logged loudly rather than swallowed — a server owner reading this line is
+    // the only remaining path to making the player whole.
+    if (!player.addMoney('bank', cost)) {
+      console.error(
+        `[hodlr] buy debited ${cost} from ${citizenid} and could neither credit coins nor refund.`
+      );
+    }
+    return { ok: false, reason: 'credit_failed' };
+  }
 
   return { ok: true, quantity: holding.quantity + quantity, price, cost };
 });
