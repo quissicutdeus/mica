@@ -39,6 +39,7 @@ vi.mock('../lib/shell', () => ({ notifyPlayer: notifyPlayerMock }));
 
 import { runApply } from '../services/Schema';
 import { SchemaMigrator, type AdditiveApplyResult } from '../lib/SchemaMigrator';
+import * as collationCheck from '../lib/collationCheck';
 
 /** `apply()` finding nothing to do. */
 const noAdditive = (): AdditiveApplyResult => ({ applied: [], failed: null, remaining: [] });
@@ -47,6 +48,50 @@ describe('runApply', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     runPendingMigrationsMock.mockResolvedValue({ applied: [], failed: null, remaining: [] });
+    // The collation check runs before anything else in `runApply`; default it to "no
+    // mismatch" so the tests below that are not about it exercise the rest of the function
+    // exactly as before MICA-157.
+    vi.spyOn(collationCheck, 'checkOwnerCollation').mockResolvedValue(null);
+  });
+
+  /**
+   * MICA-157. A `players.citizenid` collated differently from gPhone's own tables cannot
+   * host the foreign keys the additive pass (or a versioned migration) may need to add, and
+   * would otherwise fail deep inside `SchemaMigrator.apply()` with MySQL's own opaque errno
+   * 150. This is the fail-loud path instead: named collations, named table, and — the actual
+   * point of checking first — neither migrations nor the additive pass ever run.
+   */
+  it('refuses to apply, before any DDL, when the players collation mismatches', async () => {
+    const mismatch: collationCheck.CollationMismatch = {
+      ownerTable: 'players',
+      ownerColumn: 'citizenid',
+      ownerCollation: 'utf8mb4_uca1400_ai_ci',
+      expectedCollation: 'utf8mb4_unicode_ci'
+    };
+    vi.spyOn(collationCheck, 'checkOwnerCollation').mockResolvedValueOnce(mismatch);
+    const applySpy = vi.spyOn(SchemaMigrator, 'apply');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await runApply(0);
+
+    expect(errorSpy).toHaveBeenCalledWith(collationCheck.collationMismatchMessage(mismatch));
+    expect(runPendingMigrationsMock).not.toHaveBeenCalled();
+    expect(applySpy).not.toHaveBeenCalled();
+  });
+
+  it('logs and proceeds when the collation check itself cannot run, rather than blocking apply', async () => {
+    vi.spyOn(collationCheck, 'checkOwnerCollation').mockRejectedValueOnce(new Error('no db'));
+    vi.spyOn(SchemaMigrator, 'apply').mockResolvedValueOnce(noAdditive());
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runApply(0);
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[gphoneschema] could not check the players collation before applying:',
+      expect.any(Error)
+    );
+    expect(runPendingMigrationsMock).toHaveBeenCalled();
   });
 
   it('refuses to run from anywhere but the server console', async () => {

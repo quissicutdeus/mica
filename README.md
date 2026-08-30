@@ -221,6 +221,27 @@ requirements:
    the fix and costs nothing — every statement is `CREATE TABLE IF NOT EXISTS`.
    The error is easy to misread as a broken file; it is a missing prerequisite.
 
+   **The framework's `players` table also has to share gPhone's collation.**
+   `gphone.sql` creates every table `COLLATE = utf8mb4_unicode_ci`, and a
+   foreign key requires both sides of the relationship to collate the same way.
+   MariaDB 11.4 and newer changed its own default `utf8mb4` collation to
+   `utf8mb4_uca1400_ai_ci`, so a `players` table created without an explicit
+   collation on a recent MariaDB mismatches gPhone's, and the import fails
+   partway through — some tables created, then a hard stop — with:
+
+   ```text
+   errno: 150 "Foreign key constraint is incorrectly formed"
+   ```
+
+   That message names neither collation nor `players`, which is what makes it
+   worth searching for. The fix is to recreate (or
+   `ALTER ... CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`) the
+   framework's `players` table so it collates `utf8mb4_unicode_ci` before
+   re-running `gphone.sql`. `gphoneschema apply` checks for this same mismatch
+   itself before touching the database, and refuses with a message naming the
+   actual table and both actual collations rather than letting this error
+   surface unexplained a second time.
+
    **`gphone.esx.sql` carries none of those foreign keys**, because ESX has no
    `players` table to point them at — it identifies players in `users`, by
    `identifier`. It therefore has no prerequisite beyond an empty database, and

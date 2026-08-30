@@ -88,6 +88,17 @@ const indexSql = ({ name, columns, unique }: ResolvedIndex): string => {
 export const OWNER_TABLE = 'players';
 
 /**
+ * The collation every gPhone-owned table is created with, on both generated files.
+ *
+ * A single named constant rather than the literal repeated at each `CREATE TABLE`'s closing
+ * line, because `collationCheck.ts` (MICA-157) needs the exact same value a live
+ * `players.citizenid` is compared against: a foreign key requires both sides of the
+ * relationship to share a collation, and MariaDB 11.4+ changed its own `utf8mb4` default away
+ * from this one, which is what makes the comparison worth having at all.
+ */
+export const TABLE_COLLATION = 'utf8mb4_unicode_ci';
+
+/**
  * How much of the schema the framework underneath can support.
  *
  * The only axis so far is whether `players(citizenid)` exists, and it is expressed as an
@@ -259,7 +270,7 @@ export function toCreateTableSql(
     // emitted exactly as it always was, comma and all, so the qb file does not move a byte.
     ...(ownerForeignKey.length > 0 ? body : closeBody(body)),
     ...ownerForeignKey,
-    ') ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;'
+    `) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = ${TABLE_COLLATION};`
   ];
 
   return lines.join('\n');
@@ -294,7 +305,7 @@ export function toChildTableSql(
     `CREATE TABLE IF NOT EXISTS \`${child.name}\` (`,
     // The last body line carries a trailing comma; strip it.
     ...closeBody(body),
-    ') ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;'
+    `) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = ${TABLE_COLLATION};`
   ].join('\n');
 }
 
@@ -331,7 +342,7 @@ export const schemaMigrationsLedgerDdl = (): string =>
     '    `id` varchar(255) NOT NULL,',
     '    `applied_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,',
     '    PRIMARY KEY (`id`)',
-    ') ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;'
+    `) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = ${TABLE_COLLATION};`
   ].join('\n');
 
 /**

@@ -2,6 +2,7 @@ import { SchemaMigrator } from '../lib/SchemaMigrator';
 import { runPendingMigrations, reportPendingMigrations } from '../lib/migrations';
 import { isAdmin } from './Admin';
 import { notifyPlayer } from '../lib/shell';
+import { checkOwnerCollation, collationMismatchMessage } from '../lib/collationCheck';
 
 /**
  * Schema reconciliation at resource start, plus a dry run and an explicit apply on demand.
@@ -35,6 +36,22 @@ export const runApply = async (source: number): Promise<void> => {
   if (source !== 0) {
     console.log('[gphoneschema] apply only runs from the server console.');
     return;
+  }
+
+  // MICA-157. Before any DDL: a `players` table whose `citizenid` collation disagrees with
+  // gPhone's own tables cannot host the foreign keys this pass's `ADD KEY` statements (and
+  // the versioned migrations before them) may need to create, and would otherwise fail with
+  // MySQL's own opaque errno 150. A failure to determine collations at all (no database, no
+  // `information_schema` access) is not itself grounds to refuse — that surfaces soon enough,
+  // and loudly, from the real DDL below — so it is logged and apply proceeds.
+  try {
+    const mismatch = await checkOwnerCollation();
+    if (mismatch) {
+      console.error(collationMismatchMessage(mismatch));
+      return;
+    }
+  } catch (error) {
+    console.error('[gphoneschema] could not check the players collation before applying:', error);
   }
 
   const result = await runPendingMigrations();
