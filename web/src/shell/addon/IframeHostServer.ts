@@ -196,7 +196,39 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     appRegistryWrite: [],
     /** Same reasoning as `appRegistryWrite` above: no add-on changes another's notification
      * policy or the player's Do Not Disturb, regardless of permission. */
-    notificationSettingsWrite: []
+    notificationSettingsWrite: [],
+    /**
+     * MICA-162: `keybinds-write`'s two members are both unscoped global writes —
+     * `setBinding` takes an arbitrary `actionId`, not just one the calling app owns, and
+     * `resetBindings` wipes every override on the phone, not just the caller's. Neither has
+     * a legitimate add-on use: an app that wants its own shortcut declares it in its
+     * manifest (`keybinds`) and lets the player rebind it from Settings > Shortcuts, the
+     * same as every other app. Empty, not absent, for the `appRegistryWrite` reason above —
+     * only `settings` (core, in-process) declares this permission today, but the block must
+     * hold regardless of what a future manifest declares.
+     */
+    keybindsWrite: [],
+    /**
+     * MICA-162: `system-hardware-write`'s ten members split on whether the write is a
+     * reversible, self-contained "how does this session sound/feel" preference or a
+     * device-wide state change with no legitimate add-on reason.
+     *
+     * Grantable: `setVolume`, `setRingMode` and `previewRingtone` are ordinary
+     * experience controls — turning the phone down, silencing it for a scene, auditioning
+     * a tone — visible to the player and trivially reversible from Settings.
+     *
+     * Hard-blocked, and deliberately a stricter cut than just the three most obviously
+     * device-wide ones (`setCharge`, `toggleBluetooth`, `toggleCellService` — falsifying
+     * hardware readouts or cutting connectivity phone-wide, breaking every other app's use
+     * of it): `setSignal` is the same falsified-readout shape as `setCharge`; `setRingtone`
+     * and `setVolumeStep` permanently change a *persisted* device-wide preference (the
+     * player's actual ringtone, the hardware volume-key step) with no plausible add-on need
+     * — unlike `previewRingtone`, which only auditions a tone and persists nothing; and
+     * `toggleMute` silences the whole device's audio for every other app too, not just the
+     * caller's own session. None of the six has a legitimate add-on use case, full stop —
+     * the same bar `appRegistryWrite`/`notificationSettingsWrite` apply above.
+     */
+    systemHardwareWrite: ['setVolume', 'setRingMode', 'previewRingtone']
   };
 
   // `DENIED_FACETS` is imported from `sdk/permissions.ts`, not declared here (MICA-33):

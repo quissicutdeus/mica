@@ -400,6 +400,171 @@ describe('IframeHostServer', () => {
   });
 
   /**
+   * MICA-162: MICA-127 split eight permissions into a read/write pair each and hard-
+   * blocked six of the eight write facets in `MEMBER_ALLOWLIST` regardless of manifest
+   * declaration (`appRegistryWrite: []`, `notificationSettingsWrite: []` above).
+   * `keybindsWrite` and `systemHardwareWrite` did not get that treatment when they were
+   * split — this proves the raw `postMessage` route through `requireMember` is closed for
+   * all four, not just the two that already had it. `requireMember` runs before the
+   * permission check, so `server([...])` grants the permission only to prove the *member*
+   * refusal fires even when the caller is otherwise entitled, matching the `appRegistry
+   * members` block above.
+   */
+  describe('MICA-127/162 write-facet member allowlists', () => {
+    it('hard-blocks every keybindsWrite member, permission or not', async () => {
+      const setBinding = vi.fn();
+      const resetBindings = vi.fn();
+      registerFacet('keybindsWrite' as any, (() => ({ setBinding, resetBindings })) as any);
+      const { posted, from } = server(['keybinds-write'] as any);
+      from({
+        kind: 'call',
+        id: 1,
+        facet: 'keybindsWrite',
+        factoryArgs: [],
+        member: 'setBinding',
+        args: ['back', 'Escape']
+      });
+      from({
+        kind: 'call',
+        id: 2,
+        facet: 'keybindsWrite',
+        factoryArgs: [],
+        member: 'resetBindings',
+        args: []
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(posted.map((m) => (m as any).ok)).toEqual([false, false]);
+      expect(posted[0]).toMatchObject({ error: { message: expect.stringContaining('core only') } });
+      expect(setBinding).not.toHaveBeenCalled();
+      expect(resetBindings).not.toHaveBeenCalled();
+    });
+
+    it('hard-blocks appRegistryWrite entirely, even with app-registry-write granted', async () => {
+      const unregisterApp = vi.fn();
+      registerFacet('appRegistryWrite' as any, (() => ({ unregisterApp })) as any);
+      const { posted, from } = server(['app-registry-write'] as any);
+      from({
+        kind: 'call',
+        id: 1,
+        facet: 'appRegistryWrite',
+        factoryArgs: [],
+        member: 'unregisterApp',
+        args: ['mail']
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(posted[0]).toMatchObject({
+        ok: false,
+        error: { message: expect.stringContaining('core only') }
+      });
+      expect(unregisterApp).not.toHaveBeenCalled();
+    });
+
+    it('hard-blocks notificationSettingsWrite entirely, even with notification-settings-write granted', async () => {
+      const setDndEnabled = vi.fn();
+      registerFacet('notificationSettingsWrite' as any, (() => ({ setDndEnabled })) as any);
+      const { posted, from } = server(['notification-settings-write'] as any);
+      from({
+        kind: 'call',
+        id: 1,
+        facet: 'notificationSettingsWrite',
+        factoryArgs: [],
+        member: 'setDndEnabled',
+        args: [true]
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(posted[0]).toMatchObject({
+        ok: false,
+        error: { message: expect.stringContaining('core only') }
+      });
+      expect(setDndEnabled).not.toHaveBeenCalled();
+    });
+
+    describe('systemHardwareWrite splits device-wide members from experience ones', () => {
+      /** Every real member, stubbed, so a member missing from either list here fails loud. */
+      const members = [
+        'setCharge',
+        'setSignal',
+        'toggleCellService',
+        'toggleBluetooth',
+        'setVolume',
+        'toggleMute',
+        'setVolumeStep',
+        'setRingMode',
+        'setRingtone',
+        'previewRingtone'
+      ] as const;
+      const blocked = [
+        'setCharge',
+        'setSignal',
+        'toggleCellService',
+        'toggleBluetooth',
+        'toggleMute',
+        'setVolumeStep',
+        'setRingtone'
+      ];
+      const grantable = ['setVolume', 'setRingMode', 'previewRingtone'];
+
+      let calls: Record<string, unknown[]>;
+
+      beforeEach(() => {
+        calls = {};
+        registerFacet(
+          'systemHardwareWrite' as any,
+          (() =>
+            Object.fromEntries(
+              members.map((m) => [m, (...args: unknown[]) => (calls[m] = args)])
+            )) as any
+        );
+      });
+
+      it.each(blocked)("blocks '%s' as core only", async (member) => {
+        const { posted, from } = server(['system-hardware-write'] as any);
+        from({
+          kind: 'call',
+          id: 1,
+          facet: 'systemHardwareWrite',
+          factoryArgs: [],
+          member,
+          args: []
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(posted[0]).toMatchObject({
+          ok: false,
+          error: { message: expect.stringContaining('core only') }
+        });
+        expect(calls[member]).toBeUndefined();
+      });
+
+      it.each(grantable)("still allows '%s' with the permission granted", async (member) => {
+        const { posted, from } = server(['system-hardware-write'] as any);
+        from({
+          kind: 'call',
+          id: 1,
+          facet: 'systemHardwareWrite',
+          factoryArgs: [],
+          member,
+          args: ['probe-arg']
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(posted[0]).toMatchObject({ ok: true });
+        expect(calls[member]).toEqual(['probe-arg']);
+      });
+
+      it('covers every real systemHardwareWrite member between the two lists', () => {
+        expect([...blocked, ...grantable].sort()).toEqual([...members].sort());
+      });
+    });
+  });
+
+  /**
    * MICA-21: `onAppForeground`, `onAppUnmount`, `deepLink`, `clearAppStorage` and
    * `appStorageBytes` are bare-function facets whose factory takes an app id and (for the
    * first three) a handler, neither of which passes through `pinAppId` or `decodeArgs`. A
