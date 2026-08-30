@@ -210,7 +210,7 @@ CREATE TABLE IF NOT EXISTS `gphone_messages_participants` (
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `status` (`status`),
-    KEY `conversation_participant` (`conversation_id`, `citizenid`),
+    UNIQUE KEY `conversation_participant_unique` (`conversation_id`, `citizenid`),
     KEY `citizenid_status` (`citizenid`, `status`),
     KEY `conversation_status` (`conversation_id`, `status`),
     KEY `participant_last_read` (`citizenid`, `last_read`),
@@ -550,3 +550,6 @@ CREATE TABLE IF NOT EXISTS `gphone_schema_migrations` (
     `applied_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO `gphone_schema_migrations` (`id`) VALUES
+  ('0001_repair_conversation_participants');

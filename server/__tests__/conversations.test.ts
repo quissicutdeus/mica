@@ -22,9 +22,16 @@ vi.mock('../lib/FrameworkBridge', () => ({
   }
 }));
 
-const directory = vi.hoisted(() => ({ byPhone: new Map<string, { citizenid: string }>() }));
+const directory = vi.hoisted(() => ({
+  byPhone: new Map<string, { citizenid: string }>(),
+  /** Every number `create` actually looked up, in order — the cap is a bound on this too. */
+  lookups: [] as string[]
+}));
 vi.mock('../lib/PlayerDirectory', () => ({
-  resolveByPhone: async (phone: string) => directory.byPhone.get(phone) ?? null
+  resolveByPhone: async (phone: string) => {
+    directory.lookups.push(phone);
+    return directory.byPhone.get(phone) ?? null;
+  }
 }));
 
 import { conversations } from '../services/Conversations';
@@ -38,9 +45,16 @@ const call = async (action: string, data: unknown) => {
   return (globalThis.emitNet as any).mock.calls.at(-1)?.[3];
 };
 
+/** Citizenids handed to a participants-table insert, in the order they were written. */
+const participantsAdded = () =>
+  dbMock.insert.mock.calls
+    .filter(([sql]) => typeof sql === 'string' && sql.includes('gphone_messages_participants'))
+    .map(([, params]) => (params as unknown[])[1]);
+
 beforeEach(() => {
   vi.clearAllMocks();
   directory.byPhone.clear();
+  directory.lookups.length = 0;
   dbMock.query.mockResolvedValue([]);
   dbMock.insert.mockResolvedValue(101);
   dbMock.update.mockResolvedValue(true);
@@ -96,9 +110,157 @@ describe('conversations:create — citizenids only via phone resolution', () => 
   });
 });
 
+/**
+ * MICA-153. `is_group` decided whether the Messages UI drew the member list, the group
+ * heading and the per-message sender name, and `create` read it straight off the payload —
+ * so a client could stand a third account inside a thread the victim was shown as a private
+ * DM, with no surface anywhere in the app on which to find them.
+ */
+describe('conversations:create — is_group is derived, never taken from the payload', () => {
+  it('refuses a payload claiming is_group: false over three people', async () => {
+    directory.byPhone.set('555-0100', { citizenid: 'CIT_B' });
+    directory.byPhone.set('555-0200', { citizenid: 'CIT_EAVESDROPPER' });
+
+    const created = await call('create', {
+      is_group: false,
+      phone: '555-0100',
+      participants: ['555-0200']
+    });
+
+    // Three people in the row means a group, whatever the payload said — which is what
+    // makes the participants section render and the sender names appear.
+    expect(created.is_group).toBe(true);
+    expect(participantsAdded()).toEqual(
+      expect.arrayContaining(['CIT_A', 'CIT_B', 'CIT_EAVESDROPPER'])
+    );
+  });
+
+  it('will not look for a one-to-one to reuse once a third person is in the thread', async () => {
+    directory.byPhone.set('555-0100', { citizenid: 'CIT_B' });
+    directory.byPhone.set('555-0200', { citizenid: 'CIT_EAVESDROPPER' });
+
+    await call('create', { is_group: false, phone: '555-0100', participants: ['555-0200'] });
+
+    // `findOneToOne` filters on `c.is_group = 0`. It is not consulted here, and the row it
+    // would have to match is written with the flag set — so a three-party thread can never
+    // be handed back as the canonical pair for two of the people inside it.
+    const askedForAPair = dbMock.query.mock.calls.some(
+      ([sql]) => typeof sql === 'string' && sql.includes('c.is_group = 0')
+    );
+    expect(askedForAPair).toBe(false);
+  });
+
+  it('derives the flag downwards too — is_group: true over one other person is a pair', async () => {
+    directory.byPhone.set('555-0100', { citizenid: 'CIT_B' });
+
+    const created = await call('create', { is_group: true, phone: '555-0100' });
+
+    expect(created.is_group).toBe(false);
+    // Two people is a pair, so the reuse check runs and this thread is one-to-one.
+    const askedForAPair = dbMock.query.mock.calls.some(
+      ([sql]) => typeof sql === 'string' && sql.includes('c.is_group = 0')
+    );
+    expect(askedForAPair).toBe(true);
+  });
+});
+
+/**
+ * The other half of MICA-153: `participants` was a raw client array with no dedup and no
+ * cap, so one number repeated 500 times wrote 500 live rows for one person and
+ * `Messages.deliverToParticipants` then emitted 500 packets per message, permanently.
+ */
+describe('conversations:create — the participant list is deduplicated and bounded', () => {
+  it('collapses a number repeated many times to one participant and one lookup', async () => {
+    directory.byPhone.set('555-victim', { citizenid: 'CIT_VICTIM' });
+
+    const created = await call('create', {
+      participants: Array.from({ length: 500 }, () => '555-victim')
+    });
+
+    expect(participantsAdded()).toEqual(['CIT_A', 'CIT_VICTIM']);
+    // Deduplicated before resolution, so the 500 entries cost one directory query.
+    expect(directory.lookups).toEqual(['555-victim']);
+    // One other person is a pair, not a group.
+    expect(created.is_group).toBe(false);
+  });
+
+  it('collapses two spellings that resolve to the same person', async () => {
+    directory.byPhone.set('555-0100', { citizenid: 'CIT_B' });
+    directory.byPhone.set('5550100', { citizenid: 'CIT_B' });
+
+    await call('create', { participants: ['555-0100', '5550100'] });
+
+    // Both numbers are looked up — they are different strings — but the person behind them
+    // is added once. Deduplicating the phone strings alone would not have caught this.
+    expect(directory.lookups).toHaveLength(2);
+    expect(participantsAdded()).toEqual(['CIT_A', 'CIT_B']);
+  });
+
+  it('refuses members beyond the cap, and stops looking numbers up at it', async () => {
+    const phones = Array.from({ length: 100 }, (_, i) => `555-${String(i).padStart(4, '0')}`);
+    for (const [index, phone] of phones.entries()) {
+      directory.byPhone.set(phone, { citizenid: `CIT_${index}` });
+    }
+
+    await call('create', { participants: phones });
+
+    // 32 members counting the creator, so 31 of the 100 requested people get in.
+    expect(participantsAdded()).toHaveLength(32);
+    expect(participantsAdded()[0]).toBe('CIT_A');
+    // And the cap bounds the work, not just the result: the remaining numbers are never
+    // resolved, so an oversized list cannot buy 100 directory queries either.
+    expect(directory.lookups.length).toBeLessThanOrEqual(32);
+  });
+});
+
+/**
+ * Where the uniqueness actually lives. A `UNIQUE (conversation_id, citizenid)` would break
+ * rejoining — leaving stamps `left_at` and coming back inserts a second row — and MySQL has
+ * no partial unique index for "unique among the live rows", so the invariant is enforced by
+ * the statement that writes.
+ */
+describe('addParticipant — the live row is unique by construction', () => {
+  const repo = conversations.repo as unknown as {
+    addParticipant: (id: number, citizenid: string, role?: 'admin' | 'member') => Promise<boolean>;
+  };
+
+  it('guards the insert on there being no live row for that person', async () => {
+    await repo.addParticipant(7, 'CIT_B');
+
+    const [sql, params] = dbMock.insert.mock.calls.at(-1) as [string, unknown[]];
+    const normalized = sql.replace(/\s+/g, ' ');
+
+    expect(normalized).toContain('NOT EXISTS');
+    // The guard is the liveness rule, not the pair: a row someone has left does not block
+    // them coming back.
+    expect(normalized).toContain('left_at IS NULL');
+    expect(normalized).not.toContain('ON DUPLICATE KEY');
+    // Conversation and citizenid are bound twice — once for the row, once for the guard.
+    expect(params).toEqual([7, 'CIT_B', 'member', 7, 'CIT_B']);
+  });
+
+  it('reports that nothing was written when the guard matched an existing live row', async () => {
+    // A conditional insert that inserted no row reports an insert id of 0.
+    dbMock.insert.mockResolvedValueOnce(0);
+
+    await expect(repo.addParticipant(7, 'CIT_B')).resolves.toBe(false);
+  });
+
+  it('reports a write when the row was actually inserted', async () => {
+    dbMock.insert.mockResolvedValueOnce(42);
+
+    await expect(repo.addParticipant(7, 'CIT_B')).resolves.toBe(true);
+  });
+});
+
 describe('the declaration', () => {
   it('still disables the generic create in favor of this custom handler', () => {
     expect(handlers.has('gphone:server:conversations:create')).toBe(true);
     expect(conversations.resolved.columns).not.toContain('participant');
+  });
+
+  it('keeps is_group out of the client-writable set, so the generic update cannot set it', () => {
+    expect(conversations.resolved.columns).toContain('is_group');
+    expect(conversations.repo['clientWritable']).not.toContain('is_group');
   });
 });

@@ -45,7 +45,8 @@ export const conversations = defineService<Conversation>({
   },
   statuses: ['active', 'archived', 'deleted', 'moderated'],
   schema: {
-    // Set by the custom create; never client-writable.
+    // Derived by the custom create from the resolved member count, never client-writable
+    // and never read from a payload. See the note on `isGroup` in the create handler.
     is_group: { type: 'bool', notNull: true, default: 0, clientWritable: false },
     // The only generic write. `update` scopes it to the creator.
     name: { type: 'string', length: 50 }
@@ -89,7 +90,26 @@ export const conversations = defineService<Conversation>({
       },
       indexes: [
         { name: 'status', columns: ['status'] },
-        { name: 'conversation_participant', columns: ['conversation_id', 'citizenid'] },
+        /**
+         * One row per person per thread, enforced by the database rather than by the code
+         * that writes it (MICA-153). Nothing adds a participant to an existing
+         * conversation — `addParticipant` is reached only from `create`, and leaving a
+         * thread and messaging that person again starts a new one — so there is no
+         * rejoin this can refuse.
+         *
+         * It replaces the non-unique `conversation_participant`, which covered the same
+         * two columns in the same order and is redundant beside it. The name had to
+         * change: `SchemaMigrator` compares live indexes **by name only**
+         * (`server/lib/migrate.ts`), so flipping the old one to unique in place would have
+         * been a silent no-op on every server that already has it, leaving upgraded
+         * installs permanently unlike fresh ones with nothing reporting it. Migration
+         * `0001` does the drop and the add explicitly for the same reason.
+         */
+        {
+          name: 'conversation_participant_unique',
+          columns: ['conversation_id', 'citizenid'],
+          unique: true
+        },
         { name: 'citizenid_status', columns: ['citizenid', 'status'] },
         { name: 'conversation_status', columns: ['conversation_id', 'status'] },
         { name: 'participant_last_read', columns: ['citizenid', 'last_read'] }
@@ -150,6 +170,18 @@ const hydrateParticipants = async (conversationId: number) => {
   return await Database.query<any[]>(query, [conversationId]);
 };
 
+/**
+ * The most people one conversation may hold, the creator included.
+ *
+ * `participants` arrives as a raw client array, and every entry costs a `resolveByPhone`
+ * query at create time and a net packet per message forever after
+ * (`Messages.deliverToParticipants`). Unbounded, that is not a one-off cost but a
+ * permanent amplifier attached to a thread. A hard constant rather than a convar, the
+ * same call `proximity.MAX_NEARBY` makes: a server owner's dial belongs on things they
+ * benefit from tuning, not on the ceiling for work a player can ask the server to do.
+ */
+const MAX_CONVERSATION_MEMBERS = 32;
+
 /** The UI sends either a citizenid or a whole contact object as `participant`. */
 const nameOf = (participant: unknown): string | null => {
   if (!isRecord(participant)) return null;
@@ -160,15 +192,15 @@ const nameOf = (participant: unknown): string | null => {
 
 // Create/Start conversation
 app.registerEvent('create', async (source, cbId, data, citizenid) => {
-  // The client chooses every field here, so it is read once into named locals with the
-  // shape each one is actually allowed to have. `participant` is the exception and stays
-  // loose: the UI sends either a whole contact object (used only for its display name,
-  // below) or nothing. It is never trusted as a citizenid — a raw citizenid is never proof
-  // the caller knows this person (§2.9), and a modified client could otherwise force its
-  // way into a thread with anyone it can guess an id for. A citizenid only ever becomes a
-  // participant by resolving through a phone number, the same as the 1-on-1 path.
+  // The client chooses every field here except `is_group`, which is derived below, so each
+  // is read once into a named local with the shape it is actually allowed to have.
+  // `participant` is the second exception and stays loose: the UI sends either a whole
+  // contact object (used only for its display name, below) or nothing. It is never trusted
+  // as a citizenid — a raw citizenid is never proof the caller knows this person (§2.9),
+  // and a modified client could otherwise force its way into a thread with anyone it can
+  // guess an id for. A citizenid only ever becomes a participant by resolving through a
+  // phone number, the same as the 1-on-1 path.
   const body = fields(data);
-  const isGroup = body.is_group === true;
   const phone = optionalString(body.phone);
   const requestedName = optionalString(body.name);
   const participant = body.participant;
@@ -186,7 +218,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
    * key onto `players`.
    */
   let targetName: string | null = null;
-  if (!isGroup && phone) {
+  if (phone) {
     const target = await resolveByPhone(phone);
     if (!target) {
       console.log(`[Conversation] No player holds phone ${phone}; refusing to start a thread.`);
@@ -196,9 +228,55 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     targetName = target.displayName;
   }
 
+  /**
+   * Everyone who will be in the thread, the creator included.
+   *
+   * A `Set` because the derived `is_group` below is a count of *people*, and because
+   * every duplicate here used to become its own live participant row. Deduplicating the
+   * phone strings would not be enough on its own — two spellings of one number resolve
+   * to the same citizenid — so the collapse happens on the resolved id.
+   *
+   * The requested list is deduplicated and truncated *before* any of it is resolved, so
+   * a payload naming one number 500 times costs one lookup rather than 500.
+   */
+  const requestedPhones = Array.isArray(body.participants)
+    ? body.participants.filter((p): p is string => typeof p === 'string')
+    : [];
+
+  const members = new Set<string>([citizenid]);
+  if (targetCitizenId) members.add(targetCitizenId);
+
+  // Group members: each entry is a phone number, resolved the same way the 1-on-1 target
+  // is — never a raw citizenid, for the same reason `targetCitizenId` above isn't one.
+  for (const memberPhone of [...new Set(requestedPhones)].slice(0, MAX_CONVERSATION_MEMBERS)) {
+    if (members.size >= MAX_CONVERSATION_MEMBERS) break;
+    const target = await resolveByPhone(memberPhone);
+    if (!target) continue; // unknown number
+    members.add(target.citizenid);
+  }
+
+  const others = [...members].filter((member) => member !== citizenid);
+
+  /**
+   * Derived from who is actually in the thread, and never read from the payload.
+   *
+   * `is_group` is a fact about the row rather than a property the caller owns, and the
+   * Messages UI gates every affordance that would reveal an extra participant on it —
+   * the member list, the group heading, the per-message sender name. A client that could
+   * set it could therefore stand a third account inside a thread the victim is shown as
+   * a private DM, and the victim had no surface anywhere in the app on which to discover
+   * them (MICA-153).
+   *
+   * Deriving it repairs `findOneToOne` at the same time. That query filters on
+   * `is_group = 0`, so a forged three-party thread could be handed back as the canonical
+   * pair for any two people inside it; a thread with three members can no longer claim
+   * to be a pair, because nothing but the member count decides the flag.
+   */
+  const isGroup = others.length > 1;
+
   // Logic for 1-on-1: existing check
-  if (!isGroup && targetCitizenId) {
-    const existing = await conversationRepo.findOneToOne(citizenid, targetCitizenId);
+  if (!isGroup && others.length === 1) {
+    const existing = await conversationRepo.findOneToOne(citizenid, others[0]);
     if (existing) return existing;
   }
 
@@ -211,31 +289,14 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     name: requestedName ?? targetName ?? nameOf(participant) ?? undefined
   };
   const conversationId = await conversationRepo.createConversation(newConv);
-  console.log(`[Conversation] Created conversation ${conversationId}, adding participants.`);
 
-  // Add self
   await conversationRepo.addParticipant(conversationId, citizenid, 'admin');
-  console.log(`[Conversation] Added self (${citizenid}) to ${conversationId}`);
-
-  // Add others
-  // If 1-on-1
-  if (targetCitizenId) {
-    console.log(`[Conversation] Adding target (${targetCitizenId}) to ${conversationId}`);
-    await conversationRepo.addParticipant(conversationId, targetCitizenId, 'member');
-  } else {
-    console.log(`[Conversation] No targetCitizenId found (payload: ${JSON.stringify(data)})`);
+  for (const memberCitizenId of others) {
+    await conversationRepo.addParticipant(conversationId, memberCitizenId, 'member');
   }
-
-  // Group members: each entry is a phone number, resolved the same way the 1-on-1 target
-  // is — never a raw citizenid, for the same reason `targetCitizenId` above isn't one.
-  const participantPhones = Array.isArray(body.participants)
-    ? body.participants.filter((p): p is string => typeof p === 'string')
-    : [];
-  for (const memberPhone of participantPhones) {
-    const target = await resolveByPhone(memberPhone);
-    if (!target || target.citizenid === citizenid) continue; // unknown number, or self (already added)
-    await conversationRepo.addParticipant(conversationId, target.citizenid, 'member');
-  }
+  console.log(
+    `[Conversation] Created conversation ${conversationId} with ${members.size} participant(s).`
+  );
 
   return { ...newConv, id: conversationId };
 });

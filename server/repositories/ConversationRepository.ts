@@ -33,16 +33,59 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     return await this.updateUnscoped(conversationId, { status: 'deleted' });
   }
 
+  /**
+   * Put someone in a thread, unless they are already in it.
+   *
+   * The guarantee itself is the database's: `conversation_participant_unique` makes one
+   * row per person per thread a constraint rather than a convention, so nothing — a
+   * concurrent request included — can write a second one. This statement is what keeps
+   * that constraint from surfacing as an error. A plain `INSERT` racing another would
+   * raise a duplicate-key failure, which reaches a player as a failed action for what is
+   * really a no-op; `NOT EXISTS` makes "already in the thread" the quiet outcome it
+   * should be, and the index stays underneath as the thing that is actually load-bearing.
+   *
+   * It is one statement, so the check and the write cannot be prised apart the way a
+   * `SELECT` followed by an `INSERT` in the service could be. The subquery is wrapped in a
+   * derived table because MySQL otherwise refuses to re-read the table it is inserting
+   * into (ER 1093); the wrapper forces it to materialise first.
+   *
+   * Without any of this, `participants: ["555-victim" x 500]` wrote 500 live rows for one
+   * person, and `Messages.deliverToParticipants` then emitted 500 packets per message for
+   * the life of the thread (MICA-153).
+   *
+   * `left_at IS NULL` is in the guard rather than the key because it is the liveness rule
+   * every other query here uses; the key is the pair, which is stricter and is what the
+   * table can actually enforce.
+   *
+   * Returns whether a row was actually written, so a caller can tell "added" from
+   * "already in the thread".
+   */
   async addParticipant(
     conversationId: number,
     citizenid: string,
     role: 'admin' | 'member' = 'member'
-  ) {
-    // Insert new session row
-    return await Database.insert(
-      "INSERT INTO gphone_messages_participants (conversation_id, citizenid, role, left_at, status) VALUES (?, ?, ?, NULL, 'active')",
-      [conversationId, citizenid, role]
-    );
+  ): Promise<boolean> {
+    const query = `
+            INSERT INTO gphone_messages_participants
+                (conversation_id, citizenid, role, left_at, status)
+            SELECT ?, ?, ?, NULL, 'active' FROM DUAL
+            WHERE NOT EXISTS (
+                SELECT 1 FROM (
+                    SELECT 1 FROM gphone_messages_participants
+                    WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL
+                    LIMIT 1
+                ) live
+            )
+        `;
+    const insertId = await Database.insert(query, [
+      conversationId,
+      citizenid,
+      role,
+      conversationId,
+      citizenid
+    ]);
+    // A conditional insert that matched nothing reports an insert id of 0.
+    return Boolean(insertId);
   }
 
   async removeParticipant(conversationId: number, citizenid: string, status: string = 'removed') {

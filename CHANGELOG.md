@@ -70,10 +70,59 @@ the README take every one of those rows with it. Neither direction is a
 conversion. Plan a framework switch as a data migration you write, or as a
 deliberate reset your players are told about.
 
-Nothing else. No versioned migration has landed and no table has gained a
-column, so nothing here needs `gphoneschema apply`. Every convar below defaults
-to the behaviour a server already had, so an update that sets none of them
-changes nothing for your players.
+**Run `gphoneschema apply` from your server console after updating.** This
+release carries the first versioned migration gPhone has ever shipped,
+`0001_repair_conversation_participants`, and it repairs rows that a bug let
+anyone write. Until you run it, the repair has not happened on your database.
+
+Two things were wrong in Messages, and both left marks that a code fix alone
+cannot clear. `is_group` was set by whatever the phone sent rather than by who
+was actually in the thread, and the Messages app hides the member list, the
+group heading and every sender name while that flag is off — so a modified
+client could put a third account into a conversation its two participants were
+shown as a private one-to-one, and they had no screen anywhere in the app on
+which to find it. Separately, the list of people to add was taken as sent, with
+no limit and no check for repeats, so one number listed five hundred times
+became five hundred live rows for one player and five hundred copies of every
+later message delivered to them, for as long as the thread existed.
+
+**This migration deletes rows, and it is the only part of gPhone outside
+`gphonemedia prune` that does.** It removes the surplus participant rows — the
+ones naming a person a second, or five-hundredth, time in a thread they were
+already in — keeping one row for each person in each conversation. Those rows
+are artefacts of the bug and nobody asked for them, but you are entitled to know
+they go, and to take a backup first if you would rather. **No conversation and
+no message is touched, and nobody is removed from a thread they are actually
+in**: where a person has both a current row and older ones, the current row is
+the one kept.
+
+They have to be deleted rather than merely marked as departed, because the
+constraint described below counts rows and not live ones — five hundred rows
+flagged "left" collide with it just as surely as five hundred active ones.
+
+The migration then recomputes `is_group` for every conversation from the number
+of people actually left in it. That step is what makes an already-tampered
+thread visible: the member list and the sender names come back, and anyone who
+should not have been in the conversation is finally on screen. **So it is worth
+reading your players' reports of odd threads after this rather than before** — a
+group that had been presenting itself as a private chat starts showing its
+members.
+
+Last, it puts the rule into the table itself so nothing can write those rows
+again. On `gphone_messages_participants`, the index `conversation_participant`
+is replaced by a unique `conversation_participant_unique` over the same two
+columns, which is what makes one row per person per thread a guarantee rather
+than a convention. The rename is not cosmetic: gPhone compares the indexes on
+your database against the ones it expects **by name only**, so had the existing
+name been reused your server would have kept a non-unique index forever and
+reported nothing wrong. The migration therefore adds and drops the index itself
+rather than trusting that comparison, and both steps check whether they are
+needed first — so an apply that is interrupted can simply be run again. The new
+key goes on before the old one comes off, so if anything does go wrong your
+table is left exactly as it was rather than with no index at all.
+
+Every convar below defaults to the behaviour a server already had, so an update
+that sets none of them changes nothing for your players.
 
 ### Added
 

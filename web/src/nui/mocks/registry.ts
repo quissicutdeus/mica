@@ -1491,12 +1491,20 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     return false;
   },
-  startConversation: async ({ is_group }: { phone?: string; is_group?: boolean }) => {
+  /**
+   * `is_group` is deliberately ignored, exactly as the server ignores it (MICA-153).
+   * It is derived from how many people are in the thread, so a mock that echoed the
+   * payload back would let the browser and every Playwright run keep the semantics the
+   * game no longer has — the shape of drift AGENTS.md §8 warns a mock can hide.
+   */
+  startConversation: async ({ participants }: { phone?: string; participants?: string[] }) => {
     await delay(300);
+    // The caller plus the target, plus anyone else named — more than two is a group.
+    const members = 2 + new Set(participants ?? []).size;
     return {
       id: Math.random(),
       citizenid: 'my-id',
-      is_group: is_group || false,
+      is_group: members > 2,
       status: 'active',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
