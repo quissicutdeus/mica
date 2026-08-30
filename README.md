@@ -280,16 +280,31 @@ filled.
 one per character, so every character a player has shares one phone: one contact
 list, one inbox, one gallery. This is intended.
 
-**Nothing cleans up after a deleted character, and you have to wire that
-yourself.** On a qb core the `ON DELETE CASCADE` above clears twenty-two tables
-for free, and the orphan sweep at every resource start catches whatever it
-missed. `gphone.esx.sql` has no cascade, and the sweep reads `players` and skips
-itself when it cannot — deliberately, since treating an unreadable owner table
-as "everybody is an orphan" would delete the database. So on ESX, a deleted
-character's contacts, messages, notes and photos stay. Your deletion flow should
-trigger `gphone:server:media:characterDeleted` with the identifier to reclaim
-the media; that server event is the same one described under Configuration, and
-on ESX it goes from a convenience to the only automatic cleanup you have.
+**Cleanup after a deleted character is an orphan sweep here, not a cascade.** On
+a qb core the `ON DELETE CASCADE` above clears twenty-two tables for free.
+`gphone.esx.sql` has no cascade — there is no `players` table to point one at —
+so on ESX the sweep at every resource start is the whole mechanism rather than a
+backstop. It asks `users(identifier)` who exists and deletes the rows belonging
+to characters who do not.
+
+**It refuses to run rather than guess, and you will see it say so.** Treating an
+owner table it cannot read as "everybody is an orphan" would delete your
+database, so the sweep skips and logs a reason whenever it cannot prove what it
+is about to delete: no framework has answered yet, `users` is empty or
+unreadable, or none of the identities sampled from gPhone's own rows exist in
+`users` at all. That last one is the guard for a box with a leftover `players`
+table from a previous qb install. Each prints one line naming the reason, and
+each is a refusal rather than a result — a skipped sweep leaves rows behind, it
+never removes extra ones. The sweep also logs a line when it starts and a line
+when it finishes, including when it removed nothing, so "it ran and found
+nothing" is distinguishable from "it never got as far as the database".
+
+**A deletion flow can reclaim the space immediately** by triggering the server
+event `gphone:server:shell:characterDeleted` with the identifier, which removes
+that character's rows from every table at once instead of waiting for the next
+restart. `gphone:server:media:characterDeleted` still exists and still does
+exactly what it always did — media only. Both are local server events: another
+resource can fire them, a game client cannot.
 
 **Phone numbers are not part of core ESX.** There is no `charinfo`. gPhone looks
 for `phoneNumber`, `phone_number` or `phone` on the player object and reports no
@@ -562,21 +577,32 @@ next reconnect.
 
 Two things about media storage that are not convars, since this is where you
 will be looking if the table is bigger than you expected. gPhone removes a
-deleted character's photos in three ways, in this order: the table is created
-with `ON DELETE CASCADE` onto `players`, so a framework that removes the
-character's row takes the photos with it; a sweep at every resource start
-deletes media whose owner no longer exists, which covers an install whose table
+deleted character's photos in three ways, in this order: on a qb core the table
+is created with `ON DELETE CASCADE` onto `players`, so a framework that removes
+the character's row takes the photos with it; a sweep at every resource start
+deletes rows whose owner no longer exists, which covers an install whose table
 predates that constraint; and a deletion script of your own can trigger the
-server event `gphone:server:media:characterDeleted` with a citizenid to reclaim
-the space immediately. That event is a local one — another server resource can
-fire it, a game client cannot.
+server event `gphone:server:shell:characterDeleted` with a citizenid to reclaim
+the space immediately, across every table rather than photos alone.
+`gphone:server:media:characterDeleted` does the same for media only and is
+unchanged. Both are local events — another server resource can fire them, a game
+client cannot.
 
-**On ESX only the third of those works.** `gphone.esx.sql` has no cascade to
-carry the photos out, and the start-up sweep counts rows in `players` first and
-skips itself when that table is unreadable rather than concluding every photo is
-an orphan — which on a schema with no `players` is every time. So an ESX server
-reclaims nothing on its own, and the `characterDeleted` event is not a
-convenience there but the whole of the mechanism.
+**On ESX the first of those does not exist and the other two do.**
+`gphone.esx.sql` has no cascade to carry the photos out, because there is no
+`players` table to point one at, so the start-up sweep is the mechanism rather
+than a backstop: it asks `users(identifier)` who exists and removes the rows of
+characters who do not.
+
+**The sweep refuses rather than guesses.** It skips, and logs which of these it
+hit, whenever it cannot prove what it is about to delete: no framework has
+answered yet, the owner table is empty or unreadable, or not one of the
+identities sampled out of gPhone's own rows exists in that table. Treating an
+owner table it cannot read as "everybody is an orphan" would delete your
+database, so a refusal always leaves rows behind and never removes extra ones.
+It also logs a line when it starts and a line when it finishes, including a
+finish that removed nothing, so a sweep that ran and found nothing is
+distinguishable from one that never reached the database at all.
 
 The last two are the Store's, and they are the only pair here that turns
 something **on** rather than tuning something already running. Both are empty by

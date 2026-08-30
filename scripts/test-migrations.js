@@ -58,7 +58,7 @@ const DUPLICATES = 500;
  * configured": a harness that returns early — a fixture that silently seeded nothing, a loop
  * over an empty list — would otherwise print a pass having checked almost nothing.
  */
-const MINIMUM_CHECKS = 40;
+const MINIMUM_CHECKS = 70;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -211,7 +211,13 @@ const installOxmysql = (connection) => {
 const loadServerModule = async () => {
   const entry = [
     `export { runPendingMigrations, reportPendingMigrations } from '${root}/server/lib/migrations.ts';`,
-    `export { migrations } from '${root}/server/migrations/index.ts';`
+    `export { migrations } from '${root}/server/migrations/index.ts';`,
+    // MICA-152. The services barrel is what fills `declaredServices`, and the sweep
+    // derives its table set from it — so importing it is the only way to drive the real
+    // derivation rather than a list retyped here.
+    `import '${root}/server/services/index.ts';`,
+    `export { sweepOrphanedRows, purgeOwnedRows, ownedTables } from '${root}/server/lib/orphanSweep.ts';`,
+    `export { __setResourceLookup, detectFramework, FrameworkBridge } from '${root}/server/lib/FrameworkBridge.ts';`
   ].join('\n');
 
   const outfile = path.join(root, 'node_modules', '.cache', 'gphone-migration-harness.mjs');
@@ -230,7 +236,25 @@ const loadServerModule = async () => {
         "globalThis.GetCurrentResourceName = globalThis.GetCurrentResourceName ?? (() => 'gphone');",
         'globalThis.RegisterCommand = globalThis.RegisterCommand ?? (() => {});',
         'globalThis.IsPlayerAceAllowed = globalThis.IsPlayerAceAllowed ?? (() => false);',
-        'globalThis.GetConvar = globalThis.GetConvar ?? ((_n, fallback) => fallback);'
+        'globalThis.GetConvar = globalThis.GetConvar ?? ((_n, fallback) => fallback);',
+        'globalThis.GetConvarInt = globalThis.GetConvarInt ?? ((_n, fallback) => fallback);',
+        /**
+         * Shadowed, not stubbed globally, and only inside this bundle.
+         *
+         * Importing the services barrel starts four module-scope `setInterval` loops —
+         * Battery, Signal, Music, HodlrMarket — each of which would then issue real queries
+         * against whichever database the harness is currently pointed at, on its own
+         * schedule. Background writes in the middle of assertions about row counts is how a
+         * deterministic harness stops being one.
+         *
+         * A module-level `const` in an ESM bundle shadows the global for this file alone, so
+         * the host process keeps a working `setInterval` (mysql2 needs one) and every
+         * `if (typeof setInterval === 'function')` in the services still takes its branch
+         * and calls nothing. `setTimeout` is deliberately left alone: `orphanSweep` yields
+         * on it between delete chunks, and shadowing that would deadlock the thing under
+         * test.
+         */
+        'const setInterval = () => 0;'
       ].join('\n')
     },
     outfile,
@@ -582,6 +606,253 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   );
 };
 
+/* --------------------------------------------- MICA-152: the orphan sweep */
+
+/**
+ * es_extended's own table, in the one shape gPhone reads it in.
+ *
+ * `identifier` is wider than gPhone's `citizenid varchar(50)` on purpose — stock ESX varies
+ * between varchar(46) and varchar(60), and an `esx_multicharacter` identifier
+ * (`char1:license:<40 hex>`) is 54. gPhone's column is the binding constraint, and the
+ * mismatch that causes is MICA-158 rather than this ticket. The fixtures below stay inside
+ * 50 characters so they are testing the sweep and not that bug.
+ */
+const USERS_TABLE = `
+CREATE TABLE IF NOT EXISTS users (
+    identifier varchar(60) NOT NULL,
+    firstname varchar(50) DEFAULT NULL,
+    lastname varchar(50) DEFAULT NULL,
+    PRIMARY KEY (identifier)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;`;
+
+const SWEEP_LIVE = 'char1:license:aaaaaaaaaaaaaaaaaa';
+const SWEEP_GONE = 'char1:license:bbbbbbbbbbbbbbbbbb';
+
+/** Framework stand-ins. `exposes` only ever reads one key off the resource it probes. */
+const FRAMEWORK = {
+  qb: (name) => (name === 'qbx_core' ? { GetPlayer: () => null } : undefined),
+  esx: (name) => (name === 'es_extended' ? { getSharedObject: () => ({}) } : undefined),
+  /** Neither has started yet. A legal `server.cfg` puts gPhone above its framework. */
+  none: () => undefined
+};
+
+/**
+ * Rows for one character who exists and one who does not, across three tables.
+ *
+ * `gphone_audit_logs` is in there because it is the one swept table with no `defineService`
+ * behind it, so a derivation bug that dropped it would otherwise show up nowhere.
+ */
+const seedSweepRows = async (connection, live, gone) => {
+  for (const table of ['gphone_notes', 'gphone_contacts', 'gphone_audit_logs']) {
+    await connection.query(`DELETE FROM ${table}`);
+  }
+  await connection.query(
+    'INSERT INTO gphone_notes (citizenid, title, content) VALUES (?,?,?), (?,?,?), (?,?,?)',
+    [live, 'mine', 'a', gone, 'ghost', 'b', gone, 'ghost again', 'c']
+  );
+  await connection.query(
+    'INSERT INTO gphone_contacts (citizenid, firstname, phone) VALUES (?,?,?), (?,?,?)',
+    [live, 'Live', '555-0001', gone, 'Gone', '555-0002']
+  );
+  await connection.query(
+    'INSERT INTO gphone_audit_logs (citizenid, action, service, method, target_id) VALUES (?,?,?,?,?)',
+    [gone, 'deleted', 'notes', 'delete', 1]
+  );
+};
+
+const rowsIn = async (connection, table) =>
+  Number(await scalar(connection, `SELECT COUNT(*) FROM ${table}`));
+
+/**
+ * MICA-152, against a real server rather than a mocked `Database`.
+ *
+ * The unit suite asserts the SQL as text, which cannot tell you whether MariaDB accepts
+ * `DELETE … WHERE NOT EXISTS … LIMIT n`, and cannot tell you what an empty owner table
+ * actually does. Those are the two questions worth a container.
+ *
+ * **The fail-closed cases are the point.** A sweep that reads "I cannot see the owner table"
+ * as "everything is an orphan" deletes every row on the server while logging a success, so
+ * each case below breaks exactly one precondition and asserts the row counts did not move —
+ * not merely that the return value was zero, which a guard that stopped running would also
+ * produce.
+ */
+const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const database = `gphone_sweep_${variant}`;
+  const ownerTable = hasPlayers ? 'players' : 'users';
+  const label = `${schemaFile} sweep`;
+
+  step(`${schemaFile} — MICA-152 orphan sweep, on a ${variant} server`);
+
+  await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+  await connection.query(`CREATE DATABASE \`${database}\``);
+  await connection.changeUser({ database });
+  await connection.query(hasPlayers ? PLAYERS_TABLE : USERS_TABLE);
+  await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+
+  const live = hasPlayers ? 'CIT_LIVE' : SWEEP_LIVE;
+  const gone = hasPlayers ? 'CIT_GONE' : SWEEP_GONE;
+  const ownerColumn = hasPlayers ? 'citizenid' : 'identifier';
+  const addOwner = (id) =>
+    connection.query(`INSERT INTO ${ownerTable} (${ownerColumn}) VALUES (?)`, [id]);
+
+  server.__setResourceLookup(FRAMEWORK[variant]);
+  check(`${label}: detects the framework`, server.detectFramework(), variant);
+  check(`${label}: resolves the owner table`, server.FrameworkBridge.ownerTable(), {
+    table: ownerTable,
+    column: ownerColumn
+  });
+
+  // The derived set, against the schema that actually imported. The unit suite ties it to
+  // the committed file; this ties it to the live database, which is the thing rows are in.
+  const swept = server.ownedTables().map((t) => t.table);
+  // `gphone_%` only, and the underscore escaped so it is a literal rather than a
+  // single-character wildcard. On qb the framework's own `players` also has a `citizenid`
+  // column and is emphatically not something gPhone sweeps.
+  const [liveTables] = await connection.query(
+    `SELECT t.table_name AS name FROM information_schema.TABLES t
+       JOIN information_schema.COLUMNS c
+         ON c.table_schema = t.table_schema AND c.table_name = t.table_name
+      WHERE t.table_schema = DATABASE()
+        AND t.table_name LIKE 'gphone|_%' ESCAPE '|'
+        AND c.column_name = 'citizenid'`
+  );
+  check(
+    `${label}: sweeps exactly the imported tables that carry a citizenid`,
+    swept.toSorted(),
+    liveTables.map((r) => r.name).toSorted()
+  );
+  check(
+    `${label}: includes the audit ledger, which no declaration produces`,
+    swept.includes('gphone_audit_logs'),
+    true
+  );
+  check(`${label}: never sweeps the framework's own table`, swept.includes(ownerTable), false);
+
+  /* --- it works ------------------------------------------------------------ */
+
+  await addOwner(live);
+
+  if (hasPlayers) {
+    /**
+     * qb first, because "qb behaviour is unchanged" is the claim most worth executing.
+     *
+     * With the cascade intact there is nothing for the sweep to find — an orphan cannot even
+     * be *inserted*, since the foreign key rejects a citizenid with no `players` row. So the
+     * order here is: prove the sweep is a no-op, prove the cascade still does the work, and
+     * only then reach the state the sweep exists for.
+     */
+    await addOwner(gone);
+    await seedSweepRows(connection, live, gone);
+
+    const intact = await server.sweepOrphanedRows();
+    check(`${label}: with the cascade intact the sweep removes nothing`, intact.removed, 0);
+    check(
+      `${label}: and leaves every row where it was`,
+      await rowsIn(connection, 'gphone_notes'),
+      3
+    );
+
+    await connection.query(`DELETE FROM ${ownerTable} WHERE ${ownerColumn} = ?`, [gone]);
+    check(
+      `${label}: the cascade still takes a deleted character's rows, unchanged`,
+      await rowsIn(connection, 'gphone_notes'),
+      1
+    );
+
+    /**
+     * Now the case the sweep is the backstop for on qb: an install whose tables were created
+     * before the constraint existed. `SchemaMigrator` adds columns and indexes and
+     * deliberately never adds a foreign key, so such a server keeps the shape it was made
+     * with and nothing cleans up after a deleted character — the ESX condition, arrived at
+     * from a different direction.
+     */
+    for (const [table, key] of [
+      ['gphone_notes', 'fk_notes_citizenid'],
+      ['gphone_contacts', 'fk_contacts_citizenid'],
+      ['gphone_audit_logs', 'fk_audit_logs_citizenid']
+    ]) {
+      await connection.query(`ALTER TABLE ${table} DROP FOREIGN KEY ${key}`);
+    }
+  }
+
+  await seedSweepRows(connection, live, gone);
+
+  const sweptResult = await server.sweepOrphanedRows();
+  check(`${label}: the sweep ran rather than refusing`, sweptResult.skipped, null);
+  check(
+    `${label}: nothing failed per-table`,
+    sweptResult.failures.map((f) => f.table),
+    []
+  );
+  check(`${label}: the orphans are gone`, await rowsIn(connection, 'gphone_notes'), 1);
+  check(
+    `${label}: the live character kept their contact`,
+    await rowsIn(connection, 'gphone_contacts'),
+    1
+  );
+
+  /* --- and now every way it must refuse ------------------------------------ */
+
+  const reseed = async () => {
+    await connection.query(`DELETE FROM ${ownerTable}`);
+    await addOwner(live);
+    await seedSweepRows(connection, live, gone);
+  };
+
+  const refuses = async (why, expected) => {
+    const before = await rowsIn(connection, 'gphone_notes');
+    const result = await server.sweepOrphanedRows();
+    check(`${label}: ${why} — refuses with '${expected}'`, result.skipped, expected);
+    check(`${label}: ${why} — DELETED NOTHING`, await rowsIn(connection, 'gphone_notes'), before);
+  };
+
+  await reseed();
+  await connection.query(`DELETE FROM ${ownerTable}`);
+  await refuses('an empty owner table', 'owner-empty');
+
+  // The one that would wipe twenty-two tables while logging success: an owner table that is
+  // present and populated but holds identities from a different framework entirely. On an
+  // ESX box that is a leftover `players` from a previous qb install; every gPhone row then
+  // looks unowned.
+  await connection.query(`INSERT INTO ${ownerTable} (${ownerColumn}) VALUES (?), (?)`, [
+    'SOMEBODY_ELSE_1',
+    'SOMEBODY_ELSE_2'
+  ]);
+  await refuses('a populated owner table full of strangers', 'identity-mismatch');
+
+  // Unreadable rather than empty. On ESX today this is the *only* thing standing between a
+  // sweep and the whole database, and it is the `catch` doing it rather than the count.
+  await connection.query(`RENAME TABLE ${ownerTable} TO ${ownerTable}_hidden`);
+  await refuses('an owner table that does not exist', 'owner-unreadable');
+  await connection.query(`RENAME TABLE ${ownerTable}_hidden TO ${ownerTable}`);
+
+  // The boot-order case. gPhone can start before its framework, and a two-state verdict
+  // would answer "qb" here — on a box that may well still have a stale `players`.
+  server.__setResourceLookup(FRAMEWORK.none);
+  await refuses('no framework has answered yet', 'unknown-framework');
+
+  /* --- the purge hook, which is told rather than inferring ------------------ */
+
+  // Deliberately not guarded on the owner table: it is handed a citizenid by a resource
+  // that just deleted the character, so there is no absence of evidence to misread. It has
+  // to keep working on exactly the servers where the owner row is already gone.
+  const purge = await server.purgeOwnedRows(gone);
+  check(`${label}: the purge works with no framework at all`, purge.removed > 0, true);
+  check(
+    `${label}: the purge left the live character alone`,
+    await rowsIn(connection, 'gphone_notes'),
+    1
+  );
+  check(
+    `${label}: the purge reached the audit ledger`,
+    await rowsIn(connection, 'gphone_audit_logs'),
+    0
+  );
+
+  server.__setResourceLookup();
+};
+
 const main = async () => {
   assertDockerUsable();
 
@@ -607,6 +878,17 @@ const main = async () => {
     // been imported anywhere. If it is not valid SQL, that is a MICA-150 finding.
     await runVariant({ connection, schemaFile: 'gphone.sql', hasPlayers: true, server });
     await runVariant({ connection, schemaFile: 'gphone.esx.sql', hasPlayers: false, server });
+
+    // MICA-152. Both frameworks, because the sweep's whole job is to be the cascade ESX
+    // does not have — and because "qb is unchanged" is a claim worth executing rather than
+    // reasoning about.
+    await runSweepFixtures({ connection, schemaFile: 'gphone.sql', hasPlayers: true, server });
+    await runSweepFixtures({
+      connection,
+      schemaFile: 'gphone.esx.sql',
+      hasPlayers: false,
+      server
+    });
 
     if (checksRun < MINIMUM_CHECKS) {
       throw new Error(

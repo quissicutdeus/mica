@@ -1,5 +1,6 @@
 import { guardNetEvent } from './netGuard';
 import { registerService } from './services';
+import { ownedTables, purgeOwnedRows, sweepOrphanedRows } from './orphanSweep';
 
 /**
  * The shell service — the phone itself, rather than any app on it.
@@ -325,3 +326,110 @@ const dispatchPlayerLoaded = (src: number): void => {
  * case for the owner of the registry is how the owner's path stops being tested.
  */
 onPlayerLoaded('shell', pushRehydrate);
+
+/**
+ * Told that a character is gone, remove its rows from every table that owned any.
+ *
+ * **`on`, never `onNet`, and the distinction is the security boundary.** `onNet` would
+ * register this as a net event, and a registered net event is reachable by a modified
+ * client (§2.9) — which would hand any player a one-argument purge of any other player's
+ * entire phone, across twenty-two tables. `on` registers a local handler only, so the sole
+ * way to reach it is a trigger from another **server** resource, which is code the owner
+ * installed. `mediaRetention.test.ts` has asserted exactly this for the media hook since
+ * MICA-71 and `orphanSweep.test.ts` asserts it here; that assertion is the one thing that
+ * catches an `onNet` slip, so it is carried across rather than paraphrased.
+ *
+ * gPhone owns the name rather than listening for a framework's, for the reason
+ * `services/Media.ts` gives at length: qb-core, qbx_core and es_extended do not agree on
+ * what they emit when a character is deleted, several multicharacter resources emit
+ * nothing, and a handler for a guessed name is cleanup that silently never runs — which
+ * reads exactly like cleanup that works.
+ *
+ * **The older `gphone:server:media:characterDeleted` is left alone, doing exactly what it
+ * documented.** Widening it to a whole-phone purge would have been free reach for owners
+ * already wired to it, and that is the argument against it: the README also describes it as
+ * a way to reclaim media *space*, so somebody firing it at a character who still exists
+ * would silently lose that character's messages and contacts too. Deleting more than the
+ * caller asked for is the failure this ticket exists to prevent, not a bonus. Owners wired
+ * to the old name keep media cleanup at once and get the other twenty-one tables at the
+ * next restart's sweep, which is strictly better than they had.
+ */
+on(`gphone:server:${SHELL_SERVICE}:characterDeleted`, (rawCitizenid: unknown) => {
+  const citizenid = typeof rawCitizenid === 'string' ? rawCitizenid.trim() : '';
+  if (citizenid.length === 0) return;
+
+  void purgeOwnedRows(citizenid)
+    .then(({ removed, failures }) => {
+      // Unconditionally, including zero, for the reason the start-up sweep below gives at
+      // length: a query issued while oxmysql has no pool hangs rather than failing, so an
+      // outcome logged only when there was something to say cannot be told apart from one
+      // that never returned. An operator triggering this deliberately needs the difference.
+      console.log(`[gphone] purged ${removed} row(s) for deleted character ${citizenid}.`);
+      for (const { table, error } of failures) {
+        console.error(`[gphone] could not purge ${table} for ${citizenid}:`, error);
+      }
+    })
+    .catch((error) => {
+      console.error('[gphone] purge for a deleted character failed:', error);
+    });
+});
+
+/**
+ * The backstop: sweep at every resource start.
+ *
+ * A hook is what keeps a busy server tidy between restarts, and it only fires on the
+ * servers whose owner wired it up. This is what covers everyone else — and on ESX, where
+ * the schema has no cascade at all, it is the only thing standing between a deleted
+ * character and rows that live forever.
+ *
+ * `onResourceStart` rather than module scope, matching `Schema.ts` and `Media.ts`: it fires
+ * after the whole controller graph has imported, so `declaredServices` is complete and the
+ * derived table set is the real one. Reading it at module scope would sweep only the
+ * services that happened to import first — a sweep that silently covers a subset is worse
+ * than none, because its log line says it ran.
+ *
+ * Failure is logged, never thrown. Maintenance must not be able to stop the resource
+ * starting, and nothing is waiting on this: no player is connected yet.
+ *
+ * **It says it is starting before it asks the database anything, and says it finished even
+ * when it removed nothing.** Both halves are load-bearing, and the reason is specific rather
+ * than tidiness. oxmysql's `rawQuery` does `await using connection = await getConnection();
+ * if (!connection) return;` without ever invoking the callback, so a query issued before the
+ * pool is up **neither resolves nor rejects** — it hangs, and `lib/Database.ts` has no
+ * timeout. This hook can fire in exactly that window. A hang is safe from deleting anything,
+ * which is the half that matters, but a sweep that logged only its results would be
+ * indistinguishable from one that ran and found nothing: silence that reads as success, the
+ * failure this repo cares most about. A `starting` line with no `finished` line after it is
+ * an operator's evidence that the sweep never got past its first query.
+ *
+ * The timeout that would actually fix the hang belongs in `Database`, not here — every
+ * `await Database.*` in the resource has it, and solving it locally is what left
+ * `HodlrMarket.restorePrice` as the only caller that recovers.
+ *
+ * `gphone_media` is swept twice at start — once here and once by `runMediaMaintenance`,
+ * which also runs the retention prune and reports the pair. That is deliberate. The second
+ * `DELETE … WHERE NOT EXISTS` over a table just swept removes nothing, and making either
+ * conditional on the other would couple two lifecycles to save one no-op statement.
+ */
+on('onResourceStart', (resourceName: string) => {
+  if (resourceName !== GetCurrentResourceName()) return;
+
+  const tables = ownedTables().length;
+  console.log(`[gphone] orphan sweep starting over ${tables} table(s).`);
+
+  void sweepOrphanedRows()
+    .then(({ removed, byTable, failures }) => {
+      const detail = Object.entries(byTable)
+        .map(([table, count]) => `${table} ${count}`)
+        .join(', ');
+      console.log(
+        `[gphone] orphan sweep finished: removed ${removed} row(s)${detail ? ` (${detail})` : ''}.`
+      );
+      for (const { table, error } of failures) {
+        console.error(`[gphone] orphan sweep could not read ${table}:`, error);
+      }
+    })
+    .catch((error) => {
+      console.error('[gphone] orphan sweep failed:', error);
+    });
+});

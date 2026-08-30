@@ -591,6 +591,32 @@ const esxAllPlayers = (core: any): Record<number, unknown> => {
 };
 
 /**
+ * The framework's own table of characters, and the column in it that holds what gPhone
+ * stores as a `citizenid`.
+ *
+ * gPhone creates neither. qb owns `players(citizenid)`; es_extended owns
+ * `users(identifier)`, which MICA-150 decided maps directly onto `citizenid` — one phone
+ * per player rather than per character, recorded on that ticket.
+ *
+ * **Both fields are interpolated into SQL as identifiers, so both are frozen literals in
+ * this module and nothing else may supply one.** MySQL cannot parameterize a table or a
+ * column name (§2.9), and the only safe way to build such a statement is from a closed set
+ * the server author wrote. `orphanSweep.ts` re-checks what it gets back before it builds
+ * anything, on the principle that a guard which lives only at the producer stops guarding
+ * the moment a second producer appears.
+ */
+export interface OwnerTable {
+  table: string;
+  column: string;
+}
+
+/** qb-core and qbx_core. Matches `schemaSql.OWNER_TABLE`, which the DDL points at. */
+const QB_OWNER_TABLE: OwnerTable = Object.freeze({ table: 'players', column: 'citizenid' });
+
+/** es_extended. The table `findOfflineByCitizenId` already reads, asked a different way. */
+const ESX_OWNER_TABLE: OwnerTable = Object.freeze({ table: 'users', column: 'identifier' });
+
+/**
  * What a framework's own records say about a player, online or not.
  *
  * Names are separate rather than pre-joined because the two frameworks store them
@@ -606,6 +632,38 @@ export interface FrameworkIdentity {
 }
 
 /**
+ * Which framework is answering for this server **right now** — and the third answer.
+ *
+ * `usesEsx()` below is a boolean and cannot say "I do not know yet", which is fine for every
+ * question it was written for: it decides which of two lookups renders a name, and being
+ * wrong renders no name. It is **not** fine for a question whose wrong answer deletes rows.
+ *
+ * The third state is real, not theoretical. `exposes` swallows the throw a FiveM `exports`
+ * proxy raises for a resource that is not running, so "es_extended has not started yet" and
+ * "this is a qb server" are the same answer to a boolean. FiveM starts resources in
+ * `server.cfg` order and nothing in this repo controls it: `ensure gphone` above
+ * `ensure es_extended` is a legal config, and gPhone's own `onResourceStart` fires inside
+ * that window. A sweep that resolved `unknown` to qb on such a server would compare ESX
+ * identifiers against a `players` table — and if that box carries a leftover, non-empty
+ * `players` from a previous qb install, every gPhone row looks unowned and the whole phone
+ * database is deleted at boot with a log line saying it worked.
+ *
+ * So: `unknown` is a first-class answer, and a caller that cannot act safely without knowing
+ * must **skip**. It must never be folded back into a default.
+ *
+ * A qb core still wins when both are installed, matching `getPlayer`: a live server does not
+ * change which string it calls a citizenid on the strength of a second resource being
+ * present.
+ */
+export type FrameworkKind = 'qb' | 'esx' | 'unknown';
+
+export const detectFramework = (): FrameworkKind => {
+  if (exposes('qbx_core', 'GetPlayer') || exposes('qb-core', 'GetCoreObject')) return 'qb';
+  if (esxCore() !== null) return 'esx';
+  return 'unknown';
+};
+
+/**
  * Is es_extended the framework answering for this server?
  *
  * A qb core wins when both are installed, matching `getPlayer`: a live server does not change
@@ -613,9 +671,13 @@ export interface FrameworkIdentity {
  * no framework at all this is false, so the offline lookups below fall through to the qb
  * query — which is what they did before ESX existed, and what keeps a frameworkless test
  * behaving as it always has.
+ *
+ * Expressed through `detectFramework` so there is one detection rather than two that can
+ * disagree. The truth table is unchanged: `unknown` reads as "not ESX" here exactly as it
+ * always did, because falling through to the qb query is the harmless answer for a *read*.
+ * Only the destructive caller distinguishes the third state.
  */
-const usesEsx = (): boolean =>
-  !exposes('qbx_core', 'GetPlayer') && !exposes('qb-core', 'GetCoreObject') && esxCore() !== null;
+const usesEsx = (): boolean => detectFramework() === 'esx';
 
 const trimmedOrNull = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
@@ -687,6 +749,35 @@ export const __resetOfflineLookupWarnings = (): void => {
 };
 
 export class FrameworkBridge {
+  /**
+   * Where this server keeps the characters gPhone's rows belong to — or `null`.
+   *
+   * Behind the bridge for the same reason `findOfflineByCitizenId` is: it is a framework
+   * question, not a phone one. The difference is that this answers it for *any* gPhone
+   * table rather than for one lookup, which is what lets a single sweep clean up after a
+   * deleted character on either framework (MICA-152).
+   *
+   * **`null` when the framework is not known yet, and a caller must skip on it.** See
+   * `detectFramework` for why that state exists and what folding it into a default costs.
+   * Resolving the table from the *framework* rather than from probing which table happens
+   * to exist is the whole point: a box with both `players` and `users` present is the
+   * dangerous case, and a probe picks the wrong one there by construction.
+   *
+   * This says where to look. It does **not** say whether looking will work: the table may
+   * be absent, unreadable, or empty. Every caller has to treat all three as "I do not
+   * know", never as "there are no characters" — see `orphanSweep.ts`.
+   */
+  public static ownerTable(): OwnerTable | null {
+    switch (detectFramework()) {
+      case 'qb':
+        return QB_OWNER_TABLE;
+      case 'esx':
+        return ESX_OWNER_TABLE;
+      default:
+        return null;
+    }
+  }
+
   /**
    * The framework's record of a player who may be offline, by citizenid.
    *

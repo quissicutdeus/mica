@@ -5,6 +5,7 @@ import { appEventChannel } from '../lib/appEvents';
 import { requirePositiveInt, fields } from '../lib/payload';
 import { playerCoords } from '../lib/playerCoords';
 import { Database } from '../lib/Database';
+import { sweepOrphanedRows } from '../lib/orphanSweep';
 import { isAdmin } from './Admin';
 import { notifyPlayer } from '../lib/shell';
 
@@ -943,49 +944,40 @@ export const pruneExpiredMedia = async (): Promise<number> => {
  * Delete media whose owner no longer exists. **A hard delete, and the character-deletion
  * cleanup.**
  *
- * The first line of defence is not this: every gPhone table is generated with
+ * The first line of defence is not this: on qb every gPhone table is generated with
  * `FOREIGN KEY (citizenid) REFERENCES players (citizenid) ON DELETE CASCADE`
  * (`lib/schemaSql.ts`), so on a table created from `gphone.sql` a deleted character takes
  * its photos with it inside the same statement, with no resource involvement at all. That
  * is the mechanism, and it is already correct.
  *
- * This is the backstop for the three ways that guarantee does not hold, none of which the
+ * This is the backstop for the four ways that guarantee does not hold, none of which the
  * database will tell you about:
  *
+ * - **ESX**, which has no `players` table to point a constraint at, so `gphone.esx.sql`
+ *   carries no cascade to drop the rows (MICA-150). That is the case this sweep could
+ *   not cover until MICA-152 taught it to ask `users(identifier)` the same question, and
+ *   it is why this function no longer names a table itself.
  * - A table created before the constraint existed. `SchemaMigrator` adds columns and keys
  *   and deliberately never adds a foreign key, so an older install keeps the shape it was
  *   created with.
  * - A framework that retires a character without removing the `players` row.
  * - A `players` table on an engine that accepts a foreign key and does not enforce one.
  *
- * **Guarded on `players` answering a non-zero count first**, and that guard is the whole
- * safety argument: a missing, empty or unreadable `players` table would otherwise make
- * every media row an orphan and delete the lot. It fails closed — anything it cannot
- * confirm leaves the table alone and says so.
+ * **The safety argument now lives in `lib/orphanSweep.ts`** — the framework verdict, the
+ * owner-table count, the sampled identity check, and the rule that anything unconfirmed
+ * leaves the table alone and says so. Read that file before changing this one. Restating a
+ * single table's worth of that reasoning here is how the two copies drift, and the copy
+ * that drifts is the one that deletes.
  *
- * `NOT EXISTS` rather than `NOT IN`, because `NOT IN` against a subquery containing a
- * single NULL is unknown for every row and would silently delete nothing at all — a prune
- * that quietly does nothing reads exactly like one that had nothing to do.
+ * Still its own function, because `gphonemedia prune` reports media separately from
+ * everything else and because this is the sweep the README told operators about.
  */
 export const pruneOrphanedMedia = async (): Promise<number> => {
-  const owners = await Database.single<{ total: number | string | null }>(
-    'SELECT COUNT(*) AS total FROM players'
-  );
-  const total = Number(owners?.total ?? 0);
-  if (!Number.isFinite(total) || total <= 0) {
-    console.warn(
-      '[gphonemedia] players is empty or unreadable — the orphan sweep was skipped rather ' +
-        'than treating every row as an orphan.'
-    );
-    return 0;
-  }
-
-  return affectedRows(
-    await Database.query(
-      'DELETE FROM gphone_media WHERE NOT EXISTS ' +
-        '(SELECT 1 FROM players p WHERE p.citizenid = gphone_media.citizenid)'
-    )
-  );
+  const { removed } = await sweepOrphanedRows({
+    only: [{ table: media.resolved.table, column: 'citizenid' }],
+    label: 'gphonemedia'
+  });
+  return removed;
 };
 
 /**

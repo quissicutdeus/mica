@@ -49,7 +49,13 @@ vi.mock('../lib/FrameworkBridge', () => ({
       new Map(
         citizenids.filter((cid) => cid in bridge.online).map((cid) => [cid, bridge.online[cid]])
       ),
-    registerUsableItem: () => {}
+    registerUsableItem: () => {},
+    // MICA-152 moved the sweep's owner table behind the bridge so it can ask ESX
+    // `users(identifier)` the same question. The qb answer keeps every assertion below
+    // reading the statement MICA-71 shipped; the ESX and not-yet-known answers, and the
+    // guards that hang off them, are `orphanSweep.test.ts`'s subject rather than this
+    // file's — which is why this stub is a fixed qb answer and not a switch.
+    ownerTable: () => ({ table: 'players', column: 'citizenid' })
   }
 }));
 
@@ -377,6 +383,29 @@ describe('the retention prune', () => {
   });
 });
 
+/**
+ * A server the sweep is willing to act on.
+ *
+ * MICA-152 put two questions in front of the DELETE rather than one: how many characters
+ * the framework can see, and whether a sample of the citizenids in gPhone's own rows can be
+ * found among them. The second is what catches a *populated but wrong* owner table — a
+ * leftover qb `players` on an ESX box, or a truncated identifier — where "every row is an
+ * orphan" would otherwise be the answer and the whole database the cost.
+ *
+ * So a bare `mockResolvedValue` no longer describes a sweepable server. This does, and each
+ * test below states which of the two it is breaking.
+ */
+const sweepableServer = (removedPerStatement: number) => {
+  dbMock.single.mockImplementation(async (sql: string) =>
+    String(sql).includes('AS matched') ? { matched: 2 } : { total: 120 }
+  );
+  dbMock.query.mockImplementation(async (sql: string) =>
+    String(sql).startsWith('SELECT DISTINCT')
+      ? [{ owner: 'CID_A' }]
+      : { affectedRows: removedPerStatement }
+  );
+};
+
 describe('the orphan sweep — cleanup after a character is deleted', () => {
   it('refuses to run when players is empty, rather than treating every row as an orphan', async () => {
     dbMock.single.mockResolvedValue({ total: 0 });
@@ -393,8 +422,7 @@ describe('the orphan sweep — cleanup after a character is deleted', () => {
   });
 
   it('deletes only rows whose owner is gone, once players answers', async () => {
-    dbMock.single.mockResolvedValue({ total: 120 });
-    dbMock.query.mockResolvedValue({ affectedRows: 3 });
+    sweepableServer(3);
 
     expect(await pruneOrphanedMedia()).toBe(3);
 
@@ -447,8 +475,7 @@ describe('purging one character', () => {
 
 describe('runMediaMaintenance', () => {
   it('sweeps orphans even when retention is off', async () => {
-    dbMock.single.mockResolvedValue({ total: 5 });
-    dbMock.query.mockResolvedValue({ affectedRows: 2 });
+    sweepableServer(2);
 
     expect(await runMediaMaintenance()).toEqual({ expired: 0, orphaned: 2 });
   });
@@ -494,8 +521,7 @@ describe('gphonemedia prune', () => {
   });
 
   it('runs for the console', async () => {
-    dbMock.single.mockResolvedValue({ total: 5 });
-    dbMock.query.mockResolvedValue({ affectedRows: 1 });
+    sweepableServer(1);
 
     await runMediaPruneCommand(0);
 
