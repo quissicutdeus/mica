@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { anySheetOpen } from './state/sheets';
   import { badgeAllowed } from './state/notificationPolicy';
   import { get } from 'svelte/store';
   import { isAdmin } from '../services/admin';
@@ -129,7 +130,7 @@
 
   function driveSwipeShortcut(deltaY: number): void {
     if (swipeTarget === null) {
-      if (get(isShadeOpen) || get(isDrawerOpen)) return;
+      if (anySheetOpen()) return;
       swipeTarget = deltaY > 0 ? 'shade' : 'drawer';
     }
     if (swipeTarget === 'shade') {
@@ -153,8 +154,7 @@
       // instead of ever reaching it, since `driveSwipeShortcut` no-ops once it sees
       // `isShadeOpen`/`isDrawerOpen` but only *after* this had already claimed the
       // pointer.
-      shouldStart: (e) =>
-        !get(isShadeOpen) && !get(isDrawerOpen) && !(e.target as HTMLElement).closest('button'),
+      shouldStart: (e) => !anySheetOpen() && !(e.target as HTMLElement).closest('button'),
       // `shouldStart` above has already excluded every icon and folder, so this only ever
       // runs on empty grid cells — there is no horizontal gesture left to yield to, and
       // cancelling on one just rejected any swipe that started a little sideways.

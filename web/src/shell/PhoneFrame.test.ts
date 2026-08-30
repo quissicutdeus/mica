@@ -235,6 +235,92 @@ describe('PhoneFrame transparency', () => {
     homeBar.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   });
 
+  it('will not pull the shade down while the app drawer is already open (MICA-140)', async () => {
+    /**
+     * The reported bug. The status bar stays mounted and live underneath the fully extended
+     * app drawer, and its drag handler guarded only on `isShadeOpen` — so pulling it down
+     * opened the shade on top of a sheet that was already open. Both were then on screen at
+     * once, each with its own `back` handler and its own close gesture assuming it was the
+     * thing on top.
+     *
+     * Its sibling gesture in this same file (the home bar's pull-up) had always checked
+     * both. That asymmetry is the bug, which is why the guard is now one shared expression
+     * rather than a condition repeated at four call sites.
+     */
+    const { isDrawerOpen } = await import('./state/appDrawer');
+    const { isShadeOpen } = await import('./state/shade');
+    const { SHADE_DRAG_REVEAL_DISTANCE } = await import('./state/display');
+    const { get } = await import('svelte/store');
+
+    isShadeOpen.set(false);
+    isDrawerOpen.set(true);
+
+    const { getByRole } = renderFrame(false);
+    const statusBar = getByRole('button', { name: /notification shade/i });
+
+    const fire = (type: string, target: EventTarget, clientY: number, timeMs: number) => {
+      const event = new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: 0,
+        clientY,
+        pointerId: 1,
+        button: 0
+      });
+      Object.defineProperty(event, 'timeStamp', { value: timeMs, configurable: true });
+      target.dispatchEvent(event);
+    };
+
+    // A pull that would comfortably commit if nothing else were open.
+    const commitDeltaY = SHADE_DRAG_REVEAL_DISTANCE * 0.9;
+    fire('pointerdown', statusBar, 0, 0);
+    fire('pointermove', window, commitDeltaY, 20);
+    fire('pointerup', window, commitDeltaY, 20);
+
+    expect(get(isShadeOpen), 'the shade must not open over the drawer').toBe(false);
+    expect(get(isDrawerOpen), 'and the drawer must be left alone').toBe(true);
+
+    statusBar.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    isDrawerOpen.set(false);
+  });
+
+  it('still pulls the shade down when nothing else is open', async () => {
+    // The other side of the guard: it must refuse a second sheet, not the first one.
+    const { isDrawerOpen } = await import('./state/appDrawer');
+    const { isShadeOpen } = await import('./state/shade');
+    const { SHADE_DRAG_REVEAL_DISTANCE } = await import('./state/display');
+    const { get } = await import('svelte/store');
+
+    isShadeOpen.set(false);
+    isDrawerOpen.set(false);
+
+    const { getByRole } = renderFrame(false);
+    const statusBar = getByRole('button', { name: /notification shade/i });
+
+    const fire = (type: string, target: EventTarget, clientY: number, timeMs: number) => {
+      const event = new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: 0,
+        clientY,
+        pointerId: 1,
+        button: 0
+      });
+      Object.defineProperty(event, 'timeStamp', { value: timeMs, configurable: true });
+      target.dispatchEvent(event);
+    };
+
+    const commitDeltaY = SHADE_DRAG_REVEAL_DISTANCE * 0.9;
+    fire('pointerdown', statusBar, 0, 0);
+    fire('pointermove', window, commitDeltaY, 20);
+    fire('pointerup', window, commitDeltaY, 20);
+
+    expect(get(isShadeOpen)).toBe(true);
+
+    statusBar.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    isShadeOpen.set(false);
+  });
+
   it('closes the app drawer when tapping the home bar (MICA-45)', async () => {
     // The home bar's tap handler used to only check the shade — pressing it while the
     // drawer (which used to be a separate search sheet too) was open fell through to the

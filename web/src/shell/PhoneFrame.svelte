@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { anySheetOpen } from './state/sheets';
   import { onMount, type Snippet } from 'svelte';
   import { get } from 'svelte/store';
   import { fly, fade } from '../lib/motion';
@@ -165,12 +166,15 @@
       // A dedicated grab surface: nothing horizontal shares these pixels.
       crossAxisCancel: false,
       onMove: (deltaY) => {
-        if (get(isShadeOpen)) return;
+        // `anySheetOpen`, not `isShadeOpen`: the status bar stays live underneath the
+        // extended app drawer, so guarding only on the shade let this open a second sheet
+        // on top of one already open (MICA-140).
+        if (anySheetOpen()) return;
         shadeDragPhase.set('dragging');
         shadeDragProgress.set(clampProgress(deltaY / SHADE_DRAG_REVEAL_DISTANCE));
       },
       onEnd: (deltaY, velocity) => {
-        if (get(isShadeOpen)) return;
+        if (anySheetOpen()) return;
         shadeDragPhase.set('settling');
         if (shouldCommitDrag(get(shadeDragProgress), velocity)) {
           shadeDragProgress.set(1);
@@ -190,7 +194,7 @@
     progress: drawerDragProgress,
     phase: drawerDragPhase,
     revealDistance: SHADE_DRAG_REVEAL_DISTANCE,
-    guard: () => get(currentApp).id === 'home' && !get(isDrawerOpen) && !get(isShadeOpen),
+    guard: () => get(currentApp).id === 'home' && !anySheetOpen(),
     open: openDrawer,
     commit: DRAWER_OPEN_COMMIT
   });

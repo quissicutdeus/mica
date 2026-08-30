@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { anySheetOpen } from './state/sheets';
   import { badgeAllowed } from './state/notificationPolicy';
   import { get } from 'svelte/store';
   import { attachDragGesture } from '../lib/pointerDrag';
@@ -34,7 +35,7 @@
     progress: drawerDragProgress,
     phase: drawerDragPhase,
     revealDistance: SHADE_DRAG_REVEAL_DISTANCE,
-    guard: () => !get(isDrawerOpen),
+    guard: () => !anySheetOpen(),
     open: openDrawer,
     commit: DRAWER_OPEN_COMMIT
   });
