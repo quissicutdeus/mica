@@ -16,35 +16,51 @@ vi.mock('../../../../services/notifications', () => ({ addNotificationItem: vi.f
 import { appAction as inAppAction } from '../../inProcess/facets/appAction';
 import { appEvents as inAppEvents } from '../../inProcess/facets/appEvents';
 import { appRegistry as inAppRegistry } from '../../inProcess/facets/appRegistry';
+import { appRegistryWrite as inAppRegistryWrite } from '../../inProcess/facets/appRegistryWrite';
 import { clock as inClock } from '../../inProcess/facets/clock';
+import { clockWrite as inClockWrite } from '../../inProcess/facets/clockWrite';
 import { devTools as inDevTools } from '../../inProcess/facets/devTools';
 import { display as inDisplay } from '../../inProcess/facets/display';
+import { displayWrite as inDisplayWrite } from '../../inProcess/facets/displayWrite';
 import { keybinds as inKeybinds } from '../../inProcess/facets/keybinds';
+import { keybindsWrite as inKeybindsWrite } from '../../inProcess/facets/keybindsWrite';
 import { navigation as inNavigation } from '../../inProcess/facets/navigation';
 import { lifecycle as inLifecycle } from '../../inProcess/facets/lifecycle';
 import { notificationSettings as inNotificationSettings } from '../../inProcess/facets/notificationSettings';
+import { notificationSettingsWrite as inNotificationSettingsWrite } from '../../inProcess/facets/notificationSettingsWrite';
 import { phoneNotification as inPhoneNotification } from '../../inProcess/facets/phoneNotification';
 import { sound as inSound } from '../../inProcess/facets/sound';
 import { systemHardware as inSystemHardware } from '../../inProcess/facets/systemHardware';
+import { systemHardwareWrite as inSystemHardwareWrite } from '../../inProcess/facets/systemHardwareWrite';
 import { theme as inTheme } from '../../inProcess/facets/theme';
+import { themeWrite as inThemeWrite } from '../../inProcess/facets/themeWrite';
 import { wallpaper as inWallpaper } from '../../inProcess/facets/wallpaper';
+import { wallpaperWrite as inWallpaperWrite } from '../../inProcess/facets/wallpaperWrite';
 import { storage as inStorage } from '../../inProcess/facets/storage';
 
 import { appAction } from './appAction';
 import { appEvents } from './appEvents';
 import { appLevels, type AppLevelsConfig } from './appLevels';
 import { appRegistry } from './appRegistry';
+import { appRegistryWrite } from './appRegistryWrite';
 import { clock } from './clock';
+import { clockWrite } from './clockWrite';
 import { devTools } from './devTools';
 import { display } from './display';
+import { displayWrite } from './displayWrite';
 import { keybinds } from './keybinds';
+import { keybindsWrite } from './keybindsWrite';
 import { navigation } from './navigation';
 import { notificationSettings } from './notificationSettings';
+import { notificationSettingsWrite } from './notificationSettingsWrite';
 import { phoneNotification } from './phoneNotification';
 import { sound } from './sound';
 import { systemHardware } from './systemHardware';
+import { systemHardwareWrite } from './systemHardwareWrite';
 import { theme } from './theme';
+import { themeWrite } from './themeWrite';
 import { wallpaper } from './wallpaper';
+import { wallpaperWrite } from './wallpaperWrite';
 import { storage, clearAppStorage } from './storage';
 import { persisted } from './persisted';
 import { timer } from './timer';
@@ -79,17 +95,25 @@ beforeEach(() => {
 describe('iframe shell facet twins — key parity with inProcess', () => {
   it.each([
     ['appRegistry', appRegistry, inAppRegistry],
+    ['appRegistryWrite', appRegistryWrite, inAppRegistryWrite],
     ['clock', clock, inClock],
+    ['clockWrite', clockWrite, inClockWrite],
     ['devTools', devTools, inDevTools],
     ['display', display, inDisplay],
+    ['displayWrite', displayWrite, inDisplayWrite],
     ['keybinds', keybinds, inKeybinds],
+    ['keybindsWrite', keybindsWrite, inKeybindsWrite],
     ['navigation', navigation, inNavigation],
     ['notificationSettings', notificationSettings, inNotificationSettings],
+    ['notificationSettingsWrite', notificationSettingsWrite, inNotificationSettingsWrite],
     ['phoneNotification', phoneNotification, inPhoneNotification],
     ['sound', sound, inSound],
     ['systemHardware', systemHardware, inSystemHardware],
+    ['systemHardwareWrite', systemHardwareWrite, inSystemHardwareWrite],
     ['theme', theme, inTheme],
-    ['wallpaper', wallpaper, inWallpaper]
+    ['themeWrite', themeWrite, inThemeWrite],
+    ['wallpaper', wallpaper, inWallpaper],
+    ['wallpaperWrite', wallpaperWrite, inWallpaperWrite]
   ] as const)('%s: same keys as inProcess', (_name, iframeFacet, inProcessFacet) => {
     expect(keys(iframeFacet())).toEqual(keys(inProcessFacet()));
   });

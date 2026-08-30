@@ -13,6 +13,10 @@ export type { KeybindGroup } from './inProcess/facets/keybinds';
  * const { onKeybind } = useKeybinds();
  * onKeybind('shutter', takePhoto);
  * ```
+ *
+ * Claiming an action for your own app this way needs nothing more — `onKeybind`, `bindings`,
+ * `groups` and `findConflict` are all read-only. Rebinding a key or wiping every override is
+ * `useKeybindsWrite` (MICA-127); only Settings' Shortcuts screen has any business there.
  */
 export function useKeybinds() {
   return guarded('useKeybinds').facets.keybinds();

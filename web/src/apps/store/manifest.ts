@@ -7,7 +7,7 @@ export default defineApp({
   icon: Icon,
   author: 'gPhone',
   description: 'Browse, install, and manage gPhone community apps and permissions',
-  permissions: ['app-registry', 'navigation', 'storage'],
+  permissions: ['app-registry', 'app-registry-write', 'navigation', 'storage'],
   requiresNetwork: true,
   core: true,
   /**
@@ -32,7 +32,7 @@ export default defineApp({
    * already gone looking. A no-op with no catalog configured.
    */
   preload: async () => {
-    const { useAppRegistry } = await import('@gphone/sdk');
-    await useAppRegistry().refreshUpdates();
+    const { useAppRegistryWrite } = await import('@gphone/sdk');
+    await useAppRegistryWrite().refreshUpdates();
   }
 });

@@ -36,23 +36,58 @@ export const ALL_PERMISSIONS = [
   // The phone itself
   'app-events',
   'app-registry',
+  // MICA-127: `app-registry` only ever reads the installed list, the bundled add-ons the
+  // Store can offer, and the update queue. Installing, removing or updating an app is a
+  // separate ask, and (unlike the other splits below) already unreachable for a sandboxed
+  // add-on regardless of permission — see `IframeHostServer`'s `MEMBER_ALLOWLIST`. Splitting
+  // it anyway is a disclosure fix for a `core: true` app, which is never sandboxed.
+  'app-registry-write',
   'clock',
+  // MICA-127: `clock` only ever reads the time and the 12/24-hour preference. Changing
+  // the preference is a phone-wide setting, not something every app that shows a clock
+  // should be able to flip — split the way `bank` split off `account`.
+  'clock-write',
   'devtools',
   'display',
+  // MICA-127: `display` only ever reads how big the phone is drawn. Resizing the
+  // window, rebuilding the home grid, or overriding motion for every app is Settings'
+  // business, not any app that merely wants to know the current size.
+  'display-write',
   'keybinds',
+  // MICA-127: `keybinds` only ever lets an app claim an action for itself and read the
+  // current bindings. Rebinding a key — or wiping every override — is a global write with
+  // no member allowlist behind it today, unlike the read half.
+  'keybinds-write',
   // Load a track and start or stop it. Separate from `system-hardware`, which owns the
   // phone's *UI sound* volume: an app that shows a battery level has no business also
   // being able to start playing something out loud.
   'music',
   'navigation',
   'notification-settings',
+  // MICA-127: `notification-settings` only ever reads whether the player has muted an
+  // app. Muting a rival, unmuting itself, or flipping Do Not Disturb is a separate ask,
+  // and — like `app-registry-write` — already unreachable for a sandboxed add-on
+  // regardless of permission (MICA-63's `MEMBER_ALLOWLIST` row). Splitting it anyway is
+  // a disclosure fix for a `core: true` app.
+  'notification-settings-write',
   // No 'sound': `useSound` is implicit (`PERMISSION_OF.useSound === null`). Its facet is one
   // `play(effect)` over a fixed built-in set, used by kit widgets — `AppIcon`, `ToggleSwitch`,
   // `SegmentedControl` — that every app renders with, so a name to declare would be a name
   // nothing checks.
   'system-hardware', // battery, signal, bluetooth, volume
+  // MICA-127: `system-hardware` only ever reads the battery, signal, bluetooth state and
+  // volume levels. Changing any of it — including Developer Tools' fake battery level — is
+  // a separate ask.
+  'system-hardware-write',
   'theme',
-  'wallpaper'
+  // MICA-127: `theme` only ever reads the active seed and scheme. Changing the whole
+  // phone's colour for every app is a much bigger ask than rendering in whatever is
+  // already active.
+  'theme-write',
+  'wallpaper',
+  // MICA-127: same split as `theme` — reading the current background and replacing it
+  // for the whole phone are not the same ask.
+  'wallpaper-write'
 ] as const;
 
 export type AppPermission = (typeof ALL_PERMISSIONS)[number];

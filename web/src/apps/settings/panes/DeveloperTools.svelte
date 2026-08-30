@@ -6,6 +6,7 @@
     useNavigation,
     usePhoneNotification,
     useSystemHardware,
+    useSystemHardwareWrite,
     useAppAction,
     ToggleSwitch,
     isBrowser,
@@ -15,8 +16,8 @@
 
   let { onhide } = $props<{ onhide: () => void }>();
 
-  const { charge, signalLevel, setSignal, soundVolume, soundMuted, setVolume, toggleMute } =
-    useSystemHardware();
+  const { charge, signalLevel, soundVolume, soundMuted } = useSystemHardware();
+  const { setCharge, setSignal, setVolume, toggleMute } = useSystemHardwareWrite();
   const { toast } = usePhoneNotification();
   const { run } = useAppAction('settings');
   const { openApp } = useNavigation();
@@ -36,7 +37,7 @@
    * within a second and which never reached the character's saved charge.
    */
   const applyBatteryLevel = async (level: number) => {
-    charge.set(level);
+    setCharge(level);
     if (isBrowser()) return;
     await run(() => fetchNui('setBatteryLevel', { level }), {
       error: 'Could not set the battery level'

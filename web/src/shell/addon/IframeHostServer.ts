@@ -180,7 +180,23 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       'dndEnabled',
       'appNotificationPolicies',
       'customisedNotificationApps'
-    ]
+    ],
+    /**
+     * MICA-127: an empty list, not an absent entry. `appRegistry`/`notificationSettings`
+     * above split their write halves into their own facet — `appRegistryWrite`,
+     * `notificationSettingsWrite` — so their own `MEMBER_ALLOWLIST` rows could shrink to
+     * read members only. But `requireMember` treats a facet **absent** from this table as
+     * unrestricted, so simply deleting the write members from those two rows would have
+     * reopened every one of them here, on the new facet name, the moment a manifest declared
+     * the new `-write` permission. Naming the write facet with an empty list keeps the same
+     * "no add-on installs or removes an app" guarantee the old row enforced, regardless of
+     * what any manifest declares — the guest twin's own `refused()` throws are the polite
+     * half of this pair, not the enforcing half.
+     */
+    appRegistryWrite: [],
+    /** Same reasoning as `appRegistryWrite` above: no add-on changes another's notification
+     * policy or the player's Do Not Disturb, regardless of permission. */
+    notificationSettingsWrite: []
   };
 
   // `DENIED_FACETS` is imported from `sdk/permissions.ts`, not declared here (MICA-33):

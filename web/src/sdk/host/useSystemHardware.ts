@@ -2,7 +2,8 @@ import './inProcess/facets/systemHardware';
 import { guarded } from './guard';
 
 /**
- * The phone's hardware: battery, cellular signal, cell service, bluetooth, and volume controls.
+ * The phone's hardware: battery, cellular signal, cell service, bluetooth, and volume
+ * controls — read-only. Changing any of it is `useSystemHardwareWrite` (MICA-127).
  */
 export function useSystemHardware() {
   return guarded('useSystemHardware').facets.systemHardware();

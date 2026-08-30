@@ -1,8 +1,13 @@
 <script lang="ts">
-  import { SettingsSection, ToggleSwitch, useSystemHardware } from '@gphone/sdk';
+  import {
+    SettingsSection,
+    ToggleSwitch,
+    useSystemHardware,
+    useSystemHardwareWrite
+  } from '@gphone/sdk';
 
-  const { cellServiceEnabled, toggleCellService, bluetoothEnabled, toggleBluetooth } =
-    useSystemHardware();
+  const { cellServiceEnabled, bluetoothEnabled } = useSystemHardware();
+  const { toggleCellService, toggleBluetooth } = useSystemHardwareWrite();
 </script>
 
 <div class="space-y-6 p-4">

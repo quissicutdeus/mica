@@ -8,23 +8,15 @@ type Twin = AsTwin<
   ReturnType<typeof import('../../inProcess/facets/notificationSettings').notificationSettings>
 >;
 
-const refused = () => {
-  throw new Error('[gPhone] only a core app may change notification settings');
-};
-
 const DEFAULT_APP_POLICY: AppNotificationPolicy = { banner: true, sound: true, badge: true };
 
 /**
- * OS Service Hook for notification preferences, seen from inside a sandboxed add-on.
- *
- * **Read-only, and deliberately so** (MICA-63). An add-on may ask whether the player has
- * silenced it — useful for deciding not to bother pushing — and may never answer that question
- * for itself. Letting one change the policy would let it unmute itself, mute a rival, or switch
- * off Do Not Disturb, none of which is an add-on's decision to make.
- *
- * As with `appRegistry`, this is the polite half of the pair: `IframeHostServer`'s
- * `MEMBER_ALLOWLIST` refuses the setters at the boundary, so a raw `postMessage` that skips
- * this twin gets an error rather than a write. These throws just fail earlier and more legibly.
+ * OS Service Hook for notification preferences, seen from inside a sandboxed add-on —
+ * read-only, and deliberately so (MICA-63/MICA-127). An add-on may ask whether the
+ * player has silenced it — useful for deciding not to bother pushing — and may never
+ * change the answer. Muting a rival, unmuting itself, or flipping Do Not Disturb is
+ * `useNotificationSettingsWrite`, whose members `IframeHostServer`'s `MEMBER_ALLOWLIST`
+ * still refuses regardless of permission: none of this is an add-on's decision to make.
  */
 export function notificationSettings(): Twin {
   const policies = store<Record<string, AppNotificationPolicy>>(
@@ -46,9 +38,7 @@ export function notificationSettings(): Twin {
      * values, not store factories, and the map is already here. Same answer, no extra traffic.
      */
     appPolicyStore: (appId: string): Readable<AppNotificationPolicy> =>
-      derived(policies, ($map) => $map[appId] ?? DEFAULT_APP_POLICY),
-    setAppNotificationPolicy: refused,
-    clearAppNotificationPolicy: refused
+      derived(policies, ($map) => $map[appId] ?? DEFAULT_APP_POLICY)
   };
 }
 

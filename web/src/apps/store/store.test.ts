@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import manifest from './manifest';
-import { useAppRegistry, setTrustedRemoteAppHosts, setRemoteCatalogUrl } from '@gphone/sdk';
+import {
+  useAppRegistry,
+  useAppRegistryWrite,
+  setTrustedRemoteAppHosts,
+  setRemoteCatalogUrl
+} from '@gphone/sdk';
 import type { AppManifest } from '@gphone/sdk';
 import { renderApp } from '@gphone/sdk/testing';
 import { catalogApps, remoteCatalogApps, mergedCatalogApps } from './appInfo';
@@ -15,7 +20,8 @@ vi.mock('../../nui/fetchNui', () => ({
 
 import Store from './index.svelte';
 
-const { registryStore: appRegistryStore, refreshUpdates } = useAppRegistry();
+const { registryStore: appRegistryStore } = useAppRegistry();
+const { refreshUpdates } = useAppRegistryWrite();
 
 // The registry insists on a component now. These three cases are about bookkeeping —
 // registration, lookup, and the system-app guard — and never mount anything.

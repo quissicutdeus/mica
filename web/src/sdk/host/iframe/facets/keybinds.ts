@@ -34,14 +34,9 @@ export function keybinds(): Twin {
     },
     bindings: store('keybinds', [], 'bindings', {}),
     groups: store('keybinds', [], 'groups', []),
-    /**
-     * Async here, unlike the inProcess twin's synchronous setter — no add-on calls this;
-     * Settings, which does, is a core app and runs in-process.
-     */
-    setBinding: fn('keybinds', [], 'setBinding'),
-    resetBindings: fn('keybinds', [], 'resetBindings'),
-    // Same gap as setBinding above, but findConflict's sync return value (not void) means
-    // TS won't quietly accept the Promise-returning twin without saying so.
+    // Async here, unlike the inProcess twin's synchronous return; findConflict's sync
+    // return value (not void) means TS won't quietly accept the Promise-returning twin
+    // without saying so.
     findConflict: fn('keybinds', [], 'findConflict') as unknown as Twin['findConflict']
   };
 }

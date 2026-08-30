@@ -2,7 +2,9 @@ import './inProcess/facets/wallpaper';
 import { guarded } from './guard';
 
 /**
- * The phone's home screen background.
+ * The phone's home screen background — read-only. Changing it is `useWallpaperWrite`
+ * (MICA-127): reading the current background and replacing the whole phone's are not
+ * the same ask.
  *
  * A background is a color or a picture, and a color *is* the theme seed — the gradient
  * is generated from the scheme that seed produces, so a preset and a color dragged off a

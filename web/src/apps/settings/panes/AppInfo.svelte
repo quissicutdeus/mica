@@ -8,8 +8,9 @@
     SettingsSection,
     ToggleSwitch,
     useAppAction,
-    useAppRegistry,
+    useAppRegistryWrite,
     useNotificationSettings,
+    useNotificationSettingsWrite,
     type AppManifest
   } from '@gphone/sdk';
 
@@ -34,7 +35,7 @@
     onremoved: () => void;
   } = $props();
 
-  const { unregisterApp } = useAppRegistry();
+  const { unregisterApp } = useAppRegistryWrite();
   const { run, busy } = useAppAction('settings');
 
   /**
@@ -48,8 +49,8 @@
    * before raising a toast for a pushed event, so for anything else these would be three dead
    * controls. `phone` is the exception: it owns the ringtone and the missed-call badge.
    */
-  const { appNotificationPolicies, setAppNotificationPolicy, clearAppNotificationPolicy } =
-    useNotificationSettings();
+  const { appNotificationPolicies } = useNotificationSettings();
+  const { setAppNotificationPolicy, clearAppNotificationPolicy } = useNotificationSettingsWrite();
 
   const canNotify = $derived(
     app.id === 'phone' || Boolean(app.permissions?.includes('notifications'))

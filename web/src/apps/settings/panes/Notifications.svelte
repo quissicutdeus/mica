@@ -5,6 +5,7 @@
     useAppRegistry,
     useNotifications,
     useNotificationSettings,
+    useNotificationSettingsWrite,
     type AppManifest
   } from '@gphone/sdk';
 
@@ -29,9 +30,15 @@
     notificationSoundEnabled,
     badgesEnabled,
     dndEnabled,
-    appNotificationPolicies,
-    setAppNotificationPolicy
+    appNotificationPolicies
   } = useNotificationSettings();
+  const {
+    setToastsEnabled,
+    setNotificationSoundEnabled,
+    setBadgesEnabled,
+    setDndEnabled,
+    setAppNotificationPolicy
+  } = useNotificationSettingsWrite();
 
   const { registryStore } = useAppRegistry();
 
@@ -136,7 +143,7 @@
           >Silence banners and sounds without going offline</span
         >
       </div>
-      <ToggleSwitch checked={$dndEnabled} onchange={(val: boolean) => dndEnabled.set(val)} />
+      <ToggleSwitch checked={$dndEnabled} onchange={(val: boolean) => setDndEnabled(val)} />
     </div>
   </SettingsSection>
 
@@ -149,10 +156,7 @@
             >Display popup banners when notifications arrive</span
           >
         </div>
-        <ToggleSwitch
-          checked={$toastsEnabled}
-          onchange={(val: boolean) => toastsEnabled.set(val)}
-        />
+        <ToggleSwitch checked={$toastsEnabled} onchange={(val: boolean) => setToastsEnabled(val)} />
       </div>
 
       <div class="flex items-center justify-between p-4">
@@ -164,7 +168,7 @@
         </div>
         <ToggleSwitch
           checked={$notificationSoundEnabled}
-          onchange={(val: boolean) => notificationSoundEnabled.set(val)}
+          onchange={(val: boolean) => setNotificationSoundEnabled(val)}
         />
       </div>
     </div>
@@ -178,7 +182,7 @@
           >Show unread count badges on launcher icons</span
         >
       </div>
-      <ToggleSwitch checked={$badgesEnabled} onchange={(val: boolean) => badgesEnabled.set(val)} />
+      <ToggleSwitch checked={$badgesEnabled} onchange={(val: boolean) => setBadgesEnabled(val)} />
     </div>
   </SettingsSection>
 

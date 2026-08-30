@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     useAppRegistry,
+    useAppRegistryWrite,
     useNavigation,
     type AppManifest,
     ConfirmDialog,
@@ -25,15 +26,9 @@
   // directly here any more — `mergedCatalogApps` already calls it internally.
   let catalogAppsList = $state<AppManifest[]>([]);
 
-  const {
-    registryStore,
-    unregisterApp,
-    registerAddOn,
-    installFromCatalog,
-    updatesStore,
-    refreshUpdates,
-    updateApp
-  } = useAppRegistry();
+  const { registryStore, updatesStore } = useAppRegistry();
+  const { unregisterApp, registerAddOn, installFromCatalog, refreshUpdates, updateApp } =
+    useAppRegistryWrite();
 
   const { openApp: openPhoneApp } = useNavigation();
   const { run } = useAppAction('store');

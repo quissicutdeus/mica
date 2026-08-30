@@ -1,6 +1,6 @@
 import { registerFacet } from '../../current';
 import type { Facets } from '../../inProcess/facets';
-import { fn, store, type AsTwin } from './_shared';
+import { store, type AsTwin } from './_shared';
 import { constants } from '../constants';
 import type { MotionPreference } from '../../../../shell/state/motion';
 
@@ -11,7 +11,6 @@ export function display(): Twin {
 
   return {
     displaySize: store('display', [], 'displaySize', c.displaySizeDefault ?? 50),
-    setDisplaySize: fn('display', [], 'setDisplaySize'),
     displaySizeDefault: c.displaySizeDefault,
     phoneScale: store('display', [], 'phoneScale', 1),
     phoneBox: store('display', [], 'phoneBox', { width: 0, height: 0 }),
@@ -21,7 +20,6 @@ export function display(): Twin {
     // so it is stated here rather than carried over the wire. It is the shipped default and
     // changes only when `motion.ts` does; the live value arrives on the store above.
     motionPreference: store<MotionPreference>('display', [], 'motionPreference', 'system'),
-    setMotionPreference: fn('display', [], 'setMotionPreference'),
     motionPreferenceDefault: 'system',
     reducedMotion: store('display', [], 'reducedMotion', false),
 
@@ -32,9 +30,7 @@ export function display(): Twin {
     homeGridColumnsMax: c.homeGridColumnsMax,
     homeGridRowsDefault: c.homeGridRowsDefault,
     homeGridRowsMin: c.homeGridRowsMin,
-    homeGridRowsMax: c.homeGridRowsMax,
-
-    setHomeGridSize: fn('display', [], 'setHomeGridSize')
+    homeGridRowsMax: c.homeGridRowsMax
   };
 }
 

@@ -2,7 +2,8 @@ import { registerFacet } from '../../current';
 import { time, is24Hour, formattedTime } from '../../../../shell/state/time';
 
 /**
- * The phone's clock, and how it is displayed.
+ * The phone's clock, and how it is displayed — read-only. Changing the 12/24-hour
+ * preference is `useClockWrite` (MICA-127).
  *
  * Split out of `useSystemHardware`, which had grown to mean "anything the shell owns".
  * A 12-versus-24-hour preference is not hardware — it is a locale setting that happens
@@ -13,7 +14,7 @@ export function clock() {
   return {
     /** The current time, updated by the shell. */
     time,
-    /** Whether to render it in 24-hour form. Writable: Settings toggles it. */
+    /** Whether to render it in 24-hour form. Settings writes it through `useClockWrite`. */
     is24Hour,
     /**
      * The time already rendered in the player's chosen form.

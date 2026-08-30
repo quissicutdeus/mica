@@ -1,6 +1,6 @@
 import { registerFacet } from '../../current';
 import type { Facets } from '../../inProcess/facets';
-import { fn, store, type AsTwin } from './_shared';
+import { store, type AsTwin } from './_shared';
 import { constants } from '../constants';
 import { seedFromRgbString, sanitizeSeed } from '../../../../lib/seed';
 
@@ -11,11 +11,8 @@ export function theme(): Twin {
   return {
     themeStore: store('theme', [], 'themeStore', { seed: sanitizeSeed(undefined), mode: 'dark' }),
     schemeStore: store('theme', [], 'schemeStore', {}),
-    setThemeSeed: fn('theme', [], 'setThemeSeed'),
-    setThemeMode: fn('theme', [], 'setThemeMode'),
     /** A derived store in the inProcess twin — see `shell/state/theme.ts:71`. */
     isLightMode: store('theme', [], 'isLightMode', false),
-    resetTheme: fn('theme', [], 'resetTheme'),
     // Carried over the wire as `unknown` (`AddOnConstants`) — see systemHardware.ts.
     defaultTheme: constants().theme.defaultTheme as Twin['defaultTheme'],
     seedFromRgbString,

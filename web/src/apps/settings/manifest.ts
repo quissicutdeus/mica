@@ -16,17 +16,25 @@ export default defineApp({
   // nearby-broadcast surface included, even though Sound touches only the level and the
   // mute. That is the honest direction to err in: §7 allows declaring more than the scan
   // finds and forbids declaring less, and the permission sheet a player reads shows the
-  // grant. The same holds for `system-hardware`, which covers the battery, the signal,
-  // Bluetooth, the volume and the ringer switch as one.
+  // grant.
+  //
+  // `app-registry`/`clock`/`display`/`keybinds`/`notification-settings`/`system-hardware`/
+  // `theme`/`wallpaper` each split into a read half and a `-write` half (MICA-127) —
+  // Settings (and, for `app-registry-write`, the Store) is the one place on the phone with
+  // a real reason to hold every write half, so it declares both of each pair it touches.
   permissions: [
     'account',
     'admin',
     'app-registry',
+    'app-registry-write',
     'call',
     'clock',
+    'clock-write',
     'devtools',
     'display',
+    'display-write',
     'keybinds',
+    'keybinds-write',
     'mail',
     'media',
     'messages',
@@ -34,10 +42,14 @@ export default defineApp({
     'navigation',
     'notifications',
     'notification-settings',
+    'notification-settings-write',
     'storage',
     'system-hardware',
+    'system-hardware-write',
     'theme',
-    'wallpaper'
+    'theme-write',
+    'wallpaper',
+    'wallpaper-write'
   ],
   core: true
 });

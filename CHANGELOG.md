@@ -34,6 +34,39 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**If you run a third-party add-on that reads or changes the phone's theme,
+wallpaper, display size, home grid, clock format, keyboard shortcuts, hardware
+(battery/signal/bluetooth/volume), notification settings, or app registry, check
+it against this release.** Eight SDK hooks that used to bundle a low-stakes read
+with a global write behind one permission now split into a read half and a
+`-write` half, the same way `useAccount`/`useBank` already did:
+
+- `useTheme` / `useThemeWrite` — permission `theme-write`
+- `useWallpaper` / `useWallpaperWrite` — permission `wallpaper-write`
+- `useDisplay` / `useDisplayWrite` — permission `display-write`
+- `useClock` / `useClockWrite` — permission `clock-write`
+- `useKeybinds` / `useKeybindsWrite` — permission `keybinds-write`
+- `useSystemHardware` / `useSystemHardwareWrite` — permission
+  `system-hardware-write`
+- `useAppRegistry` / `useAppRegistryWrite` — permission `app-registry-write`
+- `useNotificationSettings` / `useNotificationSettingsWrite` — permission
+  `notification-settings-write`
+
+Every setter that used to come back from the read hook — `setThemeSeed`,
+`setWallpaperSeed`, `setDisplaySize`, `setHomeGridSize`, `setBinding`,
+`toggleBluetooth`, `unregisterApp`, `setAppNotificationPolicy`, and the rest —
+moved to the matching write hook, gated by the matching new permission.
+Declaring `theme` alone used to also mean "may repaint the whole phone for every
+app"; now it means only "may read the active theme," and an add-on that wants to
+change it has to say so (MICA-127). `app-registry-write` and
+`notification-settings-write` were already unreachable for a sandboxed add-on
+regardless of permission (installing an app or muting a rival was never
+something an add-on's manifest alone could unlock), so those two are a
+disclosure fix rather than a new restriction. Nothing that ships with the phone
+is affected — Settings (and, for `app-registry-write`, the Store) are the only
+in-tree apps that ever held any write half, and their manifests already declare
+the new permissions.
+
 **If you run a third-party add-on that draws reactions, check it against this
 release.** `ReactionBar`, the SDK component an add-on draws a reaction row with,
 changed shape: it now takes `summary` and `ontoggle` in place of `counts`,

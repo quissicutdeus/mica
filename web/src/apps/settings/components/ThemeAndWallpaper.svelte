@@ -1,7 +1,9 @@
 <script lang="ts">
   import {
     useWallpaper,
+    useWallpaperWrite,
     useTheme,
+    useThemeWrite,
     useMedia,
     useClock,
     useDisplay,
@@ -17,14 +19,13 @@
     wallpaperBackground,
     activeSeed,
     backgroundForSeed,
-    setWallpaperSeed,
-    setPresetWallpaper,
-    setWallpaperImage,
-    resetWallpaper,
     seedFromImage,
     presets
   } = useWallpaper();
-  const { themeStore, setThemeMode, schemeStore, seedFromRgbString } = useTheme();
+  const { setWallpaperSeed, setPresetWallpaper, setWallpaperImage, resetWallpaper } =
+    useWallpaperWrite();
+  const { themeStore, schemeStore, seedFromRgbString } = useTheme();
+  const { setThemeMode } = useThemeWrite();
   const { media, fullMedia } = useMedia();
   const { toast } = usePhoneNotification();
   const { formattedTime } = useClock();

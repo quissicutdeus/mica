@@ -4,7 +4,9 @@
     SettingsSection,
     ToggleSwitch,
     useClock,
-    useDisplay
+    useClockWrite,
+    useDisplay,
+    useDisplayWrite
   } from '@gphone/sdk';
   import ThemeAndWallpaper from '../components/ThemeAndWallpaper.svelte';
 
@@ -14,9 +16,9 @@
   // dark first, since it reframes everything after it, then the color, the presets, a
   // photo, and finally the size and the clock.
   const { is24Hour } = useClock();
+  const { setIs24Hour } = useClockWrite();
   const {
     displaySize,
-    setDisplaySize,
     displaySizeDefault,
     phoneBox,
     isSizeLimited,
@@ -26,11 +28,10 @@
     homeGridColumnsMax,
     homeGridRowsMin,
     homeGridRowsMax,
-    setHomeGridSize,
     motionPreference,
-    setMotionPreference,
     reducedMotion
   } = useDisplay();
+  const { setDisplaySize, setHomeGridSize, setMotionPreference } = useDisplayWrite();
 
   /**
    * Three states rather than a switch, because "off" and "follow the system" are
@@ -177,7 +178,7 @@
       label="24-Hour Time"
       description="Use 24-hour format"
       checked={$is24Hour}
-      onchange={(v: boolean) => is24Hour.set(v)}
+      onchange={(v: boolean) => setIs24Hour(v)}
     />
   </SettingsSection>
 </div>

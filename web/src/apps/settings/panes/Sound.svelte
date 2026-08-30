@@ -21,24 +21,26 @@
    * `shell/state/audio.ts` says where the mode actually reaches, and is honest in the
    * Vibrate row's own description about the one thing it cannot do here.
    */
-  import { SettingsSection, ToggleSwitch, useSystemHardware, useMusic } from '@gphone/sdk';
+  import {
+    SettingsSection,
+    ToggleSwitch,
+    useSystemHardware,
+    useSystemHardwareWrite,
+    useMusic
+  } from '@gphone/sdk';
 
   const {
     soundVolume,
     soundMuted,
-    setVolume,
-    toggleMute,
     volumeStep,
-    setVolumeStep,
     volumeStepChoices,
     ringMode,
-    setRingMode,
     ringModeChoices,
     ringtone,
-    setRingtone,
-    ringtoneChoices,
-    previewRingtone
+    ringtoneChoices
   } = useSystemHardware();
+  const { setVolume, toggleMute, setVolumeStep, setRingMode, setRingtone, previewRingtone } =
+    useSystemHardwareWrite();
 
   /**
    * Choosing a tone plays it, rather than putting a second speaker button beside every

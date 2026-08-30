@@ -2,10 +2,7 @@ import { registerFacet } from '../../current';
 import {
   themeStore,
   schemeStore,
-  setThemeSeed,
-  setThemeMode,
   isLightMode,
-  resetTheme,
   DEFAULT_THEME,
   type ThemeState,
   type ThemeMode
@@ -14,15 +11,16 @@ import { seedFromRgbString, sanitizeSeed } from '../../../../lib/m3';
 
 export type { ThemeState, ThemeMode };
 
-/** Implementation of the `useTheme` facet — see the `useTheme` hook doc for the usage contract. */
+/**
+ * Implementation of the `useTheme` facet — see the `useTheme` hook doc for the usage
+ * contract. Read-only: changing the seed, the mode, or resetting either is `useThemeWrite`
+ * (MICA-127) — a player picking a theme is a much bigger ask than an app rendering one.
+ */
 export function theme() {
   return {
     themeStore,
     schemeStore,
-    setThemeSeed,
-    setThemeMode,
     isLightMode,
-    resetTheme,
     defaultTheme: DEFAULT_THEME,
     /** Convert an `rgb()`/`rgba()` string — what a color picker emits — into a seed. */
     seedFromRgbString,

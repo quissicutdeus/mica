@@ -1,7 +1,13 @@
 <script lang="ts">
-  import { SettingsSection, useKeybinds, usePhoneNotification } from '@gphone/sdk';
+  import {
+    SettingsSection,
+    useKeybinds,
+    useKeybindsWrite,
+    usePhoneNotification
+  } from '@gphone/sdk';
 
-  const { bindings, groups, setBinding, resetBindings, findConflict } = useKeybinds();
+  const { bindings, groups, findConflict } = useKeybinds();
+  const { setBinding, resetBindings } = useKeybindsWrite();
   const { toast } = usePhoneNotification();
 
   /** The action currently waiting for a key, if any. */

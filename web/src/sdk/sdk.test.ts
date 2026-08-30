@@ -8,6 +8,7 @@ import {
   useNavigation,
   useStorage,
   useSystemHardware,
+  useSystemHardwareWrite,
   useClock,
   useAccount,
   useCall,
@@ -207,8 +208,9 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       expect(storage.getItem('user_theme')).toBeNull();
     });
 
-    it('useSystemHardware exposes hardware stores and setters', () => {
-      const { charge, signalLevel, setSignal } = useSystemHardware();
+    it('useSystemHardware exposes hardware stores, and useSystemHardwareWrite sets them', () => {
+      const { charge, signalLevel } = useSystemHardware();
+      const { setSignal } = useSystemHardwareWrite();
       expect(charge).toBeDefined();
 
       setSignal(3);

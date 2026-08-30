@@ -162,17 +162,28 @@ const LABELS: Record<AppPermission, { label: string; icon: string }> = {
   social: { label: 'Social Profiles', icon: '\u{1F465}' },
   storage: { label: 'Local Storage', icon: '\u{1F4BE}' },
   'app-events': { label: 'Background Updates', icon: '\u{1F4E1}' },
-  'app-registry': { label: 'Install & Remove Apps', icon: '\u{1F4E6}' },
-  clock: { label: 'Clock Settings', icon: '\u{1F552}' },
+  'app-registry': { label: 'Installed Apps (Read)', icon: '\u{1F4E6}' },
+  'app-registry-write': { label: 'Install & Remove Apps', icon: '\u{1F4E6}' },
+  clock: { label: '12/24-Hour Setting (Read)', icon: '\u{1F552}' },
+  'clock-write': { label: 'Change 12/24-Hour Setting', icon: '\u{1F552}' },
   devtools: { label: 'Developer Tools', icon: '\u{1F6E0}\u{FE0F}' },
-  display: { label: 'Display Settings', icon: '\u{1F4F1}' },
+  display: { label: 'Display Size & Layout (Read)', icon: '\u{1F4F1}' },
+  'display-write': { label: 'Resize the Phone & Home Screen', icon: '\u{1F4F1}' },
   keybinds: { label: 'Keyboard Shortcuts', icon: '\u{2328}\u{FE0F}' },
+  'keybinds-write': { label: 'Rebind Phone Shortcuts', icon: '\u{2328}\u{FE0F}' },
   music: { label: 'Play Music Out Loud', icon: '\u{1F3B5}' },
   navigation: { label: 'Open Other Apps', icon: '\u{21AA}\u{FE0F}' },
-  'notification-settings': { label: 'Notification Settings', icon: '\u{1F515}' },
-  'system-hardware': { label: 'Battery, Signal & Bluetooth', icon: '\u{1F50B}' },
-  theme: { label: 'Theme', icon: '\u{1F3A8}' },
-  wallpaper: { label: 'Wallpaper', icon: '\u{1F5BC}\u{FE0F}' }
+  'notification-settings': { label: 'Notification Mute Status (Read)', icon: '\u{1F515}' },
+  'notification-settings-write': { label: 'Change Notification Settings', icon: '\u{1F515}' },
+  'system-hardware': { label: 'Battery, Signal & Bluetooth (Read)', icon: '\u{1F50B}' },
+  'system-hardware-write': {
+    label: 'Change Battery, Signal, Bluetooth & Volume',
+    icon: '\u{1F50B}'
+  },
+  theme: { label: 'Theme (Read)', icon: '\u{1F3A8}' },
+  'theme-write': { label: "Change the Phone's Theme", icon: '\u{1F3A8}' },
+  wallpaper: { label: 'Wallpaper (Read)', icon: '\u{1F5BC}\u{FE0F}' },
+  'wallpaper-write': { label: 'Change the Wallpaper', icon: '\u{1F5BC}\u{FE0F}' }
 };
 
 /** A permission as a player should read it. */

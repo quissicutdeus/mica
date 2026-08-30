@@ -1,0 +1,24 @@
+import { registerFacet } from '../../current';
+import { fn, type AsTwin } from './_shared';
+
+type Twin = AsTwin<
+  ReturnType<typeof import('../../inProcess/facets/systemHardwareWrite').systemHardwareWrite>
+>;
+
+/** Implementation of the `useSystemHardwareWrite` facet — see the inProcess twin for the usage contract. */
+export function systemHardwareWrite(): Twin {
+  return {
+    setCharge: fn('systemHardwareWrite', [], 'setCharge'),
+    setSignal: fn('systemHardwareWrite', [], 'setSignal'),
+    toggleCellService: fn('systemHardwareWrite', [], 'toggleCellService'),
+    toggleBluetooth: fn('systemHardwareWrite', [], 'toggleBluetooth'),
+    setVolume: fn('systemHardwareWrite', [], 'setVolume'),
+    toggleMute: fn('systemHardwareWrite', [], 'toggleMute'),
+    setVolumeStep: fn('systemHardwareWrite', [], 'setVolumeStep'),
+    setRingMode: fn('systemHardwareWrite', [], 'setRingMode'),
+    setRingtone: fn('systemHardwareWrite', [], 'setRingtone'),
+    previewRingtone: fn('systemHardwareWrite', [], 'previewRingtone')
+  };
+}
+
+registerFacet('systemHardwareWrite', systemHardwareWrite);

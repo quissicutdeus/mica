@@ -5,8 +5,6 @@ import {
   allPhoneActions,
   bindings,
   registerHandler,
-  resetBindings,
-  setBinding,
   currentOverrides,
   type ResolvedKeybindAction
 } from '../../../../shell/state/keybinds';
@@ -21,7 +19,12 @@ export interface KeybindGroup {
 /** Core's group renders without picking it out of the pack — it's the phone's own list. */
 const CORE_OWNER_ID = 'core';
 
-/** Implementation of the `useKeybinds` facet — see the `useKeybinds` hook doc for the usage contract. */
+/**
+ * Implementation of the `useKeybinds` facet — see the `useKeybinds` hook doc for the usage
+ * contract. Read-only, `onKeybind` included — claiming an action for your own app is not
+ * a global write. Rebinding a key or wiping every override is `useKeybindsWrite`
+ * (MICA-127).
+ */
 export function keybinds() {
   return {
     /**
@@ -71,9 +74,6 @@ export function keybinds() {
 
       return core ? [core, ...appGroups] : appGroups;
     }),
-
-    setBinding,
-    resetBindings,
 
     /**
      * The action already using this key in the same context, if any. Two actions may

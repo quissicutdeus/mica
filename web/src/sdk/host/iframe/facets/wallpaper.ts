@@ -19,10 +19,6 @@ export function wallpaper(): Twin {
       [],
       'backgroundForSeed'
     ) as unknown as Twin['backgroundForSeed'],
-    setWallpaperSeed: fn('wallpaper', [], 'setWallpaperSeed'),
-    setPresetWallpaper: fn('wallpaper', [], 'setPresetWallpaper'),
-    setWallpaperImage: fn('wallpaper', [], 'setWallpaperImage'),
-    resetWallpaper: fn('wallpaper', [], 'resetWallpaper'),
     seedFromImage: fn('wallpaper', [], 'seedFromImage'),
     // Carried over the wire as `unknown` (`AddOnConstants`) — see systemHardware.ts.
     presets: c.presets as Twin['presets'],

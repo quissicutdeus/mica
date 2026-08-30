@@ -3,10 +3,6 @@ import {
   wallpaperStore,
   wallpaperBackground,
   wallpaperNeedsContrast,
-  setWallpaperSeed,
-  setPresetWallpaper,
-  setWallpaperImage,
-  resetWallpaper,
   activeSeed,
   backgroundForSeed,
   DEFAULT_WALLPAPER,
@@ -18,7 +14,10 @@ import { seedFromImage } from '../../../../shell/state/seedFromImage';
 
 export type { WallpaperState, WallpaperPreset };
 
-/** Implementation of the `useWallpaper` facet — see the `useWallpaper` hook doc for the usage contract. */
+/**
+ * Implementation of the `useWallpaper` facet — see the `useWallpaper` hook doc for the
+ * usage contract. Read-only: setting the wallpaper is `useWallpaperWrite` (MICA-127).
+ */
 export function wallpaper() {
   return {
     wallpaperStore,
@@ -27,10 +26,6 @@ export function wallpaper() {
     wallpaperNeedsContrast,
     activeSeed,
     backgroundForSeed,
-    setWallpaperSeed,
-    setPresetWallpaper,
-    setWallpaperImage,
-    resetWallpaper,
     seedFromImage,
     presets: PRESETS,
     defaultWallpaper: DEFAULT_WALLPAPER
