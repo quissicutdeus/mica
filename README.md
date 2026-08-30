@@ -400,37 +400,40 @@ set gphone_blabber_edit_window 900
 set gphone_notification_retention 30
 set gphone_media_quota_mb 64
 set gphone_media_retention 0
+set gphone_orphan_owner_table ""
 setr gphone_addon_hosts ""
 setr gphone_addon_catalog ""
 ```
 
-| Convar                          | Type                 | Default                | Controls                                           |
-| ------------------------------- | -------------------- | ---------------------- | -------------------------------------------------- |
-| `gphone_admin_aces`             | comma-separated aces | `gphone.admin,command` | Who counts as a gPhone admin                       |
-| `gphone_rate_limit`             | integer              | `60`                   | Requests per player, per action, per minute        |
-| `gphone_bank_transfer_max`      | integer              | `50000`                | Ceiling on one player-to-player send               |
-| `gphone_hodlr_trade_max`        | integer              | `50000`                | Ceiling on what one Hodlr buy or sell is worth     |
-| `gphone_max_accounts_per_app`   | integer              | `3`                    | Identities one player may hold in one social app   |
-| `gphone_bluetooth_range`        | integer, meters      | `15`                   | How far a proximity share reaches                  |
-| `gphone_bluetooth_max_nearby`   | integer              | `5`                    | How many phones one proximity share reaches        |
-| `gphone_music_range`            | integer, meters      | `30`                   | How far music from a phone is heard (needs `setr`) |
-| `gphone_music_max_nearby`       | integer              | `8`                    | Broadcasters one listener is told about at once    |
-| `gphone_blabber_edit_window`    | integer, seconds     | `900`                  | How long a Blab stays editable by its author       |
-| `gphone_notification_retention` | integer, days        | `30`                   | How long notification rows are kept                |
-| `gphone_camera_quality`         | integer, 1-100       | `95`                   | Encode quality of a stored photo (needs `setr`)    |
-| `gphone_media_quota_mb`         | integer, MiB         | `64`                   | Storage one player's photo library may occupy      |
-| `gphone_media_retention`        | integer, days        | `0` (off)              | How long stored media is kept, if you want a limit |
-| `gphone_addon_hosts`            | hostname list        | empty (off)            | Hosts a Store add-on may be fetched from           |
-| `gphone_addon_catalog`          | https URL            | empty (off)            | The add-on catalog the Store lists                 |
+| Convar                          | Type                 | Default                | Controls                                              |
+| ------------------------------- | -------------------- | ---------------------- | ----------------------------------------------------- |
+| `gphone_admin_aces`             | comma-separated aces | `gphone.admin,command` | Who counts as a gPhone admin                          |
+| `gphone_rate_limit`             | integer              | `60`                   | Requests per player, per action, per minute           |
+| `gphone_bank_transfer_max`      | integer              | `50000`                | Ceiling on one player-to-player send                  |
+| `gphone_hodlr_trade_max`        | integer              | `50000`                | Ceiling on what one Hodlr buy or sell is worth        |
+| `gphone_max_accounts_per_app`   | integer              | `3`                    | Identities one player may hold in one social app      |
+| `gphone_bluetooth_range`        | integer, meters      | `15`                   | How far a proximity share reaches                     |
+| `gphone_bluetooth_max_nearby`   | integer              | `5`                    | How many phones one proximity share reaches           |
+| `gphone_music_range`            | integer, meters      | `30`                   | How far music from a phone is heard (needs `setr`)    |
+| `gphone_music_max_nearby`       | integer              | `8`                    | Broadcasters one listener is told about at once       |
+| `gphone_blabber_edit_window`    | integer, seconds     | `900`                  | How long a Blab stays editable by its author          |
+| `gphone_notification_retention` | integer, days        | `30`                   | How long notification rows are kept                   |
+| `gphone_camera_quality`         | integer, 1-100       | `95`                   | Encode quality of a stored photo (needs `setr`)       |
+| `gphone_media_quota_mb`         | integer, MiB         | `64`                   | Storage one player's photo library may occupy         |
+| `gphone_media_retention`        | integer, days        | `0` (off)              | How long stored media is kept, if you want a limit    |
+| `gphone_orphan_owner_table`     | `table.column`       | empty (off)            | Overrides which table the orphan sweep checks against |
+| `gphone_addon_hosts`            | hostname list        | empty (off)            | Hosts a Store add-on may be fetched from              |
+| `gphone_addon_catalog`          | https URL            | empty (off)            | The add-on catalog the Store lists                    |
 
-Thirteen of the sixteen are read on every use rather than cached, so changing
+Thirteen of the seventeen are read on every use rather than cached, so changing
 one with `set` from the live console takes effect on the next request and needs
 no restart. `gphone_blabber_edit_window` and `gphone_notification_retention` are
 read once at resource start, so a change to either needs a restart, for the
-reasons given under them below. `gphone_media_retention` is the third exception
-and the mildest: it is read whenever the media prune runs, which is at resource
-start and again on `gphonemedia prune`, so a change takes effect on the next
-prune rather than needing a restart. `gphone_camera_quality` is read on every
+reasons given under them below. `gphone_media_retention` and
+`gphone_orphan_owner_table` are the third and fourth exceptions and the mildest:
+both are read whenever the orphan sweep runs, which is at resource start and
+again on `gphonemedia prune`, so a change to either takes effect on the next
+sweep rather than needing a restart. `gphone_camera_quality` is read on every
 use as well, but the phone only asks for it when the Camera app comes to the
 foreground, so a change reaches a player the next time they open the camera
 rather than the next time they take a photo. `gphone_addon_hosts` and
@@ -624,6 +627,18 @@ database, so a refusal always leaves rows behind and never removes extra ones.
 It also logs a line when it starts and a line when it finishes, including a
 finish that removed nothing, so a sweep that ran and found nothing is
 distinguishable from one that never reached the database at all.
+
+- **`gphone_orphan_owner_table`** — names the table and column the orphan sweep
+  should check against, as `table.column`, instead of only ever trusting the
+  qb/ESX detection above. For a fork, a custom identity resource, or a framework
+  migration in progress, where the detection above cannot know what you renamed
+  `players` to. **Empty means "use the detected framework's own owner table"** —
+  the behavior above, unchanged — not "skip the sweep". A value is checked
+  against `information_schema` before the sweep trusts it at all: naming a table
+  or column that does not actually exist in your database refuses the sweep
+  outright and says so loudly in the console, the same way an unreadable owner
+  table does, rather than silently falling back to the framework's own answer or
+  running with an unverified name.
 
 The last two are the Store's, and they are the only pair here that turns
 something **on** rather than tuning something already running. Both are empty by

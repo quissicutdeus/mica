@@ -57,6 +57,7 @@ import {
   orphanDeleteSql,
   sweepOrphanedRows,
   purgeOwnedRows,
+  OWNER_OVERRIDE_CONVAR,
   type OwnedTable
 } from '../lib/orphanSweep';
 import { FrameworkBridge, __setResourceLookup, detectFramework } from '../lib/FrameworkBridge';
@@ -356,6 +357,112 @@ describe('fail-closed: nothing is deleted on evidence the sweep does not have', 
 
     expect(result.skipped).toBeNull();
     expect(deletes().length).toBe(ownedTables().length);
+  });
+});
+
+/**
+ * MICA-159. MICA-152 above resolves the owner table from the three-state framework
+ * verdict; this convar is a convenience layered on top for the non-standard setup that
+ * verdict cannot cover — a fork, a custom identity resource, a framework migration in
+ * progress. Every "fails closed" case here is really the same property the rest of this file
+ * is about: an unverified value must never be trusted to decide which rows get deleted, so an
+ * invalid override skips the sweep outright rather than quietly falling back to the framework
+ * verdict — falling back would make a typo in the convar silently sweep the *wrong* table.
+ */
+describe('the owner-table override convar (MICA-159)', () => {
+  const withOverride = (value: string) => {
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === OWNER_OVERRIDE_CONVAR ? value : fallback;
+  };
+
+  afterEach(() => {
+    (globalThis as any).GetConvar = (_name: string, fallback: string) => fallback;
+  });
+
+  it('empty means "use the framework verdict", not "skip the sweep"', async () => {
+    withOverride('');
+    healthyServer({ matched: 1, removedPerTable: 2 });
+
+    const result = await sweepOrphanedRows();
+
+    expect(result.skipped).toBeNull();
+    expect(deletes().length).toBe(ownedTables().length);
+    // Nothing to verify against information_schema when there is no override at all.
+    expect(dbMock.scalar).not.toHaveBeenCalled();
+  });
+
+  it('a valid override replaces the framework verdict as the owner table', async () => {
+    withOverride('custom_characters.character_id');
+    healthyServer({ matched: 1, removedPerTable: 2 });
+    dbMock.scalar.mockImplementation(async (sql: string) => {
+      if (sql === 'SELECT DATABASE()') return 'gphone_db';
+      if (sql.includes('information_schema.COLUMNS')) return 1;
+      throw new Error(`unexpected scalar(): ${sql}`);
+    });
+
+    const result = await sweepOrphanedRows();
+
+    expect(result.skipped).toBeNull();
+    expect(deletes().length).toBeGreaterThan(0);
+    // Every DELETE checks existence against the overridden table, not `players`.
+    for (const sql of deletes()) {
+      expect(sql).toContain('FROM custom_characters p');
+      expect(sql).toContain('p.character_id');
+    }
+  });
+
+  it('fails closed on a malformed value, never falling through to the framework verdict', async () => {
+    withOverride('not-a-table-and-column');
+    healthyServer({ removedPerTable: 5 });
+
+    const result = await sweepOrphanedRows();
+
+    expect(result.skipped).toBe('owner-override-invalid');
+    expect(deletes()).toEqual([]);
+    // The shape alone was enough to refuse it — never even asked information_schema.
+    expect(dbMock.scalar).not.toHaveBeenCalled();
+    // And never consulted the framework verdict either, which is the whole point of
+    // failing closed rather than falling back to it.
+    expect(dbMock.single).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on a table.column that does not exist in this database', async () => {
+    withOverride('players.no_such_column');
+    healthyServer({ removedPerTable: 5 });
+    dbMock.scalar.mockImplementation(async (sql: string) => {
+      if (sql === 'SELECT DATABASE()') return 'gphone_db';
+      if (sql.includes('information_schema.COLUMNS')) return null; // not found
+      throw new Error(`unexpected scalar(): ${sql}`);
+    });
+
+    const result = await sweepOrphanedRows();
+
+    expect(result.skipped).toBe('owner-override-invalid');
+    expect(deletes()).toEqual([]);
+    expect(dbMock.single).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the override cannot be verified against information_schema at all', async () => {
+    withOverride('custom_characters.character_id');
+    healthyServer({ removedPerTable: 5 });
+    dbMock.scalar.mockRejectedValue(new Error('connection lost'));
+
+    const result = await sweepOrphanedRows();
+
+    expect(result.skipped).toBe('owner-override-invalid');
+    expect(deletes()).toEqual([]);
+  });
+
+  it('sweeps normally once the override convar is cleared again', async () => {
+    withOverride('');
+    healthyServer({ matched: 1, removedPerTable: 2 });
+
+    const result = await sweepOrphanedRows();
+
+    expect(result.skipped).toBeNull();
+    for (const sql of deletes()) {
+      expect(sql).toContain('FROM players p');
+    }
   });
 });
 

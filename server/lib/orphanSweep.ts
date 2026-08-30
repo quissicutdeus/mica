@@ -98,6 +98,73 @@ const identifier = (value: unknown, what: string): string => {
   return value;
 };
 
+/**
+ * MICA-159. MICA-152 (above) resolves the owner table from the three-state framework
+ * verdict, which is the real fix for the boot-ordering hazard. This convar is a convenience
+ * layered on top of it for the non-standard setup that verdict cannot cover at all — a fork,
+ * a custom identity resource, a framework migration in progress — where an operator can just
+ * say which table and column own a citizenid, as `table.column`.
+ *
+ * **Default empty means "use the framework verdict"**, not "skip the sweep" — an operator who
+ * never touches this convar gets exactly MICA-152's behavior, unchanged.
+ */
+export const OWNER_OVERRIDE_CONVAR = 'gphone_orphan_owner_table';
+
+export interface OwnerOverride {
+  /** The resolved override, when the convar named a real table and column. `null` covers
+   * both "the convar is empty" and "the convar is set but unusable" — `invalid` is what
+   * tells those two apart, and a caller must never conflate them. */
+  owner: OwnerTable | null;
+  /**
+   * A non-empty convar value that did not resolve to a real, existing table and column.
+   *
+   * `GetConvar` hands back a free-form string with no validation of its own — the same fact
+   * `client/services/Camera.ts`'s `cameraQuality` documents for `GetConvarInt` ("a convar is
+   * a free-form string, so `GetConvarInt` answers 0 for anything it cannot parse"). That
+   * function's answer is to clamp a bad value to the nearest usable one, because the worst
+   * case is a slightly wrong JPEG quality. This convar names which rows the sweep is allowed
+   * to delete, so a bad value is never silently substituted for anything — the caller must
+   * fail closed and skip the sweep entirely, never fall through to the framework verdict.
+   */
+  invalid: boolean;
+  raw: string;
+}
+
+/**
+ * Read and verify the owner-table override, against `information_schema` rather than
+ * trusted as typed. A well-formed `table.column` that does not name a real column in a real
+ * table in this schema is exactly as untrustworthy as a malformed one — both are `invalid`.
+ */
+export const resolveOwnerOverride = async (): Promise<OwnerOverride> => {
+  const raw = GetConvar(OWNER_OVERRIDE_CONVAR, '').trim();
+  if (raw.length === 0) return { owner: null, invalid: false, raw: '' };
+
+  const dot = raw.indexOf('.');
+  const table = dot === -1 ? '' : raw.slice(0, dot);
+  const column = dot === -1 ? '' : raw.slice(dot + 1);
+  if (!SAFE_IDENTIFIER.test(table) || !SAFE_IDENTIFIER.test(column)) {
+    return { owner: null, invalid: true, raw };
+  }
+
+  try {
+    const schema = await Database.scalar<string | null>('SELECT DATABASE()', []);
+    if (!schema) return { owner: null, invalid: true, raw };
+
+    const found = await Database.scalar<number | null>(
+      `SELECT 1 FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1`,
+      [schema, table, column]
+    );
+    if (!found) return { owner: null, invalid: true, raw };
+  } catch {
+    // Could not verify the convar names a real table — never trust an unverified name to
+    // decide which rows this sweep is allowed to delete.
+    return { owner: null, invalid: true, raw };
+  }
+
+  return { owner: { table, column }, invalid: false, raw };
+};
+
 const asColumnDef = (spec: ColumnType | ColumnDef): ColumnDef =>
   typeof spec === 'string' ? { type: spec } : spec;
 
@@ -153,7 +220,12 @@ export const ownedTables = (): OwnedTable[] => {
 
 /** Why a sweep deleted nothing. Every one of these is a refusal, not a result. */
 export type SkipReason =
-  'unknown-framework' | 'owner-unreadable' | 'owner-empty' | 'identity-mismatch' | 'nothing-owned';
+  | 'unknown-framework'
+  | 'owner-unreadable'
+  | 'owner-empty'
+  | 'identity-mismatch'
+  | 'nothing-owned'
+  | 'owner-override-invalid';
 
 export interface SweepFailure {
   table: string;
@@ -211,7 +283,12 @@ const sampleOwners = async (tables: readonly OwnedTable[]): Promise<string[]> =>
  * `owner-empty` and `owner-unreadable` wording is the sentence MICA-71 shipped, with the
  * table name resolved rather than assumed, so an ESX server is told about `users`.
  */
-const announceSkip = (label: string, reason: SkipReason, owner: OwnerTable | null): void => {
+const announceSkip = (
+  label: string,
+  reason: SkipReason,
+  owner: OwnerTable | null,
+  detail?: string
+): void => {
   const table = owner?.table ?? 'the owner table';
 
   switch (reason) {
@@ -236,6 +313,15 @@ const announceSkip = (label: string, reason: SkipReason, owner: OwnerTable | nul
           'skipped rather than deleting every row on the server. Every row being an orphan ' +
           'is not a thing that happens; a wrong owner table, a framework that has not ' +
           'finished starting, or a truncated identifier all look exactly like this.'
+      );
+      return;
+    case 'owner-override-invalid':
+      console.error(
+        `[${label}] ${OWNER_OVERRIDE_CONVAR} names '${detail ?? '?'}', which is not \`table.column\` ` +
+          'naming a real table and column in this database — the orphan sweep was skipped ' +
+          'rather than trusting an unverified value to decide which rows it may delete. ' +
+          `Clear ${OWNER_OVERRIDE_CONVAR} to use the detected framework's own owner table ` +
+          'instead, or correct it.'
       );
       return;
     default:
@@ -279,10 +365,18 @@ const announceSkip = (label: string, reason: SkipReason, owner: OwnerTable | nul
  *    leaving orphans costs disk, and the other way costs the database.
  */
 type OwnerVerdict =
-  { owner: OwnerTable; skipped: null } | { owner: OwnerTable | null; skipped: SkipReason };
+  | { owner: OwnerTable; skipped: null }
+  | { owner: OwnerTable | null; skipped: SkipReason; detail?: string };
 
 const resolveOwner = async (tables: readonly OwnedTable[]): Promise<OwnerVerdict> => {
-  const owner = FrameworkBridge.ownerTable();
+  // MICA-159, checked before the framework verdict: an invalid override must never fall
+  // through to it, so this has to be the first thing decided, not a fallback tried after.
+  const override = await resolveOwnerOverride();
+  if (override.invalid) {
+    return { owner: null, skipped: 'owner-override-invalid', detail: override.raw };
+  }
+
+  const owner = override.owner ?? FrameworkBridge.ownerTable();
   if (!owner) return { owner: null, skipped: 'unknown-framework' };
 
   const ownerTable = identifier(owner.table, 'the owner table');
@@ -407,7 +501,7 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
   const verdict = await resolveOwner(tables);
   if (verdict.skipped !== null || !verdict.owner) {
     const reason = verdict.skipped ?? 'unknown-framework';
-    announceSkip(label, reason, verdict.owner);
+    announceSkip(label, reason, verdict.owner, 'detail' in verdict ? verdict.detail : undefined);
     return skip(reason);
   }
   const owner = verdict.owner;
