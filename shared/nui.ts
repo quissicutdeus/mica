@@ -64,6 +64,25 @@ export interface CallStatusPayload {
   name: string;
 }
 
+/**
+ * The two remote add-on convars, on their way from the client to the shell (MICA-126).
+ *
+ * Unlike everything else in this file this rides a `fetchNui` **reply** rather than a push,
+ * for the reasons set out in `client/services/RemoteApps.ts`. The narrowing belongs here
+ * anyway: this is the file that narrows what crosses the bridge, and a second convention
+ * for one payload would be worse than one slightly broad file.
+ *
+ * Empty is the meaningful, expected answer in both fields — a stock server configures
+ * neither — so `parseRemoteAppConfig` never returns `null` for an absent value. `null` is
+ * reserved for a reply that was not this payload at all.
+ */
+export interface RemoteAppConfigPayload {
+  /** Hostnames a bundle or catalog may be fetched from. Empty means nothing installs. */
+  hosts: string[];
+  /** The operator's catalog URL, or `''` for "no catalog configured". */
+  catalogUrl: string;
+}
+
 /** Utility primitive sanitizers */
 
 function safeString(val: unknown, maxLen = 1000): string | undefined {
@@ -209,6 +228,33 @@ export function parseCallStatus(data: unknown): CallStatusPayload | null {
   const number = safeString(obj.number, 50) ?? '';
   const name = safeString(obj.name, 100) ?? number;
   return { status: rawStatus, number, name };
+}
+
+/**
+ * The remote add-on config reply, or `null` if it was not one.
+ *
+ * Deliberately narrow rather than merely shaped: what comes back here decides which hosts
+ * may ship JavaScript into a player's phone, so a non-string in `hosts` is dropped instead
+ * of coerced. It arrives from the game client, which is trusted for this — the values are
+ * the operator's own convars and the client is where they are readable — but the parse is
+ * the same either way, since the browser mock and the dev harness answer this too.
+ *
+ * `catalogUrl` is passed through as written. Whether it is fetchable is
+ * `isTrustedRemoteUrl`'s question, asked against the allowlist in the same payload, and
+ * answering it twice in two places is how the two answers drift apart.
+ */
+export function parseRemoteAppConfig(data: unknown): RemoteAppConfigPayload | null {
+  const obj = safeObject(data);
+  if (!obj) return null;
+
+  const rawHosts = Array.isArray(obj.hosts) ? obj.hosts : [];
+  const hosts: string[] = [];
+  for (const entry of rawHosts) {
+    const host = safeString(entry, 253)?.toLowerCase();
+    if (host && !hosts.includes(host)) hosts.push(host);
+  }
+
+  return { hosts, catalogUrl: safeString(obj.catalogUrl, 2048) ?? '' };
 }
 
 /**

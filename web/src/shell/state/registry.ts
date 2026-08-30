@@ -9,7 +9,7 @@ import { clearAppStorage } from '../../sdk/host/useStorage';
 import { messageOf } from '../../lib/errors';
 import { usePersisted } from '../../sdk/host/usePersisted';
 import { placeOnHomeGridIfAbsent } from './homeGrid';
-import { isTrustedRemoteUrl, matchesHash } from './remoteAppSecurity';
+import { getTrustedRemoteAppHosts, isTrustedRemoteUrl, matchesHash } from './remoteAppSecurity';
 import { isCatalogEntry, type CatalogEntry } from './catalog';
 
 export type { AppManifest } from '../../sdk/manifest';
@@ -594,6 +594,14 @@ function createAppRegistry() {
     installFromCatalog: (entry: CatalogEntry): Promise<{ manifest: AppManifest }> =>
       installVerified(entry),
     rehydrateSavedRemoteApps: async (): Promise<void> => {
+      // Nothing can clear the host check while the allowlist is empty, so with no allowlist
+      // this is not "every saved install failed", it is "the operator's configuration has
+      // not arrived yet". It arrives over NUI (`state/remoteAppConfig.ts`, MICA-126),
+      // strictly after this module is first imported, and that module calls this again once
+      // it has applied it. Returning quietly rather than warning per app is the difference
+      // between a boot log that names a real problem and one that cries wolf on every start.
+      if (getTrustedRemoteAppHosts().length === 0) return;
+
       const savedRemoteApps = getSavedRemoteApps();
       await Promise.all(
         savedRemoteApps.map((saved) =>

@@ -223,6 +223,10 @@ export const CLIENT_ONLY_ACTIONS: readonly string[] = [
   // `gphone_camera_quality`. The NUI cannot read a convar, so the client reads it and
   // answers with it — a hardware read like the four above, not a service call.
   'cameraQuality',
+  // `gphone_addon_hosts` and `gphone_addon_catalog`, the same way and for the same reason
+  // (MICA-126). Asked once at page load, before the registry re-verifies saved remote
+  // installs — the allowlist has to be in place before that check can mean anything.
+  'remoteAppConfig',
   // Setting a GPS waypoint from a location a message already carries is purely local —
   // `SetNewWaypoint` fires on the recipient's own client with no server round trip.
   'setWaypoint'

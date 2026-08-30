@@ -82,10 +82,40 @@ export async function remoteCatalogApps(catalogUrl: string | undefined): Promise
   }
 }
 
-/** Bundled add-ons, then whatever a configured remote catalog offers. */
+/**
+ * Bundled add-ons, then whatever a configured remote catalog offers — **one row per id**.
+ *
+ * This concatenated the two lists, which is fine until an operator's catalog offers an id
+ * this build also ships. `CatalogList` keys its `{#each}` on `id`, and Svelte 5 throws
+ * `each_key_duplicate` on a repeated key — so the whole Store crashed to `AppCrashed` the
+ * moment a catalog named `blabber`, `notes`, `hodlr` or `snek`. That is not an exotic
+ * collision: those four are the only add-ons gPhone ships, so they are the obvious ids for
+ * an operator republishing one with a change of their own, and it is the first thing anyone
+ * following `docs/addon-catalog.md` would try. Nothing caught it, because nothing had ever
+ * fetched a real catalog (MICA-126).
+ *
+ * **The catalog entry wins.** An operator publishing an id had to allowlist its host first
+ * and then write the entry by hand, so it is the more deliberate of the two statements; it
+ * carries a version and a pinned hash, so it can be updated later, where a bundled copy is
+ * frozen into this build with nowhere newer to fetch from. Dropping it instead would mean
+ * silently ignoring the one thing the operator actually configured, which is the failure
+ * this whole ticket is about. It is logged rather than done quietly — a shadowed id is
+ * worth knowing about even when it is what you meant.
+ */
 export async function mergedCatalogApps(catalogUrl: string | undefined): Promise<AppManifest[]> {
   const remote = await remoteCatalogApps(catalogUrl);
-  return [...catalogApps(), ...remote];
+  const remoteIds = new Set(remote.map((app) => app.id));
+
+  const bundled = catalogApps().filter((app) => {
+    if (!remoteIds.has(app.id)) return true;
+    console.warn(
+      `gPhone Store: the catalog offers '${app.id}', which this build also ships. ` +
+        `Listing the catalog's copy.`
+    );
+    return false;
+  });
+
+  return [...bundled, ...remote];
 }
 
 /**

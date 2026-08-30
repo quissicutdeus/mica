@@ -191,6 +191,34 @@ describe('remote catalog', () => {
     expect(merged.find((a) => a.id === 'remote_weather')?.isRemote).toBe(true);
   });
 
+  it('lists one row per id when the catalog offers an add-on this build also ships', async () => {
+    // Found the first time a real catalog was ever fetched (MICA-126). `CatalogList`
+    // keys its `{#each}` on `id`, so two rows for `notes` threw `each_key_duplicate` and
+    // the Store crashed to `AppCrashed` — no listing, no install, nothing to retry but a
+    // Restart button. The four ids gPhone ships are exactly the ones an operator is most
+    // likely to republish, so this is the first thing anybody would have hit.
+    const shadowing = {
+      ...remoteEntry,
+      id: 'notes',
+      name: 'Notes',
+      bundleUrl: 'https://store.example.com/apps/notes.js'
+    };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([shadowing])
+    } as Response);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const merged = await mergedCatalogApps('https://store.example.com/catalog.json');
+
+    expect(merged.filter((a) => a.id === 'notes')).toHaveLength(1);
+    // The catalog's copy, not the bundled one: it is what the operator configured, and the
+    // only one of the two that carries a hash and can ever be updated.
+    expect(merged.find((a) => a.id === 'notes')?.isRemote).toBe(true);
+    expect(warn).toHaveBeenCalled();
+  });
+
   it('falls back to an empty list, not a rejection, when the remote catalog fetch fails', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

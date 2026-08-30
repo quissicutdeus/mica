@@ -10,6 +10,7 @@ import './Mail';
 import './Message';
 import './Music';
 import './Relay';
+import './RemoteApps';
 import './Settings';
 import './Shell';
 import './Signal';

@@ -3,6 +3,7 @@
   import { hydrateSettings } from '../sdk/host/useStorage';
   import { migrateAppDrawerHintForExistingSaves } from './state/onboarding';
   import { appRegistryStore } from './state/registry';
+  import { loadRemoteAppConfig } from './state/remoteAppConfig';
   import { createNuiMessageRouter } from './nuiMessages';
   import { installDevHarness, seedBrowserPhone } from './devHarness';
   import { isBrowser } from '../lib/isBrowser';
@@ -272,6 +273,22 @@
    */
   onMount(() => {
     void hydrateSettings().then(() => migrateAppDrawerHintForExistingSaves());
+  });
+
+  /**
+   * The operator's remote add-on convars, asked for here for the same reason settings are
+   * (MICA-126).
+   *
+   * Earlier than `bootstrapStores` on purpose, and it has to be: the answer decides which
+   * hosts may ship code into this phone, and `registry.ts` cannot re-verify a saved remote
+   * install until it has one. Waiting for the phone to be *opened* would mean an add-on the
+   * player installed last session was missing from the launcher they are looking at.
+   *
+   * Not awaited, like the hydrate above — a phone with no configured catalog is the normal
+   * case and is fully usable, so nothing here is worth blocking first paint on.
+   */
+  onMount(() => {
+    void loadRemoteAppConfig();
   });
 
   /**

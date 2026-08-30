@@ -27,6 +27,44 @@ interface CatalogEntry {
 `isCatalogEntry` (same file) validates a value has every field with the right
 primitive type before anything downstream trusts it.
 
+## Turning it on
+
+**Nothing below happens on a server that has not configured two convars, and
+that is deliberate.** Both are empty by default, and both need `setr`, because
+the whole install path lives in the phone's own UI and a plain `set` never
+leaves the server:
+
+```cfg
+setr gphone_addon_hosts "store.example.com"
+setr gphone_addon_catalog "https://store.example.com/catalog.json"
+```
+
+`gphone_addon_hosts` is the allowlist step 2 below checks, and
+`gphone_addon_catalog` is the URL the Store and the update check both fetch.
+**The catalog's own host must appear in the allowlist too** — gPhone holds the
+catalog to the same list as the bundles on it, so there is one list rather than
+two, and setting the catalog while forgetting the allowlist is the mistake that
+makes the Store list nothing. The client prints a line about that pairing at
+resource start rather than leaving it to be discovered.
+
+`client/services/RemoteApps.ts` reads both and answers a `remoteAppConfig` NUI
+call with them; `web/src/shell/state/remoteAppConfig.ts` applies them at page
+load, before the rehydration described below can run. That path is what makes
+`setTrustedRemoteAppHosts` and `setRemoteCatalogUrl` reachable at all: until
+MICA-126 nothing in a shipped build called either, so every claim in this file
+was true of the code and false of any build you could run. The README's
+Configuration section carries what to weigh before allowlisting a host.
+
+In a browser — `pnpm dev`, or the built preview — there are no convars, so the
+mock in `web/src/nui/mocks/registry.ts` answers with the same empty config a
+stock server does. Two env vars stand in for the convars when you want to walk
+the loop without a game running:
+
+```sh
+VITE_MICA_ADDON_HOSTS=store.example.com \
+VITE_MICA_ADDON_CATALOG=https://store.example.com/catalog.json pnpm dev
+```
+
 ## The manifest comes from the entry, not the code
 
 `installFromCatalog`/rehydration build the app's `AppManifest` out of the
@@ -49,8 +87,9 @@ warning, since there is no path left to recover a manifest from it.
    verify.
 2. Refuse a `bundleUrl` whose host isn't on the trusted-remote-app allowlist
    (`web/src/shell/state/remoteAppSecurity.ts`'s `setTrustedRemoteAppHosts`/
-   `getTrustedRemoteAppHosts`), empty by default until an operator configures
-   their own catalog host.
+   `getTrustedRemoteAppHosts`), empty until `gphone_addon_hosts` fills it — so
+   on a server that has set no convars this step refuses everything, which is
+   the intended behaviour rather than a misconfiguration.
 3. Fetch the bytes, hash them, and compare against `entry.sha256`. A mismatch
    refuses the install. A pinned hash re-verifies on every boot, not just at
    install time, so a bundle swapped out server-side after install is refused
@@ -84,10 +123,10 @@ nothing put them together, so an install could sit behind a published fix
 indefinitely (MICA-74). `web/src/shell/state/appUpdates.ts` is the join:
 
 - **`getRemoteCatalogUrl()`/`setRemoteCatalogUrl()`** (`catalog.ts`) hold the
-  operator's catalog URL, unset by default, exactly like
-  `setTrustedRemoteAppHosts`. It moved out of a `const` inside the Store app
-  because the update check runs at phone-open, before the Store has ever been
-  opened.
+  operator's catalog URL, unset until `gphone_addon_catalog` fills it, exactly
+  like `setTrustedRemoteAppHosts`. It moved out of a `const` inside the Store
+  app because the update check runs at phone-open, before the Store has ever
+  been opened.
 - **`refreshAppUpdates()`** fetches that catalog and compares. It runs from the
   Store's manifest `preload` (so the launcher badge is right before first paint)
   and again from its `onAppForeground`. A failed fetch **keeps the previous

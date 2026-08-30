@@ -329,7 +329,7 @@ itself.
 ## Configuration
 
 Everything a server owner can tune is a convar, set in `server.cfg` above
-`ensure gphone`. Most are read on the server, so plain `set` is enough. **Two
+`ensure gphone`. Most are read on the server, so plain `set` is enough. **Four
 need `setr`**, because a client reads them and a plain `set` never leaves the
 server:
 
@@ -340,6 +340,10 @@ server:
 - **`gphone_camera_quality`** — the photo is encoded in the phone's own UI,
   which cannot read a convar at all, so the client reads it and hands it over. A
   plain `set` leaves every photo at the default.
+- **`gphone_addon_hosts`** and **`gphone_addon_catalog`** — the Store's install
+  path lives entirely in the phone's UI, for the same reason. A plain `set`
+  leaves every phone with an empty allowlist, which means every install is
+  refused.
 
 The values below are the defaults as written in the code, so a server that sets
 none of them behaves exactly as shown and this block is only worth pasting if
@@ -360,6 +364,8 @@ set gphone_blabber_edit_window 900
 set gphone_notification_retention 30
 set gphone_media_quota_mb 64
 set gphone_media_retention 0
+setr gphone_addon_hosts ""
+setr gphone_addon_catalog ""
 ```
 
 | Convar                          | Type                 | Default                | Controls                                           |
@@ -378,10 +384,12 @@ set gphone_media_retention 0
 | `gphone_camera_quality`         | integer, 1-100       | `95`                   | Encode quality of a stored photo (needs `setr`)    |
 | `gphone_media_quota_mb`         | integer, MiB         | `64`                   | Storage one player's photo library may occupy      |
 | `gphone_media_retention`        | integer, days        | `0` (off)              | How long stored media is kept, if you want a limit |
+| `gphone_addon_hosts`            | hostname list        | empty (off)            | Hosts a Store add-on may be fetched from           |
+| `gphone_addon_catalog`          | https URL            | empty (off)            | The add-on catalog the Store lists                 |
 
-Eleven of the fourteen are read on every use rather than cached, so changing one
-with `set` from the live console takes effect on the next request and needs no
-restart. `gphone_blabber_edit_window` and `gphone_notification_retention` are
+Thirteen of the sixteen are read on every use rather than cached, so changing
+one with `set` from the live console takes effect on the next request and needs
+no restart. `gphone_blabber_edit_window` and `gphone_notification_retention` are
 read once at resource start, so a change to either needs a restart, for the
 reasons given under them below. `gphone_media_retention` is the third exception
 and the mildest: it is read whenever the media prune runs, which is at resource
@@ -389,7 +397,10 @@ start and again on `gphonemedia prune`, so a change takes effect on the next
 prune rather than needing a restart. `gphone_camera_quality` is read on every
 use as well, but the phone only asks for it when the Camera app comes to the
 foreground, so a change reaches a player the next time they open the camera
-rather than the next time they take a photo.
+rather than the next time they take a photo. `gphone_addon_hosts` and
+`gphone_addon_catalog` are the same shape: read whenever asked for, and asked
+for once, when a player's phone UI loads — so a change reaches them when they
+next reconnect.
 
 - **`gphone_admin_aces`** — which ace objects grant gPhone admin: the phone's
   Developer Tools, and the `gphone*` console commands. The default recognises
@@ -566,6 +577,36 @@ skips itself when that table is unreadable rather than concluding every photo is
 an orphan — which on a schema with no `players` is every time. So an ESX server
 reclaims nothing on its own, and the `characterDeleted` event is not a
 convenience there but the whole of the mechanism.
+
+The last two are the Store's, and they are the only pair here that turns
+something **on** rather than tuning something already running. Both are empty by
+default, and a server that leaves them empty behaves exactly as it always has:
+the Store lists the add-ons that ship inside gPhone, and nothing is fetched from
+anywhere.
+
+- **`gphone_addon_hosts`** — the hostnames a Store add-on's bundle, and the
+  catalog listing it, may be fetched from. Separated by commas or spaces
+  (`setr gphone_addon_hosts "store.example.com cdn.example.com"`), and a whole
+  URL is accepted and reduced to its hostname, since that is the value you are
+  most likely to have in front of you. **Read this before setting it**: a host
+  here is one you are allowing to ship JavaScript that runs inside your players'
+  phones. gPhone bounds what that code can do — an add-on runs in a sandboxed
+  iframe with no access to the shell, it may only reach the exact server actions
+  the permissions a player agreed to allow, and its bytes are checked against
+  the SHA-256 the catalog published before they run at all — but the host is
+  still choosing what code that is, on every fetch, forever. Allowlist a host
+  you would give a database password to, and nobody else. Empty means no host,
+  which is why nothing installs on a stock build.
+- **`gphone_addon_catalog`** — the `https://` URL of the JSON listing your Store
+  offers, and the update check reads the same one. Its host has to appear in
+  `gphone_addon_hosts` too: gPhone holds the catalog to the same allowlist as
+  the bundles on it, so there is one list to keep right rather than two. Setting
+  this and forgetting that is the mistake worth knowing about — the Store then
+  lists nothing at all — so the client says so in the console at resource start
+  rather than leaving you to find it. Empty means the Store shows only what
+  ships with gPhone. The entry format, the hash pinning and what the phone does
+  with a published update are in
+  [`docs/addon-catalog.md`](docs/addon-catalog.md).
 
 One convar you may still find in an old config: `gphone_auto_migrate`. An
 earlier build added missing columns and indexes at start when it was set, and
