@@ -135,7 +135,8 @@ describe('Shared NUI Payload Validation', () => {
       phone: '555-0100',
       email: undefined,
       avatar: undefined,
-      favorite: false
+      favorite: false,
+      sender: null
     });
 
     expect(parseContactShare({ lastname: 'Smith' })).toEqual({
@@ -144,8 +145,41 @@ describe('Shared NUI Payload Validation', () => {
       phone: undefined,
       email: undefined,
       avatar: undefined,
-      favorite: false
+      favorite: false,
+      sender: null
     });
+  });
+
+  /**
+   * MICA-155: `sender` is attached server-side from the connection that emitted the
+   * event, never read off the card's own claimed identity — these prove the parser carries
+   * it through rather than dropping it at this boundary the way the rest of the payload's
+   * fields never did.
+   */
+  it('parses and trims a sender, independently of the card fields it accompanies', () => {
+    expect(
+      parseContactShare({
+        firstname: 'Trevor',
+        phone: '555-0100',
+        sender: { citizenid: ' ABC123 ', name: '  Real Name  ', phone: ' 555-9999 ' }
+      })
+    ).toMatchObject({
+      firstname: 'Trevor',
+      phone: '555-0100',
+      sender: { citizenid: 'ABC123', name: 'Real Name', phone: '555-9999' }
+    });
+  });
+
+  it('resolves sender.name and sender.phone to null rather than dropping the sender entirely', () => {
+    expect(
+      parseContactShare({ sender: { citizenid: 'ABC123', name: null, phone: null } })
+    ).toMatchObject({ sender: { citizenid: 'ABC123', name: null, phone: null } });
+  });
+
+  it('treats a sender with no citizenid as no sender at all', () => {
+    expect(parseContactShare({ sender: { name: 'Nobody' } })).toMatchObject({ sender: null });
+    expect(parseContactShare({ sender: 'not-an-object' })).toMatchObject({ sender: null });
+    expect(parseContactShare({})).toMatchObject({ sender: null });
   });
 
   it('validates call status payloads', () => {

@@ -12,6 +12,32 @@ export interface Contact {
   updated_at: Date | string;
 }
 
+/**
+ * What the `gphone:client:contacts:incoming` NUI message carries (MICA-155).
+ *
+ * `firstname`/`lastname`/`phone`/`avatar` are the sender's own choice, and stay arbitrary by
+ * design — `contacts.share` on the web side offers *any* saved card, not necessarily the
+ * sender's own identity, so the server does not and must not resolve `phone` against who
+ * actually sent it. `sender` is what changed: attached server-side from the connection that
+ * emitted the event, never read off the payload, so a receiving client can tell who really
+ * sent a card apart from what the card claims to be about — the difference is what makes a
+ * card with a name and number that do not match one another worth treating with suspicion,
+ * rather than something to resolve automatically (a Messages thread rename, say).
+ */
+export interface SharedContactCard {
+  firstname: string;
+  lastname: string;
+  phone: string;
+  avatar: string;
+  sender: {
+    citizenid: string;
+    /** The sender's own resolved display name, or null when the framework has none. */
+    name: string | null;
+    /** The sender's own phone number, or null. Compare against `phone` to tell a self-share from a forwarded card. */
+    phone: string | null;
+  };
+}
+
 export interface Conversation {
   id: number;
   citizenid: string;

@@ -32,7 +32,16 @@ const FIXTURES: Record<TestToast, { action: string; data: unknown }> = {
   },
   contact: {
     action: 'shareContact',
-    data: { firstname: 'Franklin', lastname: 'Clinton', phone: '555-0177' }
+    // MICA-155: `sender` is a distinct identity from the card's own claimed name on
+    // purpose — this fixture is what dev/e2e exercises the "who actually sent this"
+    // toast copy against, so a card and a sender that agree would leave that path
+    // untested in the browser.
+    data: {
+      firstname: 'Franklin',
+      lastname: 'Clinton',
+      phone: '555-0177',
+      sender: { citizenid: 'DEV1', name: 'Lamar Davis', phone: '555-0188' }
+    }
   },
   call: {
     action: 'callStatus',

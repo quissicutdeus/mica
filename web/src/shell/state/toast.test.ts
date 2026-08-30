@@ -59,6 +59,7 @@ describe('toast store interactive notifications', () => {
     toast.showContactShare({
       name: 'John Doe',
       phone: '555-0199',
+      senderLabel: 'Alice',
       onAccept: acceptSpy,
       onDecline: declineSpy
     });
@@ -76,6 +77,29 @@ describe('toast store interactive notifications', () => {
 
     await activeToasts[0].actions?.[1].onClick();
     expect(declineSpy).toHaveBeenCalledOnce();
+  });
+
+  /**
+   * MICA-155: `contacts.share` lets someone forward any saved card, so the card's own
+   * claimed name is never provenance — a card saying "John Doe" from a player whose real
+   * identity is someone else entirely must still surface who actually sent it, in what
+   * actually renders (the title `ToastHost.svelte` paints), not merely in data the toast
+   * carries but never shows.
+   */
+  it('shows the true sender even when the card claims an unrelated name', () => {
+    toast.showContactShare({
+      name: 'John Doe',
+      phone: '555-0199',
+      senderLabel: 'Trevor Philips',
+      onAccept: () => {}
+    });
+
+    const [active] = get(toast);
+    expect(active.title).toContain('Trevor Philips');
+    expect(active.title).not.toContain('John Doe');
+    // The claimed card identity still renders too — in the message, not the title — so
+    // the player can see both and judge whether they agree.
+    expect(active.message).toBe('John Doe (555-0199)');
   });
 
   it('creates incoming call toast with standardized Accept and Decline actions', async () => {
@@ -265,7 +289,7 @@ describe('a toast carries which app it came from', () => {
     ],
     [
       'showContactShare',
-      () => toast.showContactShare({ name: 'x', phone: 'y', onAccept: () => {} }),
+      () => toast.showContactShare({ name: 'x', phone: 'y', senderLabel: 'z', onAccept: () => {} }),
       'contacts'
     ],
     ['showCall', () => toast.showCall({ number: 'x', onAccept: () => {} }), 'phone']

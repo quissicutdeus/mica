@@ -267,6 +267,15 @@ function createToastStore() {
       name: string;
       phone: string;
       avatar?: string;
+      /**
+       * MICA-155: who actually sent this card, resolved server-side from the connection
+       * that emitted it — never the card's own claimed name, which `contacts.share`
+       * deliberately lets be about someone else entirely (forwarding a friend's number).
+       * Required, not optional, so a caller cannot silently drop it the way the toast used
+       * to show only the claimed identity with nothing to check it against. The player
+       * needs this *before* Accept, not after.
+       */
+      senderLabel: string;
       onAccept: () => void | Promise<void>;
       onDecline?: () => void | Promise<void>;
       onClick?: () => void | Promise<void>;
@@ -278,8 +287,9 @@ function createToastStore() {
         source: 'app',
         type: 'contact',
         app: 'contacts',
-        title: 'Contact Shared',
+        title: `Contact shared by ${options.senderLabel}`,
         message: `${options.name}${options.phone ? ` (${options.phone})` : ''}`,
+        sender: options.senderLabel,
         avatar: options.avatar,
         duration: 10000,
         onClick: options.onClick || options.onAccept,

@@ -271,6 +271,53 @@ describe('contact share', () => {
     expect(route(message('shareContact', { firstname: 'A', phone: '1' }))).toBe(true);
     expect(route(message('receiveContactShare', { firstname: 'A', phone: '1' }))).toBe(true);
   });
+
+  /**
+   * MICA-155: `firstname`/`lastname`/`phone` on the card are the sender's own free
+   * choice — `contacts.share` forwards any saved card, not only the sender's own — so
+   * they carry no provenance by themselves. `sender` is attached server-side from the
+   * actual connection that sent the event and must be what the player sees identified as
+   * the sender, in the text the toast actually renders, before they decide whether to
+   * Accept.
+   */
+  describe('surfaces the true sender, independent of what the card claims', () => {
+    it('shows the resolved sender name even when the card claims someone else entirely', () => {
+      route(
+        message('shareContact', {
+          firstname: 'John',
+          lastname: 'Doe',
+          phone: '555-0199',
+          sender: { citizenid: 'ABC123', name: 'Trevor Philips', phone: '555-0000' }
+        })
+      );
+
+      const shown = lastToast();
+      expect(shown?.title).toContain('Trevor Philips');
+      expect(shown?.title).not.toContain('John');
+      // The claimed card identity is still visible too, just not mistaken for the sender.
+      expect(shown?.message).toBe('John Doe (555-0199)');
+    });
+
+    it('falls back to the sender citizenid when the framework has no resolved name', () => {
+      route(
+        message('shareContact', {
+          firstname: 'Franklin',
+          phone: '555-0177',
+          sender: { citizenid: 'XYZ789', name: null, phone: null }
+        })
+      );
+
+      expect(lastToast()?.title).toContain('XYZ789');
+    });
+
+    it('never renders blank or silent — an old server or mock with no sender still says so', () => {
+      route(message('shareContact', { firstname: 'Franklin', phone: '555-0177' }));
+
+      const shown = lastToast();
+      expect(shown?.title).toBeTruthy();
+      expect(shown?.title).toContain('Unknown sender');
+    });
+  });
 });
 
 /**

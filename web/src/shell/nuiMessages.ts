@@ -191,10 +191,18 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
       }
     };
 
+    // MICA-155: the card's own firstname/lastname/phone are the sender's free choice —
+    // `contacts.share` lets someone forward any saved card, not only their own — so they
+    // carry no provenance on their own. `sender` is attached server-side from the actual
+    // connection that emitted the event and is what the player can trust; it must be shown
+    // before Accept, not folded into or hidden behind the claimed name.
+    const senderLabel = share.sender?.name ?? share.sender?.citizenid ?? 'Unknown sender';
+
     toast.showContactShare({
       name: `${share.firstname ?? ''} ${share.lastname ?? ''}`.trim() || share.phone || 'Contact',
       phone: share.phone ?? '',
       avatar: share.avatar,
+      senderLabel,
       onAccept: accept,
       onDecline: () => {
         toast.show({ type: 'info', app: 'contacts', message: 'Contact share declined' });

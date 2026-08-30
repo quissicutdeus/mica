@@ -49,6 +49,15 @@ export interface ReceiveMessagePayload {
   replyToId?: number;
 }
 
+/**
+ * Who actually sent a shared contact card — see `ContactSharePayload.sender` (MICA-155).
+ */
+export interface ContactShareSender {
+  citizenid: string;
+  name: string | null;
+  phone: string | null;
+}
+
 export interface ContactSharePayload {
   firstname?: string;
   lastname?: string;
@@ -56,6 +65,15 @@ export interface ContactSharePayload {
   email?: string;
   avatar?: string;
   favorite?: boolean;
+  /**
+   * Who actually sent this card, resolved server-side from the connection that emitted it
+   * (MICA-155's `PlayerDirectory.resolve`) — never read off the card's own claimed
+   * `firstname`/`lastname`/`phone`, which stay the sender's free choice by design
+   * (`contacts.share` lets someone forward any saved card, not only their own). `null` only
+   * for a payload with no `sender` object at all — an old server build, or a mock that
+   * predates MICA-155 — never as a stand-in for "trusted".
+   */
+  sender: ContactShareSender | null;
 }
 
 export interface CallStatusPayload {
@@ -206,6 +224,21 @@ export function parseReceiveMessage(data: unknown): ReceiveMessagePayload | null
   return { conversationId, message, senderName, phone, avatar, created_at, replyToId };
 }
 
+function parseContactShareSender(val: unknown): ContactShareSender | null {
+  const obj = safeObject(val);
+  if (!obj) return null;
+  const citizenid = safeString(obj.citizenid, 100);
+  // No citizenid, no sender — this is the one field the card's identity actually rests on,
+  // so a payload that lacks it is treated the same as one with no `sender` at all rather
+  // than handed on half-built.
+  if (!citizenid) return null;
+  return {
+    citizenid,
+    name: safeString(obj.name, 100) ?? null,
+    phone: safeString(obj.phone, 50) ?? null
+  };
+}
+
 export function parseContactShare(data: unknown): ContactSharePayload | null {
   const obj = safeObject(data);
   if (!obj) return null;
@@ -215,7 +248,8 @@ export function parseContactShare(data: unknown): ContactSharePayload | null {
   const email = safeString(obj.email, 255);
   const avatar = safeString(obj.avatar, 2048);
   const favorite = obj.favorite === true;
-  return { firstname, lastname, phone, email, avatar, favorite };
+  const sender = parseContactShareSender(obj.sender);
+  return { firstname, lastname, phone, email, avatar, favorite, sender };
 }
 
 export function parseCallStatus(data: unknown): CallStatusPayload | null {
