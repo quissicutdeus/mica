@@ -169,6 +169,74 @@ something that eagerly does (the app registry is the one to watch for). If you
 guess wrong, the test fails immediately and obviously — add the docblock and
 move on.
 
+## `pnpm test:migrations` — the versioned migrations, against a real database
+
+Opt-in, and **not part of `pnpm verify`**. It needs Docker and pulls
+`mariadb:11`, which is not a cost every gate should carry; leaving it out is
+what keeps `verify` runnable anywhere. Whether it ever joins the gate is a
+separate decision.
+
+```sh
+pnpm test:migrations
+```
+
+It starts a throwaway MariaDB container on a free port, imports **both**
+`gphone.sql` and `gphone.esx.sql`, seeds the states a live server can be in,
+runs the migrations, and asserts the result. The container is removed
+afterwards, including on failure.
+
+### What it proves that `server/__tests__/` cannot
+
+The unit suites mock `Database`, so a migration test there can assert SQL text
+and call ordering and nothing else. That is blind to every question MySQL
+answers: whether a statement parses, whether an `ALTER` succeeds against the
+rows actually present, whether a constraint rejects what it should.
+
+MICA-153 is the worked example. A draft of `0001` soft-closed its duplicate
+rows instead of deleting them, and `UNIQUE (conversation_id, citizenid)` counts
+rows rather than live rows — so `ADD UNIQUE KEY` aborted with ER 1062 on the
+first database that had the duplicates the migration existed to remove. Every
+mocked assertion passed. Re-introducing that bug today fails this harness on the
+fixture named `3-CIT_VICTIM`, which is the whole argument for the file.
+
+### It drives the real module, deliberately
+
+`scripts/test-migrations.js` bundles `server/lib/migrations.ts` and
+`server/migrations/` with esbuild, installs a real `mysql2` client as
+`exports.oxmysql`, and calls the actual `runPendingMigrations`. So the ledger,
+the oldest-first ordering, the `information_schema` guards and the
+id-to-filename contract all run the way they run on a server.
+
+**Do not "simplify" it into extracting the SQL and piping it to a client.** That
+tests a transcription of the migration rather than the migration, which is how
+the ER 1062 bug survived a manual check in the first place — the person running
+it had hand-assembled the statements, so their idempotency result described
+their shell history rather than the file on disk.
+
+It also **regresses the schema before migrating**: `gphone.sql` is generated
+from the current declaration, so a fresh import already carries the unique key,
+and both guards would find their work done and skip. The harness drops the
+unique index, restores the old non-unique one and empties the ledger, so what it
+migrates is a server that has genuinely never run this.
+
+### A skip is never a pass
+
+Every path that cannot do the work exits non-zero and says
+`Nothing here is a pass`. Docker absent, daemon unreachable, container refusing
+to start, schema failing to import — all failures, none of them silent, and
+there is no branch that reports success having tested nothing.
+
+The count is checked too: the run fails if fewer assertions execute than
+expected, so a fixture that silently seeded nothing cannot print a pass. This is
+the same reasoning as `changelog.test.ts`'s "the check fires, rather than merely
+being configured".
+
+### Adding a migration to it
+
+The fixtures live in `seedFixtures` and are the regression set for `0001`. A new
+migration wants its own fixtures and its own assertions; raise `MINIMUM_CHECKS`
+when you add them, or the new checks are not actually required to run.
+
 ## Playwright's per-test timeout, and its escape hatch
 
 `web/playwright.config.ts` sets Playwright's own 30-second default
