@@ -1045,41 +1045,14 @@ const ADD_ON_ONLY_BY_DESIGN = ['bootAddOn'];
  * so it cannot grow in silence, and every entry is something an add-on should be able to
  * name and cannot.
  *
- * `placeholderAvatar` / `placeholderPhoto` / `placeholderPhotos` come from
- * `lib/placeholderImage.ts`, which is state-free and I/O-free and bundles into an add-on
- * unchanged — `index.ts` says as much in the comment above its own re-export of them. The
- * rest are pure types whose **values already cross**: an add-on can call `createCrudStore`
- * and `usePagedList` and `useKeybinds` through `addon.ts`, and then cannot name what any
- * of them returns.
- *
- * The fix is a handful of lines in `addon.ts`, and this file deliberately changes no SDK
- * source — it measures the surface, it does not move it. Emptying this list is the
- * follow-up.
+ * Closed by MICA-129: `placeholderAvatar` / `placeholderPhoto` / `placeholderPhotos`
+ * (state-free and I/O-free, `lib/placeholderImage.ts` — `index.ts` said as much above its
+ * own re-export of them) and the nineteen pure types whose **values already crossed** —
+ * `createCrudStore`, `usePagedList`, `useKeybinds` and the rest were callable through
+ * `addon.ts` with nothing to name what they returned — are now re-exported from `addon.ts`
+ * too. Empty until the next divergence nobody meant to introduce.
  */
-const KNOWN_DRIFT = [
-  'placeholderAvatar',
-  'placeholderPhoto',
-  'placeholderPhotos',
-  'type AccountSearchQuery',
-  'type AppEvent',
-  'type AppUpdate',
-  'type AppUpdateKind',
-  'type CreateListingInput',
-  'type CrudEvents',
-  'type CrudOptions',
-  'type Facets',
-  'type FollowListQuery',
-  'type FollowPage',
-  'type ListingPage',
-  'type M3Tokens',
-  'type PagedStore',
-  'type ResolvedKeybindAction',
-  'type RunningApp',
-  'type SendMoneyInput',
-  'type SendMoneyOutcome',
-  'type TimeState',
-  'type ToastMessage'
-];
+const KNOWN_DRIFT: string[] = [];
 
 /** Names in `a` and not in `b`, minus the ones declared as intended. */
 const undeclaredDivergence = (a: string[], b: string[], declared: string[]): string[] => {

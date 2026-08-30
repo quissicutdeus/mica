@@ -116,6 +116,38 @@ function shellTimeShim(): Plugin {
   };
 }
 
+// MICA-129: matches the bare specifier and any subpath (`@gphone/sdk/core/whatever`),
+// so a future file added under `sdk/core.ts` doesn't reopen the confusing-error gap this
+// plugin exists to close.
+const CORE_ENTRY_RE = /^@gphone\/sdk\/core(\/.*)?$/;
+
+/**
+ * `@gphone/sdk/core` has no `resolve.alias` entry in this config, unlike the shell's own
+ * `vite.config.ts` — deliberately: `useNuiBridge` is the raw transport and `boundary.test.ts`
+ * already refuses it to any `core: false` app at the source level. But `tsconfig.app.json`
+ * resolves the specifier fine (it maps `@gphone/sdk/*` to `src/sdk/*` for everybody), so an
+ * add-on that imports it typechecks clean and only then hits Rollup's generic "could not
+ * resolve" here — a confusing failure for something that is refused on purpose, not a build
+ * misconfiguration. This intercepts the specifier first and fails with the actual rule
+ * instead, via `this.error()` so it is still a build-time failure, not a runtime one.
+ */
+function refuseCoreEntry(): Plugin {
+  return {
+    name: 'gphone-refuse-core-entry',
+    resolveId: {
+      order: 'pre',
+      handler(id) {
+        if (!CORE_ENTRY_RE.test(id)) return null;
+        this.error(
+          `[gPhone] an add-on may not import @gphone/sdk/core — it is the raw NUI transport, ` +
+            `reserved for core: true apps (boundary.test.ts already refuses this at the ` +
+            `source level). Reach your own server actions through useService(id) instead.`
+        );
+      }
+    }
+  };
+}
+
 /** Inline the single CSS asset into every entry chunk; the frame has no <link> to load it from. */
 function inlineCss(): Plugin {
   return {
@@ -166,7 +198,7 @@ if (!process.env.ADDON_ID && ids.length > 1) {
 }
 
 export default defineConfig({
-  plugins: [addOnEntries(), facetSwap(), shellTimeShim(), svelte(), inlineCss()],
+  plugins: [addOnEntries(), facetSwap(), shellTimeShim(), refuseCoreEntry(), svelte(), inlineCss()],
   // `outDir` (`public/addons`) sits inside the shell's `publicDir` (`public/`, Vite's
   // default) so the main `vite build` can pick the bundles up through its own publicDir
   // copy — but that makes *this* config's default publicDir the same `public/` folder,

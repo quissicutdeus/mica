@@ -14,7 +14,9 @@ export * from './kit/index';
  * reaches its own server without a route table entry.
  */
 export { createCrudStore, byNewest } from '../services/createCrudStore';
+export type { CrudEvents, CrudOptions } from '../services/createCrudStore';
 export { createPagedStore } from '../services/createPagedStore';
+export type { PagedStore } from '../services/createPagedStore';
 /**
  * @public
  * The reader form of `createPagedStore`'s first argument — an app needs the type to name a
@@ -24,6 +26,34 @@ export type { PageReader } from '../services/createPagedStore';
 export { AppPermissionError } from './host/protocol';
 /** @public */
 export type { Host } from './host/protocol';
+/**
+ * MICA-129: type-only re-exports whose **values** already cross into an add-on bundle
+ * through the barrels above — `createCrudStore`, `usePagedList`, `useKeybinds` and the rest
+ * are callable from here, and until this line an add-on could call them and never name what
+ * they return. Each one is erased at build time (`seam.test.ts`'s `VALUE_IMPORT`/
+ * `VALUE_EXPORT` both exempt `export type`), so adding it here costs nothing at runtime even
+ * where the module behind it is otherwise shell/in-process-only (`Facets`, `TimeState`,
+ * `ResolvedKeybindAction`, `ToastMessage`, `AppEvent`, `RunningApp`) — nothing is actually
+ * imported, only the shape.
+ */
+export type { Facets } from './host/inProcess/facets';
+export type { TimeState } from '../shell/state/time';
+export type { ResolvedKeybindAction } from '../shell/state/keybinds';
+export type { RunningApp } from '../shell/state/navigation';
+export type { ToastMessage } from '../shell/state/toast';
+export type { AppEvent } from '../shell/state/appEvents';
+export type { M3Tokens } from '../lib/m3';
+export type { FollowPage, FollowListQuery, AccountSearchQuery } from '../services/accounts';
+export type { ListingPage, CreateListingInput } from '../services/marketplace';
+export type { SendMoneyOutcome, SendMoneyInput } from '../services/bank';
+export type { AppUpdate, AppUpdateKind } from '../shell/state/appUpdates';
+/**
+ * Deterministic placeholder imagery, for the fixtures an add-on renders in a browser.
+ *
+ * Mirrors `index.ts`'s own re-export (MICA-129 closed the gap): `lib/` is state-free and
+ * I/O-free by definition (AGENTS.md §8), so this bundles into a sandboxed add-on unchanged.
+ */
+export { placeholderAvatar, placeholderPhoto, placeholderPhotos } from '../lib/placeholderImage';
 export * from './types';
 export * from './version';
 /** @public */

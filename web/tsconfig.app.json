@@ -24,6 +24,17 @@
     // `_` to satisfy the compiler is noise rather than cleanliness.
     "noUnusedLocals": true,
     "moduleDetection": "force",
+    // `@gphone/sdk` here always resolves to `index.ts`, even for the source of a `core: false`
+    // add-on — only `vite.addon.config.ts` redirects the bare specifier to the smaller
+    // `addon.ts` for a real add-on bundle. A single `tsconfig` cannot fork that resolution
+    // per source directory (paths are project-wide), and a second project scoped to just
+    // `core: false` app directories would need its own dynamically generated `include` list
+    // mirroring `vite.addon.config.ts`'s `addOnIds()` — a second piece of config that drifts
+    // from the first exactly the way this ticket (MICA-129) was filed to close. So this
+    // divergence is accepted rather than papered over here: `sdk/publicSurface.test.ts`'s
+    // parity arm reads `index.ts` and `addon.ts` directly (source and runtime) and fails on
+    // any undeclared difference, which is what actually catches "typechecks clean, breaks at
+    // `vite build`" without a second resolution graph to keep in sync.
     "paths": {
       "@shared/*": ["../shared/*"],
       "@gphone/sdk": ["./src/sdk/index.ts"],
