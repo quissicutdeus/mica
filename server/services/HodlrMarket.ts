@@ -84,6 +84,18 @@ let restoreInFlight = false;
  * is outstanding drops the export callback, so the promise neither resolves nor rejects. A
  * *rejected* read was always fine and always retried; an abandoned one is what this bounds.
  * Two ticks is a minute of closed market against a read that normally lands in milliseconds.
+ *
+ * **Not superseded by `Database.ts`'s general MICA-160 timeout, even though both land on
+ * a minute.** That timeout makes `Database.scalar` itself reject rather than hang, which
+ * would on its own be enough to clear `restoreInFlight` through the ordinary `catch`/`finally`
+ * below — but it cannot cancel the real `oxmysql` call underneath it, only stop this module
+ * from waiting on it. If that real call later answers anyway, `restoreGeneration` below is
+ * what stops the stale answer from overwriting a market that has since been restored again by
+ * a fresh attempt; a bounded promise is not the same guarantee as an ignored one. This module's
+ * tests also mock `Database` wholesale (as every server suite does, to keep a real connection
+ * out of `pnpm test:unit:server`), so they cannot exercise the general timeout at all — the
+ * "never settles" cases below stay meaningful only because this module still owns its own
+ * abandon-and-retry.
  */
 const MAX_RESTORE_TICKS = 2;
 let restoreTicksWaited = 0;
