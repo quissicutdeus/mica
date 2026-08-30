@@ -53,6 +53,20 @@ const MAX_LENGTH_BY_TYPE: Record<ColumnType, number | null> = {
   enum: null
 };
 
+/**
+ * The range a `defineService` `int` column can actually hold.
+ *
+ * `schemaSql.ts` always emits `int` as `int(11)` — a signed 32-bit MySQL `INT`, never
+ * `UNSIGNED` and never `BIGINT` — so this pair is the one range every declared int column
+ * has, not a per-column setting to derive. Before this, `assertWritableValue` only checked
+ * that an int value was whole, so `Number.MAX_SAFE_INTEGER` written to an `int(11)` reached
+ * MySQL, which in non-strict mode **silently clamps** to `INT_MAX` — the row is written,
+ * the write reports success, and the stored value is not the one the client sent. Same
+ * failure shape `MAX_LENGTH_BY_TYPE` exists to prevent for strings, just for numbers.
+ */
+const INT_MIN = -2147483648;
+const INT_MAX = 2147483647;
+
 /** What the generic write path checks a value against, derived from one column's declaration. */
 export interface ColumnRule {
   type: ColumnType;
@@ -60,6 +74,9 @@ export interface ColumnRule {
   maxLength: number | null;
   /** Permitted values, for `enum`. Null otherwise. */
   values: readonly string[] | null;
+  /** Inclusive bounds for `int`. Null otherwise. */
+  min: number | null;
+  max: number | null;
 }
 
 /** A foreign key onto another table. `players` is implied for `citizenid`. */
@@ -720,7 +737,9 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     columnRules[name] = {
       type: def.type,
       maxLength: def.type === 'string' ? (def.length ?? 255) : MAX_LENGTH_BY_TYPE[def.type],
-      values: def.type === 'enum' ? (def.values ?? null) : null
+      values: def.type === 'enum' ? (def.values ?? null) : null,
+      min: def.type === 'int' ? INT_MIN : null,
+      max: def.type === 'int' ? INT_MAX : null
     };
   }
 

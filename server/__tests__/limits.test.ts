@@ -11,6 +11,7 @@ const { dbMock } = vi.hoisted(() => ({
 }));
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
+import { Repository } from '../lib/Repository';
 import { resolveAppSchema, buildRepository } from '../lib/defineService';
 import { allow, forgetSource, __setRateLimitClock, __resetRateLimits } from '../lib/rateLimit';
 
@@ -76,6 +77,21 @@ describe('column limits — derived from the declaration, not invented', () => {
     expect(() => repo.assertWritableValue('qty', 3)).not.toThrow();
   });
 
+  it('rejects an int value out of range for a signed int(11) column', () => {
+    // `schemaSql.ts` always emits `int` as `int(11)` — a signed 32-bit MySQL INT. Out of
+    // range, non-strict MySQL silently clamps to the boundary rather than erroring: row
+    // written, success reported, stored value not the one sent.
+    const repo = buildRepository(resolveAppSchema({ id: 'counts2', schema: { qty: 'int' } }));
+
+    expect(() => repo.assertWritableValue('qty', Number.MAX_SAFE_INTEGER)).toThrow(
+      /must be between -2147483648 and 2147483647/
+    );
+    expect(() => repo.assertWritableValue('qty', -2147483649)).toThrow(/must be between/);
+    // The boundary values themselves fit and must not be rejected.
+    expect(() => repo.assertWritableValue('qty', 2147483647)).not.toThrow();
+    expect(() => repo.assertWritableValue('qty', -2147483648)).not.toThrow();
+  });
+
   it('passes null through, so clearing a nullable column still works', () => {
     const repo = buildRepository(
       resolveAppSchema({ id: 'nullable', schema: { note: { type: 'string', length: 5 } } })
@@ -111,6 +127,24 @@ describe('column limits — derived from the declaration, not invented', () => {
     const repo = buildRepository(resolveAppSchema({ id: 'x', schema: { a: 'string' } }));
 
     expect(() => repo.assertWritableValue('citizenid', 'x'.repeat(9999))).not.toThrow();
+  });
+
+  it('never lets a hand-written repository make status client-writable, even if it tries', () => {
+    // AGENTS.md §2.9 says `id`, `citizenid`, `created_at`, `updated_at` and `status` are
+    // never client-writable, and `defineService` already refuses `status` in a declared
+    // schema — but §2.9 also allows a hand-written repository, which passes through no
+    // declaration that could vet it. NEVER_CLIENT_WRITABLE is what actually holds the line
+    // there; this repository declares `status` writable directly, the way a hand-written
+    // one could, and the backstop must still win.
+    class HandWrittenRepository extends Repository<{ status: string }> {
+      protected tableName = 'gphone_hand_written';
+      protected columns = ['id', 'citizenid', 'status', 'created_at', 'updated_at'] as const;
+      protected clientWritable = ['status'] as const;
+    }
+
+    const repo = new HandWrittenRepository();
+
+    expect(repo.writableColumns).not.toContain('status');
   });
 });
 

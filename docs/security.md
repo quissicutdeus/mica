@@ -80,9 +80,9 @@ client-only actions that never reach the server. All of them land in
 3. **Payload reduction** — every key checked against the schema's
    `clientWritable` set. `id`, `citizenid`, `created_at`, `updated_at` and
    `status` are never client-writable.
-4. **Per-column validation** — length and enum rules derived from the schema,
-   because non-strict MySQL truncates silently: row written, success reported,
-   data quietly wrong.
+4. **Per-column validation** — length, enum, and `int` range rules derived from
+   the schema, because non-strict MySQL truncates or clamps silently: row
+   written, success reported, data quietly wrong.
 5. **Ownership** — `update` and `delete` carry a `citizenid` predicate. A row id
    is never authorisation. Shared rows check membership instead.
 
@@ -356,11 +356,11 @@ by this list until someone re-weighs it.
   `allow()` (`server/lib/rateLimit.ts`) is a fixed 60-second window per
   `(source, service, action)` — it does not bound how many _distinct_ actions a
   player fires inside that window, nor whether several land concurrently before
-  any of them completes. `columnRules` bounds a single field's length and enum
-  membership against the schema — it does not bound a request's total payload
-  byte count, nor the sum across several writes. Neither gap is a defect in what
-  these limiters were built to do; naming them here is so the doc does not
-  overclaim by omission.
+  any of them completes. `columnRules` bounds a single field's length, enum
+  membership, and `int` range against the schema — it does not bound a request's
+  total payload byte count, nor the sum across several writes. Neither gap is a
+  defect in what these limiters were built to do; naming them here is so the doc
+  does not overclaim by omission.
 - **A modified client can attempt bank transfers up to the rate limit, bounded
   only by real balance and a resolvable recipient.** `Bank.ts`'s `sendMoney`
   caps a single transfer at `gphone_bank_transfer_max` (default 50,000) and

@@ -282,7 +282,10 @@ describe('Repository — reads', () => {
 
 describe('Repository — declared client policy', () => {
   it('subtracts the never-writable columns even when a repository declares them', () => {
-    expect(new OverreachingRepo().writableColumns).toEqual(['status', 'title']);
+    // `status` is in NEVER_CLIENT_WRITABLE alongside `id`/`citizenid`/the timestamps
+    // (MICA-138) — a hand-written repository that lists it in `clientWritable`, the way
+    // `OverreachingRepo` does above, still does not get it.
+    expect(new OverreachingRepo().writableColumns).toEqual(['title']);
   });
 
   it('drops declared names that are not real columns', () => {

@@ -5,11 +5,19 @@ import type { ColumnRule, ResolvedMembership } from './defineService';
  * Columns no client payload may ever write, on any table.
  *
  * `id` is the primary key, `citizenid` is the ownership anchor and is always
- * supplied by the server from the framework, and the timestamps are managed by
- * MySQL. A repository that lists any of these in `clientWritable` still will not
- * get them — this set is subtracted last.
+ * supplied by the server from the framework, `status` drives soft-delete and
+ * moderation and is moved only by named repository methods (`delete`, a
+ * moderation sweep), and the timestamps are managed by MySQL. A repository
+ * that lists any of these in `clientWritable` still will not get them — this
+ * set is subtracted last.
+ *
+ * `defineService` already refuses to let a schema declare `status` (it is an
+ * `IMPLICIT_COLUMNS` name), so a declared service never reaches this backstop
+ * for it. This entry is what actually holds the line for §2.9's other case —
+ * "hand-written otherwise" — where a repository sets `clientWritable` directly
+ * and passes through no declaration that could vet it.
  */
-const NEVER_CLIENT_WRITABLE = new Set(['id', 'citizenid', 'created_at', 'updated_at']);
+const NEVER_CLIENT_WRITABLE = new Set(['id', 'citizenid', 'status', 'created_at', 'updated_at']);
 
 /**
  * Columns no client may filter on, whatever a repository declares. Subtracted last, exactly
@@ -113,6 +121,24 @@ export abstract class Repository<T> {
 
     if (rule.type === 'int' && typeof value === 'number' && !Number.isInteger(value)) {
       throw new Error(`'${column}' must be a whole number.`);
+    }
+
+    /**
+     * `int(11)` is a signed 32-bit MySQL `INT` (`INT_MIN`/`INT_MAX` in `defineService.ts`).
+     * Out of range, non-strict MySQL **silently clamps** to the boundary rather than
+     * erroring — the write reports success and the stored value is not the one sent. The
+     * whole-number check above catches a fraction; this catches a value that is an integer
+     * but does not fit.
+     */
+    if (
+      rule.type === 'int' &&
+      typeof value === 'number' &&
+      Number.isInteger(value) &&
+      rule.min !== null &&
+      rule.max !== null &&
+      (value < rule.min || value > rule.max)
+    ) {
+      throw new Error(`'${column}' must be between ${rule.min} and ${rule.max}.`);
     }
   }
 
