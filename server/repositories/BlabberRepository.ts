@@ -263,6 +263,8 @@ export class BlabberRepository extends SchemaRepository<Blab> {
    * mouth at a time.
    */
   private async selectPublic(ids: number[]): Promise<Blab[]> {
+    if (ids.length === 0) return [];
+
     const projection = this.publicColumns.map((column) => `\`${column}\``).join(', ');
     const placeholders = ids.map(() => '?').join(', ');
 
