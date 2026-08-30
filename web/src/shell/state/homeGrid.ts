@@ -198,21 +198,42 @@ export function moveGridItem(fromPosition: number, toPosition: number): Placemen
 }
 
 /**
+ * How many currently-placed items would have nowhere to go at `capacity` cells.
+ *
+ * Pure — reads `homeGridItems` but touches nothing — so `setHomeGridSize` (MICA-121) can
+ * ask this *before* it writes the new `homeGridColumns`/`homeGridRows`, and refuse the
+ * resize outright rather than applying it and finding out afterward. Every top-level item
+ * (an app, or a folder — a folder's contents never claim a grid cell of their own) needs
+ * exactly one cell, so this is just item count against capacity.
+ */
+export function itemsBeyondCapacity(capacity: number): number {
+  return Math.max(0, get(homeGridItems).length - capacity);
+}
+
+/**
  * Called after `homeGridColumns`/`homeGridRows` shrinks. Sanitization only fixes
  * structurally invalid data (see `sanitizeHomeGridItems`); an item whose `position` is
  * merely out of range for the *new*, smaller grid is a size-dependent problem, not a
  * structural one, and belongs here — right where the resize actually happens — rather than
- * in the sanitizer. Reflows every out-of-range item into the first free in-bounds cell;
- * once the grid is entirely full, remaining out-of-range items are dropped rather than
- * left invisible and unreachable.
+ * in the sanitizer. Reflows every out-of-range item into the first free in-bounds cell.
+ *
+ * MICA-121: if the new capacity cannot hold every item, this makes **no change at all**
+ * rather than reflowing what fits and quietly dropping the rest onto the floor — a partial
+ * compaction is still data loss, just less of it, and it is exactly as silent either way.
+ * `setHomeGridSize` is expected to check `itemsBeyondCapacity` and refuse the resize before
+ * ever calling this, so the ordinary path never reaches the no-op branch below; it stays
+ * here as the backstop for any other caller, present or future, that skips that check.
+ * Returns how many items could not be placed — 0 means every item is now in bounds,
+ * whether or not anything actually moved.
  */
-export function compactGridToCurrentCapacity(): void {
+export function compactGridToCurrentCapacity(): number {
   const capacity = gridCapacity();
   const current = get(homeGridItems);
-  const inBounds = current.filter((item) => item.position < capacity);
   const outOfBounds = current.filter((item) => item.position >= capacity);
-  if (outOfBounds.length === 0) return;
+  if (outOfBounds.length === 0) return 0;
+  if (current.length > capacity) return outOfBounds.length; // would still lose items — change nothing
 
+  const inBounds = current.filter((item) => item.position < capacity);
   const occupied = new Set(inBounds.map((item) => item.position));
   const result = [...inBounds];
   for (const item of outOfBounds) {
@@ -223,11 +244,13 @@ export function compactGridToCurrentCapacity(): void {
         break;
       }
     }
-    if (free === -1) break; // grid is entirely full — nowhere left to put the rest
+    // `current.length <= capacity` above guarantees a free cell exists for every item
+    // still to place, so `free` is never -1 here.
     occupied.add(free);
     result.push({ ...item, position: free });
   }
   homeGridItems.set(result);
+  return 0;
 }
 
 export function removeFromGrid(position: number): void {

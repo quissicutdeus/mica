@@ -11,6 +11,7 @@ import {
   sanitizeHomeGridItems,
   isGridCellOccupied,
   compactGridToCurrentCapacity,
+  itemsBeyondCapacity,
   type HomeGridFolder
 } from './homeGrid';
 import { homeGridColumns, homeGridRows } from './homeGridSettings';
@@ -190,18 +191,61 @@ describe('Home grid state', () => {
       expect(mail!.position).not.toBe(0);
     });
 
-    it('drops an out-of-range item that has nowhere to land once the grid is entirely full', () => {
+    it('MICA-121: changes nothing and reports the count when the grid is entirely full', () => {
       homeGridColumns.set(3);
       homeGridRows.set(4); // capacity 12
       for (let p = 0; p < 12; p++) placeAppOnGrid(`app${p}`, p);
       homeGridItems.update((items) => [...items, { position: 50, kind: 'app', appId: 'overflow' }]);
+      const before = get(homeGridItems);
 
-      compactGridToCurrentCapacity();
+      const blocked = compactGridToCurrentCapacity();
 
-      expect(get(homeGridItems).some((i) => i.kind === 'app' && i.appId === 'overflow')).toBe(
-        false
-      );
-      expect(get(homeGridItems)).toHaveLength(12);
+      expect(blocked).toBe(1);
+      // Nothing moved and nothing was dropped — 'overflow' is still there, still at 50.
+      expect(get(homeGridItems)).toEqual(before);
+      expect(get(homeGridItems).find((i) => i.kind === 'app' && i.appId === 'overflow')).toEqual({
+        position: 50,
+        kind: 'app',
+        appId: 'overflow'
+      });
+    });
+
+    it('MICA-121: still refuses, and drops nothing, with several items beyond capacity', () => {
+      homeGridColumns.set(3);
+      homeGridRows.set(4); // capacity 12
+      for (let p = 0; p < 12; p++) placeAppOnGrid(`app${p}`, p);
+      homeGridItems.update((items) => [
+        ...items,
+        { position: 50, kind: 'app', appId: 'overflow1' },
+        { position: 51, kind: 'app', appId: 'overflow2' },
+        { position: 52, kind: 'app', appId: 'overflow3' }
+      ]);
+      const before = get(homeGridItems);
+
+      const blocked = compactGridToCurrentCapacity();
+
+      expect(blocked).toBe(3);
+      expect(get(homeGridItems)).toEqual(before);
+      expect(get(homeGridItems)).toHaveLength(15);
+    });
+
+    it('returns 0 once everything is already in bounds', () => {
+      placeAppOnGrid('notes', 3);
+      expect(compactGridToCurrentCapacity()).toBe(0);
+    });
+  });
+
+  describe('itemsBeyondCapacity', () => {
+    it('is 0 when everything already fits', () => {
+      placeAppOnGrid('notes', 3);
+      expect(itemsBeyondCapacity(20)).toBe(0);
+    });
+
+    it('counts exactly how many items a smaller capacity could not hold', () => {
+      for (let p = 0; p < 5; p++) placeAppOnGrid(`app${p}`, p);
+      expect(itemsBeyondCapacity(12)).toBe(0);
+      expect(itemsBeyondCapacity(3)).toBe(2);
+      expect(itemsBeyondCapacity(0)).toBe(5);
     });
   });
 
