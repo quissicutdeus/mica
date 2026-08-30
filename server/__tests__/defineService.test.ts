@@ -16,6 +16,8 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 vi.mock('../lib/FrameworkBridge', () => bridgeMock);
 vi.mock('../lib/AuditLogger', () => auditMock);
 
+import { CITIZENID_MAX_LENGTH, citizenIdFromIdentifier } from '@shared/framework';
+
 import {
   resolveAppSchema,
   buildRepository,
@@ -664,7 +666,7 @@ describe('toCreateTableSql', () => {
   it('reproduces the shape of the hand-written gphone_notes table', () => {
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS `gphone_notes`');
     expect(sql).toContain('`id` int(11) NOT NULL AUTO_INCREMENT');
-    expect(sql).toContain('`citizenid` varchar(50) NOT NULL');
+    expect(sql).toContain(`\`citizenid\` varchar(${CITIZENID_MAX_LENGTH}) NOT NULL`);
     expect(sql).toContain('`title` varchar(255) DEFAULT NULL');
     expect(sql).toContain('`content` text DEFAULT NULL');
     expect(sql).toContain("ENUM('active', 'archived', 'deleted', 'moderated')");
@@ -851,5 +853,44 @@ describe('resolveAppSchema — public reads and paging', () => {
     });
 
     expect(registered).toContain('gphone:server:feed_b:get');
+  });
+});
+
+describe('the citizenid column and the guard that fills it', () => {
+  /**
+   * MICA-158. `citizenid` is never client-writable, so `assertWritableValue` — the guard
+   * that length-checks every other column against its declaration — deliberately never looks
+   * at it. The only thing standing between a framework identifier and this column is
+   * `citizenIdFromIdentifier`, and it can only be right if it is bounded by the same number
+   * the column is.
+   *
+   * So this reads the width back out of generated DDL rather than asserting a literal. A
+   * future widening that changes one and not the other fails here, which is the whole point:
+   * a guard that is looser than its column silently truncates in non-strict mode, and a guard
+   * that is tighter refuses players the column could have held.
+   */
+  it('derives the column width from the same constant that bounds the identifier', () => {
+    const sql = toCreateTableSql(resolveAppSchema(notesDefinition));
+    const declared = /`citizenid` varchar\((\d+)\)/.exec(sql);
+
+    expect(declared).not.toBeNull();
+    expect(Number(declared?.[1])).toBe(CITIZENID_MAX_LENGTH);
+  });
+
+  it('accepts an identifier of exactly the column width and refuses one character more', () => {
+    // The boundary itself, because off-by-one here is the difference between "this player
+    // has no phone" and "this player's rows get swept as unowned".
+    const exact = 'x'.repeat(CITIZENID_MAX_LENGTH);
+    const over = 'x'.repeat(CITIZENID_MAX_LENGTH + 1);
+
+    expect(citizenIdFromIdentifier(exact)).toBe(exact);
+    expect(citizenIdFromIdentifier(over)).toBeNull();
+  });
+
+  it('measures the trimmed identifier, not the raw one', () => {
+    // Whitespace is stripped before the write, so a value that fits after trimming fits.
+    const padded = `  ${'x'.repeat(CITIZENID_MAX_LENGTH)}  `;
+
+    expect(citizenIdFromIdentifier(padded)).toBe('x'.repeat(CITIZENID_MAX_LENGTH));
   });
 });

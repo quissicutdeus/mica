@@ -20,6 +20,7 @@ import {
   FrameworkBridge,
   __setResourceLookup,
   citizenIdFromIdentifier,
+  CITIZENID_MAX_LENGTH,
   __resetEsxMetaWarning,
   __resetOfflineLookupWarnings
 } from '../lib/FrameworkBridge';
@@ -392,6 +393,47 @@ describe('FrameworkBridge on ESX — identity', () => {
     expect(FrameworkBridge.getPlayer(1)).toBeNull();
     expect(error).toHaveBeenCalled();
     expect(String(error.mock.calls[0][0])).toContain('es_extended');
+  });
+
+  it('refuses an identifier too long for citizenid, and says so by how much', () => {
+    /**
+     * MICA-158, reproduced against MariaDB before it was fixed. `citizenid` is never
+     * client-writable, so `Repository.assertWritableValue` — which length-checks every other
+     * column against its declaration — deliberately never sees this one. An over-long
+     * identifier therefore reached MySQL unexamined, and MySQL decided: `ERROR 1406` on every
+     * write under `STRICT_TRANS_TABLES` (MariaDB's default), or, under a permissive
+     * `sql_mode`, a silent truncation that leaves the stored id unequal to the player's
+     * `users.identifier` — at which point the orphan sweep reads their rows as unowned and
+     * deletes them.
+     *
+     * A raw `license:` identifier is 48 characters and fits with two to spare. A
+     * multicharacter addon prefixing it does not, which is the reported trigger.
+     */
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const tooLong = `char1:${LICENSE}`;
+    expect(tooLong.length).toBeGreaterThan(CITIZENID_MAX_LENGTH);
+
+    useResources(esx({ 1: xPlayer(tooLong) }));
+
+    expect(FrameworkBridge.getPlayer(1)).toBeNull();
+
+    // The numbers are the point: an operator can only act on this if the log says the
+    // identifier's length and the column's, rather than "no citizenid".
+    const logged = String(error.mock.calls[0][0]);
+    expect(logged).toContain('es_extended');
+    expect(logged).toContain(`${tooLong.length} characters`);
+    expect(logged).toContain(String(CITIZENID_MAX_LENGTH));
+  });
+
+  it('serves an identifier of exactly the column width', () => {
+    // The other side of the boundary. Refusing one character early would take the phone off
+    // a player the column could have held perfectly well.
+    const exact = 'license:' + 'a'.repeat(CITIZENID_MAX_LENGTH - 'license:'.length);
+    expect(exact).toHaveLength(CITIZENID_MAX_LENGTH);
+
+    useResources(esx({ 1: xPlayer(exact) }));
+
+    expect(FrameworkBridge.getCitizenId(1)).toBe(exact);
   });
 
   it('reads the identifier from getIdentifier() when the field is absent', () => {

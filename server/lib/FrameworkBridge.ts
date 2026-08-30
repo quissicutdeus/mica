@@ -1,4 +1,8 @@
-import { citizenIdFromIdentifier } from '@shared/framework';
+import {
+  citizenIdFromIdentifier,
+  describeIdentifierRejection,
+  CITIZENID_MAX_LENGTH
+} from '@shared/framework';
 import { Database } from './Database';
 
 export interface FrameworkPlayer {
@@ -157,10 +161,11 @@ const balanceOf = (result: unknown, call: string, src: number): number => {
  * functions and all three frameworks have to refuse an unnameable player the same way. A
  * second copy of this rule is a second place for it to stop being true.
  */
-const unidentified = (src: number, framework: string): null => {
+const unidentified = (src: number, framework: string, why?: string): null => {
   console.error(
-    `[FrameworkBridge] ${framework} returned a player for source ${src} with no ` +
-      `citizenid. Refusing to serve gPhone data rather than inventing an identity.`
+    `[FrameworkBridge] ${framework} returned a player for source ${src} with no usable ` +
+      `citizenid${why ? ` — ${why}` : ''}. Refusing to serve gPhone data rather than ` +
+      `inventing an identity.`
   );
   return null;
 };
@@ -178,7 +183,7 @@ const unidentified = (src: number, framework: string): null => {
  * to make it too and the two targets cannot import each other. Re-exported here so that the
  * one place a reader looks for how ESX identity works is the bridge that uses it.
  */
-export { citizenIdFromIdentifier };
+export { citizenIdFromIdentifier, CITIZENID_MAX_LENGTH };
 
 /**
  * The ESX shared object, or null when `es_extended` is not the framework here.
@@ -528,7 +533,7 @@ const esxFrameworkPlayer = (xPlayer: any, src: number): FrameworkPlayer | null =
   }
 
   const citizenid = citizenIdFromIdentifier(identifier);
-  if (!citizenid) return unidentified(src, 'es_extended');
+  if (!citizenid) return unidentified(src, 'es_extended', describeIdentifierRejection(identifier));
 
   const view = esxView(xPlayer, citizenid, src);
 

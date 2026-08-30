@@ -6,6 +6,7 @@ import {
   type ResolvedService,
   type ResolvedIndex
 } from './defineService';
+import { CITIZENID_MAX_LENGTH } from '@shared/framework';
 
 /**
  * Emit MySQL DDL from a resolved app schema.
@@ -182,7 +183,13 @@ export function expectedShape(resolved: ResolvedService): ExpectedShape {
     table,
     columns: [
       { name: 'id', def: { type: 'int', notNull: true }, autoIncrement: true },
-      { name: 'citizenid', def: { type: 'string', length: 50, notNull: true } },
+      // Width from `@shared/framework`, not a literal: the same constant bounds the
+      // identifier that lands here, so the column and its guard cannot drift apart
+      // (MICA-158).
+      {
+        name: 'citizenid',
+        def: { type: 'string', length: CITIZENID_MAX_LENGTH, notNull: true }
+      },
       ...fields.map(({ name, def }) => ({ name, def })),
       {
         name: 'status',

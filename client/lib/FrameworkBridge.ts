@@ -1,4 +1,4 @@
-import { citizenIdFromIdentifier } from '@shared/framework';
+import { citizenIdFromIdentifier, describeIdentifierRejection } from '@shared/framework';
 
 /**
  * The client half of the framework bridge, and it is **display only**.
@@ -40,9 +40,26 @@ const esxMoney = (accounts: unknown): Record<string, number> => {
  * `firstName`/`lastName` are top-level and a phone number is not core ESX, so it is looked for
  * under the names community resources actually use and reported as absent otherwise.
  */
+const identifierRefusals = new Set<string>();
+
 const esxPlayerData = (data: any): any => {
   const citizenid = citizenIdFromIdentifier(data?.identifier);
-  if (!citizenid) return null;
+  if (!citizenid) {
+    // Display-only, so the authoritative complaint is the server bridge's — but a blank
+    // phone is debugged from the player's F8 console, and this is the line that says why it
+    // is blank rather than broken. Once per distinct reason per session: the cause is a
+    // property of the framework's identifier format, not of the moment it was read, and
+    // `getCitizenId` is on a path the UI can poll (MICA-158).
+    const why = describeIdentifierRejection(data?.identifier);
+    if (!identifierRefusals.has(why)) {
+      identifierRefusals.add(why);
+      console.error(
+        `[FrameworkBridge] Refusing an ESX identity for display: ${why}. The server refuses ` +
+          `it too, so this phone has no data. Reported once per distinct reason.`
+      );
+    }
+    return null;
+  }
 
   const phone = [data?.phoneNumber, data?.phone_number, data?.phone].find(
     (candidate) => typeof candidate === 'string' && candidate.trim() !== ''
