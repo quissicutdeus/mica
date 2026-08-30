@@ -79,6 +79,17 @@ export function createPagedStore<T extends { id: number }>(
   let filter: Record<string, unknown> = {};
   /** Guards against a scroll handler firing twice before the first reply lands. */
   let inFlight = false;
+  /**
+   * Bumped at the start of every `load`/`loadMore` request, and captured by that request as
+   * `myGeneration`. MICA-117: `loadMore` refusing to start while `inFlight` never covered
+   * `load`, which resets the window unconditionally — so an outstanding `loadMore`, launched
+   * before that `load` and still awaiting its reply, used to land afterward and apply its
+   * now-meaningless cursor and rows on top of the fresh page one. Checking `generation` after
+   * every await, and dropping a reply whose generation has been superseded, makes the *last*
+   * request to start the only one allowed to touch state — whichever of `load`/`loadMore` that
+   * is, and however the two interleave.
+   */
+  let generation = 0;
   /** What the warnings below name the store, since `action` may be an anonymous reader. */
   const label = typeof action === 'function' ? action.name || 'reader' : action;
 
@@ -109,26 +120,46 @@ export function createPagedStore<T extends { id: number }>(
 
     load: async (next: Record<string, unknown> = {}) => {
       filter = next;
-      cursor = null;
+      const myGeneration = ++generation;
+      // MICA-118: no eager `cursor = null` here. Clearing it up front left `cursor` and
+      // `hasMore` disagreeing for as long as a failed request's `catch` ran — `hasMore` still
+      // true from the last good page, `cursor` already null, and `loadMore`'s own
+      // `cursor === null` guard then refused every retry forever with nothing logged. Leaving
+      // `cursor` alone until a reply actually succeeds means a failure leaves the window in
+      // exactly the state a caller would expect: unchanged, and retryable from where it was.
       inFlight = true;
       try {
         const page = await fetchPage(null);
+        // MICA-117: an outstanding `loadMore` (or an even newer `load`) may have already
+        // landed and moved `generation` on — this reply describes a window that no longer
+        // exists, so it is dropped rather than applied.
+        if (generation !== myGeneration) return;
         rows.set(page.rows);
         cursor = page.nextCursor;
         hasMore.set(page.nextCursor !== null);
       } catch (e) {
         console.warn(`Paged store '${label}' failed to load; keeping the last known page.`, e);
       } finally {
-        inFlight = false;
-        loaded.set(true);
+        // Only the request that is still the latest gets to say the store is idle — an
+        // earlier, now-superseded call finishing later must not clear a busy flag a newer
+        // request is still relying on.
+        if (generation === myGeneration) {
+          inFlight = false;
+          loaded.set(true);
+        }
       }
     },
 
     loadMore: async () => {
       if (inFlight || cursor === null) return false;
+      const myGeneration = ++generation;
       inFlight = true;
       try {
         const page = await fetchPage(cursor);
+        // MICA-117: a `load` that started after this `loadMore` already replaced the
+        // window by the time this reply lands — appending onto it, or overwriting its
+        // cursor, would silently corrupt state this call knows nothing about.
+        if (generation !== myGeneration) return false;
         cursor = page.nextCursor;
         hasMore.set(page.nextCursor !== null);
         if (page.rows.length === 0) return false;
@@ -140,7 +171,7 @@ export function createPagedStore<T extends { id: number }>(
         console.warn(`Paged store '${label}' failed to load more; leaving the cursor as-is.`, e);
         return false;
       } finally {
-        inFlight = false;
+        if (generation === myGeneration) inFlight = false;
       }
     },
 

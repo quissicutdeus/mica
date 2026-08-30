@@ -135,4 +135,120 @@ describe('createPagedStore', () => {
       { id: 1, label: 'a' }
     ]);
   });
+
+  /** Resolves and rejects on demand, so a test can control exactly when each reply lands. */
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (err: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  describe('MICA-117: load/loadMore interleaving', () => {
+    it('drops a loadMore that resolves after a load has already landed', async () => {
+      const store = createPagedStore<Row>('getFeed');
+      const spy = vi.spyOn(fetchNuiModule, 'fetchNui');
+
+      // Prime the store with a first page so loadMore has a cursor to start from.
+      spy.mockResolvedValueOnce({ rows: [{ id: 9, label: 'primed' }], nextCursor: 9 });
+      await store.load();
+
+      const loadMoreReply = deferred<{ rows: Row[]; nextCursor: number | null }>();
+      const loadReply = deferred<{ rows: Row[]; nextCursor: number | null }>();
+      spy.mockReturnValueOnce(loadMoreReply.promise);
+      spy.mockReturnValueOnce(loadReply.promise);
+
+      // loadMore starts first — the ordinary path in (camera reopened from gallery while a
+      // scroll-triggered loadMore is still in flight).
+      const loadMorePromise = store.loadMore();
+      // load lands while that loadMore is still awaiting its reply.
+      const loadPromise = store.load();
+      loadReply.resolve({ rows: [{ id: 1, label: 'page one' }], nextCursor: 1 });
+      await loadPromise;
+
+      // The window is exactly load's page one, with load's cursor — before the stale
+      // loadMore reply has even arrived yet.
+      expect(get(store)).toEqual([{ id: 1, label: 'page one' }]);
+      expect(get(store.hasMore)).toBe(true);
+
+      // Now the superseded loadMore finally resolves. It must not append its rows onto the
+      // window `load` just replaced, or overwrite the cursor/hasMore load just set.
+      loadMoreReply.resolve({ rows: [{ id: 8, label: 'stale' }], nextCursor: 8 });
+      expect(await loadMorePromise).toBe(false);
+
+      expect(get(store)).toEqual([{ id: 1, label: 'page one' }]);
+      expect(get(store.hasMore)).toBe(true);
+
+      // The window is still healthy — a real loadMore now continues from load's cursor (1),
+      // not the stale one (8) the dropped reply tried to install.
+      spy.mockResolvedValueOnce({ rows: [{ id: 0, label: 'page two' }], nextCursor: null });
+      expect(await store.loadMore()).toBe(true);
+      expect(spy).toHaveBeenLastCalledWith('getFeed', { cursor: 1, limit: undefined });
+      expect(get(store)).toEqual([
+        { id: 1, label: 'page one' },
+        { id: 0, label: 'page two' }
+      ]);
+    });
+
+    it('lets the later of two overlapping loads win, dropping the earlier reply', async () => {
+      const store = createPagedStore<Row>('getFeed');
+      const spy = vi.spyOn(fetchNuiModule, 'fetchNui');
+
+      const firstReply = deferred<{ rows: Row[]; nextCursor: number | null }>();
+      const secondReply = deferred<{ rows: Row[]; nextCursor: number | null }>();
+      spy.mockReturnValueOnce(firstReply.promise);
+      spy.mockReturnValueOnce(secondReply.promise);
+
+      const firstLoad = store.load({ tab: 'first' });
+      const secondLoad = store.load({ tab: 'second' });
+
+      // The later call's reply lands first — still must win, because it started last.
+      secondReply.resolve({ rows: [{ id: 2, label: 'second' }], nextCursor: 2 });
+      await secondLoad;
+      expect(get(store)).toEqual([{ id: 2, label: 'second' }]);
+
+      firstReply.resolve({ rows: [{ id: 1, label: 'first' }], nextCursor: 1 });
+      await firstLoad;
+
+      // The earlier reply landing after the later one changes nothing.
+      expect(get(store)).toEqual([{ id: 2, label: 'second' }]);
+      expect(get(store.hasMore)).toBe(true);
+      expect(get(store.loaded)).toBe(true);
+    });
+  });
+
+  describe('MICA-118: cursor/hasMore agreement after a failed first-page load', () => {
+    it('leaves cursor and hasMore agreeing, so loadMore actually retries instead of being wired to false forever', async () => {
+      const store = createPagedStore<Row>('getFeed');
+      const spy = vi.spyOn(fetchNuiModule, 'fetchNui');
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      spy.mockResolvedValueOnce({ rows: [{ id: 2, label: 'b' }], nextCursor: 2 });
+      await store.load();
+      expect(get(store.hasMore)).toBe(true);
+
+      // A refresh (server busy, fetchNui timeout, service throw) fails outright.
+      spy.mockRejectedValueOnce(new Error('refused'));
+      await store.load();
+
+      expect(warn).toHaveBeenCalled();
+      // hasMore is still true from the last good page — if cursor had been cleared to null
+      // up front and never restored, loadMore below would be wired to return false forever
+      // with nothing logged, since its `cursor === null` guard would refuse to even try.
+      expect(get(store.hasMore)).toBe(true);
+
+      spy.mockResolvedValueOnce({ rows: [{ id: 1, label: 'a' }], nextCursor: null });
+      const more = await store.loadMore();
+
+      expect(more).toBe(true);
+      expect(spy).toHaveBeenLastCalledWith('getFeed', { cursor: 2, limit: undefined });
+      expect(get(store)).toEqual([
+        { id: 2, label: 'b' },
+        { id: 1, label: 'a' }
+      ]);
+    });
+  });
 });
