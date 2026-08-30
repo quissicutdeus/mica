@@ -4,7 +4,14 @@ const IS_WATCH_MODE = process.env.IS_WATCH_MODE === '1';
 
 const TARGET_ENTRIES = [
   {
-    target: "node24",
+    // MICA-112: FXServer's server-side JS runtime defaults to Node 16, and the only
+    // opt-in alternative is Node 22 via a `node_version` directive in fxmanifest.lua
+    // (docs.fivem.net/docs/scripting-reference/resource-manifest/) — this repo's
+    // (generated) fxmanifest.lua declares no `node_version`, so it runs on the default.
+    // "node24" was never a real FXServer runtime; it just under-constrained esbuild and
+    // let `server/tsconfig.json`'s honestly-conservative `lib: ["es2021"]` (see the
+    // comment there) look like a stale mismatch instead of the correct number.
+    target: "node16",
     entryPoints: ["server/server.ts"],
     platform: "node",
     outfile: "./dist/server/server.js",
