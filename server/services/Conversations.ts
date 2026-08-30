@@ -288,12 +288,34 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     // sometimes sends instead of a citizenid.
     name: requestedName ?? targetName ?? nameOf(participant) ?? undefined
   };
-  const conversationId = await conversationRepo.createConversation(newConv);
+  let conversationId = await conversationRepo.createConversation(newConv);
 
   await conversationRepo.addParticipant(conversationId, citizenid, 'admin');
   for (const memberCitizenId of others) {
     await conversationRepo.addParticipant(conversationId, memberCitizenId, 'member');
   }
+
+  /**
+   * The `findOneToOne` above and the `create` below it are two round trips, and two people
+   * opening a chat with each other at the same moment both miss and both create. No attacker
+   * is needed; this is the ordinary case (MICA-156). Messages then split across two threads
+   * with no way to merge them, because each player may hold the id the other is not writing
+   * to.
+   *
+   * Reconciling here rather than guarding the insert, because a conversation is only *a
+   * pair* once its participant rows exist — which is after the insert. By this line both
+   * racers are visible to each other, and both resolve the same lowest id, so the loser
+   * stands down and returns the winner. It narrows the window rather than closing it; the
+   * residue needs a uniquely-indexed pair key, tracked as MICA-156's second half.
+   */
+  if (!isGroup && others.length === 1) {
+    conversationId = await conversationRepo.reconcilePairDuplicate(
+      conversationId,
+      citizenid,
+      others[0]
+    );
+  }
+
   console.log(
     `[Conversation] Created conversation ${conversationId} with ${members.size} participant(s).`
   );

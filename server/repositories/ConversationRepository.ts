@@ -187,6 +187,88 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     }));
   }
 
+  /**
+   * After creating a pair thread, settle which one survives if two were created at once.
+   *
+   * **Why this is not a `NOT EXISTS` guard on the insert, like `addParticipant`'s.** A
+   * conversation only becomes *a pair* once both participant rows exist, and those are
+   * written after the conversation row. At the moment of the `INSERT` there is nothing for a
+   * subquery to look at: the pair the guard would test for is a fact that does not exist
+   * yet. So the check has to run afterwards, when both racers' membership is visible to each
+   * other, and repair rather than prevent.
+   *
+   * **The deterministic part is what makes it safe.** Both racers ask the same question —
+   * which is the lowest active pair id for these two people — so both get the same answer no
+   * matter who asks first. Whoever is not that id stands down. Without the total order, two
+   * racers each seeing the other would each defer, and both threads would be discarded.
+   *
+   * **It narrows the window; it does not close it.** If both re-checks run before either has
+   * written its participant rows, both still see only themselves and both survive. That
+   * residue needs a uniquely-indexed pair key on the conversations table, which needs
+   * generated-column support in `defineService` and a decided story for duplicates that
+   * already exist on live servers — MICA-156's second half, tracked separately. What this
+   * removes is the wide window between the service's `findOneToOne` and its `create`, which
+   * spans two round trips and is where two people opening a chat at the same moment actually
+   * collide.
+   *
+   * **Never discards anything that holds a message.** The reconciliation is only ever run
+   * against a thread this request just created, but a message can in principle be written
+   * into it in between, and losing one to a tidy-up is a worse bug than the duplicate. The
+   * count is the condition, not an assertion.
+   *
+   * Returns the conversation the caller should use — its own id, or the older one it just
+   * stood down in favour of.
+   */
+  async reconcilePairDuplicate(
+    conversationId: number,
+    citizenid1: string,
+    citizenid2: string
+  ): Promise<number> {
+    const canonical = await Database.scalar<number | null>(
+      `
+            SELECT c.id
+            FROM gphone_messages_conversations c
+            WHERE c.is_group = 0 AND c.status = 'active'
+            AND EXISTS (
+                SELECT 1 FROM gphone_messages_participants p1
+                WHERE p1.conversation_id = c.id AND p1.citizenid = ? AND p1.left_at IS NULL
+            )
+            AND EXISTS (
+                SELECT 1 FROM gphone_messages_participants p2
+                WHERE p2.conversation_id = c.id AND p2.citizenid = ? AND p2.left_at IS NULL
+            )
+            ORDER BY c.id ASC
+            LIMIT 1
+        `,
+      [citizenid1, citizenid2]
+    );
+
+    // No answer means the pair is not readable as a pair — a participant write that has not
+    // landed, or a query that failed. Keep what was created rather than guess.
+    if (typeof canonical !== 'number' || canonical === conversationId) return conversationId;
+
+    const messages = await Database.scalar<number>(
+      `SELECT COUNT(*) FROM gphone_messages WHERE conversation_id = ? AND status <> 'deleted'`,
+      [conversationId]
+    );
+    if (Number(messages) > 0) return conversationId;
+
+    await this.discardEmptyDuplicate(conversationId);
+    return canonical;
+  }
+
+  /**
+   * Soft-delete a thread this request created and then found to be a duplicate.
+   *
+   * A named method over `updateUnscoped` rather than a service-level bypass, per AGENTS.md
+   * §2.9: the row does belong to the caller, but the predicate that matters here is "this is
+   * the duplicate we just made", which is not an ownership question and is established by
+   * `reconcilePairDuplicate` rather than by the caller.
+   */
+  private async discardEmptyDuplicate(conversationId: number): Promise<boolean> {
+    return await this.updateUnscoped(conversationId, { status: 'deleted' });
+  }
+
   async findOneToOne(citizenid1: string, citizenid2: string): Promise<Conversation | null> {
     // Find active 1-on-1 where both users are currently active participants
     const query = `

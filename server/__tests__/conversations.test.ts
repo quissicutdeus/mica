@@ -219,6 +219,95 @@ describe('conversations:create — the participant list is deduplicated and boun
  * no partial unique index for "unique among the live rows", so the invariant is enforced by
  * the statement that writes.
  */
+/**
+ * MICA-156. `create` calls `findOneToOne` and then `createConversation`, two round trips
+ * apart, and two people opening a chat with each other at the same moment both miss and both
+ * create. No attacker is required — this is the ordinary case, and the messages then split
+ * across two threads with no way to merge them.
+ *
+ * MICA-153's `conversation_participant_unique` cannot reach it: two racing creates produce
+ * two different `conversation_id` values, so the participant rows never collide.
+ *
+ * What lands here narrows the window rather than closing it. A conversation is only *a pair*
+ * once its participant rows exist, which is after the insert, so there is nothing for a
+ * `NOT EXISTS` guard on that insert to test. The reconciliation runs afterwards, when both
+ * racers can see each other, and resolves a deterministic winner.
+ */
+describe('conversations:create — a thread lost to a race stands down', () => {
+  /** `reconcilePairDuplicate` asks two scalar questions; answer them by their SQL. */
+  const scalarAnswers = ({ canonical, messages }: { canonical: unknown; messages?: number }) => {
+    dbMock.scalar.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORDER BY c.id ASC')) return canonical;
+      if (sql.includes('COUNT(*) FROM gphone_messages')) return messages ?? 0;
+      return null;
+    });
+  };
+
+  const discarded = () =>
+    dbMock.update.mock.calls
+      .filter(([sql]) => typeof sql === 'string' && sql.includes('gphone_messages_conversations'))
+      .map(([, params]) => params);
+
+  beforeEach(() => {
+    directory.byPhone.set('555-0100', { citizenid: 'CIT_B' });
+    dbMock.insert.mockResolvedValue(202);
+  });
+
+  it('returns the older thread and discards its own when it lost', async () => {
+    // Both racers resolve the same lowest id, so the one that is not it stands down. Without
+    // that total order, two racers each seeing the other would each defer and both threads
+    // would be thrown away.
+    scalarAnswers({ canonical: 101 });
+
+    const created = await call('create', { phone: '555-0100' });
+
+    expect(created.id).toBe(101);
+    expect(discarded()).toHaveLength(1);
+  });
+
+  it('keeps its own thread when it is the older one', async () => {
+    scalarAnswers({ canonical: 202 });
+
+    const created = await call('create', { phone: '555-0100' });
+
+    expect(created.id).toBe(202);
+    expect(discarded()).toHaveLength(0);
+  });
+
+  it('never discards a thread that already holds a message', async () => {
+    // The reconciliation only ever runs against a thread this request just created, but a
+    // message can land in it in between. Losing one to a tidy-up is a worse bug than the
+    // duplicate it was cleaning up, so the count is a condition and not an assertion.
+    scalarAnswers({ canonical: 101, messages: 1 });
+
+    const created = await call('create', { phone: '555-0100' });
+
+    expect(created.id).toBe(202);
+    expect(discarded()).toHaveLength(0);
+  });
+
+  it('keeps its own thread when the pair cannot be read back at all', async () => {
+    // A participant write that has not landed, or a failed query. Guessing here would throw
+    // away a perfectly good thread on no evidence.
+    scalarAnswers({ canonical: null });
+
+    const created = await call('create', { phone: '555-0100' });
+
+    expect(created.id).toBe(202);
+    expect(discarded()).toHaveLength(0);
+  });
+
+  it('does not reconcile a group thread, which has no pair to be duplicate of', async () => {
+    directory.byPhone.set('555-0200', { citizenid: 'CIT_C' });
+    scalarAnswers({ canonical: 101 });
+
+    const created = await call('create', { phone: '555-0100', participants: ['555-0200'] });
+
+    expect(created.id).toBe(202);
+    expect(discarded()).toHaveLength(0);
+  });
+});
+
 describe('addParticipant — the live row is unique by construction', () => {
   const repo = conversations.repo as unknown as {
     addParticipant: (id: number, citizenid: string, role?: 'admin' | 'member') => Promise<boolean>;
