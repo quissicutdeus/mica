@@ -125,13 +125,42 @@ const stripComments = (text: string): string =>
  */
 const GRANDFATHERED: Record<string, number> = {};
 
+/**
+ * A real reference to an app, not just a word that happens to match its id.
+ *
+ * App ids are ordinary English nouns (`notes`, `music`, `phone`) that core legitimately
+ * needs as identifiers — a local array called `notes` in `shell/state/audio.ts` tripped 7
+ * false offences here before the check was narrowed (MICA-123). What actually names an
+ * app, the way the class doc above's three real incidents did: an import path into its
+ * directory (`apps/notes/...`), or a quoted string holding exactly its id — how a deep
+ * link, a registry lookup, or a manifest id is written. A bare identifier that merely
+ * shares the spelling is neither.
+ */
 const countFor = (text: string, ids: string[]): number => {
   const stripped = stripComments(text);
   return ids.reduce((total, id) => {
-    const rx = new RegExp(`\\b${id}\\b`, 'g');
+    const rx = new RegExp(String.raw`apps/${id}/|['"\`]${id}['"\`]`, 'g');
     return total + (stripped.match(rx) ?? []).length;
   }, 0);
 };
+
+describe('countFor matches a real reference, not a bare word', () => {
+  it('ignores an identifier that merely shares an app id spelling', () => {
+    expect(countFor('const notes = [1, 2, 3];\nnotes.push(4);', ['notes'])).toBe(0);
+  });
+
+  it('catches an import path into the app directory', () => {
+    expect(countFor(`import { x } from '../apps/notes/store';`, ['notes'])).toBe(1);
+  });
+
+  it('catches a quoted app-id string', () => {
+    expect(countFor(`openApp('notes');`, ['notes'])).toBe(1);
+  });
+
+  it('does not match a quoted string that only contains the id as a substring', () => {
+    expect(countFor(`const table = 'gphone_notes_dms';`, ['notes'])).toBe(0);
+  });
+});
 
 describe('core may not name an app', () => {
   const ids = addOnIds();
