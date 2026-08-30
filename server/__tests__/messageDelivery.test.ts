@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { __resetRateLimits } from '../lib/rateLimit';
 
 /**
  * A sent message has to reach the other people in the thread.
@@ -12,20 +13,37 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * and inline reply. Nothing ever fired it.
  */
 
-const { participants, emitted, sources } = vi.hoisted(() => ({
-  participants: { rows: [] as any[] },
-  emitted: [] as { event: string; target: number; payload: any }[],
-  sources: new Map<string, number>()
-}));
+const { participants, emitted, sources, dbMock, handlers, player } = vi.hoisted(() => {
+  const captured = new Map<string, Function>();
+  const previousOnNet = (globalThis as any).onNet;
+  (globalThis as any).onNet = (event: string, handler: Function) => {
+    captured.set(event, handler);
+    return typeof previousOnNet === 'function' ? previousOnNet(event, handler) : undefined;
+  };
 
-vi.mock('../lib/Database', () => ({
-  Database: { query: vi.fn(async () => []) }
-}));
+  return {
+    participants: { rows: [] as any[] },
+    emitted: [] as { event: string; target: number; payload: any }[],
+    sources: new Map<string, number>(),
+    dbMock: { query: vi.fn(async () => []), insert: vi.fn(), update: vi.fn(), single: vi.fn() },
+    handlers: captured,
+    // The reaction handlers below go through `ServiceEndpoint`'s wrapper, which resolves
+    // the caller from `FrameworkBridge.getPlayer(source)` — unlike `deliverToParticipants`,
+    // which is called directly and never touches it. `null` keeps every existing test in
+    // this file exactly as unauthenticated as it always was; the reaction tests set it.
+    player: { current: null as { citizenid: string; source: number } | null }
+  };
+});
+
+vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 vi.mock('../lib/FrameworkBridge', () => ({
   FrameworkBridge: {
     getSourceByCitizenId: (citizenid: string) => sources.get(citizenid) ?? null,
-    getPlayer: () => null
+    getPlayer: (source: number) =>
+      player.current && player.current.source === source
+        ? { citizenid: player.current.citizenid, source, setMeta: () => {} }
+        : null
   }
 }));
 
@@ -45,8 +63,25 @@ beforeEach(async () => {
   emitted.length = 0;
   sources.clear();
   participants.rows = [];
+  dbMock.query.mockReset().mockResolvedValue([]);
+  dbMock.insert.mockReset();
+  dbMock.update.mockReset();
+  dbMock.single.mockReset();
+  player.current = null;
+  __resetRateLimits();
   ({ deliverToParticipants } = await import('../services/Messages'));
 });
+
+/** Drives a registered `gphone:server:messages:<action>` handler as `citizenid`@`source`. */
+const call = async (action: string, source: number, citizenid: string, data: unknown) => {
+  player.current = { citizenid, source };
+  (globalThis as any).source = source;
+  (globalThis as any).emitNet = vi.fn();
+  const handler = handlers.get(`gphone:server:messages:${action}`);
+  if (!handler) throw new Error(`no handler for ${action}`);
+  await handler('cb-1', data);
+  return (globalThis.emitNet as any).mock.calls.at(-1)?.[3];
+};
 
 describe('deliverToParticipants', () => {
   it('pushes to an online participant', async () => {
@@ -118,5 +153,140 @@ describe('deliverToParticipants', () => {
     await deliverToParticipants(7, 'SENDER', { name: null, phone: null }, message);
 
     expect(emitted.map((e) => e.target).toSorted()).toEqual([1, 2]);
+  });
+});
+
+/**
+ * MICA-143: reactions on Messages, storing into `gphone_messages_reactions` —
+ * `server/services/Messages.ts`'s own child table, not the shared `gphone_account_reactions`
+ * Blabber DMs use. See the docblock above `requireReactableMessage` in that file for why: that
+ * table's `account_id` is a foreign key onto `gphone_accounts`, and native Messages has no
+ * account layer to key on — it authorizes by citizenid, the same identity conversation
+ * membership already uses.
+ */
+describe('reactions on Messages (MICA-143)', () => {
+  // `call` reassigns the shared global `emitNet` per invocation (necessary so its own return
+  // value can be read back), which would otherwise leak into `deliverToParticipants` above if
+  // test order ever changed. Restored after every test in this block for that reason.
+  afterEach(() => {
+    (globalThis as any).emitNet = (event: string, target: number, payload: any) => {
+      emitted.push({ event, target, payload });
+    };
+  });
+
+  const activeMessage = { ...message, status: 'active' };
+
+  /** `messageRepo.findById` finds the message, and `isMember` confirms current membership. */
+  const asParticipant = (row: unknown = activeMessage) => {
+    dbMock.single.mockImplementation(async (sql: string) => {
+      if (sql.includes('gphone_messages_participants')) return { placeholder: 1 };
+      if (sql.includes('gphone_messages')) return row;
+      throw new Error(`unexpected single(): ${sql}`);
+    });
+  };
+
+  describe('react', () => {
+    it('inserts a reaction once the caller is confirmed as a current participant', async () => {
+      asParticipant();
+      dbMock.insert.mockResolvedValue(1);
+
+      const reply = await call('react', 5, 'OTHER', { message_id: 42, emoji: '👍' });
+
+      expect(reply).toBe(true);
+      expect(dbMock.insert).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO `gphone_messages_reactions`'),
+        [42, 'OTHER', '👍']
+      );
+    });
+
+    it('refuses a reactor who is not a participant in the thread', async () => {
+      dbMock.single.mockImplementation(async (sql: string) => {
+        if (sql.includes('gphone_messages_participants')) return undefined;
+        if (sql.includes('gphone_messages')) return activeMessage;
+        throw new Error(`unexpected single(): ${sql}`);
+      });
+
+      const reply = await call('react', 5, 'STRANGER', { message_id: 42, emoji: '👍' });
+
+      expect(reply).toEqual({ error: 'Not a participant in this conversation.' });
+      expect(dbMock.insert).not.toHaveBeenCalled();
+    });
+
+    it('refuses to react to a message that has been unsent, but still confirms membership first', async () => {
+      asParticipant({ ...activeMessage, status: 'deleted' });
+
+      const reply = await call('react', 5, 'OTHER', { message_id: 42, emoji: '👍' });
+
+      expect(reply).toEqual({ error: 'That message is no longer available.' });
+      expect(dbMock.insert).not.toHaveBeenCalled();
+    });
+
+    it('rejects anything that is not a single plausible emoji, before touching the database', async () => {
+      const reply = await call('react', 5, 'OTHER', {
+        message_id: 42,
+        emoji: 'this is not a single emoji, it is far too long a string'
+      });
+
+      expect(reply).toEqual({ error: 'That is not a single emoji.' });
+      expect(dbMock.single).not.toHaveBeenCalled();
+      expect(dbMock.insert).not.toHaveBeenCalled();
+    });
+
+    it('tapping the same emoji twice is idempotent, not an error', async () => {
+      asParticipant();
+      dbMock.insert.mockRejectedValue(new Error("Duplicate entry '42-OTHER-👍' for key 'x'"));
+
+      const reply = await call('react', 5, 'OTHER', { message_id: 42, emoji: '👍' });
+
+      expect(reply).toBe(true);
+    });
+  });
+
+  describe('unreact', () => {
+    it("deletes scoped to the caller's own citizenid, with no membership check at all", async () => {
+      dbMock.update.mockResolvedValue(true);
+
+      const reply = await call('unreact', 5, 'OTHER', { message_id: 42, emoji: '👍' });
+
+      expect(reply).toBe(true);
+      expect(dbMock.update).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM `gphone_messages_reactions`'),
+        [42, 'OTHER', '👍']
+      );
+      // Taking back your own reaction stays possible even after leaving the thread, the
+      // same "withdrawing stays possible forever" reasoning `delete` documents for the
+      // message itself — so this never even reads the message row to check membership.
+      expect(dbMock.single).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reactionsFor', () => {
+    it("reports counts and the caller's own reactions only for messages they can currently see", async () => {
+      dbMock.query.mockImplementation(async (sql: string) => {
+        if (sql.includes('gphone_messages_participants')) return [{ id: 42 }];
+        if (sql.includes('GROUP BY')) {
+          return [
+            { message_id: 42, emoji: '👍', total: 2 },
+            { message_id: 42, emoji: '🔥', total: 1 }
+          ];
+        }
+        return [{ message_id: 42, emoji: '👍' }];
+      });
+
+      const reply = await call('reactionsFor', 5, 'OTHER', { target_ids: [42] });
+
+      expect(reply).toEqual({ 42: { counts: { '👍': 2, '🔥': 1 }, mine: ['👍'] } });
+    });
+
+    it('omits a message the caller is not currently a live participant in — never trusting the id alone', async () => {
+      dbMock.query.mockImplementation(async (sql: string) => {
+        if (sql.includes('gphone_messages_participants')) return []; // not visible to this caller
+        throw new Error(`unexpected query(): ${sql}`);
+      });
+
+      const reply = await call('reactionsFor', 5, 'OUTSIDER', { target_ids: [999] });
+
+      expect(reply).toEqual({});
+    });
   });
 });

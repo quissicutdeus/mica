@@ -29,3 +29,14 @@ export type ReactableTable = string;
 
 export const isReactableTable = (table: unknown): table is ReactableTable =>
   typeof table === 'string' && reactable.has(table);
+
+/**
+ * 1–16 UTF-16 code units: a single emoji up to a multi-codepoint ZWJ/skin-tone sequence.
+ *
+ * Shared rather than duplicated per reaction path (`Accounts.ts`'s `react`/`unreact`, and
+ * `Messages.ts`'s MICA-143 equivalent for native Messages) — the same validation is the
+ * same rule regardless of which table's reactions are being written, and a second copy is
+ * a second place for the two to quietly disagree about what a "single emoji" is.
+ */
+export const isPlausibleEmoji = (value: unknown): value is string =>
+  typeof value === 'string' && value.length >= 1 && value.length <= 16;

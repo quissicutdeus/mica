@@ -114,6 +114,15 @@ export const ROUTES: readonly Route[] = [
   // removes the message from every participant's thread, not a hide-for-me.
   route('editMessage', 'messages', 'edit'),
   route('deleteMessage', 'messages', 'delete'),
+  // Reactions (MICA-143), on the shared client-side primitive (`createReactionStore`/
+  // `ReactionBar`, MICA-98) but a `messages`-owned table rather than the shared
+  // `gphone_account_reactions` — see `Messages.ts`'s docblock above `requireReactableMessage`
+  // for why. Named distinctly from `accounts`' `reactToTarget`/`unreactToTarget`/
+  // `getReactionsFor` even though the shape is identical, since `action` is the NUI name and
+  // must be globally unique across every service's routes.
+  route('reactToMessage', 'messages', 'react'),
+  route('unreactToMessage', 'messages', 'unreact'),
+  route('getMessageReactions', 'messages', 'reactionsFor'),
 
   // Notes
   // Notes is `core: false` and reaches its service through the generic route instead, so

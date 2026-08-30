@@ -481,6 +481,25 @@ const mockFollows: { follower: number; followee: number }[] = [];
 const mockBlocks: { blocker: number; blocked: number }[] = [];
 const mockReactions: { account: number; table: string; target: number; emoji: string }[] = [];
 
+/**
+ * Reactions on a Messages thread (MICA-143), keyed by citizenid rather than an account —
+ * `gphone_messages_reactions` is its own table, not `gphone_account_reactions`, and Messages
+ * has no account layer to key on instead. Separate array from `mockReactions` above for the
+ * same reason: two different tables, two different identity columns.
+ *
+ * Seeded with two other participants' reactions on one message in "Union Depository Heist"
+ * (conversation id 2, its oldest message, id 2001 — see `mockConversations` in `data.ts`), a
+ * >2-person group. The Messages e2e spec's group-conversation coverage needs a count that
+ * already includes reactions from someone other than the mock's own identity to assert
+ * against — the question MICA-143 raised was whether an aggregated count across more than
+ * one other participant reads correctly, and a fixture with zero other reactors could never
+ * exercise that.
+ */
+const mockMessageReactions: { messageId: number; citizenid: string; emoji: string }[] = [
+  { messageId: 2001, citizenid: 'group-heist-member-a', emoji: '🔥' },
+  { messageId: 2001, citizenid: 'group-heist-member-b', emoji: '🔥' }
+];
+
 const mockDms: BlabberDm[] = [
   {
     id: 1,
@@ -1490,6 +1509,40 @@ const mockRegistry: Record<string, MockHandler> = {
       return true;
     }
     return false;
+  },
+  /**
+   * Reactions on a message (MICA-143), the same three-verb shape as `reactToTarget`/
+   * `unreactToTarget`/`getReactionsFor` above but against `mockMessageReactions` — a
+   * `messages`-owned fixture keyed on citizenid, not an account. The mock's one caller
+   * identity is `'my-id'`, matching `editMessage`/`deleteMessage`'s own ownership checks
+   * above.
+   */
+  reactToMessage: ({ message_id, emoji }: { message_id: number; emoji: string }) => {
+    if (
+      !mockMessageReactions.some(
+        (r) => r.messageId === message_id && r.citizenid === 'my-id' && r.emoji === emoji
+      )
+    ) {
+      mockMessageReactions.push({ messageId: message_id, citizenid: 'my-id', emoji });
+    }
+    return true;
+  },
+  unreactToMessage: ({ message_id, emoji }: { message_id: number; emoji: string }) => {
+    const at = mockMessageReactions.findIndex(
+      (r) => r.messageId === message_id && r.citizenid === 'my-id' && r.emoji === emoji
+    );
+    if (at >= 0) mockMessageReactions.splice(at, 1);
+    return true;
+  },
+  getMessageReactions: ({ target_ids }: { target_ids: number[] }) => {
+    const out: Record<number, { counts: Record<string, number>; mine: string[] }> = {};
+    for (const id of target_ids) out[id] = { counts: {}, mine: [] };
+    for (const row of mockMessageReactions) {
+      if (!(row.messageId in out)) continue;
+      out[row.messageId].counts[row.emoji] = (out[row.messageId].counts[row.emoji] ?? 0) + 1;
+      if (row.citizenid === 'my-id') out[row.messageId].mine.push(row.emoji);
+    }
+    return out;
   },
   /**
    * `is_group` is deliberately ignored, exactly as the server ignores it (MICA-153).

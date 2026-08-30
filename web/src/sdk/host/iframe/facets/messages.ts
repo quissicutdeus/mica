@@ -12,7 +12,10 @@ export function messages(): Twin {
     unreadMessagesCount,
     sendMessage: fn('messages', [], 'sendMessage'),
     addReceivedMessage: fn('messages', [], 'addReceivedMessage'),
-    startText: fn('messages', [], 'startText')
+    startText: fn('messages', [], 'startText'),
+    messageReactions: store('messages', [], 'messageReactions', {}),
+    loadMessageReactions: fn('messages', [], 'loadMessageReactions'),
+    toggleMessageReaction: fn('messages', [], 'toggleMessageReaction')
   };
 }
 // The Twin above is what an iframe can honestly offer (MICA-26) -- Readable in place of

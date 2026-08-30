@@ -1,7 +1,7 @@
 import { defineService, SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
-import { isReactableTable } from '../lib/reactions';
+import { isReactableTable, isPlausibleEmoji } from '../lib/reactions';
 import { Account } from '@shared/types';
 import { fields, optionalString, pageBounds, requirePositiveInt } from '../lib/payload';
 import { buildDeepLink } from '@shared/deepLink';
@@ -561,10 +561,6 @@ app.registerEvent('unblock', async (source, cbId, data, citizenid) => {
   );
   return true;
 });
-
-/** 1–16 UTF-16 code units: a single emoji up to a multi-codepoint ZWJ/skin-tone sequence. */
-const isPlausibleEmoji = (value: unknown): value is string =>
-  typeof value === 'string' && value.length >= 1 && value.length <= 16;
 
 /**
  * React to a row on any table that opted in via `defineService`'s `reactable`.

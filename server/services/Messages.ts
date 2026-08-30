@@ -9,6 +9,8 @@ import { resolveOwnedAttachments } from '../lib/attachments';
 import { Message } from '@shared/types';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { AuditLogger } from '../lib/AuditLogger';
+import { Database } from '../lib/Database';
+import { isPlausibleEmoji } from '../lib/reactions';
 
 /**
  * Messages: membership on both axes.
@@ -79,6 +81,47 @@ export const messages = defineService<Message>({
         { name: 'message_id', columns: ['message_id'] },
         { name: 'citizenid', columns: ['citizenid'] },
         { name: 'photo_id', columns: ['photo_id'] }
+      ]
+    },
+    /**
+     * MICA-143: reactions on a message, using the shared client-side primitive
+     * (`createReactionStore`/`ReactionBar`, MICA-98) but **not** `gphone_account_reactions`
+     * — see the docblock above `requireReactableMessage` below for why that table does not
+     * fit here. Keyed on `citizenid` rather than an `account_id`, because a message's own
+     * membership is already decided by citizenid (`requireParticipant`), and Messages has no
+     * account layer to key on instead.
+     */
+    {
+      name: 'gphone_messages_reactions',
+      columns: {
+        message_id: {
+          type: 'int',
+          notNull: true,
+          references: { table: 'gphone_messages', column: 'id' }
+        },
+        citizenid: {
+          type: 'string',
+          length: 50,
+          notNull: true,
+          references: { table: 'players', column: 'citizenid' }
+        },
+        // Free text, matching `gphone_account_reactions.emoji`: the picker offers a fixed
+        // palette plus a "+" for any other emoji, so the column has to accept anything the
+        // palette does not enumerate.
+        emoji: { type: 'string', length: 32, notNull: true },
+        created_at: { type: 'timestamp', notNull: true, defaultNow: true }
+      },
+      indexes: [
+        // One reaction per participant per emoji per message — tapping the same emoji
+        // twice toggles it off rather than stacking a duplicate row, the same idempotency
+        // shape `gphone_account_reactions` uses.
+        {
+          name: 'message_citizen_emoji',
+          columns: ['message_id', 'citizenid', 'emoji'],
+          unique: true
+        },
+        // The batched read's own lookup: every reaction on a page of messages, one query.
+        { name: 'message_id', columns: ['message_id'] }
       ]
     }
   ],
@@ -235,6 +278,144 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
     });
   }
   return success;
+});
+
+/**
+ * MICA-143: reactions on Messages, reusing the shared client-side primitive
+ * (`createReactionStore`/`ReactionBar`, MICA-98) with server-side storage of its own —
+ * `gphone_messages_reactions` above, not `gphone_account_reactions`.
+ *
+ * **Why not the shared accounts table.** `gphone_account_reactions.account_id` is a
+ * `NOT NULL` foreign key onto `gphone_accounts`, Blabber's identity graph, where one player
+ * may hold several handles per app. Native Messages has no such layer at all — a message is
+ * sent and read by the citizenid on the session, the same identity `requireParticipant`
+ * already checks membership by. Two ways to reuse the shared table were considered and both
+ * rejected: widening `account_id` to accept a citizenid instead (a retype of a column
+ * Blabber's own reactions depend on, needing a migration and touching a table this ticket
+ * was not about) and minting an implicit per-player "account" for a `messages` app (stretching
+ * what an account *means* — a deliberately reclaimable, possibly-plural handle — onto a
+ * system that is 1:1 with the character and has no handle at all). Either would also let
+ * `gphone_messages`' numeric row ids collide with every other reactable table's ids inside
+ * one shared column if `messages` were ever declared `reactable`, which is deliberately not
+ * done: see the declaration above. A citizenid-keyed **child table** needed neither — it is
+ * additive DDL only (`gphoneschema apply` picks it up the same way it does any new table,
+ * no versioned migration), and it keys reactions on the identity Messages already uses.
+ *
+ * **Membership, not ownership — for `react`.** Any current participant may react to any
+ * message in the thread, not just its sender, so this checks `requireParticipant` rather
+ * than `requireOwnMessage`. Refused once the message is no longer `active`: reacting to a
+ * message that has been unsent or moderated has nothing left to react to.
+ *
+ * **`unreact` needs neither.** The `DELETE` is scoped to the caller's own citizenid in the
+ * `WHERE`, the same as `Accounts.ts`'s `unreact` (§2.9) — a citizenid can only ever remove
+ * its own reaction row, which is safe regardless of whether they are still a participant.
+ * Taking back your own reaction stays possible even after leaving the thread or the message
+ * being deleted later, the same "withdrawing stays possible forever" reasoning `delete`
+ * above documents for the message itself.
+ *
+ * **`reactionsFor` is scoped to conversations the caller currently belongs to**, unlike
+ * Blabber's batched read of the same shape: a Blab is a public post, so nothing there needs
+ * scoping, but a message lives in a private thread, and a batched read that trusted every id
+ * in the payload (§2.9) would hand back reaction counts, and which emoji the caller used,
+ * for a conversation it has no other way to see into.
+ */
+const requireReactableMessage = async (messageId: number, citizenid: string): Promise<Message> => {
+  const row = await messageRepo.findById(messageId);
+  if (!row) throw new Error('That message is not available.');
+  await requireParticipant(row.conversation_id, citizenid);
+  if ((row.status ?? 'active') !== 'active') {
+    throw new Error('That message is no longer available.');
+  }
+  return row;
+};
+
+app.registerEvent('react', async (source, cbId, data, citizenid) => {
+  const body = fields(data);
+  const messageId = requirePositiveInt(body.message_id, 'message id');
+  if (!isPlausibleEmoji(body.emoji)) throw new Error('That is not a single emoji.');
+
+  await requireReactableMessage(messageId, citizenid);
+
+  try {
+    await Database.insert(
+      `INSERT INTO \`gphone_messages_reactions\`
+       (\`message_id\`, \`citizenid\`, \`emoji\`) VALUES (?, ?, ?)`,
+      [messageId, citizenid, body.emoji]
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (!/duplicate/i.test(message)) throw error;
+  }
+  return true;
+});
+
+app.registerEvent('unreact', async (source, cbId, data, citizenid) => {
+  const body = fields(data);
+  const messageId = requirePositiveInt(body.message_id, 'message id');
+  if (!isPlausibleEmoji(body.emoji)) throw new Error('That is not a single emoji.');
+
+  await Database.update(
+    `DELETE FROM \`gphone_messages_reactions\`
+     WHERE \`message_id\` = ? AND \`citizenid\` = ? AND \`emoji\` = ?`,
+    [messageId, citizenid, body.emoji]
+  );
+  return true;
+});
+
+/**
+ * Grouped reaction counts for a page of messages, plus which of them the caller has already
+ * used — mirrors `accounts:reactionsFor`'s batched shape, one call per page of messages
+ * rather than one per row.
+ */
+app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
+  const body = fields(data);
+  const raw = Array.isArray(body.target_ids) ? body.target_ids : [];
+  const requested = raw
+    .map((value) => {
+      try {
+        return requirePositiveInt(value, 'message id');
+      } catch {
+        return null;
+      }
+    })
+    .filter((id): id is number => id !== null)
+    .slice(0, 60);
+
+  if (requested.length === 0) return {};
+
+  const requestedPlaceholders = requested.map(() => '?').join(', ');
+  // Only messages in a conversation the caller is a *live* participant of right now — see
+  // the docblock above for why this batched read cannot trust every id in the payload the
+  // way Blabber's equivalent, over public posts, safely can.
+  const visible = await Database.query<{ id: number }[]>(
+    `SELECT m.\`id\` FROM \`gphone_messages\` m
+     JOIN \`gphone_messages_participants\` p ON p.\`conversation_id\` = m.\`conversation_id\`
+     WHERE m.\`id\` IN (${requestedPlaceholders}) AND p.\`citizenid\` = ? AND p.\`left_at\` IS NULL`,
+    [...requested, citizenid]
+  );
+  const messageIds = visible.map((row) => row.id);
+  if (messageIds.length === 0) return {};
+
+  const placeholders = messageIds.map(() => '?').join(', ');
+  const [counts, mine] = await Promise.all([
+    Database.query<{ message_id: number; emoji: string; total: number }[]>(
+      `SELECT \`message_id\`, \`emoji\`, COUNT(*) AS total FROM \`gphone_messages_reactions\`
+       WHERE \`message_id\` IN (${placeholders})
+       GROUP BY \`message_id\`, \`emoji\``,
+      messageIds
+    ),
+    Database.query<{ message_id: number; emoji: string }[]>(
+      `SELECT \`message_id\`, \`emoji\` FROM \`gphone_messages_reactions\`
+       WHERE \`message_id\` IN (${placeholders}) AND \`citizenid\` = ?`,
+      [...messageIds, citizenid]
+    )
+  ]);
+
+  const out: Record<number, { counts: Record<string, number>; mine: string[] }> = {};
+  for (const id of messageIds) out[id] = { counts: {}, mine: [] };
+  for (const row of counts) out[row.message_id].counts[row.emoji] = Number(row.total);
+  for (const row of mine) out[row.message_id].mine.push(row.emoji);
+  return out;
 });
 
 /**

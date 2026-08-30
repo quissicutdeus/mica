@@ -29,7 +29,8 @@
   } from '@gphone/sdk';
   import type { Contact, MediaPreview } from '@shared/types';
 
-  const { conversationsStore } = useMessages();
+  const { conversationsStore, messageReactions, loadMessageReactions, toggleMessageReaction } =
+    useMessages();
   const conversationsLoaded = conversationsStore.loaded;
   const { busy, run } = useAppAction('messages');
   const { contactsStore: contacts } = useContacts();
@@ -126,6 +127,16 @@
 
   const renderedMessages = $derived(inChatSearchQuery.trim() ? filteredMessages : page.visible);
   const renderIndexOffset = $derived(inChatSearchQuery.trim() ? 0 : page.offset);
+
+  /**
+   * Reactions for whatever page of the thread is actually on screen, not the whole
+   * conversation — matching the windowing `page` already does, so opening a long thread
+   * does not fetch reaction counts for messages nobody has scrolled to yet.
+   */
+  $effect(() => {
+    const ids = renderedMessages.map((m) => m.id);
+    if (ids.length > 0) void loadMessageReactions(ids);
+  });
 
   const isMessageReadByOther = (msg: UIMessage) => {
     if (!currentConv || !currentConv.participants || currentConv.participants.length === 0)
@@ -611,6 +622,8 @@
         onscroll={page.onScroll}
         unreadCount={initialUnreadCount}
         searching={!!inChatSearchQuery.trim()}
+        reactions={$messageReactions}
+        ontogglereaction={toggleMessageReaction}
       />
 
       <MessageComposer

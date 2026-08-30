@@ -231,4 +231,104 @@ test.describe('Messages App E2E', () => {
     // touching it and still puts the tap target within a pixel of the wrong action.
     expect(send!.y + send!.height, 'Send sits above the gesture bar').toBeLessThan(home!.y);
   });
+
+  /**
+   * Reactions (MICA-143), on the shared primitive Blabber's DMs already use
+   * (`createReactionStore`/`ReactionBar`, MICA-98). Driven through the actual
+   * emoji-picker affordance rather than the store directly, because the wiring — the
+   * three-file NUI round trip plus the browser mock registry (AGENTS.md §8) — is exactly
+   * what fails silently if a layer is missing, and a unit test of `createReactionStore`
+   * already covers the toggle/optimism/rollback logic in isolation.
+   */
+  test('reacts to a message and removes the reaction by tapping the chip again', async ({
+    page
+  }) => {
+    await page
+      .locator('[role="button"]')
+      .filter({ hasText: 'Trevor' })
+      .first()
+      .click({ force: true });
+
+    const messagesContainer = page.locator('#messages-container');
+    await expect(messagesContainer).toBeVisible();
+
+    // The newest message, not the oldest: the thread opens scrolled to the bottom, so
+    // this one is already on screen. `.first()` would be the oldest of the loaded
+    // window and typically off-screen above it — Playwright scrolls an off-screen
+    // target into view before clicking, and scrolling up that far crosses the
+    // infinite-scroll-up threshold, which prepends another page of older messages and
+    // leaves the (re-evaluated, lazy) `.first()` locator pointing at a brand-new
+    // element that was never reacted to.
+    const message = messagesContainer.locator('[id^="msg-"]').last();
+    await expect(message).toBeVisible();
+
+    await message.getByRole('button', { name: 'React with 👍' }).click();
+
+    const chip = message.getByRole('button', { name: /^👍 reaction, 1,/ });
+    await expect(chip).toBeVisible();
+    await expect(chip, "the tapped chip is the player's own reaction").toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+
+    await chip.click();
+    await expect(message.getByRole('button', { name: /^👍 reaction,/ })).toHaveCount(0);
+    // The picker itself survives the round trip either way — reacting again is still on offer.
+    await expect(message.getByRole('button', { name: 'React with 👍' })).toBeVisible();
+  });
+
+  /**
+   * The group-conversation rendering question MICA-143 raised and asked to be settled:
+   * what a reaction looks like once a thread has more than two participants, unlike
+   * Blabber's DMs which are always 1:1.
+   *
+   * The decision: nothing changes. `ReactionBar` never shows *who* reacted, only a count
+   * and whether one of them is the viewer's own (see `conversations.ts`'s
+   * `messageReactions` docblock), so a count is already participant-count agnostic by
+   * construction — widening it to name reactors would be a wider server contract than
+   * this ticket's "point Messages at the existing primitive". This test is what makes
+   * that decision a checked fact rather than an assertion in a docblock: the fixture
+   * seeds two *other* participants' reactions on a message in a >2-person thread, and the
+   * count aggregates them correctly before the player has reacted at all, then again once
+   * the player's own tap is added on top.
+   */
+  test('aggregates reactions from other participants in a group conversation', async ({ page }) => {
+    await page
+      .locator('[role="button"]')
+      .filter({ hasText: 'Union Depository Heist' })
+      .first()
+      .click({ force: true });
+
+    const messagesContainer = page.locator('#messages-container');
+    await expect(messagesContainer).toBeVisible();
+
+    // The seeded message is the thread's oldest, behind three "Load older" pages — the
+    // same technique the attachment spec above uses to reach a deterministic row.
+    for (let i = 0; i < 3; i += 1) {
+      await messagesContainer
+        .locator('button', { hasText: 'Load older messages' })
+        .dispatchEvent('click');
+    }
+    await expect(
+      messagesContainer.locator('button', { hasText: 'Load older messages' })
+    ).not.toBeVisible();
+
+    const message = page.locator('#msg-2001');
+    await expect(message).toBeVisible();
+
+    const seeded = message.getByRole('button', { name: /^🔥 reaction, 2,/ });
+    await expect(seeded, 'two other participants already reacted').toBeVisible();
+    await expect(seeded).toHaveAttribute('aria-pressed', 'false');
+
+    await seeded.click();
+    const withMine = message.getByRole('button', { name: /^🔥 reaction, 3,/ });
+    await expect(withMine, "the player's own tap adds to the existing two").toBeVisible();
+    await expect(withMine).toHaveAttribute('aria-pressed', 'true');
+
+    await withMine.click();
+    await expect(
+      message.getByRole('button', { name: /^🔥 reaction, 2,/ }),
+      'taking it back leaves the other two participants alone'
+    ).toBeVisible();
+  });
 });

@@ -1,6 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
-import type { Contact, Conversation, Message } from '@shared/types';
+import type { Contact, Conversation, Message, ReactionSummary } from '@shared/types';
+import { createReactionStore } from '../sdk/kit/createReactionStore';
 
 import { citizenid, fetchCitizenId } from './account';
 import { contacts } from './contacts';
@@ -468,3 +469,36 @@ export const unreadMessagesCount = derived(
       0
     )
 );
+
+/**
+ * Reactions on a message, on the shared primitive (MICA-98/MICA-143).
+ *
+ * `gphone_messages_reactions` is its own child table under the `messages` service, keyed on
+ * citizenid rather than an account — see `Messages.ts`'s docblock above
+ * `requireReactableMessage` for why this is not `gphone_account_reactions`. Messages is core,
+ * so this reaches the server through named routes (`reactToMessage`/`unreactToMessage`/
+ * `getMessageReactions`) exactly like the rest of this file, rather than through a facet the
+ * way Blabber's `dmReactions` must for a `core: false` add-on.
+ *
+ * A group thread's count is not treated any differently from a DM's here or in `ReactionBar` —
+ * both render a bare count plus whether the caller is one of the reactors, and that is
+ * participant-count agnostic by construction (see `ReactionBar`'s own docblock: it holds no
+ * state about *who* reacted, only how many and whether "mine"). Surfacing *which* participants
+ * reacted would need the server to hand back identities rather than counts, which is a wider
+ * contract change than this ticket's "point Messages at the existing primitive" — so a group
+ * thread with three reactions today reads exactly like a DM with three would, and that is the
+ * deliberate scope of this pass rather than an oversight.
+ */
+export const messageReactions = createReactionStore({
+  load: (ids) =>
+    fetchNui<Record<number, ReactionSummary>>(
+      'getMessageReactions',
+      { target_ids: ids },
+      { defaultValue: {} }
+    ),
+  react: (messageId, emoji) => fetchNui('reactToMessage', { message_id: messageId, emoji }),
+  unreact: (messageId, emoji) => fetchNui('unreactToMessage', { message_id: messageId, emoji })
+});
+
+export const toggleMessageReaction = (messageId: number, emoji: string): Promise<void> =>
+  messageReactions.toggle(messageId, emoji);

@@ -474,6 +474,21 @@ CREATE TABLE IF NOT EXISTS `gphone_messages_attachments` (
         REFERENCES `gphone_media` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `gphone_messages_reactions` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `message_id` int(11) NOT NULL,
+    `citizenid` varchar(50) NOT NULL,
+    `emoji` varchar(32) NOT NULL,
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `message_citizen_emoji` (`message_id`, `citizenid`, `emoji`),
+    KEY `message_id` (`message_id`),
+    CONSTRAINT `fk_gphone_messages_reactions_message_id` FOREIGN KEY (`message_id`)
+        REFERENCES `gphone_messages` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_gphone_messages_reactions_citizenid` FOREIGN KEY (`citizenid`)
+        REFERENCES `players` (`citizenid`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 -- Generated from the 'notes' defineService declaration.
 -- Do not edit by hand; change the declaration and regenerate.
 

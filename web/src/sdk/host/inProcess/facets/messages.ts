@@ -1,5 +1,10 @@
 import { registerFacet } from '../../current';
-import { conversationsStore, unreadMessagesCount } from '../../../../services/conversations';
+import {
+  conversationsStore,
+  unreadMessagesCount,
+  messageReactions,
+  toggleMessageReaction
+} from '../../../../services/conversations';
 import { openApp } from '../../../../shell/state/navigation';
 export { unreadMessagesCount };
 
@@ -18,7 +23,12 @@ export function messages() {
      * Open Messages and start (or resume) a conversation with a bare phone number —
      * no saved Contact required. See MICA-15.
      */
-    startText: (phone: string) => openApp('messages', { phone, startNew: true })
+    startText: (phone: string) => openApp('messages', { phone, startNew: true }),
+    /** Reactions on a message (MICA-143), on the shared primitive — see `conversations.ts`. */
+    messageReactions,
+    loadMessageReactions: (ids: number[]) => messageReactions.load(ids),
+    toggleMessageReaction: (messageId: number, emoji: string) =>
+      toggleMessageReaction(messageId, emoji)
   };
 }
 

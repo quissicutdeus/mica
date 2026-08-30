@@ -9,13 +9,14 @@
     formatTime,
     Avatar,
     ConfirmDialog,
+    ReactionBar,
     ReportButton,
     ReportDialog,
     EditIcon,
     ReplyIcon,
     TrashIcon
   } from '@gphone/sdk';
-  import type { Contact, MediaPreview } from '@shared/types';
+  import type { Contact, MediaPreview, ReactionSummary } from '@shared/types';
 
   const { openApp } = useNavigation();
   const { contactsStore: contacts } = useContacts();
@@ -33,6 +34,9 @@
     onedit?: (msg: UIMessage) => void;
     /** Take the message back, for everyone. Own messages only, and confirmed first. */
     ondelete?: (msg: UIMessage) => Promise<void> | void;
+    /** This message's reaction counts, if `messageReactions` has answered for it yet. */
+    reactionSummary?: ReactionSummary | null;
+    ontogglereaction?: (emoji: string) => void;
   }
 
   let {
@@ -43,7 +47,9 @@
     onreply,
     onscrollto,
     onedit,
-    ondelete
+    ondelete,
+    reactionSummary = null,
+    ontogglereaction
   }: Props = $props();
 
   let showActions = $state(false);
@@ -320,4 +326,14 @@
       {/if}
     {/if}
   </div>
+
+  <!-- Aligned by the outer column's own `items-end`/`items-start`, exactly like the
+       timestamp row above — no group-vs-DM branching needed here: a summary is a bare
+       count plus "mine", which reads the same regardless of how many participants the
+       thread has (see `conversations.ts`'s docblock on `messageReactions`). -->
+  <ReactionBar
+    summary={reactionSummary}
+    ontoggle={(emoji: string) => ontogglereaction?.(emoji)}
+    class="px-1"
+  />
 </div>

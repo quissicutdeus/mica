@@ -34,6 +34,16 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**`gphone_messages_reactions` is a new table — run `gphoneschema apply` from
+your server console after updating, or import the regenerated `gphone.sql` /
+`gphone.esx.sql` on a fresh install.** Native Messages (SMS-style threads) can
+now be reacted to with an emoji, the same shared primitive Blabber's DMs already
+used, but stored separately rather than in Blabber's own
+`gphone_account_reactions`: that table's reactor is an `account_id`, which
+Messages has no equivalent of, so this one keys a reaction on `message_id`,
+`citizenid`, `emoji` and `created_at` instead, alongside the usual `id`. No
+existing table changed shape.
+
 **If you run a third-party add-on that reads or changes the phone's theme,
 wallpaper, display size, home grid, clock format, keyboard shortcuts, hardware
 (battery/signal/bluetooth/volume), notification settings, or app registry, check

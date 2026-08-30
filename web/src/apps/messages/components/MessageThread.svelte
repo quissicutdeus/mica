@@ -1,5 +1,6 @@
 <script lang="ts">
   import { EmptyState, type UIConversation, type UIMessage } from '@gphone/sdk';
+  import type { ReactionSummary } from '@shared/types';
   import MessageBubble from './MessageBubble.svelte';
 
   /**
@@ -25,7 +26,9 @@
     onedit,
     ondelete,
     onloadmore,
-    onscroll
+    onscroll,
+    reactions,
+    ontogglereaction
   }: {
     messages: UIMessage[];
     offset: number;
@@ -47,6 +50,9 @@
     ondelete?: (msg: UIMessage) => Promise<void> | void;
     onloadmore: () => void;
     onscroll: (event: Event) => void;
+    /** Reaction summaries keyed by message id — `$messageReactions` handed straight through. */
+    reactions: Record<number, ReactionSummary>;
+    ontogglereaction: (messageId: number, emoji: string) => void;
   } = $props();
 </script>
 
@@ -96,6 +102,8 @@
         {onscrollto}
         {onedit}
         {ondelete}
+        reactionSummary={reactions[msg.id]}
+        ontogglereaction={(emoji: string) => ontogglereaction(msg.id, emoji)}
       />
     {/if}
   {/each}
