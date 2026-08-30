@@ -196,20 +196,32 @@ describe('conversations:create — the participant list is deduplicated and boun
     expect(participantsAdded()).toEqual(['CIT_A', 'CIT_B']);
   });
 
-  it('refuses members beyond the cap, and stops looking numbers up at it', async () => {
+  it('refuses a request over the cap, with a player-readable message, before resolving any of it', async () => {
     const phones = Array.from({ length: 100 }, (_, i) => `555-${String(i).padStart(4, '0')}`);
+    for (const [index, phone] of phones.entries()) {
+      directory.byPhone.set(phone, { citizenid: `CIT_${index}` });
+    }
+
+    const result = await call('create', { participants: phones });
+
+    expect(result).toEqual({ error: 'A conversation can hold at most 32 people.' });
+    // Refused outright rather than silently truncated: nothing was written, and the cap
+    // bounds the work, not just the result — an oversized list never buys 100 directory
+    // queries or 32 wasted ones.
+    expect(participantsAdded()).toHaveLength(0);
+    expect(directory.lookups).toHaveLength(0);
+  });
+
+  it('allows a request that lands exactly on the cap', async () => {
+    const phones = Array.from({ length: 31 }, (_, i) => `555-${String(i).padStart(4, '0')}`);
     for (const [index, phone] of phones.entries()) {
       directory.byPhone.set(phone, { citizenid: `CIT_${index}` });
     }
 
     await call('create', { participants: phones });
 
-    // 32 members counting the creator, so 31 of the 100 requested people get in.
+    // 31 requested plus the creator is exactly 32 — the cap, not one over it.
     expect(participantsAdded()).toHaveLength(32);
-    expect(participantsAdded()[0]).toBe('CIT_A');
-    // And the cap bounds the work, not just the result: the remaining numbers are never
-    // resolved, so an oversized list cannot buy 100 directory queries either.
-    expect(directory.lookups.length).toBeLessThanOrEqual(32);
   });
 });
 

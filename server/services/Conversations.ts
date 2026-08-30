@@ -179,6 +179,10 @@ const hydrateParticipants = async (conversationId: number) => {
  * permanent amplifier attached to a thread. A hard constant rather than a convar, the
  * same call `proximity.MAX_NEARBY` makes: a server owner's dial belongs on things they
  * benefit from tuning, not on the ceiling for work a player can ask the server to do.
+ *
+ * A request over the cap is refused outright (see the check below `members` is built),
+ * not silently truncated — a player who asked for 40 people and got 32 with no signal
+ * which 8 were dropped would have no way to tell their group is incomplete.
  */
 const MAX_CONVERSATION_MEMBERS = 32;
 
@@ -236,20 +240,35 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
    * phone strings would not be enough on its own — two spellings of one number resolve
    * to the same citizenid — so the collapse happens on the resolved id.
    *
-   * The requested list is deduplicated and truncated *before* any of it is resolved, so
-   * a payload naming one number 500 times costs one lookup rather than 500.
+   * The requested list is deduplicated *before* any of it is resolved, so a payload
+   * naming one number 500 times costs one lookup rather than 500.
    */
   const requestedPhones = Array.isArray(body.participants)
     ? body.participants.filter((p): p is string => typeof p === 'string')
     : [];
+  const uniquePhones = [...new Set(requestedPhones)];
 
   const members = new Set<string>([citizenid]);
   if (targetCitizenId) members.add(targetCitizenId);
 
+  /**
+   * Refuse an oversized request outright, before any `resolveByPhone` call is spent on it.
+   *
+   * A silent truncation here would let a player ask for 100 people and quietly get 32 with
+   * no indication which ones were dropped — worse than telling them up front. Checked
+   * against the deduplicated phone count rather than the eventual resolved-citizenid count,
+   * because that count is only known after doing the resolution work this check exists to
+   * avoid; the one case that costs is several spellings of the same number in a request
+   * that is already at the cap, which is not worth paying per-entry lookups to get exactly
+   * right.
+   */
+  if (uniquePhones.length + members.size > MAX_CONVERSATION_MEMBERS) {
+    throw new Error(`A conversation can hold at most ${MAX_CONVERSATION_MEMBERS} people.`);
+  }
+
   // Group members: each entry is a phone number, resolved the same way the 1-on-1 target
   // is — never a raw citizenid, for the same reason `targetCitizenId` above isn't one.
-  for (const memberPhone of [...new Set(requestedPhones)].slice(0, MAX_CONVERSATION_MEMBERS)) {
-    if (members.size >= MAX_CONVERSATION_MEMBERS) break;
+  for (const memberPhone of uniquePhones) {
     const target = await resolveByPhone(memberPhone);
     if (!target) continue; // unknown number
     members.add(target.citizenid);
