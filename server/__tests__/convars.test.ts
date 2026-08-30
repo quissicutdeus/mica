@@ -29,6 +29,29 @@ const walk = (dir: string): string[] => {
 };
 
 /**
+ * Resolve a `const IDENTIFIER = 'value'` declaration for a `GetConvar*` argument that is
+ * a bare identifier rather than a string literal.
+ *
+ * Exported from the test module (not `server/lib`) purely so a unit test below can prove
+ * this actually discriminates a real declaration from an unrelated one, rather than only
+ * being exercised indirectly by the real repo scan.
+ *
+ * `arg` has already been trimmed to something that looks like an identifier by the caller;
+ * `[^\w]` (a negated *word*-character class) strips anything that survived that isn't
+ * `[A-Za-z0-9_]`, so the built regex's `\b<ident>\s*=` anchors on the identifier itself. A
+ * class written `[^\\w]` — "not a backslash and not a literal w" — strips everything else
+ * instead, including every letter but `w`, and collapses almost any identifier to `''`; the
+ * resulting `\b\s*=\s*['"\`]...` then matches the *first* quoted assignment anywhere in the
+ * file, which is a false pass, not a failure to resolve.
+ */
+const resolveConstConvarName = (arg: string, text: string): string | null => {
+  const identifier = arg.replace(/[^\w]/g, '');
+  if (!identifier) return null;
+  const declared = text.match(new RegExp(`\\b${identifier}\\s*=\\s*['"\`]([^'"\`]+)['"\`]`));
+  return declared ? declared[1] : null;
+};
+
+/**
  * The convar name at each `GetConvar*` call site.
  *
  * The first argument is a literal at some call sites and a `const` at others, so an
@@ -47,10 +70,8 @@ const readConvarNames = (): { name: string; file: string }[] => {
         found.push({ name: literal[1], file: where });
         continue;
       }
-      const declared = text.match(
-        new RegExp(`\\b${arg.replace(/[^\\w]/g, '')}\\s*=\\s*['"\`]([^'"\`]+)['"\`]`)
-      );
-      if (declared) found.push({ name: declared[1], file: where });
+      const resolved = resolveConstConvarName(arg, text);
+      if (resolved !== null) found.push({ name: resolved, file: where });
       else found.push({ name: `UNRESOLVED:${arg} (${where})`, file: where });
     }
   }
@@ -83,5 +104,43 @@ describe('convar documentation (MICA-73)', () => {
       .map((name) => `${name} (read in ${convars.find((c) => c.name === name)?.file})`);
 
     expect(undocumented, `add it to ${DOCS.join(', ')} — see MICA-73`).toEqual([]);
+  });
+});
+
+describe('resolveConstConvarName (MICA-124)', () => {
+  // The regression this guards: a scanner that resolves an identifier to '' and then
+  // matches the file's first quoted assignment, regardless of which const it actually
+  // names, passes on a decoy and never proves it read the real declaration.
+
+  it('finds the declaration the call site actually names, not an earlier unrelated one', () => {
+    const text = `
+      const APP = 'blabber';
+      const EDIT_WINDOW_CONVAR = 'gphone_blabber_edit_window';
+      GetConvar(EDIT_WINDOW_CONVAR, '900');
+    `;
+
+    expect(resolveConstConvarName('EDIT_WINDOW_CONVAR', text)).toBe('gphone_blabber_edit_window');
+  });
+
+  it('does NOT fall back to an earlier decoy assignment when the real one is later', () => {
+    // Same fixture as above, but this proves the negative: asking for the wrong name must
+    // fail this assertion, so the test can actually catch the `[^\\w]` regression rather
+    // than trivially passing regardless of which string comes out.
+    const text = `
+      const APP = 'blabber';
+      const EDIT_WINDOW_CONVAR = 'gphone_blabber_edit_window';
+      GetConvar(EDIT_WINDOW_CONVAR, '900');
+    `;
+
+    expect(resolveConstConvarName('EDIT_WINDOW_CONVAR', text)).not.toBe('blabber');
+  });
+
+  it('returns null — not a coincidental match — when no matching declaration exists', () => {
+    const text = `
+      const SOMETHING_ELSE = 'gphone_unrelated';
+      GetConvar(TYPOED_CONVAR, '30');
+    `;
+
+    expect(resolveConstConvarName('TYPOED_CONVAR', text)).toBeNull();
   });
 });
