@@ -57,12 +57,12 @@ export function parseRequestEvent(event: string): { service: string; action: str
  * the event the two segments derive, so an app reaches its own service without core
  * naming it.
  *
- * **It is not a widening of what NUI can reach.** The server only listens on events a
- * `registerEvent` created, so the reachable set is exactly the set of registered actions
- * — which is what the route table enumerates anyway. And it changes nothing about
- * authority: `ServiceEndpoint` still authenticates the caller, rate-limits per
- * `(source, service, action)`, and reduces the payload to the declared allowlist (§2.9).
- * A NUI request was never proof of intent and still is not.
+ * **It does widen what CEF XSS can reach**, and an earlier version of this comment claimed
+ * otherwise — see "Correction to the record" in `docs/security.md`. `shared/routes.ts` is a
+ * strict subset of registered actions; this callback reaches the whole set, routed or not.
+ * It changes nothing about authority, though: `ServiceEndpoint` still authenticates the
+ * caller, rate-limits per `(source, service, action)`, and reduces the payload to the
+ * declared allowlist (§2.9). A NUI request was never proof of intent and still is not.
  *
  * The named routes stay. They are checked by `routes.test.ts` against the `fetchNui`
  * calls, the server registrations and the browser mock, and that check is worth keeping

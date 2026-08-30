@@ -9,6 +9,10 @@ checklist tells you what was done, and what matters here is what is _assumed_,
 because an assumption nobody wrote down is the one that gets broken by a
 well-meaning change.
 
+**Last verified against `0922a9b` (2026-08-29).** Entry-point counts, the
+accepted-risks register, and the add-on-trust claims below are only as fresh as
+that commit — a service or app added since has not been weighed against them.
+
 ---
 
 ## The one rule
@@ -34,8 +38,12 @@ cross-references it against the `fetchNui` calls, the server registrations and
 the browser mock. Its job is catching a **missing layer** — the failure that
 silently does nothing in game.
 
-It bounds what CEF XSS can reach, because XSS is confined to registered
-callbacks. It does **not** bound a modified client, which never touches NUI. So:
+It bounds **neither**. A modified client never touches NUI at all, so the route
+table was never in its path. And CEF XSS is not actually confined to the route
+table either: the generic `svc` callback (`shared/rpc.ts`,
+`client/services/Relay.ts`) relays any `{service, action}` pair matching a name
+pattern, not just the entries `shared/routes.ts` lists, to
+`gphone:server:<service>:<action>`. So:
 
 > **A registered net event is reachable. "The UI does not call it" is not a
 > control.**
@@ -335,11 +343,38 @@ it afterwards.
 
 ## Accepted risks
 
+Accepted against the feature set at `0922a9b` (2026-08-29) — a risk below was
+weighed against what existed then, and a service added afterward is not covered
+by this list until someone re-weighs it.
+
 - **Owner-scoped actions reachable beyond what the UI offers.** A modified
   client can invoke any registered action against its own rows. Closing that
   entirely would mean an allowlist per action on top of the access axes that
   already express it. The mitigation is to register only what the app uses,
   which is now tested.
+- **The rate limiter and `columnRules` bound less than a reader might assume.**
+  `allow()` (`server/lib/rateLimit.ts`) is a fixed 60-second window per
+  `(source, service, action)` — it does not bound how many _distinct_ actions a
+  player fires inside that window, nor whether several land concurrently before
+  any of them completes. `columnRules` bounds a single field's length and enum
+  membership against the schema — it does not bound a request's total payload
+  byte count, nor the sum across several writes. Neither gap is a defect in what
+  these limiters were built to do; naming them here is so the doc does not
+  overclaim by omission.
+- **A modified client can attempt bank transfers up to the rate limit, bounded
+  only by real balance and a resolvable recipient.** `Bank.ts`'s `sendMoney`
+  caps a single transfer at `gphone_bank_transfer_max` (default 50,000) and
+  resolves the recipient from a phone number server-side, never a client-
+  supplied citizenid — `transfer()` then re-verifies the sender's real balance
+  against the framework's own money API. None of that is in question; what is
+  unweighed is the _rate_: nothing caps the number of transfers a source can
+  attempt per minute below the generic `(source, 'bank', 'sendMoney')` window,
+  so a modified client's real ceiling is `transferMax() ×` however many
+  `sendMoney` calls the 60-second window admits, not one transfer per window.
+  The same applies to `Hodlr`/`HodlrMarket` trades, which share the convar and
+  reasoning. No privilege escalation results — a transfer still needs a real
+  balance and a real recipient — but the throughput bound is worth stating
+  rather than left implicit.
 - **`permissions` on a manifest refuse in-process; a `core: true` app is still
   not sandboxed from the shell** (§7). An undeclared hook throws
   `AppPermissionError` at component init; store-scope calls resolve by explicit
@@ -357,6 +392,19 @@ it afterwards.
   context; the shell hash-verifies the bundle text it was handed before booting
   it. §2.9 is what stands behind server-side actions either way — the server
   does not care which app is asking.
+- **Where the bytes are fetched from is checked, and checked again on update.**
+  `isTrustedRemoteUrl` (`web/src/shell/state/remoteAppSecurity.ts`) requires
+  HTTPS plus a hostname on an operator-configured allowlist, empty by default —
+  nothing installs from anywhere until an operator opts a catalog host in. It
+  exempts `data:` URLs, because `installFromCatalog` only ever builds one
+  internally from bytes it has already hash-verified; that exemption is not safe
+  to hand untrusted input directly, so the caller is responsible for rejecting a
+  `data:` URL first — `nuiMessages.ts`'s `installApp` handler does exactly that,
+  refusing a `data:` `bundleUrl` at the NUI boundary before `isTrustedRemoteUrl`
+  ever sees it. An update is not exempt from any of this either: `appUpdates.ts`
+  re-fetches the bundle and re-verifies it against the catalog entry's **fresh**
+  `sha256`, the same check a first install runs, rather than trusting a
+  previously-verified hash to still apply.
 - **An add-on's outbound network is a declared per-app allowlist, not "any host"
   (MICA-24).** Before this, the sandboxed frame had no Content-Security-Policy
   at all: an opaque origin with `allow-scripts` can still `fetch()` any URL, so
