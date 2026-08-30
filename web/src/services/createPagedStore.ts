@@ -175,7 +175,16 @@ export function createPagedStore<T extends { id: number }>(
       }
     },
 
-    prepend: (row: T) => rows.update((current) => [row, ...current]),
+    // A `load`/`loadMore` racing the create this optimistically follows may already have
+    // pulled `row` in from the server — unshifting it again would show it twice. Replace
+    // in place (keeping the server's sorted position) if it's already there, unshift only
+    // if it isn't (MICA-119).
+    prepend: (row: T) =>
+      rows.update((current) =>
+        current.some((r) => r.id === row.id)
+          ? current.map((r) => (r.id === row.id ? row : r))
+          : [row, ...current]
+      ),
     replace: (row: T) =>
       rows.update((current) =>
         current.map((existing) => (existing.id === row.id ? row : existing))

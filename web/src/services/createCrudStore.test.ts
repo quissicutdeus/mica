@@ -141,6 +141,36 @@ describe('createCrudStore', () => {
     expect(get(store.loaded)).toBe(true);
   });
 
+  it('MICA-119: does not duplicate a created row that a racing load already pulled in', async () => {
+    // The create round trip and a `load()` triggered elsewhere (foreground, another
+    // caller) are independent — if the load's reply lands, and already contains the row
+    // the server just created, before `add`'s own `mutate` runs, appending unconditionally
+    // would show the row twice.
+    const store = createCrudStore<Row>('Rows', events);
+    let resolveCreate!: (row: Row) => void;
+    const createReply = new Promise<Row>((resolve) => {
+      resolveCreate = resolve;
+    });
+
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(async (action: string) => {
+      if (action === events.create) return createReply;
+      if (action === events.list) return [{ id: 5, label: 'x' }];
+      throw new Error(`unexpected action ${action}`);
+    });
+
+    const addPromise = store.add({ label: 'x' });
+
+    // The racing load lands first and already carries the new row.
+    await store.load();
+    expect(get(store)).toEqual([{ id: 5, label: 'x' }]);
+
+    // Now the create this store's own `add` was waiting on resolves.
+    resolveCreate({ id: 5, label: 'x' });
+    await addPromise;
+
+    expect(get(store)).toEqual([{ id: 5, label: 'x' }]);
+  });
+
   it('sorts rows that have no timestamp without throwing them away', async () => {
     const store = createCrudStore<Row>('Rows', events, { sort: byNewest<Row>('created_at') });
     vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue([

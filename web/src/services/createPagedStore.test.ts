@@ -220,6 +220,38 @@ describe('createPagedStore', () => {
     });
   });
 
+  describe('MICA-119: prepend racing a load', () => {
+    it('replaces in place rather than duplicating a row a racing load already pulled in', async () => {
+      // The caller's own create round trip and a `load()` triggered elsewhere are
+      // independent. If the load's reply lands — and already contains the row the server
+      // just created — before the caller's optimistic `prepend` runs, unshifting it
+      // unconditionally would show the row twice.
+      const store = createPagedStore<Row>('getFeed');
+      const spy = vi.spyOn(fetchNuiModule, 'fetchNui');
+
+      spy.mockResolvedValueOnce({ rows: [{ id: 5, label: 'x' }], nextCursor: null });
+      await store.load();
+      expect(get(store)).toEqual([{ id: 5, label: 'x' }]);
+
+      // The create's own reply lands afterward; the caller prepends what it was given,
+      // unaware the racing load already put the same row in the window.
+      store.prepend({ id: 5, label: 'x (from create)' });
+
+      expect(get(store)).toEqual([{ id: 5, label: 'x (from create)' }]);
+    });
+
+    it('still unshifts a genuinely new row', () => {
+      const store = createPagedStore<Row>('getFeed');
+      store.prepend({ id: 1, label: 'first' });
+      store.prepend({ id: 2, label: 'second' });
+
+      expect(get(store)).toEqual([
+        { id: 2, label: 'second' },
+        { id: 1, label: 'first' }
+      ]);
+    });
+  });
+
   describe('MICA-118: cursor/hasMore agreement after a failed first-page load', () => {
     it('leaves cursor and hasMore agreeing, so loadMore actually retries instead of being wired to false forever', async () => {
       const store = createPagedStore<Row>('getFeed');

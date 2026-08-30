@@ -151,7 +151,16 @@ export function createCrudStore<T extends { id: number }, TDraft = Omit<T, 'id'>
     add: async (draft: TDraft): Promise<T> => {
       options.validate?.(draft);
       const created = await request<T>(required(events.create, 'create'), draft);
-      mutate((rows) => ordered([...rows, created]));
+      // A `load()` racing this round trip may already have pulled `created` in from the
+      // server — appending it again would show the row twice. Replace in place if it's
+      // already there, append only if it isn't (MICA-119).
+      mutate((rows) =>
+        ordered(
+          rows.some((r) => r.id === created.id)
+            ? rows.map((r) => (r.id === created.id ? created : r))
+            : [...rows, created]
+        )
+      );
       return created;
     },
 
