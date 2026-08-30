@@ -379,4 +379,97 @@ describe('hodlr: buy and sell', () => {
       expect(reply.history).toEqual(HISTORY);
     });
   });
+
+  /**
+   * MICA-145. The atomic `quantity = quantity ± ?` update is correct under two concurrent
+   * trades on one holding — that's the whole point of it, and it stays exactly as it was.
+   * What used to be wrong is the number handed *back* to each caller: it was computed from
+   * this handler's own pre-write read (`holding.quantity ± quantity`), which is stale the
+   * moment a second trade's write lands in between. Low severity — no money or coins are at
+   * risk, nothing is corrupted, it's a display value that could disagree with the database
+   * for one round trip until the next portfolio read corrected it. These tests drive two
+   * trades that both read the same pre-write snapshot (the interleaving) and assert the
+   * echoed quantity is the real post-write total for *both* of them, not either one's own
+   * stale local arithmetic.
+   */
+  describe('echoed quantity under two interleaved trades', () => {
+    /**
+     * `call()` above reassigns the *global* `emitNet` per invocation, which two genuinely
+     * concurrent calls would race on — the second call's assignment can land before the
+     * first call's handler ever reaches its own `emitNet(...)`, since that reference is
+     * resolved dynamically, not captured at registration. So this drives the raw handler
+     * with one shared `emitNet` mock and pulls each reply back out by its own `cbId`.
+     */
+    const driveConcurrently = (event: string, payloads: [unknown, unknown]) => {
+      const handler = handlers.get(event);
+      if (!handler) throw new Error(`no handler for ${event}`);
+      (globalThis as any).source = 1;
+      const emit = vi.fn();
+      (globalThis as any).emitNet = emit;
+
+      const [a, b] = payloads;
+      return Promise.all([handler('cb-a', a), handler('cb-b', b)]).then(() => {
+        const replyFor = (cbId: string) =>
+          emit.mock.calls.find(([, , id]: [unknown, unknown, string]) => id === cbId)?.[3];
+        return [replyFor('cb-a'), replyFor('cb-b')];
+      });
+    };
+
+    /**
+     * Gates every `Database.scalar` re-read until every expected write has landed, which is
+     * what makes the two trades genuinely interleaved rather than merely sequential: each
+     * trade's own pre-write read (`dbMock.query`, stubbed to always return the same stale
+     * row) never sees the other's write, but the post-write re-read this fix adds always
+     * observes the fully-settled total — the same thing a real concurrent pair of `UPDATE`s
+     * against one row would produce.
+     */
+    const trackWrites = (expected: number, startingQuantity: number) => {
+      let stored = startingQuantity;
+      let settled = 0;
+      let resolveAllWritten: () => void;
+      const allWritten = new Promise<void>((resolve) => (resolveAllWritten = resolve));
+
+      dbMock.update.mockImplementation(async (sql: string, params: [number, number]) => {
+        const delta = /`quantity` - \?/.test(sql) ? -params[0] : params[0];
+        stored += delta;
+        settled += 1;
+        if (settled === expected) resolveAllWritten();
+        return true;
+      });
+      dbMock.scalar.mockImplementation(async () => {
+        await allWritten;
+        return stored;
+      });
+
+      return () => stored;
+    };
+
+    it("reports the real total on both legs of two interleaved buys, not either one's own stale echo", async () => {
+      // Both buys' own `findOrCreateHolding` read the same pre-write quantity (5) — the
+      // interleaving. Naively, a 3-coin buy would echo 8 and a 4-coin buy would echo 9;
+      // the real total once both land is 12.
+      dbMock.query.mockResolvedValue([{ ...HOLDING, quantity: 5 }]);
+      const finalStored = trackWrites(2, 5);
+
+      const [replyA, replyB] = await driveConcurrently(BUY, [{ quantity: 3 }, { quantity: 4 }]);
+
+      expect(finalStored()).toBe(12);
+      expect(replyA).toMatchObject({ ok: true, quantity: 12 });
+      expect(replyB).toMatchObject({ ok: true, quantity: 12 });
+    });
+
+    it("reports the real total on both legs of two interleaved sells, not either one's own stale echo", async () => {
+      // Both sells' own `findOrCreateHolding` read the same pre-write quantity (10). A
+      // naive 3-coin sell would echo 7 and a 4-coin sell would echo 6; the real total once
+      // both land is 3.
+      dbMock.query.mockResolvedValue([{ ...HOLDING, quantity: 10 }]);
+      const finalStored = trackWrites(2, 10);
+
+      const [replyA, replyB] = await driveConcurrently(SELL, [{ quantity: 3 }, { quantity: 4 }]);
+
+      expect(finalStored()).toBe(3);
+      expect(replyA).toMatchObject({ ok: true, quantity: 3 });
+      expect(replyB).toMatchObject({ ok: true, quantity: 3 });
+    });
+  });
 });

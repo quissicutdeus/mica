@@ -82,6 +82,24 @@ const findOrCreateHolding = async (citizenid: string): Promise<HodlrHolding> => 
 };
 
 /**
+ * The row's quantity as it stands right now, for the value echoed back after a write that
+ * moved it with an atomic relative `UPDATE` (MICA-145). A pre-write read plus the delta
+ * this handler applied is correct only when no other trade landed between that read and the
+ * write committing — true most of the time, but not under two interleaved trades on the same
+ * holding, which is exactly what the atomic update exists to make safe. `fallback` is the
+ * pre-write-computed value, used only if the row has somehow vanished by the time this reads
+ * it again (it never should — a holding row outlives the trade that touches it) so a caller
+ * still gets a number rather than a thrown error after money has already moved.
+ */
+const currentQuantityOf = async (id: number, fallback: number): Promise<number> => {
+  const quantity = await Database.scalar<number | null>(
+    'SELECT `quantity` FROM `gphone_hodlr` WHERE `id` = ?',
+    [id]
+  );
+  return quantity ?? fallback;
+};
+
+/**
  * Neither read settles money, so a closed market is not a vulnerability here the way it is
  * on `buy`/`sell`. It is still wrong to answer with a number: while the market is closed
  * `getCurrentPrice()` is `STARTING_PRICE` — the constant MICA-130 was built on — and
@@ -184,7 +202,15 @@ app.registerEvent('buy', async (source, cbId, data, citizenid, player) => {
     return { ok: false, reason: 'credit_failed' };
   }
 
-  return { ok: true, quantity: holding.quantity + quantity, price, cost };
+  // Re-read rather than echo `holding.quantity + quantity`: the increment above is atomic
+  // in SQL specifically so two concurrent trades can't clobber each other, but that also
+  // means this handler's own pre-write read is stale the moment a concurrent trade commits
+  // between it and here. The stored value is always correct; only the number handed back to
+  // this caller could otherwise disagree with it until the next portfolio read. Low
+  // severity — no money or coins are at risk, nothing is corrupted, it's a display value.
+  const currentQuantity = await currentQuantityOf(holding.id, holding.quantity + quantity);
+
+  return { ok: true, quantity: currentQuantity, price, cost };
 });
 
 app.registerEvent('sell', async (source, cbId, data, citizenid, player) => {
@@ -229,5 +255,11 @@ app.registerEvent('sell', async (source, cbId, data, citizenid, player) => {
     return { ok: false, reason: 'credit_failed' };
   }
 
-  return { ok: true, quantity: holding.quantity - quantity, price, proceeds };
+  // Same reasoning as `buy` above: the decrement is atomic in SQL precisely so two
+  // concurrent sells can't both pass the `quantity >= ?` guard, which means this handler's
+  // pre-write read can be stale by the time this line runs. Re-read rather than echo
+  // `holding.quantity - quantity`.
+  const currentQuantity = await currentQuantityOf(holding.id, holding.quantity - quantity);
+
+  return { ok: true, quantity: currentQuantity, price, proceeds };
 });
