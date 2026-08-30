@@ -95,8 +95,6 @@ if (!paging) {
   throw new Error("defineService('marketplace'): a public read must declare paging.");
 }
 
-const MAX_ATTACHMENTS = 4;
-
 /** Non-negative integer price, or throws. Zero is a legitimate "free" listing. */
 const requirePrice = (raw: unknown): number => {
   if (typeof raw !== 'number' && typeof raw !== 'string') {
@@ -117,8 +115,9 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   if (!title) throw new Error('A listing needs a title.');
   if (!description) throw new Error('A listing needs a description.');
 
-  const owned = await resolveOwnedAttachments(body.attachments, citizenid, mediaRepo);
-  const attachments = owned.slice(0, MAX_ATTACHMENTS);
+  // No `.slice()` any more: the cap is applied inside the resolver, before it does the work
+  // the cap is supposed to bound (MICA-154).
+  const attachments = await resolveOwnedAttachments(body.attachments, citizenid, mediaRepo);
 
   const id = await Database.insert(
     'INSERT INTO `gphone_marketplace` (`citizenid`, `title`, `price`, `description`, `status`) VALUES (?, ?, ?, ?, ?)',

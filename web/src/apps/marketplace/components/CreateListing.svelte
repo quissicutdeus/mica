@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { MAX_ATTACHMENTS } from '@shared/attachments';
   import { Button, PhotoPickerModal, useMarketplace } from '@gphone/sdk';
   import type { MediaPreview } from '@shared/types';
 
@@ -13,8 +14,6 @@
   let attachments = $state<{ photo_id: number; media: MediaPreview }[]>([]);
   let showPicker = $state(false);
   let busy = $state(false);
-
-  const MAX_ATTACHMENTS = 4;
 
   const canPost = $derived(
     title.trim().length > 0 &&

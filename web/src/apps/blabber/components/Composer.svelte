@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { MAX_ATTACHMENTS } from '@shared/attachments';
   import { untrack } from 'svelte';
   import { Button, CloseIcon, MediaThumb, PhotoIcon, PhotoPickerModal } from '@gphone/sdk';
   import type { MediaPreview } from '@shared/types';
@@ -176,7 +177,10 @@
       const existing = attachments.find((a) => a.photo_id === photoId);
       if (existing) {
         attachments = attachments.filter((a) => a.photo_id !== photoId);
-      } else {
+      } else if (attachments.length < MAX_ATTACHMENTS) {
+        // The server refuses an over-cap array outright rather than truncating it, so the
+        // picker has to stop here or an ordinary player meets an error the composer never
+        // warned them about (MICA-154).
         attachments = [...attachments, { photo_id: photoId, media }];
       }
     }}

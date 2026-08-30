@@ -69,7 +69,7 @@ describe('Marketplace service', () => {
       expect(reply.error).toMatch(/valid price/);
     });
 
-    it('drops attachments the caller does not own, and caps at 4', async () => {
+    it('drops attachments the caller does not own', async () => {
       // resolveOwnedAttachments calls media.repo.findById(id, citizenid) -> Database.single,
       // once per attachment in payload order. ids 1-5 are "owned", 999 is not.
       dbMock.single.mockImplementation(async (_sql: string, params: unknown[]) => {
@@ -83,19 +83,49 @@ describe('Marketplace service', () => {
         title: 'Couch',
         price: 200,
         description: 'barely used',
+        attachments: [{ photo_id: 1 }, { photo_id: 2 }, { photo_id: 999 }] // 999 is not owned
+      });
+
+      expect(reply.error).toBeUndefined();
+      // 1 insert for the listing row + 2 for the owned attachments.
+      expect(dbMock.insert).toHaveBeenCalledTimes(3);
+    });
+
+    /**
+     * This used to assert the opposite, and the change is deliberate (MICA-154).
+     *
+     * `create` capped by calling `resolveOwnedAttachments` and then `.slice(0, 4)`, so a
+     * five-element array was silently reduced to four — after five ownership queries had
+     * already run. The cap bounded what was stored, not the work that produced it, which is
+     * the whole defect: an array is only expensive before it is capped.
+     *
+     * Moving the check inside the resolver means it now runs on the length, before any
+     * query. Refusing rather than truncating follows from that: no legitimate client can
+     * exceed the cap — all three composers stop the picker at it — so an over-long array is
+     * a broken or modified client, and quietly keeping the first four would hide the former.
+     */
+    it('refuses an over-cap array outright, without querying for any of it', async () => {
+      dbMock.single.mockResolvedValue({ id: 1 });
+      dbMock.insert.mockResolvedValue(1);
+      dbMock.query.mockResolvedValue([]);
+
+      const reply = await call('create', {
+        title: 'Couch',
+        price: 200,
+        description: 'barely used',
         attachments: [
           { photo_id: 1 },
           { photo_id: 2 },
           { photo_id: 3 },
           { photo_id: 4 },
-          { photo_id: 5 }, // 5th owned attachment — dropped by the 4-cap
-          { photo_id: 999 } // not owned — dropped regardless
+          { photo_id: 5 }
         ]
       });
 
-      expect(reply.error).toBeUndefined();
-      // 1 insert for the listing row + 4 for the capped attachments.
-      expect(dbMock.insert).toHaveBeenCalledTimes(5);
+      expect(reply.error).toBe('You can attach at most 4 photos.');
+      // Not one ownership lookup, and not the listing row either.
+      expect(dbMock.single).not.toHaveBeenCalled();
+      expect(dbMock.insert).not.toHaveBeenCalled();
     });
 
     it('inserts owned attachment rows into the child table, scoped to the caller', async () => {
