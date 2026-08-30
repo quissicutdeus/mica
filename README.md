@@ -446,18 +446,26 @@ next reconnect.
   two, and the second is the interesting one. `command` is the near-universal
   proxy for "runs this server" (`add_ace group.admin command allow`), so an
   owner who is already a full admin is not asked to grant themselves a second,
-  phone-specific ace before the phone will believe them — anyone holding
-  `command` can already do by console everything the phone's admin tools offer,
-  so recognising it grants nothing new. `gphone.admin` stays for the case the
-  dedicated ace actually exists for: giving phone admin to somebody who is not a
-  server admin. Change it to hand the phone to a staff group —
-  `set gphone_admin_aces "gphone.admin,mygroup.staff"` — but note that the value
-  **replaces** the list rather than adding to it, so dropping `command` revokes
-  anyone whose only qualification was that ace, quite possibly including you. An
-  empty or whitespace-only value falls back to the default rather than silently
-  locking everyone out. The server console is trusted whatever this says, and
-  `gphoneschema apply` takes the console and nobody else no matter how this is
-  set.
+  phone-specific ace before the phone will believe them — but that convenience
+  is not free. gPhone admin includes the pending report queue, which has no
+  console equivalent, and its previews include excerpts of private messages and
+  DMs (`gphone_messages` and `gphone_blabber_dms` are both reportable, alongside
+  listings, accounts, Blabs and photos), plus moderate/un-moderate across those
+  six tables and `gphoneseed`/`gphonecharge`. A server that grants `command` to
+  a staff or moderator group so they can run `/kick`/`/ban` is granting all of
+  that too, whether or not anyone meant to. `gphone.admin` stays for the case
+  the dedicated ace actually exists for: giving phone admin to somebody who is
+  not a server admin. A staff-tier server that wants `/kick`/`/ban` without the
+  report queue and the rest should set `gphone_admin_aces "gphone.admin"`, which
+  drops `command` from the recognised set — or, to hand the phone to that staff
+  group deliberately instead of excluding them,
+  `set gphone_admin_aces "gphone.admin,mygroup.staff"`. Either way, note that
+  the value **replaces** the list rather than adding to it, so dropping
+  `command` revokes anyone whose only qualification was that ace, quite possibly
+  including you. An empty or whitespace-only value falls back to the default
+  rather than silently locking everyone out. The server console is trusted
+  whatever this says, and `gphoneschema apply` takes the console and nobody else
+  no matter how this is set.
 - **`gphone_rate_limit`** — how many requests one player may make of one action
   within a fixed 60-second window, enforced at the net-event boundary so custom
   actions are covered and not just generic CRUD. Over the limit the request is
