@@ -331,6 +331,14 @@ export interface AppManifest {
 }
 
 import { MICA_VERSION } from './version';
+// Not `export * from './permissions'` anywhere in `index.ts`/`addon.ts` — deliberately.
+// `validateManifestPermissions` is an internal check `defineApp` runs on every manifest,
+// not a capability an app author calls, and this module's every export is swept into
+// `@gphone/sdk`'s public surface by `index.ts`'s `export * from './manifest'`. Adding it
+// here would make it public forever (MICA-16's "adding an export is a one-way door");
+// living in `permissions.ts` instead — already outside both barrels — keeps it callable
+// and independently testable without widening what an add-on can reach.
+import { validateManifestPermissions } from './permissions';
 
 /**
  * Helper function to define and validate a gPhone application manifest.
@@ -545,6 +553,8 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
    */
   const tile = resolveTile(id, manifest);
   const color = flattenTile(tile);
+
+  validateManifestPermissions(id, manifest.permissions ?? [], ALL_PERMISSIONS);
 
   return {
     version: MICA_VERSION,

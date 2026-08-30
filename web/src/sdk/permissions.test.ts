@@ -1,13 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { ALL_PERMISSIONS } from './manifest';
+import { ALL_PERMISSIONS, defineApp } from './manifest';
 import {
   HOOK_OF_FACET,
   PERMISSION_OF,
   permissionOfFacet,
   DENIED_FACETS,
-  SAFE_IMPLICIT_FACETS
+  SAFE_IMPLICIT_FACETS,
+  validateManifestPermissions
 } from './permissions';
 import { bundledAddOns, registeredApps } from '../shell/state/registry';
 
@@ -305,5 +306,112 @@ describe("useService stays in the app's own namespace", () => {
       }
     }
     expect(offenders.sort()).toEqual([]);
+  });
+});
+
+/**
+ * MICA-128: `defineApp` never checked a manifest's `permissions` array against
+ * `ALL_PERMISSIONS` at runtime — only the `AppPermission` type does, and only for a
+ * manifest this repo itself typechecks. A published add-on, or a hand-written manifest
+ * this build never sees, could carry `'notifcations'` or `'contacts '` and load exactly
+ * as if it had declared nothing: no error at install, no row in the permission sheet, and
+ * an `AppPermissionError` thrown into the app's `ErrorBoundary` the first time it actually
+ * called the hook the typo was meant to name.
+ */
+describe('validateManifestPermissions', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('says nothing about a manifest that only declares real permissions', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    validateManifestPermissions('contacts_app', ['contacts', 'notifications'], ALL_PERMISSIONS);
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('says nothing about a manifest that declares no permissions at all', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    validateManifestPermissions('quiet_app', [], ALL_PERMISSIONS);
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('warns, but does not throw, on an unrecognized permission', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(() =>
+      validateManifestPermissions('typo_app', ['notifcations'], ALL_PERMISSIONS)
+    ).not.toThrow();
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("'typo_app' declares permission 'notifcations'")
+    );
+  });
+
+  it('suggests the real name for a one-edit-distance typo', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    validateManifestPermissions('typo_app', ['notifcations'], ALL_PERMISSIONS);
+    validateManifestPermissions('spacey_app', ['contacts '], ALL_PERMISSIONS);
+    validateManifestPermissions('sep_app', ['system_hardware'], ALL_PERMISSIONS);
+
+    expect(warn).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("Did you mean 'notifications'?")
+    );
+    expect(warn).toHaveBeenNthCalledWith(2, expect.stringContaining("Did you mean 'contacts'?"));
+    expect(warn).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining("Did you mean 'system-hardware'?")
+    );
+  });
+
+  it('offers no suggestion for a name that is not a near miss of anything real', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    validateManifestPermissions('madeup_app', ['teleportation'], ALL_PERMISSIONS);
+
+    const [message] = warn.mock.calls[0] as [string];
+    expect(message).toContain("declares permission 'teleportation'");
+    expect(message).not.toContain('Did you mean');
+  });
+
+  it('still loads the app: an unrecognized permission never stops the manifest', () => {
+    // The failure this ticket is about is the *unsafe* direction — silently accepting a
+    // typo. The fix must not overcorrect into refusing to load over one, which would
+    // break the legitimate case (an add-on built against a newer phone's vocabulary,
+    // opened on an older one) to catch the illegitimate one.
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const manifest = defineApp({
+      id: 'forward_compatible',
+      tile: { bg: 'bg-blue-600' },
+      icon: null,
+      core: false,
+      // A manifest this repo never typechecks is exactly the case under test — the cast is
+      // what a real published bundle's untyped JS effectively does.
+      permissions: ['notifcations', 'future_capability'] as never
+    });
+
+    expect(manifest.id).toBe('forward_compatible');
+    expect(manifest.permissions).toEqual(['notifcations', 'future_capability']);
+  });
+
+  it('fails loudly, not silently, when the vocabulary it checks against is broken', () => {
+    // MICA-124 happened once already: a table that silently came back empty made every
+    // check reading it vacuously pass. An empty or unimportable ALL_PERMISSIONS must not
+    // let every manifest through as if nothing were wrong — it must stop the check outright.
+    expect(() => validateManifestPermissions('any_app', ['contacts'], [])).toThrow(
+      /ALL_PERMISSIONS is empty or failed to import/
+    );
+  });
+
+  it('the real ALL_PERMISSIONS is in fact non-empty', () => {
+    // A sanity floor on the table this whole check leans on, not a ceiling — see
+    // 'declares only names in the vocabulary' above for the same shape of guard.
+    expect(ALL_PERMISSIONS.length).toBeGreaterThan(10);
   });
 });

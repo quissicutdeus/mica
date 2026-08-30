@@ -224,3 +224,99 @@ export const SAFE_IMPLICIT_FACETS: ReadonlySet<string> = new Set([
   'sound',
   'lifecycle'
 ]);
+
+/**
+ * Cheap Levenshtein distance. Every comparison here is against a permission name — under
+ * twenty characters, roughly thirty of them — so the naive O(n·m) table is nowhere near
+ * worth replacing with anything smarter.
+ */
+function editDistance(a: string, b: string): number {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const dp: number[][] = Array.from({ length: rows }, () => new Array<number>(cols).fill(0));
+  for (let i = 0; i < rows; i++) dp[i][0] = i;
+  for (let j = 0; j < cols; j++) dp[0][j] = j;
+  for (let i = 1; i < rows; i++) {
+    for (let j = 1; j < cols; j++) {
+      dp[i][j] =
+        a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+/**
+ * The one real permission name exactly one edit from `perm`, if there is one — the shape of
+ * a typo (`'notifcations'`), a stray space (`'contacts '`), or the wrong separator
+ * (`'system_hardware'`), not a genuinely different word that happens to be short.
+ * `undefined` for anything further off, so a made-up name gets a plain warning rather than
+ * a wrong guess.
+ */
+function nearestPermission(perm: string, allPermissions: readonly string[]): string | undefined {
+  return allPermissions.find((known) => editDistance(perm, known) === 1);
+}
+
+/**
+ * `AppManifest['permissions']` is TypeScript-checked only *inside this repo* —
+ * `AppPermission` is a union derived from `ALL_PERMISSIONS` `as const`, so a manifest
+ * authored here that names something else fails at compile time, and
+ * `permissions.test.ts`'s "declares only names in the vocabulary" re-proves it at the
+ * value level for every bundled app. Nothing enforces that for a manifest this repo never
+ * typechecks — a published add-on, or a dev-registered one — and `defineApp` (`manifest.ts`)
+ * is the one place every manifest passes through regardless of source, so that is where
+ * this runs (MICA-128).
+ *
+ * A typo there used to load silently: the permission sheet disclosed nothing for a name
+ * matching no row, and the first call to the hook it was *meant* to name threw
+ * `AppPermissionError` into the app's `ErrorBoundary` on first use — installed fine, broke
+ * later, far from the manifest that caused it. That is the unsafe failure direction, so
+ * this only warns, never throws: an unrecognized name is also the shape of honest forward
+ * compatibility (an add-on built against a newer phone's vocabulary, opened on an older
+ * one), and refusing to load over that would break the legitimate case to catch the
+ * illegitimate one.
+ *
+ * Not gated behind `import.meta.env.DEV` the way `manifest.ts`'s id-casing warning is —
+ * that one is cosmetic (the id still normalizes correctly either way); this one is a live
+ * bug in waiting, closer to `catalog.ts`'s unconditional warning on a dropped remote-catalog
+ * row than to a dev-authoring nicety.
+ *
+ * Deliberately not exported from `sdk/index.ts`/`sdk/addon.ts` (this file isn't swept by
+ * either barrel) — it is `defineApp`'s own internal check, not a capability an app calls.
+ *
+ * `allPermissions` is a required parameter, not a closed-over import of `ALL_PERMISSIONS`,
+ * so `permissions.test.ts` can hand this a deliberately empty or malformed list and prove
+ * the guard below actually fires, rather than trusting that it would.
+ */
+export function validateManifestPermissions(
+  id: string,
+  permissions: readonly string[],
+  allPermissions: readonly string[]
+): void {
+  // MICA-124 happened once already, elsewhere: a vocabulary list that silently came back
+  // empty (a broken import, a bad refactor) made every check reading it vacuously pass — or
+  // here, vacuously warn about every single permission, burying the one real typo in noise
+  // about apps that did nothing wrong. Refuse to compare against a table that failed to
+  // load, rather than trusting it.
+  if (!Array.isArray(allPermissions) || allPermissions.length === 0) {
+    throw new Error(
+      'gPhone App Manifest error: ALL_PERMISSIONS is empty or failed to import. The ' +
+        'permission vocabulary itself is broken, so no manifest can be validated against ' +
+        "it — that is a build defect, not this app's."
+    );
+  }
+
+  for (const perm of permissions) {
+    if (allPermissions.includes(perm)) continue;
+    const suggestion = nearestPermission(perm, allPermissions);
+    console.warn(
+      `gPhone App Manifest: '${id}' declares permission '${perm}', which is not in ` +
+        `ALL_PERMISSIONS.` +
+        (suggestion ? ` Did you mean '${suggestion}'?` : '') +
+        ` The app still loads, but the Store's permission sheet discloses nothing for this ` +
+        `name, and a real hook it was meant to match will throw AppPermissionError on first ` +
+        `use instead of being covered by this declaration.`
+    );
+  }
+}
