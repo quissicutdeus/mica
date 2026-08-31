@@ -475,6 +475,21 @@ split from a `-write` half, which moves every setter out of the hook that used
 to return it, and `ReactionBar`'s props. Read those two entries if your add-on
 repaints the phone, changes a system setting, or draws a reaction row.
 
+**`svelte` and `vite` are now peer dependencies**, where they were development
+dependencies before. If you build an add-on outside this repo, your own project
+already supplies both — this makes that requirement explicit rather than
+accidental. The declared floors are `svelte@^5.46.4` and `vite@^8.0.0`, taken
+from what `@sveltejs/vite-plugin-svelte` already enforces to compile this
+package's components, not invented here.
+
+What changes for you: an install below either floor now warns, and an install
+run with strict peer resolution fails where it previously said nothing. That is
+the intended outcome. The failure it replaces is worse and much harder to read —
+a consumer resolving its own second copy of Svelte gets two component
+registries, and the symptom is components that render once and then quietly stop
+reacting. No exported name moved, so `v1` does not move for this; it is a
+resolution change at your install, not a contract change.
+
 **The design system is out of contract.** `app.css`, `app-utilities.css` and
 `app-reset.css` ship inside the package, and `v1` does not move when they
 change. An add-on's CSS is inlined at that add-on's own build, so no bundle can
