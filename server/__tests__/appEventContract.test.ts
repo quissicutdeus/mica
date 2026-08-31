@@ -63,7 +63,12 @@ describe('app-space is open', () => {
     // actual `subscribeAppEvent` call lives in its facet module — assert both halves of that
     // wiring rather than the string that used to sit in one file.
     expect(read('web/src/sdk/host/useAppEvents.ts')).toContain("guarded('useAppEvents'");
-    expect(read('web/src/sdk/host/inProcess/facets/appEvents.ts')).toContain('subscribeAppEvent');
+    // MICA-172 step 1 moved the shell-backed facets out of the SDK, so the implementation
+    // half of this assertion now lives in `web/src/host/facets/`. The wiring being asserted is
+    // unchanged; only where the phone keeps its own facet did. This path is hardcoded from the
+    // *server* test project, so nothing in `web/` fails when it goes stale — which is exactly
+    // what happened: the move landed green on the web suite and broke here.
+    expect(read('web/src/host/facets/appEvents.ts')).toContain('subscribeAppEvent');
     expect(read('web/src/sdk/host/index.ts')).toContain('useAppEvents');
   });
 });
