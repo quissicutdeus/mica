@@ -7,7 +7,7 @@
  */
 import '../web/src/host/registerFacets';
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 
@@ -1445,6 +1445,136 @@ const undeclaredDivergence = (a: string[], b: string[], declared: string[]): str
 };
 
 // ---------------------------------------------------------------------------
+// The declared entry points: `sdk/package.json`'s `exports` map
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything above reads the entry points **as files**. `import * as sdkApp from './app'`
+ * and `ts.createProgram` on `app.ts` both prove what that file publishes — and neither
+ * proves that `@gphone/sdk/app` still *names* it.
+ *
+ * That gap is not theoretical here, because **nothing in this tree resolves `@gphone/sdk`
+ * through the `exports` map at all**. `web/vite.config.ts` aliases the bare specifier and
+ * both subpaths to absolute paths; `web/vite.addon.config.ts` does the same and points the
+ * bare one at `addon.ts`; `web/tsconfig.app.json` path-maps all three. Even `main.ts`
+ * imports the stylesheets by relative path, with a comment explaining that the alias would
+ * shadow the specifier. Every one of those short-circuits package resolution before it
+ * begins, so the map is read by exactly one kind of consumer: one outside this repo.
+ * Rename `./app` to `./manifest`, drop `./core`, or point `.` at some other file, and
+ * `typecheck`, `test:unit`, `test:e2e` and `build` are all green while every published
+ * add-on fails to resolve the SDK at all. That is the shape of the ReactionBar incident at
+ * the top of this file — in-tree call sites all updated, out-of-tree ones all broken — one
+ * layer further out, at the specifier rather than at the name behind it.
+ *
+ * So this section asserts the two halves agree: every entry point whose surface is frozen
+ * above is published under the subpath an add-on writes, and it resolves to the very file
+ * that surface was read from.
+ *
+ * **Two things it deliberately does not do.**
+ *
+ * First, `addon.ts` is in the frozen surface and absent from the map, and this gate
+ * **records that rather than resolving it**. `@gphone/sdk` means `index.ts` to the
+ * typechecker and `addon.ts` inside a `core: false` bundle, and it is
+ * `vite.addon.config.ts` — not the package — that performs the swap, so an out-of-tree
+ * add-on building without that config resolves `.` to the shell barrel. Whether the package
+ * should publish `addon.ts`, under what subpath, and what `.` ought to mean is an open
+ * question tracked elsewhere and not this ticket's to answer. `UNPUBLISHED_BY_DESIGN` below
+ * is the record of today's answer, and the gate fires if the map disagrees with it in
+ * either direction — which puts the decision in a diff whenever somebody does make it,
+ * without making it here.
+ *
+ * Second, **the stylesheets are out of contract** and stay that way. `sdk/version.ts` says
+ * at length why `SDK_CONTRACT_VERSION` must not move for a colour tweak: an add-on's CSS is
+ * inlined from whatever `vite.addon.config.ts` injected at *its* build, so no add-on can
+ * have compiled against one stylesheet and been handed another. The `.css` subpaths are
+ * therefore checked for one thing only — that the file they name is on disk — which no edit
+ * to a stylesheet's *contents* can ever fail. They reach no baseline, no version pin, and
+ * no assertion about names.
+ */
+
+/** The `exports` map exactly as `sdk/package.json` declares it. */
+const packageExports = (): Record<string, unknown> => {
+  const pkg = JSON.parse(readFileSync(join(SDK_DIR, 'package.json'), 'utf8')) as {
+    exports?: Record<string, unknown>;
+  };
+  return pkg.exports ?? {};
+};
+
+/**
+ * The subpath each frozen entry point is published under — the string an add-on author
+ * actually types. `ENTRY_FILES` says what each one has to resolve to.
+ */
+const SUBPATH_OF_ENTRY: Record<string, string> = {
+  '@gphone/sdk': '.',
+  '@gphone/sdk/app': './app',
+  '@gphone/sdk/core': './core'
+};
+
+/**
+ * Frozen above, published by nobody — see the second-to-last paragraph of the docblock.
+ * `addon.ts` is reached through `vite.addon.config.ts`'s alias, never through the package.
+ */
+const UNPUBLISHED_BY_DESIGN = ['@gphone/sdk (add-on bundle)'];
+
+/** Subpaths publishing the design system rather than a module. Out of contract (above). */
+const isStylesheet = (subpath: string): boolean => subpath.endsWith('.css');
+
+/**
+ * Every way the map and the frozen surface can disagree, as one list of readable lines.
+ *
+ * Pure, and takes its declarations as arguments, so the block at the bottom of this file
+ * can drive it with a broken map and watch it fire — the same treatment `breakingChanges`
+ * gets, for the same reason.
+ */
+const exportsMapProblems = (
+  map: Record<string, unknown>,
+  subpathOf: Record<string, string>,
+  files: Record<string, string>,
+  unpublished: string[]
+): string[] => {
+  const problems: string[] = [];
+  const published = new Set(Object.values(subpathOf));
+  const unpublishedFiles = new Map(unpublished.map((entry) => [`./${files[entry]}`, entry]));
+
+  for (const [entry, subpath] of Object.entries(subpathOf)) {
+    const expected = `./${files[entry]}`;
+    if (!(subpath in map)) {
+      problems.push(`${subpath}: not in the exports map, so \`${entry}\` no longer resolves`);
+      continue;
+    }
+    const target = map[subpath];
+    // A conditional entry (`{ svelte: …, default: … }`) is a shape nobody has needed here
+    // yet. Reading one wrong would be worse than refusing it, so this refuses it: a gate
+    // that shrugs at input it cannot parse is a gate that passes.
+    if (typeof target !== 'string') {
+      problems.push(
+        `${subpath}: declared as ${JSON.stringify(target)}, not a path — teach this gate the ` +
+          'shape rather than leaving the entry unchecked'
+      );
+      continue;
+    }
+    if (target !== expected) {
+      problems.push(`${subpath}: names ${target}, but ${entry}'s frozen surface is ${expected}`);
+    }
+  }
+
+  for (const [subpath, target] of Object.entries(map)) {
+    if (published.has(subpath) || isStylesheet(subpath)) continue;
+    const entry = typeof target === 'string' ? unpublishedFiles.get(target) : undefined;
+    problems.push(
+      entry === undefined
+        ? `${subpath}: an entry point no frozen surface covers — add it to ENTRY_POINTS and ` +
+            'freeze what it publishes, or take it back out of the map'
+        : `${subpath}: publishes ${String(target)}, which UNPUBLISHED_BY_DESIGN says this ` +
+            `package does not publish. If that decision has been made, move ${entry} into ` +
+            'SUBPATH_OF_ENTRY and say so in the CHANGELOG'
+    );
+  }
+
+  return problems;
+};
+
+// ---------------------------------------------------------------------------
 
 describe('the SDK public surface (MICA-125)', () => {
   const exportsNow = liveExports();
@@ -1729,6 +1859,72 @@ describe('the SDK public surface (MICA-125)', () => {
     });
   });
 
+  describe('an add-on can still name every entry point', () => {
+    const map = packageExports();
+
+    it('read the exports map, so the comparisons below are not vacuous', () => {
+      // An empty or absent map would make every assertion below pass over nothing — and
+      // an absent one is itself the loudest possible break, since `@gphone/sdk` then
+      // resolves to nothing at all.
+      expect(
+        Object.keys(map).length,
+        'sdk/package.json declares no exports map, or none this could parse — every check ' +
+          'below is comparing against nothing'
+      ).toBeGreaterThanOrEqual(4);
+      expect(Object.keys(map)).toContain('.');
+    });
+
+    it('says of every frozen entry point whether it is published', () => {
+      // The tie between the two halves. A fifth entry point added to `ENTRY_POINTS` above
+      // has to be classified here — published under some subpath, or deliberately not —
+      // rather than growing the frozen surface with nothing watching how it is reached.
+      expect(
+        [...Object.keys(SUBPATH_OF_ENTRY), ...UNPUBLISHED_BY_DESIGN].sort(),
+        'an entry point is frozen above and neither published nor declared unpublished ' +
+          'here, so nothing checks how an add-on reaches it'
+      ).toEqual(Object.keys(ENTRY_POINTS).sort());
+      expect(
+        Object.keys(SUBPATH_OF_ENTRY).filter((entry) => UNPUBLISHED_BY_DESIGN.includes(entry)),
+        'an entry point cannot be both published and unpublished'
+      ).toEqual([]);
+      expect(
+        Object.keys(SUBPATH_OF_ENTRY).filter((entry) => ENTRY_FILES[entry] === undefined),
+        'a subpath is declared for an entry point with no file, so it is checked against ' +
+          '`./undefined`'
+      ).toEqual([]);
+    });
+
+    it('publishes every entry point whose surface is frozen above', () => {
+      expect(
+        exportsMapProblems(map, SUBPATH_OF_ENTRY, ENTRY_FILES, UNPUBLISHED_BY_DESIGN),
+        "`sdk/package.json`'s `exports` map and the surface frozen in this file disagree. " +
+          'Nothing in this repo resolves through that map — every consumer in-tree goes ' +
+          'through a Vite alias or a tsconfig path — so a rename or a retarget here is ' +
+          'invisible to `typecheck`, `test:unit`, `test:e2e` and `build`, and breaks every ' +
+          'published add-on outright: the specifier resolves to nothing, before any ' +
+          'question of what it exports. If the change is intended, move the declarations ' +
+          'above it in the same commit and write the CHANGELOG entry under "Action ' +
+          'required" naming the specifier an add-on author has to change.'
+      ).toEqual([]);
+    });
+
+    it('names a file that is on disk, stylesheets included', () => {
+      // The one thing asked of the `.css` entries, and the only one that would be right to
+      // ask: they are out of contract (see the docblock), so their *contents* reach no
+      // assertion in this file, but an entry naming a file that is not there is broken for
+      // every consumer regardless of which side of that line it sits on.
+      const missing = Object.entries(map)
+        .filter(([, target]) => typeof target !== 'string' || !existsSync(join(SDK_DIR, target)))
+        .map(([subpath, target]) => `${subpath} -> ${JSON.stringify(target)}`);
+
+      expect(
+        missing,
+        'an `exports` entry names a file that does not exist, so the specifier resolves to ' +
+          'nothing for anyone outside this repo'
+      ).toEqual([]);
+    });
+  });
+
   /**
    * The assertions above pass over a surface that has not changed, so on a clean tree they
    * are a verified silence rather than a scan that happens to match nothing. These drive
@@ -1950,6 +2146,95 @@ describe('the SDK public surface (MICA-125)', () => {
           .map((p) => `${component}: ${p}`)
       );
       expect(malformed, 'the parser produced something that is not a prop name').toEqual([]);
+    });
+
+    // The `exports` map half. Same treatment: the assertions above run against the real
+    // `sdk/package.json`, which today agrees with the frozen surface, so on a clean tree
+    // they are a silence. These hand `exportsMapProblems` the four maps this repo does not
+    // have and check it says so.
+    const files = {
+      '@gphone/sdk': 'index.ts',
+      '@gphone/sdk (add-on bundle)': 'addon.ts',
+      '@gphone/sdk/app': 'app.ts'
+    };
+    const subpaths = { '@gphone/sdk': '.', '@gphone/sdk/app': './app' };
+
+    it('sees a subpath that is gone', () => {
+      expect(exportsMapProblems({ '.': './index.ts' }, subpaths, files, [])).toEqual([
+        './app: not in the exports map, so `@gphone/sdk/app` no longer resolves'
+      ]);
+    });
+
+    it('sees a subpath pointed at a different file', () => {
+      expect(
+        exportsMapProblems({ '.': './addon.ts', './app': './app.ts' }, subpaths, files, [])
+      ).toEqual([".: names ./addon.ts, but @gphone/sdk's frozen surface is ./index.ts"]);
+    });
+
+    it('sees an entry point added with no frozen surface behind it', () => {
+      expect(
+        exportsMapProblems(
+          { '.': './index.ts', './app': './app.ts', './shell': './shell/state/catalog.ts' },
+          subpaths,
+          files,
+          []
+        )
+      ).toEqual([
+        './shell: an entry point no frozen surface covers — add it to ENTRY_POINTS and ' +
+          'freeze what it publishes, or take it back out of the map'
+      ]);
+    });
+
+    it('sees the deferred `addon.ts` decision being made in the map', () => {
+      // Not a judgement on which way it should go — the point is that it stops being
+      // silent. The map publishing `addon.ts` today would mean an add-on could reach a
+      // second, smaller `@gphone/sdk` that nothing declares, so it reports and names the
+      // declaration to move.
+      expect(
+        exportsMapProblems(
+          { '.': './index.ts', './app': './app.ts', './addon': './addon.ts' },
+          subpaths,
+          files,
+          ['@gphone/sdk (add-on bundle)']
+        )
+      ).toEqual([
+        './addon: publishes ./addon.ts, which UNPUBLISHED_BY_DESIGN says this package does ' +
+          'not publish. If that decision has been made, move @gphone/sdk (add-on bundle) ' +
+          'into SUBPATH_OF_ENTRY and say so in the CHANGELOG'
+      ]);
+    });
+
+    it('refuses an entry shape it cannot read, rather than passing over it', () => {
+      expect(
+        exportsMapProblems(
+          { '.': { default: './index.ts' }, './app': './app.ts' },
+          subpaths,
+          files,
+          []
+        )
+      ).toEqual([
+        '.: declared as {"default":"./index.ts"}, not a path — teach this gate the shape ' +
+          'rather than leaving the entry unchecked'
+      ]);
+    });
+
+    it('lets the stylesheets alone, whatever they are and however many', () => {
+      // The out-of-contract half, asserted rather than asserted about. A stylesheet
+      // added, renamed or rewritten reaches no contract check, which is what
+      // `sdk/version.ts` requires of anything reading the design system.
+      expect(
+        exportsMapProblems(
+          {
+            '.': './index.ts',
+            './app': './app.ts',
+            './app.css': './app.css',
+            './brand-new.css': './somewhere/else.css'
+          },
+          subpaths,
+          files,
+          []
+        )
+      ).toEqual([]);
     });
   });
 });

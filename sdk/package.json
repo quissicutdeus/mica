@@ -17,6 +17,11 @@
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "lint": "eslint . --cache --cache-strategy content --cache-location node_modules/.cache/eslint/"
   },
+  "//peerDependencies": "MICA-125. Svelte and Vite are the consumer's to supply, not this package's to bring. `bootAddOn` calls `mount()` (`host/iframe/boot.ts`) and 85 components are compiled by whoever builds them, so a consumer that resolves its own Svelte gets two copies, two component registries and two sets of context keys — a bug whose symptom is a component that renders and then silently stops reacting, with nothing in any error to name the cause. The floors are what the toolchain that compiles this package already enforces: `@sveltejs/vite-plugin-svelte@7` declares `svelte: ^5.46.4` and `vite: ^8.0.0` itself, so a lower version of either cannot build these components in the supported configuration. Both stay in `devDependencies` at the versions this repo builds with — a peer is a requirement on the consumer and installs nothing here, and `svelte-check`, `eslint-plugin-svelte` and this package's own suite all need them resolvable from `sdk/`.",
+  "peerDependencies": {
+    "svelte": "^5.46.4",
+    "vite": "^8.0.0"
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
