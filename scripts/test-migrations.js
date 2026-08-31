@@ -448,12 +448,19 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   );
   check(`${schemaFile}: a fresh install has the migration pre-seeded`, Number(seeded), 1);
 
-  const seeded0002 = await scalar(
+  const seededViewed = await scalar(
     connection,
     'SELECT COUNT(*) FROM gphone_schema_migrations WHERE id = ?',
-    ['0002_conversations_pair_key']
+    ['0002_audit_logs_add_viewed_action']
   );
-  check(`${schemaFile}: a fresh install has 0002 pre-seeded too`, Number(seeded0002), 1);
+  check(`${schemaFile}: a fresh install has 0002 pre-seeded too`, Number(seededViewed), 1);
+
+  const seeded0003 = await scalar(
+    connection,
+    'SELECT COUNT(*) FROM gphone_schema_migrations WHERE id = ?',
+    ['0003_conversations_pair_key']
+  );
+  check(`${schemaFile}: a fresh install has 0003 pre-seeded too`, Number(seeded0003), 1);
 
   const freshRun = await server.runPendingMigrations();
   check(`${schemaFile}: a fresh install applies nothing`, freshRun.applied, []);
@@ -499,9 +506,27 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   check(`${schemaFile}: reports no failure`, result.failed, null);
   check(`${schemaFile}: applied the migration`, result.applied, [
     '0001_repair_conversation_participants',
-    '0002_conversations_pair_key'
+    '0002_audit_logs_add_viewed_action',
+    '0003_conversations_pair_key'
   ]);
   check(`${schemaFile}: nothing left over`, result.remaining, []);
+
+  step(`${schemaFile} — MICA-70: the audit ledger accepts 'viewed'`);
+  let viewedRejected = null;
+  try {
+    await connection.query(
+      `INSERT INTO gphone_audit_logs (citizenid, action, service, method, target_id)
+       VALUES (?, 'viewed', 'reports', 'queue', 1)`,
+      ['CIT_A']
+    );
+  } catch (error) {
+    viewedRejected = error.code;
+  }
+  check(
+    `an audit row with action 'viewed' is accepted, not rejected by the enum`,
+    viewedRejected,
+    null
+  );
 
   step(`${schemaFile} — the five fixtures`);
   check(
@@ -703,7 +728,8 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   check(`a forced replay still succeeds`, replay.failed, null);
   check(`a forced replay applies cleanly`, replay.applied, [
     '0001_repair_conversation_participants',
-    '0002_conversations_pair_key'
+    '0002_audit_logs_add_viewed_action',
+    '0003_conversations_pair_key'
   ]);
   check(
     `a forced replay changes no rows`,
@@ -786,9 +812,10 @@ const runPairKeyDuplicateFixture = async ({ connection, schemaFile, server }) =>
     result.failed,
     null
   );
-  check(`${database}: it applied both migrations`, result.applied, [
+  check(`${database}: it applied every pending migration`, result.applied, [
     '0001_repair_conversation_participants',
-    '0002_conversations_pair_key'
+    '0002_audit_logs_add_viewed_action',
+    '0003_conversations_pair_key'
   ]);
 
   const firstKey = await scalar(

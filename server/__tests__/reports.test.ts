@@ -215,6 +215,121 @@ describe('the queue is admin-only', () => {
   });
 });
 
+/**
+ * MICA-70. `AuditLogger` recorded a moderation decision from the day it shipped and
+ * nothing else — an admin reading twenty reported messages left no trace, decided or not.
+ * `queue` and `history` are where reported content first reaches an admin's screen, so
+ * that is where the read gets logged.
+ */
+describe('viewing the queue and history is audited', () => {
+  /** Every audit-ledger insert, decoded into the columns `AuditLogger.log` wrote. */
+  const auditEntries = () =>
+    dbMock.insert.mock.calls
+      .filter(([sql]) => typeof sql === 'string' && sql.includes('gphone_audit_logs'))
+      .map(([, params]) => {
+        const [citizenid, action, service, method, targetId, targetTable, details] =
+          params as unknown[];
+        return {
+          citizenid,
+          action,
+          service,
+          method,
+          targetId,
+          targetTable,
+          details: typeof details === 'string' ? JSON.parse(details) : details
+        };
+      });
+
+  it('logs one viewed entry per report an admin actually sees in the queue', async () => {
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+    dbMock.query.mockResolvedValue([
+      {
+        id: 9,
+        created_at: '2026-01-01T00:00:00Z',
+        resolution: 'pending',
+        target_table: 'gphone_messages',
+        target_id: 4
+      },
+      {
+        id: 10,
+        created_at: '2026-01-02T00:00:00Z',
+        resolution: 'pending',
+        target_table: 'gphone_media',
+        target_id: 7
+      }
+    ]);
+
+    await call('queue', {}, ADMIN);
+
+    expect(auditEntries()).toEqual([
+      {
+        citizenid: ADMIN,
+        action: 'viewed',
+        service: 'reports',
+        method: 'queue',
+        targetId: 4,
+        targetTable: 'gphone_messages',
+        details: { reportId: 9 }
+      },
+      {
+        citizenid: ADMIN,
+        action: 'viewed',
+        service: 'reports',
+        method: 'queue',
+        targetId: 7,
+        targetTable: 'gphone_media',
+        details: { reportId: 10 }
+      }
+    ]);
+  });
+
+  it('logs nothing when the queue is empty — nothing was actually shown', async () => {
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+    dbMock.query.mockResolvedValue([]);
+
+    await call('queue', {}, ADMIN);
+
+    expect(auditEntries()).toEqual([]);
+  });
+
+  it('logs nothing when a player is refused before ever reaching the content', async () => {
+    dbMock.query.mockResolvedValue([
+      { id: 9, target_table: 'gphone_messages', target_id: 4, resolution: 'pending' }
+    ]);
+
+    await call('queue', {});
+
+    expect(auditEntries()).toEqual([]);
+  });
+
+  it('logs history views under method "history", distinct from the queue', async () => {
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+    dbMock.query.mockResolvedValue([
+      {
+        id: 11,
+        updated_at: '2026-01-03T00:00:00Z',
+        resolution: 'actioned',
+        target_table: 'gphone_blabber',
+        target_id: 2
+      }
+    ]);
+
+    await call('history', {}, ADMIN);
+
+    expect(auditEntries()).toEqual([
+      {
+        citizenid: ADMIN,
+        action: 'viewed',
+        service: 'reports',
+        method: 'history',
+        targetId: 2,
+        targetTable: 'gphone_blabber',
+        details: { reportId: 11 }
+      }
+    ]);
+  });
+});
+
 describe('resolving is admin-only', () => {
   const pending = {
     id: 9,

@@ -422,6 +422,33 @@ by this list until someone re-weighs it.
   breaking Svelte's own runtime-injected `<style>` tags or the inlined module
   script itself, and there is no browser or game client in this environment to
   verify against if it did.
+- **Message and DM bodies are readable by whoever operates the server, and that
+  is inherent to what a FiveM resource is, not a defect in gPhone (MICA-70).**
+  A message lands in the operator's own MySQL database as plaintext
+  (`server/services/Messages.ts` declares `message` as the table's
+  `reportable.previewColumn`, which is what lets an admin reviewing a report
+  read the body being reported) and the same operator runs the server console —
+  nothing a resource does can keep its own host from reading its own database.
+  End-to-end encryption was considered and rejected as the wrong tool here, for
+  three reasons rather than one: gPhone ships the client as part of the
+  resource, so there is no independently distributed client whose code an
+  operator cannot alter — an operator controlling the code that encrypts defeats
+  E2EE's entire guarantee; there is nowhere durable to hold a private key, since
+  CEF's browser storage is per-machine and does not survive a reinstall or a new
+  PC; and E2EE would break the moderation/reports system above, which depends on
+  an admin being able to read a reported message's body to act on it. This
+  round's answer is disclosure and accountability, not secrecy: a privacy notice
+  on first run and from Settings says plainly that message content is readable
+  by the server operator, and an admin reading a message's body is now written
+  to the audit ledger (`server/lib/AuditLogger.ts`) so _that_ it was read is on
+  the record, even though the underlying database access it is auditing never
+  was and structurally cannot be prevented from the resource side. Three things
+  this round explicitly does **not** do, so nobody mistakes this slice for the
+  whole of MICA-70: no encryption at rest — a server owner with database
+  access still reads plaintext regardless of the audit log — no retention limit,
+  so messages are kept indefinitely by default, and no player-facing export or
+  delete of their own message history. Those are deferred as separate follow-up
+  work.
 
 ---
 

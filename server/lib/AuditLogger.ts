@@ -21,7 +21,15 @@ type AuditAction =
   | 'removed'
   | 'moderated'
   /** A moderation reversed. Distinct from `unarchived` so the ledger reads honestly. */
-  | 'unmoderated';
+  | 'unmoderated'
+  /**
+   * An admin *read* reported content rather than acting on it (MICA-70). Every other
+   * action here is a write — this is the one exception, and it exists because a write is
+   * not the only thing a player deserves to know happened to their content. Accountability
+   * for an operator reading something is otherwise unrecoverable after the fact: there is
+   * no row a read leaves behind on its own, so this is the only place it is ever recorded.
+   */
+  | 'viewed';
 
 export interface AuditLogOptions {
   citizenid: string;

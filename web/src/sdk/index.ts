@@ -28,6 +28,14 @@ export {
   getTrustedRemoteAppHosts
 } from '../shell/state/remoteAppSecurity';
 /**
+ * @public
+ * MICA-70's one privacy-disclosure string, read by both the first-run notice
+ * (`shell/PrivacyNotice.svelte`) and the permanent copy in Settings > About — plain text
+ * with nothing reactive about it, so there is no facet or permission to gate it behind
+ * (the same reasoning `MICA_BUILD_INFO` above already rests on).
+ */
+export { PRIVACY_NOTICE_TEXT } from './privacyNotice';
+/**
  * `svelte/transition`'s `fade` and `fly`, wrapped so they honour Settings > Display >
  * Motion (MICA-66). Exported here because an app may not import the shell by path
  * (§2.7), and because a Svelte 5 transition runs on the Web Animations API — a `duration:`

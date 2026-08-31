@@ -11,7 +11,10 @@ import { AuditLogger } from '../lib/AuditLogger';
  * The moderation ledger. It is the only record that a decision was made, and it is
  * written on the success path of deletes and moderations — so if it silently stops
  * working, nothing else changes and nobody notices until somebody asks who removed
- * something.
+ * something. Since MICA-70 it also carries `'viewed'`, written when an admin reads
+ * reported content rather than acts on it (`Reports.ts`'s `queue`/`history`) — the one
+ * action here that is a read, because a read leaves no row of its own for a ledger to
+ * point back to later.
  */
 
 const params = () => dbMock.insert.mock.calls[0][1];

@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 import PhoneFrame from './PhoneFrame.svelte';
 import { charge } from './state/charge';
+import { privacyNoticeSeen } from './state/privacyNotice';
 
 /**
  * In game the phone is a transparent NUI overlay: the camera viewfinder is the actual
@@ -44,6 +45,14 @@ if (!Element.prototype.animate) {
 }
 
 const noopSnippet = (() => {}) as never;
+
+// MICA-70's first-run privacy notice renders unconditionally over the whole frame while
+// unseen, which is exactly the behavior it wants — but it also means every existing test
+// here would otherwise get a second `role="dialog"` node it has nothing to do with. None
+// of this file is testing that notice, so it starts pre-dismissed for all of it.
+beforeEach(() => {
+  privacyNoticeSeen.set(true);
+});
 
 const renderFrame = (transparent: boolean) =>
   render(PhoneFrame, {

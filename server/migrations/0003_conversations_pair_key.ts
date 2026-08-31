@@ -79,7 +79,7 @@ const hasIndex = async (table: string, index: string): Promise<boolean> => {
  * ever touches rows still holding `NULL` in both new columns.
  */
 export const migration: Migration = {
-  id: '0002_conversations_pair_key',
+  id: '0003_conversations_pair_key',
   description:
     'adds gphone_messages_conversations.participant_a/participant_b, backfills them for ' +
     'existing one-to-one threads, adds the generated pair_key column, and indexes it — ' +

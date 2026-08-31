@@ -56,6 +56,12 @@ export type { AppUpdate, AppUpdateKind } from '../shell/state/appUpdates';
 export { placeholderAvatar, placeholderPhoto, placeholderPhotos } from '../lib/placeholderImage';
 export * from './types';
 export * from './version';
+/**
+ * @public
+ * MICA-70's privacy-disclosure string — plain, state-free text, so it bundles into a
+ * sandboxed add-on unchanged. Mirrors `index.ts`'s own re-export.
+ */
+export { PRIVACY_NOTICE_TEXT } from './privacyNotice';
 /** @public */
 /**
  * The motion-aware `fade`/`fly`, mirroring `index.ts` (MICA-66).

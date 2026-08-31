@@ -41,6 +41,14 @@ ringtone override, one of the client's existing ringtone choices. It is nullable
 with no default, and null means "use the system ringtone" — an existing contact
 is never backfilled to a specific tone.
 
+**`gphone_audit_logs.action` gained a `viewed` value, via a new migration
+(`0002_audit_logs_add_viewed_action`) — run `gphoneschema apply` from your
+server console after updating, or import the regenerated `gphone.sql` /
+`gphone.esx.sql` on a fresh install.** An admin opening the report queue or
+history now writes an audit entry for each reported item they actually see, not
+only for a moderation decision — the ledger previously recorded a takedown but
+not the read that preceded it. No existing row changes shape or meaning.
+
 **`gphone_messages_conversations` gained `participant_a`, `participant_b` and a
 generated `pair_key` column, plus a migration (`0003_conversations_pair_key`) —
 run `gphoneschema apply` from your server console after updating, or import the

@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     MICA_BUILD_INFO,
+    PRIVACY_NOTICE_TEXT,
     SettingsSection,
     useAccount,
     useAppRegistry,
@@ -90,4 +91,15 @@
       </button>
     </div>
   </SettingsSection>
+
+  <!-- MICA-70, item 1: the permanent copy of the notice a new character sees once, on
+       first run (`shell/PrivacyNotice.svelte`). Always reachable here rather than only
+       shown once and forgotten. -->
+  <div class="mt-4">
+    <SettingsSection title="Privacy">
+      <div class="p-4">
+        <p class="text-on-surface-variant text-body-medium">{PRIVACY_NOTICE_TEXT}</p>
+      </div>
+    </SettingsSection>
+  </div>
 </div>

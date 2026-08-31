@@ -11,6 +11,7 @@ import {
   summariseTarget,
   type ReportableTable
 } from '../lib/moderation';
+import { AuditLogger } from '../lib/AuditLogger';
 import { isAdmin } from './Admin';
 import type { Report, ReportResolution } from '@shared/types';
 
@@ -155,20 +156,63 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
 });
 
 /**
+ * Log an admin *viewing* reported content, as distinct from acting on it (MICA-70).
+ *
+ * `AuditLogger` recorded a moderation decision from the day it shipped, and nothing else —
+ * an admin opening the queue and reading twenty players' reported messages, photos and
+ * bios left no trace at all, decision or not. Accountability for a read is unrecoverable
+ * after the fact if it is not written down here: unlike a write, a read leaves no row of
+ * its own for a ledger to point at later.
+ *
+ * One entry per report actually reaching the admin's screen, not one per call: `queue`
+ * and `history` each return a list, and `target_table`/`target_id` — the same pair
+ * `moderateTarget`/`restoreTarget` already log against — names one piece of content per
+ * report, not the list. `details.reportId` is what tells two reports of the *same*
+ * content apart, since `target_table`+`target_id` alone cannot. The `preview` and
+ * `note` an admin actually read are already sitting on the report row itself
+ * (`target_preview`, `note`) — logging them again here would be the exact redundant copy
+ * a ledger entry should not carry.
+ *
+ * An empty list logs nothing: nothing was actually shown, so there is nothing to be
+ * accountable for having seen.
+ */
+const logContentViewed = async (
+  citizenid: string,
+  method: 'queue' | 'history',
+  rows: readonly Report[]
+): Promise<void> => {
+  await Promise.all(
+    rows.map((row) =>
+      AuditLogger.log({
+        citizenid,
+        action: 'viewed',
+        service: 'reports',
+        method,
+        targetId: row.target_id,
+        targetTable: row.target_table,
+        details: { reportId: row.id }
+      })
+    )
+  );
+};
+
+/**
  * The review queue.
  *
  * Gated here rather than by hiding the Administration app. Hiding the app hides the
  * button, not the capability — a NUI request is not proof of intent (AGENTS.md §2.9),
  * and `gphonecharge` already shipped once with its gate in the wrong place.
  */
-app.registerEvent('queue', async (source) => {
+app.registerEvent('queue', async (source, cbId, data, citizenid) => {
   if (!isAdmin(source)) throw new Error('Not authorised.');
 
   const pending = await repo.findAll({ resolution: 'pending' } as Partial<Report>);
   // Oldest first: a queue that surfaces the newest report first starves the backlog.
-  return pending.sort(
+  const sorted = pending.sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
+  await logContentViewed(citizenid, 'queue', sorted);
+  return sorted;
 });
 
 /**
@@ -177,11 +221,15 @@ app.registerEvent('queue', async (source) => {
  * A separate call rather than a flag on `queue`, because the two are read at different
  * times and the pending list is the one that has to stay small and fast.
  */
-app.registerEvent('history', async (source) => {
+app.registerEvent('history', async (source, cbId, data, citizenid) => {
   if (!isAdmin(source)) throw new Error('Not authorised.');
 
   const rows = await repo.findAllResolved();
-  return rows.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  const sorted = rows.sort(
+    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+  );
+  await logContentViewed(citizenid, 'history', sorted);
+  return sorted;
 });
 
 /**

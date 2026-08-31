@@ -17,6 +17,11 @@
 -- updates or deletes a row in this table — so it stays a trustworthy record after the
 -- content it refers to has been soft-deleted.
 --
+-- One action, `viewed`, is not a player acting on their own content at all: it is an
+-- admin reading content somebody else reported (MICA-70). It is the one exception to
+-- "state-changing" above, and it exists for the same reason the rest of this table
+-- does — a read otherwise leaves nothing behind for anyone to be held accountable to.
+--
 -- `target_table` + `target_id` point at the affected row rather than using a foreign
 -- key, on purpose: the log must survive the row it describes, and it spans every app
 -- table. That is also why there is no FK on those columns.
@@ -30,7 +35,8 @@ CREATE TABLE IF NOT EXISTS `gphone_audit_logs` (
         'left',
         'removed',
         'moderated',
-        'unmoderated'
+        'unmoderated',
+        'viewed'
     ) NOT NULL,
     `service` varchar(100) NOT NULL,
     `method` varchar(100) NOT NULL,
@@ -614,4 +620,5 @@ CREATE TABLE IF NOT EXISTS `gphone_schema_migrations` (
 
 INSERT IGNORE INTO `gphone_schema_migrations` (`id`) VALUES
   ('0001_repair_conversation_participants'),
-  ('0002_conversations_pair_key');
+  ('0002_audit_logs_add_viewed_action'),
+  ('0003_conversations_pair_key');

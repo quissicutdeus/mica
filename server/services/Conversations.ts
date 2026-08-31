@@ -99,7 +99,7 @@ export const conversations = defineService<Conversation>({
      * built from are no more secret than what `findForCitizen`'s hydrated participant list
      * already hands every member of a thread.
      *
-     * **Mirrored by hand in `server/migrations/0002_conversations_pair_key.ts`.** A
+     * **Mirrored by hand in `server/migrations/0003_conversations_pair_key.ts`.** A
      * migration is frozen at the moment it shipped and must not import a service module
      * whose shape can move out from under it (the same reason `0001` hardcodes its own
      * table and index names rather than importing them) — so the two copies of this
