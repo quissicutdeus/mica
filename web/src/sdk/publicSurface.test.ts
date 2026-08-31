@@ -7,6 +7,7 @@ import * as sdkIndex from './index';
 import * as sdkAddon from './addon';
 import * as sdkApp from './app';
 import * as sdkCore from './core';
+import { SDK_CONTRACT_VERSION } from './version';
 
 /**
  * The SDK's public surface, frozen — so a change that breaks a published add-on cannot
@@ -99,26 +100,26 @@ import * as sdkCore from './core';
  */
 
 /**
- * The version the contract below is pinned to, and the version the baseline was frozen
- * at. **They must stay equal**, which is the whole mechanism: landing a break means
- * bumping this *and* re-freezing the baseline in the same commit, so the break is a
- * deliberate, reviewable line in a diff rather than a silence.
+ * What `BASELINE_EXPORTS` and `BASELINE_PROPS` below were captured at.
  *
- * It lives here rather than in `web/package.json` or `sdk/version.ts` because every other
- * version in this tree moves on its own. `MICA_VERSION` is CalVer computed from
- * `git log` at build time (`vite.config.ts`), so it changes on every commit and pinning
- * to it would mean nothing; `web/package.json`'s `1.0.0` is read by no code at all, and
- * putting a contract number there would advertise a published package that does not
- * exist. A pin whose only job is to stamp the list underneath it belongs next to that
- * list, where the two cannot drift apart.
+ * The pin itself — `SDK_CONTRACT_VERSION` — is imported from `sdk/version.ts` above, and
+ * this literal is what it is checked against. **They must stay equal**, which is the whole
+ * mechanism: landing a break means bumping the exported constant *and* re-freezing the
+ * baselines here in the same commit, so the break is a deliberate, reviewable line in a
+ * diff rather than a silence.
  *
- * The cost of that choice, stated: an add-on author cannot import this number. Exporting
- * it from `sdk/version.ts` would fix that and is the obvious follow-up; this file
- * deliberately changes no SDK source.
+ * This half stays a literal in this file on purpose. It is not a second copy of the pin —
+ * it is the record of what the lists underneath it were captured at, and importing it too
+ * would make `has a baseline frozen at the version it is pinned to` compare a value with
+ * itself and pass forever. One number is authored where an add-on can read it; the other
+ * sits next to the frozen data it describes, which is what lets them disagree at all.
+ *
+ * The pin used to live here as well, and MICA-173 moved it: this file said outright that
+ * "an add-on author cannot import this number", which made the one number in the tree with
+ * real compatibility meaning unreadable by the only people who needed it. `sdk/version.ts`
+ * is where it went, for the reasons written there — briefly, `MICA_VERSION` is a CalVer
+ * build stamp that moves on every push, and `package.json`'s `1.0.0` is read by no code.
  */
-const SDK_CONTRACT_VERSION = '1';
-
-/** What `BASELINE_EXPORTS` and `BASELINE_PROPS` below were captured at. */
 const BASELINE_VERSION = '1';
 
 const SDK_DIR = __dirname;
@@ -467,6 +468,12 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'ReplyIcon',
     'ReportButton',
     'ReportDialog',
+    // Added at v1 rather than captured with the rest of the list (MICA-173). An addition
+    // never needs writing down — the gate only reads this list for removals — but this one
+    // is the pin an add-on's own compatibility check imports, so dropping it later would
+    // break exactly the code this export was created to enable. Listing it is what makes
+    // that a failure instead of a silent widening in the other direction.
+    'SDK_CONTRACT_VERSION',
     'Screen',
     'SearchBar',
     'SearchIcon',
@@ -634,6 +641,12 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'ReplyIcon',
     'ReportButton',
     'ReportDialog',
+    // Added at v1 rather than captured with the rest of the list (MICA-173). An addition
+    // never needs writing down — the gate only reads this list for removals — but this one
+    // is the pin an add-on's own compatibility check imports, so dropping it later would
+    // break exactly the code this export was created to enable. Listing it is what makes
+    // that a failure instead of a silent widening in the other direction.
+    'SDK_CONTRACT_VERSION',
     'Screen',
     'SearchBar',
     'SearchIcon',

@@ -177,6 +177,62 @@ function inlineCss(): Plugin {
   };
 }
 
+/**
+ * MICA-170. Every `__MICA_*__` identifier this tree injects has to be substituted here
+ * too, and until this plugin existed nothing said so: `vite.config.ts` had a `define` block
+ * and this config had none, so `__MICA_VERSION__` and `__MICA_BUILD_INFO__` survived
+ * verbatim into all four shipped bundles. Inside the add-on iframe the identifiers are
+ * undeclared, `sdk/version.ts`'s `typeof` guards held, and every published add-on read the
+ * fallback — a plausible, confidently wrong `1.0.0`, on every server, forever.
+ *
+ * It failed in the direction that reads as success, and no suite saw it because no suite
+ * inspects `public/addons/*.js` — the directory is gitignored and only exists after
+ * `scripts/build-addons.mjs` runs. That is why the check is *here* rather than in a Vitest
+ * file that greps the output directory: a test like that passes on a clean checkout by
+ * finding nothing to read, which is the fail-open shape AGENTS.md §9 names. This runs
+ * exactly when a bundle is produced and fails the build that would have shipped it, so
+ * there is no state in which it is silent and a bad bundle exists.
+ *
+ * `addonDefines.test.ts` covers the other half statically — that this config defines every
+ * identifier `src/vite-env.d.ts` declares — so a newly injected global is caught by the
+ * unit suite before anyone gets as far as a build.
+ */
+function noUnsubstitutedDefines(): Plugin {
+  const IDENTIFIER = /__MICA_[A-Za-z0-9_]*__/g;
+  return {
+    name: 'gphone-no-unsubstituted-defines',
+    // `order: 'post'`, and last in the `plugins` array, so this sees the final chunk text —
+    // including whatever `inlineCss()` (also a post hook) has prepended by then.
+    generateBundle: {
+      order: 'post',
+      handler(_, bundle) {
+        for (const [file, chunk] of Object.entries(bundle)) {
+          // Assets are decoded rather than `.toString()`-ed: a `Uint8Array`'s own
+          // `toString` yields `"104,101,..."`, in which nothing ever matches and every
+          // binary asset would silently read as clean.
+          const text =
+            chunk.type === 'chunk'
+              ? chunk.code
+              : typeof chunk.source === 'string'
+                ? chunk.source
+                : new TextDecoder().decode(chunk.source);
+          const found = [...new Set(text.match(IDENTIFIER) ?? [])];
+          if (found.length > 0) {
+            this.error(
+              `[gPhone] ${file} still contains unsubstituted build-time identifier(s): ` +
+                `${found.join(', ')}. An add-on bundle runs in a sandboxed iframe where these ` +
+                `are undeclared, so each one silently falls back to whatever default ` +
+                `src/sdk/version.ts holds instead of failing. Add it to this config's ` +
+                `\`define\` block — with a deliberate value for an add-on, which is not ` +
+                `automatically the shell's (see the block's comment).`
+            );
+          }
+        }
+      }
+    }
+  };
+}
+
 // MICA-16 step 4: `output.codeSplitting: false` below is what makes each bundle
 // self-contained on Vite 8's rolldown build path, and rolldown rejects more than one
 // `lib.entry` once that's set ("multiple inputs are not supported when
@@ -198,7 +254,43 @@ if (!process.env.ADDON_ID && ids.length > 1) {
 }
 
 export default defineConfig({
-  plugins: [addOnEntries(), facetSwap(), shellTimeShim(), refuseCoreEntry(), svelte(), inlineCss()],
+  plugins: [
+    addOnEntries(),
+    facetSwap(),
+    shellTimeShim(),
+    refuseCoreEntry(),
+    svelte(),
+    inlineCss(),
+    // Last, deliberately — it reads the finished chunk text. See its comment.
+    noUnsubstitutedDefines()
+  ],
+  /**
+   * MICA-170/MICA-173. Both identifiers are substituted with the **empty string**, not
+   * with the shell's values, and that is the decision rather than an oversight.
+   *
+   * `vite.config.ts` stamps the shell with a CalVer computed from `git log`, so it moves on
+   * every push to `main`. Handing that to an add-on would be worse than it looks: an add-on
+   * bundle is compiled once and then loaded by whatever phone installs it, so the stamp
+   * baked in here is the version of the tree that *built* the bundle, not the version of
+   * the phone *running* it. For the four in-tree add-ons those coincide; for a third-party
+   * add-on — the ones this whole surface exists for — they do not, and that bundle has no
+   * `define` at all. A number that means one thing for our bundles and another for
+   * everyone else's is not a contract.
+   *
+   * So an add-on is told, honestly, that it does not know: `''` — which `lib/semver.ts`
+   * already reads as *not orderable* rather than folding into "up to date". The number an
+   * add-on can actually act on is `SDK_CONTRACT_VERSION` (`src/sdk/version.ts`), which
+   * moves only when the surface moves and is a plain source constant, so it needs no
+   * `define` and is correct in every bundle however it was built.
+   *
+   * Defining them at all — rather than leaving the fallbacks in `sdk/version.ts` to produce
+   * the same `''` — is what makes `noUnsubstitutedDefines()` above meaningful: a bundle
+   * carrying a bare `__MICA_*__` identifier is then always a mistake, never a shrug.
+   */
+  define: {
+    __MICA_VERSION__: JSON.stringify(''),
+    __MICA_BUILD_INFO__: JSON.stringify('')
+  },
   // `outDir` (`public/addons`) sits inside the shell's `publicDir` (`public/`, Vite's
   // default) so the main `vite build` can pick the bundles up through its own publicDir
   // copy — but that makes *this* config's default publicDir the same `public/` folder,
