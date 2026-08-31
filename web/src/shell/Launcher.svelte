@@ -4,9 +4,9 @@
   import { get } from 'svelte/store';
   import { appVisible } from './state/appVisibility';
   import AppIcon from '../sdk/ui/AppIcon.svelte';
-  import { attachLongPressDrag } from '../lib/longPressDrag';
-  import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
-  import { abandonSheetDrag, DRAWER_OPEN_COMMIT } from '../lib/sheetDrag';
+  import { attachLongPressDrag } from '../lib/phone/longPressDrag';
+  import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/phone/pointerDrag';
+  import { abandonSheetDrag, DRAWER_OPEN_COMMIT } from '../lib/phone/sheetDrag';
   import { appRegistryStore } from './state/registry';
   import { homeGridColumns, homeGridRows } from './state/homeGridSettings';
   import { homeGridItems, openFolderId, type HomeGridItem } from './state/homeGrid';

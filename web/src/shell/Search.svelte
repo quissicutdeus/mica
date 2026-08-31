@@ -1,7 +1,7 @@
 <script lang="ts">
   import { get } from 'svelte/store';
-  import { attachDragGesture } from '../lib/pointerDrag';
-  import { createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/sheetDrag';
+  import { attachDragGesture } from '../lib/phone/pointerDrag';
+  import { createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/phone/sheetDrag';
   import { isDrawerOpen, openDrawer, drawerDragProgress, drawerDragPhase } from './state/appDrawer';
   import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
   import SearchIcon from '../sdk/ui/icons/SearchIcon.svelte';

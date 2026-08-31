@@ -1,4 +1,4 @@
-import { isBrowser } from './isBrowser';
+import { isBrowser } from '../sdk/isBrowser';
 
 interface DebugEvent {
   action: string;

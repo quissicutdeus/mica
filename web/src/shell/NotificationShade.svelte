@@ -3,10 +3,10 @@
   import type { NotificationItem } from '@shared/types';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
-  import { fade, fly } from '../lib/motion';
-  import { attachDragGesture } from '../lib/pointerDrag';
-  import { createSheetClose } from '../lib/sheetDrag';
-  import { focusTrap } from '../lib/focusTrap';
+  import { fade, fly } from '../lib/sdk/motion';
+  import { attachDragGesture } from '../lib/phone/pointerDrag';
+  import { createSheetClose } from '../lib/phone/sheetDrag';
+  import { focusTrap } from '../lib/sdk/focusTrap';
   import {
     groupNotificationsByConversation,
     type NotificationConversationGroup

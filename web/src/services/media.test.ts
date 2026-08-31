@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 import { media } from './media';
 import * as fetchNuiModule from '../nui/fetchNui';
-import * as thumbnailModule from '../lib/thumbnail';
+import * as thumbnailModule from '../lib/sdk/thumbnail';
 
 const row = (id: number, extra: Record<string, unknown> = {}) => ({
   id,

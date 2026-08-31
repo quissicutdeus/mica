@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
-import { isBrowser } from '../lib/isBrowser';
+import { isBrowser } from '../lib/sdk/isBrowser';
 
 /**
  * Whether the player holds an admin ace, as decided by the server.

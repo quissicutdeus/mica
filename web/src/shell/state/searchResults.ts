@@ -1,7 +1,7 @@
 import type { Contact } from '@shared/types';
 import type { AppManifest } from '../../sdk/manifest';
 import type { UIConversation } from '../../services/conversations';
-import { manifestVisible, type CapabilitySet } from '../../lib/appVisibility';
+import { manifestVisible, type CapabilitySet } from '../../lib/phone/appVisibility';
 
 /**
  * How many hits each group contributes at most.

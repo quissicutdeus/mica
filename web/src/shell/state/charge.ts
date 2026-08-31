@@ -1,5 +1,5 @@
 import { derived, writable } from 'svelte/store';
-import { isBrowser } from '../../lib/isBrowser';
+import { isBrowser } from '../../lib/sdk/isBrowser';
 
 // Charge level between 0 and 100
 export const charge = writable<number>(100);

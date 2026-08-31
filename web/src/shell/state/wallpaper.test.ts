@@ -11,7 +11,7 @@ import {
   PRESETS
 } from './wallpaper';
 import { themeStore, resetTheme } from './theme';
-import { buildSchemes } from '../../lib/m3';
+import { buildSchemes } from '../../lib/sdk/m3';
 import { backgroundForSeed } from './wallpaper';
 
 describe('Wallpaper Store', () => {

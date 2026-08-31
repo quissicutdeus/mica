@@ -53,9 +53,9 @@ import {
   type AudibleBroadcast,
   type NearbyBroadcast
 } from '../../../../shell/state/nearbyMusic';
-import { MAX_AUDIBLE_BROADCASTS } from '../../../../lib/musicBroadcast';
+import { MAX_AUDIBLE_BROADCASTS } from '../../../../lib/sdk/musicBroadcast';
 import { isYouTubeSource, thumbnailUrlFor } from '@shared/youtube';
-import { describeMusicError } from '../../../../lib/musicErrors';
+import { describeMusicError } from '../../../../lib/sdk/musicErrors';
 
 export type {
   AudibleBroadcast,

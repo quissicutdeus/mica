@@ -1,5 +1,5 @@
 import { writable, derived } from 'svelte/store';
-import { isBrowser } from '../../lib/isBrowser';
+import { isBrowser } from '../../lib/sdk/isBrowser';
 import { usePersisted } from '../../sdk/host/usePersisted';
 
 /**

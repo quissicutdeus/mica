@@ -64,10 +64,10 @@
     MusicStatus
   } from '../host/inProcess/facets/music';
   import { thumbnailUrlFor } from '@shared/youtube';
-  import { describeMusicError } from '../../lib/musicErrors';
-  import { formatDuration } from '../../lib/formatters';
-  import { buildSchemes, cssVarBlock } from '../../lib/m3';
-  import { dominantColorFrom } from '../../lib/dominantColor';
+  import { describeMusicError } from '../../lib/sdk/musicErrors';
+  import { formatDuration } from '../../lib/sdk/formatters';
+  import { buildSchemes, cssVarBlock } from '../../lib/sdk/m3';
+  import { dominantColorFrom } from '../../lib/sdk/dominantColor';
   import Button from './Button.svelte';
   import MusicNoteIcon from './icons/MusicNoteIcon.svelte';
   import PauseIcon from './icons/PauseIcon.svelte';

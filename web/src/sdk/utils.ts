@@ -8,9 +8,15 @@
  * Only things that are genuinely platform surface. App-specific helpers belong in the
  * app — `hashStringToCardNumber` was a `utils/` file used by nothing but Bank, and now
  * lives there.
+ *
+ * Every implementation below is in `lib/sdk/`, never `lib/phone/`, and that is checked
+ * rather than observed: `lib/ownership.test.ts` (MICA-171) splits `lib/` by owner and
+ * fails if anything under `sdk/` reaches the phone-owned half. Adding a re-export here
+ * whose module lives in `lib/phone/` is the thing it catches — move the module, or do
+ * not export it.
  */
-export { isBrowser } from '../lib/isBrowser';
-export { filterByQuery } from '../lib/filterByQuery';
+export { isBrowser } from '../lib/sdk/isBrowser';
+export { filterByQuery } from '../lib/sdk/filterByQuery';
 export {
   formatCurrency,
   formatDate,
@@ -18,9 +24,9 @@ export {
   formatRelativeTime,
   formatTime,
   formatTimestamp
-} from '../lib/formatters';
-export { renderMarkdown } from '../lib/markdown';
-export { useScrollDetect } from '../lib/useScrollDetect';
+} from '../lib/sdk/formatters';
+export { renderMarkdown } from '../lib/sdk/markdown';
+export { useScrollDetect } from '../lib/sdk/useScrollDetect';
 /**
  * Image encoding, and the downscale every photo is stored with (MICA-110).
  *
@@ -38,7 +44,7 @@ export {
   makeThumbnail,
   THUMBNAIL_MAX_DIMENSION,
   THUMBNAIL_QUALITY
-} from '../lib/thumbnail';
+} from '../lib/sdk/thumbnail';
 
 /**
  * Split player-written text into styleable pieces — text, `@mention`, `#tag`.

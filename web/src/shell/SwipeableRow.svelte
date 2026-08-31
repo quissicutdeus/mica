@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { attachDragGesture, shouldCommitSwipe } from '../lib/pointerDrag';
+  import { attachDragGesture, shouldCommitSwipe } from '../lib/phone/pointerDrag';
 
   interface Props {
     /**

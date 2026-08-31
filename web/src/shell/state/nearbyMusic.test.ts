@@ -19,7 +19,7 @@ import {
   INCUMBENT_MARGIN,
   MAX_AUDIBLE_BROADCASTS,
   joinOffsetSeconds
-} from '../../lib/musicBroadcast';
+} from '../../lib/sdk/musicBroadcast';
 
 /**
  * Other people's music, and the two rules the ticket promoted from open questions to

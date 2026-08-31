@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { fade } from '../../lib/motion';
+  import { fade } from '../../lib/sdk/motion';
   import Button from './Button.svelte';
   import { useReport } from '../host/useReport';
   import { usePhoneNotification } from '../host/usePhoneNotification';
   import type { ReportCategory } from '@shared/types';
-  import { messageOf } from '../../lib/errors';
-  import { focusTrap } from '../../lib/focusTrap';
+  import { messageOf } from '../../lib/sdk/errors';
+  import { focusTrap } from '../../lib/sdk/focusTrap';
 
   interface Props {
     /** The gPhone table the content lives in. Validated again server-side. */

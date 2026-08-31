@@ -1,7 +1,7 @@
 import { registerFacet } from '../../current';
 import { writable } from 'svelte/store';
 import { toast } from '../../../../shell/state/toast';
-import { messageOf } from '../../../../lib/errors';
+import { messageOf } from '../../../../lib/sdk/errors';
 
 export interface AppActionOptions {
   /** Toast to show when the work succeeds. Omit for actions that speak for themselves. */

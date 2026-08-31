@@ -1,5 +1,5 @@
 import type { Readable, Unsubscriber } from 'svelte/store';
-import { messageOf } from '../lib/errors';
+import { messageOf } from '../lib/sdk/errors';
 
 /**
  * A launcher badge count, composed the first time something reads it.

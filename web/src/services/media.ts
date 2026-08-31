@@ -1,7 +1,7 @@
 import { get } from 'svelte/store';
 import { createPagedStore } from './createPagedStore';
 import { fetchNui } from '../nui/fetchNui';
-import { makeThumbnail } from '../lib/thumbnail';
+import { makeThumbnail } from '../lib/sdk/thumbnail';
 import type { MediaItem, MediaPreview } from '@shared/types';
 
 /**

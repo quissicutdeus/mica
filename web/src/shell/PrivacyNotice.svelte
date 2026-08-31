@@ -10,9 +10,9 @@
    * (`apps/settings/panes/About.svelte`), reading the same `PRIVACY_NOTICE_TEXT` constant
    * so the two can never drift apart.
    */
-  import { fade } from '../lib/motion';
+  import { fade } from '../lib/sdk/motion';
   import Button from '../sdk/ui/Button.svelte';
-  import { focusTrap } from '../lib/focusTrap';
+  import { focusTrap } from '../lib/sdk/focusTrap';
   import { PRIVACY_NOTICE_TEXT, markPrivacyNoticeSeen } from './state/privacyNotice';
 
   let dialogRef = $state<HTMLElement | null>(null);

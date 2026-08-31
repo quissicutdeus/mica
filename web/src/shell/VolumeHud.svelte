@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fly } from '../lib/motion';
+  import { fly } from '../lib/sdk/motion';
   import { soundVolumePercent, soundMuted, volumeHudVisible } from './state/audio';
 </script>
 

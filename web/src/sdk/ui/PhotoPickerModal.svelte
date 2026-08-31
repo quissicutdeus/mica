@@ -7,7 +7,7 @@
   import CloseIcon from './icons/CloseIcon.svelte';
   import CheckCircleIcon from './icons/CheckCircleIcon.svelte';
   import Button from './Button.svelte';
-  import { focusTrap } from '../../lib/focusTrap';
+  import { focusTrap } from '../../lib/sdk/focusTrap';
 
   let {
     title = 'Select Photo',

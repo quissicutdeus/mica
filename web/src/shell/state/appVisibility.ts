@@ -1,7 +1,7 @@
 import { derived } from 'svelte/store';
 import { isAdmin } from '../../services/admin';
 import { capabilities } from '../../services/capabilities';
-import { manifestVisible } from '../../lib/appVisibility';
+import { manifestVisible } from '../../lib/phone/appVisibility';
 import type { AppManifest } from '../../sdk/manifest';
 
 /**

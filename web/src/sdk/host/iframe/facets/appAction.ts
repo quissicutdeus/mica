@@ -1,6 +1,6 @@
 import { registerFacet } from '../../current';
 import { writable } from 'svelte/store';
-import { messageOf } from '../../../../lib/errors';
+import { messageOf } from '../../../../lib/sdk/errors';
 import { remoteCall } from '../remote';
 
 type Twin = ReturnType<typeof import('../../inProcess/facets/appAction').appAction>;

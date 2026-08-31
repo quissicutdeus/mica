@@ -43,7 +43,7 @@ export { PRIVACY_NOTICE_TEXT } from './privacyNotice';
  * the originals would quietly opt that app out of the setting. `motion.test.ts` fails if
  * anything does.
  */
-export { fade, fly } from '../lib/motion';
+export { fade, fly } from '../lib/sdk/motion';
 export { fetchCatalog, getRemoteCatalogUrl, setRemoteCatalogUrl } from '../shell/state/catalog';
 export type { CatalogEntry } from '../shell/state/catalog';
 /**
@@ -60,7 +60,7 @@ export type { ResolvedKeybindAction } from '../shell/state/keybinds';
 export type { RunningApp } from '../shell/state/navigation';
 export type { ToastMessage } from '../shell/state/toast';
 export type { AppEvent } from '../shell/state/appEvents';
-export type { M3Tokens } from '../lib/m3';
+export type { M3Tokens } from '../lib/sdk/m3';
 export type { FollowPage, FollowListQuery, AccountSearchQuery } from '../services/accounts';
 export type { ListingPage, CreateListingInput } from '../services/marketplace';
 export type { SendMoneyOutcome, SendMoneyInput } from '../services/bank';
@@ -76,6 +76,10 @@ export type { SendMoneyOutcome, SendMoneyInput } from '../services/bank';
  * Safe to sit in the SDK because `lib/` is state-free and I/O-free by definition
  * (AGENTS.md §8), so it bundles into a sandboxed add-on unchanged.
  */
-export { placeholderAvatar, placeholderPhoto, placeholderPhotos } from '../lib/placeholderImage';
+export {
+  placeholderAvatar,
+  placeholderPhoto,
+  placeholderPhotos
+} from '../lib/sdk/placeholderImage';
 export * from './types';
 export * from './version';

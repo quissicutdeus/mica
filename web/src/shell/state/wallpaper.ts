@@ -1,6 +1,6 @@
 import { derived } from 'svelte/store';
 import { usePersisted } from '../../sdk/host/usePersisted';
-import { backgroundForScheme, buildSchemes, sanitizeSeed } from '../../lib/m3';
+import { backgroundForScheme, buildSchemes, sanitizeSeed } from '../../lib/sdk/m3';
 import { schemeStore, setThemeSeed, themeStore, type ThemeMode } from './theme';
 
 /**

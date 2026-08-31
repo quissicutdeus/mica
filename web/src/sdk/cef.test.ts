@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { ROLE_NAMES, TOKEN_NAMES } from '../lib/m3';
+import { ROLE_NAMES, TOKEN_NAMES } from '../lib/sdk/m3';
 
 /**
  * The CEF capability baseline, enforced.

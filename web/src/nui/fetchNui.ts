@@ -1,4 +1,4 @@
-import { isBrowser } from '../lib/isBrowser';
+import { isBrowser } from '../lib/sdk/isBrowser';
 import { getTransport } from './transport';
 
 /**

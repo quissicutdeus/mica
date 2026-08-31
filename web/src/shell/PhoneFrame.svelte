@@ -2,7 +2,7 @@
   import { anySheetOpen } from './state/sheets';
   import { onMount, type Snippet } from 'svelte';
   import { get } from 'svelte/store';
-  import { fly, fade } from '../lib/motion';
+  import { fly, fade } from '../lib/sdk/motion';
   import { formattedTime, formattedDate } from './state/time';
   import { goHome, currentApp } from './state/navigation';
   import { displayCharge, isBatteryDead } from './state/charge';
@@ -10,9 +10,9 @@
   import { bluetoothEnabled } from './state/bluetooth';
   import { musicSource, musicStatus } from './state/music';
   import { stepVolume } from './state/audio';
-  import { enableDragScroll } from '../lib/dragScroll';
-  import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
-  import { abandonSheetDrag, createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/sheetDrag';
+  import { enableDragScroll } from '../lib/phone/dragScroll';
+  import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/phone/pointerDrag';
+  import { abandonSheetDrag, createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/phone/sheetDrag';
   import {
     PHONE_HEIGHT,
     PHONE_WIDTH,

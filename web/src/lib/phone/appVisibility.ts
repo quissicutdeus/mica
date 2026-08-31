@@ -1,4 +1,4 @@
-import type { AppCapability, AppManifest } from '../sdk/manifest';
+import type { AppCapability, AppManifest } from '../../sdk/manifest';
 
 /**
  * Whether an app should appear on this phone at all — the rule, with no stores behind it.

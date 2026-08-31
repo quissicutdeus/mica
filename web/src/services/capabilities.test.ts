@@ -13,13 +13,13 @@ import { get } from 'svelte/store';
 const loadCapabilities = async (browser: boolean, reply: () => Promise<unknown>) => {
   vi.resetModules();
   const fetchNui = vi.fn(reply);
-  vi.doMock('../lib/isBrowser', () => ({ isBrowser: () => browser }));
+  vi.doMock('../lib/sdk/isBrowser', () => ({ isBrowser: () => browser }));
   vi.doMock('../nui/fetchNui', () => ({ fetchNui, isBrowser: () => browser }));
   return { ...(await import('./capabilities')), fetchNui };
 };
 
 beforeEach(() => vi.resetModules());
-afterEach(() => vi.doUnmock('../lib/isBrowser'));
+afterEach(() => vi.doUnmock('../lib/sdk/isBrowser'));
 
 const hasMoney = async () => ({ money: true });
 

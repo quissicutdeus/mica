@@ -1,5 +1,5 @@
-import { debugData } from '../lib/debug';
-import { placeholderAvatar } from '../lib/placeholderImage';
+import { debugData } from '../lib/phone/debug';
+import { placeholderAvatar } from '../lib/sdk/placeholderImage';
 import { appRegistryStore } from './state/registry';
 import { openApp } from './state/navigation';
 import {

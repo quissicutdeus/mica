@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { is24Hour } from '../shell/state/time';
+import { is24Hour } from '../../shell/state/time';
 
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', {

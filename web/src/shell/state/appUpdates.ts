@@ -1,9 +1,9 @@
 import { derived, get, writable, type Readable } from 'svelte/store';
-import { compareVersions } from '../../lib/semver';
+import { compareVersions } from '../../lib/phone/semver';
 import { fetchCatalog, getRemoteCatalogUrl, type CatalogEntry } from './catalog';
 import { appRegistryStore } from './registry';
 import type { AppManifest } from '../../sdk/manifest';
-import { messageOf } from '../../lib/errors';
+import { messageOf } from '../../lib/sdk/errors';
 
 /**
  * Whether an installed add-on has fallen behind the catalog.

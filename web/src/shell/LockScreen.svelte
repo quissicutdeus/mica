@@ -19,7 +19,7 @@
   import { unlock } from './state/lockScreen';
   import { callStore } from '../services/call';
   import { openApp } from './state/navigation';
-  import { fade } from '../lib/motion';
+  import { fade } from '../lib/sdk/motion';
   import PhoneIcon from '../sdk/ui/icons/PhoneIcon.svelte';
 
   /**

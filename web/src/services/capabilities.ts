@@ -1,8 +1,8 @@
 import { writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
-import { isBrowser } from '../lib/isBrowser';
+import { isBrowser } from '../lib/sdk/isBrowser';
 import { ALL_CAPABILITIES, type AppCapability } from '../sdk/manifest';
-import type { CapabilitySet } from '../lib/appVisibility';
+import type { CapabilitySet } from '../lib/phone/appVisibility';
 
 /**
  * `isBrowser()`, but safe to evaluate where there is no `window` at all.
@@ -37,7 +37,7 @@ const inPlainBrowser = (): boolean => typeof window !== 'undefined' && isBrowser
  * `CapabilitySet` itself lives in `lib/appVisibility.ts` with the rule that reads it —
  * that module has to stay free of anything touching `window`, and this one does not.
  */
-export type { CapabilitySet } from '../lib/appVisibility';
+export type { CapabilitySet } from '../lib/phone/appVisibility';
 
 const uniform = (value: boolean): CapabilitySet =>
   Object.fromEntries(ALL_CAPABILITIES.map((name) => [name, value]));
