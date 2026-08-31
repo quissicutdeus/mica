@@ -436,7 +436,7 @@ never reach `{@html}` unsanitized. `marked` passes raw HTML through by default
 and has no built-in sanitizer.
 
 - Render user content only via the sanitizing helper in
-  `web/src/lib/markdown.ts`. Never call `marked.parse()` directly in a
+  `web/src/lib/sdk/markdown.ts`. Never call `marked.parse()` directly in a
   component.
 - Never add `a` to the DOMPurify allowlist. Anchor navigation reloads the CEF
   instance and drops all state, so a link in a message body is a griefing

@@ -131,9 +131,9 @@ indefinitely (MICA-74). `web/src/shell/state/appUpdates.ts` is the join:
   Store's manifest `preload` (so the launcher badge is right before first paint)
   and again from its `onAppForeground`. A failed fetch **keeps the previous
   answer**: a catalog server that is down is not evidence anyone is up to date.
-- **`compareVersions`** (`web/src/lib/semver.ts`) does the ordering, and returns
-  `null` for a pair it cannot order rather than guessing. `version` is an
-  operator-authored string checked only for being non-empty, so `'1.10.0'` vs
+- **`compareVersions`** (`web/src/lib/phone/semver.ts`) does the ordering, and
+  returns `null` for a pair it cannot order rather than guessing. `version` is
+  an operator-authored string checked only for being non-empty, so `'1.10.0'` vs
   `'1.9.0'` and `'2.0'` vs `'2.0.0'` both have to come out right, and `nightly`
   has to come out as _unknown_.
 - **An unorderable difference is shown as a version mismatch, never as
