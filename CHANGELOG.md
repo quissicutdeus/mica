@@ -367,6 +367,23 @@ they are replicated.
 
 ### Fixed
 
+- Add-on bundles carried a fabricated version. `vite.addon.config.ts` had no
+  `define` block, so `__MICA_VERSION__` was never substituted and every
+  add-on's `MICA_VERSION` fell through to a hard-coded `1.0.0` — on every
+  server, forever, while the phone's own bundle carried the real CalVer. The one
+  version number an add-on could read was wrong in exactly the bundles that
+  needed it, and it was wrong in the shape that reads as success rather than as
+  an error. **If you author an add-on, note the new value is the empty string,
+  not the real version**: a bundle is compiled once and then installed by
+  whatever phone fetches it, so the host's build stamp is not knowable when the
+  bundle is written, and baking in the building tree's number would be accurate
+  for the four add-ons that ship here and a lie for everyone else's. Guard with
+  `if (MICA_VERSION)` before using it. (MICA-170)
+- `@gphone/sdk` now exports `SDK_CONTRACT_VERSION`, which is the number an
+  add-on actually wants: it moves when the SDK's surface changes, never when the
+  phone rebuilds. It existed before as a constant inside a test file, where
+  nothing could import it. Nothing about a server changes. (MICA-173)
+
 - **A framework that stops answering money calls the way it used to can no
   longer create currency.** gPhone asks your framework to debit and credit
   players, and it believed whatever came back. If a qb-core or qbx_core release
