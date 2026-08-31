@@ -44,11 +44,9 @@ import type { describeMusicError } from '../lib/musicErrors';
 import type { AccountSearchQuery, FollowListQuery, FollowPage } from '../../services/accounts';
 import type { SendMoneyInput, SendMoneyOutcome } from '../../services/bank';
 import type { CallState, CallStatus } from '../../services/call';
-import type { loadCallLog } from '../../services/callLog';
-import type { UIConversation, UIMessage, conversationsStore } from '../../services/conversations';
+import type { UIConversation, UIMessage } from '../../services/conversations';
 import type { CreateListingInput, ListingPage } from '../../services/marketplace';
 import type { DeletedMediaItem } from '../../services/media';
-import type { clearNotifications, markNotificationsRead } from '../../services/notifications';
 import type { SubmitReportInput } from '../../services/reports';
 import type { AppEvent } from '../../shell/state/appEvents';
 import type { AppUpdate } from '../../shell/state/appUpdates';
@@ -60,7 +58,7 @@ import type {
   SoundEffect
 } from '../../shell/state/audio';
 import type { CatalogEntry } from '../catalog';
-import type { ResolvedKeybindAction, resetBindings, setBinding } from '../../shell/state/keybinds';
+import type { ResolvedKeybindAction } from '../../shell/state/keybinds';
 import type { AutoLockPolicy, AutoLockPolicyChoice } from '../../shell/state/lockScreen';
 import type { MotionPreference } from '../../shell/state/motion';
 import type {
@@ -70,38 +68,11 @@ import type {
   MusicRepeat,
   MusicSource,
   MusicStatus,
-  QueueEntry,
-  clearQueue,
-  cycleRepeat,
-  enqueue,
-  nextTrack,
-  pauseMusic,
-  playQueueIndex,
-  playSource,
-  previousTrack,
-  removeFromQueue,
-  resumeMusic,
-  seekMusic,
-  setMusicMuted,
-  setMusicVolume,
-  setRepeat,
-  stopMusic,
-  toggleMusicMute,
-  toggleShuffle
+  QueueEntry
 } from '../../shell/state/music';
 import type { RunningApp } from '../../shell/state/navigation';
-import type {
-  AudibleBroadcast,
-  NearbyBroadcast,
-  clearMutedBroadcasters,
-  muteBroadcaster,
-  setMuteAllNearby,
-  toggleBroadcasterMute,
-  toggleMuteAllNearby,
-  unmuteBroadcaster
-} from '../../shell/state/nearbyMusic';
+import type { AudibleBroadcast, NearbyBroadcast } from '../../shell/state/nearbyMusic';
 import type { AppNotificationPolicy } from '../../shell/state/notificationPolicy';
-import type { seedFromImage } from '../../shell/state/seedFromImage';
 import type { ThemeMode, ThemeState } from '../../shell/state/theme';
 import type { TimeState } from '../../shell/state/time';
 import type { ToastMessage } from '../../shell/state/toast';
@@ -367,7 +338,7 @@ export interface Facets {
     answerCall: () => Promise<void>;
     toggleSpeaker: () => Promise<void>;
     callLog: Writable<PhoneCallLogEntry[]>;
-    loadCallLog: typeof loadCallLog;
+    loadCallLog: () => Promise<void>;
   };
   camera: () => {
     isTakingPhoto: Writable<boolean>;
@@ -516,8 +487,8 @@ export interface Facets {
     findConflict: (actionId: string, key: string) => KeybindAction | undefined;
   };
   keybindsWrite: () => {
-    setBinding: typeof setBinding;
-    resetBindings: typeof resetBindings;
+    setBinding: (actionId: string, key: string) => void;
+    resetBindings: () => void;
   };
   lifecycle: (appId: string) => {
     currentApp: Writable<RunningApp>;
@@ -704,9 +675,15 @@ export interface Facets {
     };
     unreadMessagesCount: Readable<number>;
     sendMessage: (conversationId: number, text: string) => Promise<Message | null>;
-    addReceivedMessage: (
-      message: Parameters<typeof conversationsStore.addReceivedMessage>[0]
-    ) => void;
+    addReceivedMessage: (message: {
+      conversation_id?: number;
+      message?: string;
+      senderName?: string;
+      phone?: string;
+      avatar?: string;
+      created_at?: string;
+      reply_to_id?: number | null;
+    }) => void;
     /**
      * Open Messages and start (or resume) a conversation with a bare phone number —
      * no saved Contact required. See MICA-15.
@@ -775,23 +752,23 @@ export interface Facets {
      * Play it now: inserted after whatever is playing, and jumped to. Silently drops
      * anything `canPlay` would have refused.
      */
-    playSource: typeof playSource;
+    playSource: (input: string) => void;
     /** Add it to the end of the queue without interrupting anything, and without starting. */
-    enqueue: typeof enqueue;
+    enqueue: (input: string) => void;
     /** Play a specific row. The row already playing restarts. */
-    playQueueIndex: typeof playQueueIndex;
+    playQueueIndex: (index: number) => void;
     /** Drop a row by its `key`. Removing the row that is playing falls through to the next. */
-    removeFromQueue: typeof removeFromQueue;
+    removeFromQueue: (key: string) => void;
     /** Empty the queue and stop. `stopMusic` alone keeps it. */
-    clearQueue: typeof clearQueue;
-    nextTrack: typeof nextTrack;
-    previousTrack: typeof previousTrack;
+    clearQueue: () => void;
+    nextTrack: () => void;
+    previousTrack: () => void;
     /** Move the playhead, in seconds. Bounded by the reported duration; does not resume. */
-    seekMusic: typeof seekMusic;
+    seekMusic: (to: number) => void;
     /** Off, then all, then one. */
-    cycleRepeat: typeof cycleRepeat;
-    setRepeat: typeof setRepeat;
-    toggleShuffle: typeof toggleShuffle;
+    cycleRepeat: () => void;
+    setRepeat: (mode: MusicRepeat) => void;
+    toggleShuffle: () => void;
     /** The still frame for a video id, or `null`. A plain image; no API key, no script. */
     thumbnailUrlFor: (videoId: string | null | undefined) => string | null;
     /**
@@ -799,14 +776,14 @@ export interface Facets {
      * the same refusal. Pure and synchronous on both sides of the seam.
      */
     describeMusicError: typeof describeMusicError;
-    pauseMusic: typeof pauseMusic;
-    resumeMusic: typeof resumeMusic;
-    stopMusic: typeof stopMusic;
+    pauseMusic: () => void;
+    resumeMusic: () => void;
+    stopMusic: () => void;
     /** Set the level, 0–1. Zero mutes and moving off zero unmutes, like the system slider. */
-    setMusicVolume: typeof setMusicVolume;
-    setMusicMuted: typeof setMusicMuted;
+    setMusicVolume: (value: number) => void;
+    setMusicMuted: (muted: boolean) => void;
     /** Silence music without disturbing the level it comes back to. */
-    toggleMusicMute: typeof toggleMusicMute;
+    toggleMusicMute: () => void;
     /**
      * Other people's music (MICA-111 phase 2), and everything an app may do about it.
      *
@@ -828,13 +805,13 @@ export interface Facets {
     mutedBroadcasters: Readable<string[]>;
     /** Whether every nearby broadcast is silenced, whoever it belongs to. */
     muteAllNearby: Readable<boolean>;
-    muteBroadcaster: typeof muteBroadcaster;
-    unmuteBroadcaster: typeof unmuteBroadcaster;
-    toggleBroadcasterMute: typeof toggleBroadcasterMute;
+    muteBroadcaster: (token: string) => void;
+    unmuteBroadcaster: (token: string) => void;
+    toggleBroadcasterMute: (token: string) => void;
     /** Forget every individual mute. Leaves `muteAllNearby` alone; it is its own switch. */
-    clearMutedBroadcasters: typeof clearMutedBroadcasters;
-    setMuteAllNearby: typeof setMuteAllNearby;
-    toggleMuteAllNearby: typeof toggleMuteAllNearby;
+    clearMutedBroadcasters: () => void;
+    setMuteAllNearby: (on: boolean) => void;
+    toggleMuteAllNearby: () => void;
   };
   navigation: () => {
     currentApp: Writable<RunningApp>;
@@ -868,8 +845,8 @@ export interface Facets {
     /** Shared across every caller: the shade is one list, so the first fetch is one fetch. */
     loaded: Writable<boolean>;
     load: () => Promise<void>;
-    markRead: typeof markNotificationsRead;
-    clear: typeof clearNotifications;
+    markRead: (ids: number[]) => Promise<void>;
+    clear: (ids: number[]) => Promise<void>;
     clearAll: (targetAppId?: string) => Promise<void>;
   };
   onAppForeground: (appId: string, handler: () => void) => () => void;
@@ -1045,7 +1022,7 @@ export interface Facets {
     wallpaperNeedsContrast: Readable<boolean>;
     activeSeed: Readable<string>;
     backgroundForSeed: (seed: string, mode: ThemeMode) => string;
-    seedFromImage: typeof seedFromImage;
+    seedFromImage: (source: string) => Promise<string | null>;
     presets: readonly WallpaperPreset[];
     defaultWallpaper: WallpaperState;
   };
