@@ -47,6 +47,12 @@ action — declare it in `shared/keybinds.ts` and claim it via `useKeybinds()`.
 Prefer an existing utility in `sdk/app-utilities.css` over a bespoke rule or an
 inline `style=`. Never pass unsanitized player content to `{@html}`.
 
+**The stylesheets are not yours to edit.** MICA-172 moved `app.css`,
+`app-utilities.css` and `app-reset.css` into the SDK package, so _using_ a
+utility class is your work and _adding_ one is the `sdk` agent's. If the class
+you need does not exist, say so and return it as a finding rather than reaching
+into `sdk/` to add it — that is a different lane's file and a different review.
+
 ## Keep what you learn
 
 `.claude/agent-memory/web/` auto-loads for you on future runs. The CEF-103 floor
@@ -59,8 +65,9 @@ re-deriving the same answer next time.
 Run `pnpm --filter web exec vitest run <path>` for tests you touch, plus
 `../sdk/cef.test.ts` and `src/lib/utilityClasses.test.ts`, which police this
 area directly. Run `pnpm typecheck:web` if you touched only `web/`; if you
-touched `client/`, `server/` or `shared/`, say so — those run a different
-TypeScript version and need the full `pnpm typecheck`.
+touched `client/`, `server/`, `shared/` or `sdk/`, say so — `pnpm typecheck` now
+fans out to **four** targets, and `client/`/`server/` run a different TypeScript
+version, so a web-only check proves nothing about them.
 
 Do not run `pnpm verify`, `pnpm dev`, or any Playwright command unless your
 instructions say the port is yours; other lanes may hold it.

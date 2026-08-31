@@ -31,37 +31,37 @@ would reach for `npx`.
 
 Run from the **repo root** unless noted.
 
-| Task                                              | Command                                      | Pre-approved?            |
-| ------------------------------------------------- | -------------------------------------------- | ------------------------ |
-| **Every gate, in order**                          | **`pnpm verify`**                            | Yes                      |
-| Every gate except e2e                             | `pnpm verify --quick`                        | Yes                      |
-| Fast loop: format + typecheck + changed unit only | `pnpm check:fast`                            | Yes                      |
-| Fail fast if no dev server is warm                | `pnpm dev:check`                             | Yes                      |
-| Lint the Go server and the Dockerfile             | `pnpm lint:container`                        | Yes                      |
-| Check workflow actions for a newer major          | `pnpm lint:actions`                          | Yes                      |
-| Run the demo image locally                        | `pnpm demo` / `demo:up` / `demo:down`        | Yes                      |
-| Smoke-test a running demo image                   | `pnpm demo:smoke`                            | Yes                      |
-| Scaffold an app                                   | `pnpm new:app <id> [--service]`              | Yes                      |
-| Install                                           | `pnpm install --frozen-lockfile`             | Yes                      |
-| Format (write)                                    | `pnpm format`                                | Yes                      |
-| Format (check)                                    | `pnpm format:check`                          | Yes                      |
-| Dead code scan                                    | `pnpm deadcode`                              | Yes                      |
-| Typecheck **everything**                          | `pnpm typecheck`                             | Yes                      |
-| Typecheck one target                              | `pnpm typecheck:client` · `:server` · `:web` | Yes                      |
-| Unit tests **everything**                         | `pnpm test:unit`                             | Yes                      |
-| Unit tests one project                            | `pnpm test:unit:web` · `:server`             | Yes                      |
-| E2E tests                                         | `pnpm test:e2e`                              | Yes                      |
-| Install browsers (first run)                      | `pnpm test:e2e:install`                      | Yes                      |
-| Generate per-app SQL                              | `pnpm generate:sql`                          | Yes                      |
-| Generate + dev reset SQL                          | `pnpm generate:sql:reset`                    | Ask first — destructive  |
-| Full build                                        | `pnpm build`                                 | Yes                      |
-| Dev (both watchers)                               | `pnpm dev`                                   | Ask first — long-running |
-| Commit / push on `dev` or a ticket branch         | —                                            | Yes — see §2.1           |
-| Force-push, move `main`, change protection        | —                                            | **Ask first. See §2.1.** |
+| Task                                              | Command                                               | Pre-approved?            |
+| ------------------------------------------------- | ----------------------------------------------------- | ------------------------ |
+| **Every gate, in order**                          | **`pnpm verify`**                                     | Yes                      |
+| Every gate except e2e                             | `pnpm verify --quick`                                 | Yes                      |
+| Fast loop: format + typecheck + changed unit only | `pnpm check:fast`                                     | Yes                      |
+| Fail fast if no dev server is warm                | `pnpm dev:check`                                      | Yes                      |
+| Lint the Go server and the Dockerfile             | `pnpm lint:container`                                 | Yes                      |
+| Check workflow actions for a newer major          | `pnpm lint:actions`                                   | Yes                      |
+| Run the demo image locally                        | `pnpm demo` / `demo:up` / `demo:down`                 | Yes                      |
+| Smoke-test a running demo image                   | `pnpm demo:smoke`                                     | Yes                      |
+| Scaffold an app                                   | `pnpm new:app <id> [--service]`                       | Yes                      |
+| Install                                           | `pnpm install --frozen-lockfile`                      | Yes                      |
+| Format (write)                                    | `pnpm format`                                         | Yes                      |
+| Format (check)                                    | `pnpm format:check`                                   | Yes                      |
+| Dead code scan                                    | `pnpm deadcode`                                       | Yes                      |
+| Typecheck **everything**                          | `pnpm typecheck`                                      | Yes                      |
+| Typecheck one target                              | `pnpm typecheck:client` · `:server` · `:web` · `:sdk` | Yes                      |
+| Unit tests **everything**                         | `pnpm test:unit`                                      | Yes                      |
+| Unit tests one project                            | `pnpm test:unit:web` · `:server`                      | Yes                      |
+| E2E tests                                         | `pnpm test:e2e`                                       | Yes                      |
+| Install browsers (first run)                      | `pnpm test:e2e:install`                               | Yes                      |
+| Generate per-app SQL                              | `pnpm generate:sql`                                   | Yes                      |
+| Generate + dev reset SQL                          | `pnpm generate:sql:reset`                             | Ask first — destructive  |
+| Full build                                        | `pnpm build`                                          | Yes                      |
+| Dev (both watchers)                               | `pnpm dev`                                            | Ask first — long-running |
+| Commit / push on `dev` or a ticket branch         | —                                                     | Yes — see §2.1           |
+| Force-push, move `main`, change protection        | —                                                     | **Ask first. See §2.1.** |
 
-`pnpm typecheck` fans out to all three targets via `concurrently`. **Use it, not
+`pnpm typecheck` fans out to all four targets via `concurrently`. **Use it, not
 `pnpm typecheck:web`** — the targets run _different TypeScript versions_ (§3),
-so a web-only check proves nothing about `client/` or `server/`.
+so a web-only check proves nothing about `client/`, `server/` or `sdk/`.
 
 Commands the **user** runs, not you — suggest, don't invoke:
 
@@ -85,8 +85,9 @@ arguments, and its dry run:
 ### The two Vitest projects
 
 `pnpm test:unit` fans out to **two separate Vitest projects**, and they are not
-interchangeable. `web/src/**/*.test.ts` runs under `web/vite.config.ts`;
-`server/__tests__/` and `client/__tests__/` run under the root
+interchangeable. `web/src/**` **and `sdk/**`** run under `web/vite.config.ts`
+(the SDK is a package but has no Vitest project of its own — one config, not two
+to drift); `server/__tests__/` and `client/__tests__/` run under the root
 `vitest.config.ts`, in a node environment with no plugins and no globals, so
 imports are explicit.
 
@@ -304,6 +305,7 @@ reading a ticket, commit-message shape, PR body, filing a backlog item.
 | --------------------------- | ------------------- | -------------------------------------------- |
 | root (`client/`, `server/`) | **7.x** (Go-native) | `tsc --noEmit -p <target>/tsconfig.json`     |
 | `web/`                      | **6.x** (JS-based)  | `svelte-check` + `tsc -p tsconfig.node.json` |
+| `sdk/`                      | **6.x** (JS-based)  | `svelte-check` (85 of its files are Svelte)  |
 
 Deliberate, not drift. TypeScript 7.0 ships without a stable programmatic
 compiler API, and `svelte-check` (via `svelte2tsx`) requires it; that API lands
@@ -312,6 +314,9 @@ they get the native compiler now and `web/` waits.
 
 - **Do not "align" the versions.** Bumping `web/` to 7 breaks
   `pnpm typecheck:web`. Dropping root to 6 discards the reason the split exists.
+- **`sdk/` is pinned for its own reason, not an inherited one** (MICA-172). It
+  ships 85 Svelte components, so it needs `svelte-check` exactly as `web/` does.
+  The two unblock at 7.1 together; neither can move first.
 - **`client/` and `server/` are checked more strictly than `web/`.** TS 7 makes
   `strict` and the 6.0 deprecations hard defaults. Code that passes in `web/`
   may fail in `client/`.
@@ -329,8 +334,11 @@ they get the native compiler now and `web/` waits.
   `ts(2353) 'x' does not exist in type` at a call site that plainly has it. Run
   **Svelte: Restart Language Server** for a `.svelte` file, or **TypeScript:
   Restart TS Server** for a `.ts` one, before believing it.
-- When 7.1 ships, the migration is: bump `svelte-check`, bump `web/` to 7,
-  delete this section.
+- **The trigger is `svelte-check`, not TypeScript.** Its `peerDependencies`
+  currently cap at `^6.0.0`, so a TS 7 bump fails to install before it fails to
+  compile. Watch for a release accepting `^7`; TS `latest` is 7.0.2 and 7.1 is
+  nightly-only. Then bump `svelte-check`, move `web/` **and** `sdk/` together —
+  neither can go first — and delete this section.
 
 ---
 
@@ -597,7 +605,7 @@ does not need the e2e suite:
 | `web/`                                  | `typecheck` + `test:unit` + `test:e2e`      |
 | Anything you cannot confidently bound   | `pnpm verify`                               |
 
-`pnpm typecheck` means all three targets, never `typecheck:web` alone (§3).
+`pnpm typecheck` means all four targets, never `typecheck:web` alone (§3).
 `pnpm check:fast` is the packaged middle ground and what `pre-push` runs — but
 its `--changed` selection reads your _uncommitted_ diff, so it selects nothing
 on a clean tree and is not evidence on its own.

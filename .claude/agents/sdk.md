@@ -29,6 +29,15 @@ silently, which is the failure this whole surface is built to prevent. §7 has
 the mechanics of the boundary (`boundary.test.ts`, `useNuiBridge`'s `core: true`
 gate, the shell pieces that stay unexported); nothing below relaxes any of it.
 
+**The boundary is structural now, not a convention.** Since MICA-172 this is a
+workspace package, so "the SDK must not import the shell" is a resolution error
+rather than a test that scans paths — which is what the old arrangement missed
+when `index.ts` came to import `shell/state/catalog`. Source edges out of `sdk/`
+are zero and must stay zero. The **test suite** is the documented exception: 24
+files reach `../web/src/...` across 74 imports, because a test says which side
+it stands in for. Reach for the phone from anything that is not a test and you
+are writing an edge the package cannot spell.
+
 ## `permissions.ts` is the one table
 
 `sdk/permissions.ts` maps every host hook to the permission that discloses it,
@@ -58,16 +67,39 @@ re-derivation from first principles.
 
 ## What runs in Chromium 103
 
-`sdk/ui/` ships to CEF like everything else under `web/` — the preloaded
+`sdk/ui/` ships to CEF like every screen the phone draws — the preloaded
 `cef-css` skill is the floor here exactly as it is under `apps/`, role-token
 opacity ban included. Nothing about being "the SDK" earns an exception.
 
+## You own the design system, and it is _not_ contract
+
+`sdk/app.css`, `sdk/app-utilities.css` and `sdk/app-reset.css` moved into this
+package on MICA-172, because a primitive that renders unstyled unless its
+consumer remembers a separate import fails silently. So a new utility class or a
+token change routes here, not to `web`.
+
+**The one-way-door rule above does not apply to them.** `SDK_CONTRACT_VERSION`
+covers the JS/TS export surface only; CSS is explicitly out of contract, and
+`sdk/version.ts` says so next to the constant. No add-on can branch on a
+stylesheet version — its CSS is inlined from whatever was injected at its own
+build — so adding a class is ordinary work, not a published promise.
+
+What _is_ still binding: `utilityClasses.test.ts` requires every class used in
+markup to resolve to a real rule, and `cef.test.ts` polices the Chromium 103
+floor over this tree as raw text — it cannot tell a doc comment from markup, so
+a banned form spelled in prose fails the rule the prose is describing.
+
 ## Verifying
 
-`pnpm typecheck` — all three targets, never `typecheck:web` alone — plus
-`pnpm test:unit:web` and `pnpm test:e2e`. The SDK's own suites are the ones that
-matter most here: `boundary.test.ts`, `permissions.test.ts`,
-`appContract.test.ts`, `cef.test.ts`.
+`pnpm typecheck` — all **four** targets now (`:sdk` is one), never
+`typecheck:web` alone — plus `pnpm lint:sdk`, `pnpm test:unit:web` and
+`pnpm test:e2e`. The SDK's own suites are the ones that matter most here:
+`boundary.test.ts`, `permissions.test.ts`, `appContract.test.ts`, `cef.test.ts`.
+
+**Your tests run under `web`'s Vitest project, not one of your own** — its
+`include` reaches `../sdk/**`, so `pnpm test:unit:web` is what runs them and
+`pnpm --filter web exec vitest run ../sdk/<file>` is how you run one. There is
+deliberately no third project to keep in sync.
 
 `server/__tests__/routes.test.ts` cross-references a core app's `fetchNui`, its
 `shared/routes.ts` entry and its server handler. An add-on has no row there — it
@@ -82,6 +114,11 @@ Your final message must state:
 - Whether your change could alter what an external add-on compiles against — say
   so plainly. No suite in this repo builds a real add-on against the published
   contract, so this is on you to assess, not something a green run can confirm.
+- **`publicSurface.test.ts` does not see types at all** (MICA-182). It
+  collects with a runtime `import *`, so the 63 type-only exports on `index.ts`
+  and 62 on `addon.ts` are ungated in both directions — a published type can be
+  renamed or deleted and every gate stays green. If you touched an
+  `export type`, that check did not cover you.
 - If the task seemed to need exporting a shell piece (`PhoneFrame`, `Launcher`,
   `ToastHost`, `VolumeHud`, `ErrorBoundary`) or widening the permission table
   beyond what was asked: **stop and return that as a finding rather than doing
