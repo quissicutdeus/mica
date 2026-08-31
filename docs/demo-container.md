@@ -131,6 +131,38 @@ Both run in CI as a separate `container` job — separate because the main
 `verify` job runs inside the Playwright image, which has no Go toolchain, no
 hadolint and no Docker daemon.
 
+### The one thing `pnpm verify` does not cover
+
+That CI job **builds the image**. `pnpm verify` never does — `lint:container`
+lints the Dockerfile, it does not run it — so the image build is the single gate
+whose verdict cannot be reached from a developer's terminal by any local
+command. AGENTS.md §9 points here for exactly that reason.
+
+It matters more than the size of the exception suggests, because of what the
+image is: the only artifact assembled from an **explicit file list** rather than
+from whatever happens to be on disk. `.dockerignore` denies everything and
+re-admits an allowlist; the Dockerfile then `COPY`s named paths. Every local
+gate runs against a working tree that already contains every file, so a path
+missing from either list is invisible to all of them — and an allowlist that has
+gone stale does not announce itself, it just silently stops including something.
+
+This is not hypothetical. MICA-172 moved the SDK from `web/src/sdk/` to a
+root-level `sdk/` package. Before the move `COPY web/` carried it and neither
+list had to name it; after, neither did. `pnpm verify` stayed green and the
+image build failed on `Could not resolve '/app/sdk/app.css'` for **six
+consecutive pushes to `dev`** before anyone read the CI result.
+
+So, when a change adds or moves a top-level directory that `web/` builds
+against, or adds a file the bundle reads at build time:
+
+```sh
+docker build -t gphone-demo-test:local .   # the only way to check this locally
+```
+
+Two minutes, and it is the difference between finding this now and finding it
+six pushes later. If you did not run it, say the image build is unverified
+rather than reporting a green `pnpm verify` as though it covered this.
+
 ## When it will not start
 
 The healthcheck is the server binary in a second mode (`/gphone-serve -health`),

@@ -587,9 +587,10 @@ gate, and exists for CI rather than for you.
 It runs, in order: `format:check`, `lint:md`, `lint:agents`, `lint:container`,
 `lint`, `typecheck`, `test:unit`, `test:e2e`, `build:nocheck`, `deadcode`.
 
-**`pnpm verify` is the whole set; CI just runs it across four machines**, whose
-union is exactly the local run — so a gate added to `scripts/verify.js` lands in
-CI with nothing else touched.
+**`pnpm verify` is every gate but one**, and CI runs it across four machines, so
+a gate added to `scripts/verify.js` lands in CI untouched. The exception is the
+`container` job's **image build**, which no local command runs — see
+[`docs/demo-container.md`](docs/demo-container.md).
 
 ### Match the gate to what the change touched
 
@@ -597,15 +598,15 @@ CI with nothing else touched.
 Below that, run what the change can actually break — a comment in a YAML file
 does not need the e2e suite:
 
-| Change touches                          | Run                                         |
-| --------------------------------------- | ------------------------------------------- |
-| Markdown, config, `.github/`            | `format:check` + `lint:md`                  |
-| Shell (`scripts/**.sh`, `.githooks/`)   | `shellcheck -x` on the files                |
-| `docker/`, `Dockerfile`, `compose.yaml` | `lint:container` — a **skip is not a pass** |
-| `.github/workflows/`                    | `format:check` + `lint:md` + `lint:actions` |
-| `client/`, `server/`, `shared/`         | `typecheck` + `test:unit`                   |
-| `web/`                                  | `typecheck` + `test:unit` + `test:e2e`      |
-| Anything you cannot confidently bound   | `pnpm verify`                               |
+| Change touches                           | Run                                         |
+| ---------------------------------------- | ------------------------------------------- |
+| Markdown, config, `.github/`             | `format:check` + `lint:md`                  |
+| Shell (`scripts/**.sh`, `.githooks/`)    | `shellcheck -x` on the files                |
+| `docker/`, `Dockerfile`, `.dockerignore` | `lint:container` **and `docker build`**     |
+| `.github/workflows/`                     | `format:check` + `lint:md` + `lint:actions` |
+| `client/`, `server/`, `shared/`          | `typecheck` + `test:unit`                   |
+| `web/`                                   | `typecheck` + `test:unit` + `test:e2e`      |
+| Anything you cannot confidently bound    | `pnpm verify`                               |
 
 `pnpm typecheck` means all four targets, never `typecheck:web` alone (§3).
 `pnpm check:fast` is the packaged middle ground and what `pre-push` runs — but
