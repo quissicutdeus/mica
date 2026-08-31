@@ -17,6 +17,7 @@ import { knownServices } from './services';
 import * as PlayerDirectory from './PlayerDirectory';
 import { isPhoneOpen } from './PhoneOpenState';
 import { isPhoneLocked, setPhoneLocked } from './LockState';
+import { currentEmergencyNumber } from '../services/Phone';
 import {
   MICA_API_VERSION,
   ExportOutcome,
@@ -465,6 +466,22 @@ export function registerPublicApi(): void {
       if (!entry.phone) return fail<string>('not_ready', 'That character has no phone number.');
       return ok(entry.phone);
     })
+  );
+
+  /**
+   * The number that always connects (MICA-64), so a dispatch resource's own setup code
+   * can read it rather than duplicating (and risking drift from) gPhone's own convar
+   * name. What "picks up the other end" in this pass is the framework, the same as any
+   * other call: a dispatch resource registers a player or NPC session whose phone number
+   * *is* this value, and `Phone.ts`'s ordinary `getPlayerByPhone` lookup finds it and
+   * connects the call exactly like any other. This export is the read half of that setup,
+   * not a second call-answering path — there is no synthetic "dispatch picks up" flow
+   * here, and building one (a two-way bridge with no framework phone number behind it at
+   * all) is a larger, more decision-heavy feature than this ticket's slice covers.
+   */
+  publish(
+    'GetEmergencyNumber',
+    guarded('GetEmergencyNumber', () => ok(currentEmergencyNumber()))
   );
 
   /** The reverse lookup: whose phone number is this. */

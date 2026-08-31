@@ -63,6 +63,7 @@ describe('the public export surface', () => {
       'GetApiVersion',
       'GetBatteryLevel',
       'GetCitizenId',
+      'GetEmergencyNumber',
       'GetPhoneNumber',
       'GetSignal',
       'IsPhoneLocked',
@@ -298,6 +299,24 @@ describe('phone-directory exports', () => {
     bridgeMock.findOfflineByPhone.mockResolvedValue(null);
     const result = (await publishedExport('GetCitizenId')!('555-9999')) as any;
     expect(result).toMatchObject({ ok: false, reason: 'unknown_player' });
+  });
+});
+
+describe('GetEmergencyNumber (MICA-64)', () => {
+  it('defaults to 911', () => {
+    const result = publishedExport('GetEmergencyNumber')!() as any;
+    expect(result).toEqual({ ok: true, value: '911' });
+  });
+
+  it('reflects an operator-configured convar', () => {
+    const previous = (globalThis as any).GetConvar;
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'gphone_emergency_number' ? '112' : fallback;
+
+    const result = publishedExport('GetEmergencyNumber')!() as any;
+    (globalThis as any).GetConvar = previous;
+
+    expect(result).toEqual({ ok: true, value: '112' });
   });
 });
 

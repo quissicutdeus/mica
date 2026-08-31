@@ -6,6 +6,7 @@ import './Bank';
 import './Battery';
 import './Blabber';
 import './BlabberDms';
+import './Blocklist';
 import './Contacts';
 import './Conversations';
 import './Highscores';

@@ -5,6 +5,25 @@ import { guardNetEvent, phoneNumberFrom } from '../lib/netGuard';
 import { phoneCallLog } from './PhoneCallLog';
 import { isAdmin } from './Admin';
 import { SEED_CHARACTERS } from '../lib/seed';
+import { isBlocked } from './Blocklist';
+
+const EMERGENCY_NUMBER_CONVAR = 'gphone_emergency_number';
+const DEFAULT_EMERGENCY_NUMBER = '911';
+
+/**
+ * The number that always connects (MICA-64), read per call like `Hodlr.ts`'s
+ * `tradeMax`/`spreadPct` rather than cached — a server owner changing it with `set` from
+ * the console should not need a restart.
+ *
+ * `phoneNumberFrom` normalises it the same way any dialed number is normalised, so a
+ * convar set to `" 911 "` still compares equal to what a player actually dials.
+ */
+const emergencyNumber = (): string =>
+  phoneNumberFrom(GetConvar(EMERGENCY_NUMBER_CONVAR, DEFAULT_EMERGENCY_NUMBER)) ??
+  DEFAULT_EMERGENCY_NUMBER;
+
+/** For `GetEmergencyNumber` (`publicApi.ts`) — a dispatch resource's own setup code. */
+export const currentEmergencyNumber = (): string => emergencyNumber();
 
 // Dictionary to track active calls: CallID -> { caller: source, target: source }
 interface ActiveCall {
@@ -132,7 +151,32 @@ export function endActiveCallFor(targetSrc: number): boolean {
   return true;
 }
 
-onNet('gphone:server:phone:start', (rawTarget: unknown) => {
+/**
+ * The one failure shape a blocked call and a genuinely unreachable number must share
+ * (MICA-64) — a blocked caller must not be able to tell the two apart, including by
+ * watching their own Recents. Before this existed, "nobody holds that number" logged a
+ * call-log row (MICA-95's own fix) while a blocked call logged nothing at all, which
+ * would have been exactly the tell a "does not confirm the block" caller is promised not
+ * to get: dial a made-up number and a real blocked one, and only one leaves a row.
+ */
+function failUnreachable(src: number, targetPhone: string): void {
+  const callerCitizenid = FrameworkBridge.getCitizenId(src);
+  if (callerCitizenid) {
+    void phoneCallLog.repo.create({
+      citizenid: callerCitizenid,
+      kind: 'outgoing',
+      number: targetPhone,
+      duration: 0
+    });
+  }
+
+  // Issued before the `failed` push, which is what sends the caller's phone back to idle
+  // and makes it refetch the log, so the row is already on its way by then.
+  notifyPlayer(src, { type: 'error', message: 'Number unavailable' });
+  emitNet('gphone:client:phone:failed', src);
+}
+
+onNet('gphone:server:phone:start', async (rawTarget: unknown) => {
   // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
   // handlers got neither until this; see `lib/netGuard.ts`.
   const player = guardNetEvent('phone', 'start');
@@ -153,28 +197,33 @@ onNet('gphone:server:phone:start', (rawTarget: unknown) => {
   const targetPlayer = FrameworkBridge.getPlayerByPhone(targetPhone);
   const targetSrc = targetPlayer?.source || null;
 
-  if (!targetSrc) {
-    // A number nobody answered is still a call the player placed, and a phone lists it.
-    // This path creates no `ActiveCall`, so `logCallEnd` — the only other writer — never
-    // runs for it and Recents was simply unchanged after dialling an unreachable number
-    // (MICA-95). Duration 0 and kind 'outgoing' is exactly what `logCallEnd` writes for
-    // a call that rang and was never answered, so the two paths agree.
-    //
-    // Issued before the `failed` push, which is what sends the caller's phone back to
-    // idle and makes it refetch the log, so the row is already on its way by then.
-    const callerCitizenid = FrameworkBridge.getCitizenId(src);
-    if (callerCitizenid) {
-      void phoneCallLog.repo.create({
-        citizenid: callerCitizenid,
-        kind: 'outgoing',
-        number: targetPhone,
-        duration: 0
-      });
-    }
+  /**
+   * A blocked call fails exactly like an unreachable one (MICA-64) — same message, same
+   * call-log row, same client event — so the caller learns nothing about *why* it failed.
+   *
+   * This check runs unconditionally, even when `targetPlayer` doesn't exist, rather than
+   * only in the reachable branch: awaiting `isBlocked` is a real DB round trip, so gating
+   * it behind "does a player hold this number" would let a caller distinguish "real
+   * number" from "made up" purely by response time, regardless of what the two failure
+   * paths return (Wolffe's review, MICA-64). Passing a citizenid that can never match a
+   * row (`''` when there's no target) keeps the query's cost identical either way while
+   * still always resolving to `false` for an unreachable number.
+   *
+   * The emergency number always connects and skips this check entirely, rather than
+   * calling `isBlocked` and having the answer not matter: `targetPhone` is compared
+   * before the (async) lookup so a blocked emergency number, however that arose, is
+   * never even asked about. There is nothing to bypass for DND or signal — neither has
+   * ever gated a call here; DND only suppresses a *notification*
+   * (`web/src/shell/state/notificationPolicy.ts`) and signal has never refused one on
+   * this file's own evidence — so "connects regardless of them" already holds for every
+   * call, emergency or not.
+   */
+  const blocked =
+    targetPhone !== emergencyNumber() &&
+    (await isBlocked(targetPlayer?.citizenid ?? '', callerPhone));
 
-    notifyPlayer(src, { type: 'error', message: 'Number unavailable' });
-    // Tell client to reset
-    emitNet('gphone:client:phone:failed', src);
+  if (!targetSrc || blocked) {
+    failUnreachable(src, targetPhone);
     return;
   }
 

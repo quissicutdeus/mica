@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const { dbMock, handlers, globalHandlers, commands } = vi.hoisted(() => {
   const captured = new Map<string, Function>();
@@ -73,6 +73,9 @@ beforeEach(() => {
   adminState.isAdmin = true;
   dbMock.insert.mockResolvedValue(1);
   dbMock.query.mockResolvedValue([]);
+  // `Blocklist.ts`'s `isBlocked` (MICA-64), asked once per call: `null` means nobody is
+  // blocked, so every pre-existing test in this file connects exactly as it always did.
+  dbMock.scalar.mockResolvedValue(null);
   (globalThis as any).emitNet = vi.fn();
 });
 
@@ -266,6 +269,120 @@ describe('start: refusals', () => {
     // Distinct from the unknown-number case above: no failed event either, because
     // `phoneNumberFrom` rejects it before the handler tries to resolve anything.
     expect(emitCalls()).toHaveLength(0);
+  });
+});
+
+/**
+ * MICA-64. A blocked call must fail in a way that does not confirm the block — the
+ * ticket's own reading — so every assertion here is phrased against "does this look
+ * exactly like an unreachable number", not just "does it fail".
+ */
+describe('start: blocking (MICA-64)', () => {
+  it('refuses a call the target has blocked, indistinguishably from an unreachable number', async () => {
+    dbMock.scalar.mockResolvedValue(1); // CID_TARGET has blocked 555-0001
+
+    await fire(START, 1, '555-0002');
+
+    expect(failedTo(1)).toHaveLength(1);
+    // No `incoming` ever reached the target — the call never rang at all.
+    expect(emitCalls().filter(([event]) => event === 'gphone:client:phone:incoming')).toHaveLength(
+      0
+    );
+  });
+
+  it('logs the same call-log row a genuinely unreachable number would', async () => {
+    // Same shape as `still logs an unreachable number as an outgoing call of zero
+    // duration` above — a caller comparing their own Recents must not be able to tell a
+    // block from a wrong number.
+    dbMock.scalar.mockResolvedValue(1);
+
+    await fire(START, 1, '555-0002');
+
+    const inserts = createCalls();
+    expect(inserts).toHaveLength(1);
+    const [sql, params] = inserts[0];
+    expect(sql).toMatch(/gphone_phone_call_log/);
+    expect(params).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', '555-0002', 0]));
+  });
+
+  it('asks the blocklist about the target being called, keyed on the caller own number', async () => {
+    dbMock.scalar.mockResolvedValue(null);
+
+    await fire(START, 1, '555-0002');
+
+    expect(dbMock.scalar).toHaveBeenCalledWith(expect.any(String), ['CID_TARGET', '555-0001']);
+  });
+
+  it('connects normally when nobody has blocked the caller', async () => {
+    dbMock.scalar.mockResolvedValue(null);
+
+    await fire(START, 1, '555-0002');
+
+    expect(emitCalls().filter(([event]) => event === 'gphone:client:phone:incoming')).toHaveLength(
+      1
+    );
+  });
+});
+
+describe('start: the emergency number always connects (MICA-64)', () => {
+  const EMERGENCY_SRC = 9;
+
+  beforeEach(() => {
+    bridge.players.set(EMERGENCY_SRC, 'CID_DISPATCH');
+    bridge.phones.set(EMERGENCY_SRC, '911');
+  });
+
+  afterEach(() => {
+    bridge.players.delete(EMERGENCY_SRC);
+    bridge.phones.delete(EMERGENCY_SRC);
+  });
+
+  it('connects even though the target has blocked the caller', async () => {
+    dbMock.scalar.mockResolvedValue(1); // would refuse any other number
+
+    await fire(START, 1, '911');
+
+    expect(emitCalls().filter(([event]) => event === 'gphone:client:phone:incoming')).toHaveLength(
+      1
+    );
+    expect(failedTo(1)).toHaveLength(0);
+  });
+
+  it('never asks the blocklist at all for the emergency number', async () => {
+    dbMock.scalar.mockResolvedValue(1);
+
+    await fire(START, 1, '911');
+
+    expect(dbMock.scalar).not.toHaveBeenCalled();
+  });
+
+  it('honours an operator-configured emergency number rather than only 911', async () => {
+    const previous = (globalThis as any).GetConvar;
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'gphone_emergency_number' ? '112' : fallback;
+    bridge.phones.set(EMERGENCY_SRC, '112');
+    dbMock.scalar.mockResolvedValue(1);
+
+    await fire(START, 1, '112');
+
+    (globalThis as any).GetConvar = previous;
+    expect(emitCalls().filter(([event]) => event === 'gphone:client:phone:incoming')).toHaveLength(
+      1
+    );
+  });
+
+  it('still checks the blocklist for 911 once the convar points somewhere else', async () => {
+    const previous = (globalThis as any).GetConvar;
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'gphone_emergency_number' ? '112' : fallback;
+    dbMock.scalar.mockResolvedValue(1); // blocked
+
+    await fire(START, 1, '911');
+
+    (globalThis as any).GetConvar = previous;
+    // 911 is an ordinary number again once it is not the configured emergency line, so
+    // the block that was ignored above now applies.
+    expect(failedTo(1)).toHaveLength(1);
   });
 });
 

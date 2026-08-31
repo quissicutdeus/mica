@@ -391,6 +391,7 @@ set gphone_rate_limit 60
 set gphone_bank_transfer_max 50000
 set gphone_hodlr_trade_max 50000
 set gphone_hodlr_spread_pct 2
+set gphone_emergency_number "911"
 set gphone_max_accounts_per_app 3
 set gphone_bluetooth_range 15
 set gphone_bluetooth_max_nearby 5
@@ -413,6 +414,7 @@ setr gphone_addon_catalog ""
 | `gphone_bank_transfer_max`      | integer              | `50000`                | Ceiling on one player-to-player send                  |
 | `gphone_hodlr_trade_max`        | integer              | `50000`                | Ceiling on what one Hodlr buy or sell is worth        |
 | `gphone_hodlr_spread_pct`       | number, percent      | `2`                    | Gap between Hodlr's buy and sell quotes, around mid   |
+| `gphone_emergency_number`       | phone number         | `911`                  | Always connects, regardless of any block              |
 | `gphone_max_accounts_per_app`   | integer              | `3`                    | Identities one player may hold in one social app      |
 | `gphone_bluetooth_range`        | integer, meters      | `15`                   | How far a proximity share reaches                     |
 | `gphone_bluetooth_max_nearby`   | integer              | `5`                    | How many phones one proximity share reaches           |
@@ -507,6 +509,16 @@ next reconnect.
   adds. `0` is accepted and means exactly what it says: no spread, Hodlr trades
   at a single flat price the way it always has. Only a negative or non-numeric
   value falls back to the default of `2`.
+- **`gphone_emergency_number`** — the one number a block can never reach.
+  `Phone.ts` skips the blocklist check entirely for a call dialing this number,
+  so a player who has blocked someone (or been blocked) can still place, and
+  still receive, an emergency call. It does not by itself make the number
+  reachable — that still needs a player or NPC session registered under this
+  phone number through your framework, the same as any other contact, which a
+  dispatch resource sets up on its own. `GetEmergencyNumber` is the matching
+  export, so that resource's own setup code can read the configured value
+  instead of hardcoding `911` and drifting from a server that changed it. An
+  empty value falls back to `911`.
 - **`gphone_max_accounts_per_app`** — how many identities one player may hold in
   one social app; Blabber's `@handle`s are the only current consumer. Capped
   because the handle namespace is public and finite: with no limit, one player

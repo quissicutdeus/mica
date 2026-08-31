@@ -91,6 +91,20 @@ old single-price behavior exactly. This ships with no cooldown and no per-trade
 position limit beyond the existing `gphone_hodlr_trade_max` — the spread itself
 is what discourages rapid trading, by construction.
 
+**`gphone_blocklist` is a new table — run `gphoneschema apply` from your server
+console after updating, or import the regenerated `gphone.sql` /
+`gphone.esx.sql` on a fresh install.** A player can now block a phone number; a
+blocked call fails with the same "Number unavailable" message and call-log entry
+as a genuinely unreachable one, and a blocked sender's messages are still
+written but no longer pushed live. Columns are `id`, `citizenid`, `number`,
+`status`, `created_at` and `updated_at`, indexed by `status`, `citizenid_status`
+and a unique `citizenid_number_unique`. A new convar, `gphone_emergency_number`
+(default `911`), always connects regardless of any block — a player registered
+under that phone number (a dispatch resource's own setup, not a new gPhone
+feature) is reachable no matter who dials it. `GetEmergencyNumber` is a new
+export for that resource to read the configured number rather than duplicate the
+convar name.
+
 **`gphone_messages_reactions` is a new table — run `gphoneschema apply` from
 your server console after updating, or import the regenerated `gphone.sql` /
 `gphone.esx.sql` on a fresh install.** Native Messages (SMS-style threads) can

@@ -11,6 +11,7 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { AuditLogger } from '../lib/AuditLogger';
 import { Database } from '../lib/Database';
 import { isPlausibleEmoji } from '../lib/reactions';
+import { isBlocked } from './Blocklist';
 
 /**
  * Messages: membership on both axes.
@@ -444,6 +445,15 @@ export const deliverToParticipants = async (
     const target = FrameworkBridge.getSourceByCitizenId(participant.citizenid);
     // Offline. The row is written, so they get it from the normal fetch next time.
     if (!target) continue;
+
+    // Blocked (MICA-64): the row is still written — this only withholds the live push,
+    // the same way an offline recipient's push is withheld above — so a client-side-only
+    // block cannot be the whole story (§2.9, a modified client can already emit
+    // `gphone:server:messages:send` directly). This is deliberately narrower than hiding
+    // the message from the thread entirely, which is a larger, more decision-heavy
+    // feature (does a block retroactively hide history already read? does the thread
+    // itself disappear?) that this pass does not take a position on.
+    if (sender.phone && (await isBlocked(participant.citizenid, sender.phone))) continue;
 
     // The shape the shell's `receiveMessage` route already expects: it appends to the
     // thread and raises a toast with an inline reply.

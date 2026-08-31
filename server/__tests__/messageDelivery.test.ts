@@ -25,7 +25,16 @@ const { participants, emitted, sources, dbMock, handlers, player } = vi.hoisted(
     participants: { rows: [] as any[] },
     emitted: [] as { event: string; target: number; payload: any }[],
     sources: new Map<string, number>(),
-    dbMock: { query: vi.fn(async () => []), insert: vi.fn(), update: vi.fn(), single: vi.fn() },
+    // `scalar` backs `Blocklist.ts`'s `isBlocked` (MICA-64), called from
+    // `deliverToParticipants` for every participant — `null` (nobody blocked) keeps every
+    // existing test in this file exactly as unblocked as it always was.
+    dbMock: {
+      query: vi.fn(async () => []),
+      insert: vi.fn(),
+      update: vi.fn(),
+      single: vi.fn(),
+      scalar: vi.fn(async () => null)
+    },
     handlers: captured,
     // The reaction handlers below go through `ServiceEndpoint`'s wrapper, which resolves
     // the caller from `FrameworkBridge.getPlayer(source)` — unlike `deliverToParticipants`,
@@ -67,6 +76,10 @@ beforeEach(async () => {
   dbMock.insert.mockReset();
   dbMock.update.mockReset();
   dbMock.single.mockReset();
+  // Not `.mockReset()`: that would drop the default `async () => null` implementation
+  // set in `vi.hoisted` above, which every pre-existing test in this file relies on to
+  // keep `isBlocked` answering "nobody's blocked" without having to say so itself.
+  dbMock.scalar.mockClear();
   player.current = null;
   __resetRateLimits();
   ({ deliverToParticipants } = await import('../services/Messages'));
@@ -96,6 +109,44 @@ describe('deliverToParticipants', () => {
     expect(emitted).toHaveLength(1);
     expect(emitted[0].event).toBe('gphone:client:messages:received');
     expect(emitted[0].target).toBe(3);
+  });
+
+  /**
+   * MICA-64. Blocking a sender withholds only the live push — the row is still
+   * written, the same as an offline participant — since hiding history retroactively or
+   * making the thread itself disappear is a larger, more decision-heavy feature this
+   * pass does not take a position on.
+   */
+  it('skips the live push to a participant who has blocked the sender', async () => {
+    participants.rows = [
+      { citizenid: 'SENDER', status: 'active' },
+      { citizenid: 'OTHER', status: 'active' }
+    ];
+    sources.set('OTHER', 3);
+    dbMock.scalar.mockResolvedValueOnce(1); // OTHER has blocked 5550100
+
+    await deliverToParticipants(7, 'SENDER', { name: 'A B', phone: '5550100' }, message);
+
+    expect(emitted).toEqual([]);
+  });
+
+  it('asks the blocklist with the sender phone and the recipient citizenid', async () => {
+    participants.rows = [{ citizenid: 'OTHER', status: 'active' }];
+    sources.set('OTHER', 3);
+
+    await deliverToParticipants(7, 'SENDER', { name: 'A B', phone: '5550100' }, message);
+
+    expect(dbMock.scalar).toHaveBeenCalledWith(expect.any(String), ['OTHER', '5550100']);
+  });
+
+  it('still delivers when the sender has no known phone number, rather than blocking blindly', async () => {
+    participants.rows = [{ citizenid: 'OTHER', status: 'active' }];
+    sources.set('OTHER', 3);
+
+    await deliverToParticipants(7, 'SENDER', { name: 'A B', phone: null }, message);
+
+    expect(emitted).toHaveLength(1);
+    expect(dbMock.scalar).not.toHaveBeenCalled();
   });
 
   it('does not echo back to the sender', async () => {
