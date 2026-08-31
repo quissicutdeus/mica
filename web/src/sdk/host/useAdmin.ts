@@ -1,4 +1,3 @@
-import './inProcess/facets/admin';
 import { guarded } from './guard';
 
 /**

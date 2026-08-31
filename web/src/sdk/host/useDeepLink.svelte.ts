@@ -1,4 +1,3 @@
-import './inProcess/facets/deepLink.svelte';
 import { guarded } from './guard';
 
 /**

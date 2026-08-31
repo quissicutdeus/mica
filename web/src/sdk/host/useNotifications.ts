@@ -1,4 +1,3 @@
-import './inProcess/facets/notifications';
 import { guarded } from './guard';
 
 /**

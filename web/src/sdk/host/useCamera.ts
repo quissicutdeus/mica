@@ -1,4 +1,3 @@
-import './inProcess/facets/camera';
 import { guarded } from './guard';
 
 /**

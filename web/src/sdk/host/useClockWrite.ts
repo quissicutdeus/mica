@@ -1,4 +1,3 @@
-import './inProcess/facets/clockWrite';
 import { guarded } from './guard';
 
 /**

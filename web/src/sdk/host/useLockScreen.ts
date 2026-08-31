@@ -1,4 +1,3 @@
-import './inProcess/facets/lockScreen';
 import { guarded } from './guard';
 
 /**

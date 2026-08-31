@@ -1,10 +1,15 @@
-import './inProcess/facets/storage';
 import { guarded } from './guard';
-export {
-  registerPersistedReset,
-  registerPersistedRehydrate,
-  hydrateSettings
-} from './inProcess/facets/storage';
+/**
+ * MICA-176. These three used to be re-exported from `./inProcess/facets/storage`, and
+ * `facetSwap()` in `vite.addon.config.ts` rewrote that specifier to the iframe twin for an
+ * add-on build — a value edge across the seam that only a resolver plugin was keeping
+ * honest. Both files below are side-free by construction, so there is nothing left to
+ * choose: the persisted-store registry is shared (the bookkeeping never had a side), and
+ * `hydrateSettings` is a no-op until `inProcess/facets/storage.ts` installs the real one,
+ * which happens only in a bundle that loaded the in-process facet set.
+ */
+export { registerPersistedReset, registerPersistedRehydrate } from './seam/persistedRegistry';
+export { hydrateSettings } from './seam/settingsHydration';
 
 /**
  * OS Service Hook for app key-value storage.

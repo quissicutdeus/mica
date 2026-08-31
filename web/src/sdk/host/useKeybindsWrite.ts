@@ -1,4 +1,3 @@
-import './inProcess/facets/keybindsWrite';
 import { guarded } from './guard';
 
 /**

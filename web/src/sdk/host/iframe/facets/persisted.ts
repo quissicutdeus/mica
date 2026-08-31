@@ -1,11 +1,7 @@
 import { registerFacet } from '../../current';
 import { writable, type Writable } from 'svelte/store';
-import {
-  storage as storageFacet,
-  registerPersistedRehydrate,
-  registerPersistedReset,
-  markUnsynced
-} from './storage';
+import { storage as storageFacet, markUnsynced } from './storage';
+import { registerPersistedRehydrate, registerPersistedReset } from '../../seam/persistedRegistry';
 
 export interface PersistedOptions<T> {
   sanitize?: (value: unknown) => T;

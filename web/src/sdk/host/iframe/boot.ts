@@ -1,3 +1,12 @@
+/**
+ * MICA-176. **First import, deliberately** — the add-on's half of the SDK host seam, and
+ * the mirror of `src/main.ts`'s first line. Every `sdk/host/iframe/facets/*` twin
+ * self-registers into `sdk/host/current.ts`'s registry from here, so an add-on bundle
+ * resolves its facets by having imported this file rather than by a build alias rewriting
+ * each hook's specifier. `sdk/host/inProcess/**` is not reachable from this graph at all,
+ * which `seam.test.ts` checks by resolving specifiers to real paths.
+ */
+import './registerFacets';
 import { mount } from 'svelte';
 import { clientTransport } from './transport';
 import { createInProcessHost } from '../inProcess/createInProcessHost';

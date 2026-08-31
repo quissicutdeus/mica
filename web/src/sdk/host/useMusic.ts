@@ -1,4 +1,3 @@
-import './inProcess/facets/music';
 import { guarded } from './guard';
 
 /**

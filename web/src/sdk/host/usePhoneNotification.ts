@@ -1,4 +1,3 @@
-import './inProcess/facets/phoneNotification';
 import { guarded } from './guard';
 export type { SendNotificationOptions } from './inProcess/facets/phoneNotification';
 

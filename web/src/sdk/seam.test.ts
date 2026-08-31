@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 /**
@@ -17,7 +17,9 @@ import { join, relative } from 'node:path';
  */
 
 const SDK = __dirname;
-const ROOT = join(SDK, '..', '..');
+const SRC = join(SDK, '..');
+const WEB = join(SRC, '..');
+const ROOT = join(WEB, '..');
 
 /** Directories and files that travel with an add-on. */
 const KIT = [
@@ -33,14 +35,6 @@ const KIT = [
   join(SDK, 'version.ts')
 ];
 
-/**
- * What a kit file may not import by value. `lib/` is absent on purpose: AGENTS.md §8 defines
- * it as helpers with no gPhone state and no I/O, which is exactly what can be bundled. It
- * still gets checked — `transitiveReachable` (MICA-28) walks into whatever a kit or
- * iframe file imports, `lib/` included, rather than trusting the directory list below.
- */
-const SHELL_ONLY = ['shell', 'services', 'nui'];
-
 const walk = (path: string): string[] => {
   if (!statSync(path).isDirectory()) return [path];
   return readdirSync(path).flatMap((entry) => walk(join(path, entry)));
@@ -49,70 +43,87 @@ const walk = (path: string): string[] => {
 const FILES = KIT.flatMap(walk).filter((f) => /\.(svelte|ts)$/.test(f) && !f.endsWith('.test.ts'));
 
 /**
- * A value import of a shell-only directory, at any relative depth. `import type` is allowed:
- * it is erased at build time and so never has to resolve inside an add-on's bundle —
- * `types.ts` re-exports `UIConversation` from `services/conversations` that way.
+ * ## Why this file resolves specifiers instead of matching their shape
+ *
+ * MICA-176. Until this rewrite every check below was anchored on the *text* of a
+ * specifier — `(?:\.\./)+(shell|services|nui)/` — which is a guard that stops guarding the
+ * moment a specifier changes shape, and says nothing while it does. Two things were already
+ * invisible to it:
+ *
+ * - `sdk/host/useMail.ts`'s `export { unreadMailCount } from './inProcess/facets/mail'` —
+ *   a real value edge from an add-on-reachable file into `services/mail.ts`, three modules
+ *   deep. It begins `./`, not `../`, so it never matched, and `inProcess/` was not in the
+ *   forbidden list at all. Four hook files had six such edges between them and only
+ *   `vite.addon.config.ts`'s `facetSwap()` plugin was keeping them out of an add-on bundle.
+ * - Anything reached through a path alias rather than a relative specifier.
+ *
+ * And MICA-172 will move these files, which changes every `../` count in the tree at
+ * once. A check that reads as a pass while guarding nothing is the failure mode AGENTS.md
+ * §9 names, so the anchor is now the **resolved location on disk** of what a file imports.
+ * That cannot silently stop matching: a specifier either resolves to a file inside a
+ * forbidden directory or it does not, however it is spelled and wherever the importer moves
+ * to.
+ *
+ * The second half of the same property is `resolveSpecifier` throwing on a specifier it can
+ * neither resolve to a file nor identify as an installed package. Without that, a new alias
+ * family — or a moved file — would degrade to "unresolvable, therefore ignored", which is
+ * the same fail-open shape wearing a different hat.
  */
-const VALUE_IMPORT = new RegExp(
-  String.raw`^\s*import\s+(?!type\s)[^;]*?from\s+['"](?:\.\./)+(${SHELL_ONLY.join('|')})/[^'"]*['"]`,
-  'gm'
-);
+
+/** Where an add-on's bundle has nothing to resolve. Absolute, so the check is positional. */
+const FORBIDDEN_DIRS = [
+  join(SRC, 'shell'),
+  join(SRC, 'services'),
+  join(SRC, 'nui'),
+  /**
+   * `sdk/host/inProcess/facets/` joins the list in MICA-176. It is the shell-backed half
+   * of the host seam — 46 of its 48 modules import `shell/`, `services/` or `nui/` by value
+   * — and since `facetSwap()` was deleted nothing rewrites a path into it. An add-on's entry
+   * imports `sdk/host/iframe/registerFacets` and the shell's imports
+   * `sdk/host/inProcess/registerFacets`, so a file on the add-on graph naming a facet by
+   * value is now a real edge rather than one a resolver plugin will redirect. Type-only
+   * references are still fine and are why `iframe/facets/*.ts` may write
+   * `typeof import('../../inProcess/facets/mail')`: erased at build time, never resolved.
+   *
+   * `facets/`, not the whole of `inProcess/`. Its three other modules — `system.ts`,
+   * `createInProcessHost.ts`, `settingsSync.ts` — are not classified by where they sit: the
+   * first two are deliberately shell-free (that is what makes `guard.ts` safe to import from
+   * module scope, and `iframe/boot.ts` builds its own host out of `createInProcessHost`), and
+   * whether the third is reachable is answered by the transitive walk rather than by a
+   * directory blanket. A directory ban here would have been the shape-matching mistake this
+   * rewrite exists to stop, one level up.
+   */
+  join(SDK, 'host', 'inProcess', 'facets')
+];
+
+const inForbiddenDir = (file: string) =>
+  FORBIDDEN_DIRS.some((dir) => file === dir || file.startsWith(dir + '/'));
 
 /**
- * A value *re-export* of a shell-only directory — `export { a, b } from '...'` or
- * `export * from '...'` — at any relative depth. `import type` has a re-export twin,
- * `export type { ... } from`, which is excluded the same way: it is erased at build time.
- * Without this, `export { toast } from '../shell/state/toast'` inside `sdk/addon.ts` would
- * sail past `VALUE_IMPORT` (anchored on the `import` keyword) while still being exactly
- * the thing this file exists to catch — a name an add-on's bundle has nothing to resolve.
- */
-const VALUE_EXPORT = new RegExp(
-  String.raw`^\s*export\s+(?!type\s)(?:\{[^}]*\}|\*)\s*from\s+['"](?:\.\./)+(${SHELL_ONLY.join('|')})/[^'"]*['"]`,
-  'gm'
-);
-
-/**
- * `findOffenders`'s `exempt` param excuses a specifier vite.addon.config.ts redirects
- * before it ever reaches an add-on's real bundle (MICA-28) — without it, the transitive
- * walk below would flag `src/lib/formatters.ts`'s `../shell/state/time` import as
- * unresolvable, when the build swaps it for `sdk/host/iframe/shims/time.ts` first. Kept in
- * lockstep with that config by hand: nothing here parses it, so a new alias added there and
- * not mirrored here reintroduces exactly the gap MICA-28 closes.
+ * Specifiers `vite.addon.config.ts` redirects before rollup ever resolves them, so the file
+ * named on disk is not the file an add-on bundle contains (MICA-28). Kept in lockstep with
+ * that config by hand: nothing here parses it. The facet swap used to be a third entry and
+ * is gone — MICA-176 deleted the plugin, so `inProcess/facets/*` now means what it says.
  */
 const ALIASED_SPECIFIERS = [/(^|\/)shell\/state\/time$/, /(^|\/)nui\/fetchNui$/];
 
-/** Every `VALUE_IMPORT`/`VALUE_EXPORT` hit in one file, formatted the way every describe below reports it. */
-const findOffenders = (file: string, exempt: RegExp[] = []): string[] => {
-  const text = readFileSync(file, 'utf8');
-  const offenders: string[] = [];
-  for (const rx of [VALUE_IMPORT, VALUE_EXPORT]) {
-    for (const match of text.matchAll(rx)) {
-      const specifier = match[0].match(/['"]([^'"]+)['"]/)?.[1];
-      if (specifier && exempt.some((e) => e.test(specifier))) continue;
-      offenders.push(`${relative(ROOT, file)}  ->  ${match[0].trim()}`);
-    }
-  }
-  return offenders;
-};
+/** Path aliases both tsconfig and the Vite configs define. Resolved, not skipped. */
+const PATH_ALIASES: [RegExp, string][] = [
+  [/^@shared\/(.+)$/, join(ROOT, 'shared', '$1')],
+  [/^@gphone\/sdk\/app$/, join(SDK, 'app.ts')],
+  [/^@gphone\/sdk\/core$/, join(SDK, 'core.ts')],
+  [/^@gphone\/sdk\/testing$/, join(SDK, 'testing.ts')],
+  [/^@gphone\/sdk$/, join(SDK, 'index.ts')]
+];
 
-/** Every specifier a file value-imports or value-re-exports, relative or not. */
-const IMPORT_SPECIFIER = /^\s*import\s+(?!type\s)[^;]*?from\s+['"]([^'"]+)['"]/gm;
-const EXPORT_FROM_SPECIFIER = /^\s*export\s+(?!type\s)(?:\{[^}]*\}|\*)\s*from\s+['"]([^'"]+)['"]/gm;
-
-const importSpecifiers = (file: string): string[] => {
-  const text = readFileSync(file, 'utf8');
-  const specs: string[] = [];
-  for (const rx of [IMPORT_SPECIFIER, EXPORT_FROM_SPECIFIER]) {
-    for (const match of text.matchAll(rx)) specs.push(match[1]);
-  }
-  return specs;
-};
-
-/** Resolves a relative specifier from `fromFile` to a real file on disk, or `null` for a bare/package specifier. */
-const resolveRelative = (fromFile: string, specifier: string): string | null => {
-  if (!specifier.startsWith('.')) return null;
-  const base = join(fromFile, '..', specifier);
-  for (const candidate of [base, `${base}.ts`, `${base}.svelte`, join(base, 'index.ts')]) {
+const asFile = (base: string): string | null => {
+  for (const candidate of [
+    base,
+    `${base}.ts`,
+    `${base}.svelte`,
+    `${base}.svelte.ts`,
+    join(base, 'index.ts')
+  ]) {
     try {
       if (statSync(candidate).isFile()) return candidate;
     } catch {
@@ -122,47 +133,103 @@ const resolveRelative = (fromFile: string, specifier: string): string | null => 
   return null;
 };
 
-/**
- * `inProcess/facets/<name>` (any path depth, `.svelte` optional, `index` excluded) is the
- * other build-time swap: vite.addon.config.ts's `facetSwap()` plugin redirects it to the
- * matching `sdk/host/iframe/facets/<name>` twin before rollup ever resolves it, the same
- * way every `sdk/host/useXxx.ts` hook writes the specifier
- * (`./inProcess/facets/messages`) — and `addon.ts`'s `export * from './host/index'` makes
- * every one of those hook files, and so this edge, reachable from the add-on entry. Walking
- * into the real inProcess facet instead would check `shell/`/`services/`-importing code
- * that never ships in an add-on bundle. Mirrors vite.addon.config.ts's `FACET_RE`.
- */
-const INPROCESS_FACET_RE = /^(?:.*\/)?inProcess\/facets\/([A-Za-z]+)(?:\.svelte)?$/;
-const isFacetSwapped = (specifier: string): boolean => {
-  const m = INPROCESS_FACET_RE.exec(specifier);
-  return m !== null && m[1] !== 'index';
+/** An installed package rather than something in this repo — nothing here to check. */
+const isInstalledPackage = (specifier: string): boolean => {
+  const parts = specifier.split('/');
+  const name = specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
+  return [join(WEB, 'node_modules', name), join(ROOT, 'node_modules', name)].some(existsSync);
 };
 
 /**
- * Every file reachable from `entryFiles` by following relative imports/re-exports, not just
- * the files declared to live in a checked directory (MICA-28). This is what catches a new
- * `web/src/lib/` file that a kit or iframe file starts importing: `lib/` carries no
- * directory-level check of its own (AGENTS.md §8 — it's plain helpers, legitimately
- * reachable from an add-on bundle), so the only thing that can catch it reaching into
- * `shell/` is following the import graph out to wherever it actually leads.
+ * A specifier's real location on disk, or `null` for an installed package.
  *
- * An `ALIASED_SPECIFIERS` or facet-swapped edge is not followed: the specifier text on disk
- * (`../nui/fetchNui`, `./inProcess/facets/messages`) names a file that never ships in a real
- * add-on bundle — vite.addon.config.ts redirects it to something already covered elsewhere
- * before rollup ever resolves it. Walking into the on-disk file instead would check code an
- * add-on never actually runs, and could fail the suite over an unrelated import inside it.
+ * **Throws** on anything that is neither. That is the point: this file's guarantee is that
+ * every edge it walks was actually classified, so "I could not work out what this is" has to
+ * be a failure rather than a shrug. See this section's doc comment above.
  */
-const transitiveReachable = (entryFiles: string[]): string[] => {
+const resolveSpecifier = (fromFile: string, specifier: string): string | null => {
+  if (specifier.startsWith('.')) {
+    const resolved = asFile(join(fromFile, '..', specifier));
+    if (resolved) return resolved;
+    throw new Error(
+      `[seam.test] ${relative(ROOT, fromFile)} imports '${specifier}', which resolves to no file. ` +
+        `Every check in this file is anchored on where a specifier lands, so an unresolvable ` +
+        `one has to fail rather than be skipped.`
+    );
+  }
+  for (const [pattern, target] of PATH_ALIASES) {
+    const m = pattern.exec(specifier);
+    if (!m) continue;
+    const resolved = asFile(target.replace('$1', m[1] ?? ''));
+    if (resolved) return resolved;
+    throw new Error(
+      `[seam.test] ${relative(ROOT, fromFile)} imports '${specifier}' through a path alias that ` +
+        `resolves to no file.`
+    );
+  }
+  if (isInstalledPackage(specifier)) return null;
+  throw new Error(
+    `[seam.test] ${relative(ROOT, fromFile)} imports '${specifier}', which is neither relative, ` +
+      `nor a known path alias, nor an installed package. Add it to PATH_ALIASES if this repo ` +
+      `defines it — leaving it unclassified would make this whole file quietly stop guarding.`
+  );
+};
+
+/**
+ * A *value* import or re-export, at any depth and however spelled. `import type` and
+ * `export type` are excluded: both are erased at build time and so never have to resolve
+ * inside an add-on's bundle — `types.ts` re-exports `UIConversation` from
+ * `services/conversations` that way, and every `iframe/facets/*.ts` names its inProcess twin
+ * in type position to derive the twin's shape.
+ */
+const VALUE_IMPORT = /^\s*import\s+(?!type\s)[^;]*?from\s+['"]([^'"]+)['"]/gm;
+const VALUE_EXPORT = /^\s*export\s+(?!type\s)(?:\{[^}]*\}|\*)\s*from\s+['"]([^'"]+)['"]/gm;
+/** A bare side-effect import — `import './registerFacets';`. It has no clause to match above. */
+const SIDE_EFFECT_IMPORT = /^\s*import\s+['"]([^'"]+)['"]\s*;?\s*$/gm;
+
+const valueSpecifiers = (file: string): string[] => {
+  const text = readFileSync(file, 'utf8');
+  const specs: string[] = [];
+  for (const rx of [VALUE_IMPORT, VALUE_EXPORT, SIDE_EFFECT_IMPORT]) {
+    for (const match of text.matchAll(rx)) specs.push(match[1]);
+  }
+  return specs;
+};
+
+/** Every value edge out of one file that lands inside a forbidden directory. */
+const findOffenders = (file: string, exempt: RegExp[] = []): string[] =>
+  valueSpecifiers(file)
+    .filter((s) => !exempt.some((e) => e.test(s)))
+    .filter((s) => {
+      const resolved = resolveSpecifier(file, s);
+      return resolved !== null && inForbiddenDir(resolved);
+    })
+    .map(
+      (s) => `${relative(ROOT, file)}  ->  ${s}  (${relative(ROOT, resolveSpecifier(file, s)!)})`
+    );
+
+/**
+ * Every file reachable from `entryFiles` by following value edges (MICA-28). This is what
+ * catches a new `web/src/lib/` file that a kit or iframe file starts importing: `lib/`
+ * carries no directory-level check of its own (AGENTS.md §8 — it's plain helpers,
+ * legitimately reachable from an add-on bundle), so the only thing that can catch it
+ * reaching into `shell/` is following the import graph out to wherever it actually leads.
+ *
+ * An `ALIASED_SPECIFIERS` edge is not followed: the file it names on disk is not the file an
+ * add-on bundle contains. A forbidden edge is not followed either — it is reported by the
+ * caller, and walking into it would report the same shell tree from every entry.
+ */
+const transitiveReachable = (entryFiles: string[], exempt: RegExp[] = []): string[] => {
   const seen = new Set<string>();
   const queue = [...entryFiles];
   while (queue.length > 0) {
     const file = queue.pop()!;
     if (seen.has(file)) continue;
     seen.add(file);
-    for (const specifier of importSpecifiers(file)) {
-      if (ALIASED_SPECIFIERS.some((e) => e.test(specifier)) || isFacetSwapped(specifier)) continue;
-      const resolved = resolveRelative(file, specifier);
-      if (resolved && !seen.has(resolved)) queue.push(resolved);
+    for (const specifier of valueSpecifiers(file)) {
+      if (exempt.some((e) => e.test(specifier))) continue;
+      const resolved = resolveSpecifier(file, specifier);
+      if (resolved && !inForbiddenDir(resolved) && !seen.has(resolved)) queue.push(resolved);
     }
   }
   return [...seen];
@@ -173,8 +240,8 @@ describe('the kit does not reach the shell', () => {
     expect(FILES.length).toBeGreaterThan(20);
   });
 
-  it('no kit file, or anything it transitively imports, value-imports or value-re-exports shell/, services/ or nui/', () => {
-    const offenders = transitiveReachable(FILES).flatMap((f) =>
+  it('no kit file, or anything it transitively imports, value-imports or value-re-exports shell/, services/, nui/ or sdk/host/inProcess/', () => {
+    const offenders = transitiveReachable(FILES, ALIASED_SPECIFIERS).flatMap((f) =>
       findOffenders(f, ALIASED_SPECIFIERS)
     );
     expect(
@@ -189,11 +256,15 @@ describe('the kit does not reach the shell', () => {
  *
  * `sdk/host/*.ts` and `sdk/host/*.svelte.ts` (excluding `sdk/host/inProcess/**`) are the
  * thin `guarded('useX').facets.x(...)` wrappers (MICA-16 step 3) — they resolve a `Host`
- * and delegate. The old bodies that actually reach `shell/`, `services/` and `nui/` now
- * live under `sdk/host/inProcess/facets/`, which is the one place in the host API allowed
- * to import them. A hook file that kept a shell import instead of moving it into its facet
- * would defeat the whole point of the protocol: there would be nothing to swap out when
- * add-ons stop sharing the shell's JS context.
+ * and delegate. The bodies that actually reach `shell/`, `services/` and `nui/` live under
+ * `sdk/host/inProcess/facets/`, which is the one place in the host API allowed to import
+ * them.
+ *
+ * MICA-176 makes this sharper than it was. A hook may no longer name a concrete facet
+ * module *at all* — not `./inProcess/facets/contacts` for its side effect, and not
+ * `export { unreadMailCount } from './inProcess/facets/mail'` for a value, which is what
+ * four of them were doing. Which facet set a bundle contains is now decided by its entry
+ * point (`src/main.ts` or `bootAddOn`), and a hook that names one takes that decision back.
  */
 
 const HOST_DIR = join(SDK, 'host');
@@ -209,8 +280,10 @@ describe('the host hooks do not reach the shell', () => {
     expect(hostFiles.length).toBeGreaterThan(20);
   });
 
-  it('no sdk/host file (outside inProcess/) value-imports or value-re-exports shell/, services/ or nui/', () => {
-    const offenders = hostFiles.flatMap((f) => findOffenders(f));
+  it('no sdk/host file (outside inProcess/) value-imports or value-re-exports shell/, services/, nui/ or inProcess/', () => {
+    const offenders = hostFiles
+      .filter((f) => f !== join(HOST_DIR, 'iframe', 'registerFacets.ts'))
+      .flatMap((f) => findOffenders(f));
     expect(
       offenders.sort(),
       'move the import into sdk/host/inProcess/facets/ — a hook file only resolves a Host and delegates'
@@ -225,6 +298,11 @@ describe('the host hooks do not reach the shell', () => {
  * only things in an add-on's JS context — the transport, the twins it builds facets from,
  * and boot. Any of them reaching `shell/`, `services/` or `nui/` by value is a thing that
  * cannot resolve inside an add-on's own bundle.
+ *
+ * Since MICA-176 this is also the check that replaces `facetSwap()`. `addon.ts` is a real
+ * entry point of the add-on build, so walking it transitively is walking what a bundle
+ * actually contains — and `sdk/host/inProcess/` being a forbidden directory is what proves
+ * the sandboxed half no longer depends on a resolver plugin's regex to stay out.
  */
 
 const IFRAME_DIR = join(HOST_DIR, 'iframe');
@@ -245,19 +323,33 @@ const ADDON_FILE = join(SDK, 'addon.ts');
  */
 const ADDON_ALLOWED_SPECIFIERS = ['../services/createCrudStore', '../services/createPagedStore'];
 
-const iframeOffenders = (file: string): string[] => {
-  const text = readFileSync(file, 'utf8');
-  const offenders: string[] = [];
-  for (const rx of [VALUE_IMPORT, VALUE_EXPORT]) {
-    for (const match of text.matchAll(rx)) {
-      const specifier = match[0].match(/['"]([^'"]+)['"]/)?.[1];
-      if (!specifier) continue;
-      if (file === ADDON_FILE && ADDON_ALLOWED_SPECIFIERS.includes(specifier)) continue;
-      if (ALIASED_SPECIFIERS.some((e) => e.test(specifier))) continue;
-      offenders.push(`${relative(ROOT, file)}  ->  ${match[0].trim()}`);
+const addonExempt = (file: string, specifier: string) =>
+  (file === ADDON_FILE && ADDON_ALLOWED_SPECIFIERS.includes(specifier)) ||
+  ALIASED_SPECIFIERS.some((e) => e.test(specifier));
+
+const iframeOffenders = (file: string): string[] =>
+  valueSpecifiers(file)
+    .filter((s) => !addonExempt(file, s))
+    .filter((s) => {
+      const resolved = resolveSpecifier(file, s);
+      return resolved !== null && inForbiddenDir(resolved);
+    })
+    .map((s) => `${relative(ROOT, file)}  ->  ${s}`);
+
+const addonReachable = () => {
+  const seen = new Set<string>();
+  const queue = [...iframeFiles];
+  while (queue.length > 0) {
+    const file = queue.pop()!;
+    if (seen.has(file)) continue;
+    seen.add(file);
+    for (const specifier of valueSpecifiers(file)) {
+      if (addonExempt(file, specifier)) continue;
+      const resolved = resolveSpecifier(file, specifier);
+      if (resolved && !inForbiddenDir(resolved) && !seen.has(resolved)) queue.push(resolved);
     }
   }
-  return offenders;
+  return [...seen];
 };
 
 describe('the iframe transport and the add-on barrel do not reach the shell', () => {
@@ -265,8 +357,8 @@ describe('the iframe transport and the add-on barrel do not reach the shell', ()
     expect(iframeFiles.length).toBeGreaterThan(20);
   });
 
-  it('no sdk/host/iframe file, sdk/addon.ts, or anything either transitively imports, value-imports or value-re-exports shell/, services/ or nui/ (outside the addon.ts allowlist)', () => {
-    const offenders = transitiveReachable(iframeFiles).flatMap(iframeOffenders);
+  it('no sdk/host/iframe file, sdk/addon.ts, or anything either transitively imports, value-imports or value-re-exports shell/, services/, nui/ or sdk/host/inProcess/ (outside the addon.ts allowlist)', () => {
+    const offenders = addonReachable().flatMap(iframeOffenders);
     expect(
       offenders.sort(),
       'an add-on bundle has no shell to import — go through the transport instead'
@@ -275,13 +367,20 @@ describe('the iframe transport and the add-on barrel do not reach the shell', ()
 });
 
 /**
- * Every in-process facet has an iframe twin.
+ * Every in-process facet has an iframe twin, and both boot sets are exhaustive.
  *
  * `sdk/host/inProcess/facets/*.ts` is what a hook resolves to inside the shell; once an
  * add-on runs in its own iframe, the same hook must resolve to a twin under
- * `sdk/host/iframe/facets/` that goes over the transport instead. A facet added to one
- * side and forgotten on the other is a hook that silently works in-process and throws (or
- * worse, no-ops) once the app it belongs to actually ships as a sandboxed add-on.
+ * `sdk/host/iframe/facets/` that goes over the transport instead. A facet added to one side
+ * and forgotten on the other is a hook that silently works in-process and throws (or worse,
+ * no-ops) once the app it belongs to actually ships as a sandboxed add-on.
+ *
+ * MICA-176 adds the second half. A facet is now pulled onto the graph by
+ * `<side>/registerFacets.ts` rather than by the hook that uses it, so a facet file that
+ * exists, has a twin, and is in neither boot set never registers — and the first thing that
+ * notices is `host facet 'x' is not loaded`, thrown at whoever opens that app. The list in
+ * each `registerFacets.ts` is compared against the directory here so that a facet added and
+ * not listed fails the suite instead.
  */
 
 const IN_PROCESS_FACETS = join(HOST_IN_PROCESS, 'facets');
@@ -293,11 +392,62 @@ const facetNames = (dir: string, exclude: string[]): string[] =>
     .filter((f) => !f.endsWith('.test.ts') && !exclude.includes(f))
     .sort();
 
+/** The `./facets/<name>` specifiers one `registerFacets.ts` imports, as file names. */
+const bootSet = (registerFacetsFile: string): string[] =>
+  valueSpecifiers(registerFacetsFile)
+    .filter((s) => s.startsWith('./facets/'))
+    .map((s) => `${s.slice('./facets/'.length)}.ts`)
+    .sort();
+
 describe('every in-process facet has an iframe twin', () => {
   it('sdk/host/iframe/facets/*.ts file names equal sdk/host/inProcess/facets/*.ts file names (minus index.ts)', () => {
     const inProcess = facetNames(IN_PROCESS_FACETS, ['index.ts']);
     const iframe = facetNames(IFRAME_FACETS, ['_shared.ts']);
     expect(inProcess.length).toBeGreaterThan(20);
     expect(iframe).toEqual(inProcess);
+  });
+});
+
+describe('the boot facet sets are exhaustive', () => {
+  it('sdk/host/inProcess/registerFacets.ts imports every in-process facet', () => {
+    expect(bootSet(join(HOST_IN_PROCESS, 'registerFacets.ts'))).toEqual(
+      facetNames(IN_PROCESS_FACETS, ['index.ts'])
+    );
+  });
+
+  it('sdk/host/iframe/registerFacets.ts imports every iframe twin', () => {
+    expect(bootSet(join(IFRAME_DIR, 'registerFacets.ts'))).toEqual(
+      facetNames(IFRAME_FACETS, ['_shared.ts'])
+    );
+  });
+
+  /**
+   * The in-process set is imported by exactly one module, and it is the shell's entry.
+   * Anything else importing it — a hook, `guard.ts`, or anything either of those reaches —
+   * puts `shell/` back on the module graph between `guard.ts` and the state it reads, which
+   * is the cycle `current.ts`'s type-only facet import exists to avoid, and would also make
+   * the whole seam moot by dragging the shell-backed facets into an add-on bundle.
+   */
+  it('only src/main.ts imports the in-process facet set', () => {
+    const target = join(HOST_IN_PROCESS, 'registerFacets.ts');
+    const allowed = new Set([join(SRC, 'main.ts'), join(SDK, 'testing.ts')]);
+    const importers = walk(SRC)
+      .filter((f) => /\.(svelte|svelte\.ts|ts)$/.test(f) && !f.endsWith('.test.ts'))
+      .filter((f) => !allowed.has(f))
+      .filter((f) =>
+        valueSpecifiers(f).some((s) => {
+          if (!s.startsWith('.')) return false;
+          try {
+            return resolveSpecifier(f, s) === target;
+          } catch {
+            return false;
+          }
+        })
+      )
+      .map((f) => relative(ROOT, f));
+    expect(
+      importers.sort(),
+      'the shell entry point picks the facet set — nothing else may, or the choice is back in the module graph'
+    ).toEqual([]);
   });
 });

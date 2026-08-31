@@ -1,5 +1,4 @@
 import type { Writable } from 'svelte/store';
-import './inProcess/facets/persisted';
 import { guarded } from './guard';
 import type { PersistedOptions } from './inProcess/facets/persisted';
 export type { PersistedOptions };

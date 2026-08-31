@@ -1,4 +1,3 @@
-import './inProcess/facets/wallpaper';
 import { guarded } from './guard';
 
 /**

@@ -1,4 +1,3 @@
-import './inProcess/facets/marketplace';
 import { guarded } from './guard';
 
 /** OS Service Hook for Marketplace. */

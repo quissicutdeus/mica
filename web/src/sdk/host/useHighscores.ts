@@ -1,4 +1,3 @@
-import './inProcess/facets/highscores';
 import { guarded } from './guard';
 
 /**

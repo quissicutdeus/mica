@@ -1,4 +1,3 @@
-import './inProcess/facets/accounts';
 import { guarded } from './guard';
 export type { ReactionTarget } from './inProcess/facets/accounts';
 

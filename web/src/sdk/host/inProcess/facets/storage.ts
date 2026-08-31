@@ -1,6 +1,13 @@
 import { registerFacet } from '../../current';
 import { fetchSettings } from '../../../../services/settings';
 import { isUnsynced, markUnsynced, queueClearApp, queueRemove, queueWrite } from '../settingsSync';
+import {
+  persistedRehydratorsAll,
+  persistedResetsFor,
+  registerPersistedRehydrate,
+  registerPersistedReset
+} from '../../seam/persistedRegistry';
+import { registerSettingsHydrator } from '../../seam/settingsHydration';
 
 const memoryStore = new Map<string, string>();
 
@@ -16,49 +23,6 @@ function getStorageBackend() {
 }
 
 const namespaceOf = (appId: string) => `gphone:${appId}:`;
-
-/**
- * Live `usePersisted` stores, per app, so clearing storage resets them too.
- *
- * Sweeping the keys is not enough on its own, and the gap is not theoretical. A persisted
- * store reads its key **once**, at construction — which for every one of them is module
- * scope, and the CEF page never unloads. So clearing an app's storage while its store is in
- * memory left the old value on screen, and the store's next write put the key straight back.
- * "Back to a freshly installed state" would have been true only of the keys nothing was
- * holding.
- *
- * A registry rather than an event because the reset has to reach the *inner* writable:
- * `usePersisted`'s own `set` persists, so resetting through it would recreate the key it was
- * just asked to delete.
- */
-const persistedResets = new Map<string, Set<() => void>>();
-
-/**
- * Internal, for `usePersisted`. Not something an app has a reason to call.
- *
- * Stores are never disposed — they live in module scope for the life of the page — so there is
- * nothing to unregister and no leak in keeping them.
- */
-export function registerPersistedReset(appId: string, reset: () => void): void {
-  const existing = persistedResets.get(appId);
-  if (existing) existing.add(reset);
-  else persistedResets.set(appId, new Set([reset]));
-}
-
-/**
- * Live stores that can re-read their key, for hydration.
- *
- * Deliberately **not** `persistedResets`, which sets a store back to its shipped default.
- * That is the right answer for "this app's storage was cleared" and the wrong one for
- * "the server just told us what this character had": reusing it would reset every
- * preference to the default at the exact moment the real values arrived.
- */
-const persistedRehydrators = new Set<() => void>();
-
-/** Internal, for `usePersisted`. Stores live for the life of the page, so nothing unregisters. */
-export function registerPersistedRehydrate(rehydrate: () => void): void {
-  persistedRehydrators.add(rehydrate);
-}
 
 /**
  * Implementation of the `clearAppStorage` facet — see the `clearAppStorage` hook doc for
@@ -92,7 +56,7 @@ export function clearAppStorage(appId: string): void {
 
   // Outside the try, and after the sweep: a storage backend that threw must not leave the
   // stores holding values whose keys may already be gone.
-  for (const reset of persistedResets.get(appId) ?? []) reset();
+  for (const reset of persistedResetsFor(appId)) reset();
 }
 
 /**
@@ -110,7 +74,7 @@ export function clearAppStorage(appId: string): void {
  * A failed fetch leaves the cache untouched. Keeping whatever the phone was already
  * showing beats resetting a working phone to defaults because one request timed out.
  */
-export async function hydrateSettings(): Promise<void> {
+async function hydrateSettingsInProcess(): Promise<void> {
   try {
     const rows = await fetchSettings();
     const backend = getStorageBackend();
@@ -121,7 +85,7 @@ export async function hydrateSettings(): Promise<void> {
       backend.setItem(`${namespaceOf(row.app)}${row.setting_key}`, row.setting_value ?? 'null');
     }
 
-    for (const rehydrate of persistedRehydrators) rehydrate();
+    for (const rehydrate of persistedRehydratorsAll()) rehydrate();
   } catch (error) {
     console.error('[settings] Hydration failed; keeping the values already on the phone.', error);
   }
@@ -208,3 +172,18 @@ registerFacet('storage', storage);
 registerFacet('appStorageBytes', appStorageBytes);
 
 registerFacet('clearAppStorage', clearAppStorage);
+
+/**
+ * MICA-176: the in-process half of `hydrateSettings`, installed rather than exported.
+ * `useStorage.ts` re-exports the neutral `hydrateSettings` from `seam/settingsHydration`,
+ * which is a no-op until this line runs — and this module is on the graph only through
+ * `inProcess/registerFacets.ts`, which only the shell's entry point imports.
+ */
+registerSettingsHydrator(hydrateSettingsInProcess);
+
+/**
+ * Re-exported so `registerPersistedReset`/`registerPersistedRehydrate` keep the shape
+ * `persisted.ts` imports them in, on both sides. The registry itself is shared —
+ * `seam/persistedRegistry.ts` — because the bookkeeping never had a side.
+ */
+export { registerPersistedRehydrate, registerPersistedReset };

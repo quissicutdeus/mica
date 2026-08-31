@@ -1,4 +1,3 @@
-import './inProcess/facets/systemHardware';
 import { guarded } from './guard';
 
 /**

@@ -1,3 +1,10 @@
+/**
+ * MICA-176. `@gphone/sdk/testing` is an entry point like `src/main.ts` and `bootAddOn`,
+ * so it supplies a facet set the same way: a test that renders an app is standing in for
+ * the shell, and gets the in-process facets. Before this ticket every hook pulled its own
+ * facet onto the graph, so a test never had to say which side it was on.
+ */
+import './host/inProcess/registerFacets';
 import { vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 import type { Component } from 'svelte';

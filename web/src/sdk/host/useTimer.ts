@@ -1,4 +1,3 @@
-import './inProcess/facets/timer';
 import { guarded } from './guard';
 export type { CancelTimer } from './inProcess/facets/timer';
 

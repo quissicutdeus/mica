@@ -1,5 +1,4 @@
 import { onMount } from 'svelte';
-import './inProcess/facets/lifecycle';
 import { guarded } from './guard';
 
 /**

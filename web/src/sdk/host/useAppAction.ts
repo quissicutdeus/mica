@@ -1,4 +1,3 @@
-import './inProcess/facets/appAction';
 import { guarded } from './guard';
 export type { AppActionOptions } from './inProcess/facets/appAction';
 

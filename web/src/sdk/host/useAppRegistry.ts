@@ -1,4 +1,3 @@
-import './inProcess/facets/appRegistry';
 import { guarded } from './guard';
 
 /**

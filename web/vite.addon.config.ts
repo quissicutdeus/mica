@@ -48,49 +48,19 @@ function addOnEntries(): Plugin {
   };
 }
 
-// `index` is excluded explicitly (`name !== 'index'` below, not just "no trailing name" as
-// an earlier version of this comment claimed): `[A-Za-z]+` matches the literal word
-// `index` just as readily as any real facet name, so a hypothetical `inProcess/facets/index`
-// specifier would otherwise swap to a nonexistent `iframe/facets/index.ts` (iframe has no
-// index — `current.ts`/`protocol.ts`'s `Facets` import is type-only and never resolved at
-// this level, and nothing else spells the path with a trailing `/index`, but the guard
-// costs nothing and removes the possibility outright).
-const FACET_RE = /^(.*\/)?inProcess\/facets\/([A-Za-z]+)(\.svelte)?$/;
-
 /**
- * Every `useXxx.ts` hook imports its facet by a *relative* specifier written from inside
- * `src/sdk/host/` itself — `./inProcess/facets/appRegistry`, not an absolute path
- * containing a `host/` segment. Vite's alias matcher tests the raw specifier text as
- * written, before it is resolved against the importer's directory, so a
- * `.../host/inProcess/facets/...` anchor never matches that literal string and the real
- * inProcess facet (which reaches into `shell/state/...`) would load instead of its iframe
- * twin. `FACET_RE` anchors on `inProcess/facets/<name>` instead — with an optional leading
- * path segment, so the few `../../inProcess/facets/<name>` type-position references from
- * `iframe/facets/*.ts` still match too.
+ * MICA-176 deleted `facetSwap()` from here.
+ *
+ * It was a `resolveId` plugin, `order: 'pre'`, rewriting `inProcess/facets/<name>` to
+ * `iframe/facets/<name>` — so the one specifier every `sdk/host/useXxx.ts` hook wrote
+ * resolved to a shell-backed module in the phone and a sandboxed twin in an add-on, and
+ * what an add-on bundle actually contained was a property of this file's regex rather than
+ * of anything readable in the source. The choice now lives at the entry point:
+ * `src/main.ts` imports `sdk/host/inProcess/registerFacets`, `bootAddOn` imports
+ * `sdk/host/iframe/registerFacets`, and no hook names a concrete facet module. Do not
+ * reintroduce a resolver plugin for this — `sdk/seam.test.ts` resolves every specifier on
+ * the add-on graph to a real path and fails on anything under `src/sdk/host/inProcess/`.
  */
-function facetSwap(): Plugin {
-  const iframeFacets = path.resolve(here, 'src/sdk/host/iframe/facets');
-  return {
-    name: 'gphone-facet-swap',
-    // `order: 'pre'` is load-bearing: rolldown's native resolver fast-paths plain relative
-    // specifiers (`./inProcess/facets/appRegistry`, exactly what every `useXxx.ts` hook
-    // writes) straight to the filesystem, bypassing a normal-stage plugin's `resolveId`
-    // entirely — confirmed by adding a log here and never seeing it fire for one of these
-    // while the entry's synthetic `addon-entry:` specifier (not a plain relative path) did
-    // reach it. `resolve.alias` avoids this because Vite registers its alias plugin
-    // `enforce: 'pre'` already; matching that here is what makes the swap actually apply.
-    resolveId: {
-      order: 'pre',
-      handler(id) {
-        const m = FACET_RE.exec(id);
-        if (!m) return null;
-        const [, , name, svelteExt] = m;
-        if (name === 'index') return null;
-        return path.join(iframeFacets, `${name}${svelteExt ?? ''}.ts`);
-      }
-    }
-  };
-}
 
 const SHELL_TIME_RE = /(^|\/)shell\/state\/time$/;
 
@@ -256,7 +226,6 @@ if (!process.env.ADDON_ID && ids.length > 1) {
 export default defineConfig({
   plugins: [
     addOnEntries(),
-    facetSwap(),
     shellTimeShim(),
     refuseCoreEntry(),
     svelte(),
@@ -303,9 +272,11 @@ export default defineConfig({
       { find: '@shared', replacement: path.resolve(here, '../shared') },
       { find: '@gphone/sdk/app', replacement: path.resolve(here, 'src/sdk/app.ts') },
       { find: '@gphone/sdk', replacement: path.resolve(here, 'src/sdk/addon.ts') },
-      // The other swap that puts every hook on the wall side without touching a hook file.
-      // The facets swap is `facetSwap()` above (a plugin, not a declarative alias) because
-      // one facet needs more than a path substitution — see its doc comment.
+      // The last remaining specifier-level swap, and it is not about facets: `nui/fetchNui`
+      // is imported by `services/createCrudStore` and `createPagedStore`, which `addon.ts`
+      // re-exports on purpose (see its doc comment). The facet swap that used to live
+      // alongside this is gone — MICA-176 moved that choice to the entry point; see the
+      // note where `facetSwap()` used to be defined, above.
       {
         find: /^(.*)\/nui\/fetchNui$/,
         replacement: path.resolve(here, 'src/sdk/host/iframe/fetchNui.ts')

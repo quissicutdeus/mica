@@ -3,32 +3,15 @@ import type { AsTwin } from './_shared';
 import { remoteCall } from '../remote';
 import { clientTransport } from '../transport';
 import { readKey, writeKey, removeKey, allKeys, hydrateStorage } from '../storageCache';
+import {
+  persistedRehydratorsAll,
+  registerPersistedRehydrate,
+  registerPersistedReset
+} from '../../seam/persistedRegistry';
 
 type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/storage').storage>>;
 
 const namespaceOf = (appId: string) => `gphone:${appId}:`;
-
-/**
- * Live `usePersisted` stores, per app — mirrors the inProcess registry so `persisted.ts`
- * can reset/rehydrate them the same way. See the inProcess `storage.ts` for why a registry
- * rather than an event: the reset has to reach the *inner* writable.
- */
-const persistedResets = new Map<string, Set<() => void>>();
-
-/** Internal, for the `persisted` twin. */
-export function registerPersistedReset(appId: string, reset: () => void): void {
-  const existing = persistedResets.get(appId);
-  if (existing) existing.add(reset);
-  else persistedResets.set(appId, new Set([reset]));
-}
-
-/** Live stores that can re-read their key, for rehydration. See inProcess `storage.ts`. */
-const persistedRehydrators = new Set<() => void>();
-
-/** Internal, for the `persisted` twin. */
-export function registerPersistedRehydrate(rehydrate: () => void): void {
-  persistedRehydrators.add(rehydrate);
-}
 
 /**
  * Called by `usePersisted`'s `sync: false` (via the twin's `markUnsynced`), which cannot
@@ -38,15 +21,6 @@ export function registerPersistedRehydrate(rehydrate: () => void): void {
 export function markUnsynced(appId: string, key: string): void {
   void remoteCall('storage', [appId], 'markUnsynced', key);
 }
-
-/**
- * The inProcess twin hydrates settings from the real DB once at shell boot; an add-on's
- * storage arrives synchronously in the frame's `hydrate` message instead (see
- * `storageCache.ts`), so there is nothing for this to do here. It exists only because
- * `useStorage.ts` re-exports it unconditionally from whichever `storage` twin the build
- * resolves to, and the module graph needs the export to exist either way.
- */
-export async function hydrateSettings(): Promise<void> {}
 
 /**
  * Wire the shell's later storage pushes to the cache and every live persisted store, once
@@ -59,7 +33,7 @@ function wireOnStorage(): void {
   try {
     clientTransport().onStorage((snapshot) => {
       hydrateStorage(snapshot);
-      for (const rehydrate of persistedRehydrators) rehydrate();
+      for (const rehydrate of persistedRehydratorsAll()) rehydrate();
     });
     wired = true;
   } catch {
@@ -126,3 +100,6 @@ export function clearAppStorage(appId: string): void {
 registerFacet('storage', storage);
 registerFacet('appStorageBytes', appStorageBytes);
 registerFacet('clearAppStorage', clearAppStorage);
+
+/** See the inProcess twin: the registry is shared, only the re-export shape is per-side. */
+export { registerPersistedRehydrate, registerPersistedReset };

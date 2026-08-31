@@ -1,4 +1,3 @@
-import './inProcess/facets/wallpaperWrite';
 import { guarded } from './guard';
 
 /**

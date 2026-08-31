@@ -1,4 +1,3 @@
-import './inProcess/facets/displayWrite';
 import { guarded } from './guard';
 
 /**

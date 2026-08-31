@@ -1,4 +1,3 @@
-import './inProcess/facets/report';
 import { guarded } from './guard';
 export type { SubmitReportInput } from './inProcess/facets/report';
 

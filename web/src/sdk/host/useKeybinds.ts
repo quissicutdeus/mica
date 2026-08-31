@@ -1,4 +1,3 @@
-import './inProcess/facets/keybinds';
 import { guarded } from './guard';
 export type { KeybindGroup } from './inProcess/facets/keybinds';
 
