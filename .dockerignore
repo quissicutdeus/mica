@@ -9,11 +9,13 @@
 !pnpm-lock.yaml
 !pnpm-workspace.yaml
 !shared
+!sdk
 !web
 !docker
 
 # ...minus the parts of those that are not build inputs. A re-admitted directory
 # re-admits its whole subtree, so these have to be named explicitly.
+sdk/node_modules
 web/node_modules
 web/dist
 web/e2e

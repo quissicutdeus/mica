@@ -22,10 +22,12 @@ RUN npm install -g pnpm@11 --no-fund --no-audit && apk add --no-cache brotli
 WORKDIR /app
 
 # Manifests only, so editing a .svelte file does not reinstall 300 packages.
-# pnpm-lock.yaml has exactly two importers, `.` and `web`, so this is the
-# complete input to the resolver.
+# pnpm-lock.yaml has three importers -- `.`, `web` and `sdk` -- so these are the
+# complete input to the resolver. `sdk` became one in MICA-172; before that it
+# was a directory inside web/ and needed no manifest of its own here.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY web/package.json ./web/package.json
+COPY sdk/package.json ./sdk/package.json
 
 # --ignore-scripts is load-bearing for two reasons:
 #   1. The root package.json has `"prepare": "simple-git-hooks"`. pnpm runs the
@@ -49,9 +51,18 @@ RUN --mount=type=cache,id=gphone-pnpm-store,target=/pnpm/store,sharing=locked \
       --store-dir=/pnpm/store \
       --config.package-import-method=copy
 
-# web/vite.config.ts reaches outside web/ for exactly two things: `import pkg
-# from '../package.json'` (already copied) and the @shared alias -> ../shared.
+# web/vite.config.ts reaches outside web/ for three things: `import pkg from
+# '../package.json'` (already copied), the @shared alias -> ../shared, and
+# @gphone/sdk -> ../sdk.
+#
+# That third one is why the image build broke on MICA-172 and stayed broken
+# for six pushes. The SDK used to live under web/src/, so `COPY web/` brought it
+# along and nothing here had to name it; once it moved to a root-level package,
+# every local gate still passed -- they all run against a working tree that has
+# the directory -- and only the image, which is assembled from an explicit file
+# list, could notice. `pnpm verify` cannot catch a missing COPY by construction.
 COPY shared/ ./shared/
+COPY sdk/ ./sdk/
 COPY web/ ./web/
 
 # Declared here, not at the top, so they cannot invalidate the install layers.
