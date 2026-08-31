@@ -2,7 +2,7 @@ import { registerFacet } from '../../current';
 import type { Facets } from '../../facets';
 import { fn, type AsTwin } from './_shared';
 
-export type { SubmitReportInput } from '../../../../services/reports';
+export type { SubmitReportInput } from '../../../vocabulary/reports';
 
 type Twin = AsTwin<ReturnType<Facets['report']>>;
 

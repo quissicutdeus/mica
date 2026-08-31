@@ -16,15 +16,7 @@ import type { AppEventEnvelope } from '@shared/appEvents';
  *   - **Component scope** — mount-scoped, and replayed on subscribe from the buffer below.
  */
 
-/** One event delivered through `useAppEvents`. */
-export interface AppEvent<T = Record<string, unknown>> {
-  app: string;
-  event: string;
-  payload: T;
-  at: number;
-  /** Arrived before this handler existed, and is being replayed. */
-  replayed: boolean;
-}
+import type { AppEvent } from '@gphone/sdk';
 
 type Handler = (event: AppEvent) => void;
 

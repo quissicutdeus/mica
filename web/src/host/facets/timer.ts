@@ -3,7 +3,6 @@ import { registerFacet } from '../../sdk/host/current';
 import { onAppUnmount } from './lifecycle';
 
 // MICA-179: defined once in the host contract; re-exported so existing importers keep working.
-export type { CancelTimer } from '../../sdk/host/facets';
 /** Implementation of the `useTimer` facet. See the `useTimer` hook doc for the usage contract. */
 export function timer() {
   const timeouts = new Set<ReturnType<typeof setTimeout>>();

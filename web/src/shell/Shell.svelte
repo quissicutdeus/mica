@@ -22,7 +22,8 @@
     PHONE_WIDTH
   } from './state/display';
   import { get } from 'svelte/store';
-  import { callStore, type CallStatus } from '../services/call';
+  import { callStore } from '../services/call';
+  import type { CallStatus } from '../sdk/vocabulary/call';
   import { contacts } from '../services/contacts';
   import { isPreviewingPhoto } from '../services/camera';
   import PhoneFrame from './PhoneFrame.svelte';

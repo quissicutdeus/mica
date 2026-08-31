@@ -29,15 +29,7 @@ import {
   stopMusic,
   setMusicVolume,
   setMusicMuted,
-  toggleMusicMute,
-  type MusicError,
-  type MusicErrorReason,
-  type MusicNowPlaying,
-  type MusicPosition,
-  type MusicRepeat,
-  type MusicSource,
-  type MusicStatus,
-  type QueueEntry
+  toggleMusicMute
 } from '../../shell/state/music';
 import {
   audibleBroadcasts,
@@ -49,26 +41,11 @@ import {
   setMuteAllNearby,
   toggleBroadcasterMute,
   toggleMuteAllNearby,
-  unmuteBroadcaster,
-  type AudibleBroadcast,
-  type NearbyBroadcast
+  unmuteBroadcaster
 } from '../../shell/state/nearbyMusic';
 import { MAX_AUDIBLE_BROADCASTS } from '../../sdk/lib/musicBroadcast';
 import { isYouTubeSource, thumbnailUrlFor } from '@shared/youtube';
 import { describeMusicError } from '../../sdk/lib/musicErrors';
-
-export type {
-  AudibleBroadcast,
-  MusicError,
-  MusicErrorReason,
-  MusicNowPlaying,
-  MusicPosition,
-  MusicRepeat,
-  MusicSource,
-  MusicStatus,
-  NearbyBroadcast,
-  QueueEntry
-};
 
 /**
  * Implementation of the `useMusic` facet — see the `useMusic` hook doc for the contract.

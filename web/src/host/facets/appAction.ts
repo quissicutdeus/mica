@@ -5,7 +5,6 @@ import { toast } from '../../shell/state/toast';
 import { messageOf } from '@gphone/sdk';
 
 // MICA-179: defined once in the host contract; re-exported so existing importers keep working.
-export type { AppActionOptions } from '../../sdk/host/facets';
 /** Implementation of the `useAppAction` facet — see the `useAppAction` hook doc for the usage contract. */
 export function appAction(appId?: string) {
   const busy = writable(false);

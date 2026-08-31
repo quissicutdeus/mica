@@ -3,15 +3,7 @@ import { createPagedStore } from '../sdk/createPagedStore';
 import { fetchNui } from '../nui/fetchNui';
 import { makeThumbnail } from '@gphone/sdk';
 import type { MediaItem, MediaPreview } from '@shared/types';
-
-/**
- * A row from the "Recently Deleted" read (MICA-75-wiring) — `MediaPreview` plus the one
- * field that read has no use for and this one needs: when it was deleted, for
- * `RecentlyDeletedItem.deletedAt`. Server-projected to exactly this shape
- * (`server/services/Media.ts`'s `getDeleted`), not `MediaPreview` itself, since that type
- * deliberately carries no timestamp at all.
- */
-export type DeletedMediaItem = MediaPreview & { updated_at: string | Date };
+import type { DeletedMediaItem } from '../sdk/vocabulary/media';
 
 /**
  * Three columns, seven rows.

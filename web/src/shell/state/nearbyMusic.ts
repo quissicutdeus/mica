@@ -2,6 +2,7 @@ import { derived, get, writable, type Readable, type Writable } from 'svelte/sto
 import { usePersisted } from '../../sdk/host/usePersisted';
 import { isPlaylistId, isVideoId } from '@shared/youtube';
 import { MAX_NEARBY_BROADCASTS } from '@shared/musicBroadcast';
+import type { AudibleBroadcast, NearbyBroadcast } from '@gphone/sdk';
 import {
   MAX_AUDIBLE_BROADCASTS,
   joinOffsetSeconds,
@@ -88,43 +89,6 @@ import {
  * mute evasion; surviving an `ensure gphone` is a nicety, and the price of it would be a
  * stored cross-session identifier for every player who has ever pressed play.
  */
-
-/**
- * One person the phone has been told is playing something within earshot.
- *
- * Structurally the wire's `NearbyBroadcast` (`@shared/musicBroadcast`) and re-declared
- * rather than imported, because this is the shape *after* narrowing: every field here has
- * been re-checked against `shared/youtube.ts` and bounded, and a row that failed is not
- * here at all. The names are the wire's on purpose — three lanes touch this row and a
- * rename at any hop is a place for two vocabularies to disagree.
- */
-export interface NearbyBroadcast {
-  /** The broadcaster's FiveM server id. Used here only to look up their volume. */
-  source: number;
-  /** Who is broadcasting, stable across a reconnect. The mute key, and every store's key. */
-  token: string;
-  /** What to call them in the mute list. `null` when the server did not say. */
-  label: string | null;
-  videoId: string | null;
-  playlistId: string | null;
-  /** Server clock, ms. What `joinOffsetSeconds` measures from. */
-  startedAt: number;
-  /** Whether they have paused it. Held rather than torn down — see `NearbyMusicFrame`. */
-  paused: boolean;
-}
-
-/** A broadcast that won the cap, with the two numbers needed to actually play it. */
-export interface AudibleBroadcast extends NearbyBroadcast {
-  /** The game client's distance attenuation, 0..1. Multiplied by the music volume. */
-  attenuation: number;
-  /**
-   * Seconds into the source to start at.
-   *
-   * Fixed when the source appeared and **not** recomputed on a volume tick — see
-   * `offsets` below, which is the difference between one frame and a frame per tick.
-   */
-  startAt: number;
-}
 
 const sanitizeLabel = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;

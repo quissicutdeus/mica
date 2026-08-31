@@ -55,14 +55,14 @@
    * headers there is a further unknown on top (`docs/testing-music-in-cef.md`).
    */
   import type { Readable } from 'svelte/store';
+  import type { MusicError } from '../lib/musicErrors';
   import type {
-    MusicError,
     MusicNowPlaying,
     MusicPosition,
     MusicRepeat,
     MusicSource,
     MusicStatus
-  } from '../../host/facets/music';
+  } from '../vocabulary/music';
   import { thumbnailUrlFor } from '@shared/youtube';
   import { describeMusicError } from '../lib/musicErrors';
   import { formatDuration } from '../lib/formatters';

@@ -1,24 +1,11 @@
 import { writable, derived, get } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
 import type { Contact, Conversation, Message, ReactionSummary } from '@shared/types';
+import type { UIConversation, UIMessage } from '@gphone/sdk';
 import { createReactionStore } from '../sdk/kit/createReactionStore';
 
 import { citizenid, fetchCitizenId } from './account';
 import { contacts } from './contacts';
-
-export interface UIConversation extends Conversation {
-  target: string; // The phone number or identifier of the other person
-  targetName: string; // Display name
-  targetAvatar?: string; // Contact profile image URL
-  lastMessage: string; // Content string
-  lastMessageAt: string; // ISO date
-  unreadCount: number;
-}
-
-export interface UIMessage extends Message {
-  sender: 'me' | 'other';
-  replyToMsg?: UIMessage | null;
-}
 
 function createMessagesStore() {
   const { subscribe, set, update } = writable<UIConversation[]>([]);

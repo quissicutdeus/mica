@@ -1,5 +1,5 @@
 import { guarded } from './guard';
-export type { SubmitReportInput } from '../../host/facets/report';
+export type { SubmitReportInput } from '../vocabulary/reports';
 
 /**
  * Report a piece of content.

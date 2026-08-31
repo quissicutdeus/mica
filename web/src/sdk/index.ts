@@ -60,20 +60,20 @@ export type { CatalogEntry } from './catalog';
  * The Store renders the update rows; `useAppRegistry()` is what produces them. Only the
  * type crosses the boundary here — the list itself comes from the permission-gated facet.
  */
-export type { AppUpdate, AppUpdateKind } from '../shell/state/appUpdates';
+export type { AppUpdate, AppUpdateKind } from './vocabulary/shell';
 export { AppPermissionError } from './host/protocol';
 /** @public */
 export type { Host } from './host/protocol';
 export type { Facets } from './host/facets';
-export type { TimeState } from '../shell/state/time';
-export type { ResolvedKeybindAction } from '../shell/state/keybinds';
-export type { RunningApp } from '../shell/state/navigation';
-export type { ToastMessage } from '../shell/state/toast';
-export type { AppEvent } from '../shell/state/appEvents';
+export type { TimeState } from './vocabulary/shell';
+export type { ResolvedKeybindAction } from './vocabulary/shell';
+export type { RunningApp } from './vocabulary/shell';
+export type { ToastMessage } from './vocabulary/shell';
+export type { AppEvent } from './vocabulary/shell';
 export type { M3Tokens } from './lib/m3';
-export type { FollowPage, FollowListQuery, AccountSearchQuery } from '../services/accounts';
-export type { ListingPage, CreateListingInput } from '../services/marketplace';
-export type { SendMoneyOutcome, SendMoneyInput } from '../services/bank';
+export type { FollowPage, FollowListQuery, AccountSearchQuery } from './vocabulary/accounts';
+export type { ListingPage, CreateListingInput } from './vocabulary/marketplace';
+export type { SendMoneyOutcome, SendMoneyInput } from './vocabulary/bank';
 /**
  * Deterministic placeholder imagery, for the fixtures an app renders in a browser.
  *

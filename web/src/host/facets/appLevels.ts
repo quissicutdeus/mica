@@ -4,7 +4,6 @@ import { onDestroy } from 'svelte';
 import { registerHandler } from '../../shell/state/keybinds';
 
 // MICA-179: defined once in the host contract; re-exported so existing importers keep working.
-export type { AppLevelsConfig } from '../../sdk/host/facets';
 const resolve = (title: string | (() => string) | undefined): string =>
   typeof title === 'function' ? title() : (title ?? '');
 

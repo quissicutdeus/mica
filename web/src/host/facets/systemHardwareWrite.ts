@@ -8,9 +8,9 @@ import {
   setVolumeStep,
   setRingMode,
   setRingtone,
-  audio,
-  type RingtoneId
+  audio
 } from '../../shell/state/audio';
+import type { RingtoneId } from '../../sdk/vocabulary/audio';
 
 /**
  * Implementation of the `useSystemHardwareWrite` facet — see the `useSystemHardwareWrite`

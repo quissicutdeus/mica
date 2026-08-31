@@ -2,7 +2,7 @@ import { registerFacet } from '../../current';
 import type { Facets } from '../../facets';
 import { store, type AsTwin } from './_shared';
 import { constants } from '../constants';
-import type { MotionPreference } from '../../../../shell/state/motion';
+import type { MotionPreference } from '../../../vocabulary/display';
 
 type Twin = AsTwin<ReturnType<Facets['display']>>;
 

@@ -11,7 +11,6 @@ import {
 import { conflictsWith, findAction } from '@shared/keybinds';
 
 // MICA-179: defined once in the host contract; re-exported so existing importers keep working.
-export type { KeybindGroup } from '../../sdk/host/facets';
 /** Core's group renders without picking it out of the pack — it's the phone's own list. */
 const CORE_OWNER_ID = 'core';
 

@@ -30,20 +30,7 @@ import {
  * by arithmetic (`lib/m3.ts`), so every seed works and none of them is a special case.
  */
 
-export type ThemeMode = 'light' | 'dark';
-
-export interface ThemeState {
-  /** The color every role is generated from. `#rrggbb`. */
-  seed: string;
-  /**
-   * Which of the two generated schemes is applied.
-   *
-   * `buildSchemes` has always produced both tables — light was generated and asserted
-   * from the start precisely so switching it on would be this one union widening plus a
-   * Settings control, rather than a change to the engine.
-   */
-  mode: ThemeMode;
-}
+import type { ThemeMode, ThemeState } from '@gphone/sdk';
 
 export const DEFAULT_THEME: ThemeState = { seed: DEFAULT_SEED, mode: 'dark' };
 

@@ -4,7 +4,7 @@ import { onDestroy } from 'svelte';
 import { fn, type AsTwin } from './_shared';
 import { remoteCall } from '../remote';
 import { clientTransport } from '../transport';
-import type { AppEvent } from '../../../../shell/state/appEvents';
+import type { AppEvent } from '../../../vocabulary/shell';
 
 type Twin = AsTwin<ReturnType<Facets['appEvents']>>;
 

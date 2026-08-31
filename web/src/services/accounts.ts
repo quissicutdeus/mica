@@ -1,5 +1,6 @@
 import { fetchNui } from '../nui/fetchNui';
 import type { Account, FollowStats, ReactionSummary } from '@shared/types';
+import type { AccountSearchQuery, FollowListQuery, FollowPage, ReactionTarget } from '@gphone/sdk';
 
 /**
  * The shared social-identity service, as functions.
@@ -10,12 +11,6 @@ import type { Account, FollowStats, ReactionSummary } from '@shared/types';
  * `useNuiBridge`, which is the hatch MICA-16 closes. No store here on purpose: which
  * accounts are "mine" is per app, and the app holds that.
  */
-
-export interface ReactionTarget {
-  app: string;
-  target_table: string;
-  target_ids: number[];
-}
 
 export const getMyAccounts = (app: string) =>
   fetchNui<{ rows: Account[]; limit: number }>(
@@ -57,18 +52,6 @@ export const getFollowStats = (input: {
  * service is its enumerated facet, which is this module. Public, like the counts: no
  * viewer identity is sent, because these read the same whoever is looking.
  */
-export interface FollowPage {
-  rows: Account[];
-  nextCursor: number | null;
-}
-
-export interface FollowListQuery {
-  app: string;
-  account_id: number;
-  cursor?: number;
-  limit?: number;
-}
-
 // Two literal calls rather than one helper taking the action name, for the reason
 // `toggleFollow` gives: `server/__tests__/routes.test.ts` scans for the action name as a
 // string literal at the call site, and a route it cannot see is reported as dead weight.
@@ -99,13 +82,6 @@ export const getFollowing = (query: FollowListQuery) =>
  * matching `getFollowers`/`getFollowing` — an empty page on a transport failure is the
  * same lie that hid the sandbox refusal.
  */
-export interface AccountSearchQuery {
-  app: string;
-  q: string;
-  cursor?: number;
-  limit?: number;
-}
-
 export const searchAccounts = (query: AccountSearchQuery) =>
   fetchNui<{ rows: Account[]; nextCursor: number | null }>('searchAccounts', query, undefined);
 

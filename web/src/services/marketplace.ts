@@ -1,14 +1,9 @@
 import { writable } from 'svelte/store';
 import { useService } from '../sdk/host/useService';
 import type { Listing } from '@shared/types';
+import type { CreateListingInput, ListingPage } from '@gphone/sdk';
 
 const service = () => useService('marketplace');
-
-/** A page of marketplace listings, as returned by the feed/search/mine reads. */
-export interface ListingPage {
-  rows: Listing[];
-  nextCursor: number | null;
-}
 
 const emptyPage: ListingPage = { rows: [], nextCursor: null };
 
@@ -34,14 +29,6 @@ export const viewListing = async (
   id: number
 ): Promise<(Listing & { contactPhone: string | null; isOwn: boolean }) | null> =>
   service().call('view', { id }, null);
-
-/** What `postListing` takes to create a new marketplace listing. */
-export interface CreateListingInput {
-  title: string;
-  price: number;
-  description: string;
-  attachments: { photo_id: number }[];
-}
 
 export const postListing = async (input: CreateListingInput): Promise<Listing> => {
   const created = await service().call<Listing>('create', input);

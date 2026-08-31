@@ -41,46 +41,57 @@
 
 import type { M3Tokens, sanitizeSeed, seedFromRgbString } from '../lib/m3';
 import type { describeMusicError } from '../lib/musicErrors';
-import type { AccountSearchQuery, FollowListQuery, FollowPage } from '../../services/accounts';
-import type { SendMoneyInput, SendMoneyOutcome } from '../../services/bank';
-import type { CallState, CallStatus } from '../../services/call';
-import type { UIConversation, UIMessage } from '../../services/conversations';
-import type { CreateListingInput, ListingPage } from '../../services/marketplace';
-import type { DeletedMediaItem } from '../../services/media';
-import type { SubmitReportInput } from '../../services/reports';
-import type { AppEvent } from '../../shell/state/appEvents';
-import type { AppUpdate } from '../../shell/state/appUpdates';
+import type {
+  AccountSearchQuery,
+  FollowListQuery,
+  FollowPage,
+  ReactionTarget
+} from '../vocabulary/accounts';
 import type {
   RingMode,
   RingModeChoice,
   RingtoneId,
   RingtoneOption,
   SoundEffect
-} from '../../shell/state/audio';
-import type { CatalogEntry } from '../catalog';
-import type { ResolvedKeybindAction } from '../../shell/state/keybinds';
-import type { AutoLockPolicy, AutoLockPolicyChoice } from '../../shell/state/lockScreen';
-import type { MotionPreference } from '../../shell/state/motion';
+} from '../vocabulary/audio';
+import type { SendMoneyInput, SendMoneyOutcome } from '../vocabulary/bank';
+import type { CallState, CallStatus } from '../vocabulary/call';
 import type {
-  MusicError,
+  MotionPreference,
+  ThemeMode,
+  ThemeState,
+  WallpaperPreset,
+  WallpaperState
+} from '../vocabulary/display';
+import type { CreateListingInput, ListingPage } from '../vocabulary/marketplace';
+import type { DeletedMediaItem } from '../vocabulary/media';
+import type { IncomingMessage, UIConversation, UIMessage } from '../vocabulary/messages';
+import type {
+  AudibleBroadcast,
   MusicNowPlaying,
   MusicPosition,
   MusicRepeat,
   MusicSource,
   MusicStatus,
+  NearbyBroadcast,
   QueueEntry
-} from '../../shell/state/music';
-import type { RunningApp } from '../../shell/state/navigation';
-import type { AudibleBroadcast, NearbyBroadcast } from '../../shell/state/nearbyMusic';
-import type { AppNotificationPolicy } from '../../shell/state/notificationPolicy';
-import type { ThemeMode, ThemeState } from '../../shell/state/theme';
-import type { TimeState } from '../../shell/state/time';
-import type { ToastMessage } from '../../shell/state/toast';
-import type { WallpaperState } from '../../shell/state/wallpaper';
+} from '../vocabulary/music';
+import type { SubmitReportInput } from '../vocabulary/reports';
+import type {
+  AppEvent,
+  AppNotificationPolicy,
+  AppUpdate,
+  AutoLockPolicy,
+  AutoLockPolicyChoice,
+  ResolvedKeybindAction,
+  RunningApp,
+  TimeState,
+  ToastMessage
+} from '../vocabulary/shell';
+import type { MusicError } from '../lib/musicErrors';
+import type { CatalogEntry } from '../catalog';
 import type { ReactionStore } from '../kit/createReactionStore';
 import type { AppComponent, AppManifest } from '../manifest';
-import type { ReactionTarget } from '../../host/facets/accounts';
-import type { WallpaperPreset } from '../../host/facets/wallpaper';
 import type { KeybindAction } from '@shared/keybinds';
 import type {
   Account,
@@ -663,27 +674,11 @@ export interface Facets {
       archiveConversation: (conversationId: number, archive?: boolean) => Promise<void>;
       deleteConversation: (conversationId: number) => Promise<void>;
       renameConversation: (conversationId: number, name: string) => Promise<void>;
-      addReceivedMessage: (incoming: {
-        conversation_id?: number;
-        message?: string;
-        senderName?: string;
-        phone?: string;
-        avatar?: string;
-        created_at?: string;
-        reply_to_id?: number | null;
-      }) => void;
+      addReceivedMessage: (incoming: IncomingMessage) => void;
     };
     unreadMessagesCount: Readable<number>;
     sendMessage: (conversationId: number, text: string) => Promise<Message | null>;
-    addReceivedMessage: (message: {
-      conversation_id?: number;
-      message?: string;
-      senderName?: string;
-      phone?: string;
-      avatar?: string;
-      created_at?: string;
-      reply_to_id?: number | null;
-    }) => void;
+    addReceivedMessage: (message: IncomingMessage) => void;
     /**
      * Open Messages and start (or resume) a conversation with a bare phone number —
      * no saved Contact required. See MICA-15.

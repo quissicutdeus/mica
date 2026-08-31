@@ -1,7 +1,7 @@
 import { derived } from 'svelte/store';
 import { usePersisted } from '../../sdk/host/usePersisted';
 import { backgroundForScheme, buildSchemes, sanitizeSeed } from '../../sdk/lib/m3';
-import { schemeStore, setThemeSeed, themeStore, type ThemeMode } from './theme';
+import { schemeStore, setThemeSeed, themeStore } from './theme';
 
 /**
  * The home screen background.
@@ -20,14 +20,7 @@ import { schemeStore, setThemeSeed, themeStore, type ThemeMode } from './theme';
  * And because the picture and the seed were chosen separately, they could disagree: the
  * shipped "Dark Midnight" was a gray gradient with a blue seed.
  */
-export type WallpaperState = { type: 'color' } | { type: 'image'; image: string };
-
-export interface WallpaperPreset {
-  id: string;
-  label: string;
-  /** The color the whole phone — wallpaper included — is generated from. */
-  seed: string;
-}
+import type { ThemeMode, WallpaperPreset, WallpaperState } from '@gphone/sdk';
 
 /**
  * The offered colors, chosen for **distinct hue**.

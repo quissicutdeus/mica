@@ -1,6 +1,7 @@
 import { derived, get } from 'svelte/store';
 import { PHONE_SCOPE_ACTIONS, type KeybindAction } from '@shared/keybinds';
 import { usePersisted } from '../../sdk/host/usePersisted';
+import type { ResolvedKeybindAction } from '@gphone/sdk';
 import { appRegistryStore } from './registry';
 
 /**
@@ -17,15 +18,6 @@ const OVERRIDES_KEY = 'keybinds';
 type Overrides = Record<string, string>;
 
 const overrides = usePersisted<Overrides>('settings', OVERRIDES_KEY, {});
-
-/**
- * A `KeybindAction` tagged with who owns it, for grouping in Settings > Shortcuts.
- * `ownerId: 'core'` for the static list; otherwise the declaring app's id.
- */
-export interface ResolvedKeybindAction extends KeybindAction {
-  ownerId: string;
-  ownerLabel: string;
-}
 
 /**
  * App-declared actions, live off the installed-app registry.

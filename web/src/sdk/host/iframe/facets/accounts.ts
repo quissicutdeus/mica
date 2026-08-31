@@ -2,7 +2,7 @@ import { registerFacet } from '../../current';
 import type { Facets } from '../../facets';
 import { fn, type AsTwin } from './_shared';
 
-export type { ReactionTarget } from '../../../../services/accounts';
+export type { ReactionTarget } from '../../../vocabulary/accounts';
 
 type Twin = AsTwin<ReturnType<Facets['accounts']>>;
 

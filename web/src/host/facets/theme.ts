@@ -1,15 +1,6 @@
 import { registerFacet } from '../../sdk/host/current';
-import {
-  themeStore,
-  schemeStore,
-  isLightMode,
-  DEFAULT_THEME,
-  type ThemeState,
-  type ThemeMode
-} from '../../shell/state/theme';
+import { themeStore, schemeStore, isLightMode, DEFAULT_THEME } from '../../shell/state/theme';
 import { seedFromRgbString, sanitizeSeed } from '../../sdk/lib/m3';
-
-export type { ThemeState, ThemeMode };
 
 /**
  * Implementation of the `useTheme` facet — see the `useTheme` hook doc for the usage

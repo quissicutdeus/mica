@@ -10,13 +10,7 @@ import { hasPasscode } from '../../services/passcode';
  * makes there.
  */
 
-export type AutoLockPolicy = 'onClose' | 'onTimeout' | 'never';
-
-export interface AutoLockPolicyChoice {
-  readonly id: AutoLockPolicy;
-  readonly label: string;
-  readonly description: string;
-}
+import type { AutoLockPolicy, AutoLockPolicyChoice } from '../../sdk/vocabulary/shell';
 
 export const AUTO_LOCK_POLICY_CHOICES: readonly AutoLockPolicyChoice[] = [
   {

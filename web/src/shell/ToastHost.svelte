@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { toast, type ToastMessage, type ToastAction } from './state/toast';
+  import { toast } from './state/toast';
+  import type { ToastAction, ToastMessage } from '../sdk/vocabulary/shell';
   import { fly } from '@gphone/sdk';
   import CloseIcon from '../sdk/ui/icons/CloseIcon.svelte';
   import SendIcon from '../sdk/ui/icons/SendIcon.svelte';

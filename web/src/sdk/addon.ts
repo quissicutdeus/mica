@@ -37,16 +37,16 @@ export type { Host } from './host/protocol';
  * imported, only the shape.
  */
 export type { Facets } from './host/facets';
-export type { TimeState } from '../shell/state/time';
-export type { ResolvedKeybindAction } from '../shell/state/keybinds';
-export type { RunningApp } from '../shell/state/navigation';
-export type { ToastMessage } from '../shell/state/toast';
-export type { AppEvent } from '../shell/state/appEvents';
+export type { TimeState } from './vocabulary/shell';
+export type { ResolvedKeybindAction } from './vocabulary/shell';
+export type { RunningApp } from './vocabulary/shell';
+export type { ToastMessage } from './vocabulary/shell';
+export type { AppEvent } from './vocabulary/shell';
 export type { M3Tokens } from './lib/m3';
-export type { FollowPage, FollowListQuery, AccountSearchQuery } from '../services/accounts';
-export type { ListingPage, CreateListingInput } from '../services/marketplace';
-export type { SendMoneyOutcome, SendMoneyInput } from '../services/bank';
-export type { AppUpdate, AppUpdateKind } from '../shell/state/appUpdates';
+export type { FollowPage, FollowListQuery, AccountSearchQuery } from './vocabulary/accounts';
+export type { ListingPage, CreateListingInput } from './vocabulary/marketplace';
+export type { SendMoneyOutcome, SendMoneyInput } from './vocabulary/bank';
+export type { AppUpdate, AppUpdateKind } from './vocabulary/shell';
 /**
  * Deterministic placeholder imagery, for the fixtures an add-on renders in a browser.
  *

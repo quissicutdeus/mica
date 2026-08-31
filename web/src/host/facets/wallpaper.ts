@@ -6,13 +6,9 @@ import {
   activeSeed,
   backgroundForSeed,
   DEFAULT_WALLPAPER,
-  PRESETS,
-  type WallpaperState,
-  type WallpaperPreset
+  PRESETS
 } from '../../shell/state/wallpaper';
 import { seedFromImage } from '../../shell/state/seedFromImage';
-
-export type { WallpaperState, WallpaperPreset };
 
 /**
  * Implementation of the `useWallpaper` facet — see the `useWallpaper` hook doc for the

@@ -17,17 +17,7 @@ import { appRegistryStore } from './registry';
  * as scroll offset, which no save/restore API could reasonably capture.
  */
 
-export interface RunningApp {
-  /**
-   * The app's registry id — `notes`, `settings`. Not its display name.
-   *
-   * It was called `name`, which read as the human-facing one and got used that way:
-   * `ErrorBoundary` printed it, so a crash in Admin said "The admin app encountered a
-   * problem". The manifest holds the display name; this is the key you look it up with.
-   */
-  id: string;
-  props: Record<string, unknown>;
-}
+import type { RunningApp } from '@gphone/sdk';
 
 /**
  * How many apps stay resident. Beyond this the least recently used is unmounted.

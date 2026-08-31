@@ -2,8 +2,13 @@ import { writable, derived, get } from 'svelte/store';
 import { usePersisted } from '../../sdk/host/usePersisted';
 import { isBatteryDead } from './charge';
 import { isBrowser } from '@gphone/sdk';
-
-export type SoundEffect = 'click' | 'pop' | 'camera' | 'notification' | 'ringtone';
+import type {
+  RingMode,
+  RingModeChoice,
+  RingtoneId,
+  RingtoneOption,
+  SoundEffect
+} from '../../sdk/vocabulary/audio';
 
 const sanitizeVolume = (value: unknown): number => {
   const n = Number(value);
@@ -49,15 +54,6 @@ const ALERT_EFFECTS: ReadonlySet<SoundEffect> = new Set<SoundEffect>([
  * reasoning `notificationPolicy.ts` gives for why Do Not Disturb never withholds a call
  * banner.
  */
-export type RingMode = 'normal' | 'vibrate' | 'silent';
-
-export interface RingModeChoice {
-  readonly id: RingMode;
-  readonly label: string;
-  /** Shown under the label in Settings > Sound. Says what the mode actually does. */
-  readonly description: string;
-}
-
 /**
  * **Vibrate is honest about being a label, for now.**
  *
@@ -115,8 +111,6 @@ interface RingtoneStep {
   readonly at: number;
   readonly dur: number;
 }
-
-export type RingtoneId = 'classic' | 'chime' | 'beacon' | 'pulse' | 'ascent';
 
 interface RingtoneChoice {
   readonly id: RingtoneId;
@@ -217,12 +211,6 @@ export const ringtone = usePersisted<RingtoneId>('settings', 'ringtone', 'classi
 });
 
 export const setRingtone = (id: RingtoneId) => ringtone.set(sanitizeRingtone(id));
-
-/** What a chooser needs, and nothing behind it. */
-export interface RingtoneOption {
-  readonly id: RingtoneId;
-  readonly label: string;
-}
 
 /**
  * The list a picker renders, projected from the recipes above so the two cannot drift.

@@ -3,6 +3,7 @@ import { compareVersions } from '../../lib/phone/semver';
 import { fetchCatalog, getRemoteCatalogUrl, type CatalogEntry } from '../../sdk/catalog';
 import { appRegistryStore } from './registry';
 import type { AppManifest } from '../../sdk/manifest';
+import type { AppUpdate } from '@gphone/sdk';
 import { messageOf } from '@gphone/sdk';
 
 /**
@@ -18,28 +19,6 @@ import { messageOf } from '@gphone/sdk';
  * Only a **catalog install** (`isRemote`) can be behind. A bundled add-on's code is part of
  * this build — its version is the phone's own, and there is nowhere newer to get it from.
  */
-export type AppUpdateKind =
-  /** The catalog's version is strictly newer than what is installed. */
-  | 'newer'
-  /**
-   * The two versions differ and cannot be ordered — one of them is not a version this can
-   * parse (`lib/semver.ts`). Surfaced rather than swallowed: an operator who publishes
-   * `nightly` still republished *something*, and silently calling that "up to date" is the
-   * failure this ticket is about. It is shown as a mismatch, never as "newer".
-   */
-  | 'unordered';
-
-export interface AppUpdate {
-  appId: string;
-  /** The installed app's name, so a caller can say what is out of date without a second lookup. */
-  name: string;
-  installedVersion: string | undefined;
-  availableVersion: string;
-  kind: AppUpdateKind;
-  /** The catalog entry to install. Carries the fresh `sha256`, so the update re-verifies like any install. */
-  entry: CatalogEntry;
-}
-
 /**
  * The last catalog `refreshAppUpdates` fetched. Empty until something asks, and left alone
  * by a failed fetch — see `refreshAppUpdates`.

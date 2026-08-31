@@ -67,8 +67,6 @@ export function useMusic() {
 /** @public — SDK surface for add-ons; no in-repo app needs to name it. */
 export type {
   AudibleBroadcast,
-  MusicError,
-  MusicErrorReason,
   MusicNowPlaying,
   MusicPosition,
   MusicRepeat,
@@ -76,4 +74,5 @@ export type {
   MusicStatus,
   NearbyBroadcast,
   QueueEntry
-} from '../../host/facets/music';
+} from '../vocabulary/music';
+export type { MusicError, MusicErrorReason } from '../lib/musicErrors';

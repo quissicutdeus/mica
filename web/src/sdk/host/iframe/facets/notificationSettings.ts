@@ -2,7 +2,7 @@ import { derived, type Readable } from 'svelte/store';
 import { registerFacet } from '../../current';
 import type { Facets } from '../../facets';
 import { store, type AsTwin } from './_shared';
-import type { AppNotificationPolicy } from '../../../../shell/state/notificationPolicy';
+import type { AppNotificationPolicy } from '../../../vocabulary/shell';
 
 type Twin = AsTwin<ReturnType<Facets['notificationSettings']>>;
 

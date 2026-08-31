@@ -1,5 +1,6 @@
 import { derived, get, type Readable } from 'svelte/store';
 import { usePersisted } from '../../sdk/host/usePersisted';
+import type { AppNotificationPolicy, NotificationSource } from '../../sdk/vocabulary/shell';
 import { toastsEnabled, notificationSoundEnabled, badgesEnabled } from './notificationSettings';
 import { contacts } from '../../services/contacts';
 
@@ -53,14 +54,6 @@ export type NotificationChannel = 'banner' | 'sound' | 'badge';
  *   reach somebody on. Exempt from everything. An admin warning a player can mute is not a
  *   warning, and the player would never know it had been sent.
  */
-export type NotificationSource = 'feedback' | 'app' | 'call' | 'system';
-
-export interface AppNotificationPolicy {
-  banner: boolean;
-  sound: boolean;
-  badge: boolean;
-}
-
 const DEFAULT_APP_POLICY: AppNotificationPolicy = { banner: true, sound: true, badge: true };
 
 type PolicyMap = Record<string, AppNotificationPolicy>;

@@ -3,55 +3,8 @@ import { audio } from './audio';
 import { isBatteryDead } from './charge';
 import { isPhoneOpen } from './phoneOpen';
 import { addNotificationItem, clearNotifications } from '../../services/notifications';
-import { notificationAllows, type NotificationSource } from './notificationPolicy';
-
-type ToastType = 'info' | 'success' | 'warning' | 'error' | 'message' | 'call' | 'contact';
-
-export interface ToastAction {
-  label: string;
-  variant?: 'primary' | 'secondary' | 'success' | 'danger';
-  onClick: (textInput?: string) => void | Promise<void>;
-}
-
-/** A single toast, as shown by `usePhoneNotification().toast`. */
-export interface ToastMessage {
-  id: string;
-  /** The drawer notification this toast created, if any — lets a swipe-to-archive act on the right row. */
-  notificationId?: number;
-  app?: string;
-  title?: string;
-  message: string;
-  type: ToastType;
-  duration?: number;
-  avatar?: string;
-  sender?: string;
-  deepLink?: string;
-  persist?: boolean;
-  actions?: ToastAction[];
-  hasReplyInput?: boolean;
-  replyPlaceholder?: string;
-  onReply?: (replyText: string) => void | Promise<void>;
-  onClick?: () => void | Promise<void>;
-  /**
-   * What kind of interruption this is, which is what decides whether Do Not Disturb and the
-   * per-app mutes apply to it (`state/notificationPolicy.ts`).
-   *
-   * Defaults to `'feedback'` — a toast confirming something the player just did, which is never
-   * suppressed. Every *arrival* path has to say so, and they all live in `nuiMessages.ts` and
-   * the helpers at the bottom of this file.
-   */
-  source?: NotificationSource;
-  /** For a call: it rang despite DND, because of a favourite or a repeat. */
-  breakThrough?: boolean;
-  /**
-   * Run when the toast times out on its own, as opposed to being dismissed or actioned.
-   *
-   * Exists because an expiring toast can leave state behind: an unanswered call toast
-   * vanished after 12s while `callStore.status` stayed `'incoming'`, so the phone sat
-   * open and focused showing a call with no way to end it.
-   */
-  onExpire?: () => void | Promise<void>;
-}
+import { notificationAllows } from './notificationPolicy';
+import type { ToastMessage } from '../../sdk/vocabulary/shell';
 
 let toastCounter = 0;
 

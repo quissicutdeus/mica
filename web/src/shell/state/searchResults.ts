@@ -1,6 +1,6 @@
 import type { Contact } from '@shared/types';
 import type { AppManifest } from '../../sdk/manifest';
-import type { UIConversation } from '../../services/conversations';
+import type { UIConversation } from '@gphone/sdk';
 import { manifestVisible, type CapabilitySet } from '../../lib/phone/appVisibility';
 
 /**

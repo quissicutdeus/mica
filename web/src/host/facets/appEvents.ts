@@ -1,6 +1,7 @@
 import { registerFacet } from '../../sdk/host/current';
 import { onDestroy } from 'svelte';
-import { clearAppEvents, subscribeAppEvent, type AppEvent } from '../../shell/state/appEvents';
+import { clearAppEvents, subscribeAppEvent } from '../../shell/state/appEvents';
+import type { AppEvent } from '@gphone/sdk';
 
 /** Implementation of the `useAppEvents` facet — see the `useAppEvents` hook doc for the usage contract. */
 export function appEvents(appId: string) {

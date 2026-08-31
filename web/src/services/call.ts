@@ -1,16 +1,6 @@
 import { writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
-
-export type CallStatus = 'idle' | 'dialing' | 'connected' | 'incoming';
-
-export interface CallState {
-  status: CallStatus;
-  number: string;
-  name?: string;
-  duration: number; // in seconds
-  speaker: boolean;
-  muted: boolean;
-}
+import type { CallState, CallStatus } from '../sdk/vocabulary/call';
 
 const initialState: CallState = {
   status: 'idle',

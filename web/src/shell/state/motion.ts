@@ -64,7 +64,7 @@ import { usePersisted } from '../../sdk/host/usePersisted';
  * a `requestAnimationFrame` loop of its own. Those are per-call-site problems.
  */
 
-export type MotionPreference = 'system' | 'full' | 'reduced';
+import type { MotionPreference } from '../../sdk/vocabulary/display';
 
 export const MOTION_PREFERENCE_DEFAULT: MotionPreference = 'system';
 

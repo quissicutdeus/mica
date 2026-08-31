@@ -3,7 +3,7 @@ import { GENERIC_SERVICE_ACTION } from '@shared/rpc';
 // Type-only: `services/bank.ts` imports `fetchNui`, which imports this file's own
 // transport — a value import here would be a real import cycle, a type-only one is
 // erased before anything runs.
-import type { SendMoneyOutcome } from '../../services/bank';
+import type { SendMoneyOutcome } from '@gphone/sdk';
 import type {
   Account,
   Blab,

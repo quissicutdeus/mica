@@ -1,6 +1,7 @@
 import { derived, writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
-import type { Report, ReportCategory } from '@shared/types';
+import type { Report } from '@shared/types';
+import type { SubmitReportInput } from '@gphone/sdk';
 
 /**
  * The moderation queue, and the badge that counts it.
@@ -43,13 +44,6 @@ export const reopenReport = async (id: number): Promise<void> => {
   if (res?.error) throw new Error(res.error);
   await Promise.all([loadPendingReports(), loadReportHistory()]);
 };
-
-export interface SubmitReportInput {
-  targetTable: string;
-  targetId: number;
-  category: ReportCategory;
-  note?: string;
-}
 
 /**
  * File a report against a row. Anyone may call it; the queue that reads it is admin-only.

@@ -2,11 +2,7 @@ import { writable, derived } from 'svelte/store';
 import { isBrowser } from '@gphone/sdk';
 import { usePersisted } from '../../sdk/host/usePersisted';
 
-/** Hours and minutes, as rendered by `useClock`. */
-export interface TimeState {
-  hours: number;
-  minutes: number;
-}
+import type { TimeState } from '@gphone/sdk';
 
 const getRealTime = (): TimeState => {
   const now = new Date();

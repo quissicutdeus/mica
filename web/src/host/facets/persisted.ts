@@ -9,7 +9,6 @@ import {
 import { markUnsynced } from '../settingsSync';
 
 // MICA-179: defined once in the host contract; re-exported so existing importers keep working.
-export type { PersistedOptions } from '../../sdk/host/facets';
 /** Implementation of the `usePersisted` facet — see the `usePersisted` hook doc for the usage contract. */
 export function persisted<T>(
   appId: string,

@@ -1,4 +1,5 @@
 import { fetchNui } from '../nui/fetchNui';
+import type { SendMoneyInput, SendMoneyOutcome } from '@gphone/sdk';
 
 /**
  * Sending money, kept out of `services/account.ts` on purpose.
@@ -10,30 +11,6 @@ import { fetchNui } from '../nui/fetchNui';
  * specifically when an app can move their money rather than inferring it from "reads my
  * balance."
  */
-
-export type SendMoneyOutcome =
-  | { ok: true; to: string; amount: number }
-  | {
-      ok: false;
-      reason:
-        | 'invalid_amount'
-        | 'exceeds_limit'
-        | 'same_player'
-        | 'payer_offline'
-        | 'recipient_offline'
-        | 'insufficient_funds'
-        | 'debit_failed'
-        | 'credit_failed'
-        | 'stranded';
-    };
-
-export interface SendMoneyInput {
-  /** The recipient's phone number. Resolved to a citizenid server-side — never sent as one. */
-  phone: string;
-  amount: number;
-  /** Optional, server-truncated. Reaches nobody but the server's own transfer log. */
-  note?: string;
-}
 
 /**
  * No `defaultValue`: a malformed payload (bad phone, non-positive amount) throws, the

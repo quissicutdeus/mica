@@ -3,9 +3,16 @@ import { usePersisted } from '../../sdk/host/usePersisted';
 import { parseYouTubeSource, isPlaylistId, isVideoId } from '@shared/youtube';
 import { reasonForCode, type MusicError, type MusicErrorReason } from '../../sdk/lib/musicErrors';
 import { callStore } from '../../services/call';
+import type {
+  MusicNowPlaying,
+  MusicPosition,
+  MusicRepeat,
+  MusicSource,
+  MusicStatus,
+  QueueEntry
+} from '@gphone/sdk';
 
 /** Re-exported so the player's failures are named from one module — see `lib/musicErrors`. */
-export type { MusicError, MusicErrorReason };
 
 /**
  * What the phone is playing out loud, and the one place that decides it.
@@ -55,18 +62,6 @@ export type { MusicError, MusicErrorReason };
  * text by Svelte and never as markup.
  */
 
-export type MusicStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'error';
-
-/** How the queue behaves when a track ends. */
-export type MusicRepeat = 'off' | 'all' | 'one';
-
-export interface MusicSource {
-  /** The video to play, or `null` for a playlist opened at its first entry. */
-  videoId: string | null;
-  /** The playlist to play through, when the pasted link named one. */
-  playlistId: string | null;
-}
-
 /**
  * One row of the queue.
  *
@@ -75,21 +70,6 @@ export interface MusicSource {
  * at all. Every reference the queue holds internally — the history stack, the shuffle
  * cycle — is a key for that reason.
  */
-export interface QueueEntry extends MusicSource {
-  key: string;
-  /**
-   * Why this row would not play, once it has failed. Kept on the row rather than only in
-   * `musicError` so the reason survives moving on to the next track — a list where the bad
-   * row still says what is wrong with it is a list a person can act on.
-   */
-  error?: MusicError | null;
-  /**
-   * What the player reported for this row, once it has played it. `null` until then, and
-   * for a playlist row always — see `MusicNowPlaying.title` for what a playlist is on.
-   */
-  title: string | null;
-}
-
 /**
  * What the embed says it is actually playing, as opposed to what it was handed.
  *
@@ -97,18 +77,6 @@ export interface QueueEntry extends MusicSource {
  * `PL…`, and the thing making noise is one video inside it that the phone did not pick and
  * cannot name in advance.
  */
-/**
- * Where the player says it is in the current track, in seconds.
- *
- * Separate from `MusicNowPlaying` on purpose: this changes constantly and that does not,
- * and a title line that re-renders on every position report is a title line that flickers.
- */
-export interface MusicPosition {
-  current: number;
-  /** `0` until the player reports one — a live stream never will. */
-  duration: number;
-}
-
 /**
  * A seek the phone wants performed, addressed by token.
  *
@@ -123,17 +91,6 @@ export interface MusicSeek {
   seconds: number;
   /** Whether to play after landing. A scrub keeps the current state; a repeat starts. */
   resume: boolean;
-}
-
-export interface MusicNowPlaying {
-  /** The reported title, normalized. `null` until the player says one. */
-  title: string | null;
-  /** The video the player is on. Inside a playlist this is not the row's own id. */
-  videoId: string | null;
-  /** Position inside a playlist the embed is advancing itself, when it reports one. */
-  playlistIndex: number | null;
-  /** How many entries that playlist has, when it reports one. */
-  playlistCount: number | null;
 }
 
 /** The origin every embed is loaded from and every command is addressed to. */

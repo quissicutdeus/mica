@@ -1,12 +1,7 @@
 import { get } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
-import {
-  musicPosition,
-  musicSeek,
-  musicSource,
-  musicStatus,
-  type MusicSource
-} from '../shell/state/music';
+import { musicPosition, musicSeek, musicSource, musicStatus } from '../shell/state/music';
+import type { MusicSource } from '@gphone/sdk';
 
 /**
  * Telling the server what this phone is playing out loud. MICA-111 phase 2.
