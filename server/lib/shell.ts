@@ -6,10 +6,15 @@ import { ownedTables, purgeOwnedRows, sweepOrphanedRows } from './orphanSweep';
 /**
  * The shell service — the phone itself, rather than any app on it.
  *
- * It has no endpoint because nothing calls into it: the traffic goes one way, from the
- * server out to a player's UI. It is still a service, and declaring it here is what lets
- * `eventNames.test.ts` check the `<service>` segment against a registry instead of a
- * hard-coded list of names that were "not apps".
+ * Most of its traffic goes one way, from the server out to a player's UI, and everything
+ * in this file is that outbound half. It is not the whole service: `services/Capabilities.ts`
+ * registers `gphone:server:shell:capabilities`, an inbound action answering what this
+ * deployment can do so the launcher can hide what it cannot. That lives in its own file
+ * rather than here because this one owns the push side and the player-loaded registry; the
+ * two halves share only the `shell` name.
+ *
+ * Declaring the service here is what lets `eventNames.test.ts` check the `<service>` segment
+ * against a registry instead of a hard-coded list of names that were "not apps".
  */
 const SHELL_SERVICE = registerService('shell');
 
