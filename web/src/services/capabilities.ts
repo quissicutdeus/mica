@@ -40,7 +40,7 @@ const inPlainBrowser = (): boolean => typeof window !== 'undefined' && isBrowser
 export type { CapabilitySet } from '../lib/appVisibility';
 
 const uniform = (value: boolean): CapabilitySet =>
-  Object.fromEntries(ALL_CAPABILITIES.map((name) => [name, value])) as CapabilitySet;
+  Object.fromEntries(ALL_CAPABILITIES.map((name) => [name, value]));
 
 /**
  * Every capability, present or absent.
@@ -97,9 +97,7 @@ export const refreshCapabilities = async (): Promise<void> => {
       // short of an explicit `true` is a no, the same way `admin.ts` refuses to read
       // `'yes'` as a grant, and a capability the reply omits is simply absent.
       capabilities.set(
-        Object.fromEntries(
-          ALL_CAPABILITIES.map((name) => [name, res?.[name] === true])
-        ) as CapabilitySet
+        Object.fromEntries(ALL_CAPABILITIES.map((name) => [name, res?.[name] === true]))
       );
       capabilitiesKnown.set(true);
     } catch {
