@@ -431,12 +431,15 @@ describe('the boot facet sets are exhaustive', () => {
   it('only an entry point imports the in-process facet set', () => {
     const target = join(SRC, 'host', 'registerFacets.ts');
     /**
-     * The four core-side entry points, and nothing else. `main.ts` is the shell's;
-     * `index.ts` is `@gphone/sdk`'s core-side barrel and the mirror of `addon.ts` reaching
-     * the iframe set through `bootAddOn`; `testing.ts` is `@gphone/sdk/testing`. A test file
-     * may import it too — it is standing in for the shell — and is excluded below.
+     * Two entry points, and nothing else. `main.ts` is the shell's boot path; `testing.ts`
+     * backs `@gphone/sdk/testing` and stands in for the shell in a unit test.
+     *
+     * `sdk/index.ts` was on this list until MICA-172 and is deliberately off it now: the
+     * in-process facets live in `web/src/host/`, so the SDK importing them would be a package
+     * importing its consumer, which is the edge this whole ticket removes. A test file that
+     * needs the set says so itself, and is excluded below.
      */
-    const allowed = new Set([join(SRC, 'main.ts'), join(SDK, 'index.ts'), join(SDK, 'testing.ts')]);
+    const allowed = new Set([join(SRC, 'main.ts'), join(SRC, 'testing.ts')]);
     const importers = walk(SRC)
       .filter((f) => /\.(svelte|svelte\.ts|ts)$/.test(f) && !f.endsWith('.test.ts'))
       .filter((f) => !allowed.has(f))

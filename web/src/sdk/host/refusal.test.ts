@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as fetchNuiModule from '../../nui/fetchNui';
-import { renderApp } from '../testing';
+import { renderApp } from '../../testing';
 import { AppPermissionError } from './protocol';
 import { resetHostsForTest } from './current';
 import UsesContacts from './__fixtures__/UsesContacts.svelte';

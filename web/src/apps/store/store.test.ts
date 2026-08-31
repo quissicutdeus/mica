@@ -1,4 +1,11 @@
 // @vitest-environment jsdom
+/**
+ * MICA-172: which facet set this file's subject resolves against. The in-process set
+ * now lives in `web/src/host/`, outside the SDK, and `sdk/index.ts` no longer pulls it in
+ * on a test's behalf — a package cannot import its consumer. A test file is its own entry
+ * point, so it says which side it stands in for: in-process, standing in for the shell.
+ */
+import '../../host/registerFacets';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import manifest from './manifest';
 import {

@@ -1,16 +1,16 @@
 /**
- * MICA-176. `sdk/index.ts` is the core-side entry of `@gphone/sdk` and `sdk/addon.ts` is
- * the add-on-side one, so this is where the core side picks its facet set — the mirror of
- * `addon.ts` pulling the iframe set in through `export { bootAddOn } from './host/iframe/boot'`.
- * Neither file is in the other's bundle: `vite.addon.config.ts` aliases `@gphone/sdk` to
- * `addon.ts`, `vite.config.ts` aliases it here.
+ * MICA-172 removed an `import '../host/registerFacets';` that used to sit here.
  *
- * `src/main.ts` imports the same set first and directly, and still must: the shell reaches
- * plenty of `shell/state/*` without going through this barrel, and a module-scope
- * `usePersisted` there cannot wait for whenever an app happens to import `@gphone/sdk`.
- * A second import of an already-evaluated module is free.
+ * MICA-176 put it in, so anything reaching the SDK through its own entry specifier got a
+ * facet set without saying so — the core-side mirror of `addon.ts` pulling the iframe set in
+ * through `bootAddOn`. That worked while the in-process facets lived inside `sdk/`. They now
+ * live in `web/src/host/`, on the phone's side of the boundary this ticket exists to draw,
+ * and a package importing its consumer is the whole thing being fixed.
+ *
+ * So the shell's entry point is the only thing that installs the in-process set:
+ * `src/main.ts`, first import. A unit test is its own entry point and says which side it is
+ * standing in for.
  */
-import '../host/registerFacets';
 export * from './manifest';
 export * from './components';
 export * from './icons';

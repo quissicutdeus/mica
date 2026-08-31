@@ -37,6 +37,11 @@
     // `vite build`" without a second resolution graph to keep in sync.
     "paths": {
       "@shared/*": ["../shared/*"],
+      // MICA-172: explicit, and it must stay ahead of the `@gphone/sdk/*` wildcard below.
+      // `testing.ts` moved to `src/testing.ts` when the in-process facets left the SDK — it
+      // renders an app the way the shell does, so it is a phone helper, not a package export.
+      // The specifier is unchanged; only what backs it moved.
+      "@gphone/sdk/testing": ["./src/testing.ts"],
       "@gphone/sdk": ["./src/sdk/index.ts"],
       "@gphone/sdk/*": ["./src/sdk/*"]
     }

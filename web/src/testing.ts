@@ -1,18 +1,30 @@
 /**
+ * MICA-172 moved this file out of `sdk/` and into `web/src/`, and `@gphone/sdk/testing` is
+ * now a **web-side alias** rather than a package export. It needs `createInProcessHost`, the
+ * in-process facet set and `shell/state/navigation` — it renders an app the way the shell
+ * does, which is a phone concern, not something the published SDK can carry across a package
+ * boundary. Its own docblock below already said it is not exported from `@gphone/sdk`; the
+ * specifier is unchanged and all four consumers are `web/` app tests.
+ *
  * MICA-176. `@gphone/sdk/testing` is an entry point like `src/main.ts` and `bootAddOn`,
  * so it supplies a facet set the same way: a test that renders an app is standing in for
  * the shell, and gets the in-process facets. Before this ticket every hook pulled its own
  * facet onto the graph, so a test never had to say which side it was on.
  */
-import '../host/registerFacets';
+import './host/registerFacets';
 import { vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 import type { Component } from 'svelte';
-import { currentApp } from '../shell/state/navigation';
-import { ALL_PERMISSIONS, type AppComponent, type AppPermission, type AppProps } from './manifest';
-import { HOST_CONTEXT_KEY } from './host/protocol';
-import { createInProcessHost } from './host/inProcess/createInProcessHost';
-import { registerHost } from './host/current';
+import { currentApp } from './shell/state/navigation';
+import {
+  ALL_PERMISSIONS,
+  type AppComponent,
+  type AppPermission,
+  type AppProps
+} from './sdk/manifest';
+import { HOST_CONTEXT_KEY } from './sdk/host/protocol';
+import { createInProcessHost } from './sdk/host/inProcess/createInProcessHost';
+import { registerHost } from './sdk/host/current';
 
 /**
  * Test-only SDK surface. **Not exported from `@gphone/sdk`** — importing this pulls in
