@@ -32,7 +32,7 @@ export { DEFAULT_SEED, sanitizeSeed, seedFromRgbString };
  * modifier.
  *
  * That last phrase is deliberately not spelled as the literal class. MICA-172 moved this
- * file into `src/sdk/`, which `cef.test.ts` scans as raw source text — it cannot tell a doc
+ * file into the SDK package, which `cef.test.ts` scans as raw source text — it cannot tell a doc
  * comment from markup, so naming the forbidden form here would fail the very rule this
  * sentence describes.
  *

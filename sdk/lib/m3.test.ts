@@ -328,7 +328,7 @@ describe('M3 color engine', () => {
       // is correct before any JS runs. Literals drift; this is what stops them.
       //
       // When this fails, the diff is the fix: paste the expected values into the
-      // `@theme` block of `src/sdk/app.css`.
+      // `@theme` block of `sdk/app.css`.
       const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
       const declared = new Map<string, string>();
       for (const [, name, value] of css.matchAll(/^\s*--color-([a-z0-9-]+):\s*([^;]+);/gm)) {

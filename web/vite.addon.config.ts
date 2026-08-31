@@ -224,7 +224,7 @@ export default defineConfig({
    *
    * So an add-on is told, honestly, that it does not know: `''` — which `lib/semver.ts`
    * already reads as *not orderable* rather than folding into "up to date". The number an
-   * add-on can actually act on is `SDK_CONTRACT_VERSION` (`src/sdk/version.ts`), which
+   * add-on can actually act on is `SDK_CONTRACT_VERSION` (`sdk/version.ts`), which
    * moves only when the surface moves and is a plain source constant, so it needs no
    * `define` and is correct in every bundle however it was built.
    *

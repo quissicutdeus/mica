@@ -57,7 +57,7 @@ re-deriving the same answer next time.
 ## Verifying
 
 Run `pnpm --filter web exec vitest run <path>` for tests you touch, plus
-`src/sdk/cef.test.ts` and `src/lib/utilityClasses.test.ts`, which police this
+`../sdk/cef.test.ts` and `src/lib/utilityClasses.test.ts`, which police this
 area directly. Run `pnpm typecheck:web` if you touched only `web/`; if you
 touched `client/`, `server/` or `shared/`, say so — those run a different
 TypeScript version and need the full `pnpm typecheck`.
