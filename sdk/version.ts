@@ -9,9 +9,17 @@
 
 /**
  * The version of the **contract** `@gphone/sdk` publishes: the exported names of each entry
- * point, the props of every exported component, and the members of every exported string
- * vocabulary. It moves when that surface moves and at no other time, which is the whole
- * reason it is worth reading.
+ * point — **the values an add-on can call and the types it can name, equally** — the props
+ * of every exported component, and the members of every exported string vocabulary. It
+ * moves when that surface moves and at no other time, which is the whole reason it is worth
+ * reading.
+ *
+ * That "and the types" is spelled out because the sentence used to say "the exported names"
+ * and leave it open, and the check behind it read the surface with a runtime `import *`,
+ * which cannot see a type at all. Sixty-three published names on `index.ts` and sixty-two on
+ * `addon.ts` were outside the gate in both directions until MICA-182 closed it. An add-on
+ * that writes `import type { Note } from '@gphone/sdk'` is broken by that name disappearing
+ * in exactly the way one calling a deleted hook is, so this number moves for both.
  *
  * `publicSurface.test.ts` pins its frozen baselines to this value and imports it from here
  * rather than declaring a copy — landing a break means bumping this *and* re-freezing those

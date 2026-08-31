@@ -9,6 +9,7 @@ import '../web/src/host/registerFacets';
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createRequire } from 'node:module';
 
 import * as sdkIndex from './index';
 import * as sdkAddon from './addon';
@@ -35,19 +36,31 @@ import { SDK_CONTRACT_VERSION } from './version';
  * eleven breaking SDK changes in this project's life, a name-level snapshot would have
  * caught six, and none of the three most recent.
  *
- * So this file captures four things, and only the first is a list of names:
+ * So this file captures five things, and only the first two are lists of names:
  *
- *   1. the exported names of each entry point an app can actually name,
- *   2. the **props** of every exported Svelte component,
- *   3. the **members** of every exported string vocabulary (`ALL_PERMISSIONS`), and
- *   4. **parity between `index.ts` and `addon.ts`** — the two files `@gphone/sdk`
+ *   1. the exported **values** of each entry point an app can actually call, read by
+ *      importing the real modules,
+ *   2. the exported **types** of each entry point, which compile to nothing and so are
+ *      invisible to that import — read from the typechecker instead (MICA-182),
+ *   3. the **props** of every exported Svelte component,
+ *   4. the **members** of every exported string vocabulary (`ALL_PERMISSIONS`), and
+ *   5. **parity between `index.ts` and `addon.ts`** — the two files `@gphone/sdk`
  *      resolves to depending on who is building. See that section for why.
+ *
+ * The first two are deliberately two arms and not one, because they answer different
+ * questions. `import * as sdk from './index'` proves a name **exists at runtime** — a
+ * barrel that throws on load, or an `export *` that resolves to nothing, fails there and
+ * nowhere else. `checker.getExportsOfModule` proves a name **resolves for the typechecker**
+ * — which is the only thing an `export type` has ever done. Neither subsumes the other, and
+ * the gate asserts the two agree on the value half rather than assuming it.
  *
  * ## What counts as breaking
  *
- * Five things fail this gate, and every one of them breaks code that already exists:
+ * Six things fail this gate, and every one of them breaks code that already exists:
  *
  *   - an export in the baseline that is gone,
+ *   - a type-only export in the baseline that is gone (a **rename** is exactly this: the
+ *     old name removed, the new one an addition that passes),
  *   - a prop in the baseline that is gone (a **rename** shows up as exactly this),
  *   - a prop that had a default and no longer does — a call site that omitted it now
  *     gets `undefined` where it used to get a value,
@@ -81,13 +94,13 @@ import { SDK_CONTRACT_VERSION } from './version';
  *   way. Optional-with-no-default is normal here (`Screen`'s `onback`), so treating a new
  *   no-default prop as required would fire on changes that break nothing. Rather than cry
  *   wolf, this gate does not see it.
- * - **Type-only exports, except across the two barrels.** The name list in
- *   `BASELINE_EXPORTS` is read from the real modules at runtime, which is what makes
- *   `export *` through three generated barrels work without reimplementing the resolver —
- *   but `export type { Host }` has no runtime footprint, so dropping or renaming an
- *   exported *type* passes that arm. The parity block reads both barrels statically and
- *   does see types, so a type that stops crossing into an add-on's bundle is caught even
- *   though a type deleted from both is not.
+ * - **A type's *shape*.** MICA-182 closed the hole where an exported type could be
+ *   renamed or deleted outright with every gate green, but only at the level of names.
+ *   `interface AppProps { id: string }` becoming `{ appId: string }` keeps the name
+ *   `AppProps` on the entry point and passes here, exactly as a renamed prop on a
+ *   still-exported component would have before `BASELINE_PROPS` existed. That is the same
+ *   gap `BASELINE_PROPS` was written to close for components, one level up, and nothing
+ *   here closes it for types.
  * - **Behaviour behind a name that did not move.** A prop keeping its name and meaning
  *   something else is invisible here and always will be.
  * - **`@gphone/sdk/testing`.** Test-only, aliased for this repo's own suites and not for
@@ -96,7 +109,7 @@ import { SDK_CONTRACT_VERSION } from './version';
  *
  * A last one that is not a blind spot but is worth knowing: `defineApp` types
  * `manifest.permissions` as `AppPermission[]` and never validates it against
- * `ALL_PERMISSIONS` at runtime. That is why arm 3 exists — a shrinking vocabulary has no
+ * `ALL_PERMISSIONS` at runtime. That is why arm 4 exists — a shrinking vocabulary has no
  * runtime signal of its own.
  *
  * Nothing here reads git — no parent commit, no merge base, no `git status`. Those answer
@@ -146,6 +159,19 @@ const ENTRY_POINTS: Record<string, Record<string, unknown>> = {
   '@gphone/sdk (add-on bundle)': sdkAddon,
   '@gphone/sdk/app': sdkApp,
   '@gphone/sdk/core': sdkCore
+};
+
+/**
+ * The same four entry points as files on disk, for the arm that asks the compiler rather
+ * than the module loader. Kept beside `ENTRY_POINTS` rather than folded into it because the
+ * two are read by different machinery; `asked the typechecker about every entry point`
+ * below asserts they name the same four, so one cannot quietly lose an entry the other has.
+ */
+const ENTRY_FILES: Record<string, string> = {
+  '@gphone/sdk': 'index.ts',
+  '@gphone/sdk (add-on bundle)': 'addon.ts',
+  '@gphone/sdk/app': 'app.ts',
+  '@gphone/sdk/core': 'core.ts'
 };
 
 /** Barrels that re-export a `.svelte` default, and so decide which components are public. */
@@ -376,6 +402,149 @@ const liveProps = (): Record<string, string[] | null> => {
 
 const liveExports = (): Record<string, string[]> =>
   Object.fromEntries(Object.entries(ENTRY_POINTS).map(([id, mod]) => [id, exportNames(mod)]));
+
+// ---------------------------------------------------------------------------
+// Reading the surface the *typechecker* publishes
+// ---------------------------------------------------------------------------
+
+/**
+ * MICA-182. Everything above reads the SDK by importing it, and an import can only ever
+ * see what exists at runtime.
+ *
+ * `export type { Host }` compiles to nothing. It is not a property of the namespace object
+ * an `import *` produces, so it was never in `BASELINE_EXPORTS`, and nothing in this file
+ * ever saw it. Measured on `b22f3dd`: the compiler reports 244 exports on `index.ts` and
+ * 239 on `addon.ts` where the import reports 181 and 177 — **63 and 62 published names that
+ * could be renamed or deleted outright with every gate in this repo green.** The parity
+ * block below did read types, but only as a *difference* between the two barrels, so a type
+ * deleted from both crossed nothing and reported nothing.
+ *
+ * That is the same class of silence as MICA-125 itself: an add-on that writes
+ * `import type { Note } from '@gphone/sdk'` is as broken by that name disappearing as one
+ * that calls a deleted hook, and nothing in this tree ever compiles a real add-on against
+ * the published contract to find out.
+ *
+ * So this arm asks the compiler the question the module loader cannot answer, over the same
+ * four entry points, and freezes the answer in `BASELINE_TYPE_EXPORTS`. It is **additional**
+ * to the runtime arm rather than a replacement for it — see the header for why neither
+ * subsumes the other.
+ */
+
+/**
+ * TypeScript 6, reached under an alias.
+ *
+ * Root's bare `typescript` is 7.0.2, which ships **no** programmatic compiler API — that
+ * lands in 7.1 (AGENTS.md §3), and `ts.createProgram` is simply absent before it. Root
+ * therefore installs 6.0.3 a second time under the name `typescript-ast-parser`, for tooling
+ * that has to ask the compiler a question rather than run it. `scripts/check-sdk-partition.js`
+ * reaches it exactly this way and is the in-repo precedent.
+ *
+ * Resolved from the **repo root**, where the alias is a declared devDependency, rather than
+ * from `sdk/`, where it would resolve only by pnpm's hoisting. `package.json` is named
+ * because `createRequire` wants a path to resolve from and that one is certain to exist.
+ *
+ * Left untyped on purpose: `typeof import('typescript')` would drag TypeScript's own
+ * multi-megabyte declaration file into `svelte-check`'s program for the sake of one local.
+ * The SDK's eslint config already turns the `no-unsafe-*` family off for test files, for
+ * exactly this shape.
+ */
+const ts = createRequire(join(SDK_DIR, '..', 'package.json'))('typescript-ast-parser');
+
+/** What one entry point exports, split by whether the name survives compilation. */
+interface TypedEntry {
+  /** Exports with a runtime value. Asserted below to equal what an `import *` sees. */
+  values: string[];
+  /** Exports that are types and nothing else — the names this arm exists for. */
+  types: string[];
+}
+
+/**
+ * Every entry point's exports as the typechecker resolves them, classified.
+ *
+ * **One program for the whole file.** `ts.createProgram` over these four roots costs about
+ * 0.8s and pulls in ~420 files; doing it per test would multiply that by however many
+ * assertions read it. It is called once, at `describe` scope, and the result passed around.
+ *
+ * Three details that decide whether the answer is right:
+ *
+ * - **The ambient declarations are root files too**, and they are read out of the tsconfig's
+ *   own file list rather than named here, so a new `.d.ts` is picked up on its own. What
+ *   they carry is `declare module '*.svelte'`: without it every
+ *   `export { default as Button } from './ui/Button.svelte'` would resolve to nothing and
+ *   ~90 components would be misfiled as type-only. Three separate things supply it here —
+ *   `sdk/env.d.ts`, `web/src/vite-env.d.ts` and `"types": [..., "svelte", ...]` in the
+ *   config — and deleting any two still leaves it resolving, which was measured rather than
+ *   assumed. The floors in `asked the typechecker about every entry point` are what would
+ *   make losing all three loud instead of a quietly shrunken list.
+ * - **A type-only *specifier* wins over the symbol it points at.** `export type { X }`
+ *   erases `X` whatever `X` is, so the keyword on the line decides, not the target's flags.
+ * - **An alias that resolves to nothing is a type, not a value.** A symbol with no
+ *   declarations behind it did not resolve, and claiming it as a runtime value would put a
+ *   name in the wrong list.
+ *
+ *   The two overlap on the one case in this tree that needs either. `components.ts` writes
+ *   `export type { RecentlyDeletedItem } from './ui/RecentlyDeleted.svelte'`; the target is
+ *   an `interface` in a `.svelte` module context this program cannot see, so
+ *   `getAliasedSymbol` hands back the unknown symbol, which does carry `SymbolFlags.Value`
+ *   — measured: with neither guard, that pure type is filed as a runtime value and the
+ *   cross-check against `import *` fails by exactly one name. Both rules are kept because
+ *   they generalise differently: one covers a resolvable value re-exported as a type, the
+ *   other covers an unresolvable target exported without the keyword.
+ *
+ * `noEmit` is passed explicitly even though the config already sets it, and `program.emit()`
+ * is never called: a compiler invocation that scatters `.d.ts` files across the tree is a
+ * failure mode this repo has already hit once.
+ */
+const typecheckerExports = (): Record<string, TypedEntry> => {
+  const configPath = join(SDK_DIR, 'tsconfig.json');
+  const read = ts.readConfigFile(configPath, (file: string) => readFileSync(file, 'utf8'));
+  if (read.error) {
+    throw new Error(
+      `sdk/tsconfig.json: ${ts.flattenDiagnosticMessageText(read.error.messageText, ' ')}`
+    );
+  }
+  const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, SDK_DIR, undefined, configPath);
+  const ambient: string[] = parsed.fileNames.filter((file: string) => file.endsWith('.d.ts'));
+
+  const program = ts.createProgram(
+    [...Object.values(ENTRY_FILES).map((file) => join(SDK_DIR, file)), ...ambient],
+    { ...parsed.options, noEmit: true }
+  );
+  const checker = program.getTypeChecker();
+
+  const out: Record<string, TypedEntry> = {};
+  for (const [id, file] of Object.entries(ENTRY_FILES)) {
+    const source = program.getSourceFile(join(SDK_DIR, file));
+    // Not an `expect`: the helpers here run before any test body, so a missing root has to
+    // stop the file rather than let a later comparison run against an empty list.
+    if (source === undefined) throw new Error(`sdk/${file} is not in the program`);
+    const symbol = checker.getSymbolAtLocation(source);
+    if (symbol === undefined) throw new Error(`sdk/${file} resolved to no module symbol`);
+
+    const values: string[] = [];
+    const types: string[] = [];
+    for (const exported of checker.getExportsOfModule(symbol)) {
+      if (exported.name === 'default') continue;
+      const typeOnlySpecifier = (exported.declarations ?? []).some(
+        (d: any) => ts.isExportSpecifier(d) && (d.isTypeOnly || d.parent.parent.isTypeOnly)
+      );
+      let resolved = exported;
+      if (resolved.flags & ts.SymbolFlags.Alias) {
+        try {
+          resolved = checker.getAliasedSymbol(resolved);
+        } catch {
+          // An alias the checker refuses to follow is not a runtime value either.
+        }
+      }
+      const unresolved = (resolved.declarations ?? []).length === 0;
+      const isValue =
+        !typeOnlySpecifier && !unresolved && Boolean(resolved.flags & ts.SymbolFlags.Value);
+      (isValue ? values : types).push(exported.name);
+    }
+    out[id] = { values: values.sort(), types: types.sort() };
+  }
+  return out;
+};
 
 // ---------------------------------------------------------------------------
 // The frozen contract
@@ -773,6 +942,158 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
 };
 
 /**
+ * The **type-only** export names of each entry point as of `BASELINE_VERSION` — the names
+ * that resolve for the typechecker and vanish at compile time. MICA-182.
+ *
+ * Frozen on exactly the same terms as `BASELINE_EXPORTS` above, and hand-written for the
+ * same reason: the value of this list is that a removal is a line somebody has to delete in
+ * a diff. A generated snapshot would be cheaper to maintain and worth much less — the commit
+ * that breaks the contract regenerates the snapshot in the same breath, and the reviewer
+ * sees a file that "just updated" rather than a name that went away.
+ *
+ * `@gphone/sdk/app` and `@gphone/sdk/core` export no types at all today. They are written
+ * down as empty rather than omitted, so `has a baseline to compare against` can assert all
+ * four entry points are present and a list that goes missing cannot read as "nothing to
+ * check here".
+ *
+ * The single divergence between the two big lists is `CatalogEntry`, which is on `index.ts`
+ * and deliberately not on `addon.ts` — see `SHELL_ONLY_BY_DESIGN`.
+ */
+const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
+  '@gphone/sdk': [
+    'AccountSearchQuery',
+    'AppActionOptions',
+    'AppCapability',
+    'AppComponent',
+    'AppEvent',
+    'AppKeybindInput',
+    'AppLevelsConfig',
+    'AppManifest',
+    'AppManifestInput',
+    'AppPermission',
+    'AppProps',
+    'AppTile',
+    'AppUpdate',
+    'AppUpdateKind',
+    'AudibleBroadcast',
+    'CancelTimer',
+    'CatalogEntry',
+    'Contact',
+    'CreateListingInput',
+    'CrudEvents',
+    'CrudOptions',
+    'Facets',
+    'FocusTrapOptions',
+    'FollowListQuery',
+    'FollowPage',
+    'Host',
+    'KeybindGroup',
+    'ListingPage',
+    'M3Tokens',
+    'Mail',
+    'MusicError',
+    'MusicErrorReason',
+    'MusicNowPlaying',
+    'MusicPosition',
+    'MusicRepeat',
+    'MusicSource',
+    'MusicStatus',
+    'NearbyBroadcast',
+    'Note',
+    'PageReader',
+    'PagedListOptions',
+    'PagedStore',
+    'PersistedOptions',
+    'QueueEntry',
+    'ReactionStore',
+    'ReactionTarget',
+    'ReactionTransport',
+    'RecentlyDeletedItem',
+    'ResolvedKeybindAction',
+    'RunningApp',
+    'SendMoneyInput',
+    'SendMoneyOutcome',
+    'SendNotificationOptions',
+    'SubmitReportInput',
+    'ThemeMode',
+    'ThemeState',
+    'TimeState',
+    'ToastMessage',
+    'Transaction',
+    'UIConversation',
+    'UIMessage',
+    'WallpaperPreset',
+    'WallpaperState'
+  ],
+  '@gphone/sdk (add-on bundle)': [
+    'AccountSearchQuery',
+    'AppActionOptions',
+    'AppCapability',
+    'AppComponent',
+    'AppEvent',
+    'AppKeybindInput',
+    'AppLevelsConfig',
+    'AppManifest',
+    'AppManifestInput',
+    'AppPermission',
+    'AppProps',
+    'AppTile',
+    'AppUpdate',
+    'AppUpdateKind',
+    'AudibleBroadcast',
+    'CancelTimer',
+    'Contact',
+    'CreateListingInput',
+    'CrudEvents',
+    'CrudOptions',
+    'Facets',
+    'FocusTrapOptions',
+    'FollowListQuery',
+    'FollowPage',
+    'Host',
+    'KeybindGroup',
+    'ListingPage',
+    'M3Tokens',
+    'Mail',
+    'MusicError',
+    'MusicErrorReason',
+    'MusicNowPlaying',
+    'MusicPosition',
+    'MusicRepeat',
+    'MusicSource',
+    'MusicStatus',
+    'NearbyBroadcast',
+    'Note',
+    'PageReader',
+    'PagedListOptions',
+    'PagedStore',
+    'PersistedOptions',
+    'QueueEntry',
+    'ReactionStore',
+    'ReactionTarget',
+    'ReactionTransport',
+    'RecentlyDeletedItem',
+    'ResolvedKeybindAction',
+    'RunningApp',
+    'SendMoneyInput',
+    'SendMoneyOutcome',
+    'SendNotificationOptions',
+    'SubmitReportInput',
+    'ThemeMode',
+    'ThemeState',
+    'TimeState',
+    'ToastMessage',
+    'Transaction',
+    'UIConversation',
+    'UIMessage',
+    'WallpaperPreset',
+    'WallpaperState'
+  ],
+  '@gphone/sdk/app': [],
+  '@gphone/sdk/core': []
+};
+
+/**
  * The props of each exported component as of `BASELINE_VERSION`, in the encoding
  * `encodeProp` produces. Frozen on the same terms as the export list above.
  */
@@ -929,11 +1250,12 @@ const BASELINE_VOCABULARIES: Record<string, string[]> = {
 
 /** One way the live surface would break something already written against the baseline. */
 interface Break {
-  /** `'@gphone/sdk'` for an export, the component name for a prop. */
+  /** `'@gphone/sdk'` for an export or a type, the component name for a prop. */
   where: string;
   what: string;
   kind:
     | 'export removed'
+    | 'type export removed'
     | 'prop removed'
     | 'prop lost its default'
     | 'shape could not be read'
@@ -959,6 +1281,8 @@ interface Surface {
   props: Record<string, string[]>;
   /** Optional so the probes below can name only the axis they are exercising. */
   vocabularies?: Record<string, string[]>;
+  /** Type-only exports, keyed by entry point. Optional on the same terms. */
+  types?: Record<string, string[]>;
 }
 
 const breakingChanges = (live: Surface, baseline: Surface): Break[] => {
@@ -968,6 +1292,17 @@ const breakingChanges = (live: Surface, baseline: Surface): Break[] => {
     const now = new Set(live.exports[entry] ?? []);
     for (const name of names) {
       if (!now.has(name)) breaks.push({ where: entry, what: name, kind: 'export removed' });
+    }
+  }
+
+  for (const [entry, names] of Object.entries(baseline.types ?? {})) {
+    // No empty-means-skip escape here, unlike the vocabulary arm below. A vocabulary that
+    // vanished is already an `export removed` line; an entry point whose type list came back
+    // empty is either a real wipe of every published type or an arm that stopped resolving,
+    // and both of those must be loud.
+    const now = new Set(live.types?.[entry] ?? []);
+    for (const name of names) {
+      if (!now.has(name)) breaks.push({ where: entry, what: name, kind: 'type export removed' });
     }
   }
 
@@ -1117,6 +1452,11 @@ describe('the SDK public surface (MICA-125)', () => {
   // Read off `@gphone/sdk`, which is the superset: every vocabulary an add-on can see is
   // re-exported there too, and the parity block below is what keeps that true.
   const vocabulariesNow = vocabularies(sdkIndex);
+  // One `ts.createProgram` for the whole file. Every assertion below reads this.
+  const typedNow = typecheckerExports();
+  const typesNow = Object.fromEntries(
+    Object.entries(typedNow).map(([id, entry]) => [id, entry.types])
+  );
 
   describe('the gate can actually run', () => {
     // Every assertion below compares two lists. If either side comes back empty — a
@@ -1145,6 +1485,43 @@ describe('the SDK public surface (MICA-125)', () => {
       // that is not the SDK, and the vocabulary arm below would compare against nothing.
       expect(Object.keys(vocabulariesNow).length).toBeGreaterThan(0);
       expect(vocabulariesNow.ALL_PERMISSIONS?.length ?? 0).toBeGreaterThanOrEqual(25);
+    });
+
+    it('asked the typechecker about every entry point', () => {
+      expect(
+        Object.keys(ENTRY_FILES).sort(),
+        'ENTRY_FILES and ENTRY_POINTS name different entry points, so one arm of this gate ' +
+          'is checking something the other is not'
+      ).toEqual(Object.keys(ENTRY_POINTS).sort());
+      expect(Object.keys(typedNow).sort()).toEqual(Object.keys(ENTRY_POINTS).sort());
+
+      // Floors, like the runtime ones above and for a sharper reason: if `sdk/env.d.ts`
+      // stopped reaching `declare module '*.svelte'`, every component export would resolve
+      // to nothing and land in `types` instead of `values`. The counts, not an exception,
+      // are what make that visible.
+      expect(typedNow['@gphone/sdk'].values.length).toBeGreaterThanOrEqual(150);
+      expect(typedNow['@gphone/sdk (add-on bundle)'].values.length).toBeGreaterThanOrEqual(150);
+      expect(
+        typedNow['@gphone/sdk'].types.length,
+        'no type-only exports resolved out of index.ts — the program did not build the ' +
+          'surface this arm exists to check'
+      ).toBeGreaterThanOrEqual(60);
+      expect(typedNow['@gphone/sdk (add-on bundle)'].types.length).toBeGreaterThanOrEqual(59);
+    });
+
+    it('classifies value against type the way the module loader does', () => {
+      // The load-bearing cross-check, and the reason the runtime arm is kept rather than
+      // replaced. Two independent readings of the same four modules — one by importing
+      // them, one by resolving them — must agree exactly on which names survive
+      // compilation. If they ever disagree, the classifier is wrong and the type list it
+      // produced is not trustworthy, so this fails rather than under-reporting in silence.
+      for (const entry of Object.keys(ENTRY_POINTS)) {
+        expect(
+          typedNow[entry].values,
+          `${entry}: the typechecker and an \`import *\` disagree about which exports have a ` +
+            'runtime value, so the type-only list below is derived from a bad split'
+        ).toEqual(exportsNow[entry]);
+      }
     });
 
     it('read the props of every exported component', () => {
@@ -1197,6 +1574,15 @@ describe('the SDK public surface (MICA-125)', () => {
           'gate go quiet'
       ).toBeGreaterThan(0);
       expect(BASELINE_VOCABULARIES.ALL_PERMISSIONS.length).toBeGreaterThanOrEqual(25);
+      expect(
+        Object.keys(BASELINE_TYPE_EXPORTS).sort(),
+        'the frozen type-only baseline is missing an entry point — restore it rather than ' +
+          'letting the gate go quiet'
+      ).toEqual(Object.keys(ENTRY_POINTS).sort());
+      expect(BASELINE_TYPE_EXPORTS['@gphone/sdk'].length).toBeGreaterThanOrEqual(60);
+      expect(BASELINE_TYPE_EXPORTS['@gphone/sdk (add-on bundle)'].length).toBeGreaterThanOrEqual(
+        59
+      );
     });
   });
 
@@ -1217,11 +1603,12 @@ describe('the SDK public surface (MICA-125)', () => {
       Object.entries(propsNow).map(([name, list]) => [name, list ?? []])
     );
     const found = breakingChanges(
-      { exports: exportsNow, props, vocabularies: vocabulariesNow },
+      { exports: exportsNow, props, vocabularies: vocabulariesNow, types: typesNow },
       {
         exports: BASELINE_EXPORTS,
         props: BASELINE_PROPS,
-        vocabularies: BASELINE_VOCABULARIES
+        vocabularies: BASELINE_VOCABULARIES,
+        types: BASELINE_TYPE_EXPORTS
       }
     ).map(describeBreak);
 
@@ -1231,8 +1618,11 @@ describe('the SDK public surface (MICA-125)', () => {
         `add-on, which compiled against v${SDK_CONTRACT_VERSION} and cannot be recompiled ` +
         'by you. If the change is intended: bump SDK_CONTRACT_VERSION, re-capture the two ' +
         'baselines below it in the same commit, and write the CHANGELOG entry under ' +
-        '"Action required" naming what an add-on author has to change. Adding an export or ' +
-        'an optional prop needs none of that and does not reach here.'
+        '"Action required" naming what an add-on author has to change. That applies to a ' +
+        '`type export removed` line exactly as it does to a value: an add-on that writes ' +
+        '`import type { Note }` is as broken by the name going away as one that calls a ' +
+        'deleted hook. Adding an export or an optional prop needs none of that and does ' +
+        'not reach here.'
     ).toEqual([]);
   });
 
@@ -1297,6 +1687,37 @@ describe('the SDK public surface (MICA-125)', () => {
           exportsNow['@gphone/sdk (add-on bundle)'],
           exportsNow['@gphone/sdk'],
           ADD_ON_ONLY_BY_DESIGN
+        )
+      ).toEqual([]);
+    });
+
+    it('hands an add-on the same types, not just the same source lines', () => {
+      // The regex above reads `export type { ... } from` lines out of the two files. This
+      // reads the same question off the resolved programs, so a type arriving through an
+      // `export *` barrel — written down in neither file — is compared too, and a barrel
+      // reformatted past the regex cannot take this arm down with it.
+      const shellOnlyTypes = [...SHELL_ONLY_BY_DESIGN, ...KNOWN_DRIFT]
+        .filter((n) => n.startsWith('type '))
+        .map((n) => n.slice('type '.length));
+      const addOnOnlyTypes = ADD_ON_ONLY_BY_DESIGN.filter((n) => n.startsWith('type ')).map((n) =>
+        n.slice('type '.length)
+      );
+
+      expect(
+        undeclaredDivergence(
+          typedNow['@gphone/sdk'].types,
+          typedNow['@gphone/sdk (add-on bundle)'].types,
+          shellOnlyTypes
+        ),
+        'this type is on `@gphone/sdk` when the typechecker resolves it and absent from the ' +
+          'barrel a `core: false` add-on actually bundles, so `import type { ... }` in an ' +
+          'add-on resolves in the editor and against nothing at build time'
+      ).toEqual([]);
+      expect(
+        undeclaredDivergence(
+          typedNow['@gphone/sdk (add-on bundle)'].types,
+          typedNow['@gphone/sdk'].types,
+          addOnOnlyTypes
         )
       ).toEqual([]);
     });
@@ -1400,6 +1821,72 @@ describe('the SDK public surface (MICA-125)', () => {
           surface({ '@gphone/sdk': ['ReactionBar'] }, { ReactionBar: ['ontoggle'] })
         ).map(describeBreak)
       ).toEqual(['ReactionBar: its props (shape could not be read)']);
+    });
+
+    it('sees a type-only export that is gone', () => {
+      // The MICA-182 case. `Note` has no runtime footprint, so the arm above passes over
+      // it entirely and every other gate in this repo stays green while an add-on's
+      // `import type { Note } from '@gphone/sdk'` stops resolving.
+      expect(
+        breakingChanges(
+          { ...surface({ '@gphone/sdk': [] }), types: { '@gphone/sdk': ['AppManifest'] } },
+          { ...surface({ '@gphone/sdk': [] }), types: { '@gphone/sdk': ['AppManifest', 'Note'] } }
+        ).map(describeBreak)
+      ).toEqual(['@gphone/sdk: Note (type export removed)']);
+    });
+
+    it('sees a type-only export that was renamed, on the barrel an add-on bundles', () => {
+      // A rename is a removal plus an addition, and only the removal is reported — which is
+      // the correct half: the old name is what published code writes.
+      const entry = '@gphone/sdk (add-on bundle)';
+      expect(
+        breakingChanges(
+          { ...surface({ [entry]: [] }), types: { [entry]: ['UIMessage'] } },
+          { ...surface({ [entry]: [] }), types: { [entry]: ['Message'] } }
+        ).map(describeBreak)
+      ).toEqual([`${entry}: Message (type export removed)`]);
+    });
+
+    it('lets an added type-only export through', () => {
+      // Additions pass on this axis for the same reason they pass on every other one — see
+      // the header. A new exported type breaks nobody.
+      expect(
+        breakingChanges(
+          { ...surface({ '@gphone/sdk': [] }), types: { '@gphone/sdk': ['Note', 'Reaction'] } },
+          { ...surface({ '@gphone/sdk': [] }), types: { '@gphone/sdk': ['Note'] } }
+        )
+      ).toEqual([]);
+    });
+
+    it('reports every published type when an entry point stops resolving', () => {
+      // The fail-open shape for this arm: the program builds but one barrel comes back with
+      // nothing. Skipping an empty list the way the vocabulary arm does would turn a total
+      // loss of the surface into silence.
+      expect(
+        breakingChanges(
+          { ...surface({ '@gphone/sdk': [] }), types: {} },
+          { ...surface({ '@gphone/sdk': [] }), types: { '@gphone/sdk': ['Host', 'Note'] } }
+        ).map(describeBreak)
+      ).toEqual([
+        '@gphone/sdk: Host (type export removed)',
+        '@gphone/sdk: Note (type export removed)'
+      ]);
+    });
+
+    it('reads type-only exports out of the real program, not just out of a literal', () => {
+      // Same reason as the props probe at the bottom: the differ above is driven with
+      // literals, so something has to assert that the encoding those literals are written in
+      // is what the live classifier actually produces. `Host` and `Note` are published types
+      // with no runtime footprint, and `useTimer` is a published value — the split has to
+      // put each on the right side.
+      expect(typesNow['@gphone/sdk']).toContain('Host');
+      expect(typesNow['@gphone/sdk']).toContain('Note');
+      expect(typesNow['@gphone/sdk']).not.toContain('useTimer');
+      expect(exportsNow['@gphone/sdk']).toContain('useTimer');
+      // And `@gphone/sdk/app` publishes two values and no types, which is a fact about the
+      // entry point rather than an arm that failed to read it.
+      expect(typesNow['@gphone/sdk/app']).toEqual([]);
+      expect(exportsNow['@gphone/sdk/app'].length).toBeGreaterThan(0);
     });
 
     it('sees a member dropped from an exported vocabulary', () => {
