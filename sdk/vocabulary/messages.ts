@@ -1,10 +1,10 @@
-import type { Conversation, Message } from '@shared/types';
+import type { Conversation, Message } from '@gphone/shared/types';
 
 /**
  * The conversation and message shapes `Facets['messages']` hands an app. MICA-172 —
  * see `./accounts.ts`.
  *
- * Both extend a `@shared/types` row the SDK already imports, so moving them in acquired no
+ * Both extend a `@gphone/shared/types` row the SDK already imports, so moving them in acquired no
  * new dependency: the wire shape stays shared with `server/`, and what is added here is the
  * UI's own projection of it.
  */

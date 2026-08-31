@@ -18,7 +18,7 @@
     onAppForeground,
     type AppProps
   } from '@gphone/sdk';
-  import type { SavedPlace, MediaPreview } from '@shared/types';
+  import type { SavedPlace, MediaPreview } from '@gphone/shared/types';
   import { useSavedPlaces } from './store';
 
   let { onback }: AppProps = $props();

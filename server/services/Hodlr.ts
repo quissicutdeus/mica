@@ -1,5 +1,5 @@
 import { defineService } from '../lib/defineService';
-import type { HodlrHolding } from '@shared/types';
+import type { HodlrHolding } from '@gphone/shared/types';
 import { fields, requirePositiveInt } from '../lib/payload';
 import { getCurrentPrice, getPriceHistory, isMarketReady } from './HodlrMarket';
 import { Database } from '../lib/Database';

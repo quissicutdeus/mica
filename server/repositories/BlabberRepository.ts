@@ -1,6 +1,6 @@
 import { SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { Blab, MediaPreview } from '@shared/types';
+import { Blab, MediaPreview } from '@gphone/shared/types';
 
 /**
  * Author hydration for Blabber.

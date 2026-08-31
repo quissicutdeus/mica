@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { MediaPreview } from '@shared/types';
+  import type { MediaPreview } from '@gphone/shared/types';
   import DocumentIcon from './icons/DocumentIcon.svelte';
   import LinkIcon from './icons/LinkIcon.svelte';
   import LocationIcon from './icons/LocationIcon.svelte';

@@ -1,7 +1,7 @@
 import { derived } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
 import { createCrudStore } from '../../../sdk/createCrudStore';
-import type { Contact } from '@shared/types';
+import type { Contact } from '@gphone/shared/types';
 
 /**
  * The one rule, applied to a create, an update and a share alike.

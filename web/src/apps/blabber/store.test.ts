@@ -70,7 +70,7 @@ import type {
   FollowStats,
   BlabberDmThread,
   BlabberDm
-} from '@shared/types';
+} from '@gphone/shared/types';
 
 /**
  * Which action a call is for, whichever route it took.

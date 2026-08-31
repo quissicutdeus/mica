@@ -1,7 +1,7 @@
 import { derived, get } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
 import { createCrudStore } from '../../../sdk/createCrudStore';
-import type { Mail } from '@shared/types';
+import type { Mail } from '@gphone/shared/types';
 
 const store = createCrudStore<Mail>('Mail', {
   list: 'getMail',

@@ -5,7 +5,7 @@ import { openApp } from './state/navigation';
 import {
   MUSIC_BROADCASTS_NUI_ACTION,
   MUSIC_BROADCAST_VOLUMES_NUI_ACTION
-} from '@shared/musicBroadcast';
+} from '@gphone/shared/musicBroadcast';
 
 /**
  * Browser-only scaffolding: seed the phone, and expose a console helper for firing

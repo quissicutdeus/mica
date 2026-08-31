@@ -4,7 +4,7 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { phoneNumberFrom } from '../lib/netGuard';
 import { fields, requirePositiveInt, optionalString } from '../lib/payload';
 import { transfer, type PaymentOutcome } from '../lib/Payments';
-import { Transaction } from '@shared/types';
+import { Transaction } from '@gphone/shared/types';
 
 /**
  * Bank: read-only, and backed by the banking resource's own export rather than its

@@ -1,5 +1,5 @@
 import { registerFacet } from '../../../../sdk/host/current';
-import type { Mail } from '@shared/types';
+import type { Mail } from '@gphone/shared/types';
 import { mailStore, unreadMailCount } from '../../services/mail';
 export { unreadMailCount };
 

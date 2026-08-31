@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { MAX_ATTACHMENTS } from '@shared/attachments';
+  import { MAX_ATTACHMENTS } from '@gphone/shared/attachments';
   import { untrack } from 'svelte';
   import { Button, CloseIcon, MediaThumb, PhotoIcon, PhotoPickerModal } from '@gphone/sdk';
-  import type { MediaPreview } from '@shared/types';
+  import type { MediaPreview } from '@gphone/shared/types';
 
   /** 280, matching `gphone_blabber.body`. The server enforces it from the same declaration. */
   const LIMIT = 280;

@@ -1,4 +1,4 @@
-import { citizenIdFromIdentifier, describeIdentifierRejection } from '@shared/framework';
+import { citizenIdFromIdentifier, describeIdentifierRejection } from '@gphone/shared/framework';
 
 /**
  * The client half of the framework bridge, and it is **display only**.

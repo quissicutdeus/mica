@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDeepLink, parseDeepLink } from '@shared/deepLink';
+import { buildDeepLink, parseDeepLink } from '@gphone/shared/deepLink';
 
 /**
  * The contract between what the server writes and what the phone opens.

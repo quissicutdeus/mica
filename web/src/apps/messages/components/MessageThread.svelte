@@ -1,6 +1,6 @@
 <script lang="ts">
   import { EmptyState, type UIConversation, type UIMessage } from '@gphone/sdk';
-  import type { ReactionSummary } from '@shared/types';
+  import type { ReactionSummary } from '@gphone/shared/types';
   import MessageBubble from './MessageBubble.svelte';
 
   /**

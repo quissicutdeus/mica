@@ -9,7 +9,7 @@
     formatDate
   } from '@gphone/sdk';
   import { useBlabber } from '../store';
-  import type { Account } from '@shared/types';
+  import type { Account } from '@gphone/shared/types';
   import DmComposer from './DmComposer.svelte';
   import BlabBody from './BlabBody.svelte';
 

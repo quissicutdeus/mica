@@ -25,7 +25,7 @@
     "noUnusedLocals": true,
     "moduleDetection": "force",
     "paths": {
-      "@shared/*": ["../shared/*"],
+      "@gphone/shared/*": ["../shared/*"],
       "@gphone/sdk": ["./index.ts"],
       "@gphone/sdk/app": ["./app.ts"],
       "@gphone/sdk/core": ["./core.ts"]

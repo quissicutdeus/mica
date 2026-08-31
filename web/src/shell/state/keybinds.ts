@@ -1,5 +1,5 @@
 import { derived, get } from 'svelte/store';
-import { PHONE_SCOPE_ACTIONS, type KeybindAction } from '@shared/keybinds';
+import { PHONE_SCOPE_ACTIONS, type KeybindAction } from '@gphone/shared/keybinds';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
 import type { ResolvedKeybindAction } from '@gphone/sdk';
 import { appRegistryStore } from './registry';

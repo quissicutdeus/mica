@@ -6,7 +6,7 @@ import { media } from './Media';
 import { defineService } from '../lib/defineService';
 import { conversationIdFrom, fields, requirePositiveInt } from '../lib/payload';
 import { resolveOwnedAttachments } from '../lib/attachments';
-import { Message } from '@shared/types';
+import { Message } from '@gphone/shared/types';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { AuditLogger } from '../lib/AuditLogger';
 import { Database } from '../lib/Database';

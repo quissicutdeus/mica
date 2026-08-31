@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
-import type { NotificationItem } from '@shared/types';
+import type { NotificationItem } from '@gphone/shared/types';
 import {
   shadeNotifications,
   unreadCounts,

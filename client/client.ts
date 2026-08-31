@@ -7,7 +7,7 @@ import { openPhone, closePhone } from './lib/PhoneVisibility';
 import { PhoneAnimation } from './game/PhoneAnimation';
 import { Freelook } from './game/Freelook';
 import { PhoneCamera } from './game/PhoneCamera';
-import { GAME_SCOPE_ACTIONS } from '@shared/keybinds';
+import { GAME_SCOPE_ACTIONS } from '@gphone/shared/keybinds';
 
 // Send system time to NUI
 const sendTimeToNui = () => {

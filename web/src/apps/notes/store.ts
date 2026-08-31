@@ -1,5 +1,5 @@
 import { createCrudStore, byNewest, useService } from '@gphone/sdk';
-import type { Note } from '@shared/types';
+import type { Note } from '@gphone/shared/types';
 
 /**
  * `restore`/`getDeleted` (MICA-75-wiring) are custom actions, not part of

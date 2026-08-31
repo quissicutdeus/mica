@@ -1,6 +1,6 @@
 import { SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { Message } from '@shared/types';
+import { Message } from '@gphone/shared/types';
 
 /**
  * Bespoke queries for the messages table. The schema, the `columns` allowlist and

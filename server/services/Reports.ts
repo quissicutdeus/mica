@@ -13,7 +13,7 @@ import {
 } from '../lib/moderation';
 import { AuditLogger } from '../lib/AuditLogger';
 import { isAdmin } from './Admin';
-import type { Report, ReportResolution } from '@shared/types';
+import type { Report, ReportResolution } from '@gphone/shared/types';
 
 /**
  * Resolving is a privileged write: the row's `citizenid` is the reporter, so the

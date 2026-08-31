@@ -1,5 +1,5 @@
-import { taggedTopics } from '@shared/richText';
-import { GENERIC_SERVICE_ACTION } from '@shared/rpc';
+import { taggedTopics } from '@gphone/shared/richText';
+import { GENERIC_SERVICE_ACTION } from '@gphone/shared/rpc';
 // Type-only: `services/bank.ts` imports `fetchNui`, which imports this file's own
 // transport — a value import here would be a real import cycle, a type-only one is
 // erased before anything runs.
@@ -20,7 +20,7 @@ import type {
   Report,
   SavedPlace,
   Transaction
-} from '@shared/types';
+} from '@gphone/shared/types';
 import {
   mockContacts,
   mockConversations,

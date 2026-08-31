@@ -1,4 +1,4 @@
-import { Transaction } from '@shared/types';
+import { Transaction } from '@gphone/shared/types';
 
 /**
  * Adapter over whichever banking resource the server runs, mirroring what

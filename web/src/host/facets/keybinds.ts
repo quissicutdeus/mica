@@ -8,7 +8,7 @@ import {
   registerHandler,
   currentOverrides
 } from '../../shell/state/keybinds';
-import { conflictsWith, findAction } from '@shared/keybinds';
+import { conflictsWith, findAction } from '@gphone/shared/keybinds';
 
 // MICA-179: defined once in the host contract; re-exported so existing importers keep working.
 /** Core's group renders without picking it out of the pack — it's the phone's own list. */

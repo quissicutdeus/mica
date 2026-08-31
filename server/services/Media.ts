@@ -1,5 +1,5 @@
 import { defineService, SchemaRepository } from '../lib/defineService';
-import { MediaItem } from '@shared/types';
+import { MediaItem } from '@gphone/shared/types';
 import { findNearbyVisiblePlayers } from '../lib/proximity';
 import { appEventChannel } from '../lib/appEvents';
 import { requirePositiveInt, fields } from '../lib/payload';

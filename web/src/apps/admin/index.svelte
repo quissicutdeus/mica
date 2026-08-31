@@ -10,7 +10,7 @@
     formatRelativeTime,
     type AppProps
   } from '@gphone/sdk';
-  import type { Report } from '@shared/types';
+  import type { Report } from '@gphone/shared/types';
 
   let { onback }: AppProps = $props();
 

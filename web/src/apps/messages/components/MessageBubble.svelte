@@ -16,7 +16,7 @@
     ReplyIcon,
     TrashIcon
   } from '@gphone/sdk';
-  import type { Contact, MediaPreview, ReactionSummary } from '@shared/types';
+  import type { Contact, MediaPreview, ReactionSummary } from '@gphone/shared/types';
 
   const { openApp } = useNavigation();
   const { contactsStore: contacts } = useContacts();

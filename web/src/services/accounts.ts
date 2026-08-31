@@ -1,5 +1,5 @@
 import { fetchNui } from '../nui/fetchNui';
-import type { Account, FollowStats, ReactionSummary } from '@shared/types';
+import type { Account, FollowStats, ReactionSummary } from '@gphone/shared/types';
 import type { AccountSearchQuery, FollowListQuery, FollowPage, ReactionTarget } from '@gphone/sdk';
 
 /**

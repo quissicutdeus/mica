@@ -1,6 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
-import type { Contact, Conversation, Message, ReactionSummary } from '@shared/types';
+import type { Contact, Conversation, Message, ReactionSummary } from '@gphone/shared/types';
 import type { UIConversation, UIMessage } from '@gphone/sdk';
 import { createReactionStore } from '../../../sdk/kit/createReactionStore';
 

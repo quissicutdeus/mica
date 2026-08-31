@@ -2,9 +2,9 @@ import { defineService, SchemaRepository, type ResolvedService } from '../lib/de
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { isReactableTable, isPlausibleEmoji } from '../lib/reactions';
-import { Account } from '@shared/types';
+import { Account } from '@gphone/shared/types';
 import { fields, optionalString, pageBounds, requirePositiveInt } from '../lib/payload';
-import { buildDeepLink } from '@shared/deepLink';
+import { buildDeepLink } from '@gphone/shared/deepLink';
 
 /**
  * Social identities, shared by every social app.

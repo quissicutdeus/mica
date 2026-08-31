@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { MAX_ATTACHMENTS } from '@shared/attachments';
+  import { MAX_ATTACHMENTS } from '@gphone/shared/attachments';
   import { Button, PhotoPickerModal, useMarketplace } from '@gphone/sdk';
-  import type { MediaPreview } from '@shared/types';
+  import type { MediaPreview } from '@gphone/shared/types';
 
   let { onposted, oncancel }: { onposted: (id: number) => void; oncancel: () => void } = $props();
 

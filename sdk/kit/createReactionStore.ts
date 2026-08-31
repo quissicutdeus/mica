@@ -1,5 +1,5 @@
 import { writable, type Readable } from 'svelte/store';
-import type { ReactionSummary } from '@shared/types';
+import type { ReactionSummary } from '@gphone/shared/types';
 
 /**
  * What a target with nothing on it looks like.

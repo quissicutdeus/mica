@@ -9,7 +9,7 @@ import type {
   MediaPreview,
   PricePoint,
   SavedPlace
-} from '@shared/types';
+} from '@gphone/shared/types';
 import { placeholderAvatar, placeholderPhoto, placeholderPhotos } from '@gphone/sdk';
 
 /** Inject created_at / updated_at timestamps into a mock object. Accepts an optional offset (ms before now). */

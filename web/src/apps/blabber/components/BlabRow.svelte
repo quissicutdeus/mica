@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Avatar, formatDate, MediaThumb, ReportDialog } from '@gphone/sdk';
-  import type { Blab, BlabEngagement } from '@shared/types';
+  import type { Blab, BlabEngagement } from '@gphone/shared/types';
   import BlabBody from './BlabBody.svelte';
   import BlabActions from './BlabActions.svelte';
 

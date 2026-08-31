@@ -1,7 +1,7 @@
 import { derived, get, writable, type Readable, type Writable } from 'svelte/store';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
-import { isPlaylistId, isVideoId } from '@shared/youtube';
-import { MAX_NEARBY_BROADCASTS } from '@shared/musicBroadcast';
+import { isPlaylistId, isVideoId } from '@gphone/shared/youtube';
+import { MAX_NEARBY_BROADCASTS } from '@gphone/shared/musicBroadcast';
 import type { AudibleBroadcast, NearbyBroadcast } from '@gphone/sdk';
 import { MAX_AUDIBLE_BROADCASTS } from '../../../../sdk/host/seam/music';
 import { joinOffsetSeconds, rankAudible } from '../../lib/phone/musicRanking';

@@ -1,7 +1,7 @@
 // The server half of the battery service.
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { defineService } from '../lib/defineService';
-import { PhoneBattery } from '@shared/types';
+import { PhoneBattery } from '@gphone/shared/types';
 import { isAdmin } from './Admin';
 import { onPlayerLoaded, notifyPlayer } from '../lib/shell';
 import { guardNetEvent, levelFrom } from '../lib/netGuard';

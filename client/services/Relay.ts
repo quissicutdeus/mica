@@ -1,6 +1,6 @@
 import { ServiceProxy } from '../lib/ServiceProxy';
-import { ROUTES, serverEventFor } from '@shared/routes';
-import { GENERIC_SERVICE_ACTION, parseGenericRequest, requestEventFor } from '@shared/rpc';
+import { ROUTES, serverEventFor } from '@gphone/shared/routes';
+import { GENERIC_SERVICE_ACTION, parseGenericRequest, requestEventFor } from '@gphone/shared/rpc';
 
 /**
  * Registers every declared route.

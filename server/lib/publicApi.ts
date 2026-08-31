@@ -12,7 +12,7 @@
  */
 import { FrameworkBridge } from './FrameworkBridge';
 import { appEventChannel } from './appEvents';
-import { buildDeepLink, parseDeepLink } from '@shared/deepLink';
+import { buildDeepLink, parseDeepLink } from '@gphone/shared/deepLink';
 import { knownServices } from './services';
 import * as PlayerDirectory from './PlayerDirectory';
 import { isPhoneOpen } from './PhoneOpenState';
@@ -42,7 +42,7 @@ import {
   setPlayerSignal,
   FULL_SIGNAL
 } from '../services/Signal';
-import type { Contact, MediaItem, MediaKind } from '@shared/types';
+import type { Contact, MediaItem, MediaKind } from '@gphone/shared/types';
 
 /**
  * How an external resource names itself in the notification shade.

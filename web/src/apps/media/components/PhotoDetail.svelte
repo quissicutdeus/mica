@@ -8,7 +8,7 @@
     fade,
     useMedia
   } from '@gphone/sdk';
-  import type { MediaItem } from '@shared/types';
+  import type { MediaItem } from '@gphone/shared/types';
 
   /**
    * One photo, full size.

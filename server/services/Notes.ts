@@ -1,5 +1,5 @@
 import { defineService } from '../lib/defineService';
-import { Note } from '@shared/types';
+import { Note } from '@gphone/shared/types';
 import { fields, requirePositiveInt } from '../lib/payload';
 import { restoreWindowDays } from '../lib/retention';
 

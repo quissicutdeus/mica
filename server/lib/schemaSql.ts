@@ -6,7 +6,7 @@ import {
   type ResolvedService,
   type ResolvedIndex
 } from './defineService';
-import { CITIZENID_MAX_LENGTH } from '@shared/framework';
+import { CITIZENID_MAX_LENGTH } from '@gphone/shared/framework';
 
 /**
  * Emit MySQL DDL from a resolved app schema.
@@ -208,7 +208,7 @@ export function expectedShape(resolved: ResolvedService): ExpectedShape {
     table,
     columns: [
       { name: 'id', def: { type: 'int', notNull: true }, autoIncrement: true },
-      // Width from `@shared/framework`, not a literal: the same constant bounds the
+      // Width from `@gphone/shared/framework`, not a literal: the same constant bounds the
       // identifier that lands here, so the column and its guard cannot drift apart
       // (MICA-158).
       {

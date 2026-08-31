@@ -1,5 +1,5 @@
 import { registerNuiTransport } from '../../nui/transport';
-import { GENERIC_SERVICE_ACTION } from '@shared/rpc';
+import { GENERIC_SERVICE_ACTION } from '@gphone/shared/rpc';
 import { remoteCall } from './remote';
 
 // MICA-16 step 4: the alias target for `src/nui/fetchNui.ts` in the add-on build.

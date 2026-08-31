@@ -1,5 +1,5 @@
 import { SchemaRepository } from '../lib/defineService';
-import { Conversation, Participant } from '@shared/types';
+import { Conversation, Participant } from '@gphone/shared/types';
 import { Database } from '../lib/Database';
 
 /**

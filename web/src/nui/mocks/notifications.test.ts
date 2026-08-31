@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { parseDeepLink } from '@shared/deepLink';
+import { parseDeepLink } from '@gphone/shared/deepLink';
 import { MockRegistry } from './registry';
 import { mockConversations, mockEmails } from './data';
-import type { NotificationItem } from '@shared/types';
+import type { NotificationItem } from '@gphone/shared/types';
 
 /**
  * Every fixture notification points at a fixture that exists.

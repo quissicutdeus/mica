@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { APP_EVENT_NET_EVENT, APP_EVENT_NUI_ACTION } from '@shared/appEvents';
+import { APP_EVENT_NET_EVENT, APP_EVENT_NUI_ACTION } from '@gphone/shared/appEvents';
 
 const ROOT = join(__dirname, '..', '..');
 const read = (relative: string) => readFileSync(join(ROOT, relative), 'utf8');
@@ -19,7 +19,7 @@ describe('the wire strings are shared, not retyped', () => {
       // The defect this prevents is the one that made every custom mail action time out for
       // fifteen seconds: two sides deriving the same name independently and disagreeing.
       const text = read(file);
-      expect(text).toContain("from '@shared/appEvents'");
+      expect(text).toContain("from '@gphone/shared/appEvents'");
       expect(text).not.toContain("'gphone:client:shell:appEvent'");
       expect(text).not.toContain('"gphone:client:shell:appEvent"');
     }

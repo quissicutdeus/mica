@@ -42,7 +42,7 @@ export { describeMusicError, reasonForCode } from '../../lib/musicErrors';
  * **This is the number to lower first** if an in-game test says four players at once (three
  * nearby plus your own) is too many. It is one line, and nothing else has to move.
  *
- * The division of labour with `@shared/musicBroadcast` is worth stating, because both have
+ * The division of labour with `@gphone/shared/musicBroadcast` is worth stating, because both have
  * a cap in them and they are not the same cap. The server's `MAX_NEARBY_BROADCASTS` bounds
  * the *roster* — how many people it will name to one listener — and it is a message-size
  * decision. This one bounds how many of those actually get a player, and it is a

@@ -2,7 +2,7 @@ import {
   citizenIdFromIdentifier,
   describeIdentifierRejection,
   CITIZENID_MAX_LENGTH
-} from '@shared/framework';
+} from '@gphone/shared/framework';
 import { Database } from './Database';
 import { numberFor, readCitizenIdByNumber, readNumber } from './phoneNumbers';
 

@@ -1,5 +1,5 @@
 import { requirePositiveInt } from './payload';
-import { MAX_ATTACHMENTS } from '@shared/attachments';
+import { MAX_ATTACHMENTS } from '@gphone/shared/attachments';
 
 /**
  * Keep only the attachments whose photo the sender actually owns.

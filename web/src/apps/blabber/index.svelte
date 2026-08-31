@@ -22,7 +22,7 @@
     type AppProps
   } from '@gphone/sdk';
   import { useBlabber } from './store';
-  import type { Account, Blab } from '@shared/types';
+  import type { Account, Blab } from '@gphone/shared/types';
   import AccountMenu from './components/AccountMenu.svelte';
   import BlabRow from './components/BlabRow.svelte';
   import Composer from './components/Composer.svelte';

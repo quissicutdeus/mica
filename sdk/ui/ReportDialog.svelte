@@ -3,7 +3,7 @@
   import Button from './Button.svelte';
   import { useReport } from '../host/useReport';
   import { usePhoneNotification } from '../host/usePhoneNotification';
-  import type { ReportCategory } from '@shared/types';
+  import type { ReportCategory } from '@gphone/shared/types';
   import { messageOf } from '../lib/errors';
   import { focusTrap } from '../lib/focusTrap';
 

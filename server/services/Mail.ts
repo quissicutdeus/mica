@@ -1,11 +1,11 @@
 import { defineService, SchemaRepository } from '../lib/defineService';
-import { Mail } from '@shared/types';
+import { Mail } from '@gphone/shared/types';
 import { AuditLogger } from '../lib/AuditLogger';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { fields, flagUnlessFalse, requirePositiveInt } from '../lib/payload';
-import { buildDeepLink } from '@shared/deepLink';
+import { buildDeepLink } from '@gphone/shared/deepLink';
 
 /**
  * Mail: `read: 'owner'`, `write: 'server'`.

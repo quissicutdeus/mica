@@ -108,8 +108,8 @@ function candidates(base) {
 }
 function resolveSpecifier(spec, from) {
   if (PATHS[spec]) return PATHS[spec];
-  const base = spec.startsWith('@shared/')
-    ? path.join(ROOT, 'shared', spec.slice('@shared/'.length))
+  const base = spec.startsWith('@gphone/shared/')
+    ? path.join(ROOT, 'shared', spec.slice('@gphone/shared/'.length))
     : spec.startsWith('.')
       ? path.resolve(path.dirname(from), spec)
       : null;

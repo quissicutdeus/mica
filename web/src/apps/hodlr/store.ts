@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 import { useService } from '@gphone/sdk';
-import type { PricePoint } from '@shared/types';
+import type { PricePoint } from '@gphone/shared/types';
 
 /**
  * Hodlr's own data layer, inside the app — see `apps/notes/store.ts` for why: an

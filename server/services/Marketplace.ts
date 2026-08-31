@@ -1,5 +1,5 @@
 import { defineService } from '../lib/defineService';
-import { Listing } from '@shared/types';
+import { Listing } from '@gphone/shared/types';
 import { MarketplaceRepository } from '../repositories/MarketplaceRepository';
 import { fields, optionalString, requirePositiveInt, pageBounds } from '../lib/payload';
 import { resolveOwnedAttachments } from '../lib/attachments';

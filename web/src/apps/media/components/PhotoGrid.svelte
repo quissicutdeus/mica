@@ -8,7 +8,7 @@
     usePagedList,
     useMedia
   } from '@gphone/sdk';
-  import type { MediaItem } from '@shared/types';
+  import type { MediaItem } from '@gphone/shared/types';
 
   /**
    * The gallery grid — three columns of 123px tiles, a page at a time.

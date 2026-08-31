@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { nearbyBroadcastFixture } from '@shared/musicBroadcast.fixtures';
+import { nearbyBroadcastFixture } from '@gphone/shared/musicBroadcast.fixtures';
 
 /**
  * The client hop of MICA-111 phase 2 — the half that takes the server's roster, hands

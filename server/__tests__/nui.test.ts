@@ -10,7 +10,7 @@ import {
   parseReceiveMessage,
   parseContactShare,
   parseCallStatus
-} from '@shared/nui';
+} from '@gphone/shared/nui';
 
 describe('Shared NUI Payload Validation', () => {
   it('parses valid setTime payloads and rejects invalid ones', () => {

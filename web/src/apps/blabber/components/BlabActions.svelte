@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { BlabEngagement } from '@shared/types';
+  import type { BlabEngagement } from '@gphone/shared/types';
 
   /**
    * Reply / mouth / ear, with counts.

@@ -1,7 +1,7 @@
 // The server half of the settings service.
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { PhoneSetting } from '@shared/types';
+import { PhoneSetting } from '@gphone/shared/types';
 import { fields } from '../lib/payload';
 import { onPlayerLoaded } from '../lib/shell';
 

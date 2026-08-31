@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/svelte';
 import MediaThumb from './MediaThumb.svelte';
-import type { MediaItem } from '@shared/types';
+import type { MediaItem } from '@gphone/shared/types';
 
 const item = (over: Partial<MediaItem>): MediaItem => ({
   id: 1,

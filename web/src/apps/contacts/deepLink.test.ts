@@ -8,7 +8,7 @@
 import '../../host/registerFacets';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
-import type { Contact } from '@shared/types';
+import type { Contact } from '@gphone/shared/types';
 
 const mocks = vi.hoisted(() => ({
   openApp: vi.fn(),

@@ -3,14 +3,14 @@ import { ownedAccount, isBlocked } from './Accounts';
 // Media is a declared app; reuse its derived repository rather than a second instance, so
 // the attachment-ownership check runs against the same allowlist Messages already uses.
 import { media } from './Media';
-import { Blab } from '@shared/types';
+import { Blab } from '@gphone/shared/types';
 import { fields, optionalString, pageBounds, requirePositiveInt } from '../lib/payload';
 import { resolveOwnedAttachments } from '../lib/attachments';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
-import { mentionedHandles, taggedTopics } from '@shared/richText';
+import { mentionedHandles, taggedTopics } from '@gphone/shared/richText';
 import { BlabberRepository } from '../repositories/BlabberRepository';
-import { buildDeepLink } from '@shared/deepLink';
+import { buildDeepLink } from '@gphone/shared/deepLink';
 
 /** The app id, which is also the handle namespace accounts are claimed in. */
 const APP = 'blabber';
@@ -426,7 +426,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     /**
      * Tell whoever was mentioned.
      *
-     * Derived with the **same tokenizer the UI renders with** (`@shared/richText`), which is why
+     * Derived with the **same tokenizer the UI renders with** (`@gphone/shared/richText`), which is why
      * that file lives in `shared/` rather than under `web/`. Two definitions of "what counts as
      * a mention" is how you get one that highlights and never notifies.
      *

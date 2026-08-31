@@ -1,4 +1,4 @@
-import type { Account } from '@shared/types';
+import type { Account } from '@gphone/shared/types';
 
 /**
  * The social-identity nouns `Facets['accounts']` is written in terms of. MICA-172.

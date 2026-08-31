@@ -1,4 +1,4 @@
-import { parseRemoteAppConfig, type RemoteAppConfigPayload } from '@shared/nui';
+import { parseRemoteAppConfig, type RemoteAppConfigPayload } from '@gphone/shared/nui';
 import { fetchNui } from '../../nui/fetchNui';
 import { setRemoteCatalogUrl } from '../../../../sdk/catalog';
 import { appRegistryStore } from './registry';

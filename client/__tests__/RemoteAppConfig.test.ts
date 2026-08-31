@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { parseRemoteAppConfig } from '@shared/nui';
+import { parseRemoteAppConfig } from '@gphone/shared/nui';
 
 /**
  * `gphone_addon_hosts` and `gphone_addon_catalog` — the two values that decide whether the

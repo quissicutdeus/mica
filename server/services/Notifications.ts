@@ -1,5 +1,5 @@
 import { defineService, SchemaRepository } from '../lib/defineService';
-import { NotificationItem } from '@shared/types';
+import { NotificationItem } from '@gphone/shared/types';
 import { Database } from '../lib/Database';
 import { fields, requirePositiveInt } from '../lib/payload';
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { requestEventFor, responseEventFor } from '@shared/rpc';
-import { ROUTES, serverEventFor } from '@shared/routes';
+import { requestEventFor, responseEventFor } from '@gphone/shared/rpc';
+import { ROUTES, serverEventFor } from '@gphone/shared/routes';
 
 /**
  * Capture what the service registers, before the module graph loads.

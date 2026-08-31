@@ -1,7 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { ROUTES, CLIENT_ONLY_ACTIONS, UNIMPLEMENTED_ACTIONS, serverEventFor } from '@shared/routes';
+import {
+  ROUTES,
+  CLIENT_ONLY_ACTIONS,
+  UNIMPLEMENTED_ACTIONS,
+  serverEventFor
+} from '@gphone/shared/routes';
 
 /**
  * The NUI round trip has three layers — `web/` calls, `client/` relays, `server/`

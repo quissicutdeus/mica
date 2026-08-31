@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { parseDeepLink } from '@shared/deepLink';
-  import type { NotificationItem } from '@shared/types';
+  import { parseDeepLink } from '@gphone/shared/deepLink';
+  import type { NotificationItem } from '@gphone/shared/types';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { fade, fly, focusTrap } from '@gphone/sdk';

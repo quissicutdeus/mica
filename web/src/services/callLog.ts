@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { PhoneCallLogEntry } from '@shared/types';
+import type { PhoneCallLogEntry } from '@gphone/shared/types';
 import { fetchNui } from '../nui/fetchNui';
 
 /** The signed-in player's call history, newest first. */

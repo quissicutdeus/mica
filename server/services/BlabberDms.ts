@@ -2,9 +2,9 @@ import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { ownedAccount, isBlocked } from './Accounts';
-import { BlabberDm } from '@shared/types';
+import { BlabberDm } from '@gphone/shared/types';
 import { fields, optionalString, requirePositiveInt } from '../lib/payload';
-import { buildDeepLink } from '@shared/deepLink';
+import { buildDeepLink } from '@gphone/shared/deepLink';
 
 const APP = 'blabber';
 

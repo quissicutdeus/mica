@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { Button } from '@gphone/sdk';
-  import type { Account } from '@shared/types';
+  import type { Account } from '@gphone/shared/types';
 
   /**
    * The editable half of an identity.

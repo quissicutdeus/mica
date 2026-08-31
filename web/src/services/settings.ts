@@ -1,5 +1,5 @@
 import { fetchNui } from '../nui/fetchNui';
-import type { PhoneSetting } from '@shared/types';
+import type { PhoneSetting } from '@gphone/shared/types';
 
 /**
  * The client half of the `settings` service.

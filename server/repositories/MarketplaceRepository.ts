@@ -1,6 +1,6 @@
 import { SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { Listing, MediaPreview } from '@shared/types';
+import { Listing, MediaPreview } from '@gphone/shared/types';
 
 const distinctIds = (ids: number[]): number[] => [...new Set(ids)];
 

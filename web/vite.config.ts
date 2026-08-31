@@ -138,7 +138,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@shared': path.resolve(import.meta.dirname, '../shared'),
+      '@gphone/shared': path.resolve(import.meta.dirname, '../shared'),
       // Before the bare `@gphone/sdk` entry, and it has to stay there: aliases are tried
       // in order, and the shorter key matches this specifier as a prefix — resolving it
       // to `../sdk/index.ts/testing`, which is not a path.
@@ -194,7 +194,7 @@ export default defineConfig({
     // MICA-172: `../sdk/**` mirrors the `../shared/**` entry beside it. The SDK is its
     // own workspace package now, but it deliberately does NOT get a third Vitest project:
     // that would mean a second copy of the Svelte plugin, the jsdom opt-in convention, the
-    // `@shared` alias and the `@material/material-color-utilities` inline workaround — and
+    // `@gphone/shared` alias and the `@material/material-color-utilities` inline workaround — and
     // four copies of a convention is how two of them end up disagreeing. Reaching across a
     // package boundary in this include is the established precedent, not a new one.
     include: [

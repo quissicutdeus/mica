@@ -37,13 +37,16 @@
       // esbuild builds these two directly (`build/build-bundle.js`), so nothing in the
       // repo imports them and knip cannot infer that they are roots.
       "entry": ["client/client.ts", "server/server.ts", "scripts/*.js", "build/*.js"],
-      "project": [
-        "client/**/*.ts",
-        "server/**/*.ts",
-        "shared/**/*.ts",
-        "scripts/**/*.js",
-        "build/**/*.js"
-      ]
+      "project": ["client/**/*.ts", "server/**/*.ts", "scripts/**/*.js", "build/**/*.js"]
+    },
+    // MICA-186: its own workspace now that `shared/` is a root-level package, for the
+    // same reason `sdk` below is. `shared/**/*.ts` stayed listed under `.` for one run
+    // after the promotion and knip reported it as "Refine project pattern (no matches)" --
+    // a warning, not a failure, so `deadcode` stayed green while silently covering nothing
+    // here. Every file is imported by client, server, web or sdk; there are no entry points
+    // of its own, which is the point of the package.
+    "shared": {
+      "project": ["**/*.ts"]
     },
     "web": {
       "entry": ["e2e/**/*.spec.ts", "*.config.ts"],

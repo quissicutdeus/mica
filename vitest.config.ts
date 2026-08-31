@@ -14,7 +14,7 @@ import path from 'path';
 export default defineConfig({
   resolve: {
     alias: {
-      '@shared': path.resolve(import.meta.dirname, 'shared')
+      '@gphone/shared': path.resolve(import.meta.dirname, 'shared')
     }
   },
   test: {

@@ -13,7 +13,7 @@
     useService
   } from '@gphone/sdk';
   import { useBlabber } from '../store';
-  import type { Account, Blab } from '@shared/types';
+  import type { Account, Blab } from '@gphone/shared/types';
   import BlabRow from './BlabRow.svelte';
 
   /**

@@ -1,4 +1,4 @@
-import type { KeybindAction } from '@shared/keybinds';
+import type { KeybindAction } from '@gphone/shared/keybinds';
 import type { CatalogEntry } from '../catalog';
 
 /**
@@ -13,7 +13,7 @@ import type { CatalogEntry } from '../catalog';
  * The published names are unchanged; only the module behind each one moved.
  *
  * `AppUpdate` names `CatalogEntry`, which was already inside the package, and
- * `ResolvedKeybindAction` extends `@shared/keybinds` — the wire definition the server shares.
+ * `ResolvedKeybindAction` extends `@gphone/shared/keybinds` — the wire definition the server shares.
  * Neither acquired a new dependency by moving.
  */
 

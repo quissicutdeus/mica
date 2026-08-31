@@ -22,12 +22,14 @@ RUN npm install -g pnpm@11 --no-fund --no-audit && apk add --no-cache brotli
 WORKDIR /app
 
 # Manifests only, so editing a .svelte file does not reinstall 300 packages.
-# pnpm-lock.yaml has three importers -- `.`, `web` and `sdk` -- so these are the
-# complete input to the resolver. `sdk` became one in MICA-172; before that it
-# was a directory inside web/ and needed no manifest of its own here.
+# pnpm-lock.yaml has four importers -- `.`, `web`, `sdk` and `shared` -- so these
+# are the complete input to the resolver. `sdk` became one in MICA-172 and
+# `shared` in MICA-186; before that each was a plain directory that needed no
+# manifest of its own here.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY web/package.json ./web/package.json
 COPY sdk/package.json ./sdk/package.json
+COPY shared/package.json ./shared/package.json
 
 # --ignore-scripts is load-bearing for two reasons:
 #   1. The root package.json has `"prepare": "simple-git-hooks"`. pnpm runs the

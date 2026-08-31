@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { EmptyState, Skeleton, MediaThumb, useMarketplace } from '@gphone/sdk';
-  import type { Listing } from '@shared/types';
+  import type { Listing } from '@gphone/shared/types';
 
   let {
     onselect,

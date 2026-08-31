@@ -58,7 +58,7 @@ export {
  * HTML. Building an HTML string for `{@html}` is the alternative, and it is how a message
  * becomes script.
  */
-export { tokenizeRichText } from '@shared/richText';
+export { tokenizeRichText } from '@gphone/shared/richText';
 
 /**
  * Keep Tab inside a modal surface, and put focus back where it came from on close.

@@ -36,7 +36,7 @@
     // any undeclared difference, which is what actually catches "typechecks clean, breaks at
     // `vite build`" without a second resolution graph to keep in sync.
     "paths": {
-      "@shared/*": ["../shared/*"],
+      "@gphone/shared/*": ["../shared/*"],
       // MICA-172: explicit and first, and it is the one specifier that does NOT resolve
       // into the package. `testing.ts` renders an app the way the shell does, so it is a
       // phone helper rather than published contract (`sdk/publicSurface.test.ts` says so),

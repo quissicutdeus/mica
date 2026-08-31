@@ -1,5 +1,5 @@
 import { defineService, SchemaRepository } from '../lib/defineService';
-import { SavedPlace } from '@shared/types';
+import { SavedPlace } from '@gphone/shared/types';
 import { fields, optionalString } from '../lib/payload';
 import { playerCoords } from '../lib/playerCoords';
 

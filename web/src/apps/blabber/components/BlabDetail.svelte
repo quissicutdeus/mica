@@ -1,7 +1,7 @@
 <script lang="ts">
   import { EmptyState, Skeleton, usePagedList } from '@gphone/sdk';
   import { useBlabber } from '../store';
-  import type { Blab } from '@shared/types';
+  import type { Blab } from '@gphone/shared/types';
   import BlabRow from './BlabRow.svelte';
   import Composer from './Composer.svelte';
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { parseRequestEvent, requestEventFor, responseEventFor } from '@shared/rpc';
+import { parseRequestEvent, requestEventFor, responseEventFor } from '@gphone/shared/rpc';
 
 const { dbMock } = vi.hoisted(() => ({
   dbMock: { query: vi.fn(), insert: vi.fn(), update: vi.fn(), scalar: vi.fn(), single: vi.fn() }

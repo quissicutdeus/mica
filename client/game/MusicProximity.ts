@@ -1,4 +1,4 @@
-import { DEFAULT_MUSIC_RANGE } from '@shared/musicBroadcast';
+import { DEFAULT_MUSIC_RANGE } from '@gphone/shared/musicBroadcast';
 
 /**
  * How loud a neighbour's phone is, from where this ped is standing. MICA-111 phase 2.

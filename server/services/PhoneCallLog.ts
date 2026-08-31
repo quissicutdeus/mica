@@ -1,5 +1,5 @@
 import { defineService } from '../lib/defineService';
-import { PhoneCallLogEntry } from '@shared/types';
+import { PhoneCallLogEntry } from '@gphone/shared/types';
 
 /**
  * One row per participant, per call — read-only from the client. `Phone.ts` is the

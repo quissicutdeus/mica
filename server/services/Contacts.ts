@@ -1,5 +1,5 @@
 import { defineService, SchemaRepository } from '../lib/defineService';
-import { Contact, SharedContactCard } from '@shared/types';
+import { Contact, SharedContactCard } from '@gphone/shared/types';
 import { guardNetEvent } from '../lib/netGuard';
 import { findNearbyVisiblePlayers } from '../lib/proximity';
 import { appEventChannel } from '../lib/appEvents';

@@ -1,5 +1,5 @@
 import { createCrudStore } from '@gphone/sdk';
-import type { SavedPlace } from '@shared/types';
+import type { SavedPlace } from '@gphone/shared/types';
 
 /**
  * Saved places' own data layer, inside the app — same shape as `apps/notes/store.ts`.

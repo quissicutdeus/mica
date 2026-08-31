@@ -17,7 +17,7 @@
     type RecentlyDeletedItem,
     fade
   } from '@gphone/sdk';
-  import type { MediaItem } from '@shared/types';
+  import type { MediaItem } from '@gphone/shared/types';
   import PhotoGrid from './components/PhotoGrid.svelte';
   import PhotoDetail from './components/PhotoDetail.svelte';
 

@@ -92,7 +92,7 @@ import type { MusicError } from '../lib/musicErrors';
 import type { CatalogEntry } from '../catalog';
 import type { ReactionStore } from '../kit/createReactionStore';
 import type { AppComponent, AppManifest } from '../manifest';
-import type { KeybindAction } from '@shared/keybinds';
+import type { KeybindAction } from '@gphone/shared/keybinds';
 import type {
   Account,
   Contact,
@@ -108,7 +108,7 @@ import type {
   ReactionSummary,
   Report,
   Transaction
-} from '@shared/types';
+} from '@gphone/shared/types';
 import type { Readable, Subscriber, Unsubscriber, Writable } from 'svelte/store';
 
 /** Toast wording for `useAppAction`'s wrapped work. Moved here from the facet in MICA-179. */

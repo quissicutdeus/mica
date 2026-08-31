@@ -1,7 +1,7 @@
 import { Repository } from './Repository';
 import { AuditLogger } from './AuditLogger';
 import { type CallbackId, requirePositiveInt } from './payload';
-import { requestEventFor, responseEventFor } from '@shared/rpc';
+import { requestEventFor, responseEventFor } from '@gphone/shared/rpc';
 import { FrameworkBridge, FrameworkPlayer } from './FrameworkBridge';
 import { registerService } from './services';
 import { allow, installRateLimitCleanup } from './rateLimit';

@@ -20,7 +20,7 @@
     "lib": ["es2021"],
     "noUnusedLocals": true,
     "paths": {
-      "@shared/*": ["../shared/*"]
+      "@gphone/shared/*": ["../shared/*"]
     }
   },
   "include": ["./**/*", "../shared/**/*"],

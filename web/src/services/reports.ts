@@ -1,6 +1,6 @@
 import { derived, writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
-import type { Report } from '@shared/types';
+import type { Report } from '@gphone/shared/types';
 import type { SubmitReportInput } from '@gphone/sdk';
 
 /**

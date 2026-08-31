@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mentionedHandles, taggedTopics, tokenizeRichText } from '@shared/richText';
+import { mentionedHandles, taggedTopics, tokenizeRichText } from '@gphone/shared/richText';
 
 /**
  * The tokenizer every app that renders player text shares.

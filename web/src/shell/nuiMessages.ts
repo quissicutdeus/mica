@@ -10,13 +10,13 @@ import { hydrateSettings } from '../../../sdk/host/useStorage';
 import { bootstrapStores, resetBootstrapState } from './state/bootstrap';
 import { toast } from './state/toast';
 import { messageOf } from '@gphone/sdk';
-import { APP_EVENT_NUI_ACTION, parseAppEventEnvelope } from '@shared/appEvents';
+import { APP_EVENT_NUI_ACTION, parseAppEventEnvelope } from '@gphone/shared/appEvents';
 import {
   MUSIC_BROADCASTS_NUI_ACTION,
   MUSIC_BROADCAST_VOLUMES_NUI_ACTION
-} from '@shared/musicBroadcast';
+} from '@gphone/shared/musicBroadcast';
 import { deliverAppEvent } from './state/appEvents';
-import { parseDeepLink } from '@shared/deepLink';
+import { parseDeepLink } from '@gphone/shared/deepLink';
 import { receiveNearbyBroadcasts, receiveNearbyVolumes } from './state/nearbyMusic';
 import {
   parseContactShare,
@@ -30,7 +30,7 @@ import {
   parseSetSignal,
   parseSetTime,
   parseUninstallApp
-} from '@shared/nui';
+} from '@gphone/shared/nui';
 
 /** The little the router needs from the shell, rather than the whole component. */
 export interface NotificationBridge {
@@ -46,7 +46,7 @@ export interface NotificationBridge {
  */
 export function createNuiMessageRouter(bridge: NotificationBridge) {
   /**
-   * `@shared/nui` used to export a parser for this action that handed back a bare
+   * `@gphone/shared/nui` used to export a parser for this action that handed back a bare
    * `{ url }`, and the shell would `import()` whatever module answered from it — the
    * exact thing MICA-16 step 4 forbids. That parser and its payload type were deleted
    * outright rather than widened: nothing else used them, and a dead export still
@@ -316,7 +316,7 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
      * How loud each of them is, from the game client's distance tick.
      *
      * Separate from the roster above because it arrives from a different sender at a
-     * different rate — see `parseMusicBroadcasts` in `@shared/nui`. This is the hottest
+     * different rate — see `parseMusicBroadcasts` in `@gphone/shared/nui`. This is the hottest
      * route in the table by some distance, so it does exactly one thing.
      */
     [MUSIC_BROADCAST_VOLUMES_NUI_ACTION]: (data: unknown) => {

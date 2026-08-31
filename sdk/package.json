@@ -40,6 +40,7 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
+    "@gphone/shared": "workspace:*",
     "@material/material-color-utilities": "0.4.0",
     "dompurify": "^3.4.14",
     "marked": "^18.0.11"

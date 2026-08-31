@@ -2,7 +2,7 @@ import { defineService, SchemaRepository, type ResolvedService } from '../lib/de
 import { Database } from '../lib/Database';
 import { fields } from '../lib/payload';
 import { resolve as resolveDirectory } from '../lib/PlayerDirectory';
-import type { Highscore, LeaderboardEntry } from '@shared/types';
+import type { Highscore, LeaderboardEntry } from '@gphone/shared/types';
 
 /**
  * Every game (or scoreboard-shaped app) this table serves. Extend when the next one ships —

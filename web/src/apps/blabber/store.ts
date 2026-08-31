@@ -6,7 +6,7 @@ import type {
   BlabberDm,
   BlabberDmThread,
   FollowStats
-} from '@shared/types';
+} from '@gphone/shared/types';
 import {
   createPagedStore,
   createReactionStore,

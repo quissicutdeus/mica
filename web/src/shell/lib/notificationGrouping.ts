@@ -1,4 +1,4 @@
-import type { NotificationItem } from '@shared/types';
+import type { NotificationItem } from '@gphone/shared/types';
 
 export interface NotificationConversationGroup {
   title: string;

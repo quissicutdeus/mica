@@ -245,7 +245,7 @@ export default defineConfig({
   publicDir: false,
   resolve: {
     alias: [
-      { find: '@shared', replacement: path.resolve(here, '../shared') },
+      { find: '@gphone/shared', replacement: path.resolve(here, '../shared') },
       { find: '@gphone/sdk/app', replacement: path.resolve(here, '../sdk/app.ts') },
       { find: '@gphone/sdk', replacement: path.resolve(here, '../sdk/addon.ts') }
       /**

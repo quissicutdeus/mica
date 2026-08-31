@@ -1,5 +1,5 @@
 import { Database } from '../lib/Database';
-import type { PricePoint } from '@shared/types';
+import type { PricePoint } from '@gphone/shared/types';
 
 /**
  * The single global coin price, ticked by the server and persisted for the chart.

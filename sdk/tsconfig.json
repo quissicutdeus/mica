@@ -21,13 +21,13 @@
      * programmatic compiler API that does not land until TS 7.1. Both packages unblock at
      * the same moment; there is no version split to design for.
      *
-     * `@shared` is a sibling from here rather than something to climb out of `web/` to reach
+     * `@gphone/shared` is a sibling from here rather than something to climb out of `web/` to reach
      * — one of the four reasons this package moved to the root. The `@gphone/sdk` self-
      * reference exists because the SDK's own test files import through the public specifier
      * (`barrelCycle.test.ts`, `boundary.test.ts`) to stand where an app stands.
      */
     "paths": {
-      "@shared/*": ["../shared/*"],
+      "@gphone/shared/*": ["../shared/*"],
       "@gphone/sdk": ["./index.ts"],
       "@gphone/sdk/app": ["./app.ts"],
       "@gphone/sdk/core": ["./core.ts"],

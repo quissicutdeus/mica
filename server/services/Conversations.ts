@@ -1,10 +1,10 @@
 import { ConversationRepository } from '../repositories/ConversationRepository';
 import { defineService } from '../lib/defineService';
-import { Conversation } from '@shared/types';
+import { Conversation } from '@gphone/shared/types';
 import { Database } from '../lib/Database';
 import { AuditLogger } from '../lib/AuditLogger';
 import { resolveByPhone } from '../lib/PlayerDirectory';
-import { CITIZENID_MAX_LENGTH } from '@shared/framework';
+import { CITIZENID_MAX_LENGTH } from '@gphone/shared/framework';
 import {
   conversationIdFrom,
   fields,

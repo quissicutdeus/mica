@@ -1,6 +1,6 @@
 <script lang="ts">
   import { useHighscores, EmptyState } from '@gphone/sdk';
-  import type { LeaderboardEntry } from '@shared/types';
+  import type { LeaderboardEntry } from '@gphone/shared/types';
 
   let { onback }: { onback: () => void } = $props();
 

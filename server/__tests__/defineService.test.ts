@@ -16,7 +16,7 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 vi.mock('../lib/FrameworkBridge', () => bridgeMock);
 vi.mock('../lib/AuditLogger', () => auditMock);
 
-import { CITIZENID_MAX_LENGTH, citizenIdFromIdentifier } from '@shared/framework';
+import { CITIZENID_MAX_LENGTH, citizenIdFromIdentifier } from '@gphone/shared/framework';
 
 import {
   resolveAppSchema,

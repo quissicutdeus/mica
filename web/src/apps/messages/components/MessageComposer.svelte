@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { MAX_ATTACHMENTS } from '@shared/attachments';
+  import { MAX_ATTACHMENTS } from '@gphone/shared/attachments';
   import { MediaThumb, useLocation, useAppAction, useContacts, fly } from '@gphone/sdk';
-  import type { MediaPreview } from '@shared/types';
+  import type { MediaPreview } from '@gphone/shared/types';
   import {
     CloseIcon,
     EditIcon,

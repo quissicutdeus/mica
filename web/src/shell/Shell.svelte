@@ -10,7 +10,7 @@
   import { isBrowser } from '@gphone/sdk';
   import { currentApp, runningApps, openApp, goHome, closePhone } from './state/navigation';
   import { dispatchKey, isTypingTarget, registerHandler } from './state/keybinds';
-  import { findAction } from '@shared/keybinds';
+  import { findAction } from '@gphone/shared/keybinds';
   import { lockDevTools } from './state/devtools';
   import {
     frameMargin,

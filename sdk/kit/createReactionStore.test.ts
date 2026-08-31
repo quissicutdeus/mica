@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { createReactionStore, NO_REACTIONS, type ReactionTransport } from './createReactionStore';
-import type { ReactionSummary } from '@shared/types';
+import type { ReactionSummary } from '@gphone/shared/types';
 
 const summary = (counts: Record<string, number>, mine: string[] = []): ReactionSummary => ({
   counts,

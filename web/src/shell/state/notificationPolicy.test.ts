@@ -23,7 +23,7 @@ import {
 } from './notificationPolicy';
 import { badgesEnabled, notificationSoundEnabled, toastsEnabled } from './notificationSettings';
 import { contacts } from '../../services/contacts';
-import type { Contact } from '@shared/types';
+import type { Contact } from '@gphone/shared/types';
 
 const contact = (phone: string, favorite: boolean): Contact =>
   ({ id: 1, citizenid: 'me', firstname: 'A', lastname: 'B', phone, favorite }) as Contact;

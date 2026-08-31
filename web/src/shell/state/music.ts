@@ -1,6 +1,6 @@
 import { derived, get, writable, type Readable, type Writable } from 'svelte/store';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
-import { parseYouTubeSource, isPlaylistId, isVideoId } from '@shared/youtube';
+import { parseYouTubeSource, isPlaylistId, isVideoId } from '@gphone/shared/youtube';
 import { reasonForCode } from '../../../../sdk/host/seam/music';
 import { callStore } from '../../services/call';
 import type {

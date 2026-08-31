@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Avatar, CheckIcon } from '@gphone/sdk';
-  import type { Account } from '@shared/types';
+  import type { Account } from '@gphone/shared/types';
 
   /**
    * Identity, as a menu dropping from the header avatar that opens it.

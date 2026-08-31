@@ -60,8 +60,8 @@ vi.mock('../lib/FrameworkBridge', () => ({
 
 import { pollMusic, activeBroadcasts, __resetMusic } from '../services/Music';
 import { __resetRateLimits } from '../lib/rateLimit';
-import { MUSIC_BROADCAST_NET_EVENT } from '@shared/musicBroadcast';
-import { nearbyBroadcastFields } from '@shared/musicBroadcast.fixtures';
+import { MUSIC_BROADCAST_NET_EVENT } from '@gphone/shared/musicBroadcast';
+import { nearbyBroadcastFields } from '@gphone/shared/musicBroadcast.fixtures';
 
 const START = 'gphone:server:music:broadcastStart';
 const UPDATE = 'gphone:server:music:broadcastUpdate';

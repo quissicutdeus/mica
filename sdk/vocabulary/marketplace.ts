@@ -1,4 +1,4 @@
-import type { Listing } from '@shared/types';
+import type { Listing } from '@gphone/shared/types';
 
 /** What `Facets['marketplace']` reads and writes. MICA-172 — see `./accounts.ts`. */
 

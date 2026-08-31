@@ -1,4 +1,4 @@
-import type { AppEventEnvelope } from '@shared/appEvents';
+import type { AppEventEnvelope } from '@gphone/shared/appEvents';
 
 /**
  * The bus a pushed event lands on, and the buffer that keeps it until somebody is listening.

@@ -63,7 +63,7 @@
     MusicSource,
     MusicStatus
   } from '../vocabulary/music';
-  import { thumbnailUrlFor } from '@shared/youtube';
+  import { thumbnailUrlFor } from '@gphone/shared/youtube';
   import { describeMusicError } from '../lib/musicErrors';
   import { formatDuration } from '../lib/formatters';
   import { buildSchemes, cssVarBlock } from '../lib/m3';

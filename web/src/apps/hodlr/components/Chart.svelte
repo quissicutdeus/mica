@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { PricePoint } from '@shared/types';
+  import type { PricePoint } from '@gphone/shared/types';
 
   let { history }: { history: PricePoint[] } = $props();
 

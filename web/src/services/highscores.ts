@@ -1,5 +1,5 @@
 import { fetchNui } from '../nui/fetchNui';
-import type { LeaderboardEntry } from '@shared/types';
+import type { LeaderboardEntry } from '@gphone/shared/types';
 
 /** Fire-and-forget: a failed submit must never block the game-over screen. */
 export const submitScore = async (app: string, score: number): Promise<void> => {

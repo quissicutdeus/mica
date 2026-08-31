@@ -9,8 +9,8 @@
     MessageIcon,
     formatTime
   } from '@gphone/sdk';
-  import type { NotificationItem } from '@shared/types';
-  import { parseDeepLink } from '@shared/deepLink';
+  import type { NotificationItem } from '@gphone/shared/types';
+  import { parseDeepLink } from '@gphone/shared/deepLink';
 
   interface Props {
     onopenblab?: (blabId: number) => void;

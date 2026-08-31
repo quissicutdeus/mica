@@ -1,6 +1,6 @@
 import { writable, type Readable } from 'svelte/store';
 import { fetchNui } from './nui/transport';
-import { GENERIC_SERVICE_ACTION } from '@shared/rpc';
+import { GENERIC_SERVICE_ACTION } from '@gphone/shared/rpc';
 
 /**
  * A store over a server-paged list.

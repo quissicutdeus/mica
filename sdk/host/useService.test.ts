@@ -7,7 +7,7 @@
  */
 import '../../web/src/host/registerFacets';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { GENERIC_SERVICE_ACTION, parseGenericRequest } from '@shared/rpc';
+import { GENERIC_SERVICE_ACTION, parseGenericRequest } from '@gphone/shared/rpc';
 
 const nui = vi.hoisted(() => ({ fetchNui: vi.fn() }));
 vi.mock('../../web/src/nui/fetchNui', () => nui);

@@ -2,7 +2,7 @@
 // purely local waypoint action. `shared/routes.ts` and `client/services/Relay.ts` explain
 // why `shareLocation` is not handled by the generic loop there.
 import { ServiceProxy } from '../lib/ServiceProxy';
-import { requestEventFor } from '@shared/rpc';
+import { requestEventFor } from '@gphone/shared/rpc';
 
 const proxy = new ServiceProxy('media');
 

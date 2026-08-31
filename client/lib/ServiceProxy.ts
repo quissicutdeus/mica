@@ -1,4 +1,4 @@
-import { parseRequestEvent, requestEventFor, responseEventFor } from '@shared/rpc';
+import { parseRequestEvent, requestEventFor, responseEventFor } from '@gphone/shared/rpc';
 
 export class ServiceProxy {
   private pendingCallbacks = new Map<string, Function>();

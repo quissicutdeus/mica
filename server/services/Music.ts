@@ -3,7 +3,7 @@ import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { playerCoords } from '../lib/playerCoords';
 import { fields } from '../lib/payload';
-import { isPlaylistId, isVideoId, parseYouTubeSource } from '@shared/youtube';
+import { isPlaylistId, isVideoId, parseYouTubeSource } from '@gphone/shared/youtube';
 import {
   DEFAULT_MAX_NEARBY,
   DEFAULT_MUSIC_RANGE,
@@ -11,7 +11,7 @@ import {
   MUSIC_BROADCAST_NET_EVENT,
   type NearbyBroadcast,
   type NearbyMusicEnvelope
-} from '@shared/musicBroadcast';
+} from '@gphone/shared/musicBroadcast';
 
 /**
  * MICA-111 phase 2 — the half that makes a phone audible to the people standing next to

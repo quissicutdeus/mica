@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { NotificationItem } from '@shared/types';
+import type { NotificationItem } from '@gphone/shared/types';
 import { groupNotificationsByConversation } from './notificationGrouping';
 
 function makeItem(overrides: Partial<NotificationItem> & { id: number }): NotificationItem {

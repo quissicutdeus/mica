@@ -27,7 +27,7 @@
     useScrollDetect,
     type AppProps
   } from '@gphone/sdk';
-  import type { Contact, MediaPreview } from '@shared/types';
+  import type { Contact, MediaPreview } from '@gphone/shared/types';
 
   const { conversationsStore, messageReactions, loadMessageReactions, toggleMessageReaction } =
     useMessages();

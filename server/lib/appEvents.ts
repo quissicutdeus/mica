@@ -4,7 +4,7 @@ import {
   APP_EVENT_NAME_PATTERN,
   type AppEventEnvelope,
   type AppEventNotification
-} from '@shared/appEvents';
+} from '@gphone/shared/appEvents';
 import { getNotificationsRepository } from '../services/Notifications';
 
 type PushOutcome =

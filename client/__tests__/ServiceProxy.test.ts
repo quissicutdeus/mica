@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { requestEventFor, responseEventFor, parseRequestEvent } from '@shared/rpc';
+import { requestEventFor, responseEventFor, parseRequestEvent } from '@gphone/shared/rpc';
 import { ServiceProxy } from '../lib/ServiceProxy';
 
 /**

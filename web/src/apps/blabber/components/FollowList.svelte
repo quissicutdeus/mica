@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Avatar, EmptyState, ListItem, Skeleton, usePagedList } from '@gphone/sdk';
   import { useBlabber } from '../store';
-  import type { Account } from '@shared/types';
+  import type { Account } from '@gphone/shared/types';
 
   /**
    * Who follows an account, or who it follows.

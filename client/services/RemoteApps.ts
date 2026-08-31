@@ -1,6 +1,6 @@
 // The client half of remote add-on configuration.
 
-import type { RemoteAppConfigPayload } from '@shared/nui';
+import type { RemoteAppConfigPayload } from '@gphone/shared/nui';
 
 /**
  * The two convars that decide whether the Store can install anything at all.

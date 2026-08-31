@@ -21,7 +21,7 @@ import {
   type KeybindEnvironment
 } from './keybinds';
 import { appRegistryStore } from './registry';
-import { findAction } from '@shared/keybinds';
+import { findAction } from '@gphone/shared/keybinds';
 import { useStorage } from '../../../../sdk/host/useStorage';
 
 const IDLE: KeybindEnvironment = { currentApp: 'home', callStatus: 'idle' };

@@ -1,6 +1,6 @@
 import { Database } from './Database';
 import { AuditLogger } from './AuditLogger';
-import type { ReportCategory } from '@shared/types';
+import type { ReportCategory } from '@gphone/shared/types';
 
 /**
  * Hiding someone else's content, and the allowlist that makes it safe.
