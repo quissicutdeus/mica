@@ -62,6 +62,16 @@ active thread for the same pair (a residue of that race before this fix), the
 index is added as a plain, non-unique key instead — nothing is merged or
 deleted, and no message history is touched.
 
+**`gphone_lockscreen` is a new table — run `gphoneschema apply` from your server
+console after updating, or import the regenerated `gphone.sql` /
+`gphone.esx.sql` on a fresh install.** The lock screen's passcode (display
+state, not a security boundary) is now stored server-side as a salted hash, one
+row per citizenid, and is never sent back to the client in any form. Its columns
+are `passcode_hash`, `passcode_salt`, plus the usual `status` and `updated_at`
+every gPhone table carries. Three new exports,
+`LockPhone`/`UnlockPhone`/`IsPhoneLocked`, let another resource force the lock
+screen up or down independently of the passcode.
+
 **`gphone_messages_reactions` is a new table — run `gphoneschema apply` from
 your server console after updating, or import the regenerated `gphone.sql` /
 `gphone.esx.sql` on a fresh install.** Native Messages (SMS-style threads) can

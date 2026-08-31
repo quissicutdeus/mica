@@ -23,6 +23,8 @@ export * from './useHighscores';
 export * from './useKeybinds';
 export * from './useKeybindsWrite';
 export * from './useLocation';
+export * from './useLockScreen';
+export * from './useLockScreenWrite';
 export * from './useMail';
 export * from './useMarketplace';
 export * from './useMedia';

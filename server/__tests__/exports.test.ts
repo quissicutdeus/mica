@@ -65,7 +65,9 @@ describe('the public export surface', () => {
       'GetCitizenId',
       'GetPhoneNumber',
       'GetSignal',
+      'IsPhoneLocked',
       'IsPhoneOpen',
+      'LockPhone',
       'OpenApp',
       'RemoveDeadZone',
       'SendNotification',
@@ -74,7 +76,8 @@ describe('the public export surface', () => {
       'SetCharging',
       'SetGlobalSignal',
       'SetPhoneEnabled',
-      'SetSignal'
+      'SetSignal',
+      'UnlockPhone'
     ]);
   });
 
@@ -314,6 +317,50 @@ describe('phone-state exports', () => {
     const result = publishedExport('SetPhoneEnabled')!(SRC, false) as any;
     expect(result.ok).toBe(true);
     expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:shell:setEnabled', SRC, false);
+  });
+
+  it('IsPhoneLocked defaults to unlocked for a source never heard from', () => {
+    const result = publishedExport('IsPhoneLocked')!(SRC) as any;
+    expect(result).toMatchObject({ ok: true, value: false });
+  });
+
+  it('IsPhoneLocked refuses a source that is not connected', () => {
+    bridgeMock.getPlayer.mockReturnValue(undefined);
+    const result = publishedExport('IsPhoneLocked')!(SRC) as any;
+    expect(result).toMatchObject({ ok: false, reason: 'unknown_player' });
+  });
+
+  it('LockPhone pushes to the client and IsPhoneLocked then answers true', () => {
+    const locked = publishedExport('LockPhone')!(SRC) as any;
+    expect(locked.ok).toBe(true);
+    expect(globalThis.emitNet).toHaveBeenCalledWith(
+      'gphone:client:lockscreen:setLocked',
+      SRC,
+      true
+    );
+
+    const status = publishedExport('IsPhoneLocked')!(SRC) as any;
+    expect(status).toMatchObject({ ok: true, value: true });
+  });
+
+  it('UnlockPhone pushes to the client and IsPhoneLocked then answers false', () => {
+    publishedExport('LockPhone')!(SRC);
+    const unlocked = publishedExport('UnlockPhone')!(SRC) as any;
+    expect(unlocked.ok).toBe(true);
+    expect(globalThis.emitNet).toHaveBeenCalledWith(
+      'gphone:client:lockscreen:setLocked',
+      SRC,
+      false
+    );
+
+    const status = publishedExport('IsPhoneLocked')!(SRC) as any;
+    expect(status).toMatchObject({ ok: true, value: false });
+  });
+
+  it('LockPhone refuses a source that is not connected', () => {
+    bridgeMock.getPlayer.mockReturnValue(undefined);
+    const result = publishedExport('LockPhone')!(SRC) as any;
+    expect(result).toMatchObject({ ok: false, reason: 'unknown_player' });
   });
 
   it('OpenApp refuses an app gPhone does not have', () => {

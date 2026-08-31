@@ -176,6 +176,19 @@ export const ROUTES: readonly Route[] = [
   route('updateMusicBroadcast', 'music', 'broadcastUpdate'),
   route('stopMusicBroadcast', 'music', 'broadcastStop'),
 
+  // Lock screen passcode (MICA-60) — display state, not a security boundary (the
+  // ticket's own item 4): nothing behind the lock is authority-bearing, so a modified
+  // client that answers its own `checkPasscode` gains nothing it did not already have.
+  // The passcode itself never touches `settings`/`useStorage` — only this dedicated,
+  // presumably-hashed service does.
+  //
+  // PENDING (Cody): no `registerEvent` handler exists for any of these four yet —
+  // `web/src/nui/mocks/registry.ts` is what answers them today.
+  route('getPasscodeStatus', 'lockscreen', 'status'),
+  route('setPasscode', 'lockscreen', 'set'),
+  route('checkPasscode', 'lockscreen', 'check'),
+  route('clearPasscode', 'lockscreen', 'clear'),
+
   // Notifications — persistent OS notification service
   route('getShadeNotifications', 'notifications', 'getShadeNotifications'),
   route('getNotificationHistory', 'notifications', 'getNotificationHistory'),

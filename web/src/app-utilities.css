@@ -2022,6 +2022,14 @@
 .text-sm {
   font-size: 0.875rem;
 }
+/* No M3 type-scale token goes this large — the biggest, `--text-title-large`, is 22px,
+   sized for an app's own header rather than the lock screen's clock (MICA-60). One
+   call site today (`shell/LockScreen.svelte`); still a shared utility rather than a
+   component `<style>` block, since a class this test cannot see is a class that silently
+   renders as nothing the moment a typo touches it. */
+.text-lock-clock {
+  font-size: 56px;
+}
 .text-title-large {
   font-size: var(--text-title-large);
   line-height: var(--text-title-large--line-height);

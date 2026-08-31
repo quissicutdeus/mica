@@ -93,6 +93,9 @@ const mockReports: Report[] = [
  */
 const mockSettings = new Map<string, string>();
 
+/** The lock screen's passcode (MICA-60) — `null` until `setPasscode` is called. */
+let mockPasscodeValue: string | null = null;
+
 /**
  * `mockNotifications` itself is declared further down, after `mockBlabs` — a mention
  * notification needs a real Blab to point at, and this comment's own rule ("take the title
@@ -1935,6 +1938,23 @@ const mockRegistry: Record<string, MockHandler> = {
       if (composite.startsWith(prefix)) mockSettings.delete(composite);
     }
     return true;
+  },
+
+  // Lock screen passcode (MICA-60). `mockPasscodeValue` stands in for a hashed column —
+  // stored in plain text here only because the mock has no server to hash on, and this
+  // module never persists across a reload anyway.
+  // PENDING (Cody): no `registerEvent` handler exists yet for any of these four.
+  getPasscodeStatus: async () => ({ hasPasscode: mockPasscodeValue !== null }),
+  setPasscode: async (data?: { passcode?: string }) => {
+    mockPasscodeValue = typeof data?.passcode === 'string' ? data.passcode : null;
+    return { ok: true };
+  },
+  checkPasscode: async (data?: { passcode?: string }) => ({
+    ok: mockPasscodeValue !== null && data?.passcode === mockPasscodeValue
+  }),
+  clearPasscode: async () => {
+    mockPasscodeValue = null;
+    return { ok: true };
   },
 
   // Persistent Notifications

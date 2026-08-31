@@ -171,6 +171,8 @@ const LABELS: Record<AppPermission, { label: string; icon: string }> = {
   'display-write': { label: 'Resize the Phone & Home Screen', icon: '\u{1F4F1}' },
   keybinds: { label: 'Keyboard Shortcuts', icon: '\u{2328}\u{FE0F}' },
   'keybinds-write': { label: 'Rebind Phone Shortcuts', icon: '\u{2328}\u{FE0F}' },
+  'lock-screen': { label: 'Lock Screen Status (Read)', icon: '\u{1F512}' },
+  'lock-screen-write': { label: 'Set the Passcode & Lock Policy', icon: '\u{1F512}' },
   music: { label: 'Play Music Out Loud', icon: '\u{1F3B5}' },
   navigation: { label: 'Open Other Apps', icon: '\u{21AA}\u{FE0F}' },
   'notification-settings': { label: 'Notification Mute Status (Read)', icon: '\u{1F515}' },

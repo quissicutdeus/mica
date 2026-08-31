@@ -49,6 +49,8 @@
   import { themeStyleStore } from './state/theme';
   import { privacyNoticeSeen } from './state/privacyNotice';
   import PrivacyNotice from './PrivacyNotice.svelte';
+  import { isLocked } from './state/lockScreen';
+  import LockScreen from './LockScreen.svelte';
 
   let {
     transparent = false,
@@ -341,8 +343,16 @@
       </div>
     {/if}
 
+    <!-- Lock Screen (MICA-60). Same takeover shape as the dead-battery overlay above —
+         a full-surface `{#if}` rather than something living inside the content area — and
+         deliberately below it in this file: a dead phone shows nothing at all, lock screen
+         included, matching a real handset that cannot be unlocked with no charge either. -->
+    {#if $isLocked && !$isBatteryDead}
+      <LockScreen />
+    {/if}
+
     <!-- Status Bar -->
-    {#if !transparent && !$isBatteryDead}
+    {#if !transparent && !$isBatteryDead && !$isLocked}
       <!-- `onWallpaper` below, on each text run and never on this button: `.text-on-wallpaper`
            is three inherited properties, and app.css spells out what putting it on a
            container costs — `paint-order` reaches SVG, so the stroke would land on the
@@ -507,7 +517,7 @@
     ></div>
 
     <!-- Content Area -->
-    {#if !$isBatteryDead}
+    {#if !$isBatteryDead && !$isLocked}
       <div class="h-full">
         {@render children()}
       </div>

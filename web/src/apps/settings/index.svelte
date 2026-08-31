@@ -16,6 +16,7 @@
   import AppInfo from './panes/AppInfo.svelte';
   import Apps from './panes/Apps.svelte';
   import Display from './panes/Display.svelte';
+  import LockScreen from './panes/LockScreen.svelte';
   import Network from './panes/Network.svelte';
   import Notifications from './panes/Notifications.svelte';
   import DeveloperTools from './panes/DeveloperTools.svelte';
@@ -43,6 +44,7 @@
     | 'apps'
     | 'display'
     | 'sound'
+    | 'lockscreen'
     | 'shortcuts'
     | 'devtools'
     | 'about';
@@ -55,6 +57,7 @@
     apps: 'Apps',
     display: 'Display',
     sound: 'Sound',
+    lockscreen: 'Lock Screen & Passcode',
     shortcuts: 'Shortcuts',
     devtools: 'Developer Tools',
     about: 'About'
@@ -191,6 +194,8 @@
     <Display />
   {:else if pane === 'sound'}
     <Sound />
+  {:else if pane === 'lockscreen'}
+    <LockScreen />
   {:else if pane === 'shortcuts'}
     <Shortcuts />
   {:else if pane === 'devtools'}
@@ -263,6 +268,19 @@
             <span class="text-on-surface font-medium">Sound</span>
             <span class="text-on-surface-variant text-body-small"
               >Volume, mute, and button step size</span
+            >
+          </div>
+          <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
+        </button>
+        <button
+          type="button"
+          onclick={() => (pane = 'lockscreen')}
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+        >
+          <div class="flex flex-col">
+            <span class="text-on-surface font-medium">Lock Screen & Passcode</span>
+            <span class="text-on-surface-variant text-body-small"
+              >Passcode and when the phone asks for it</span
             >
           </div>
           <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />

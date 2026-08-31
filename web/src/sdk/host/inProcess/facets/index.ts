@@ -35,6 +35,8 @@ import type { display } from './display';
 import type { displayWrite } from './displayWrite';
 import type { keybinds } from './keybinds';
 import type { keybindsWrite } from './keybindsWrite';
+import type { lockScreen } from './lockScreen';
+import type { lockScreenWrite } from './lockScreenWrite';
 import type { music } from './music';
 import type { navigation } from './navigation';
 import type { notificationSettings } from './notificationSettings';
@@ -87,6 +89,8 @@ export interface Facets {
   displayWrite: typeof displayWrite;
   keybinds: typeof keybinds;
   keybindsWrite: typeof keybindsWrite;
+  lockScreen: typeof lockScreen;
+  lockScreenWrite: typeof lockScreenWrite;
   music: typeof music;
   navigation: typeof navigation;
   notificationSettings: typeof notificationSettings;

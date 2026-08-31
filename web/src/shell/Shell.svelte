@@ -50,6 +50,8 @@
   import ClosedPhoneNotification from './ClosedPhoneNotification.svelte';
   import { isTrustedNuiSource } from './nuiGuard';
   import { installMusicBroadcast } from '../services/music';
+  import { evaluateLockOnOpen, noteLockScreenClosed } from './state/lockScreen';
+  import { refreshPasscodeStatus } from '../services/passcode';
 
   installSystemHost();
 
@@ -115,6 +117,20 @@
    */
   $effect(() => {
     isPhoneOpen.set(visible);
+  });
+
+  /**
+   * MICA-60: whether the lock screen greets the next open, decided fresh every time
+   * `visible` actually changes rather than at each of the several places that flip it
+   * (the dev-browser keybind, the real `setVisible` message, the notification-tap path)
+   * — one effect that cannot be forgotten at a fourth call site later.
+   */
+  $effect(() => {
+    if (visible) {
+      evaluateLockOnOpen();
+    } else {
+      noteLockScreenClosed();
+    }
   });
 
   /**
@@ -285,6 +301,16 @@
    */
   onMount(() => {
     void hydrateSettings().then(() => migrateAppDrawerHintForExistingSaves());
+  });
+
+  /**
+   * Whether a passcode exists at all, asked for here for the same reason settings are
+   * above: `evaluateLockOnOpen` (MICA-60) reads it synchronously the moment `visible`
+   * turns true, and the browser's own first open can follow mount within one tick — so
+   * this has to already be in flight, not started by that same effect.
+   */
+  onMount(() => {
+    void refreshPasscodeStatus();
   });
 
   /**

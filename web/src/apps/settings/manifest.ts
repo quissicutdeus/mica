@@ -35,6 +35,8 @@ export default defineApp({
     'display-write',
     'keybinds',
     'keybinds-write',
+    'lock-screen',
+    'lock-screen-write',
     'mail',
     'media',
     'messages',

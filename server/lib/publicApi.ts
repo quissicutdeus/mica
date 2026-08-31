@@ -16,6 +16,7 @@ import { buildDeepLink, parseDeepLink } from '@shared/deepLink';
 import { knownServices } from './services';
 import * as PlayerDirectory from './PlayerDirectory';
 import { isPhoneOpen } from './PhoneOpenState';
+import { isPhoneLocked, setPhoneLocked } from './LockState';
 import {
   MICA_API_VERSION,
   ExportOutcome,
@@ -508,6 +509,54 @@ export function registerPublicApi(): void {
       }
       emitNet('gphone:client:shell:setEnabled', source, enabled === true);
       return ok();
+    })
+  );
+
+  /**
+   * Force the lock screen up or down (MICA-60), independent of whatever passcode the
+   * player has set — the same `SetPhoneEnabled`-shaped tool for a resource that needs to
+   * force a *display* state rather than ask about one. This is not the passcode lock:
+   * nothing behind it is authority-bearing, so locking a phone with no client listener for
+   * it yet (as of this ticket) is a no-op the caller cannot tell from a real one — the same
+   * as calling `SetPhoneEnabled` before `client/services/Shell.ts` existed would have been.
+   */
+  publish(
+    'LockPhone',
+    guarded('LockPhone', (source: unknown) => {
+      if (typeof source !== 'number' || !isConnected(source)) {
+        return fail('unknown_player', 'That player is not connected.');
+      }
+      setPhoneLocked(source, true);
+      emitNet('gphone:client:lockscreen:setLocked', source, true);
+      return ok();
+    })
+  );
+
+  /** The other half of `LockPhone`. */
+  publish(
+    'UnlockPhone',
+    guarded('UnlockPhone', (source: unknown) => {
+      if (typeof source !== 'number' || !isConnected(source)) {
+        return fail('unknown_player', 'That player is not connected.');
+      }
+      setPhoneLocked(source, false);
+      emitNet('gphone:client:lockscreen:setLocked', source, false);
+      return ok();
+    })
+  );
+
+  /**
+   * Whether a caller of `LockPhone`/`UnlockPhone` last locked this player, defaulting to
+   * unlocked. Eventually-consistent in the same sense `IsPhoneOpen` is, except the only
+   * writer is this export pair itself — there is no client push to race against.
+   */
+  publish(
+    'IsPhoneLocked',
+    guarded('IsPhoneLocked', (source: unknown) => {
+      if (typeof source !== 'number' || !isConnected(source)) {
+        return fail<boolean>('unknown_player', 'That player is not connected.');
+      }
+      return ok(isPhoneLocked(source));
     })
   );
 

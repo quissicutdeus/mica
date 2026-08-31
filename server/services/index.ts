@@ -11,6 +11,7 @@ import './Conversations';
 import './Highscores';
 import './Hodlr';
 import './HodlrMarket';
+import './Lockscreen';
 import './Mail';
 import './Marketplace';
 import './Media';

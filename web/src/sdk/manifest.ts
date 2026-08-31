@@ -58,6 +58,11 @@ export const ALL_PERMISSIONS = [
   // current bindings. Rebinding a key — or wiping every override — is a global write with
   // no member allowlist behind it today, unlike the read half.
   'keybinds-write',
+  'lock-screen',
+  // MICA-60: `lock-screen` only ever reads whether a passcode is set and the auto-lock
+  // policy. Setting or clearing the passcode, and changing the policy, is `lock-screen-write`
+  // — same split as every other MICA-127 pair above.
+  'lock-screen-write',
   // Load a track and start or stop it. Separate from `system-hardware`, which owns the
   // phone's *UI sound* volume: an app that shows a battery level has no business also
   // being able to start playing something out loud.
