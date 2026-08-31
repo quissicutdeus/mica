@@ -1,9 +1,9 @@
+import type { CancelTimer } from '../../facets';
 import { registerFacet } from '../../current';
 import { onAppUnmount } from './lifecycle';
 
-/** Cancels the timer it came from. Safe to call more than once, and after it has fired. */
-export type CancelTimer = () => void;
-
+// MICA-179: defined once in the host contract; re-exported so existing importers keep working.
+export type { CancelTimer } from '../../facets';
 /** Implementation of the `useTimer` facet. See the `useTimer` hook doc for the usage contract. */
 export function timer() {
   const timeouts = new Set<ReturnType<typeof setTimeout>>();

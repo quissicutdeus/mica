@@ -1,24 +1,15 @@
+import type { AppLevelsConfig } from '../../facets';
 import { registerFacet } from '../../current';
+import type { Facets } from '../../facets';
 import type { AsTwin } from './_shared';
 import { onDestroy } from 'svelte';
 import { remoteCall } from '../remote';
 import { clientTransport } from '../transport';
 
-type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/appLevels').appLevels>>;
+type Twin = AsTwin<ReturnType<Facets['appLevels']>>;
 
-interface AppLevel {
-  open: () => boolean;
-  close: () => void;
-  title?: string | (() => string);
-}
-
-export interface AppLevelsConfig {
-  appId: string;
-  title: string | (() => string);
-  onback?: () => void;
-  levels: AppLevel[];
-}
-
+// MICA-179: defined once in the host contract; re-exported so existing importers keep working.
+export type { AppLevelsConfig } from '../../facets';
 const resolve = (title: string | (() => string) | undefined): string =>
   typeof title === 'function' ? title() : (title ?? '');
 

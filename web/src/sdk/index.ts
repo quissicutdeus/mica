@@ -67,7 +67,7 @@ export type { AppUpdate, AppUpdateKind } from '../shell/state/appUpdates';
 export { AppPermissionError } from './host/protocol';
 /** @public */
 export type { Host } from './host/protocol';
-export type { Facets } from './host/inProcess/facets';
+export type { Facets } from './host/facets';
 export type { TimeState } from '../shell/state/time';
 export type { ResolvedKeybindAction } from '../shell/state/keybinds';
 export type { RunningApp } from '../shell/state/navigation';

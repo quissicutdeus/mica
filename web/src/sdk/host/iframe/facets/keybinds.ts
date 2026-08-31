@@ -1,10 +1,11 @@
 import { registerFacet } from '../../current';
+import type { Facets } from '../../facets';
 import { onDestroy } from 'svelte';
 import { fn, store, type AsTwin } from './_shared';
 import { remoteCall } from '../remote';
 import { clientTransport } from '../transport';
 
-type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/keybinds').keybinds>>;
+type Twin = AsTwin<ReturnType<Facets['keybinds']>>;
 
 /** Implementation of the `useKeybinds` facet — see the inProcess twin for the usage contract. */
 export function keybinds(): Twin {

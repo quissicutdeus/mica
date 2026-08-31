@@ -1,5 +1,5 @@
 import type { Host } from './protocol';
-import type { Facets } from './inProcess/facets';
+import type { Facets } from './facets';
 
 /**
  * All mutable host state lives here, and only here. `guard.ts`, `system.ts` and

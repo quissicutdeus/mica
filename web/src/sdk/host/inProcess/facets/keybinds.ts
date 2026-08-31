@@ -1,3 +1,4 @@
+import type { KeybindGroup } from '../../facets';
 import { registerFacet } from '../../current';
 import { onDestroy } from 'svelte';
 import { derived, get } from 'svelte/store';
@@ -5,17 +6,12 @@ import {
   allPhoneActions,
   bindings,
   registerHandler,
-  currentOverrides,
-  type ResolvedKeybindAction
+  currentOverrides
 } from '../../../../shell/state/keybinds';
 import { conflictsWith, findAction } from '@shared/keybinds';
 
-export interface KeybindGroup {
-  ownerId: string;
-  ownerLabel: string;
-  actions: ResolvedKeybindAction[];
-}
-
+// MICA-179: defined once in the host contract; re-exported so existing importers keep working.
+export type { KeybindGroup } from '../../facets';
 /** Core's group renders without picking it out of the pack — it's the phone's own list. */
 const CORE_OWNER_ID = 'core';
 

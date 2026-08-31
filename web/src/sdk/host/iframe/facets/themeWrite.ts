@@ -1,7 +1,8 @@
 import { registerFacet } from '../../current';
+import type { Facets } from '../../facets';
 import { fn, type AsTwin } from './_shared';
 
-type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/themeWrite').themeWrite>>;
+type Twin = AsTwin<ReturnType<Facets['themeWrite']>>;
 
 /** Implementation of the `useThemeWrite` facet — see the inProcess twin for the usage contract. */
 export function themeWrite(): Twin {

@@ -1,16 +1,14 @@
+import type { AppActionOptions } from '../../facets';
 import { registerFacet } from '../../current';
+import type { Facets } from '../../facets';
 import { writable } from 'svelte/store';
 import { messageOf } from '../../../../lib/sdk/errors';
 import { remoteCall } from '../remote';
 
-type Twin = ReturnType<typeof import('../../inProcess/facets/appAction').appAction>;
+type Twin = ReturnType<Facets['appAction']>;
 
-export interface AppActionOptions {
-  success?: string;
-  error?: string;
-  title?: string;
-}
-
+// MICA-179: defined once in the host contract; re-exported so existing importers keep working.
+export type { AppActionOptions } from '../../facets';
 /** Implementation of the `useAppAction` facet — see the inProcess twin for the usage contract. */
 export function appAction(appId?: string): Twin {
   const busy = writable(false);

@@ -1,11 +1,9 @@
 import { registerFacet } from '../../current';
-import type { Facets } from '../../inProcess/facets';
+import type { Facets } from '../../facets';
 import { store, type AsTwin } from './_shared';
 import { constants } from '../constants';
 
-type Twin = AsTwin<
-  ReturnType<typeof import('../../inProcess/facets/systemHardware').systemHardware>
->;
+type Twin = AsTwin<ReturnType<Facets['systemHardware']>>;
 
 export function systemHardware(): Twin {
   const c = constants().systemHardware;

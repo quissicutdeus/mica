@@ -1,4 +1,5 @@
 import { registerFacet } from '../../current';
+import type { Facets } from '../../facets';
 import type { AsTwin } from './_shared';
 import { remoteCall } from '../remote';
 import { clientTransport } from '../transport';
@@ -9,7 +10,7 @@ import {
   registerPersistedReset
 } from '../../seam/persistedRegistry';
 
-type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/storage').storage>>;
+type Twin = AsTwin<ReturnType<Facets['storage']>>;
 
 const namespaceOf = (appId: string) => `gphone:${appId}:`;
 

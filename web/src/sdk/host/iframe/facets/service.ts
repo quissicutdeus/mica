@@ -1,7 +1,8 @@
 import { registerFacet } from '../../current';
+import type { Facets } from '../../facets';
 import { fn, type AsTwin } from './_shared';
 
-type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/service').service>>;
+type Twin = AsTwin<ReturnType<Facets['service']>>;
 
 export function service(serviceId: string): Twin {
   return {

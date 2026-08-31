@@ -1,33 +1,12 @@
+import type { PersistedOptions } from '../../facets';
 import { registerFacet } from '../../current';
 import { writable, type Writable } from 'svelte/store';
 import { storage as storageFacet } from './storage';
 import { registerPersistedRehydrate, registerPersistedReset } from '../../seam/persistedRegistry';
 import { markUnsynced } from '../settingsSync';
 
-export interface PersistedOptions<T> {
-  /**
-   * Repair or reject a value before it is stored or handed out.
-   *
-   * Runs on the value read at startup *and* on every write, so a store cannot be talked
-   * into holding something the app would refuse. Stored data outlives the code that
-   * wrote it: a key whose shape changed between versions, or one a player edited by
-   * hand, comes back as whatever it was. `volumeStep` has needed this from the start.
-   */
-  sanitize?: (value: unknown) => T;
-  /**
-   * Keep this key on the phone instead of syncing it to the player's character.
-   *
-   * The exception, not the rule — the point of server-backed storage is that a
-   * preference follows the player. `wallpaperStore` is the one that needs it: a custom
-   * wallpaper is a base64 data URL of unbounded size, and syncing it would put megabytes
-   * across the NUI bridge and into MySQL every time a color changed.
-   *
-   * Declared at the store rather than in a list inside the sync layer, because a
-   * hardcoded list somewhere else is one nobody thinks to update when they add a store.
-   */
-  sync?: boolean;
-}
-
+// MICA-179: defined once in the host contract; re-exported so existing importers keep working.
+export type { PersistedOptions } from '../../facets';
 /** Implementation of the `usePersisted` facet — see the `usePersisted` hook doc for the usage contract. */
 export function persisted<T>(
   appId: string,

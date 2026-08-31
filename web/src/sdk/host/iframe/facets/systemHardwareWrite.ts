@@ -1,9 +1,8 @@
 import { registerFacet } from '../../current';
+import type { Facets } from '../../facets';
 import { fn, type AsTwin } from './_shared';
 
-type Twin = AsTwin<
-  ReturnType<typeof import('../../inProcess/facets/systemHardwareWrite').systemHardwareWrite>
->;
+type Twin = AsTwin<ReturnType<Facets['systemHardwareWrite']>>;
 
 /** Implementation of the `useSystemHardwareWrite` facet — see the inProcess twin for the usage contract. */
 export function systemHardwareWrite(): Twin {

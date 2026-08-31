@@ -1,5 +1,5 @@
 import { guarded } from './guard';
-export type { CancelTimer } from './inProcess/facets/timer';
+export type { CancelTimer } from './facets';
 
 /**
  * Timers that cannot outlive the app that started them.

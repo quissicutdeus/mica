@@ -1,9 +1,9 @@
 import { registerFacet } from '../../current';
-import type { Facets } from '../../inProcess/facets';
+import type { Facets } from '../../facets';
 import { fn, store, type AsTwin } from './_shared';
 import { constants } from '../constants';
 
-type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/wallpaper').wallpaper>>;
+type Twin = AsTwin<ReturnType<Facets['wallpaper']>>;
 
 export function wallpaper(): Twin {
   const c = constants().wallpaper;

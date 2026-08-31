@@ -1,5 +1,5 @@
 import { guarded } from './guard';
-export type { SendNotificationOptions } from './inProcess/facets/phoneNotification';
+export type { SendNotificationOptions } from './facets';
 
 /**
  * OS Service Hook for sending toast notifications and system alerts.

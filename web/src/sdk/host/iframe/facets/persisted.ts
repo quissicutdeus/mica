@@ -1,13 +1,11 @@
+import type { PersistedOptions } from '../../facets';
 import { registerFacet } from '../../current';
 import { writable, type Writable } from 'svelte/store';
 import { storage as storageFacet, markUnsynced } from './storage';
 import { registerPersistedRehydrate, registerPersistedReset } from '../../seam/persistedRegistry';
 
-export interface PersistedOptions<T> {
-  sanitize?: (value: unknown) => T;
-  sync?: boolean;
-}
-
+// MICA-179: defined once in the host contract; re-exported so existing importers keep working.
+export type { PersistedOptions } from '../../facets';
 /** Implementation of the `usePersisted` facet — copied verbatim from the inProcess twin. */
 export function persisted<T>(
   appId: string,

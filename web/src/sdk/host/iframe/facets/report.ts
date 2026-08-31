@@ -1,9 +1,10 @@
 import { registerFacet } from '../../current';
+import type { Facets } from '../../facets';
 import { fn, type AsTwin } from './_shared';
 
-export type { SubmitReportInput } from '../../inProcess/facets/report';
+export type { SubmitReportInput } from '../../../../services/reports';
 
-type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/report').report>>;
+type Twin = AsTwin<ReturnType<Facets['report']>>;
 
 export function report(): Twin {
   return {

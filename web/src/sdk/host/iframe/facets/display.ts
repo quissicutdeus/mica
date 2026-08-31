@@ -1,10 +1,10 @@
 import { registerFacet } from '../../current';
-import type { Facets } from '../../inProcess/facets';
+import type { Facets } from '../../facets';
 import { store, type AsTwin } from './_shared';
 import { constants } from '../constants';
 import type { MotionPreference } from '../../../../shell/state/motion';
 
-type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/display').display>>;
+type Twin = AsTwin<ReturnType<Facets['display']>>;
 
 export function display(): Twin {
   const c = constants().display;

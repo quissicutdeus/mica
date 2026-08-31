@@ -1,8 +1,8 @@
 import { registerFacet } from '../../current';
-import type { Facets } from '../../inProcess/facets';
+import type { Facets } from '../../facets';
 import { fn, store, type AsTwin } from './_shared';
 
-type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/notifications').notifications>>;
+type Twin = AsTwin<ReturnType<Facets['notifications']>>;
 
 export function notifications(appId?: string): Twin {
   const factoryArgs = [appId];

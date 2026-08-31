@@ -1,11 +1,8 @@
 import { registerFacet } from '../../current';
+import type { Facets } from '../../facets';
 import { type AsTwin } from './_shared';
 
-type Twin = AsTwin<
-  ReturnType<
-    typeof import('../../inProcess/facets/notificationSettingsWrite').notificationSettingsWrite
-  >
->;
+type Twin = AsTwin<ReturnType<Facets['notificationSettingsWrite']>>;
 
 const refused = () => {
   throw new Error('[gPhone] only a core app may change notification settings');

@@ -3,7 +3,7 @@ import { fetchNui } from '../nui/fetchNui';
 
 export type CallStatus = 'idle' | 'dialing' | 'connected' | 'incoming';
 
-interface CallState {
+export interface CallState {
   status: CallStatus;
   number: string;
   name?: string;

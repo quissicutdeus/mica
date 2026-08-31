@@ -36,7 +36,7 @@ export type { Host } from './host/protocol';
  * `ResolvedKeybindAction`, `ToastMessage`, `AppEvent`, `RunningApp`) — nothing is actually
  * imported, only the shape.
  */
-export type { Facets } from './host/inProcess/facets';
+export type { Facets } from './host/facets';
 export type { TimeState } from '../shell/state/time';
 export type { ResolvedKeybindAction } from '../shell/state/keybinds';
 export type { RunningApp } from '../shell/state/navigation';

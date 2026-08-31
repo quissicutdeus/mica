@@ -1,5 +1,5 @@
 import type { AppPermission } from '../manifest';
-import type { Facets } from './inProcess/facets';
+import type { Facets } from './facets';
 
 /** Svelte context key an app-scoped `Host` is set/read under. */
 export const HOST_CONTEXT_KEY = 'gphone_host';

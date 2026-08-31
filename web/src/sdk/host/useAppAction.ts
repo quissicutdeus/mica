@@ -1,5 +1,5 @@
 import { guarded } from './guard';
-export type { AppActionOptions } from './inProcess/facets/appAction';
+export type { AppActionOptions } from './facets';
 
 /**
  * OS Service Hook for running one user-initiated action.

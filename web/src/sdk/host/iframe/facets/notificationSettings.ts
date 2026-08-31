@@ -1,12 +1,10 @@
 import { derived, type Readable } from 'svelte/store';
 import { registerFacet } from '../../current';
-import type { Facets } from '../../inProcess/facets';
+import type { Facets } from '../../facets';
 import { store, type AsTwin } from './_shared';
 import type { AppNotificationPolicy } from '../../../../shell/state/notificationPolicy';
 
-type Twin = AsTwin<
-  ReturnType<typeof import('../../inProcess/facets/notificationSettings').notificationSettings>
->;
+type Twin = AsTwin<ReturnType<Facets['notificationSettings']>>;
 
 const DEFAULT_APP_POLICY: AppNotificationPolicy = { banner: true, sound: true, badge: true };
 

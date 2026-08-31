@@ -1,15 +1,9 @@
+import type { SendNotificationOptions } from '../../facets';
 import { registerFacet } from '../../current';
-import { toast, type ToastMessage } from '../../../../shell/state/toast';
+import { toast } from '../../../../shell/state/toast';
 
-export interface SendNotificationOptions {
-  title?: string;
-  message: string;
-  avatar?: string;
-  type?: ToastMessage['type'];
-  duration?: number;
-  onClick?: () => void;
-}
-
+// MICA-179: defined once in the host contract; re-exported so existing importers keep working.
+export type { SendNotificationOptions } from '../../facets';
 /**
  * OS Service Hook for sending toast notifications and system alerts.
  */

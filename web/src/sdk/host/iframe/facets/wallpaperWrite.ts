@@ -1,9 +1,8 @@
 import { registerFacet } from '../../current';
+import type { Facets } from '../../facets';
 import { fn, type AsTwin } from './_shared';
 
-type Twin = AsTwin<
-  ReturnType<typeof import('../../inProcess/facets/wallpaperWrite').wallpaperWrite>
->;
+type Twin = AsTwin<ReturnType<Facets['wallpaperWrite']>>;
 
 /** Implementation of the `useWallpaperWrite` facet — see the inProcess twin for the usage contract. */
 export function wallpaperWrite(): Twin {

@@ -1,8 +1,8 @@
 import { registerFacet } from '../../current';
-import type { Facets } from '../../inProcess/facets';
+import type { Facets } from '../../facets';
 import { fn, store, type AsTwin } from './_shared';
 
-type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/messages').messages>>;
+type Twin = AsTwin<ReturnType<Facets['messages']>>;
 
 export const unreadMessagesCount = store('messages', [], 'unreadMessagesCount', 0);
 

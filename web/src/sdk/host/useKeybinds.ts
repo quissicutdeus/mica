@@ -1,5 +1,5 @@
 import { guarded } from './guard';
-export type { KeybindGroup } from './inProcess/facets/keybinds';
+export type { KeybindGroup } from './facets';
 
 /**
  * OS Service Hook for keyboard shortcuts.

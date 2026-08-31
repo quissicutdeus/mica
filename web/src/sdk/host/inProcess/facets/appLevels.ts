@@ -1,35 +1,10 @@
+import type { AppLevelsConfig } from '../../facets';
 import { registerFacet } from '../../current';
 import { onDestroy } from 'svelte';
 import { registerHandler } from '../../../../shell/state/keybinds';
 
-interface AppLevel {
-  /** True while this level is on screen. */
-  open: () => boolean;
-  /** Take it off screen. Runs when back is pressed and this is the deepest open level. */
-  close: () => void;
-  /** Header title while this is the deepest open level. */
-  title?: string | (() => string);
-}
-
-export interface AppLevelsConfig {
-  /**
-   * The app's registry id — `notes`, `settings`. Not its display name.
-   *
-   * Required, and it is what stops Back reaching a backgrounded app. Apps are resident,
-   * so this ladder stays registered while the app sits hidden; without an owner the
-   * dispatcher would hand `back` to whichever app registered last rather than the one on
-   * screen. The app names itself for the same reason it does in `onAppForeground`: the
-   * shell has no way to hand a component its own registry id.
-   */
-  appId: string;
-  /** Title when nothing is open — the app's own name, usually. */
-  title: string | (() => string);
-  /** Where back goes once every level is closed. The shell's `onback` prop. */
-  onback?: () => void;
-  /** Deepest first. Back closes the first one that is open. */
-  levels: AppLevel[];
-}
-
+// MICA-179: defined once in the host contract; re-exported so existing importers keep working.
+export type { AppLevelsConfig } from '../../facets';
 const resolve = (title: string | (() => string) | undefined): string =>
   typeof title === 'function' ? title() : (title ?? '');
 

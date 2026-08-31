@@ -1,11 +1,12 @@
 import { registerFacet } from '../../current';
+import type { Facets } from '../../facets';
 import { onDestroy } from 'svelte';
 import { fn, type AsTwin } from './_shared';
 import { remoteCall } from '../remote';
 import { clientTransport } from '../transport';
 import type { AppEvent } from '../../../../shell/state/appEvents';
 
-type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/appEvents').appEvents>>;
+type Twin = AsTwin<ReturnType<Facets['appEvents']>>;
 
 /** Implementation of the `useAppEvents` facet — see the inProcess twin for the usage contract. */
 export function appEvents(appId: string): Twin {

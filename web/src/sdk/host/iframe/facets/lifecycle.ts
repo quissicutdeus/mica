@@ -1,9 +1,9 @@
 import { registerFacet } from '../../current';
-import type { Facets } from '../../inProcess/facets';
+import type { Facets } from '../../facets';
 import { onDestroy } from 'svelte';
 import { fn, store, type AsTwin } from './_shared';
 
-type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/lifecycle').lifecycle>>;
+type Twin = AsTwin<ReturnType<Facets['lifecycle']>>;
 
 /** Executes a cleanup callback when the application component is unmounted or closed. */
 export function onAppUnmount(handler: () => void): void {

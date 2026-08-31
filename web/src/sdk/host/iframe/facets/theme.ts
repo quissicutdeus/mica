@@ -1,10 +1,10 @@
 import { registerFacet } from '../../current';
-import type { Facets } from '../../inProcess/facets';
+import type { Facets } from '../../facets';
 import { store, type AsTwin } from './_shared';
 import { constants } from '../constants';
 import { seedFromRgbString, sanitizeSeed } from '../../../../lib/sdk/seed';
 
-type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/theme').theme>>;
+type Twin = AsTwin<ReturnType<Facets['theme']>>;
 
 /** Implementation of the `useTheme` facet — see the inProcess twin for the usage contract. */
 export function theme(): Twin {

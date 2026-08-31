@@ -1,8 +1,8 @@
 import { registerFacet } from '../../current';
-import type { Facets } from '../../inProcess/facets';
+import type { Facets } from '../../facets';
 import { store, type AsTwin } from './_shared';
 
-type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/clock').clock>>;
+type Twin = AsTwin<ReturnType<Facets['clock']>>;
 
 export function clock(): Twin {
   return {

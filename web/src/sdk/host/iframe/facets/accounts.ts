@@ -1,9 +1,10 @@
 import { registerFacet } from '../../current';
+import type { Facets } from '../../facets';
 import { fn, type AsTwin } from './_shared';
 
-export type { ReactionTarget } from '../../inProcess/facets/accounts';
+export type { ReactionTarget } from '../../../../services/accounts';
 
-type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/accounts').accounts>>;
+type Twin = AsTwin<ReturnType<Facets['accounts']>>;
 
 export function accounts(): Twin {
   return {

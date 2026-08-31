@@ -1,9 +1,9 @@
 import { readable } from 'svelte/store';
 import { registerFacet } from '../../current';
-import type { Facets } from '../../inProcess/facets';
+import type { Facets } from '../../facets';
 import { fn, store, type AsTwin } from './_shared';
 
-type Twin = AsTwin<ReturnType<typeof import('../../inProcess/facets/appRegistry').appRegistry>>;
+type Twin = AsTwin<ReturnType<Facets['appRegistry']>>;
 
 /**
  * OS Service Hook for the app registry, seen from inside a sandboxed add-on — read-only.
