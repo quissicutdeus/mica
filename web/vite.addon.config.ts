@@ -71,7 +71,7 @@ const CORE_ENTRY_RE = /^@gphone\/sdk\/core(\/.*)?$/;
  * `@gphone/sdk/core` has no `resolve.alias` entry in this config, unlike the shell's own
  * `vite.config.ts` — deliberately: `useNuiBridge` is the raw transport and `boundary.test.ts`
  * already refuses it to any `core: false` app at the source level. But `tsconfig.app.json`
- * resolves the specifier fine (`sdk/tsconfig.json` maps it, and the package's own `exports`
+ * resolves the specifier fine (it has its own `paths` entry, and the package's own `exports`
  * names it), so an
  * add-on that imports it typechecks clean and only then hits Rollup's generic "could not
  * resolve" here — a confusing failure for something that is refused on purpose, not a build

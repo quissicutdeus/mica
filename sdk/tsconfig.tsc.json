@@ -1,0 +1,80 @@
+{
+  "extends": "@tsconfig/svelte/tsconfig.json",
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsc.tsbuildinfo",
+    "target": "ES2021",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "typeRoots": ["./node_modules/@types", "../node_modules/@types"],
+    /**
+     * `svelte` and `vite/client` are deliberately absent from this list even though
+     * `tsconfig.json` next door names all three, and this is a TypeScript 7 behaviour change
+     * rather than a narrowing of what is ambient here. TS 7 resolves a `types` entry
+     * against `typeRoots` only; neither of those is an `@types/*` package, so naming them
+     * fails with TS2688 "Cannot find type definition file". Both still load — `env.d.ts`
+     * pulls them in with `/// <reference types="..." />`, which resolves through ordinary
+     * package resolution — and `--listFiles` confirms `svelte/types/index.d.ts` and
+     * `vite/client.d.ts` are in this program. Do not "fix" this by adding them back.
+     */
+    "types": ["node"],
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "noUnusedLocals": true,
+    "moduleDetection": "force",
+    "paths": {
+      "@shared/*": ["../shared/*"],
+      "@gphone/sdk": ["./index.ts"],
+      "@gphone/sdk/app": ["./app.ts"],
+      "@gphone/sdk/core": ["./core.ts"]
+    }
+  },
+  /**
+   * MICA-184. The pure-TypeScript core of the package: everything that never reaches a
+   * `.svelte`, held to the same TS 7 that already checks `client/` and `server/`. Root
+   * drives it (`typecheck:sdk` in the root `package.json`) exactly as it drives those two —
+   * the package owns its compiler options, root owns the compiler.
+   *
+   * **This is additive.** `sdk/tsconfig.json` is untouched and `svelte-check` still checks
+   * the whole package, so nothing here can leave a file unchecked; what a file can lose is
+   * this stricter pass. Narrowing `svelte-check` to match was tried and is a no-op — its
+   * program is the transitive closure of the `.svelte` files, so the pure core arrives as
+   * their dependencies regardless (823 files either way, and an error injected into an
+   * "excluded" file is still reported).
+   *
+   * That was preferred to installing TS 7 into this package under an alias. The alias works
+   * and keeps the bare `typescript` specifier at 6.0.3, which is what `typescript-eslint`
+   * resolves and refuses to run without — but it was tried on this tree and pnpm hands the
+   * aliased package's bin the same name, so `sdk/node_modules/.bin/tsc` silently became
+   * 7.0.2 while `require('typescript')` stayed 6.0.3. A package whose two answers for "which
+   * TypeScript" disagree is a worse trap than reaching for root's binary.
+   *
+   * ## The exclude list is the partition, and it is checked
+   *
+   * The five barrels below are the only non-test `.ts` files in this package that reach a
+   * `.svelte`. Excluding a file that no longer needs to be excluded costs it TS 7 coverage
+   * and **fails nothing** — and neither does the reverse, because `svelte/types` declares
+   * `*.svelte` ambiently, so tsc happily types a component import as an opaque
+   * `ComponentType`. `scripts/check-sdk-partition.js` is the only thing standing behind this
+   * list; it recomputes the import graph on every `pnpm typecheck` and fails on any
+   * disagreement in either direction. Read its header before editing this.
+   *
+   * The suite is excluded wholesale, as a decision rather than an omission: 30 of the 58
+   * test files reach a `.svelte` and many import the barrels, and the rest reach into
+   * `web/src` on purpose (the documented exception to the boundary), which would pull the
+   * phone's own source into a TS 7 program and fail on errors `web/`'s own gate does not
+   * raise. Measured: 10 such errors, 7 of them in files this package does not own.
+   */
+  "include": ["**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "**/*.test.ts",
+    "index.ts",
+    "addon.ts",
+    "core.ts",
+    "components.ts",
+    "icons.ts"
+  ]
+}

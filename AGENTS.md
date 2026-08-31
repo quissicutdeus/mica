@@ -301,11 +301,11 @@ reading a ticket, commit-message shape, PR body, filing a backlog item.
 
 ## 3. TypeScript is split by package — on purpose
 
-| Package                     | Version             | Checked by                                   |
-| --------------------------- | ------------------- | -------------------------------------------- |
-| root (`client/`, `server/`) | **7.x** (Go-native) | `tsc --noEmit -p <target>/tsconfig.json`     |
-| `web/`                      | **6.x** (JS-based)  | `svelte-check` + `tsc -p tsconfig.node.json` |
-| `sdk/`                      | **6.x** (JS-based)  | `svelte-check` (85 of its files are Svelte)  |
+| Package                     | Version               | Checked by                                     |
+| --------------------------- | --------------------- | ---------------------------------------------- |
+| root (`client/`, `server/`) | **7.x** (Go-native)   | `tsc --noEmit -p <target>/tsconfig.json`       |
+| `web/`                      | **6.x** (JS-based)    | `svelte-check` + `tsc -p tsconfig.node.json`   |
+| `sdk/`                      | **6.x** _and_ **7.x** | `svelte-check` whole; `tsc` over its pure core |
 
 Deliberate, not drift. TypeScript 7.0 ships without a stable programmatic
 compiler API, and `svelte-check` (via `svelte2tsx`) requires it; that API lands
@@ -317,6 +317,13 @@ they get the native compiler now and `web/` waits.
 - **`sdk/` is pinned for its own reason, not an inherited one** (MICA-172). It
   ships 85 Svelte components, so it needs `svelte-check` exactly as `web/` does.
   The two unblock at 7.1 together; neither can move first.
+- **`sdk/`'s 165 non-Svelte `.ts` files are _also_ checked by TS 7**
+  (`sdk/tsconfig.tsc.json`, run by `typecheck:sdk` — MICA-184). Additive, not
+  a partition: `svelte-check` still covers the package whole, so a file leaving
+  the TS 7 set loses strictness, never checking. **That drift is silent in both
+  directions** — `svelte/types` declares `*.svelte` ambiently, so `tsc` does
+  _not_ error on a component import. `scripts/check-sdk-partition.js` derives
+  the split and is the only thing that reports it; it runs first.
 - **`client/` and `server/` are checked more strictly than `web/`.** TS 7 makes
   `strict` and the 6.0 deprecations hard defaults. Code that passes in `web/`
   may fail in `client/`.
@@ -326,14 +333,9 @@ they get the native compiler now and `web/` waits.
   relative to their own tsconfig.
 - **`client/` and `server/` are plain directories**, not workspace packages —
   they share root's `node_modules`. Only `web/` is a separate pnpm project.
-- **Editor errors may disagree with CLI errors** in `web/`, because the language
-  service picks one TypeScript for the whole workspace. **The CLI is
-  authoritative.** If `pnpm typecheck` is clean, the code is clean regardless of
-  editor squiggles. The usual case is a stale cache after a type changed —
-  adding a field to an interface and getting
-  `ts(2353) 'x' does not exist in type` at a call site that plainly has it. Run
-  **Svelte: Restart Language Server** for a `.svelte` file, or **TypeScript:
-  Restart TS Server** for a `.ts` one, before believing it.
+- **Editor errors may disagree with CLI errors** in `web/` and `sdk/`. **The CLI
+  is authoritative**; the restart that fixes it is in
+  [`docs/dev-loop.md`](docs/dev-loop.md).
 - **The trigger is `svelte-check`, not TypeScript.** Its `peerDependencies`
   currently cap at `^6.0.0`, so a TS 7 bump fails to install before it fails to
   compile. Watch for a release accepting `^7`; TS `latest` is 7.0.2 and 7.1 is

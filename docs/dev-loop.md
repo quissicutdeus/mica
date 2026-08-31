@@ -237,6 +237,20 @@ The fixtures live in `seedFixtures` and are the regression set for `0001`. A new
 migration wants its own fixtures and its own assertions; raise `MINIMUM_CHECKS`
 when you add them, or the new checks are not actually required to run.
 
+## Editor errors that disagree with the CLI
+
+**The CLI is authoritative.** If `pnpm typecheck` is clean, the code is clean
+regardless of editor squiggles (AGENTS.md §3).
+
+It happens in `web/` and `sdk/` because the language service picks one
+TypeScript for the whole workspace, while those packages run their own (§3). The
+usual case is a stale cache after a type changed — adding a field to an
+interface and then getting `ts(2353) 'x' does not exist in type` at a call site
+that plainly has it.
+
+Run **Svelte: Restart Language Server** for a `.svelte` file, or **TypeScript:
+Restart TS Server** for a `.ts` one, before believing it.
+
 ## Playwright's per-test timeout, and its escape hatch
 
 `web/playwright.config.ts` sets Playwright's own 30-second default

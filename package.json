@@ -16,7 +16,7 @@
     "typecheck:client": "tsc --noEmit -p client/tsconfig.json",
     "typecheck:server": "tsc --noEmit -p server/tsconfig.json",
     "typecheck:web": "pnpm --filter web check",
-    "typecheck:sdk": "pnpm --filter @gphone/sdk check",
+    "typecheck:sdk": "node scripts/check-sdk-partition.js && tsc --noEmit -p sdk/tsconfig.tsc.json && pnpm --filter @gphone/sdk check",
     "typecheck": "concurrently \"pnpm:typecheck:*\"",
     "watch": "pnpm clearbuild && node scripts/generate-barrels.js && cross-env IS_WATCH_MODE=1 node build/build-bundle.js",
     "watch:web": "pnpm --filter web dev",
