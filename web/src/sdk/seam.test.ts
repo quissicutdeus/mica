@@ -428,9 +428,15 @@ describe('the boot facet sets are exhaustive', () => {
    * is the cycle `current.ts`'s type-only facet import exists to avoid, and would also make
    * the whole seam moot by dragging the shell-backed facets into an add-on bundle.
    */
-  it('only src/main.ts imports the in-process facet set', () => {
+  it('only an entry point imports the in-process facet set', () => {
     const target = join(HOST_IN_PROCESS, 'registerFacets.ts');
-    const allowed = new Set([join(SRC, 'main.ts'), join(SDK, 'testing.ts')]);
+    /**
+     * The four core-side entry points, and nothing else. `main.ts` is the shell's;
+     * `index.ts` is `@gphone/sdk`'s core-side barrel and the mirror of `addon.ts` reaching
+     * the iframe set through `bootAddOn`; `testing.ts` is `@gphone/sdk/testing`. A test file
+     * may import it too — it is standing in for the shell — and is excluded below.
+     */
+    const allowed = new Set([join(SRC, 'main.ts'), join(SDK, 'index.ts'), join(SDK, 'testing.ts')]);
     const importers = walk(SRC)
       .filter((f) => /\.(svelte|svelte\.ts|ts)$/.test(f) && !f.endsWith('.test.ts'))
       .filter((f) => !allowed.has(f))

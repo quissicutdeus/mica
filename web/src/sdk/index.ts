@@ -1,3 +1,16 @@
+/**
+ * MICA-176. `sdk/index.ts` is the core-side entry of `@gphone/sdk` and `sdk/addon.ts` is
+ * the add-on-side one, so this is where the core side picks its facet set — the mirror of
+ * `addon.ts` pulling the iframe set in through `export { bootAddOn } from './host/iframe/boot'`.
+ * Neither file is in the other's bundle: `vite.addon.config.ts` aliases `@gphone/sdk` to
+ * `addon.ts`, `vite.config.ts` aliases it here.
+ *
+ * `src/main.ts` imports the same set first and directly, and still must: the shell reaches
+ * plenty of `shell/state/*` without going through this barrel, and a module-scope
+ * `usePersisted` there cannot wait for whenever an app happens to import `@gphone/sdk`.
+ * A second import of an already-evaluated module is free.
+ */
+import './host/inProcess/registerFacets';
 export * from './manifest';
 export * from './components';
 export * from './icons';
