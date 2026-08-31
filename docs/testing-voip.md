@@ -59,8 +59,8 @@ Two pieces, meant to be used together:
   Developer Tools' "Simulate Incoming Call" routes through the same mechanism in
   game (`gphone:server:phone:simulateIncoming`); in a browser it still fakes the
   toast locally, since there's no server to ask.
-- **`dev/pma-voice-stub/`** — a dev-only FiveM resource, _not_ part of this one,
-  that stands in for pma-voice: prints every `setPlayerTalkingOverride`/
+- **`tools/pma-voice-stub/`** — a dev-only FiveM resource, _not_ part of this
+  one, that stands in for pma-voice: prints every `setPlayerTalkingOverride`/
   `addPlayerToCall`/`removePlayerFromCall` call, and flags it loudly if
   `addPlayerToCall`/`removePlayerFromCall` are ever called out of balance — the
   channel-leak class of bug `client/__tests__/Call.test.ts` checks against a
