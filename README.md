@@ -1020,3 +1020,29 @@ corresponds to (`MICA-16`) — the key, never the site URL.
 
 This project is open-source and licensed under the
 [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
+
+### If you are writing an add-on
+
+**An add-on built against `@gphone/sdk` is covered by the same licence, and
+there is no linking exception.** This is worth stating outright because the
+build makes it non-obvious: `vite.addon.config.ts` inlines the SDK, its styles
+and its supporting code directly into your `<id>.js`, so what you ship contains
+gPhone's own code rather than merely calling it from a distance.
+
+What that means for the three people who actually ask:
+
+- **Running an add-on on your own server.** Nothing is asked of you. The
+  licence's obligations attach to distributing a work, not to using one.
+- **Publishing an add-on for other servers.** Release its source under
+  AGPL-3.0-or-later as well, and make it available to the people you distribute
+  it to.
+- **Selling a closed-source add-on.** This project's licensing does not
+  accommodate that. Charging money for an AGPL work is expressly allowed;
+  withholding the source from the people you give it to is not.
+
+That is the project's stated position and not legal advice — nothing here has
+been reviewed by a lawyer, and this paragraph cannot tell you what a court would
+make of your particular case. [`LICENSE`](LICENSE) is the operative text; §0
+defines a work "based on" the Program, §5 carves out aggregates, and §13 covers
+use over a network. If the distinction matters to what you are building, take it
+to someone qualified rather than to this file.

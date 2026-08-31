@@ -391,6 +391,22 @@ shuts it down after.
 Then run it in game. A green suite is not evidence a NUI feature works — see
 AGENTS.md §6 and §8.
 
+## Licensing what you write
+
+gPhone is AGPL-3.0-or-later, and **an add-on built against `@gphone/sdk`
+inherits that — there is no linking exception.** The add-on build inlines the
+SDK, its styles and its supporting code into your bundle, so what you ship
+contains gPhone's code rather than merely calling it.
+
+For your own server, nothing is asked of you; the licence's obligations attach
+to distribution. If you publish an add-on for other servers, publish its source
+under the same licence. A closed-source add-on is not something this project's
+licensing accommodates.
+
+This is the project's position, not legal advice, and it has not been reviewed
+by a lawyer. The README's License section says the same thing at slightly more
+length, and [`LICENSE`](../LICENSE) is the text that actually governs.
+
 ## Where to read further
 
 - [`schema-and-services.md`](schema-and-services.md) — `defineService` in full:
