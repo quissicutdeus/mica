@@ -57,7 +57,7 @@
    *
    * "Muted" is unambiguous. The interesting one is the third: some people nearby are
    * playing and you cannot hear all of them, because the cap allows three at once
-   * (`lib/musicBroadcast.ts`). Saying so is the difference between a rule and a bug —
+   * (`lib/phone/musicRanking.ts`). Saying so is the difference between a rule and a bug —
    * without it, a person standing in a crowd hears three of the five stereos around them
    * and has no way to learn that that is deliberate.
    */

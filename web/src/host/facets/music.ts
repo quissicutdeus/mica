@@ -43,9 +43,13 @@ import {
   toggleMuteAllNearby,
   unmuteBroadcaster
 } from '../../shell/state/nearbyMusic';
-import { MAX_AUDIBLE_BROADCASTS } from '../../../../sdk/lib/musicBroadcast';
 import { isYouTubeSource, thumbnailUrlFor } from '@shared/youtube';
-import { describeMusicError } from '../../../../sdk/lib/musicErrors';
+/**
+ * MICA-181: through the host seam, not `sdk/lib/` by path. The iframe twin
+ * (`sdk/host/iframe/facets/music.ts`) reads the same two from the same module, which is the
+ * point — both halves of one facet, one source. `lib/ownership.test.ts` rule 5 is the gate.
+ */
+import { describeMusicError, MAX_AUDIBLE_BROADCASTS } from '../../../../sdk/host/seam/music';
 
 /**
  * Implementation of the `useMusic` facet — see the `useMusic` hook doc for the contract.

@@ -4,9 +4,9 @@ import {
   DEFAULT_SEED,
   buildSchemes,
   cssVarBlock,
-  sanitizeSeed,
-  type M3Tokens
-} from '../../../../sdk/lib/m3';
+  sanitizeSeed
+} from '../../../../sdk/host/seam/theme';
+import type { M3Tokens } from '@gphone/sdk';
 
 /**
  * The phone's active color theme.

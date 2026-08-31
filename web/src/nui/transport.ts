@@ -1,4 +1,4 @@
-import { isBrowser } from '../../../sdk/lib/isBrowser';
+import { isBrowser } from '@gphone/sdk';
 import { MockRegistry } from './mocks/registry';
 
 export interface ITransportAdapter {

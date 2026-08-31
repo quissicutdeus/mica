@@ -2,8 +2,7 @@ import { registerFacet } from '../../current';
 import type { Facets } from '../../facets';
 import { fn, store, type AsTwin } from './_shared';
 import { isYouTubeSource, thumbnailUrlFor } from '@shared/youtube';
-import { describeMusicError } from '../../../lib/musicErrors';
-import { MAX_AUDIBLE_BROADCASTS } from '../../../lib/musicBroadcast';
+import { describeMusicError, MAX_AUDIBLE_BROADCASTS } from '../../seam/music';
 
 type Twin = AsTwin<ReturnType<Facets['music']>>;
 
@@ -13,7 +12,8 @@ type Twin = AsTwin<ReturnType<Facets['music']>>;
  *
  * `canPlay`, `thumbnailUrlFor` and `describeMusicError` are imported and run locally
  * rather than sent over the wire, the way `theme`'s `sanitizeSeed` is: `shared/youtube.ts`
- * and `lib/musicErrors.ts` are pure and do no I/O, so they bundle into the sandbox
+ * and `lib/musicErrors.ts` (reached through `host/seam/music.ts`, which the in-process
+ * twin shares) are pure and do no I/O, so they bundle into the sandbox
  * unchanged and stay synchronous. That is the whole reason
  * `playSource` reports nothing back — over this transport it could only ever answer with a
  * promise, so the "is this a link" question is answered before the call rather than by it,

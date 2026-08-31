@@ -9,7 +9,7 @@
    * was open would be a boombox you have to hold up to hear.
    *
    * `audibleBroadcasts` has already applied the mute list and the cap
-   * (`state/nearbyMusic.ts`, `lib/musicBroadcast.ts`), so this renders it and makes no
+   * (`state/nearbyMusic.ts`, `lib/phone/musicRanking.ts`), so this renders it and makes no
    * decisions. That is why there is no filtering here and no `{#if}` beyond the list:
    * a broadcast leaving the list is a player torn down, which is what muting somebody has
    * to feel like, and a rule that lived here would be a rule the tests could not reach

@@ -57,7 +57,7 @@
    *
    * Phase 2 adds a sixth that nothing local can answer: **whether a client stands up four
    * of these at once** — three nearby broadcasts plus your own — without the framerate
-   * going. `MAX_AUDIBLE_BROADCASTS` in `lib/musicBroadcast.ts` is the number to lower if
+   * going. `MAX_AUDIBLE_BROADCASTS` in `sdk/host/seam/music.ts` is the number to lower if
    * it does not, and it is a one-line change on purpose.
    *
    * If it half-works, change one attribute at a time and let the failure pick which: a URL

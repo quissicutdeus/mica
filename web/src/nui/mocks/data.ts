@@ -10,11 +10,7 @@ import type {
   PricePoint,
   SavedPlace
 } from '@shared/types';
-import {
-  placeholderAvatar,
-  placeholderPhoto,
-  placeholderPhotos
-} from '../../../../sdk/lib/placeholderImage';
+import { placeholderAvatar, placeholderPhoto, placeholderPhotos } from '@gphone/sdk';
 
 /** Inject created_at / updated_at timestamps into a mock object. Accepts an optional offset (ms before now). */
 const ts = (offsetMs: number = 0) => {

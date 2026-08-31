@@ -1,43 +1,30 @@
 /**
- * The rules that decide whose music you hear. MICA-111 phase 2.
+ * The rules that decide whose music you hear. MICA-111 phase 2, MICA-181.
  *
- * Pure, and deliberately separate from `shell/state/nearbyMusic.ts`, for the same reason
- * `lib/musicErrors.ts` is separate from `shell/state/music.ts`: the state module owns
- * stores and persisted settings, and neither of those bundles into a sandboxed add-on or
- * into a test that wants to ask a question about the rule without standing up a phone.
- * The constants here are also read by `sdk/host/iframe/facets/music.ts`, which may import
- * nothing from `shell/`.
+ * Pure, and deliberately separate from `shell/state/nearbyMusic.ts`: the state module owns
+ * stores and persisted settings, and neither of those belongs in a test that wants to ask
+ * a question about the rule without standing up a phone.
+ *
+ * ## Why this is phone-owned
+ *
+ * It lived in `sdk/lib/musicBroadcast.ts` until MICA-181, alongside
+ * `MAX_AUDIBLE_BROADCASTS`, and the shell reached across the package boundary by relative
+ * path to get at it. Splitting the module was the answer rather than publishing it,
+ * because the two halves failed the same test differently: the cap has an importer inside
+ * `@gphone/sdk` (`sdk/host/iframe/facets/music.ts`, which offers it to an add-on as
+ * `useMusic().maxAudibleBroadcasts`) and stayed, at `sdk/host/seam/music.ts`. Everything
+ * here had **no importer in the SDK at all** — only `shell/state/nearbyMusic.ts` and its
+ * suite — so it is the shell's ranking, and it belongs on the shell's side.
+ *
+ * That is what makes it phone-owned in the sense `lib/ownership.test.ts` means: an add-on
+ * cannot name it, the SDK does not reach it, and nothing published depends on it. Rule 3
+ * in that file is what keeps the second of those true.
  *
  * Nothing in this file knows what a YouTube id is or what an iframe costs. It answers two
- * questions and no others: **how many broadcasts play at once and which**, and **where a
- * source that started before you arrived should start from**.
- *
- * The division of labour with `@shared/musicBroadcast` is worth stating, because both have
- * a cap in them and they are not the same cap. The server's `MAX_NEARBY_BROADCASTS` bounds
- * the *roster* — how many people it will name to one listener — and it is a message-size
- * decision. `MAX_AUDIBLE_BROADCASTS` here bounds how many of those actually get a player,
- * and it is a frame-budget decision, made on the client because only the client knows the
- * distances the ranking depends on.
+ * questions and no others: **which broadcasts win the cap**, and **where a source that
+ * started before you arrived should start from**.
  */
-
-/**
- * How many other people's music plays at the same time.
- *
- * Three, and the number is a frame-budget decision rather than a taste one. Each audible
- * broadcast is a live cross-origin YouTube player decoding video (the frame is invisible,
- * not absent — `MusicFrame.svelte` says why it cannot be `display:none`) on a client that
- * is also rendering GTA. Uncapped, a busy street corner is however many players happen to
- * be standing in it, which is the way to kill a framerate that the ticket named before any
- * of this was written.
- *
- * Three rather than one because a bar with two people playing music is a real thing and
- * hearing only one of them is a worse lie than hearing both. Three rather than five
- * because nobody can pick four songs apart anyway.
- *
- * **This is the number to lower first** if an in-game test says four players at once (three
- * nearby plus your own) is too many. It is one line, and nothing else has to move.
- */
-export const MAX_AUDIBLE_BROADCASTS = 3;
+import { MAX_AUDIBLE_BROADCASTS } from '../../../../sdk/host/seam/music';
 
 /**
  * How much louder a challenger must be before it takes an incumbent's slot.

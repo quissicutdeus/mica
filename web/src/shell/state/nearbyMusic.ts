@@ -3,11 +3,8 @@ import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { isPlaylistId, isVideoId } from '@shared/youtube';
 import { MAX_NEARBY_BROADCASTS } from '@shared/musicBroadcast';
 import type { AudibleBroadcast, NearbyBroadcast } from '@gphone/sdk';
-import {
-  MAX_AUDIBLE_BROADCASTS,
-  joinOffsetSeconds,
-  rankAudible
-} from '../../../../sdk/lib/musicBroadcast';
+import { MAX_AUDIBLE_BROADCASTS } from '../../../../sdk/host/seam/music';
+import { joinOffsetSeconds, rankAudible } from '../../lib/phone/musicRanking';
 
 /**
  * Other people's music. MICA-111 phase 2, the phone's half.
@@ -47,7 +44,7 @@ import {
  *   it is the only thing in the system that knows how far away anybody is.
  *
  * The phone applies both and decides nothing about range. What it *does* decide is who is
- * worth an iframe (`lib/musicBroadcast.ts`) and who has been silenced (below).
+ * worth an iframe (`lib/phone/musicRanking.ts`) and who has been silenced (below).
  *
  * ## Muting is client-side, and that is a decision rather than an accident
  *

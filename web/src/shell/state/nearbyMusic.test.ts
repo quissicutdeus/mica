@@ -27,11 +27,8 @@ import {
   toggleBroadcasterMute,
   unmuteBroadcaster
 } from './nearbyMusic';
-import {
-  INCUMBENT_MARGIN,
-  MAX_AUDIBLE_BROADCASTS,
-  joinOffsetSeconds
-} from '../../../../sdk/lib/musicBroadcast';
+import { MAX_AUDIBLE_BROADCASTS } from '../../../../sdk/host/seam/music';
+import { INCUMBENT_MARGIN, joinOffsetSeconds } from '../../lib/phone/musicRanking';
 
 /**
  * Other people's music, and the two rules the ticket promoted from open questions to

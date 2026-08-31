@@ -1,13 +1,11 @@
 import { derived, get, writable, type Readable, type Writable } from 'svelte/store';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { parseYouTubeSource, isPlaylistId, isVideoId } from '@shared/youtube';
-import {
-  reasonForCode,
-  type MusicError,
-  type MusicErrorReason
-} from '../../../../sdk/lib/musicErrors';
+import { reasonForCode } from '../../../../sdk/host/seam/music';
 import { callStore } from '../../services/call';
 import type {
+  MusicError,
+  MusicErrorReason,
   MusicNowPlaying,
   MusicPosition,
   MusicRepeat,
@@ -16,7 +14,13 @@ import type {
   QueueEntry
 } from '@gphone/sdk';
 
-/** Re-exported so the player's failures are named from one module — see `lib/musicErrors`. */
+/**
+ * `MusicError` and `MusicErrorReason` come off `@gphone/sdk`, not out of `sdk/lib/` by
+ * path (MICA-181): `useMusic.ts` re-exports them, so they are published contract and the
+ * phone reads them the way an app does. `reasonForCode` above is the half that is not
+ * published — it maps YouTube's IFrame API codes, which is the shell's conversation with
+ * the embed and nobody else's — so it comes through the host seam instead.
+ */
 
 /**
  * What the phone is playing out loud, and the one place that decides it.

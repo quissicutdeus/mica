@@ -23,7 +23,7 @@ import {
   PRESETS
 } from './wallpaper';
 import { themeStore, resetTheme } from './theme';
-import { buildSchemes } from '../../../../sdk/lib/m3';
+import { buildSchemes } from '../../../../sdk/host/seam/theme';
 import { backgroundForSeed } from './wallpaper';
 
 describe('Wallpaper Store', () => {

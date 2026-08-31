@@ -3,7 +3,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
 /**
- * Where the SDK's implementation lives, and what may not follow it. MICA-171, MICA-172.
+ * Where the SDK's implementation lives, and what may not follow it. MICA-171, MICA-172,
+ * MICA-181.
  *
  * MICA-171 split a flat `web/src/lib/` into `lib/sdk/` (owned by `@gphone/sdk`) and
  * `lib/phone/` (owned by the shell), because the SDK's *public* exports were implemented
@@ -26,6 +27,11 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
  * `lib/phone/` may import the SDK's half (`debug.ts` uses `isBrowser`). The reverse is the
  * violation, and rules 3 and 4 are what make it one.
  *
+ * MICA-181 added the fifth rule, and it points the other way: **nothing outside the SDK
+ * names `sdk/lib/` either.** Rules 3 and 4 are about what the SDK may reach; rule 5 is about
+ * what may reach the SDK's private half, which had no rule at all and had accumulated
+ * thirteen specifiers across ten files by the time anybody looked.
+ *
  * ## The triage, module by module
  *
  * "The SDK imports it today" was the starting point, not the answer — the alternative
@@ -39,17 +45,33 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
  * `sdk/utils.ts` by MICA-172). An add-on resolves these names, so their implementation is
  * SDK-owned by definition.
  *
- * **SDK-owned, not public.** `dominantColor`, `musicErrors`, `musicBroadcast`, `seed`. None
- * is exported from `sdk/index.ts`, `sdk/addon.ts` or `sdk/core.ts`; each is a dependency of
- * something that is. They are SDK-owned because the SDK cannot be moved without them, not
- * because an add-on can name them. `musicBroadcast` and `seed` are the structural case: the
- * iframe facet twins (`sdk/host/iframe/facets/music.ts`, `.../theme.ts`) may import nothing
- * from `shell/`, so the constants and the seed sanitizer were pulled out of `shell/state/`
- * and `m3.ts` precisely so an add-on's bundle could carry them.
+ * **SDK-owned, not public.** `dominantColor`, `musicErrors`, `seed`. None is exported from
+ * `sdk/index.ts`, `sdk/addon.ts` or `sdk/core.ts`; each is a dependency of something that
+ * is. They are SDK-owned because the SDK cannot be moved without them, not because an add-on
+ * can name them. `seed` is the structural case: the iframe theme twin
+ * (`sdk/host/iframe/facets/theme.ts`) may import nothing from `shell/`, so the seed
+ * sanitizer was pulled out of `m3.ts` precisely so an add-on's bundle could carry it.
+ * `musicErrors` is the same shape one level along — three modules under `sdk/` import it,
+ * and `MusicError`/`MusicErrorReason` are published from `useMusic.ts` while the functions
+ * beneath them are not.
+ *
+ * **`musicBroadcast` was in that list and is gone (MICA-181)**, because the module was two
+ * things: `MAX_AUDIBLE_BROADCASTS`, which `sdk/host/iframe/facets/music.ts` imports and which
+ * moved to `sdk/host/seam/music.ts`, and a ranking (`rankAudible`, `joinOffsetSeconds`,
+ * `INCUMBENT_MARGIN`) with **no importer under `sdk/` at all**, which moved out to
+ * `lib/phone/musicRanking.ts`. "The SDK imports it today" was the test, and half the module
+ * failed it.
  *
  * **`m3.ts` is SDK-owned**, confirmed rather than assumed: it is reached from
  * `sdk/index.ts`, `sdk/addon.ts`, `sdk/ui/NowPlayingCard.svelte`, both theme facets and
  * `sdk/cef.test.ts`, and a decision on MICA-172 puts the design system on the SDK side.
+ * MICA-181 considered **publishing its generator** — `M3Tokens` is already contract, so
+ * the type of a scheme is published while the only way to build one is not, which is not a
+ * coherent surface — and measured the cost before doing it: `buildSchemes` on `addon.ts`
+ * pulls `@material/material-color-utilities` into every add-on bundle and Rollup does not
+ * shake it back out (`hodlr` 192.30 kB to 296.17 kB, `snek` 176.60 kB to 280.48 kB). So the
+ * six names go through `sdk/host/seam/theme.ts` instead, which costs no contract and is
+ * reversible, and the disclosure stays an open question rather than a side effect.
  * `app.css`, `app-utilities.css` and `app-reset.css` moved to `sdk/` on MICA-172
  * for the same reason: eight files under `shell/` already import `@gphone/sdk`, so an SDK
  * primitive depending on a stylesheet outside the package was a reverse edge — and a
@@ -67,6 +89,11 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
  * `boundary.test.ts` still forbids an app importing `lib/` at all. `seam.test.ts` still
  * walks transitively out of the kit and iframe entries. This file is the ownership question
  * only.
+ *
+ * And rule 5 is a rule about *paths*, not about coupling. It has nothing to say about the
+ * phone importing `@gphone/sdk` too widely, or about a published name that should never have
+ * been published — `publicSurface.test.ts` is the gate for the second of those, and there is
+ * no gate for the first.
  */
 
 const LIB = __dirname;
@@ -201,5 +228,127 @@ describe('the SDK owns its own implementation', () => {
         'of sdk cannot be spelled once the SDK is its own package. Ask through a host ' +
         'seam or a facet instead.'
     ).toEqual([]);
+  });
+
+  /**
+   * Rule 4's mirror, and the half that was missing. MICA-181.
+   *
+   * Rule 4 stops the SDK reaching *out*. Nothing stopped the phone reaching *in*, and it
+   * did: ten specifiers across seven files named `sdk/lib/m3`, `sdk/lib/musicBroadcast` and
+   * `sdk/lib/musicErrors` by relative path, plus three more for `placeholderImage`,
+   * `isBrowser` and `thumbnail`. Those last three are names `@gphone/sdk` genuinely
+   * publishes, reached by a private path; the first three were **not exported from the
+   * package at any entry point at all**, so the phone was depending on implementation the
+   * SDK does not promise to keep.
+   *
+   * Why that is a rule and not a tidiness preference: `sdk/lib/` is the one directory rule 4
+   * requires to be self-contained, because it leaves `web/` with the package. A phone module
+   * that names a file in it has written down a dependency the package cannot see and cannot
+   * honour — the SDK is free to rename, split or delete anything in there, and would find
+   * out from a red build in a directory it does not own. Every legitimate need has a
+   * channel, and picking one is the decision this rule forces:
+   *
+   * - **publish it** on `index.ts`/`addon.ts` if an app should be able to name it. Nothing
+   *   took this route on MICA-181, and the reason is worth keeping: it is the only one of
+   *   the three that is a one-way door, and for the scheme generator it also turned out to
+   *   cost about 21 kB gzipped on every add-on bundle whether or not the add-on names it.
+   *   Weigh it, do not default to it.
+   * - **route it through `sdk/host/seam/`** if only the phone's half of a facet needs it.
+   *   That directory is inside the package, is reached by `web/src/host/facets/` and
+   *   `shell/state/display.ts` already, and is in no barrel — so it costs no contract and
+   *   is reversible. `describeMusicError`, `reasonForCode` and `MAX_AUDIBLE_BROADCASTS`
+   *   went this way (`seam/music.ts`), and so did the scheme generator (`seam/theme.ts`).
+   * - **move it back** if the SDK does not import it at all. `rankAudible`,
+   *   `joinOffsetSeconds` and `INCUMBENT_MARGIN` had no importer under `sdk/` and are now
+   *   `lib/phone/musicRanking.ts`.
+   *
+   * Note what this deliberately does **not** forbid: `web/` naming the rest of `sdk/` by
+   * path. `host/current`, `manifest`, `vocabulary/`, `ui/`, `catalog`, `permissions` and the
+   * seam are reached from a hundred-odd places, and that direction is the one that is
+   * allowed to exist — `sdk/host/seam/captureZoom.ts` says so in as many words. The phone is
+   * the SDK's host. It is `sdk/lib/` specifically that is private.
+   *
+   * **Test files are exempt, and named rather than pattern-matched**, because the exemption
+   * has to stay small to mean anything. The reason it exists at all is structural: `vi.mock`
+   * and `vi.doMock` take a module specifier and intercept *that module*, so a suite that
+   * needs `isBrowser` to answer `false` has to name `sdk/lib/isBrowser` — mocking the barrel
+   * that re-exports it does not intercept the re-export. `theme.test.ts` is the other kind:
+   * it asserts against `TOKEN_NAMES`, which stays unpublished on purpose (`version.ts` puts
+   * the design system out of contract, and a frozen list of token names would drag it back
+   * in). Adding a file here is a decision somebody makes in a diff, which is the point.
+   */
+  const TEST_ONLY_REACHES = [
+    'services/admin.test.ts',
+    'services/capabilities.test.ts',
+    'services/media.test.ts',
+    'shell/state/theme.test.ts'
+  ];
+
+  /** Does this specifier name something inside `sdk/lib/`? */
+  const reachesSdkLib = (file: string, specifier: string): boolean => {
+    if (specifier.startsWith('.')) {
+      const target = resolve(dirname(file), specifier);
+      return target === SDK_LIB || target.startsWith(SDK_LIB + sep);
+    }
+    // A non-relative form — an alias, or a bare path somebody added to a tsconfig later.
+    // Matched by shape rather than resolved, so a mapping this file has never heard of
+    // still trips the rule instead of passing through it.
+    return /(^|\/)sdk\/lib\//.test(specifier);
+  };
+
+  const sdkLibReaches = (files: string[]): string[] =>
+    files
+      .flatMap((file) =>
+        specifiers(file)
+          .filter((s) => reachesSdkLib(file, s))
+          .map(() => relative(SRC, file))
+      )
+      .sort();
+
+  it('this rule can tell a reach into sdk/lib from an ordinary SDK import', () => {
+    // The detector, driven with input this repo does not contain. A rule that silently
+    // stopped matching would otherwise report an empty offender list and read as a pass —
+    // which is the exact failure mode AGENTS.md names.
+    const from = join(SRC, 'shell', 'state', 'x.ts');
+    expect(reachesSdkLib(from, '../../../../sdk/lib/m3')).toBe(true);
+    expect(reachesSdkLib(from, '../../../../sdk/lib/nested/deep')).toBe(true);
+    expect(reachesSdkLib(from, '@gphone/sdk/lib/m3')).toBe(true);
+    // The direction that is allowed to exist, and must not be caught by this.
+    expect(reachesSdkLib(from, '../../../../sdk/host/seam/music')).toBe(false);
+    expect(reachesSdkLib(from, '../../../../sdk/manifest')).toBe(false);
+    expect(reachesSdkLib(from, '@gphone/sdk')).toBe(false);
+    expect(reachesSdkLib(from, '../../lib/phone/musicRanking')).toBe(false);
+  });
+
+  it('nothing in web/src outside a test names sdk/lib', () => {
+    const files = walk(SRC).filter(isSource);
+    // The walk itself, asserted before anything is compared against it.
+    expect(
+      files.length,
+      'walked web/src and found no source — the rule ran on nothing'
+    ).toBeGreaterThan(200);
+
+    expect(
+      sdkLibReaches(files),
+      'sdk/lib is @gphone/sdk implementation and is published from no entry point. Publish ' +
+        'the name on index.ts and addon.ts, route it through sdk/host/seam, or move the ' +
+        'module to web/src/lib/phone if the SDK does not import it — see the block above.'
+    ).toEqual([]);
+  });
+
+  it('the test-file exemption is exactly the list that declares it', () => {
+    // The exemption is the one way this rule can go quiet, so it is asserted as an equality
+    // rather than left as a filter. A new suite reaching into sdk/lib fails here until
+    // somebody writes it down; one that stops reaching fails here too, so the list cannot
+    // rot into a permission nobody needs any more.
+    // This file is skipped over itself. The self-test above spells `@gphone/sdk/lib/m3` as a
+    // string literal so the detector can be driven with input the tree does not contain, and
+    // `specifiers` cannot tell that from a real import — it reads quoted text, deliberately,
+    // because a `vi.mock` path is a real edge. Without this the rule reports itself, which is
+    // noise rather than a finding. Nothing else is exempted by shape.
+    const tests = walk(SRC).filter((f) => f.endsWith('.test.ts') && f !== __filename);
+    expect(tests.length, 'walked web/src and found no suites').toBeGreaterThan(20);
+
+    expect([...new Set(sdkLibReaches(tests))]).toEqual(TEST_ONLY_REACHES);
   });
 });

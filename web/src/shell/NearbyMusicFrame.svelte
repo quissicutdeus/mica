@@ -18,7 +18,7 @@
    * ## Where it starts, and why that is in the URL
    *
    * A broadcast was already running before you walked into range, so it joins at
-   * `now - startedAt` (`lib/musicBroadcast.ts`). That offset is an `embedUrlFor` parameter
+   * `now - startedAt` (`lib/phone/musicRanking.ts`). That offset is an `embedUrlFor` parameter
    * rather than a `seekTo` after load: a seek is a second command racing the autoplay it
    * is correcting, and the audible failure is the first seconds of the song playing before
    * it jumps — on every join, for everyone in range.
