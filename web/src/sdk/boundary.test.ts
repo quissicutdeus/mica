@@ -32,7 +32,7 @@ const FORBIDDEN = ['shell', 'services', 'sdk', 'nui', 'lib'];
 /**
  * Matches both `import ... from '...'` and a dynamic `import('...')` — a static-only
  * pattern let a dynamic relative import escape every rule below undetected. Verified by
- * injecting `() => import('../../shell/Shell.svelte')` into a manifest: every check in
+ * injecting `() => import('../shell/Shell.svelte')` into a manifest: every check in
  * this file passed clean until this prefix covered the call form too.
  */
 const IMPORT_PREFIX = String.raw`(?:from\s+|import\()`;

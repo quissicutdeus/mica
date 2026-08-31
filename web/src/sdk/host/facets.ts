@@ -59,7 +59,7 @@ import type {
   RingtoneOption,
   SoundEffect
 } from '../../shell/state/audio';
-import type { CatalogEntry } from '../../shell/state/catalog';
+import type { CatalogEntry } from '../catalog';
 import type { ResolvedKeybindAction, resetBindings, setBinding } from '../../shell/state/keybinds';
 import type { AutoLockPolicy, AutoLockPolicyChoice } from '../../shell/state/lockScreen';
 import type { MotionPreference } from '../../shell/state/motion';

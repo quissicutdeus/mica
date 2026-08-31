@@ -25,8 +25,8 @@ vi.mock('./registry', () => ({
 
 const load = async () => {
   const config = await import('./remoteAppConfig');
-  const security = await import('./remoteAppSecurity');
-  const catalog = await import('./catalog');
+  const security = await import('../../sdk/remoteAppSecurity');
+  const catalog = await import('../../sdk/catalog');
   return { ...config, ...security, ...catalog };
 };
 

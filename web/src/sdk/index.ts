@@ -36,10 +36,7 @@ export type { PagedStore } from '../services/createPagedStore';
  * paged read that goes through a facet (`useAccounts().getFollowers`) rather than a route.
  */
 export type { PageReader } from '../services/createPagedStore';
-export {
-  setTrustedRemoteAppHosts,
-  getTrustedRemoteAppHosts
-} from '../shell/state/remoteAppSecurity';
+export { setTrustedRemoteAppHosts, getTrustedRemoteAppHosts } from './remoteAppSecurity';
 /**
  * @public
  * MICA-70's one privacy-disclosure string, read by both the first-run notice
@@ -57,8 +54,8 @@ export { PRIVACY_NOTICE_TEXT } from './privacyNotice';
  * anything does.
  */
 export { fade, fly } from '../lib/sdk/motion';
-export { fetchCatalog, getRemoteCatalogUrl, setRemoteCatalogUrl } from '../shell/state/catalog';
-export type { CatalogEntry } from '../shell/state/catalog';
+export { fetchCatalog, getRemoteCatalogUrl, setRemoteCatalogUrl } from './catalog';
+export type { CatalogEntry } from './catalog';
 /**
  * The Store renders the update rows; `useAppRegistry()` is what produces them. Only the
  * type crosses the boundary here — the list itself comes from the permission-gated facet.

@@ -2,6 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 
 const serviceMock = vi.hoisted(() => ({ call: vi.fn() }));
+/**
+ * MICA-172: the specifier below is a **bare string** and TypeScript never checks it, so a
+ * mock whose target has moved silently stops applying and every assertion here starts
+ * passing against the real module. That is not hypothetical — the identical shape broke
+ * `settingsSync.test.ts` during this ticket's first move commit, and was only noticed
+ * because assertions happened to fail nearby. The `import type` below is inert at runtime
+ * and exists solely so the compiler fails if this path ever stops resolving.
+ */
+import type * as UseServiceModule from '../sdk/host/useService';
+void (null as unknown as typeof UseServiceModule);
 vi.mock('../sdk/host/useService', () => ({ useService: () => serviceMock }));
 
 import {

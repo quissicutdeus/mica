@@ -25,8 +25,8 @@ import {
   updateApp
 } from './appUpdates';
 import { appRegistryStore } from './registry';
-import { setRemoteCatalogUrl, type CatalogEntry } from './catalog';
-import { setTrustedRemoteAppHosts, sha256Hex } from './remoteAppSecurity';
+import { setRemoteCatalogUrl, type CatalogEntry } from '../../sdk/catalog';
+import { setTrustedRemoteAppHosts, sha256Hex } from '../../sdk/remoteAppSecurity';
 import type { AppManifest } from '../../sdk/manifest';
 
 const CATALOG_URL = 'https://store.example.com/catalog.json';

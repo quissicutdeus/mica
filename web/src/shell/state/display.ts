@@ -1,3 +1,4 @@
+import { captureZoomBoost } from '../../sdk/host/seam/captureZoom';
 import { derived, get, writable } from 'svelte/store';
 import { usePersisted } from '../../sdk/host/usePersisted';
 import { isTypingTarget } from './keybinds';
@@ -230,7 +231,9 @@ export const frameMargin = derived(viewportSize, ({ width, height }) => marginFo
  * never touches `displaySize` itself, so the player's own setting is untouched once the
  * capture is done.
  */
-export const captureZoomBoost = writable<boolean>(false);
+// MICA-172: the store moved to `sdk/host/seam/captureZoom.ts`; re-exported so every
+// existing `shell/state/display` importer is untouched. See that file for why.
+export { captureZoomBoost };
 
 /**
  * What the phone is drawn at.

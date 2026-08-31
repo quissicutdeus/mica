@@ -2,7 +2,7 @@ import { registerFacet } from '../../sdk/host/current';
 import { appRegistryStore } from '../../shell/state/registry';
 import { refreshAppUpdates, updateApp } from '../../shell/state/appUpdates';
 import type { AppComponent, AppManifest } from '../../sdk/manifest';
-import type { CatalogEntry } from '../../shell/state/catalog';
+import type { CatalogEntry } from '../../sdk/catalog';
 
 /**
  * Implementation of the `useAppRegistryWrite` facet — see the `useAppRegistryWrite` hook

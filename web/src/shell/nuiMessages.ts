@@ -3,7 +3,7 @@ import { contacts } from '../services/contacts';
 import { mailStore } from '../services/mail';
 import { conversationsStore } from '../services/conversations';
 import { appRegistryStore } from './state/registry';
-import { isCatalogEntry, type CatalogEntry } from './state/catalog';
+import { isCatalogEntry, type CatalogEntry } from '../sdk/catalog';
 import { setSignal } from './state/signal';
 import { time } from './state/time';
 import { hydrateSettings } from '../sdk/host/useStorage';

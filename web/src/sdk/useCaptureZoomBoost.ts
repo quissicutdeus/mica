@@ -1,4 +1,4 @@
-import { captureZoomBoost } from '../shell/state/display';
+import { captureZoomBoost } from './host/seam/captureZoom';
 
 /**
  * Draws the phone at its largest normal size while true, instead of the player's Display

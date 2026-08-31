@@ -10,8 +10,12 @@ import { messageOf } from '../../lib/sdk/errors';
 import { capabilities, capabilitiesKnown } from '../../services/capabilities';
 import { usePersisted } from '../../sdk/host/usePersisted';
 import { placeOnHomeGridIfAbsent } from './homeGrid';
-import { getTrustedRemoteAppHosts, isTrustedRemoteUrl, matchesHash } from './remoteAppSecurity';
-import { isCatalogEntry, type CatalogEntry } from './catalog';
+import {
+  getTrustedRemoteAppHosts,
+  isTrustedRemoteUrl,
+  matchesHash
+} from '../../sdk/remoteAppSecurity';
+import { isCatalogEntry, type CatalogEntry } from '../../sdk/catalog';
 
 export type { AppManifest } from '../../sdk/manifest';
 

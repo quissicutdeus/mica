@@ -5,7 +5,7 @@ import {
   tileFromColorClasses,
   type AppCapability,
   type AppPermission
-} from '../../sdk/manifest';
+} from './manifest';
 
 /**
  * One installable app as an operator's catalog server describes it — everything

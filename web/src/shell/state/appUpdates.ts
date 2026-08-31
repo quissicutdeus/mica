@@ -1,6 +1,6 @@
 import { derived, get, writable, type Readable } from 'svelte/store';
 import { compareVersions } from '../../lib/phone/semver';
-import { fetchCatalog, getRemoteCatalogUrl, type CatalogEntry } from './catalog';
+import { fetchCatalog, getRemoteCatalogUrl, type CatalogEntry } from '../../sdk/catalog';
 import { appRegistryStore } from './registry';
 import type { AppManifest } from '../../sdk/manifest';
 import { messageOf } from '../../lib/sdk/errors';
