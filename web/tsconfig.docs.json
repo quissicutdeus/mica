@@ -1,4 +1,12 @@
 {
   "extends": "./tsconfig.app.json",
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.js",
+    "../sdk/index.ts",
+    "../sdk/addon.ts",
+    "../sdk/app.ts",
+    "../sdk/core.ts"
+  ],
   "exclude": ["src/**/*.test.ts", "src/**/*.svelte"]
 }

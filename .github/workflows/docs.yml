@@ -1,15 +1,41 @@
 name: Publish SDK docs
+
+# Both jobs live in one workflow and only one of them runs off main, so every run was
+# called plain "Publish SDK docs" and the runs list could not tell a build from a publish.
+# Matches deploy.yml's own run-name for the same reason.
+run-name: Publish SDK docs - ${{ github.ref_name }}
+
+# Two jobs, two different questions, and they are deliberately not the same trigger.
+#
+# **Building is a gate.** `pnpm docs:sdk` is the only thing in this repo that runs TypeDoc
+# over the SDK barrels, and it is not part of `pnpm verify` — so while this workflow fired
+# on main alone, a change that broke the docs build was invisible until somebody merged,
+# and the site meanwhile went on serving its last successful build with nothing anywhere
+# saying it was stale. That is exactly the shape AGENTS.md calls a check that fails open,
+# and it is not hypothetical: MICA-172 landed on dev and broke this build for three days
+# without a single red run, because main had not moved.
+#
+# Adding dev makes the break loud on the commit that causes it, on the branch that
+# actually receives commits here.
+#
+# **Publishing is routing.** A dev build has nowhere to go; the deploy job's `if` below
+# skips it, silently and correctly.
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
+# Keyed per branch rather than the single `pages` group GitHub's starter workflow uses.
+# With dev building here too, one shared group would queue a dev build in front of a main
+# publish for no reason — the two never touch the same deployment. Within a branch the
+# serialisation is kept, and `cancel-in-progress: false` with it: a superseded publish
+# that dies mid-deploy leaves the live site half-written, which is worse than a wait.
 concurrency:
-  group: pages
+  group: docs-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -30,6 +56,8 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      # Fails, rather than publishing something wrong, if the site stops covering the
+      # add-on barrel or loses its contract-version stamp. See web/scripts/docs-sdk.mjs.
       - name: Generate SDK docs
         run: pnpm run docs:sdk
       - name: Upload pages artifact
@@ -40,6 +68,10 @@ jobs:
   deploy:
     name: Deploy
     needs: build
+    # Routing, not gating: dev has a site to build and no site to publish to. A skipped
+    # job notifies nobody, which is the correct outcome here and the wrong one for the
+    # build above — hence the split.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
