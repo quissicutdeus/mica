@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { toast } from './toast';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { toast, closedPhoneToast } from './toast';
 import { get } from 'svelte/store';
 import { shadeNotifications } from '../../services/notifications';
 import { appNotificationPolicies, dndEnabled } from './notificationPolicy';
 import { toastsEnabled } from './notificationSettings';
 import { audio } from './audio';
+import { isPhoneOpen } from './phoneOpen';
 
 describe('toast store interactive notifications', () => {
   beforeEach(() => {
@@ -371,6 +372,95 @@ describe('toast policy enforcement (MICA-63)', () => {
 
     expect(play).not.toHaveBeenCalled();
     expect(get(toast)).toHaveLength(1);
+    play.mockRestore();
+  });
+});
+
+describe('closed-phone peek (MICA-141)', () => {
+  beforeEach(() => {
+    toast.clear();
+    shadeNotifications.set([]);
+    dndEnabled.set(false);
+    appNotificationPolicies.set({});
+    toastsEnabled.set(true);
+    isPhoneOpen.set(false);
+    closedPhoneToast.set(null);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    isPhoneOpen.set(false);
+    closedPhoneToast.set(null);
+    vi.useRealTimers();
+  });
+
+  it('populates the peek and plays the chime for a generic arrival while the phone is closed', () => {
+    const play = vi.spyOn(audio, 'play');
+
+    toast.show({ source: 'app', app: 'blabber', title: 'Blabber', message: '@you were mentioned' });
+
+    expect(play).toHaveBeenCalledWith('notification');
+    expect(get(closedPhoneToast)?.message).toBe('@you were mentioned');
+    play.mockRestore();
+  });
+
+  it('auto-dismisses the peek on its own after a few seconds', () => {
+    toast.show({ source: 'app', app: 'blabber', message: 'hi' });
+    expect(get(closedPhoneToast)).not.toBeNull();
+
+    vi.advanceTimersByTime(3500);
+    expect(get(closedPhoneToast)).toBeNull();
+  });
+
+  it('does nothing when the phone is already open — ToastHost owns that case', () => {
+    isPhoneOpen.set(true);
+    const play = vi.spyOn(audio, 'play');
+
+    toast.show({ source: 'app', app: 'blabber', message: 'hi' });
+
+    expect(play).not.toHaveBeenCalled();
+    expect(get(closedPhoneToast)).toBeNull();
+    play.mockRestore();
+  });
+
+  it('opening the phone mid-peek clears it — the real banner takes over', () => {
+    toast.show({ source: 'app', app: 'blabber', message: 'hi' });
+    expect(get(closedPhoneToast)).not.toBeNull();
+
+    isPhoneOpen.set(true);
+    expect(get(closedPhoneToast)).toBeNull();
+  });
+
+  it('does not double up the chime for a type that already played its own', () => {
+    const play = vi.spyOn(audio, 'play');
+
+    toast.showMail({ sender: 'HR', subject: 'Payslip' });
+
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(play).toHaveBeenCalledWith('notification');
+    // The banner peek still shows — only the extra chime is what soundHandled suppresses.
+    expect(get(closedPhoneToast)?.title).toBe('New Email: HR');
+    play.mockRestore();
+  });
+
+  it('excludes an unclassified feedback toast — it confirms an action the player just took', () => {
+    const play = vi.spyOn(audio, 'play');
+
+    toast.show({ app: 'contacts', message: 'Contact added to address book' });
+
+    expect(play).not.toHaveBeenCalled();
+    expect(get(closedPhoneToast)).toBeNull();
+    play.mockRestore();
+  });
+
+  it('excludes an incoming call — it keeps its own ringtone and Accept/Decline story', () => {
+    const play = vi.spyOn(audio, 'play');
+
+    toast.showCall({ number: '555-0100', onAccept: () => {} });
+
+    // showCall's own ringtone check still runs; the closed-phone chime never fires on top.
+    expect(play.mock.calls.filter(([effect]) => effect === 'notification')).toHaveLength(0);
+    expect(get(closedPhoneToast)).toBeNull();
     play.mockRestore();
   });
 });

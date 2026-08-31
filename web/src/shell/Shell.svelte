@@ -41,11 +41,13 @@
   import { installSystemHost } from '../sdk/host/inProcess/system';
   import { clampedSignalLevel } from './state/signal';
   import { audio } from './state/audio';
+  import { isPhoneOpen } from './state/phoneOpen';
   import { isLightMode } from './state/theme';
   import { observeReducedMotion } from './state/motion';
   import AddOnFrame from './addon/AddOnFrame.svelte';
   import MusicPlayer from './MusicPlayer.svelte';
   import NearbyMusicPlayer from './NearbyMusicPlayer.svelte';
+  import ClosedPhoneNotification from './ClosedPhoneNotification.svelte';
   import { isTrustedNuiSource } from './nuiGuard';
   import { installMusicBroadcast } from '../services/music';
 
@@ -103,6 +105,16 @@
 
   $effect(() => {
     if (visible) audio.warm();
+  });
+
+  /**
+   * `toast.ts` cannot see this component's own `visible` rune — it is not a module — so
+   * this is the one line that keeps `state/phoneOpen.ts`'s mirror honest. MICA-141's
+   * closed-phone peek is the one thing today that needs to know open/closed from outside
+   * `Shell.svelte` at all.
+   */
+  $effect(() => {
+    isPhoneOpen.set(visible);
   });
 
   /**
@@ -422,6 +434,13 @@
     window.addEventListener('focusin', handleFocusIn);
     window.addEventListener('focusout', handleFocusOut);
 
+    // Unconditional, rather than only on the effect above that fires when the phone is
+    // first opened (MICA-141): a notification arriving before the player has ever opened
+    // the phone this session used to reach an `AudioContext` nobody had resumed yet, so
+    // CEF's autoplay restriction could leave the very first arrival silent even though
+    // every policy check said it should chime.
+    audio.warm();
+
     // Sized from a measured viewport rather than `100vh` — see `state/display.ts` for why
     // that unit is wrong in a mobile browser and why `dvh` is not available to us.
     const stopObservingViewport = observeViewport();
@@ -509,6 +528,12 @@
      `NearbyMusicPlayer.svelte` renders one player per audible broadcaster and nothing when
      nobody nearby is playing. -->
 <NearbyMusicPlayer />
+
+<!-- The closed-phone peek (MICA-141): the one thing besides the two players above still
+     rendered once `visible` tears `PhoneFrame` — and `ToastHost` with it — down. Reads
+     `toast.ts`'s own `closedPhoneToast` store, so there is nothing here for `Shell.svelte`
+     to feed it beyond the `isPhoneOpen` mirror above. -->
+<ClosedPhoneNotification />
 
 {#if !visible && isBrowser()}
   <button

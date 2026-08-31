@@ -1,6 +1,7 @@
 import { get, writable } from 'svelte/store';
 import { audio } from './audio';
 import { isBatteryDead } from './charge';
+import { isPhoneOpen } from './phoneOpen';
 import { addNotificationItem, clearNotifications } from '../../services/notifications';
 import { notificationAllows, type NotificationSource } from './notificationPolicy';
 
@@ -53,6 +54,38 @@ export interface ToastMessage {
 }
 
 let toastCounter = 0;
+
+/**
+ * The single most recent toast that arrived while the phone was collapsed, for the brief
+ * top-of-screen peek (MICA-141) — `ClosedPhoneNotification.svelte` is the only reader.
+ *
+ * Deliberately the same `ToastMessage` the open phone would have painted through
+ * `ToastHost.svelte`, rather than a parallel shape: the peek shows exactly what the real
+ * banner would have, so there is nothing new to keep in sync with it.
+ */
+export const closedPhoneToast = writable<ToastMessage | null>(null);
+
+const CLOSED_PEEK_DURATION_MS = 3000;
+let closedPeekTimer: ReturnType<typeof setTimeout> | null = null;
+
+const peekWhileClosed = (message: ToastMessage) => {
+  if (closedPeekTimer) clearTimeout(closedPeekTimer);
+  closedPhoneToast.set(message);
+  closedPeekTimer = setTimeout(() => {
+    closedPhoneToast.set(null);
+    closedPeekTimer = null;
+  }, CLOSED_PEEK_DURATION_MS);
+};
+
+/** The phone opening mid-peek supersedes it — `ToastHost.svelte`'s real banner takes over. */
+isPhoneOpen.subscribe((open) => {
+  if (!open) return;
+  if (closedPeekTimer) {
+    clearTimeout(closedPeekTimer);
+    closedPeekTimer = null;
+  }
+  closedPhoneToast.set(null);
+});
 
 function createToastStore() {
   const store = writable<ToastMessage[]>([]);
@@ -113,7 +146,18 @@ function createToastStore() {
         (options.sender && t.sender === options.sender)
     );
 
-  const show = (options: Partial<ToastMessage> & { message: string }) => {
+  const show = (
+    options: Partial<ToastMessage> & {
+      message: string;
+      /**
+       * The caller already decided about — and possibly played — this arrival's sound
+       * (`showMail`, `showContactShare`, `showIncomingMessage`, `showCall`, each with its
+       * own effect and its own policy check). Set so the closed-phone peek below does not
+       * layer a second, generic chime on top of one already made.
+       */
+      soundHandled?: boolean;
+    }
+  ) => {
     const id = options.id || `toast_${Date.now()}_${++toastCounter}`;
 
     const notificationItem =
@@ -163,6 +207,30 @@ function createToastStore() {
       onClick: options.onClick,
       onExpire: options.onExpire
     };
+
+    // MICA-141: a notification landing while the phone is collapsed still gets a chime
+    // and a brief top-of-screen peek — `ClosedPhoneNotification.svelte` is the one thing
+    // still rendered once `Shell.svelte` has torn `PhoneFrame` (and `ToastHost` with it)
+    // down. Feedback is excluded — it confirms something the player just did, which
+    // implies the phone was open to do it on — and so is a call, which already has its own
+    // ringtone and a Decline/Accept story a disappearing peek would only get in the way of.
+    // `options.source` defaults to `'feedback'` the same way `notificationPolicy.ts` itself
+    // does — an unset source is never a real arrival, so it has to resolve the same way here
+    // as it does over there, not fall through as merely-not-yet-'feedback'.
+    const arrivalSource = options.source ?? 'feedback';
+    if (!get(isPhoneOpen) && arrivalSource !== 'feedback' && newToast.type !== 'call') {
+      if (
+        !options.soundHandled &&
+        notificationAllows('sound', {
+          source: options.source,
+          app: options.app,
+          breakThrough: options.breakThrough
+        })
+      ) {
+        audio.play('notification');
+      }
+      peekWhileClosed(newToast);
+    }
 
     const visible = get(store);
 
@@ -258,7 +326,8 @@ function createToastStore() {
         replyPlaceholder: 'Reply...',
         onReply: options.onReply,
         onClick: options.onClick,
-        duration: 8000
+        duration: 8000,
+        soundHandled: true
       });
     },
 
@@ -292,6 +361,7 @@ function createToastStore() {
         sender: options.senderLabel,
         avatar: options.avatar,
         duration: 10000,
+        soundHandled: true,
         onClick: options.onClick || options.onAccept,
         actions: [
           {
@@ -349,6 +419,7 @@ function createToastStore() {
         title: 'Incoming Call',
         message: options.name ? `${options.name} (${options.number})` : options.number,
         duration: 12000,
+        soundHandled: true,
         actions: [
           {
             label: 'Accept',
@@ -378,6 +449,7 @@ function createToastStore() {
         title: `New Email: ${options.sender}`,
         message: options.subject,
         duration: 5000,
+        soundHandled: true,
         onClick: options.onClick
       });
     }
