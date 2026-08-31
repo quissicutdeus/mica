@@ -1,3 +1,4 @@
+import { detectFramework } from './FrameworkBridge';
 import { guardNetEvent } from './netGuard';
 import { registerService } from './services';
 import { ownedTables, purgeOwnedRows, sweepOrphanedRows } from './orphanSweep';
@@ -60,11 +61,17 @@ export const pushRehydrate = (source: number): void => {
  *   playerId, xPlayer, isNew)`. Not a `TriggerServerEvent`, so registering only `on` leaves
  *   the name un-net-safe inside gPhone and no client can reach it. An `onNet` twin added "to
  *   be safe" would manufacture an entry point es_extended does not have.
+ * - **`standaloneJoin`** is raised by the **FiveM runtime itself**, not by any framework —
+ *   there is no framework on a standalone server to raise anything. It is local, so the same
+ *   reasoning as `esxLocal` applies twice over: registering only `on` leaves it un-net-safe
+ *   inside gPhone, and unlike the two above it carries no identity in its payload at all.
+ *   See the listener for why the connection is the only thing it reads.
  */
 export const PLAYER_LOADED_EVENTS = {
   network: 'QBCore:Server:OnPlayerLoaded',
   qbLocal: 'QBCore:Server:PlayerLoaded',
-  esxLocal: 'esx:playerLoaded'
+  esxLocal: 'esx:playerLoaded',
+  standaloneJoin: 'playerJoining'
 } as const;
 
 const sourceOf = (player: unknown): number | undefined =>
@@ -245,6 +252,55 @@ const esxLoadedSource = (playerId: unknown, xPlayer: unknown): number | undefine
 on(PLAYER_LOADED_EVENTS.esxLocal, (playerId: unknown, xPlayer: unknown) => {
   const src = esxLoadedSource(playerId, xPlayer);
   if (src) dispatchPlayerLoaded(src);
+});
+
+/**
+ * Standalone's player-loaded event — **the connection itself, because there is nothing else**.
+ *
+ * A standalone server has no framework, so no character is ever "loaded": nothing announces
+ * one, nothing has a Player object to announce, and the three listeners above will never fire
+ * for the rest of this resource's life. What does happen is that somebody connects, and on a
+ * standalone server that *is* the whole of the event — one player, one identity, established
+ * by `FrameworkBridge.getPlayer` from their license the moment they have a server id.
+ *
+ * `playerJoining` is raised by the FiveM runtime itself when a connecting client is assigned
+ * that id, with `source` set to it. Three properties matter, and they are the reason this is
+ * the right name rather than an invented one:
+ *
+ * - **It already exists.** §2.9's rule against registering an action the app does not use
+ *   applies to a runtime-named event exactly as it does to a gphone-named one, and the
+ *   inverse applies here: gPhone listens to something the runtime already raises rather than
+ *   asking the client to announce itself. A `gphone:server:shell:ready` would have been a new
+ *   client-reachable entry point, on the one path whose whole job is establishing identity.
+ * - **`on`, never `onNet`.** The runtime raises it in-process, so registering only `on`
+ *   leaves the name un-net-safe inside gPhone (`RegisterNetEvent`'s flag is per-resource —
+ *   the fact `esxLocal` relies on, one direction over) and a client emitting it reaches
+ *   nothing here.
+ * - **The payload is not read, and there is nothing in it to read.** `playerJoining`'s only
+ *   argument is the player's *old* id from a server-transfer, which is not an identity and is
+ *   not this player's. MICA-136's rule is that the connection is the authority; here the
+ *   connection is also the only thing on offer, so the rule costs nothing and cannot be
+ *   forgotten.
+ *
+ * Gated on `detectFramework()` answering `standalone`, which is only ever true when the
+ * operator set `gphone_standalone` and no framework answered. On a qb or ESX server this
+ * fires for every join and returns immediately — the framework's own event is what dispatches
+ * there, and dispatching twice would rehydrate a phone whose character has not loaded yet.
+ *
+ * **What this cannot promise is that the player's client is listening yet.** `playerJoining`
+ * is early, and a subscriber's `emitNet` may land before the client has registered its
+ * handlers. That is survivable by construction rather than by luck: every subscriber here
+ * pushes state the phone also fetches for itself when it opens, so a lost push costs a
+ * refresh and never a wrong value. The half that has to happen at join — resolving the
+ * identity and warming what hangs off it — happens server-side and is unaffected.
+ */
+on(PLAYER_LOADED_EVENTS.standaloneJoin, () => {
+  if (detectFramework() !== 'standalone') return;
+
+  const connection = source;
+  if (!Number.isInteger(connection) || connection <= 0) return;
+
+  dispatchPlayerLoaded(connection);
 });
 
 /** Anything that wants to know a character has loaded. */

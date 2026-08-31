@@ -24,7 +24,7 @@ import path from 'path';
  * resolved source never comes from a payload on the network path, and a subscriber cannot see
  * an id the connection did not supply.
  */
-const { dbMock, bridgeMock, handlers, networked } = vi.hoisted(() => {
+const { dbMock, bridgeMock, handlers, networked, framework } = vi.hoisted(() => {
   // Inside `vi.hoisted` because ESM evaluates imports first: all three modules register at
   // module scope, so a plain assignment below the imports would capture nothing.
   // A list per event, not a single handler: three modules answer to this one name and a
@@ -60,12 +60,24 @@ const { dbMock, bridgeMock, handlers, networked } = vi.hoisted(() => {
       getCitizenId: vi.fn(),
       registerUsableItem: vi.fn()
     },
+    /**
+     * Which framework the bridge is answering for, as a mutable box.
+     *
+     * `lib/shell.ts` asks `detectFramework()` on the standalone path and nowhere else — that
+     * listener is registered on a name the FiveM *runtime* raises for every join on every
+     * server, so the verdict is the only thing keeping it from dispatching a second time
+     * alongside a framework's own event.
+     */
+    framework: { kind: 'qb' as string },
     handlers: captured
   };
 });
 
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
-vi.mock('../lib/FrameworkBridge', () => ({ FrameworkBridge: bridgeMock }));
+vi.mock('../lib/FrameworkBridge', () => ({
+  FrameworkBridge: bridgeMock,
+  detectFramework: () => framework.kind
+}));
 
 import { loadedPlayerSource, onPlayerLoaded, PLAYER_LOADED_EVENTS } from '../lib/shell';
 import { __resetBatteryCache } from '../services/Battery';
@@ -122,6 +134,7 @@ beforeEach(() => {
   // Everyone who asks is loaded, unless a test says otherwise. The interesting refusals
   // are about *which* id gets asked about, not about the framework being empty.
   bridgeMock.getPlayer.mockImplementation((src: number) => asPlayer(src));
+  framework.kind = 'qb';
 });
 
 describe('the network player-loaded listeners', () => {
@@ -451,6 +464,80 @@ describe("ESX's player-loaded event", () => {
     return vi.waitFor(() =>
       expect(emitted()).toContainEqual(['gphone:client:battery:set', ATTACKER, 100])
     );
+  });
+});
+
+/**
+ * Standalone's player-loaded path (MICA-151), which is not a player-loaded event at all.
+ *
+ * A standalone server has no framework, so nothing ever announces that a character loaded and
+ * the three listeners above never fire again for the life of the resource. What does happen is
+ * that somebody connects — and on a standalone server that *is* the whole of the event, since
+ * one connection is one identity, resolved from the player's license.
+ *
+ * `playerJoining` is raised by the FiveM runtime itself, locally, when a connecting client is
+ * assigned a server id. Two properties are asserted, and they are the two that make this safe:
+ * it is not reachable over the network, and it reads the connection rather than its argument —
+ * which is the joining player's *old* id from a server transfer, and is not an identity.
+ */
+describe("standalone's player-loaded path", () => {
+  const joinListeners = (): Function[] => handlers.get('playerJoining') ?? [];
+
+  beforeEach(() => {
+    framework.kind = 'standalone';
+  });
+
+  it('is registered locally and is not reachable over the network', () => {
+    // The property that fails the moment somebody adds an `onNet` twin "to be safe" and
+    // manufactures a client-reachable entry point the runtime does not have.
+    expect(joinListeners()).toHaveLength(1);
+    expect(networked.has('playerJoining')).toBe(false);
+    // For contrast, and to prove the harness can tell the two apart at all.
+    expect(networked.has('QBCore:Server:OnPlayerLoaded')).toBe(true);
+  });
+
+  it('dispatches for the connection when the server is standalone', () => {
+    for (const listener of joinListeners()) listener();
+
+    expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', ATTACKER]);
+    expect(emitted()).toContainEqual(['gphone:client:settings:rehydrate', ATTACKER]);
+  });
+
+  it('reaches settings and battery too, through the one registry', async () => {
+    for (const listener of joinListeners()) listener();
+
+    await vi.waitFor(() =>
+      expect(emitted()).toContainEqual(['gphone:client:battery:set', ATTACKER, 100])
+    );
+  });
+
+  it("ignores the argument entirely — it is the player's old id, not an identity", () => {
+    // MICA-136's rule, and here it costs nothing: the connection is the only thing on
+    // offer, so it cannot be forgotten in favour of a payload.
+    for (const listener of joinListeners()) listener(VICTIM);
+
+    expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', ATTACKER]);
+    expect(emitted().some((call) => call[1] === VICTIM)).toBe(false);
+  });
+
+  it('does nothing on a framework server, whose own event dispatches instead', () => {
+    // `playerJoining` fires for every join on every server. Without the verdict gate this
+    // would rehydrate a phone whose character has not loaded yet, and then again when it has.
+    for (const kind of ['qb', 'esx', 'unknown']) {
+      framework.kind = kind;
+      for (const listener of joinListeners()) listener();
+    }
+
+    expect(emitted()).toHaveLength(0);
+  });
+
+  it('refuses a trigger with no connection behind it', () => {
+    // `source` 0 is the console, or a local trigger that carried nothing.
+    (globalThis as any).source = 0;
+
+    for (const listener of joinListeners()) listener();
+
+    expect(emitted()).toHaveLength(0);
   });
 });
 
