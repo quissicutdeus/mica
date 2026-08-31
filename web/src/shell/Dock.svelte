@@ -6,6 +6,7 @@
   import { createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/sheetDrag';
   import AppIcon from '../sdk/ui/AppIcon.svelte';
   import { appRegistryStore } from './state/registry';
+  import { appVisible } from './state/appVisibility';
   import { dockAppIds, DOCK_SLOT_COUNT } from './state/dock';
   import {
     openDrawer,
@@ -21,10 +22,21 @@
 
   let dockElement = $state<HTMLElement | null>(null);
 
+  /**
+   * The dock applied no visibility filter at all — not `requiresAdmin`, and so not the
+   * `requires` capability check either. An app the launcher, the drawer, the folders and
+   * search all agreed to hide still drew its icon here and still opened from it, which is
+   * the only surface that could have said so out loud. Pinning is a placement, not an
+   * exemption: a slot whose app is not visible falls back to the same empty placeholder an
+   * unconfigured or unresolvable slot already gets, so the dock never collapses to fewer
+   * than `DOCK_SLOT_COUNT` cells and the player's own pin survives in `dockAppIds` for
+   * whenever the app is honourable again.
+   */
   const slots = $derived(
     Array.from({ length: DOCK_SLOT_COUNT }, (_, index) => {
       const appId = $dockAppIds[index] ?? '';
-      const manifest = appId ? appRegistryStore.getManifest(appId) : undefined;
+      const resolved = appId ? appRegistryStore.getManifest(appId) : undefined;
+      const manifest = $appVisible(resolved) ? resolved : undefined;
       return { index, appId, manifest };
     })
   );

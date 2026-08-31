@@ -2,7 +2,7 @@
   import { anySheetOpen } from './state/sheets';
   import { badgeAllowed } from './state/notificationPolicy';
   import { get } from 'svelte/store';
-  import { isAdmin } from '../services/admin';
+  import { appVisible } from './state/appVisibility';
   import AppIcon from '../sdk/ui/AppIcon.svelte';
   import { attachLongPressDrag } from '../lib/longPressDrag';
   import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/pointerDrag';
@@ -56,20 +56,29 @@
   let manifestById = $derived(new Map($appRegistryStore.map((m) => [m.id, m])));
 
   /**
-   * Apps flagged `requiresAdmin` are absent for everyone else, rather than present and
-   * refusing — same rule the launcher has always applied, now scoped to whatever a player
-   * actually placed on the grid instead of every installed app.
+   * Apps the phone cannot honour — `requiresAdmin` without the ace, or a `requires`
+   * capability this server does not have — are absent rather than present and refusing.
+   * Scoped to whatever a player actually placed on the grid instead of every installed app.
+   *
+   * A grid cell whose app is hidden renders empty and the item stays in `homeGridItems`
+   * untouched, deliberately: the placement is the player's and outlives the reason it is
+   * not being drawn, so an admin ace granted (or a framework that comes back) restores the
+   * icon where they left it rather than to the end of the drawer.
    */
-  const visible = (appId: string): boolean => {
-    const manifest = manifestById.get(appId);
-    return Boolean(manifest) && (!manifest!.requiresAdmin || $isAdmin);
-  };
+  const visible = (appId: string): boolean => $appVisible(manifestById.get(appId));
 
+  /**
+   * The four mini-tiles drawn inside a folder icon, and they filter for the same reason the
+   * grid above does. `FolderPopup` hides an app the phone cannot honour once the folder is
+   * open; without this the closed folder still painted its tile colour and glyph, which is
+   * the app announcing itself by another name. **Filtered before the slice**, so hiding one
+   * promotes the next app into the preview rather than leaving a gap.
+   */
   function folderPreviewManifests(appIds: string[]) {
     return appIds
-      .slice(0, 4)
       .map((id) => manifestById.get(id))
-      .filter((m): m is NonNullable<typeof m> => Boolean(m));
+      .filter((m): m is NonNullable<typeof m> => $appVisible(m))
+      .slice(0, 4);
   }
 
   function attachAppIcon(node: HTMLElement, position: number) {

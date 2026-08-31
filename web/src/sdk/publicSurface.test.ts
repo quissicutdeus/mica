@@ -843,6 +843,19 @@ const BASELINE_PROPS: Record<string, string[]> = {
  * terms as the two lists above: additions pass, a member that disappears does not.
  */
 const BASELINE_VOCABULARIES: Record<string, string[]> = {
+  /**
+   * `AppCapability` is derived from this array and `AppManifest.requires` is typed by it,
+   * so a member dropped here is the `'sound'` break again in a second vocabulary: a
+   * published add-on declaring the removed name keeps loading, `defineApp` stops
+   * recognising the declaration, and the app is either hidden on every server or shown on
+   * one that cannot run it. Recorded here so that is a red suite rather than a silence.
+   *
+   * Adding it does not move `SDK_CONTRACT_VERSION`, and should not. This widens what the
+   * gate watches; it takes nothing away from anything already compiled against v1, which
+   * is the only thing the pin is there to date-stamp. Bumping it would announce a break to
+   * add-on authors that has not happened.
+   */
+  ALL_CAPABILITIES: ['money'],
   ALL_PERMISSIONS: [
     'account',
     'admin',

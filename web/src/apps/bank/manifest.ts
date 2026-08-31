@@ -8,6 +8,10 @@ export default defineApp({
   description: 'Manage bank accounts and transfer funds',
   // 'notifications': the post-transfer success toast, via `usePhoneNotification`.
   permissions: ['account', 'bank', 'notifications'],
+  // Every screen in here moves money, which comes from the framework bridge and is simply
+  // absent in standalone mode. Distinct from the `bank` permission above: that discloses
+  // what this app reaches for, this states what the server has to be able to do.
+  requires: ['money'],
   requiresNetwork: true,
   core: true
 });

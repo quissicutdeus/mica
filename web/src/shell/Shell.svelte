@@ -4,6 +4,7 @@
   import { migrateAppDrawerHintForExistingSaves } from './state/onboarding';
   import { appRegistryStore } from './state/registry';
   import { loadRemoteAppConfig } from './state/remoteAppConfig';
+  import { refreshCapabilities } from '../services/capabilities';
   import { createNuiMessageRouter } from './nuiMessages';
   import { installDevHarness, seedBrowserPhone } from './devHarness';
   import { isBrowser } from '../lib/isBrowser';
@@ -327,6 +328,21 @@
    */
   onMount(() => {
     void loadRemoteAppConfig();
+  });
+
+  /**
+   * What this server can actually do, asked for here for exactly the reason above.
+   *
+   * `bootstrapStores` asks too, and has to — a character switch re-runs it and the answer
+   * can differ. But it is gated on the phone being *opened*, and this answer decides
+   * whether Bank and Hodlr have icons at all: `services/capabilities.ts` starts denied in
+   * game on purpose, so waiting for first open would mean painting the launcher without
+   * them and adding them a beat later, in front of the player. Asking at mount gives the
+   * request the whole time between resource start and first open; the in-flight promise in
+   * that module means the two callers cost one request rather than two.
+   */
+  onMount(() => {
+    void refreshCapabilities();
   });
 
   /**

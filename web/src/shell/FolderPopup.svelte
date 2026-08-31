@@ -7,7 +7,7 @@
   import { focusTrap } from '../lib/focusTrap';
   import AppIcon from '../sdk/ui/AppIcon.svelte';
   import { appRegistryStore } from './state/registry';
-  import { isAdmin } from '../services/admin';
+  import { appVisible } from './state/appVisibility';
   import { homeGridItems, openFolderId, renameFolder, type HomeGridFolder } from './state/homeGrid';
   import {
     iconDragState,
@@ -25,10 +25,16 @@
     ) ?? null
   );
 
+  /**
+   * `$appVisible`, not `get(isAdmin)` as this used to read. A one-shot `get()` inside a
+   * `$derived` is not tracked, so the list never re-ran when the answer it depends on
+   * changed — invisible while the only such answer arrived at boot, and wrong the moment a
+   * second one (`requires`) landed after first paint by construction.
+   */
   let visibleApps = $derived(
     (folder?.appIds ?? [])
       .map((id) => appRegistryStore.getManifest(id))
-      .filter((m): m is NonNullable<typeof m> => Boolean(m) && (!m!.requiresAdmin || get(isAdmin)))
+      .filter((m): m is NonNullable<typeof m> => $appVisible(m))
   );
 
   function close(): void {

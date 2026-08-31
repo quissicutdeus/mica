@@ -79,6 +79,21 @@ describe('isCatalogEntry', () => {
     expect(isCatalogEntry({ ...validEntry, requiresNetwork: 'yes' })).toBe(false);
   });
 
+  it('accepts requires as an optional array drawn from the capability vocabulary', () => {
+    expect(isCatalogEntry({ ...validEntry, requires: ['money'] })).toBe(true);
+    expect(isCatalogEntry({ ...validEntry, requires: [] })).toBe(true);
+    // Absent is what every catalog written before this field existed says, and it means
+    // "needs none" rather than "unknown".
+    expect(isCatalogEntry(validEntry)).toBe(true);
+  });
+
+  it('rejects a requires naming a capability no server could ever satisfy', () => {
+    // Same reasoning as `defineApp` throwing on one: an unknown name is never satisfied, so
+    // the row would list an app refused everywhere with nothing said about why.
+    expect(isCatalogEntry({ ...validEntry, requires: ['teleportation'] })).toBe(false);
+    expect(isCatalogEntry({ ...validEntry, requires: 'money' })).toBe(false);
+  });
+
   it('accepts networkHosts as an optional array of strings (MICA-24)', () => {
     expect(isCatalogEntry({ ...validEntry, networkHosts: ['https://api.example.com'] })).toBe(true);
     expect(isCatalogEntry({ ...validEntry, networkHosts: [] })).toBe(true);

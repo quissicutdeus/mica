@@ -2098,6 +2098,20 @@ const mockRegistry: Record<string, MockHandler> = {
   checkAdmin: () => ({ isAdmin: true }),
 
   /**
+   * What a server behind this phone can do (`services/capabilities.ts`).
+   *
+   * The browser's own mocks answer for money — `getBalance`, `transferMoney` and Hodlr's
+   * whole ledger are all here — so the honest answer for this transport is that it has it.
+   * Answering `false` would take Bank and Hodlr off the dev launcher and out of every e2e
+   * run while the mocks behind them kept working, which describes no real deployment.
+   *
+   * This is load-bearing rather than decorative: `refreshCapabilities` calls through the
+   * transport in a browser too, instead of short-circuiting on `isBrowser()`, so a mock
+   * that goes missing here shows up as two apps disappearing rather than as nothing at all.
+   */
+  checkCapabilities: () => ({ money: true }),
+
+  /**
    * Broadcasting to people nearby (MICA-111 phase 2), which in a browser means nobody.
    *
    * Deliberately inert rather than fed back into `shell/state/nearbyMusic.ts` — echoing

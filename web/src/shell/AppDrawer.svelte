@@ -9,6 +9,8 @@
   import AppIcon from '../sdk/ui/AppIcon.svelte';
   import SearchIcon from '../sdk/ui/icons/SearchIcon.svelte';
   import { isAdmin } from '../services/admin';
+  import { capabilities } from '../services/capabilities';
+  import { appVisible } from './state/appVisibility';
   import { contacts } from '../services/contacts';
   import { conversationsStore } from '../services/conversations';
   import { appRegistryStore } from './state/registry';
@@ -41,7 +43,7 @@
    */
   let visibleApps = $derived(
     [...$appRegistryStore]
-      .filter((app) => !app.requiresAdmin || $isAdmin)
+      .filter((app) => $appVisible(app))
       .sort((a, b) => a.name.localeCompare(b.name))
   );
 
@@ -55,7 +57,7 @@
     searchEverything(
       $searchQuery,
       { apps: $appRegistryStore, contacts: $contacts, conversations: $conversationsStore },
-      { isAdmin: $isAdmin }
+      { isAdmin: $isAdmin, capabilities: $capabilities }
     )
   );
 

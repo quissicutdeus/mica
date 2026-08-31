@@ -1,6 +1,7 @@
 import type { Contact } from '@shared/types';
 import type { AppManifest } from '../../sdk/manifest';
 import type { UIConversation } from '../../services/conversations';
+import { manifestVisible, type CapabilitySet } from '../../lib/appVisibility';
 
 /**
  * How many hits each group contributes at most.
@@ -43,9 +44,20 @@ export interface SearchSources {
   conversations: UIConversation[];
 }
 
+/**
+ * The two facts that decide whether an app is on this phone at all.
+ *
+ * Both default to the least-privileged answer, so a caller that forgets one gets a search
+ * that hides too much rather than one that surfaces an app the launcher does not draw —
+ * search is a way *into* an app, so listing a hidden one is the same broken promise as the
+ * icon, one tap earlier.
+ */
 export interface SearchOptions {
   isAdmin?: boolean;
+  capabilities?: CapabilitySet;
 }
+
+const NOTHING_SATISFIED: CapabilitySet = {};
 
 const matches = (needle: string, ...haystack: (string | undefined)[]): boolean =>
   haystack.some((value) => value?.toLowerCase().includes(needle));
@@ -72,13 +84,13 @@ const contactName = (c: Contact) => [c.firstname, c.lastname].filter(Boolean).jo
 export function searchEverything(
   query: string,
   sources: SearchSources,
-  { isAdmin = false }: SearchOptions = {}
+  { isAdmin = false, capabilities = NOTHING_SATISFIED }: SearchOptions = {}
 ): SearchResult[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];
 
   const apps: AppSearchResult[] = sources.apps
-    .filter((app) => (!app.requiresAdmin || isAdmin) && matches(needle, app.name))
+    .filter((app) => manifestVisible(app, { isAdmin, capabilities }) && matches(needle, app.name))
     .slice(0, SEARCH_RESULTS_PER_GROUP)
     .map((manifest) => ({
       kind: 'app',

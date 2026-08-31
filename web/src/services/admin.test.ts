@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 
 /**
- * `refreshAdmin` asks once per session and the flag that remembers is module scope, so
- * each test needs its own copy of the module.
+ * `refreshAdmin` de-duplicates concurrent callers on a module-scope promise, so each test
+ * needs its own copy of the module.
  *
  * Mocked with `doMock` rather than `spyOn`: `resetModules` gives the re-imported module
  * fresh copies of its own imports too, which a spy installed on the old instance never
@@ -56,10 +56,31 @@ describe('admin store', () => {
     expect(get(isAdmin)).toBe(false);
   });
 
-  it('asks once per session however many callers want the answer', async () => {
+  it('costs one request however many callers want the answer at once', async () => {
     const { refreshAdmin, fetchNui } = await loadAdmin(false, grants);
     await Promise.all([refreshAdmin(), refreshAdmin(), refreshAdmin()]);
 
     expect(fetchNui).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks again after the first answer has landed, so a character switch re-reads', async () => {
+    // This used to be a `let asked = false` that never cleared, which made it "once per CEF
+    // page" rather than once per player: `pushRehydrate` on a character switch calls
+    // `resetBootstrapState()` and `bootstrapStores(true)` (`shell/nuiMessages.ts`), which
+    // calls this again — and the latch swallowed it, so the next character inherited the
+    // previous one's Administration icon for the rest of the session.
+    let admin = true;
+    const { isAdmin, refreshAdmin, fetchNui } = await loadAdmin(false, async () => ({
+      isAdmin: admin
+    }));
+
+    await refreshAdmin();
+    expect(get(isAdmin)).toBe(true);
+
+    admin = false;
+    await refreshAdmin();
+
+    expect(fetchNui).toHaveBeenCalledTimes(2);
+    expect(get(isAdmin)).toBe(false);
   });
 });

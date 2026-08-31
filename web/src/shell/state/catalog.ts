@@ -1,5 +1,11 @@
 import { isTrustedRemoteUrl } from './remoteAppSecurity';
-import { ALL_PERMISSIONS, tileFromColorClasses, type AppPermission } from '../../sdk/manifest';
+import {
+  ALL_CAPABILITIES,
+  ALL_PERMISSIONS,
+  tileFromColorClasses,
+  type AppCapability,
+  type AppPermission
+} from '../../sdk/manifest';
 
 /**
  * One installable app as an operator's catalog server describes it — everything
@@ -19,6 +25,16 @@ export interface CatalogEntry {
   icon?: string;
   /** What this app discloses it reaches for — shown to a player before they install it. */
   permissions: AppPermission[];
+  /**
+   * Server capabilities the app cannot work without. See `AppManifest.requires`.
+   *
+   * A catalog entry is the *only* thing `installVerified` builds a remote manifest from —
+   * it never `import()`s the fetched bundle to ask what it claims to be — so a capability
+   * absent here is a capability the app can never declare, however plainly its own source
+   * says otherwise. Optional, and absent means "needs none", which is both the right
+   * default and the only thing a catalog written before this field existed can say.
+   */
+  requires?: AppCapability[];
   /** Whether the phone should block this app while signal is out. Defaults to `false`. */
   requiresNetwork?: boolean;
   /** MICA-24: the exact origins the installed add-on's frame may `fetch()`. See `AppManifest.networkHosts`. */
@@ -71,6 +87,13 @@ export function isCatalogEntry(value: unknown): value is CatalogEntry {
     (v.icon === undefined || typeof v.icon === 'string') &&
     Array.isArray(v.permissions) &&
     v.permissions.every((p) => ALL_PERMISSIONS.includes(p as AppPermission)) &&
+    // Checked against the vocabulary rather than merely typed, for the reason `defineApp`
+    // throws on the same mistake: an unknown capability can never be satisfied by any
+    // server, so the row would list an app that is refused everywhere with nothing said.
+    // Dropping and logging the entry names the catalog that got it wrong.
+    (v.requires === undefined ||
+      (Array.isArray(v.requires) &&
+        v.requires.every((c) => (ALL_CAPABILITIES as readonly string[]).includes(c as string)))) &&
     (v.requiresNetwork === undefined || typeof v.requiresNetwork === 'boolean') &&
     (v.networkHosts === undefined ||
       (Array.isArray(v.networkHosts) && v.networkHosts.every((h) => typeof h === 'string')))

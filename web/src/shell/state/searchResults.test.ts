@@ -76,6 +76,18 @@ describe('searchEverything', () => {
     expect(searchEverything('admin', withAdminApp, { isAdmin: true })).toHaveLength(1);
   });
 
+  it('hides an app whose required capability this server does not have', () => {
+    // Search is a way *into* an app, so listing one the launcher refuses to draw is the
+    // same broken promise as the icon, one tap earlier.
+    const withMoneyApp = { ...sources, apps: [app('hodlr', 'Hodlr', { requires: ['money'] })] };
+
+    expect(searchEverything('hodlr', withMoneyApp)).toEqual([]);
+    expect(searchEverything('hodlr', withMoneyApp, { capabilities: { money: false } })).toEqual([]);
+    expect(searchEverything('hodlr', withMoneyApp, { capabilities: { money: true } })).toHaveLength(
+      1
+    );
+  });
+
   it('caps each group so one crowded group cannot bury another', () => {
     const manyContacts = Array.from({ length: SEARCH_RESULTS_PER_GROUP + 3 }, (_, i) =>
       contact(i + 100, `Jim${i}`, 'Doe', `555-02${i}`)

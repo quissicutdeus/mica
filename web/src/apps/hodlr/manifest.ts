@@ -8,5 +8,8 @@ export default defineApp({
   icon: Icon,
   description: 'Trade gCoin. No questions asked.',
   permissions: [],
+  // Buying and selling gCoin is a currency transfer, so a server with no framework behind
+  // it cannot honour a single action in this app.
+  requires: ['money'],
   core: false
 });

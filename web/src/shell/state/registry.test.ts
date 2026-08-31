@@ -14,6 +14,7 @@ vi.mock('../../services/settings', () => serviceMock);
 import { appRegistryStore, getFirstBootTime, type AppManifest } from './registry';
 import { hydrateSettings, useStorage } from '../../sdk/host/useStorage';
 import { setTrustedRemoteAppHosts, sha256Hex } from './remoteAppSecurity';
+import { capabilities, capabilitiesKnown } from '../../services/capabilities';
 import type { CatalogEntry } from './catalog';
 
 const fetchResponse = (text: string, ok = true, status = 200): Response =>
@@ -303,6 +304,10 @@ describe('installFromCatalog', () => {
   beforeEach(async () => {
     setTrustedRemoteAppHosts(['store.example.com']);
     vi.restoreAllMocks();
+    // These are module-scope stores, so a test that denies a capability would leak into
+    // every test after it. jsdom reads as a plain browser, which stands in as capable.
+    capabilities.set({ money: true });
+    capabilitiesKnown.set(true);
     catalogEntry = {
       id: 'remote_catalog_app',
       name: 'Catalog App',
@@ -316,6 +321,8 @@ describe('installFromCatalog', () => {
   });
 
   afterEach(() => {
+    capabilities.set({ money: true });
+    capabilitiesKnown.set(true);
     if (get(appRegistryStore).some((a) => a.id === 'remote_catalog_app')) {
       appRegistryStore.unregisterApp('remote_catalog_app');
     }
@@ -354,6 +361,62 @@ describe('installFromCatalog', () => {
     });
 
     expect(result.manifest.networkHosts).toEqual(['https://api.example.com']);
+  });
+
+  /**
+   * The same MICA-24 shape as `networkHosts` above, and the reason `requires` had to be
+   * added to `CatalogEntry` *and* to the line that passes it through: the field alone would
+   * ship a declaration `isCatalogEntry` validates and `installVerified` silently drops, so a
+   * money add-on installed from a catalog would be ungated on every server.
+   */
+  it('carries requires from the catalog entry into the installed manifest', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode));
+
+    const result = await appRegistryStore.installFromCatalog({
+      ...catalogEntry,
+      requires: ['money']
+    });
+
+    expect(result.manifest.requires).toEqual(['money']);
+  });
+
+  it('leaves requires off a manifest whose entry declares none', async () => {
+    // `defineApp` writes no default, so `undefined` and `[]` never have to be told apart —
+    // an entry published before the field existed says exactly the right thing by omission.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode));
+
+    const result = await appRegistryStore.installFromCatalog(catalogEntry);
+
+    expect('requires' in result.manifest).toBe(false);
+  });
+
+  it('refuses to install an add-on whose capability this server does not have', async () => {
+    // Hiding the icon is what a player sees; this is what stops the Store handing them an
+    // app that would own a home-grid cell and a storage namespace and draw nothing.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode));
+    capabilities.set({ money: false });
+    capabilitiesKnown.set(true);
+
+    await expect(
+      appRegistryStore.installFromCatalog({ ...catalogEntry, requires: ['money'] })
+    ).rejects.toThrow('needs money, which this server does not provide');
+  });
+
+  it('installs a capability-hungry add-on while the server has not answered yet', async () => {
+    // `rehydrateSavedRemoteApps` and the bundled-add-on re-registration both run at module
+    // import, strictly before `refreshCapabilities` settles. Refusing on the starting
+    // assumption would turn every saved add-on into a boot-time failure on a server that
+    // has the capability; the visibility filter still hides the icon in that window.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode));
+    capabilities.set({ money: false });
+    capabilitiesKnown.set(false);
+
+    const result = await appRegistryStore.installFromCatalog({
+      ...catalogEntry,
+      requires: ['money']
+    });
+
+    expect(result.manifest.requires).toEqual(['money']);
   });
 
   it('refuses to import a bundle whose hash does not match', async () => {

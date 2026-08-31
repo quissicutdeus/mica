@@ -1,5 +1,6 @@
 import { fetchCitizenId, fetchBalance } from '../../services/account';
 import { refreshAdmin } from '../../services/admin';
+import { refreshCapabilities } from '../../services/capabilities';
 import { loadUnreadCounts } from '../../services/notifications';
 import { bundledAddOns, registeredApps } from './registry';
 
@@ -41,6 +42,11 @@ export async function bootstrapStores(force: boolean = false): Promise<void> {
         // Asked here so the home screen knows whether to draw the Administration app
         // before it renders, rather than having it appear a beat later.
         refreshAdmin(),
+        // Same reason as the admin check, and the same re-read on a character switch:
+        // `rehydrateShell` runs this whole function again, and both of these decide which
+        // icons exist. `Shell.svelte` also asks at mount so the answer is usually already
+        // in hand by the time the phone is first opened; the two share one request.
+        refreshCapabilities(),
         fetchCitizenId(),
         fetchBalance(),
         loadUnreadCounts(),

@@ -7,6 +7,7 @@ import { get, writable } from 'svelte/store';
 import { type AppComponent, type AppManifest, defineApp } from '../../sdk/manifest';
 import { clearAppStorage } from '../../sdk/host/useStorage';
 import { messageOf } from '../../lib/errors';
+import { capabilities, capabilitiesKnown } from '../../services/capabilities';
 import { usePersisted } from '../../sdk/host/usePersisted';
 import { placeOnHomeGridIfAbsent } from './homeGrid';
 import { getTrustedRemoteAppHosts, isTrustedRemoteUrl, matchesHash } from './remoteAppSecurity';
@@ -373,6 +374,42 @@ const installedAddOnIds = usePersisted<string[]>('store', 'installedAddOns', [],
   sanitize: sanitizeInstalledAddOnIds
 });
 
+/**
+ * Refuse to install an add-on this server cannot run.
+ *
+ * Hiding the icon (`shell/state/appVisibility.ts`) is what a player sees; this is what
+ * stops the Store handing them the app in the first place. Installing a money app on a
+ * moneyless server is the same broken promise as showing one — it would sit in the
+ * Installed list, own a home-grid cell and a storage namespace, and draw nothing.
+ *
+ * **Only once the server has actually answered.** `capabilitiesKnown` is false until
+ * `refreshCapabilities` settles, and both boot paths through here — `rehydrateSavedRemoteApps`
+ * and `installedAddOnIds.subscribe` — run at module import, which is strictly before that.
+ * Refusing on the starting assumption would turn every saved add-on into a boot-time
+ * failure on a perfectly capable server. The visibility filter still hides the icon in that
+ * window, so the honest reading is "not yet known" rather than "denied", and the two
+ * questions get the answer that is safe for each.
+ *
+ * A thrown error rather than a quiet skip: `useAppAction`'s `run` in the Store surfaces the
+ * message as a toast, and rehydration already logs whatever `installVerified` rejects with.
+ * Which is why this one alone among the registry's errors carries no `gPhone App Registry
+ * error:` prefix and names the app the way the player sees it — every other error here
+ * describes a programming mistake nobody but a developer should ever read, and this one is
+ * an ordinary fact about a standalone server.
+ */
+function assertCapabilitiesAvailable(manifest: AppManifest): void {
+  const requires = manifest.requires ?? [];
+  if (requires.length === 0 || !get(capabilitiesKnown)) return;
+
+  const available = get(capabilities);
+  const missing = requires.filter((name) => available[name] !== true);
+  if (missing.length === 0) return;
+
+  throw new Error(
+    `${manifest.name} needs ${missing.join(', ')}, which this server does not provide.`
+  );
+}
+
 // Reactive App Registry Store for Dynamic Community App Installation
 function createAppRegistry() {
   const installed = writable<AppManifest[]>(loadedApps);
@@ -492,6 +529,7 @@ function createAppRegistry() {
      */
     registerAddOn: (manifest: AppManifest, source?: string) => {
       const validatedManifest = defineApp(manifest);
+      assertCapabilitiesAvailable(validatedManifest);
       if (source !== undefined) {
         addOnSources[validatedManifest.id] = source;
       } else if (!addOnIds.has(validatedManifest.id)) {
@@ -667,6 +705,11 @@ function createAppRegistry() {
       color: entry.color,
       icon: entry.icon ?? null,
       permissions: entry.permissions,
+      // The manifest is built from `entry` and nothing else, so a capability the catalog
+      // does not carry is one the installed app can never declare — it would install
+      // ungated on a server that cannot run it. `isCatalogEntry` has already refused any
+      // row naming a capability `ALL_CAPABILITIES` does not know.
+      ...(entry.requires ? { requires: entry.requires } : {}),
       requiresNetwork: entry.requiresNetwork ?? false,
       networkHosts: entry.networkHosts ?? [],
       isRemote: true,
