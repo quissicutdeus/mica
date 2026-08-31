@@ -1,3 +1,7 @@
+// @vitest-environment jsdom
+// MICA-176: jsdom because this file's subject now transitively imports `services/admin.ts`,
+// which reads `window` at module scope. Not a workaround for `isBrowser()` — see the commit
+// message for why teaching that predicate to tolerate a missing `window` is the worse fix.
 /**
  * MICA-176: which facet set this file's subject resolves against. A hook no longer
  * carries its facet — `src/main.ts` picks the in-process set for the shell and `bootAddOn`
@@ -834,16 +838,31 @@ describe('surviving a restart', () => {
    * A fresh module graph, which is what a resource restart produces.
    *
    * The seeding happens *inside* it, after `resetModules` and before `music.ts` is
-   * imported, and that order is the whole trick: this suite runs in the node environment
-   * (`web/vite.config.ts` — jsdom is opt-in per file), so storage falls back to a
-   * module-scope `Map` that `resetModules` replaces along with everything else. Writing
-   * through the outer module's copy would seed a `Map` the new one never reads.
+   * imported, and that order is the whole trick: `music.ts` reads its persisted state once,
+   * at module scope, so anything written afterwards is written to a module that has already
+   * made up its mind. Storage falls back to a module-scope `Map` that `resetModules`
+   * replaces along with everything else, which is what gives each case a clean slate —
+   * still true after MICA-176 moved this file to jsdom, because this jsdom environment
+   * provides `window` but no `localStorage` (verified: `window.localStorage` is
+   * `undefined`), so `getStorageBackend()` takes the same in-memory path it took under
+   * node. If that ever changes, the `Map` stops being the backing store and each case will
+   * start inheriting the previous one's seed.
+   *
+   * **`facets/storage` alone first, then the whole set only after seeding.** MICA-176
+   * made every test file name a facet set, and the obvious edit here — re-import the whole
+   * set right after `resetModules`, the way every other file does — is wrong, silently:
+   * the set includes `inProcess/facets/music.ts`, which imports `shell/state/music.ts`,
+   * so it evaluates the module under test before a single key has been seeded and every
+   * assertion below sees an empty queue. `useStorage` needs only the `storage` facet to
+   * seed, so that is the one imported early.
    */
   const restart = async (seed: Record<string, unknown>) => {
     vi.resetModules();
+    await import('../../sdk/host/inProcess/facets/storage');
     const { useStorage } = await import('../../sdk/host/useStorage');
     const storage = useStorage('settings');
     for (const [key, value] of Object.entries(seed)) storage.setItem(key, value);
+    await import('../../sdk/host/inProcess/registerFacets');
     return import('./music');
   };
 

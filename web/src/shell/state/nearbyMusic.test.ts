@@ -1,3 +1,7 @@
+// @vitest-environment jsdom
+// MICA-176: jsdom because this file's subject now transitively imports `services/admin.ts`,
+// which reads `window` at module scope. Not a workaround for `isBrowser()` — see the commit
+// message for why teaching that predicate to tolerate a missing `window` is the worse fix.
 /**
  * MICA-176: which facet set this file's subject resolves against. A hook no longer
  * carries its facet — `src/main.ts` picks the in-process set for the shell and `bootAddOn`
@@ -417,14 +421,18 @@ describe('what the players are told', () => {
 describe('the global mute survives a restart and the per-person list is bounded', () => {
   it('sanitises a stored mute list', async () => {
     // A fresh module graph, which is what a resource restart produces — the same trick
-    // `music.test.ts` uses, and for the same reason: storage falls back to a module-scope
-    // Map that `resetModules` replaces along with everything else.
+    // `music.test.ts` uses. Its `restart` helper carries the full explanation of why
+    // `facets/storage` is imported alone before the seed and the whole set only after
+    // (importing the set evaluates `shell/state/nearbyMusic.ts`, the module under test),
+    // and why the module-scope `Map` still backs storage under jsdom.
     vi.resetModules();
+    await import('../../sdk/host/inProcess/facets/storage');
     const { useStorage } = await import('../../sdk/host/useStorage');
     const storage = useStorage('settings');
     storage.setItem('musicMutedBroadcasters', ['a', 'a', '', 7, 'b']);
     storage.setItem('musicMuteNearby', true);
 
+    await import('../../sdk/host/inProcess/registerFacets');
     const mod = await import('./nearbyMusic');
     expect(get(mod.mutedBroadcasters)).toEqual(['a', 'b']);
     expect(get(mod.muteAllNearby)).toBe(true);

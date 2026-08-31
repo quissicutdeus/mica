@@ -61,6 +61,14 @@ const fakeMql = (matches: boolean): FakeMql => {
  */
 const load = async (systemAsksForReduce: boolean) => {
   vi.resetModules();
+  /**
+   * MICA-176. `vi.resetModules()` throws away the module registry, `sdk/host/current.ts`
+   * included — so the facet registry this file populated with its top-level
+   * `registerFacets` import is gone, and the *fresh* `current.ts` the re-imports below get
+   * has an empty one. Re-importing the set here is what repopulates it; without this line
+   * the first hook call after a reset throws `host facet '<name>' is not loaded`.
+   */
+  await import('../../sdk/host/inProcess/registerFacets');
   const mql = fakeMql(systemAsksForReduce);
   const matchMedia = vi.fn((media: string) => {
     mql.media = media;
@@ -177,6 +185,8 @@ describe('reduced motion', () => {
 
   it('survives a host with no matchMedia at all', async () => {
     vi.resetModules();
+    // MICA-176: `resetModules` discarded the facet registry — see `motion.test.ts`'s note.
+    await import('../../sdk/host/inProcess/registerFacets');
     vi.stubGlobal('matchMedia', undefined);
     const mod = await import('./motion');
     expect(get(mod.systemPrefersReducedMotion)).toBe(false);

@@ -1,3 +1,7 @@
+// @vitest-environment jsdom
+// MICA-176: jsdom because this file's subject now transitively imports `services/admin.ts`,
+// which reads `window` at module scope. Not a workaround for `isBrowser()` — see the commit
+// message for why teaching that predicate to tolerate a missing `window` is the worse fix.
 /**
  * MICA-176: which facet set this file's subject resolves against. A hook no longer
  * carries its facet — `src/main.ts` picks the in-process set for the shell and `bootAddOn`
@@ -153,6 +157,8 @@ const announce = async (rows: Record<string, unknown>[]) => {
 
 beforeEach(async () => {
   vi.resetModules();
+  // MICA-176: `resetModules` discarded the facet registry — see `motion.test.ts`'s note.
+  await import('../web/src/sdk/host/inProcess/registerFacets');
   tickCallbacks = new Map();
   nextTickId = 0;
   now = 1000;
