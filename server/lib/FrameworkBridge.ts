@@ -4,6 +4,7 @@ import {
   CITIZENID_MAX_LENGTH
 } from '@shared/framework';
 import { Database } from './Database';
+import { numberFor, readCitizenIdByNumber, readNumber } from './phoneNumbers';
 
 export interface FrameworkPlayer {
   citizenid: string;
@@ -777,11 +778,15 @@ const standaloneIdentifier = (src: number): string | null => {
  * real name beats a blank one. Split on the first space exactly as `esxCharinfo` does with
  * `getName()`, so a two-word name lands in the two fields those readers expect.
  *
- * **`phone` is null.** Nothing in the FiveM runtime has a phone number to offer, and this
- * adapter does not invent one.
+ * **`phone` comes from gPhone's own table**, because nothing in the FiveM runtime has a phone
+ * number to offer and no framework is here to have issued one. `lib/phoneNumbers.ts` owns
+ * that decision and the cache this reads; `services/PhoneNumbers.ts` owns the table and
+ * assigns a number once, at connect. Null until that has happened, which every reader of
+ * `charinfo.phone` already handles.
  */
 const standaloneCharinfo = (
-  src: number
+  src: number,
+  citizenid: string
 ): { firstname: string; lastname: string; phone: string | null } => {
   let full: string | null = null;
   try {
@@ -795,7 +800,7 @@ const standaloneCharinfo = (
   return {
     firstname: !full ? '' : space === -1 ? full : full.slice(0, space),
     lastname: !full || space === -1 ? '' : full.slice(space + 1).trim(),
-    phone: null
+    phone: numberFor(citizenid)
   };
 };
 
@@ -812,7 +817,7 @@ const standaloneView = (citizenid: string, src: number) => ({
   PlayerData: {
     citizenid,
     source: src,
-    charinfo: standaloneCharinfo(src),
+    charinfo: standaloneCharinfo(src, citizenid),
     metadata: undefined
   }
 });
@@ -1217,13 +1222,27 @@ export class FrameworkBridge {
     if (!citizenid) return null;
 
     /**
-     * **Standalone has no framework record to find.** There is no `players` and no `users`,
-     * so there is nothing to look in and null is the honest answer rather than a degraded
-     * one — every caller already handles it, and an offline player simply renders without a
-     * name. Ahead of the ESX branch so that the qb query below is never reached on a server
-     * whose schema has no such table.
+     * **Standalone has no framework record, so gPhone's own is the record.** There is no
+     * `players` and no `users` to read — which is why this comes ahead of the ESX branch,
+     * so the qb query below is never reached on a schema that has no such table — but there
+     * *is* a number, because `services/PhoneNumbers.ts` issued it.
+     *
+     * The name is null and stays null, deliberately. `GetPlayerName` answers only for a
+     * connected client, and this lookup exists precisely for players who are not; inventing
+     * a name from the last one seen would be a cache pretending to be a record. So an
+     * offline standalone player renders as a number without a name, which is what a phone
+     * with an unknown contact does anyway.
+     *
+     * Null when they have no number: on a standalone server a citizenid gPhone has never
+     * issued a number to is a player gPhone has no record of at all.
      */
-    if (usesStandalone()) return null;
+    if (usesStandalone()) {
+      return await offlineLookup('the standalone phone-number lookup by citizenid', async () => {
+        const phone = await readNumber(citizenid);
+        if (!phone) return null;
+        return { citizenid, firstname: null, lastname: null, phone };
+      });
+    }
 
     if (usesEsx()) {
       return await offlineLookup('the es_extended `users` lookup by identifier', async () => {
@@ -1266,9 +1285,26 @@ export class FrameworkBridge {
    */
   public static async findOfflineByPhone(phone: string): Promise<FrameworkIdentity | null> {
     if (!phone) return null;
-    // Standalone for the reason `findOfflineByCitizenId` gives, ESX because core `users` has
-    // no phone column. Neither can answer, and both say so by answering nothing.
-    if (usesStandalone() || usesEsx()) return null;
+
+    /**
+     * **Standalone can answer this, and it is the only framework that can answer it well.**
+     * gPhone issued the number itself, so the reverse lookup is a query against a table it
+     * owns rather than a guess at somebody else's schema — which is exactly why ESX below
+     * cannot: core `users` has no phone column, and picking one community resource's table
+     * would be right for one server population and silently wrong for the rest.
+     *
+     * This is what lets a standalone player start a conversation with, or dial, somebody who
+     * is offline. Without it they could only reach players who happened to be connected.
+     */
+    if (usesStandalone()) {
+      return await offlineLookup('the standalone phone-number lookup by number', async () => {
+        const citizenid = await readCitizenIdByNumber(phone);
+        if (!citizenid) return null;
+        return { citizenid, firstname: null, lastname: null, phone };
+      });
+    }
+
+    if (usesEsx()) return null;
 
     return await offlineLookup('the `players` lookup by phone number', async () => {
       const row = await Database.single<{ citizenid: string; charinfo: unknown }>(

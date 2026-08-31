@@ -34,6 +34,7 @@ import {
   __resetStandaloneWarnings,
   __resetOfflineLookupWarnings
 } from '../lib/FrameworkBridge';
+import { __resetAssignedNumbers, rememberNumber } from '../lib/phoneNumbers';
 
 /** A well-formed FiveM license: the 40 hex characters every client has one of. */
 const LICENSE = `license:${'a'.repeat(40)}`;
@@ -101,6 +102,7 @@ beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
   __resetStandaloneWarnings();
   __resetOfflineLookupWarnings();
+  __resetAssignedNumbers();
   useResources({});
   setConvar('1');
   connect({ 5: { license: LICENSE, name: 'Ada Lovelace' } });
@@ -264,6 +266,35 @@ describe('the qb shape everything downstream reads', () => {
       lastname: ''
     });
   });
+
+  it('carries the number gPhone issued, on the player and in the qb view', () => {
+    // `getPlayer` is synchronous and the number lives in a table, so the cache in
+    // `lib/phoneNumbers.ts` is what bridges them. `getPlayerByPhone` walks this same view.
+    rememberNumber(LICENSE, '5561234');
+
+    const player = FrameworkBridge.getPlayer(5);
+
+    expect(player?.phone).toBe('5561234');
+    expect(player?.rawPlayer.PlayerData.charinfo.phone).toBe('5561234');
+    expect(FrameworkBridge.getPlayerPhone(5)).toBe('5561234');
+  });
+
+  it('has no number until one has been assigned, rather than inventing one', () => {
+    const player = FrameworkBridge.getPlayer(5);
+
+    expect(player?.phone).toBeUndefined();
+    expect(player?.rawPlayer.PlayerData.charinfo.phone).toBeNull();
+  });
+
+  it('finds a connected player by the number they were issued', () => {
+    connect({
+      1: { license: LICENSE, name: 'Ada Lovelace' },
+      7: { license: OTHER_LICENSE, name: 'Grace Hopper' }
+    });
+    rememberNumber(OTHER_LICENSE, '5561234');
+
+    expect(FrameworkBridge.getPlayerByPhone('5561234')?.citizenid).toBe(OTHER_LICENSE);
+  });
 });
 
 describe('standalone money fails closed', () => {
@@ -383,14 +414,57 @@ describe('the owner table, which decides what the orphan sweep may delete', () =
 });
 
 describe('offline lookups on standalone', () => {
-  it('answers nothing rather than querying a `players` table that does not exist', async () => {
+  it('never queries the `players` table, which does not exist here', async () => {
     // Falling through to the qb query is only harmless where that table might exist. Here it
     // certainly does not, and `offlineLookup` would swallow the failure into a once-per-start
     // warning about a broken table that was never supposed to be there.
-    await expect(FrameworkBridge.findOfflineByCitizenId(LICENSE)).resolves.toBeNull();
-    await expect(FrameworkBridge.findOfflineByPhone('5550101')).resolves.toBeNull();
+    dbMock.single.mockResolvedValue(null);
 
-    expect(dbMock.single).not.toHaveBeenCalled();
+    await FrameworkBridge.findOfflineByCitizenId(LICENSE);
+    await FrameworkBridge.findOfflineByPhone('5550101');
+
+    const queried = dbMock.single.mock.calls.map((call) => String(call[0]));
+    expect(queried.some((query) => /\bplayers\b/.test(query))).toBe(false);
+    expect(queried.every((query) => query.includes('gphone_phone_numbers'))).toBe(true);
+  });
+
+  it('renders an offline player as the number gPhone issued them', async () => {
+    // gPhone is the only record a standalone player has, so its own table is the framework
+    // record. The name stays null on purpose: `GetPlayerName` answers only for a connected
+    // client, and this lookup exists precisely for players who are not.
+    dbMock.single.mockResolvedValue({ number: '5561234' });
+
+    await expect(FrameworkBridge.findOfflineByCitizenId(LICENSE)).resolves.toEqual({
+      citizenid: LICENSE,
+      firstname: null,
+      lastname: null,
+      phone: '5561234'
+    });
+  });
+
+  it('answers nothing for a citizenid it has never issued a number to', async () => {
+    dbMock.single.mockResolvedValue(null);
+
+    await expect(FrameworkBridge.findOfflineByCitizenId(LICENSE)).resolves.toBeNull();
+  });
+
+  it('resolves a number back to its owner, which no other framework can do', async () => {
+    // This is what lets a standalone player dial, or start a conversation with, somebody who
+    // is offline. ESX answers null here because core `users` has no phone column at all.
+    dbMock.single.mockResolvedValue({ citizenid: OTHER_LICENSE });
+
+    await expect(FrameworkBridge.findOfflineByPhone('5561234')).resolves.toEqual({
+      citizenid: OTHER_LICENSE,
+      firstname: null,
+      lastname: null,
+      phone: '5561234'
+    });
+  });
+
+  it('answers nothing for a number nobody holds', async () => {
+    dbMock.single.mockResolvedValue(null);
+
+    await expect(FrameworkBridge.findOfflineByPhone('5561234')).resolves.toBeNull();
   });
 
   it('still queries `players` on a qb server', async () => {

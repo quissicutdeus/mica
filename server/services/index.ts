@@ -22,6 +22,7 @@ import './Notes';
 import './Notifications';
 import './Phone';
 import './PhoneCallLog';
+import './PhoneNumbers';
 import './Places';
 import './Reports';
 import './Schema';
