@@ -48,6 +48,3 @@ export const checkPasscodeRemote = async (digits: string): Promise<boolean> => {
   const reply = await fetchNui<{ ok?: boolean }>('checkPasscode', { passcode: digits });
   return reply?.ok === true;
 };
-
-/** Test seam, matching the rest of this file's siblings (`__resetAppEvents` etc.). */
-export const __resetPasscodeForTest = (): void => hasPasscode.set(false);

@@ -207,6 +207,15 @@ test.describe('Settings App E2E', () => {
       // Nothing left to clear, so the button says so rather than offering again.
       await expect(page.locator('text=this app has stored nothing yet')).toBeVisible();
 
+      // "Settings" is app id `settings`, the same one `privacyNoticeSeen` is persisted
+      // under (MICA-70) — so clearing this app's storage genuinely wipes that flag too,
+      // and the first-run notice reappears for real, on top of everything, exactly as it
+      // would for a player. Dismiss it before the rest of this test can click anything else.
+      await page
+        .getByRole('dialog', { name: 'Privacy notice' })
+        .getByRole('button', { name: 'Got it' })
+        .click();
+
       // And the setting is back to its shipped default, not merely absent from storage.
       await page.keyboard.press('Backspace');
       await page.keyboard.press('Backspace');

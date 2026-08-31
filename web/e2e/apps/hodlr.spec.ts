@@ -46,12 +46,14 @@ test.describe('Hodlr', () => {
     await expect(frame.locator('svg polyline')).toHaveAttribute('points', /^[\d.,\s]+$/);
 
     await frame.getByRole('button', { name: 'Buy', exact: true }).click();
-    await expect(frame.getByText('Buy gCoin at $500 each')).toBeVisible();
+    // $505, not the $500 mid above: MICA-147's spread quotes a buy above mid — see
+    // `mockHodlrBuyPrice` in `web/src/nui/mocks/data.ts`.
+    await expect(frame.getByText('Buy gCoin at $505 each')).toBeVisible();
 
     // The running total is what a player checks before committing real money, and it is
     // priced from the same store the portfolio read.
     await frame.getByPlaceholder('Quantity').fill('2');
-    await expect(frame.getByText('Cost: $1000')).toBeVisible();
+    await expect(frame.getByText('Cost: $1010')).toBeVisible();
 
     await frame.getByRole('button', { name: 'Confirm' }).click();
 
@@ -75,7 +77,9 @@ test.describe('Hodlr', () => {
     const frame = addOnFrame(page, 'hodlr');
     await frame.getByRole('button', { name: 'Sell', exact: true }).click();
 
-    await expect(frame.getByText('Sell gCoin at $500 each')).toBeVisible();
+    // $495, not $500 mid: MICA-147's spread quotes a sell below mid — see
+    // `mockHodlrSellPrice` in `web/src/nui/mocks/data.ts`.
+    await expect(frame.getByText('Sell gCoin at $495 each')).toBeVisible();
     await expect(frame.getByText('You hold 3 gCoin.')).toBeVisible();
 
     /**
@@ -90,7 +94,7 @@ test.describe('Hodlr', () => {
 
     await frame.getByPlaceholder('Quantity').fill('2');
     await expect(frame.getByText('You only have 3 gCoin to sell.')).toHaveCount(0);
-    await expect(frame.getByText('Proceeds: $1000')).toBeVisible();
+    await expect(frame.getByText('Proceeds: $990')).toBeVisible();
     await frame.getByRole('button', { name: 'Confirm' }).click();
 
     await expect(frame.getByText('1 gCoin', { exact: true })).toBeVisible();

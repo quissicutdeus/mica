@@ -87,7 +87,28 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${PORT}`,
     // No retries to be the 'first' of, so capture on the failure itself.
     trace: 'retain-on-failure',
-    viewport: { width: 1280, height: 960 }
+    viewport: { width: 1280, height: 960 },
+    /**
+     * MICA-70's first-run privacy notice defaults `privacyNoticeSeen` to `false`, and
+     * `PhoneFrame.svelte` renders it as a `z-[9999]` scrim above everything else in the
+     * phone the moment that's true — which every spec here now is, since none of them have
+     * ever seen it. Left unseeded, it intercepts the very first click of nearly the entire
+     * suite (visible as `locator.click: ... intercepts pointer events` against the scrim,
+     * not against whatever the test actually meant to click), so this is not a per-spec
+     * concern to dismiss — it is seeded true for the whole suite, the same way the theme
+     * key is seeded below for `chromium-light`. A spec that wants to test the notice
+     * itself overrides this with its own `storageState`/`addInitScript`, same as any other
+     * persisted default a test needs to defeat.
+     */
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: `http://127.0.0.1:${PORT}`,
+          localStorage: [{ name: 'gphone:settings:privacyNoticeSeen', value: 'true' }]
+        }
+      ]
+    }
   },
   projects: [
     /**
@@ -119,6 +140,10 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1280, height: 960 },
+        // A project-level `storageState` fully replaces the top-level one rather than
+        // merging with it, so the privacy-notice seed above has to be repeated here too —
+        // otherwise this project's own specs would hit the exact scrim-intercepts-clicks
+        // failure the top-level seed exists to prevent.
         storageState: {
           cookies: [],
           origins: [
@@ -128,7 +153,8 @@ export default defineConfig({
                 {
                   name: 'gphone:settings:theme',
                   value: JSON.stringify({ seed: '#155dfc', mode: 'light' })
-                }
+                },
+                { name: 'gphone:settings:privacyNoticeSeen', value: 'true' }
               ]
             }
           ]

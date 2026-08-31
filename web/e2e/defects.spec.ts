@@ -268,7 +268,12 @@ test.describe('Notes and Contacts persist in the browser mock', () => {
     const before = await page.locator('[role="button"]').count();
 
     await page.locator('[role="button"]').first().click();
-    const del = page.getByRole('button', { name: /delete/i }).first();
+    // Exact, not a substring match: MICA-75-wiring added a "Recently Deleted" header
+    // button, which a loose /delete/i regex also matches — after the real delete button
+    // closes with the detail view, that locator would fall through to the header button
+    // (always present, never reaching count 0) instead of proving the delete actually
+    // completed. `ContactDetails.svelte`'s own button is `aria-label="Delete"`, exactly.
+    const del = page.getByRole('button', { name: 'Delete', exact: true }).first();
     if ((await del.count()) === 0) test.skip();
     await del.click();
 
