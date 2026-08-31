@@ -98,6 +98,35 @@ export const ALL_PERMISSIONS = [
 export type AppPermission = (typeof ALL_PERMISSIONS)[number];
 
 /**
+ * What the *server* has to be able to do for an app to work at all, one name per thing
+ * the phone cannot supply on its own.
+ *
+ * gPhone can run standalone, with no framework resource behind it — and a deployment with
+ * no framework has no money. `Bank` and `Hodlr` are the two apps that move it, and a phone
+ * that shows a Bank which always errors is worse than one that does not show it at all.
+ *
+ * A string vocabulary rather than a `requiresMoney?: boolean`, decided once and on
+ * purpose. `AppManifest` is a published contract that every add-on anyone has shipped is
+ * compiled against (§2.7), so adding a field to it is a one-time cost and adding a second
+ * boolean later is a permanent one. `'inventory'` and whatever follows join this list
+ * without touching the shape of the manifest again.
+ *
+ * Distinct from `AppPermission`, which is a *disclosure* about what an app reaches for and
+ * is shown to a player in the Store. The two answers are independent: an app can honestly
+ * declare the `bank` permission on a server that has no money at all.
+ */
+export const ALL_CAPABILITIES = [
+  // Balances, transfers, prices — anything that moves currency. Comes from the framework
+  // bridge, so it is simply absent in standalone mode.
+  'money'
+] as const;
+
+/**
+ * One capability an app may declare it cannot work without. See `AppManifest.requires`.
+ */
+export type AppCapability = (typeof ALL_CAPABILITIES)[number];
+
+/**
  * What the shell hands an app component.
  *
  * There was no such type, and `Shell.svelte` rendered every app as `any` — so nothing was
@@ -297,6 +326,28 @@ export interface AppManifest {
    * exposes; this only stops the icon appearing for everyone else.
    */
   requiresAdmin?: boolean;
+  /**
+   * Server capabilities this app cannot function without. Absent means it needs none.
+   *
+   * **A visibility contract, not a security boundary** — the same caveat `requiresAdmin`
+   * carries, and worth restating rather than inferring. All this does is keep the icon
+   * away from a phone where the app could not work; the server still refuses every action
+   * it would have refused anyway (§2.9), and an app hidden here is not a disabled server
+   * endpoint. A modified client can still emit whatever it likes.
+   *
+   * Not `permissions`, which is a disclosure of what the app reaches for, shown to a
+   * player before they install it — that is a statement about the app, this is a statement
+   * about what the deployment can do. Not `requiresNetwork` either: that blocks the app at
+   * runtime, behind a "Not Network" screen, because cell signal comes back. A capability
+   * the server does not have is not a transient condition, so the honest outcome is
+   * absence rather than an app that is present and always errors.
+   *
+   * Absent is the only thing a bundle published before this field existed can say, and it
+   * means exactly the right thing: this app needs nothing of the server beyond what every
+   * app needs. `defineApp` supplies no default, so nothing already installed changes
+   * behaviour and no consumer has to distinguish `undefined` from `[]`.
+   */
+  requires?: AppCapability[];
   /**
    * Does this app need the NUI bridge to work at all?
    *
@@ -546,6 +597,32 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
           `is not a bare https origin (scheme, host, optional port — no path). CSP's ` +
           `connect-src takes an origin, and 'srcdoc.ts' does not correct malformed entries.`
       );
+    }
+  }
+
+  /**
+   * A typo here fails loudly, for the same reason a malformed `tile` does: an unknown
+   * capability can never be satisfied by any server, so the app would simply never appear
+   * anywhere, with nothing said and nothing to notice it. `defineApp` is the only place
+   * that can tell the author, and it runs at definition time.
+   */
+  const requires = manifest.requires;
+  if (requires !== undefined) {
+    if (!Array.isArray(requires)) {
+      throw new Error(
+        `gPhone App Manifest error: '${id}' has a 'requires' that is not an array. It lists ` +
+          `the server capabilities the app cannot work without — requires: ['money'].`
+      );
+    }
+    for (const capability of requires) {
+      if (!(ALL_CAPABILITIES as readonly string[]).includes(capability)) {
+        throw new Error(
+          `gPhone App Manifest error: '${id}' declares an unknown capability ` +
+            `'${String(capability)}' in 'requires'. Known capabilities: ` +
+            `${ALL_CAPABILITIES.join(', ')}. An unknown one is never satisfied, so the app ` +
+            `would be hidden on every server rather than on the ones that lack it.`
+        );
+      }
     }
   }
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { get } from 'svelte/store';
-import { defineApp } from './manifest';
+import { ALL_CAPABILITIES, defineApp } from './manifest';
 import { appRegistryStore } from '../shell/state/registry';
 import { currentApp, openApp, goHome } from '../shell/state/navigation';
 
@@ -293,5 +293,110 @@ describe('defineApp: networkHosts', () => {
     });
 
     expect(manifest.networkHosts).toBeUndefined();
+  });
+});
+
+describe('defineApp: requires', () => {
+  it('keeps a declared capability on the way out', () => {
+    const manifest = defineApp({
+      id: 'moneyed',
+      color: 'bg-green-600',
+      icon: null,
+      core: false,
+      requires: ['money']
+    });
+
+    expect(manifest.requires).toEqual(['money']);
+  });
+
+  it('refuses an unknown capability, naming it', () => {
+    // The failure this exists for: an unsatisfiable capability is not a broken app, it is
+    // an absent one — hidden on every server rather than only on the ones that lack the
+    // thing — and absence reports itself to nobody. `defineApp` is the last place that can
+    // say so, and it runs at definition time.
+    expect(() =>
+      defineApp({
+        id: 'typo',
+        color: 'bg-green-600',
+        icon: null,
+        core: false,
+        // Not `AppCapability`. A hand-written manifest, or one inside a published JS
+        // bundle, is not typechecked against this union at all — which is exactly why the
+        // runtime check has to exist alongside the type.
+        requires: ['munny'] as never
+      })
+    ).toThrow(/unknown capability 'munny'/);
+  });
+
+  it('names the capabilities that do exist, so the typo is fixable from the message', () => {
+    expect(() =>
+      defineApp({
+        id: 'typo2',
+        color: 'bg-green-600',
+        icon: null,
+        core: false,
+        requires: ['inventory'] as never
+      })
+    ).toThrow(/Known capabilities: money/);
+  });
+
+  it('refuses a non-array, rather than iterating a string one character at a time', () => {
+    expect(() =>
+      defineApp({
+        id: 'stringly',
+        color: 'bg-green-600',
+        icon: null,
+        core: false,
+        requires: 'money' as never
+      })
+    ).toThrow(/'requires' that is not an array/);
+  });
+
+  it('leaves an add-on that predates the field completely alone', () => {
+    // Backward compatibility is the whole reason this is optional. A bundle published
+    // before `requires` existed cannot declare it, and the absence has to mean "requires
+    // nothing" — not "unknown", and not an empty array every consumer then has to tell
+    // apart from undefined.
+    const legacy = defineApp({
+      id: 'published_last_year',
+      color: 'bg-blue-600',
+      icon: null,
+      core: false
+    });
+
+    expect(legacy.requires).toBeUndefined();
+    expect('requires' in legacy).toBe(false);
+  });
+
+  it('accepts an empty list as the same thing said explicitly', () => {
+    expect(
+      defineApp({ id: 'explicit', color: 'bg-blue-600', icon: null, core: false, requires: [] })
+        .requires
+    ).toEqual([]);
+  });
+
+  it('survives being re-run over its own output', () => {
+    // `shell/state/registry.ts` re-runs `defineApp` over an already-defined manifest to
+    // stamp `installedAt`, so every field has to round-trip. `color`/`tile` needed a rule
+    // of their own for exactly this reason; `requires` must not grow a second check that
+    // fires only on the second pass.
+    const once = defineApp({
+      id: 'twice',
+      color: 'bg-green-600',
+      icon: null,
+      core: false,
+      requires: ['money']
+    });
+
+    expect(defineApp(once).requires).toEqual(['money']);
+  });
+});
+
+describe('ALL_CAPABILITIES', () => {
+  it('is non-empty, so the validation above cannot pass vacuously', () => {
+    // The `ALL_PERMISSIONS` lesson (`permissions.test.ts`): a vocabulary that failed to
+    // import turns a check that looks strict into one that accepts everything.
+    expect(ALL_CAPABILITIES.length).toBeGreaterThan(0);
+    expect(ALL_CAPABILITIES).toContain('money');
   });
 });
