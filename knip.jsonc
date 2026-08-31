@@ -21,7 +21,17 @@
   // in package.json, which knip did read. The dependency is genuinely used; nothing but the
   // evidence moved. Kept to this one name rather than ignoring the check, so a devDependency
   // that really does go unused is still reported.
-  "ignoreDependencies": ["lint-staged"],
+  // `jsdom` is declared in `web/package.json`, which is correct: `web`'s vitest config is
+  // what runs the file that names it. But that config also globs `../shared/**/*.test.ts`,
+  // while this config lists `shared/**/*.ts` under the root workspace — so knip attributes
+  // `shared/musicBroadcast.test.ts` to a project whose package.json has no `jsdom`, and
+  // reports a dependency that is genuinely installed and genuinely used. The file needs the
+  // environment for the reason its own docblock gives (MICA-176): its subject transitively
+  // reaches `services/admin.ts`, which reads `window` at module scope.
+  //
+  // Named rather than switching the check off, matching `lint-staged` above: a devDependency
+  // that really is unused still gets reported.
+  "ignoreDependencies": ["lint-staged", "jsdom"],
   "workspaces": {
     ".": {
       // esbuild builds these two directly (`build/build-bundle.js`), so nothing in the
