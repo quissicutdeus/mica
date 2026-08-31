@@ -1,5 +1,7 @@
 import { defineService } from '../lib/defineService';
 import { Note } from '@shared/types';
+import { fields, requirePositiveInt } from '../lib/payload';
+import { restoreWindowDays } from '../lib/retention';
 
 /**
  * Notes: the whole server half of the app.
@@ -17,4 +19,28 @@ export const notes = defineService<Note>({
     content: 'text'
   },
   indexes: [{ name: 'citizenid_status_updated', columns: ['citizenid', 'status', 'updated_at'] }]
+});
+
+/**
+ * Undo a `delete`, within `restoreWindowDays()` of it (MICA-75) — see
+ * `Repository.restore` for the ownership scoping and why `updated_at` stands in for a
+ * deletion timestamp. `ok: false` covers both "no such note" and "past the window" with
+ * the same answer, matching `delete`'s own generic reply shape rather than inventing a
+ * reason a client would have no use for beyond "did it work".
+ */
+notes.app.registerEvent('restore', async (source, cbId, data, citizenid) => {
+  const id = requirePositiveInt(fields(data).id, 'id');
+  const ok = await notes.repo.restore(id, citizenid, restoreWindowDays());
+  return { ok };
+});
+
+/**
+ * The "Recently Deleted" list itself (MICA-75-wiring) — every note `restore` above
+ * could still bring back. See `Repository.findDeleted` for why this is a named action
+ * rather than the generic `get`: `status` is never client-filterable. Notes is `core:
+ * false`, so the web side reaches this through `useService('notes').call('getDeleted', {})`
+ * rather than a `shared/routes.ts` row.
+ */
+notes.app.registerEvent('getDeleted', async (source, cbId, data, citizenid) => {
+  return await notes.repo.findDeleted(citizenid, restoreWindowDays());
 });

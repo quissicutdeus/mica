@@ -3,8 +3,9 @@ import { Contact, SharedContactCard } from '@shared/types';
 import { guardNetEvent } from '../lib/netGuard';
 import { findNearbyVisiblePlayers } from '../lib/proximity';
 import { appEventChannel } from '../lib/appEvents';
-import { fields } from '../lib/payload';
+import { fields, requirePositiveInt } from '../lib/payload';
 import { resolve as resolvePlayer } from '../lib/PlayerDirectory';
+import { restoreWindowDays } from '../lib/retention';
 
 /**
  * Contacts: owner-scoped address book, all four generic CRUD actions.
@@ -53,6 +54,26 @@ export const contacts = defineService<Contact>({
         return await this.create({ ...item, citizenid } as Partial<Contact>);
       }
     })(resolved)
+});
+
+/**
+ * Undo a `delete`, within `restoreWindowDays()` of it (MICA-75) — see
+ * `Repository.restore` for the ownership scoping and why `updated_at` stands in for a
+ * deletion timestamp.
+ */
+contacts.app.registerEvent('restore', async (source, cbId, data, citizenid) => {
+  const id = requirePositiveInt(fields(data).id, 'id');
+  const ok = await contacts.repo.restore(id, citizenid, restoreWindowDays());
+  return { ok };
+});
+
+/**
+ * The "Recently Deleted" list itself (MICA-75-wiring) — every contact `restore` above
+ * could still bring back. See `Repository.findDeleted` for why this is a named action
+ * rather than the generic `get`: `status` is never client-filterable.
+ */
+contacts.app.registerEvent('getDeleted', async (source, cbId, data, citizenid) => {
+  return await contacts.repo.findDeleted(citizenid, restoreWindowDays());
 });
 
 const MAX_SHARE_NAME_LENGTH = 50;

@@ -9,7 +9,9 @@ export function contacts(): Twin {
     contactsStore: store('contacts', [], 'contactsStore', []),
     favoriteContacts: store('contacts', [], 'favoriteContacts', []),
     addContact: fn('contacts', [], 'addContact'),
-    shareContact: fn('contacts', [], 'shareContact')
+    shareContact: fn('contacts', [], 'shareContact'),
+    getDeletedContacts: fn('contacts', [], 'getDeletedContacts'),
+    restoreContact: fn('contacts', [], 'restoreContact')
   };
 }
 // The Twin above is what an iframe can honestly offer (MICA-26) -- Readable in place of

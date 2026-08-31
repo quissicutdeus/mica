@@ -5,6 +5,15 @@ import { makeThumbnail } from '../lib/thumbnail';
 import type { MediaItem, MediaPreview } from '@shared/types';
 
 /**
+ * A row from the "Recently Deleted" read (MICA-75-wiring) — `MediaPreview` plus the one
+ * field that read has no use for and this one needs: when it was deleted, for
+ * `RecentlyDeletedItem.deletedAt`. Server-projected to exactly this shape
+ * (`server/services/Media.ts`'s `getDeleted`), not `MediaPreview` itself, since that type
+ * deliberately carries no timestamp at all.
+ */
+export type DeletedMediaItem = MediaPreview & { updated_at: string | Date };
+
+/**
  * Three columns, seven rows.
  *
  * The screen is a fixed 400x850 (§5), so a page is not a guess: at the ~123px a grid tile
@@ -288,5 +297,28 @@ export const media = {
   /** Set a GPS waypoint from a location a message already carries. Purely local in game. */
   setWaypoint: async (x: number, y: number): Promise<void> => {
     await fetchNui('setWaypoint', { x, y });
+  },
+
+  /**
+   * The "Recently Deleted" list (MICA-75-wiring) — every soft-deleted row still within
+   * the restore window, projected the same way `getMedia` already is (MICA-110): no
+   * `data`. Not part of the cached `store` above — a screen visited rarely enough that a
+   * fresh read each time is the right cost.
+   */
+  getDeleted: (): Promise<DeletedMediaItem[]> =>
+    fetchNui<DeletedMediaItem[]>('getDeletedMedia', {}, { defaultValue: [] }),
+
+  /**
+   * Undo a delete. Refreshes the main list on success so the restored row reappears in
+   * it without waiting for the next foreground reload.
+   */
+  restore: async (mediaId: number): Promise<boolean> => {
+    const { ok } = await fetchNui<{ ok: boolean }>(
+      'restoreMedia',
+      { id: mediaId },
+      { defaultValue: { ok: false } }
+    );
+    if (ok) await store.load();
+    return ok;
   }
 };

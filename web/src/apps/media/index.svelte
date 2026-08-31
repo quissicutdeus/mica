@@ -3,6 +3,7 @@
     ReportDialog,
     Screen,
     ConfirmDialog,
+    RecentlyDeleted,
     ShareSquareIcon,
     TrashIcon,
     onAppForeground,
@@ -13,6 +14,7 @@
     useMedia,
     usePhoneNotification,
     type AppProps,
+    type RecentlyDeletedItem,
     fade
   } from '@gphone/sdk';
   import type { MediaItem } from '@shared/types';
@@ -27,7 +29,7 @@
     initialPhotoId
   }: AppProps & { initialPhoto?: MediaItem; initialPhotoId?: number } = $props();
 
-  const { media, deletePhoto, dropNearby } = useMedia();
+  const { media, deletePhoto, dropNearby, getDeletedMedia, restoreMedia } = useMedia();
   const { busy, run } = useAppAction('media');
   const { toast } = usePhoneNotification();
 
@@ -36,6 +38,10 @@
   const selectedIds = new SvelteSet<number>();
   let showDeleteConfirm = $state(false);
   let reporting = $state(false);
+  let showRecentlyDeleted = $state(false);
+  // `MediaPreview` plus the deletion timestamp it deliberately carries no field for —
+  // inferred from the facet call rather than a new SDK-exported type for one local.
+  let deletedMedia = $state<Awaited<ReturnType<typeof getDeletedMedia>>>([]);
 
   /**
    * A fresh first page on every foreground.
@@ -196,6 +202,39 @@
     showDeleteConfirm = false;
   };
 
+  /**
+   * "Recently Deleted" (MICA-75-wiring). A fresh read every time it's opened rather
+   * than a cached store — the screen is visited rarely enough that this is the right
+   * cost, and it means a photo deleted moments ago is already there.
+   */
+  const openRecentlyDeleted = async () => {
+    showRecentlyDeleted = true;
+    deletedMedia = await getDeletedMedia();
+  };
+
+  const recentlyDeletedItems = $derived<RecentlyDeletedItem[]>(
+    deletedMedia.map((m) => ({
+      id: m.id,
+      label: m.alt_text || (m.kind === 'photo' ? 'Photo' : m.kind),
+      deletedAt: m.updated_at
+    }))
+  );
+
+  const restoreDeletedMedia = async (id: string | number) => {
+    // `restoreMedia` resolves to `false` rather than throwing on a refusal (past the
+    // restore window, most likely), so `run` — which only reacts to a thrown error —
+    // has to be told about that refusal explicitly.
+    const restored = await run(
+      async () => {
+        if (!(await restoreMedia(Number(id)))) {
+          throw new Error('This can no longer be restored.');
+        }
+      },
+      { success: 'Restored' }
+    );
+    if (restored) deletedMedia = deletedMedia.filter((m) => m.id !== id);
+  };
+
   const app = useAppLevels({
     appId: 'media',
     title: 'Media',
@@ -210,24 +249,48 @@
           isSelectionMode = false;
           selectedIds.clear();
         }
+      },
+      {
+        open: () => showRecentlyDeleted,
+        close: () => (showRecentlyDeleted = false),
+        title: 'Recently Deleted'
       }
     ]
   });
 </script>
 
 {#snippet headerActions()}
-  {#if !selectedPhoto}
+  {#if !selectedPhoto && !showRecentlyDeleted}
     <button
       class="text-primary hover:bg-surface-container-high duration-short ease-standard ml-auto rounded-full p-2 font-semibold transition-colors"
       onclick={toggleSelectionMode}
     >
       {isSelectionMode ? 'Cancel' : 'Select'}
     </button>
+    {#if !isSelectionMode}
+      <button
+        class="text-on-surface hover:bg-surface-container-high duration-short ease-standard rounded-full p-2 transition-colors"
+        onclick={openRecentlyDeleted}
+        title="Recently Deleted"
+        aria-label="Recently Deleted"
+      >
+        <TrashIcon class="size-icon-md" />
+      </button>
+    {/if}
   {/if}
 {/snippet}
 
 <Screen title={app.title} onback={app.back} actions={headerActions}>
-  {#if selectedPhoto}
+  {#if showRecentlyDeleted}
+    <!-- No `onpermanentdelete` (MICA-75-wiring): the server ships no hard-delete this
+         round — soft-deleted stays soft-deleted forever — so this is restore-only. -->
+    <RecentlyDeleted
+      items={recentlyDeletedItems}
+      onrestore={restoreDeletedMedia}
+      emptyTitle="No deleted photos"
+      emptyDescription="Photos you delete stick around here until the restore window closes."
+    />
+  {:else if selectedPhoto}
     <PhotoDetail
       photo={selectedPhoto}
       busy={$busy}

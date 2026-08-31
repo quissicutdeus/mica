@@ -46,6 +46,7 @@ const SHARE_LOCATION_EVENT = 'gphone:server:media:shareLocation';
 const GET_EVENT = 'gphone:server:media:get';
 const ITEM_EVENT = 'gphone:server:media:item';
 const THUMBNAIL_EVENT = 'gphone:server:media:thumbnail';
+const RESTORE_EVENT = 'gphone:server:media:restore';
 
 const call = async (event: string, data: unknown) => {
   const handler = handlers.get(event);
@@ -62,6 +63,7 @@ const callShareLocation = (data: unknown) => call(SHARE_LOCATION_EVENT, data);
 const callGet = (data: unknown) => call(GET_EVENT, data);
 const callItem = (data: unknown) => call(ITEM_EVENT, data);
 const callThumbnail = (data: unknown) => call(THUMBNAIL_EVENT, data);
+const callRestore = (data: unknown) => call(RESTORE_EVENT, data);
 
 /** A one-pixel PNG — the shape store-back accepts, and nothing larger. */
 const TINY_STILL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
@@ -672,5 +674,93 @@ describe('media:create — the size a photo may actually be (MICA-116)', () => {
 
     expect(reply).toEqual({ count: 1 });
     expect(dbMock.insert).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * MICA-75. Not to be confused with `drop` above, which shares a copy to nearby phones
+ * and never touches this row's own `status`. See `Repository.test.ts` for the mechanics
+ * `restore` itself is built on.
+ */
+describe('media:restore (MICA-75)', () => {
+  it('restores deleted media within the window, scoped to the caller citizenid', async () => {
+    dbMock.update.mockResolvedValue(true);
+
+    const reply = await callRestore({ id: 12 });
+
+    expect(reply).toEqual({ ok: true });
+    const [sql, params] = dbMock.update.mock.calls[0];
+    expect(String(sql)).toContain('UPDATE `gphone_media`');
+    expect(params).toEqual([12, 'CID_A', 30]);
+  });
+
+  it('reports false once the window has passed, rather than throwing', async () => {
+    dbMock.update.mockResolvedValue(false);
+
+    const reply = await callRestore({ id: 12 });
+
+    expect(reply).toEqual({ ok: false });
+  });
+
+  it('restores under the caller citizenid, never one the payload names', async () => {
+    dbMock.update.mockResolvedValue(true);
+
+    await callRestore({ id: 12, citizenid: 'CID_VICTIM' });
+
+    expect(dbMock.update.mock.calls[0][1]).toEqual([12, 'CID_A', 30]);
+  });
+
+  it('rejects a missing id before touching the database', async () => {
+    const reply = await callRestore({});
+
+    expect(reply).toMatchObject({ error: expect.any(String) });
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * MICA-75-wiring: the "Recently Deleted" list itself. `status` is never
+ * client-filterable, so this reads `Repository.findDeleted` through a named action rather
+ * than the generic `get` — and, unlike Contacts and Notes, projects the columns down the
+ * same way `get` already does (MICA-110): a deleted row can still carry the full base64
+ * `data` blob, which a list needing only a caption and a small still has no business
+ * paying for.
+ */
+describe('media:getDeleted (MICA-75-wiring)', () => {
+  const GET_DELETED_EVENT = 'gphone:server:media:getDeleted';
+  const callGetDeleted = (data: unknown) => call(GET_DELETED_EVENT, data);
+
+  it('reads only the caller’s own deleted rows, bounded to the restore window', async () => {
+    dbMock.query.mockResolvedValue([{ id: 12, citizenid: 'CID_A', status: 'deleted' }]);
+
+    const reply = await callGetDeleted({});
+
+    expect(reply).toEqual([{ id: 12, citizenid: 'CID_A', status: 'deleted' }]);
+    const [sql, params] = dbMock.query.mock.calls[0];
+    expect(String(sql)).toContain('FROM `gphone_media`');
+    expect(String(sql)).toContain("`status` = 'deleted'");
+    expect(params).toEqual(['CID_A', 30]);
+  });
+
+  it('projects the columns down — no `data` blob in a list read', async () => {
+    dbMock.query.mockResolvedValue([]);
+
+    await callGetDeleted({});
+
+    const [sql] = dbMock.query.mock.calls[0];
+    expect(String(sql)).not.toContain('`data`');
+    expect(String(sql)).toContain('`thumbnail`');
+  });
+
+  it('ignores anything the payload claims and uses the caller’s own citizenid', async () => {
+    dbMock.query.mockResolvedValue([]);
+
+    await callGetDeleted({ citizenid: 'CID_VICTIM' });
+
+    expect(dbMock.query.mock.calls[0][1]).toEqual(['CID_A', 30]);
+  });
+
+  it('is registered alongside restore', () => {
+    expect(handlers.has(GET_DELETED_EVENT)).toBe(true);
   });
 });

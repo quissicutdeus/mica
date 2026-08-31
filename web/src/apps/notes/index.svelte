@@ -6,6 +6,7 @@
     EmptyState,
     FloatingActionButton,
     ListItem,
+    RecentlyDeleted,
     Screen,
     SearchBar,
     Skeleton,
@@ -14,6 +15,7 @@
     DocumentIcon,
     EditIcon,
     ListBulletIcon,
+    TrashIcon,
     filterByQuery,
     formatDate,
     onAppForeground,
@@ -23,11 +25,12 @@
     useScrollDetect,
     useTimer,
     type AppProps,
+    type RecentlyDeletedItem,
     fade
   } from '@gphone/sdk';
   import { useNotes } from './store';
 
-  const { notesStore: notes } = useNotes();
+  const { notesStore: notes, getDeletedNotes, restoreNote } = useNotes();
   const notesLoaded = notes.loaded;
   const { busy, run } = useAppAction('notes');
   const { after } = useTimer();
@@ -43,6 +46,8 @@
   let showDeleteConfirm = $state(false);
   let showHeadingDropdown = $state(false);
   let textAreaRef: HTMLTextAreaElement | null = $state(null);
+  let showRecentlyDeleted = $state(false);
+  let deletedNotes = $state<Note[]>([]);
 
   // New Note State
   let newNote = $state({
@@ -76,9 +81,48 @@
           draftNote = null;
         },
         title: () => selectedNote?.title || 'Untitled'
+      },
+      {
+        open: () => showRecentlyDeleted,
+        close: () => (showRecentlyDeleted = false),
+        title: 'Recently Deleted'
       }
     ]
   });
+
+  /**
+   * "Recently Deleted" (MICA-75-wiring). A fresh read every time it's opened rather
+   * than a cached store — the screen is visited rarely enough that this is the right
+   * cost, and it means a note deleted moments ago is already there.
+   */
+  const openRecentlyDeleted = async () => {
+    showRecentlyDeleted = true;
+    deletedNotes = await getDeletedNotes();
+  };
+
+  const recentlyDeletedItems = $derived<RecentlyDeletedItem[]>(
+    deletedNotes.map((n) => ({
+      id: n.id,
+      label: n.title || 'Untitled',
+      preview: n.content,
+      deletedAt: n.updated_at
+    }))
+  );
+
+  const restoreDeletedNote = async (id: string | number) => {
+    // `restoreNote` resolves to `false` rather than throwing on a refusal (past the
+    // restore window, most likely), so `run` — which only reacts to a thrown error —
+    // has to be told about that refusal explicitly.
+    const restored = await run(
+      async () => {
+        if (!(await restoreNote(Number(id)))) {
+          throw new Error('This can no longer be restored.');
+        }
+      },
+      { success: 'Note restored' }
+    );
+    if (restored) deletedNotes = deletedNotes.filter((n) => n.id !== id);
+  };
 
   const addNote = async () => {
     if (!newNote.title.trim() && !newNote.content.trim()) return;
@@ -192,11 +236,20 @@
     >
       <EditIcon />
     </button>
+  {:else if !selectedNote && !isAdding && !showRecentlyDeleted}
+    <button
+      class="hover:bg-surface-container-high duration-short ease-standard ml-auto rounded-full p-2 transition-colors"
+      onclick={openRecentlyDeleted}
+      title="Recently Deleted"
+      aria-label="Recently Deleted"
+    >
+      <TrashIcon class="size-icon-md" />
+    </button>
   {/if}
 {/snippet}
 
 {#snippet fabOverlay()}
-  {#if !selectedNote && !isAdding}
+  {#if !selectedNote && !isAdding && !showRecentlyDeleted}
     <FloatingActionButton label="New Note" collapsed={isScrolled} onclick={() => (isAdding = true)}>
       {#snippet icon()}
         <AddIcon class="text-on-surface size-icon-sm shrink-0" />
@@ -206,7 +259,16 @@
 {/snippet}
 
 <Screen title={app.title} onback={app.back} actions={headerActions} overlay={fabOverlay}>
-  {#if !selectedNote}
+  {#if showRecentlyDeleted}
+    <!-- No `onpermanentdelete` (MICA-75-wiring): the server ships no hard-delete this
+         round — soft-deleted stays soft-deleted forever — so this is restore-only. -->
+    <RecentlyDeleted
+      items={recentlyDeletedItems}
+      onrestore={restoreDeletedNote}
+      emptyTitle="No deleted notes"
+      emptyDescription="Notes you delete stick around here until the restore window closes."
+    />
+  {:else if !selectedNote}
     {#if isAdding}
       <div
         class="animate-in fade-in slide-in-from-right bg-surface-container m-2 flex flex-1 flex-col space-y-3 rounded-lg p-4"

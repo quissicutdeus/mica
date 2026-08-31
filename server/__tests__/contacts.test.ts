@@ -270,3 +270,105 @@ describe('contacts:ringtone (MICA-142)', () => {
     );
   });
 });
+
+/**
+ * MICA-75. `restore` undoes a `delete` within the shared restore window — see
+ * `Repository.restore` and `server/lib/retention.ts` for the mechanics this exercises
+ * end-to-end through the registered net event.
+ */
+describe('contacts:restore (MICA-75)', () => {
+  const genericCall = async (action: 'restore', data: unknown) => {
+    const handler = handlers.get(`gphone:server:contacts:${action}`);
+    if (!handler) throw new Error(`no handler for contacts:${action}`);
+    await (handler as any)('cb-1', data);
+    return (globalThis.emitNet as any).mock.calls.at(-1)?.[3];
+  };
+
+  it('restores a deleted contact within the window, scoped to the caller citizenid', async () => {
+    dbMock.update.mockResolvedValue(true);
+
+    const reply = await genericCall('restore', { id: 3 });
+
+    expect(reply).toEqual({ ok: true });
+    const [sql, params] = dbMock.update.mock.calls[0];
+    expect(String(sql)).toContain('UPDATE `gphone_contacts`');
+    expect(String(sql)).toContain("`status` = 'deleted'");
+    expect(params).toEqual([3, 'CID_A', 30]);
+  });
+
+  it('reports false rather than throwing once the window has passed', async () => {
+    dbMock.update.mockResolvedValue(false);
+
+    const reply = await genericCall('restore', { id: 3 });
+
+    expect(reply).toEqual({ ok: false });
+  });
+
+  it('restores under the caller citizenid, never one the payload names', async () => {
+    dbMock.update.mockResolvedValue(true);
+
+    await genericCall('restore', { id: 3, citizenid: 'CID_VICTIM' });
+
+    expect(dbMock.update.mock.calls[0][1]).toEqual([3, 'CID_A', 30]);
+  });
+
+  it('honours an operator-configured restore window', async () => {
+    const previous = (globalThis as any).GetConvar;
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'gphone_restore_window_days' ? '7' : fallback;
+    dbMock.update.mockResolvedValue(true);
+
+    await genericCall('restore', { id: 3 });
+
+    (globalThis as any).GetConvar = previous;
+    expect(dbMock.update.mock.calls[0][1]).toEqual([3, 'CID_A', 7]);
+  });
+
+  it('rejects a missing or invalid id before touching the database', async () => {
+    const reply = await genericCall('restore', {});
+
+    expect(reply).toMatchObject({ error: expect.any(String) });
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  it('is registered alongside the generic CRUD actions', () => {
+    expect(handlers.has('gphone:server:contacts:restore')).toBe(true);
+    expect(contacts.resolved.id).toBe('contacts');
+  });
+});
+
+/**
+ * MICA-75-wiring: the "Recently Deleted" list itself. `status` is never
+ * client-filterable (`Repository.ts`'s `NEVER_CLIENT_FILTERABLE`), so this is a named
+ * action reading `Repository.findDeleted` directly rather than the generic `get`.
+ */
+describe('contacts:getDeleted (MICA-75-wiring)', () => {
+  const call = async (data: unknown = {}) => {
+    const handler = handlers.get('gphone:server:contacts:getDeleted');
+    if (!handler) throw new Error('no handler for contacts:getDeleted');
+    await (handler as any)('cb-1', data);
+    return (globalThis.emitNet as any).mock.calls.at(-1)?.[3];
+  };
+
+  it('reads only the caller’s own deleted rows, bounded to the restore window', async () => {
+    dbMock.query.mockResolvedValue([{ id: 3, citizenid: 'CID_A', status: 'deleted' }]);
+
+    const reply = await call();
+
+    expect(reply).toEqual([{ id: 3, citizenid: 'CID_A', status: 'deleted' }]);
+    const [sql, params] = dbMock.query.mock.calls[0];
+    expect(String(sql)).toContain('FROM `gphone_contacts`');
+    expect(String(sql)).toContain("`status` = 'deleted'");
+    expect(params).toEqual(['CID_A', 30]);
+  });
+
+  it('ignores anything the payload claims and uses the caller’s own citizenid', async () => {
+    await call({ citizenid: 'CID_VICTIM' });
+
+    expect(dbMock.query.mock.calls[0][1]).toEqual(['CID_A', 30]);
+  });
+
+  it('is registered alongside restore', () => {
+    expect(handlers.has('gphone:server:contacts:getDeleted')).toBe(true);
+  });
+});

@@ -84,6 +84,10 @@ export const ROUTES: readonly Route[] = [
   route('createContact', 'contacts', 'create'),
   route('updateContact', 'contacts', 'update'),
   route('deleteContact', 'contacts', 'delete'),
+  // Recently Deleted (MICA-75-wiring) — `status` is never client-filterable
+  // (`Repository.ts`), so both of these are named actions rather than the generic `get`.
+  route('getDeletedContacts', 'contacts', 'getDeleted'),
+  route('restoreContact', 'contacts', 'restore'),
 
   // Conversations
   route('getConversations', 'conversations', 'get'),
@@ -157,6 +161,11 @@ export const ROUTES: readonly Route[] = [
   route('setMediaThumbnail', 'media', 'thumbnail'),
   route('createMedia', 'media', 'create'),
   route('deleteMedia', 'media', 'delete'),
+  // Recently Deleted (MICA-75-wiring) — `status` is never client-filterable
+  // (`Repository.ts`), so both of these are named actions rather than the generic `get`.
+  // The list read is projected the same way `getMedia` already is (MICA-110): no `data`.
+  route('getDeletedMedia', 'media', 'getDeleted'),
+  route('restoreMedia', 'media', 'restore'),
   // Bluetooth proximity: copy a media row the caller owns to everyone nearby and visible.
   route('shareMediaNearby', 'media', 'drop'),
   // Location sharing. Not a dumb passthrough — its client relay in `client/services/

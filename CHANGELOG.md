@@ -240,6 +240,15 @@ that sets none of them changes nothing for your players.
 
 ### Added
 
+- **A deleted Contact, Note or photo can be restored again**, within a shared
+  window (`gphone_restore_window_days`, default 30 days) after the delete.
+  `restore` is a new action on each of the three apps, ownership-scoped the same
+  way `delete` already is. Nothing calls it from the phone's UI in this release
+  — this is the server half only, and nothing about a deleted row's behavior
+  changes if you never wire a "recently deleted" screen up to it. Past the
+  window a row is not gone; it is simply no longer reachable through `restore` —
+  nothing in gPhone hard-deletes a contact, note or photo, since the moderation
+  system depends on a soft-deleted row surviving forever.
 - **gPhone runs on ESX.** `es_extended` joins `qbx_core` and `qb-core` as a
   supported framework, detected at start with no convar to set. A player loads,
   sees their own data, and makes a bank transfer (MICA-150).

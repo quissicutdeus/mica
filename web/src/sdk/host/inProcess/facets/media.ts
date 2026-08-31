@@ -45,7 +45,15 @@ export function media() {
      * neither (MICA-110) — the avatar picker and the wallpaper picker both do, and both
      * are reachable from a sandboxed app.
      */
-    fullMedia: async (mediaId: number) => mediaService.full(mediaId)
+    fullMedia: async (mediaId: number) => mediaService.full(mediaId),
+    /**
+     * The "Recently Deleted" list (MICA-75-wiring). Named here rather than left to
+     * `media.getDeleted`/`media.restore` on the store above, for the same reason
+     * `fullMedia` already is: the store an iframe gets is a `Readable` with no methods on
+     * it at all, so anything an add-on needs to call has to be its own facet member.
+     */
+    getDeletedMedia: () => mediaService.getDeleted(),
+    restoreMedia: (mediaId: number) => mediaService.restore(mediaId)
   };
 }
 

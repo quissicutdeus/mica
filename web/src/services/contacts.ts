@@ -43,6 +43,29 @@ export const contacts = {
     const firstname = payload.firstname || payload.name?.split(' ')[0];
     requireNameAndPhone({ firstname, phone: payload.phone }, true);
     await fetchNui('shareContact', payload);
+  },
+
+  /**
+   * The "Recently Deleted" list (MICA-75-wiring) — every soft-deleted contact still
+   * within the restore window. Not part of the cached `store` above: this is a screen
+   * visited rarely enough that a fresh read each time is the right cost, not a second
+   * list to keep in sync with the first.
+   */
+  getDeleted: (): Promise<Contact[]> =>
+    fetchNui<Contact[]>('getDeletedContacts', {}, { defaultValue: [] }),
+
+  /**
+   * Undo a delete. Refreshes the main list on success so the restored contact reappears
+   * in it without waiting for the next foreground reload.
+   */
+  restore: async (id: number): Promise<boolean> => {
+    const { ok } = await fetchNui<{ ok: boolean }>(
+      'restoreContact',
+      { id },
+      { defaultValue: { ok: false } }
+    );
+    if (ok) await store.load();
+    return ok;
   }
 };
 

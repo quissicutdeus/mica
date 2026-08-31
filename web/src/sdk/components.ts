@@ -30,6 +30,8 @@ export { default as MediaThumb } from './ui/MediaThumb.svelte';
 export { default as MessageBar } from './ui/MessageBar.svelte';
 export { default as PhotoPickerModal } from './ui/PhotoPickerModal.svelte';
 export { default as ReactionBar } from './ui/ReactionBar.svelte';
+export { default as RecentlyDeleted } from './ui/RecentlyDeleted.svelte';
+export type { RecentlyDeletedItem } from './ui/RecentlyDeleted.svelte';
 export { default as ReportButton } from './ui/ReportButton.svelte';
 export { default as ReportDialog } from './ui/ReportDialog.svelte';
 export { default as Screen } from './ui/Screen.svelte';

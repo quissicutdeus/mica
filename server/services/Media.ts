@@ -8,6 +8,7 @@ import { Database } from '../lib/Database';
 import { sweepOrphanedRows } from '../lib/orphanSweep';
 import { isAdmin } from './Admin';
 import { notifyPlayer } from '../lib/shell';
+import { restoreWindowDays } from '../lib/retention';
 
 /**
  * The media table: owner-scoped, create/read/delete only.
@@ -602,6 +603,37 @@ const coerceBinaryText = (item: MediaItem): MediaItem => {
 
 const app = media.app;
 const repo = media.repo;
+
+/**
+ * Undo a `delete`, within `restoreWindowDays()` of it (MICA-75) — see
+ * `Repository.restore` for the ownership scoping and why `updated_at` stands in for a
+ * deletion timestamp. Not to be confused with `drop` below, which shares a photo to
+ * nearby phones and has nothing to do with this row's own `status`.
+ */
+app.registerEvent('restore', async (_source, _cbId, data, citizenid) => {
+  const id = requirePositiveInt(fields(data).id, 'media id');
+  const ok = await repo.restore(id, citizenid, restoreWindowDays());
+  return { ok };
+});
+
+/**
+ * The "Recently Deleted" list itself (MICA-75-wiring) — every media row `restore` above
+ * could still bring back. See `Repository.findDeleted` for why this is a named action
+ * rather than the generic `get`. Projected the same way the main list is (MICA-110):
+ * no `data`, so a deleted row full of base64 bytes does not cost its whole payload just to
+ * appear in a list that only needs a caption and a small still.
+ */
+app.registerEvent('getDeleted', async (_source, _cbId, _data, citizenid) => {
+  return await repo.findDeleted(citizenid, restoreWindowDays(), [
+    'id',
+    'kind',
+    'thumbnail',
+    'mime_type',
+    'alt_text',
+    'created_at',
+    'updated_at'
+  ]);
+});
 
 /**
  * The bytes for exactly one row the caller owns. MICA-110.

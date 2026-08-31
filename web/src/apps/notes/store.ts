@@ -1,5 +1,12 @@
-import { createCrudStore, byNewest } from '@gphone/sdk';
+import { createCrudStore, byNewest, useService } from '@gphone/sdk';
 import type { Note } from '@shared/types';
+
+/**
+ * `restore`/`getDeleted` (MICA-75-wiring) are custom actions, not part of
+ * `createCrudStore`'s generic four verbs — the same reason Hodlr's `store.ts` reaches for
+ * `useService('notes')` directly rather than stretching the CRUD factory to cover them.
+ */
+const service = () => useService('notes');
 
 /**
  * Notes' own data layer, inside the app.
@@ -48,6 +55,20 @@ export function useNotes() {
       return notes.add({ title, content, created_at: now, updated_at: now });
     },
     updateNote: (note: Note) => notes.update(note),
-    deleteNote: (id: number) => notes.delete(id)
+    deleteNote: (id: number) => notes.delete(id),
+
+    /**
+     * The "Recently Deleted" list (MICA-75-wiring) — every soft-deleted note still
+     * within the restore window. Not part of `notes` above: a screen visited rarely
+     * enough that a fresh read each time is the right cost, not a second cached list.
+     */
+    getDeletedNotes: (): Promise<Note[]> => service().call<Note[]>('getDeleted', {}, []),
+
+    /** Undo a delete. Refreshes the main list on success so the note reappears in it. */
+    restoreNote: async (id: number): Promise<boolean> => {
+      const { ok } = await service().call<{ ok: boolean }>('restore', { id }, { ok: false });
+      if (ok) await notes.load();
+      return ok;
+    }
   };
 }

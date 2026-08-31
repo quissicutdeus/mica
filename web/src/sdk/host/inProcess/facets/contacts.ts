@@ -25,7 +25,10 @@ export function contacts() {
     },
     shareContact: (firstname: string, phone: string, lastname?: string) => {
       return contactsService.share({ firstname, lastname: lastname || '', phone });
-    }
+    },
+    /** The "Recently Deleted" list (MICA-75-wiring) — see `services/contacts.ts`. */
+    getDeletedContacts: () => contactsService.getDeleted(),
+    restoreContact: (id: number) => contactsService.restore(id)
   };
 }
 

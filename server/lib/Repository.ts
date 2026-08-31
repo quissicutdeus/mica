@@ -462,4 +462,100 @@ export abstract class Repository<T> {
     // applies: deleting a moderated row would overwrite the moderation record with 'deleted'.
     return await this.updateOwned(id, { status: 'deleted' }, citizenid, false);
   }
+
+  /**
+   * Undo a `delete`, ownership-scoped exactly the same way — a row id is never
+   * authorization, so this checks `citizenid` in the same `WHERE` `delete` does — and
+   * time-boxed to `windowDays` after the deletion (MICA-75). Past the window this
+   * simply matches no row and reports `false`: the row is not gone, it is only no longer
+   * reachable through this action, since the moderation system depends on a soft-deleted
+   * row surviving forever once the window has closed (a decision this method does not
+   * revisit — nothing here ever hard-deletes anything).
+   *
+   * `updated_at` stands in for "when was this deleted" rather than a dedicated
+   * `deleted_at` column: every declared table already carries `ON UPDATE
+   * CURRENT_TIMESTAMP` on it, `delete`'s own `UPDATE` bumps it as a side effect with
+   * nothing else to write, and adding a real column is a schema change this ticket was
+   * not asked for. The one thing this borrows is imprecise if something *else* touches a
+   * deleted row afterward (moderation, say) — no path in this codebase does, but a
+   * dedicated column would not have that caveat if one ever needs to.
+   *
+   * A raw query rather than routing through `applyUpdate`: that private method's own
+   * window concept (`editWindow`) is keyed on `created_at` and a property fixed at
+   * construction, and bending it to also express "keyed on `updated_at`, with a window
+   * supplied per call" would make it correct for neither caller. `status`, `citizenid`
+   * and `updated_at` are fixed column names this class already knows about, not payload
+   * keys, so nothing here reaches `assertColumns`' allowlist and nothing needs to.
+   */
+  async restore(id: number | string, citizenid: string, windowDays: number): Promise<boolean> {
+    if (!this.hasStatusColumn) {
+      throw new Error(
+        `[Repository] restore on '${this.tableName}' requires a 'status' column for soft delete.`
+      );
+    }
+    if (!this.columns.includes('updated_at')) {
+      throw new Error(
+        `[Repository] restore on '${this.tableName}' requires an 'updated_at' column.`
+      );
+    }
+    return await Database.update(
+      `UPDATE \`${this.tableName}\` SET \`status\` = 'active'
+       WHERE \`id\` = ? AND \`citizenid\` = ? AND \`status\` = 'deleted'
+         AND \`updated_at\` >= NOW() - INTERVAL ? DAY`,
+      [id, citizenid, windowDays]
+    );
+  }
+
+  /**
+   * The player's own "Recently Deleted" list (MICA-75-wiring) — every soft-deleted row
+   * `restore` above could still bring back, and nothing past that window.
+   *
+   * Bounded to the same `windowDays` `restore` itself enforces, deliberately: a row this
+   * excludes is a row `restore` would refuse anyway (past the window, its `UPDATE` matches
+   * nothing), so nothing shown here is ever a dead end. `RecentlyDeleted.svelte` was built
+   * with no countdown or "expires in" copy on purpose — the honest way to keep that promise
+   * is for a row to simply stop being listed once it stops being restorable, not to show it
+   * with no way to say why Restore no longer works.
+   *
+   * Ownership-scoped exactly like `restore` — a citizenid in the `WHERE`, never a bare id —
+   * and, like `restore`, reached through this named method rather than the generic `findAll`
+   * filter path: `status` is in `NEVER_CLIENT_FILTERABLE` up top, so a client payload can
+   * never ask for `'deleted'` rows through the ordinary read. This bypasses that path from
+   * trusted server code the same way `restore`'s own query does, not around it.
+   *
+   * `projection` mirrors `findAll`'s own: Media's deleted rows can carry the same full
+   * base64 `data` blob MICA-110 stopped shipping on the main list read, and a "Recently
+   * Deleted" screen has exactly the same no-need-for-the-original shape that ticket already
+   * solved for. Contacts and Notes have no such column and simply never pass one.
+   */
+  async findDeleted(
+    citizenid: string,
+    windowDays: number,
+    projection?: readonly string[]
+  ): Promise<T[]> {
+    if (!this.hasStatusColumn) {
+      throw new Error(
+        `[Repository] findDeleted on '${this.tableName}' requires a 'status' column for soft delete.`
+      );
+    }
+    if (!this.hasOwnerColumn) {
+      throw new Error(
+        `[Repository] findDeleted on '${this.tableName}' requires a 'citizenid' column.`
+      );
+    }
+
+    let selection = '*';
+    if (projection && projection.length > 0) {
+      this.assertColumns([...projection], 'findDeleted projection');
+      selection = projection.map((column) => `\`${column}\``).join(', ');
+    }
+
+    return await Database.query<T[]>(
+      `SELECT ${selection} FROM \`${this.tableName}\`
+       WHERE \`citizenid\` = ? AND \`status\` = 'deleted'
+         AND \`updated_at\` >= NOW() - INTERVAL ? DAY
+       ORDER BY \`updated_at\` DESC`,
+      [citizenid, windowDays]
+    );
+  }
 }

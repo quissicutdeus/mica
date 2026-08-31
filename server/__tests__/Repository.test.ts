@@ -42,6 +42,14 @@ class NoStatusRepo extends Repository<{ id: number; citizenid: string; amount: n
   protected columns = ['id', 'citizenid', 'amount'];
 }
 
+/** A soft-deletable table missing `updated_at` — nothing in this codebase actually looks
+ *  like this, since every primary table carries the framework's implicit columns, but
+ *  `restore`'s own guard needs something to refuse. */
+class NoUpdatedAtRepo extends Repository<{ id: number; citizenid: string; status: string }> {
+  protected tableName = 'gphone_no_updated_at';
+  protected columns = ['id', 'citizenid', 'status'];
+}
+
 /** Hypothetical shared table with no per-player owner. */
 class NoOwnerRepo extends Repository<{ id: number; label: string; status: string }> {
   protected tableName = 'gphone_global';
@@ -217,6 +225,125 @@ describe('Repository — soft delete', () => {
 
     await expect(repo.delete(9, '')).rejects.toThrow(/requires a citizenid/);
     expect(dbMock.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('Repository — restore (MICA-75)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dbMock.update.mockResolvedValue(true);
+  });
+
+  it('undoes a delete, scoped to the owner and bounded to the window', async () => {
+    const repo = new TestRepo();
+
+    const success = await repo.restore(9, 'CIT_OWNER', 30);
+
+    expect(success).toBe(true);
+    expect(sqlOf(dbMock.update.mock.calls[0])).toBe(
+      "UPDATE `gphone_test` SET `status` = 'active' " +
+        "WHERE `id` = ? AND `citizenid` = ? AND `status` = 'deleted' " +
+        'AND `updated_at` >= NOW() - INTERVAL ? DAY'
+    );
+    expect(paramsOf(dbMock.update.mock.calls[0])).toEqual([9, 'CIT_OWNER', 30]);
+  });
+
+  it('never issues a hard restore of any other status than deleted — the WHERE says so, not this suite alone', async () => {
+    const repo = new TestRepo();
+    await repo.restore(9, 'CIT_OWNER', 30);
+
+    expect(sqlOf(dbMock.update.mock.calls[0])).toContain("`status` = 'deleted'");
+  });
+
+  it('reports false rather than throwing when nothing matches — wrong owner, wrong status, or past the window', async () => {
+    dbMock.update.mockResolvedValue(false);
+    const repo = new TestRepo();
+
+    await expect(repo.restore(9, 'CIT_OWNER', 30)).resolves.toBe(false);
+  });
+
+  it('refuses to restore on a table with no status column', async () => {
+    const ledger = new NoStatusRepo();
+
+    await expect(ledger.restore(1, 'CIT_A', 30)).rejects.toThrow(/requires a 'status' column/);
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses to restore on a table with no 'updated_at' column", async () => {
+    const repo = new NoUpdatedAtRepo();
+
+    await expect(repo.restore(1, 'CIT_A', 30)).rejects.toThrow(/requires an 'updated_at' column/);
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  it('passes whatever window it is given, without opinions of its own about what is reasonable', async () => {
+    const repo = new TestRepo();
+    await repo.restore(9, 'CIT_OWNER', 1);
+
+    expect(paramsOf(dbMock.update.mock.calls[0])).toEqual([9, 'CIT_OWNER', 1]);
+  });
+});
+
+describe('Repository — findDeleted (MICA-75-wiring)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dbMock.query.mockResolvedValue([]);
+  });
+
+  it('reads the owner’s own deleted rows, bounded to the same window restore() enforces', async () => {
+    const repo = new TestRepo();
+
+    await repo.findDeleted('CIT_OWNER', 30);
+
+    expect(sqlOf(dbMock.query.mock.calls[0])).toBe(
+      'SELECT * FROM `gphone_test` ' +
+        "WHERE `citizenid` = ? AND `status` = 'deleted' " +
+        'AND `updated_at` >= NOW() - INTERVAL ? DAY ' +
+        'ORDER BY `updated_at` DESC'
+    );
+    expect(paramsOf(dbMock.query.mock.calls[0])).toEqual(['CIT_OWNER', 30]);
+  });
+
+  it('never asks for any other status than deleted', async () => {
+    const repo = new TestRepo();
+    await repo.findDeleted('CIT_OWNER', 30);
+
+    expect(sqlOf(dbMock.query.mock.calls[0])).toContain("`status` = 'deleted'");
+  });
+
+  it('projects down to given columns, the same way findAll does, so a heavy column is opt-in', async () => {
+    const repo = new TestRepo();
+    await repo.findDeleted('CIT_OWNER', 30, ['id', 'title', 'updated_at']);
+
+    expect(sqlOf(dbMock.query.mock.calls[0])).toBe(
+      'SELECT `id`, `title`, `updated_at` FROM `gphone_test` ' +
+        "WHERE `citizenid` = ? AND `status` = 'deleted' " +
+        'AND `updated_at` >= NOW() - INTERVAL ? DAY ' +
+        'ORDER BY `updated_at` DESC'
+    );
+  });
+
+  it('rejects a projection column that is not on the SQL identifier allowlist', async () => {
+    const repo = new TestRepo();
+
+    await expect(repo.findDeleted('CIT_OWNER', 30, ['title', 'evil'])).rejects.toThrow(
+      /rejected unknown column 'evil'/
+    );
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('refuses on a table with no status column', async () => {
+    const ledger = new NoStatusRepo();
+
+    await expect(ledger.findDeleted('CIT_A', 30)).rejects.toThrow(/requires a 'status' column/);
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('refuses on a table with no citizenid column', async () => {
+    const shared = new NoOwnerRepo();
+
+    await expect(shared.findDeleted('CIT_A', 30)).rejects.toThrow(/requires a 'citizenid' column/);
+    expect(dbMock.query).not.toHaveBeenCalled();
   });
 });
 

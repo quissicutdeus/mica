@@ -184,10 +184,25 @@ const mockOtherMedia: MediaItem[] = [
   mockLocationShare
 ];
 
+/**
+ * Soft-deleted, still within the mock restore window (MICA-75-wiring) — so "Recently
+ * Deleted" has something to show without first deleting a photo by hand.
+ */
+const deletedMedia: MediaItem = {
+  id: 9998,
+  citizenid: 'mock-id',
+  kind: 'photo',
+  thumbnail: sampleAvatars[2],
+  alt_text: 'An old screenshot',
+  status: 'deleted',
+  ...ts(2 * 24 * 3600_000)
+};
+
 export const mockMedia: MediaItem[] = [
   ...mockThumbnaillessCaptures,
   ...mockOtherMedia,
-  ...mockCaptures
+  ...mockCaptures,
+  deletedMedia
 ];
 
 export const mockListings: Listing[] = [
@@ -229,6 +244,18 @@ export const mockNotes: Note[] = [
     content:
       '# Los Santos Jobs\n\n## Pacific Standard Heist\n### Diamond Casino Robbery\n#### Cayo Perico Freight',
     ...ts()
+  },
+  /**
+   * Soft-deleted, still within the mock restore window (MICA-75-wiring) — so
+   * "Recently Deleted" has something to show without first deleting a note by hand.
+   */
+  {
+    id: 999,
+    citizenid: '1',
+    title: 'Old Shopping List',
+    content: 'Nails, rope, a burner phone',
+    status: 'deleted',
+    ...ts(2 * 24 * 3600_000)
   }
 ];
 
@@ -603,7 +630,22 @@ const generatedContacts: Contact[] = Array.from({ length: 87 }, (_, i) => {
   };
 });
 
-export const mockContacts: Contact[] = [...gtaCoreContacts, ...generatedContacts];
+/**
+ * A soft-deleted row, still within the mock restore window (MICA-75-wiring) — so
+ * "Recently Deleted" has something to show without first deleting a contact by hand.
+ */
+const deletedContact: Contact = {
+  id: 9999,
+  citizenid: 'mock-id',
+  firstname: 'Old',
+  lastname: 'Contact',
+  phone: '555-0001',
+  favorite: false,
+  status: 'deleted',
+  ...ts(2 * 24 * 3600_000)
+};
+
+export const mockContacts: Contact[] = [...gtaCoreContacts, ...generatedContacts, deletedContact];
 
 const conversationTitles: {
   is_group: boolean;

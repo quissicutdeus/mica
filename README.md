@@ -400,6 +400,7 @@ set gphone_music_max_nearby 8
 setr gphone_camera_quality 95
 set gphone_blabber_edit_window 900
 set gphone_notification_retention 30
+set gphone_restore_window_days 30
 set gphone_media_quota_mb 64
 set gphone_media_retention 0
 set gphone_orphan_owner_table ""
@@ -407,31 +408,32 @@ setr gphone_addon_hosts ""
 setr gphone_addon_catalog ""
 ```
 
-| Convar                          | Type                 | Default                | Controls                                              |
-| ------------------------------- | -------------------- | ---------------------- | ----------------------------------------------------- |
-| `gphone_admin_aces`             | comma-separated aces | `gphone.admin,command` | Who counts as a gPhone admin                          |
-| `gphone_rate_limit`             | integer              | `60`                   | Requests per player, per action, per minute           |
-| `gphone_bank_transfer_max`      | integer              | `50000`                | Ceiling on one player-to-player send                  |
-| `gphone_hodlr_trade_max`        | integer              | `50000`                | Ceiling on what one Hodlr buy or sell is worth        |
-| `gphone_hodlr_spread_pct`       | number, percent      | `2`                    | Gap between Hodlr's buy and sell quotes, around mid   |
-| `gphone_emergency_number`       | phone number         | `911`                  | Always connects, regardless of any block              |
-| `gphone_max_accounts_per_app`   | integer              | `3`                    | Identities one player may hold in one social app      |
-| `gphone_bluetooth_range`        | integer, meters      | `15`                   | How far a proximity share reaches                     |
-| `gphone_bluetooth_max_nearby`   | integer              | `5`                    | How many phones one proximity share reaches           |
-| `gphone_music_range`            | integer, meters      | `30`                   | How far music from a phone is heard (needs `setr`)    |
-| `gphone_music_max_nearby`       | integer              | `8`                    | Broadcasters one listener is told about at once       |
-| `gphone_blabber_edit_window`    | integer, seconds     | `900`                  | How long a Blab stays editable by its author          |
-| `gphone_notification_retention` | integer, days        | `30`                   | How long notification rows are kept                   |
-| `gphone_camera_quality`         | integer, 1-100       | `95`                   | Encode quality of a stored photo (needs `setr`)       |
-| `gphone_media_quota_mb`         | integer, MiB         | `64`                   | Storage one player's photo library may occupy         |
-| `gphone_media_retention`        | integer, days        | `0` (off)              | How long stored media is kept, if you want a limit    |
-| `gphone_orphan_owner_table`     | `table.column`       | empty (off)            | Overrides which table the orphan sweep checks against |
-| `gphone_addon_hosts`            | hostname list        | empty (off)            | Hosts a Store add-on may be fetched from              |
-| `gphone_addon_catalog`          | https URL            | empty (off)            | The add-on catalog the Store lists                    |
+| Convar                          | Type                 | Default                | Controls                                               |
+| ------------------------------- | -------------------- | ---------------------- | ------------------------------------------------------ |
+| `gphone_admin_aces`             | comma-separated aces | `gphone.admin,command` | Who counts as a gPhone admin                           |
+| `gphone_rate_limit`             | integer              | `60`                   | Requests per player, per action, per minute            |
+| `gphone_bank_transfer_max`      | integer              | `50000`                | Ceiling on one player-to-player send                   |
+| `gphone_hodlr_trade_max`        | integer              | `50000`                | Ceiling on what one Hodlr buy or sell is worth         |
+| `gphone_hodlr_spread_pct`       | number, percent      | `2`                    | Gap between Hodlr's buy and sell quotes, around mid    |
+| `gphone_emergency_number`       | phone number         | `911`                  | Always connects, regardless of any block               |
+| `gphone_max_accounts_per_app`   | integer              | `3`                    | Identities one player may hold in one social app       |
+| `gphone_bluetooth_range`        | integer, meters      | `15`                   | How far a proximity share reaches                      |
+| `gphone_bluetooth_max_nearby`   | integer              | `5`                    | How many phones one proximity share reaches            |
+| `gphone_music_range`            | integer, meters      | `30`                   | How far music from a phone is heard (needs `setr`)     |
+| `gphone_music_max_nearby`       | integer              | `8`                    | Broadcasters one listener is told about at once        |
+| `gphone_blabber_edit_window`    | integer, seconds     | `900`                  | How long a Blab stays editable by its author           |
+| `gphone_notification_retention` | integer, days        | `30`                   | How long notification rows are kept                    |
+| `gphone_restore_window_days`    | integer, days        | `30`                   | How long a deleted Contact/Note/Media stays restorable |
+| `gphone_camera_quality`         | integer, 1-100       | `95`                   | Encode quality of a stored photo (needs `setr`)        |
+| `gphone_media_quota_mb`         | integer, MiB         | `64`                   | Storage one player's photo library may occupy          |
+| `gphone_media_retention`        | integer, days        | `0` (off)              | How long stored media is kept, if you want a limit     |
+| `gphone_orphan_owner_table`     | `table.column`       | empty (off)            | Overrides which table the orphan sweep checks against  |
+| `gphone_addon_hosts`            | hostname list        | empty (off)            | Hosts a Store add-on may be fetched from               |
+| `gphone_addon_catalog`          | https URL            | empty (off)            | The add-on catalog the Store lists                     |
 
-Fourteen of the eighteen are read on every use rather than cached, so changing
-one with `set` from the live console takes effect on the next request and needs
-no restart. `gphone_blabber_edit_window` and `gphone_notification_retention` are
+Sixteen of the twenty are read on every use rather than cached, so changing one
+with `set` from the live console takes effect on the next request and needs no
+restart. `gphone_blabber_edit_window` and `gphone_notification_retention` are
 read once at resource start, so a change to either needs a restart, for the
 reasons given under them below. `gphone_media_retention` and
 `gphone_orphan_owner_table` are the third and fourth exceptions and the mildest:
@@ -585,6 +587,16 @@ next reconnect.
   prune runs. Raise it if you want players to keep more history; lower it if the
   table grows faster than you care to carry. A non-positive value falls back
   to 30.
+- **`gphone_restore_window_days`** — how many days after deleting a contact,
+  note or photo a player may still undo it through that app's `restore` action.
+  Shared across all three rather than one convar each: a "recently deleted"
+  window is the same kind of thing everywhere in the phone, and a server owner
+  tuning it almost certainly wants one answer, not three that can drift apart.
+  Read per call, not cached, so `set` from the console takes effect on the next
+  restore attempt with no restart. Past the window the row is not gone — nothing
+  in gPhone ever hard-deletes a contact, note or photo, since the moderation
+  system depends on a soft-deleted row surviving — it is only no longer
+  reachable through `restore`. A non-positive value falls back to 30.
 
 - **`gphone_camera_quality`** — how hard the phone squeezes a photo before it is
   stored, 1 to 100. Every capture is a single lossy encode (WebP where the

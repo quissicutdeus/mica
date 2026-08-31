@@ -9,12 +9,15 @@
     useMessages,
     onAppForeground,
     type Contact,
+    type RecentlyDeletedItem,
     FloatingActionButton,
     PhotoPickerModal,
+    RecentlyDeleted,
     Screen,
     SearchBar,
     AddIcon,
     SearchIcon,
+    TrashIcon,
     filterByQuery,
     useScrollDetect,
     useAppLevels,
@@ -38,7 +41,7 @@
    */
   let { onback, initialContact }: AppProps & { initialContact?: Contact } = $props();
 
-  const { contactsStore } = useContacts();
+  const { contactsStore, getDeletedContacts, restoreContact } = useContacts();
   const { media } = useMedia();
   const { toast } = usePhoneNotification();
   const { busy, run } = useAppAction('contacts');
@@ -47,6 +50,8 @@
   const contactsLoaded = contactsStore.loaded;
 
   let isAdding = $state(false);
+  let showRecentlyDeleted = $state(false);
+  let deletedContacts = $state<Contact[]>([]);
 
   // New Contact Form State
   let newContact = $state({
@@ -128,6 +133,11 @@
         title: 'Contact Details'
       },
       { open: () => isAdding, close: () => (isAdding = false), title: 'New Contact' },
+      {
+        open: () => showRecentlyDeleted,
+        close: () => (showRecentlyDeleted = false),
+        title: 'Recently Deleted'
+      },
       {
         open: () => showSearch,
         close: () => {
@@ -244,6 +254,41 @@
     if (deleted) selectedContact = null;
   };
 
+  /**
+   * "Recently Deleted" (MICA-75-wiring). A fresh read every time it's opened rather
+   * than a cached store — the screen is visited rarely enough that this is the right
+   * cost, and it means a contact deleted moments ago from the details screen is already
+   * there without a second round trip to reconcile.
+   */
+  const openRecentlyDeleted = async () => {
+    showRecentlyDeleted = true;
+    deletedContacts = await getDeletedContacts();
+  };
+
+  const recentlyDeletedItems = $derived<RecentlyDeletedItem[]>(
+    deletedContacts.map((c) => ({
+      id: c.id,
+      label: `${c.firstname} ${c.lastname || ''}`.trim(),
+      preview: c.phone,
+      deletedAt: c.updated_at
+    }))
+  );
+
+  const restoreDeletedContact = async (id: string | number) => {
+    // `restoreContact` resolves to `false` rather than throwing on a refusal (wrong
+    // owner, or past the restore window), so `run` — which only reacts to a thrown
+    // error — has to be told about that refusal explicitly.
+    const restored = await run(
+      async () => {
+        if (!(await restoreContact(Number(id)))) {
+          throw new Error('This can no longer be restored.');
+        }
+      },
+      { success: 'Contact restored' }
+    );
+    if (restored) deletedContacts = deletedContacts.filter((c) => c.id !== id);
+  };
+
   const shareContact = async () => {
     if (!selectedContact) return;
     if (!requireNameAndPhone(selectedContact.firstname, selectedContact.phone, true)) return;
@@ -274,7 +319,7 @@
 </script>
 
 {#snippet headerActions()}
-  {#if !selectedContact && !isAdding}
+  {#if !selectedContact && !isAdding && !showRecentlyDeleted}
     <button
       class="hover:bg-surface-container-high ml-auto rounded-full p-2 transition-colors {showSearch
         ? 'bg-surface-container text-primary'
@@ -287,6 +332,14 @@
       aria-label="Search Contacts"
     >
       <SearchIcon class="size-icon-md" />
+    </button>
+    <button
+      class="hover:bg-surface-container-high text-on-surface rounded-full p-2 transition-colors duration-short ease-standard"
+      onclick={openRecentlyDeleted}
+      title="Recently Deleted"
+      aria-label="Recently Deleted"
+    >
+      <TrashIcon class="size-icon-md" />
     </button>
   {/if}
 {/snippet}
@@ -306,7 +359,16 @@
 {/snippet}
 
 <Screen title={app.title} onback={app.back} actions={headerActions} overlay={fabOverlay}>
-  {#if !selectedContact}
+  {#if showRecentlyDeleted}
+    <!-- No `onpermanentdelete` (MICA-75-wiring): the server ships no hard-delete this
+         round — soft-deleted stays soft-deleted forever — so this is restore-only. -->
+    <RecentlyDeleted
+      items={recentlyDeletedItems}
+      onrestore={restoreDeletedContact}
+      emptyTitle="No deleted contacts"
+      emptyDescription="Contacts you delete stick around here until the restore window closes."
+    />
+  {:else if !selectedContact}
     {#if isAdding}
       <ContactForm
         draft={newContact}

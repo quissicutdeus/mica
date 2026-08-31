@@ -1317,12 +1317,20 @@ const mockRegistry: Record<string, MockHandler> = {
   },
 
   // Contacts
-  ...defineMockCrud<Contact>(mockContacts, {
-    list: 'getContacts',
-    create: 'createContact',
-    update: 'updateContact',
-    remove: 'deleteContact'
-  }),
+  ...defineMockCrud<Contact>(
+    mockContacts,
+    {
+      list: 'getContacts',
+      create: 'createContact',
+      update: 'updateContact',
+      remove: 'deleteContact'
+    },
+    // MICA-75-wiring: the real server never hard-deletes a contact (`Repository.
+    // delete` only ever moves `status` to `'deleted'`) — matching that here is what
+    // makes a deleted-then-restored contact a real round trip in the mock, not one
+    // that only works against a live server.
+    { remove: 'soft', visible: (c) => c.status !== 'deleted', defaults: { status: 'active' } }
+  ),
   getCallLog: () => ({ rows: mockCallLog, nextCursor: null }),
   /**
    * The real client resolves this NUI callback immediately and pushes the outcome
@@ -1358,14 +1366,37 @@ const mockRegistry: Record<string, MockHandler> = {
   },
 
   // Notes
-  ...defineMockCrud<Note>(mockNotes, {
-    // Scoped keys, because Notes goes through the generic service route: the request
-    // arrives as `{ service: 'notes', action: 'get' }` rather than as `getNotes`.
-    list: 'notes:get',
-    create: 'notes:create',
-    update: 'notes:update',
-    remove: 'notes:delete'
-  }),
+  ...defineMockCrud<Note>(
+    mockNotes,
+    {
+      // Scoped keys, because Notes goes through the generic service route: the request
+      // arrives as `{ service: 'notes', action: 'get' }` rather than as `getNotes`.
+      list: 'notes:get',
+      create: 'notes:create',
+      update: 'notes:update',
+      remove: 'notes:delete'
+    },
+    // MICA-75-wiring: matches the real server, which only ever soft-deletes a note.
+    { remove: 'soft', visible: (n) => n.status !== 'deleted', defaults: { status: 'active' } }
+  ),
+
+  // Recently Deleted (MICA-75-wiring). Notes is `core: false`, so its two actions are
+  // scoped keys (the generic service route) rather than named routes, matching the CRUD
+  // block above; Contacts and Media are `core: true` and keep named routes.
+  'notes:getDeleted': () => mockNotes.filter((n) => n.status === 'deleted'),
+  'notes:restore': (data: { id?: number }) => {
+    const note = mockNotes.find((n) => n.id === data?.id && n.status === 'deleted');
+    if (!note) return { ok: false };
+    note.status = 'active';
+    return { ok: true };
+  },
+  getDeletedContacts: () => mockContacts.filter((c) => c.status === 'deleted'),
+  restoreContact: (data: { id?: number }) => {
+    const contact = mockContacts.find((c) => c.id === data?.id && c.status === 'deleted');
+    if (!contact) return { ok: false };
+    contact.status = 'active';
+    return { ok: true };
+  },
 
   // Hodlr — also routes through the generic service path, but custom actions rather
   // than the generic CRUD helper: portfolio/price are reads, buy/sell mutate state
@@ -1859,15 +1890,24 @@ const mockRegistry: Record<string, MockHandler> = {
   setWaypoint: async () => ({ ok: true }),
 
   // Places (MICA-65) — saved places only; recently-shared locations read `mockMedia`
-  // above, filtered to `kind === 'location'`, the same way the real app will.
-  // PENDING (Cody): stands in for `defineService({ id: 'places', ... })` — no
-  // `registerEvent` handler exists on the server for any of these four yet.
+  // above, filtered to `kind === 'location'`, the same way the real app will. Stands in
+  // for `defineService({ id: 'places', ... })`, whose real `registerEvent` handlers
+  // (Cody's server slice) exist alongside this mock now — kept for `pnpm dev`/Playwright.
   ...defineMockCrud<SavedPlace>(mockSavedPlaces, {
     list: 'getSavedPlaces',
     create: 'createSavedPlace',
     update: 'updateSavedPlace',
     remove: 'deleteSavedPlace'
   }),
+
+  // Recently Deleted (MICA-75-wiring). Named routes, since Media is `core: true`.
+  getDeletedMedia: () => mockMedia.filter((m) => m.status === 'deleted'),
+  restoreMedia: (data: { id?: number }) => {
+    const item = mockMedia.find((m) => m.id === data?.id && m.status === 'deleted');
+    if (!item) return { ok: false };
+    item.status = 'active';
+    return { ok: true };
+  },
 
   // Mail
   ...defineMockCrud<Mail>(
