@@ -102,7 +102,7 @@ const countOf = (text: string, rx: RegExp) => (text.match(rx) ?? []).length;
 const declaredProperties = (): Set<string> => {
   const names = new Set<string>();
   for (const file of ['app.css', 'app-utilities.css', 'app-reset.css']) {
-    const full = join(ROOT, 'src', file);
+    const full = join(ROOT, 'src', 'sdk', file);
     if (!existsSync(full)) continue;
     for (const m of readFileSync(full, 'utf8').matchAll(/(--[a-zA-Z0-9-]+)\s*:/g)) names.add(m[1]);
   }

@@ -78,7 +78,7 @@ The display name is derived from it — `journal` becomes "Journal",
 id cannot express it ("GPS"). Keep it under about eight characters or it
 truncates under the icon; that is why "Administration" is called "Admin".
 
-`color` is a utility **class** from `web/src/app-utilities.css` (e.g.
+`color` is a utility **class** from `web/src/sdk/app-utilities.css` (e.g.
 `bg-blue-500`), not a color. It is interpolated into a `class` attribute, so a
 hex string renders an icon with no background at all. `defineApp` warns about
 that in dev, along with a capitalised id and an id another app has already

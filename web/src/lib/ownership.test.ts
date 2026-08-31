@@ -50,7 +50,11 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
  * **`m3.ts` is SDK-owned**, confirmed rather than assumed: it is reached from
  * `sdk/index.ts`, `sdk/addon.ts`, `sdk/ui/NowPlayingCard.svelte`, both theme facets and
  * `sdk/cef.test.ts`, and a decision on MICA-172 puts the design system on the SDK side.
- * `app.css` / `app-utilities.css` are **not** moved here — that is MICA-172's to do.
+ * `app.css`, `app-utilities.css` and `app-reset.css` moved to `web/src/sdk/` on MICA-172
+ * for the same reason: eight files under `shell/` already import `@gphone/sdk`, so an SDK
+ * primitive depending on a stylesheet outside the package was a reverse edge — and a
+ * primitive that renders unstyled unless the consumer separately remembers a CSS import
+ * fails silently, which is the failure mode this repo cares most about.
  *
  * **Phone-owned.** `pointerDrag`, `sheetDrag`, `longPressDrag`, `dragRatio`, `dragScroll`
  * are the shell's gesture plumbing and have no importer in `sdk/`. `debug` is the browser

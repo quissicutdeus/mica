@@ -38,7 +38,7 @@ function addOnEntries(): Plugin {
       if (!id.startsWith(VIRTUAL)) return null;
       const app = id.slice(VIRTUAL.length);
       return [
-        `import '${path.resolve(here, 'src/app.css')}';`,
+        `import '${path.resolve(here, 'src/sdk/app.css')}';`,
         `import manifest from '${path.join(appsDir, app, 'manifest.ts')}';`,
         `import App from '${path.join(appsDir, app, 'index.svelte')}';`,
         `import { bootAddOn } from '@gphone/sdk';`,

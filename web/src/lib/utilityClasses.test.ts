@@ -75,7 +75,7 @@ function loadDefinedClasses(): Set<string> {
   // selector (`.hover\:opacity-100:hover`, `.text-\[11px\]`) ends.
   const classSelectorRe = /\.((?:\\.|[^\s.{:,>+~[])+)/g;
   for (const name of cssFiles) {
-    const filePath = path.join(WEB_SRC, name);
+    const filePath = path.join(WEB_SRC, 'sdk', name);
     if (!fs.existsSync(filePath)) continue;
     const css = fs.readFileSync(filePath, 'utf8');
     for (const match of css.matchAll(classSelectorRe)) {
@@ -264,7 +264,7 @@ describe('box-shadow does not compose across classes', () => {
   });
 
   it('gives each composite one class carrying both the elevation and the bloom', () => {
-    const css = fs.readFileSync(path.join(WEB_SRC, 'app-utilities.css'), 'utf8');
+    const css = fs.readFileSync(path.join(WEB_SRC, 'sdk', 'app-utilities.css'), 'utf8');
 
     for (const [name, bloom] of [
       ['shadow-fab', 'var(--color-primary-glow)'],
@@ -357,7 +357,7 @@ function contrast(a: string, b: string): number {
 
 /** `.bg-yellow-400 { background-color: #facc15 }` → `{ 'bg-yellow-400': '#facc15' }`. */
 function loadPaletteLiterals(prop: 'background-color' | 'color'): Map<string, string> {
-  const css = fs.readFileSync(path.join(WEB_SRC, 'app-utilities.css'), 'utf8');
+  const css = fs.readFileSync(path.join(WEB_SRC, 'sdk', 'app-utilities.css'), 'utf8');
   const rules = new RegExp(String.raw`\.([\w-]+)\s*\{\s*${prop}:\s*(#[0-9a-f]{6})\s*;?\s*\}`, 'gi');
   return new Map([...css.matchAll(rules)].map((m) => [m[1], m[2].toLowerCase()]));
 }
@@ -369,7 +369,7 @@ describe('launcher tile contrast', () => {
 
     // What the glyph inherits when a manifest names no foreground of its own: the
     // `text-on-surface` on `Launcher.svelte`'s root, whose dark-scheme literal is in app.css.
-    const appCss = fs.readFileSync(path.join(WEB_SRC, 'app.css'), 'utf8');
+    const appCss = fs.readFileSync(path.join(WEB_SRC, 'sdk', 'app.css'), 'utf8');
     const onSurface = /--color-on-surface:\s*rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(appCss);
     expect(onSurface, '--color-on-surface declared in app.css').not.toBeNull();
     const inherited =

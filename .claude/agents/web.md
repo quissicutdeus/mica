@@ -44,8 +44,8 @@ Global state is `writable`/`derived` stores in `web/src/services/` or
 a global-state workaround. Never add a raw `keydown` listener for a phone-level
 action — declare it in `shared/keybinds.ts` and claim it via `useKeybinds()`.
 
-Prefer an existing utility in `web/src/app-utilities.css` over a bespoke rule or
-an inline `style=`. Never pass unsanitized player content to `{@html}`.
+Prefer an existing utility in `web/src/sdk/app-utilities.css` over a bespoke
+rule or an inline `style=`. Never pass unsanitized player content to `{@html}`.
 
 ## Keep what you learn
 

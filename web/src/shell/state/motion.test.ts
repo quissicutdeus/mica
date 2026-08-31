@@ -261,7 +261,7 @@ describe('one reader of the media query', () => {
   });
 
   it('is acted on by exactly one stylesheet rule, keyed on the attribute the store writes', () => {
-    const css = readFileSync(join(ROOT, 'app.css'), 'utf8');
+    const css = readFileSync(join(ROOT, 'sdk', 'app.css'), 'utf8');
 
     expect(css).toContain("html[data-reduced-motion='true'] *");
     expect(css).toContain('animation-duration: 1ms !important');

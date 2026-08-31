@@ -260,7 +260,7 @@ describe('LANDSCAPE framing', () => {
     // the dev viewfinder frames one shape and saves another — silently, and only in the
     // mode this whole feature is about.
     const webSrc = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
-    const css = fs.readFileSync(path.join(webSrc, 'app-utilities.css'), 'utf8');
+    const css = fs.readFileSync(path.join(webSrc, 'sdk', 'app-utilities.css'), 'utf8');
     const rule = /\.aspect-video\s*\{\s*aspect-ratio:\s*(\d+)\s*\/\s*(\d+)\s*;?\s*\}/.exec(css);
 
     expect(rule, '.aspect-video declared in app-utilities.css').not.toBeNull();

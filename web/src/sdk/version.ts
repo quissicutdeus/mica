@@ -29,6 +29,15 @@
  * literal type makes `SDK_CONTRACT_VERSION === '2'` a "this comparison appears
  * unintentional" error rather than a check.
  *
+ * **The design system is out of contract.** `app.css`, `app-utilities.css` and
+ * `app-reset.css` moved into the package on MICA-172, and this number does not move when
+ * they change. That is not an oversight: an add-on reads this to decide what it may *call*,
+ * and there is no equivalent question for a utility class. Nor is there a mechanism to ask
+ * one — an add-on's CSS is inlined from whatever `vite.addon.config.ts` injected at *its*
+ * build, so no add-on can have compiled against one stylesheet and been handed another. A
+ * number that moved for every colour tweak would stop meaning anything for the case it
+ * exists to serve, which is the one thing it must not do.
+ *
  * Note what it does *not* do: nothing consults it at install or boot time. There is no
  * runtime compatibility gate anywhere in the phone (MICA-173), and adding one is new
  * manifest surface that needs deciding on its own. This is a number an add-on author can

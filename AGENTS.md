@@ -364,9 +364,9 @@ No external state libraries — no Redux, Zustand, XState, Nanostores.
 ## 5. Styling
 
 Plain, hand-written CSS — no Tailwind, no CSS framework, no CSS modules, no
-styled-components. Two files carry the whole system: `web/src/app.css` (Material
-3 design tokens on `:root`) and `web/src/app-utilities.css` (a flat,
-hand-authored utility layer, one class per call site, each resolving to a
+styled-components. Two files carry the whole system: `web/src/sdk/app.css`
+(Material 3 design tokens on `:root`) and `web/src/sdk/app-utilities.css` (a
+flat, hand-authored utility layer, one class per call site, each resolving to a
 token).
 
 - **Reach for an existing class in `app-utilities.css` before inventing one**,
@@ -436,7 +436,7 @@ never reach `{@html}` unsanitized. `marked` passes raw HTML through by default
 and has no built-in sanitizer.
 
 - Render user content only via the sanitizing helper in
-  `web/src/lib/sdk/markdown.ts`. Never call `marked.parse()` directly in a
+  `web/src/sdk/lib/markdown.ts`. Never call `marked.parse()` directly in a
   component.
 - Never add `a` to the DOMPurify allowlist. Anchor navigation reloads the CEF
   instance and drops all state, so a link in a message body is a griefing

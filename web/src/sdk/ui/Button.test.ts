@@ -22,7 +22,7 @@ import Button from './Button.svelte';
  * a variant with a new hover colour fails here instead of shipping the same bug again.
  */
 const UTILITIES = path.resolve(
-  path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url)))),
+  path.dirname(path.dirname(fileURLToPath(import.meta.url))),
   'app-utilities.css'
 );
 

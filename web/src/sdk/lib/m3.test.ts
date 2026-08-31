@@ -328,8 +328,8 @@ describe('M3 color engine', () => {
       // is correct before any JS runs. Literals drift; this is what stops them.
       //
       // When this fails, the diff is the fix: paste the expected values into the
-      // `@theme` block of `src/app.css`.
-      const css = readFileSync(join(__dirname, '..', '..', 'app.css'), 'utf-8');
+      // `@theme` block of `src/sdk/app.css`.
+      const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
       const declared = new Map<string, string>();
       for (const [, name, value] of css.matchAll(/^\s*--color-([a-z0-9-]+):\s*([^;]+);/gm)) {
         declared.set(name, value.trim());
@@ -345,7 +345,7 @@ describe('M3 color engine', () => {
 
 describe('shape scale (app.css)', () => {
   it('declares the M3 shape scale', () => {
-    const css = readFileSync(join(__dirname, '..', '..', 'app.css'), 'utf-8');
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
     const expected: Record<string, string> = {
       none: '0',
       xs: '4px',
@@ -367,7 +367,7 @@ describe('shape scale (app.css)', () => {
 
 describe('elevation tokens (app.css)', () => {
   it('declares the five M3 elevation shadows as plain rgba() pairs', () => {
-    const css = readFileSync(join(__dirname, '..', '..', 'app.css'), 'utf-8');
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
     const expected: Record<string, string> = {
       1: '0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 1px 3px 1px rgba(0, 0, 0, 0.15)',
       2: '0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 2px 6px 2px rgba(0, 0, 0, 0.15)',
@@ -383,7 +383,7 @@ describe('elevation tokens (app.css)', () => {
   });
 
   it('uses no color function newer than rgba()', () => {
-    const css = readFileSync(join(__dirname, '..', '..', 'app.css'), 'utf-8');
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
     const block = css.match(/--shadow-elevation-1:[\s\S]*?--shadow-elevation-5:[^;]+;/)![0];
     for (const banned of ['oklch', 'oklab', 'color-mix', 'lab(', 'lch(', 'hwb(']) {
       expect(block).not.toContain(banned);
@@ -393,7 +393,7 @@ describe('elevation tokens (app.css)', () => {
 
 describe('typography scale (app.css)', () => {
   it('declares the trimmed M3 type scale with paired line-height', () => {
-    const css = readFileSync(join(__dirname, '..', '..', 'app.css'), 'utf-8');
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
     const expected: Record<string, { size: string; lineHeight: string }> = {
       'title-large': { size: '22px', lineHeight: '28px' },
       'title-medium': { size: '16px', lineHeight: '24px' },
@@ -415,14 +415,14 @@ describe('typography scale (app.css)', () => {
   });
 
   it('does not add a display-tier token', () => {
-    const css = readFileSync(join(__dirname, '..', '..', 'app.css'), 'utf-8');
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
     expect(css).not.toMatch(/--text-display-/);
   });
 });
 
 describe('motion tokens (app.css)', () => {
   it('declares M3 duration and easing tokens', () => {
-    const css = readFileSync(join(__dirname, '..', '..', 'app.css'), 'utf-8');
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
     expect(css.match(/--duration-short:\s*([^;]+);/)?.[1].trim()).toBe('100ms');
     expect(css.match(/--duration-medium:\s*([^;]+);/)?.[1].trim()).toBe('250ms');
     expect(css.match(/--duration-long:\s*([^;]+);/)?.[1].trim()).toBe('400ms');
@@ -435,7 +435,7 @@ describe('motion tokens (app.css)', () => {
 
 describe('icon size tokens (app.css)', () => {
   it('declares the M3 icon size scale', () => {
-    const css = readFileSync(join(__dirname, '..', '..', 'app.css'), 'utf-8');
+    const css = readFileSync(join(__dirname, '..', 'app.css'), 'utf-8');
     expect(css.match(/--size-icon-sm:\s*([^;]+);/)?.[1].trim()).toBe('1rem');
     expect(css.match(/--size-icon-md:\s*([^;]+);/)?.[1].trim()).toBe('1.25rem');
     expect(css.match(/--size-icon-lg:\s*([^;]+);/)?.[1].trim()).toBe('1.5rem');
