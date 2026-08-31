@@ -1,7 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 import { createCrudStore, byNewest } from './createCrudStore';
-import * as fetchNuiModule from '../nui/fetchNui';
+/**
+ * MICA-172: the stub point is `sdk/nui/transport`, not `nui/fetchNui`.
+ *
+ * The code under test reaches the transport through the SDK's seam now, so spying on the
+ * phone's own `fetchNui` module replaces a binding nothing calls — the real transport runs
+ * and the failure reads as fixture trouble rather than as a stub that never applied. Stub
+ * the seam and both sides of it are covered.
+ */
+import * as fetchNuiModule from './nui/transport';
 
 type Row = { id: number; label: string; created_at?: string };
 

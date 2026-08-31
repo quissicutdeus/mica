@@ -7,6 +7,12 @@
  * which `seam.test.ts` checks by resolving specifiers to real paths.
  */
 import './registerFacets';
+/**
+ * MICA-172: installs this bundle's `fetchNui` (the `postMessage` twin) into the SDK's
+ * transport seam. Explicit rather than left to whatever a facet happens to pull in, for the
+ * same reason the facet set is explicit: an entry point choosing is the whole design.
+ */
+import './fetchNui';
 import { mount } from 'svelte';
 import { clientTransport } from './transport';
 import { createInProcessHost } from '../inProcess/createInProcessHost';

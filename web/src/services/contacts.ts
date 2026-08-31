@@ -1,6 +1,6 @@
 import { derived } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
-import { createCrudStore } from './createCrudStore';
+import { createCrudStore } from '../sdk/createCrudStore';
 import type { Contact } from '@shared/types';
 
 /**

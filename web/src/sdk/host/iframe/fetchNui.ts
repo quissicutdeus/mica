@@ -1,3 +1,4 @@
+import { registerNuiTransport } from '../../nui/transport';
 import { GENERIC_SERVICE_ACTION } from '@shared/rpc';
 import { remoteCall } from './remote';
 
@@ -28,3 +29,9 @@ export async function fetchNui<T = unknown>(
     throw e;
   }
 }
+
+/**
+ * MICA-172: the add-on side of the transport seam. `bootAddOn` imports this module, which
+ * is how a sandboxed bundle says `fetchNui` means the `postMessage` twin rather than CEF.
+ */
+registerNuiTransport((...args) => fetchNui(...args));

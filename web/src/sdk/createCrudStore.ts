@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { fetchNui } from '../nui/fetchNui';
+import { fetchNui } from './nui/transport';
 import { GENERIC_SERVICE_ACTION } from '@shared/rpc';
 
 /** The NUI action names a `createCrudStore` reads and writes through. */

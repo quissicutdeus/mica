@@ -52,6 +52,17 @@ import {
   loadTaggedBlabs
 } from './store';
 import * as fetchNuiModule from '../../nui/fetchNui';
+/**
+ * MICA-172: one stub, reached two ways.
+ *
+ * This service calls `fetchNui` **directly** for some operations and through
+ * `createCrudStore` — which goes via the SDK's transport seam — for others. Spying on only
+ * one of those leaves the other talking to the real transport, which in a node environment
+ * dies inside `isBrowser()` and reads as fixture trouble rather than as a stub that never
+ * applied. Pointing the seam at this module's spied namespace makes the single
+ * `vi.spyOn(fetchNuiModule, 'fetchNui')` below cover both routes.
+ */
+import { registerNuiTransport } from '../../sdk/nui/transport';
 import type {
   Account,
   Blab,
@@ -76,6 +87,7 @@ const actionOf = (name: unknown, payload: unknown): string => {
 
 describe('blabber service', () => {
   beforeEach(() => {
+    registerNuiTransport((...args) => fetchNuiModule.fetchNui(...args));
     vi.restoreAllMocks();
     feed.load = vi.fn().mockImplementation(async () => {});
     myAccounts.set([]);

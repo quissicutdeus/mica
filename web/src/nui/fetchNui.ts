@@ -1,4 +1,4 @@
-import { isBrowser } from '../lib/sdk/isBrowser';
+import { registerNuiTransport } from '../sdk/nui/transport';
 import { getTransport } from './transport';
 
 /**
@@ -73,4 +73,29 @@ export async function fetchNui<T = unknown>(
   return reply ?? (options?.defaultValue as T) ?? (null as unknown as T);
 }
 
-export { isBrowser };
+/**
+ * MICA-172 removed an `export { isBrowser };` from here, and its import with it. The
+ * re-export let callers of this module get the predicate without a second import, and its
+ * last consumers left when `useNuiBridge` and the two store factories moved onto
+ * `sdk/nui/transport`. `isBrowser` is still public — `sdk/utils.ts` exports it straight from
+ * `lib/sdk/isBrowser`, which is where it lives. `pnpm deadcode` is what noticed it; no other
+ * gate would have, which is the argument for it being in the set.
+ */
+
+/**
+ * Install this bundle's transport (MICA-172). Importing this module is how the phone says
+ * `fetchNui` means the real CEF/mock transport — see `sdk/nui/transport.ts`.
+ *
+ * **A wrapper, not `registerNuiTransport(fetchNui)`.** Registering the binding directly
+ * captures the function as it is at import time, and a test that later does
+ * `vi.spyOn(fetchNuiModule, 'fetchNui')` replaces the module's export without touching the
+ * copy the seam holds — so the code under test calls the real transport while the test
+ * asserts against its own stub, and the failure reads as bad fixture data rather than a
+ * stale binding. That is the trap `useNuiBridge`'s own docblock describes at length, and it
+ * cost this ticket 43 red tests to rediscover one file away from where it is written down.
+ *
+ * Spread, not a fixed three parameters: forwarding `(name, data, options)` turns a
+ * two-argument call into a three-argument one with a trailing `undefined`, which changes
+ * nothing at runtime and breaks every `toHaveBeenCalledWith` asserting the real call shape.
+ */
+registerNuiTransport((...args) => fetchNui(...args));

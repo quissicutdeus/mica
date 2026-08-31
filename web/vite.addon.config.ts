@@ -271,16 +271,17 @@ export default defineConfig({
     alias: [
       { find: '@shared', replacement: path.resolve(here, '../shared') },
       { find: '@gphone/sdk/app', replacement: path.resolve(here, 'src/sdk/app.ts') },
-      { find: '@gphone/sdk', replacement: path.resolve(here, 'src/sdk/addon.ts') },
-      // The last remaining specifier-level swap, and it is not about facets: `nui/fetchNui`
-      // is imported by `services/createCrudStore` and `createPagedStore`, which `addon.ts`
-      // re-exports on purpose (see its doc comment). The facet swap that used to live
-      // alongside this is gone — MICA-176 moved that choice to the entry point; see the
-      // note where `facetSwap()` used to be defined, above.
-      {
-        find: /^(.*)\/nui\/fetchNui$/,
-        replacement: path.resolve(here, 'src/sdk/host/iframe/fetchNui.ts')
-      }
+      { find: '@gphone/sdk', replacement: path.resolve(here, 'src/sdk/addon.ts') }
+      /**
+       * MICA-172 deleted the `nui/fetchNui` alias that used to sit here.
+       *
+       * It redirected `createCrudStore`/`createPagedStore`'s transport import to the
+       * `postMessage` twin. Those two factories now live in the SDK and call
+       * `sdk/nui/transport`, a runtime seam that `bootAddOn` fills by importing
+       * `sdk/host/iframe/fetchNui` — so an add-on bundle chooses its transport the same way
+       * it chooses its facet set, at its entry point, with nothing here to keep in step. The
+       * `shell/state/time` shim above is the last specifier-level swap in this file.
+       */
     ],
     conditions: ['browser']
   },

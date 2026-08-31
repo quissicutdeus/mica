@@ -2,9 +2,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mailStore, unreadMailCount } from './mail';
 import { get } from 'svelte/store';
 import * as fetchNuiModule from '../nui/fetchNui';
+/**
+ * MICA-172: one stub, reached two ways.
+ *
+ * This service calls `fetchNui` **directly** for some operations and through
+ * `createCrudStore` — which goes via the SDK's transport seam — for others. Spying on only
+ * one of those leaves the other talking to the real transport, which in a node environment
+ * dies inside `isBrowser()` and reads as fixture trouble rather than as a stub that never
+ * applied. Pointing the seam at this module's spied namespace makes the single
+ * `vi.spyOn(fetchNuiModule, 'fetchNui')` below cover both routes.
+ */
+import { registerNuiTransport } from '../sdk/nui/transport';
 
 describe('mailStore', () => {
   beforeEach(() => {
+    registerNuiTransport((...args) => fetchNuiModule.fetchNui(...args));
     vi.restoreAllMocks();
   });
 
