@@ -134,10 +134,14 @@ for players and seamless framework integration for server developers.
   registration (`registerApp`, `unregisterApp`), and home screen grid updates.
 - **Framework Bridge**: Built-in support for **QBX Core** (`qbx_core`),
   **QBCore** (`qb-core`) and **ESX** (`es_extended`), with automatic player
-  lookup and money handlers. The framework is detected, not configured — there
-  is no convar to set. On ESX a phone belongs to the **player**, where on a qb
-  core it belongs to the **character**; that and the rest of the ESX differences
-  are set out under Installation.
+  lookup and money handlers. A framework is detected, not configured — there is
+  no convar that picks one. gPhone also runs **standalone**, with no framework
+  resource at all, and that mode alone is opt-in via `gphone_standalone`,
+  because "no framework is installed" and "the framework has not started yet"
+  look identical from inside the resource. On ESX a phone belongs to the
+  **player** where on a qb core it belongs to the **character**, and standalone
+  is per-player as well; that and the rest of the differences are set out under
+  Installation.
 - **Banking Bridge**: Reads transaction history through the banking resource's
   own exports rather than its tables (**Renewed-Banking** supported),
   normalizing each script's record shape onto one contract. Degrades to an empty
@@ -193,7 +197,10 @@ requirements:
 - **Dependencies**:
   - `oxmysql`
   - Framework: `qbx_core`, `qb-core`, or `es_extended` — see the note on ESX
-    below before installing on the last of these
+    below before installing on the last of these. **Optional**: gPhone also runs
+    with no framework at all, which you turn on deliberately with
+    `gphone_standalone`. See "Running with no framework" below for what that
+    mode costs you.
   - _(Optional)_ `ox_inventory`
 
 ---
@@ -285,7 +292,7 @@ requirements:
 
    ```cfg
    ensure oxmysql
-   ensure qbx_core # or qb-core, or es_extended
+   ensure qbx_core # or qb-core, or es_extended; omit it to run standalone
    ensure gphone
    ```
 
@@ -362,6 +369,47 @@ itself.
 
 ---
 
+### Running with no framework
+
+Set `set gphone_standalone 1` and gPhone runs with no framework resource at all.
+Import [`gphone.esx.sql`](gphone.esx.sql) rather than
+[`gphone.sql`](gphone.sql): the two differ only in the foreign keys onto qb's
+`players` table, and a standalone server has no such table for them to point at.
+
+**Identity is the player's `license:` identifier**, read from the FiveM runtime.
+A phone therefore belongs to the **player**, exactly as it does on ESX — one
+phone per person rather than one per character. Rows written in this mode do not
+carry over if you later install a framework: a license identifier and a qb
+`citizenid` are different strings, so moving between them is a data migration
+and not a config change.
+
+**gPhone issues the phone numbers**, because there is no framework to issue
+them. A number is generated at random on a player's first connection, stored in
+`gphone_phone_numbers`, and stays with them across reconnects — every contact
+anyone had saved would break otherwise. On qb and ESX that table stays empty and
+the framework's own number is used exactly as before.
+
+**There is no money, and the apps that need it are hidden rather than broken.**
+Bank and Hodlr do not appear on a standalone server. That is deliberate: a Bank
+that is present and errors on every tap is worse than one that is not there.
+Marketplace is unaffected — it never moved money in the first place, and its
+buyers and sellers settle in-world.
+
+**Metadata mirroring degrades.** `setMeta` has no framework player to write to,
+so it is dropped and reported once per resource start. gPhone's own tables are
+untouched — the battery level lives in `gphone_battery` either way — so what is
+lost is visibility to _other_ resources, never the phone's own state.
+
+**Offline players are looked up from gPhone's own table**, as there is no
+`players` or `users` table to read. Somebody gPhone has never seen has no name
+and no number, which is the same degraded-but-working answer ESX already gives
+for a phone number.
+
+**The orphan sweep does not run.** It removes gPhone rows whose character no
+longer exists, and it answers that question against the framework's own table.
+Standalone has none, so the sweep skips rather than guessing — and a sweep that
+guessed wrong here would delete the entire phone database.
+
 ## Configuration
 
 Everything a server owner can tune is a convar, set in `server.cfg` above
@@ -386,6 +434,7 @@ none of them behaves exactly as shown and this block is only worth pasting if
 you intend to change something.
 
 ```cfg
+set gphone_standalone ""
 set gphone_admin_aces "gphone.admin,command"
 set gphone_rate_limit 60
 set gphone_bank_transfer_max 50000
@@ -410,6 +459,7 @@ setr gphone_addon_catalog ""
 
 | Convar                          | Type                 | Default                | Controls                                               |
 | ------------------------------- | -------------------- | ---------------------- | ------------------------------------------------------ |
+| `gphone_standalone`             | boolean              | empty (off)            | Run with no framework resource at all                  |
 | `gphone_admin_aces`             | comma-separated aces | `gphone.admin,command` | Who counts as a gPhone admin                           |
 | `gphone_rate_limit`             | integer              | `60`                   | Requests per player, per action, per minute            |
 | `gphone_bank_transfer_max`      | integer              | `50000`                | Ceiling on one player-to-player send                   |
@@ -431,22 +481,38 @@ setr gphone_addon_catalog ""
 | `gphone_addon_hosts`            | hostname list        | empty (off)            | Hosts a Store add-on may be fetched from               |
 | `gphone_addon_catalog`          | https URL            | empty (off)            | The add-on catalog the Store lists                     |
 
-Sixteen of the twenty are read on every use rather than cached, so changing one
-with `set` from the live console takes effect on the next request and needs no
-restart. `gphone_blabber_edit_window` and `gphone_notification_retention` are
-read once at resource start, so a change to either needs a restart, for the
-reasons given under them below. `gphone_media_retention` and
-`gphone_orphan_owner_table` are the third and fourth exceptions and the mildest:
-both are read whenever the orphan sweep runs, which is at resource start and
-again on `gphonemedia prune`, so a change to either takes effect on the next
-sweep rather than needing a restart. `gphone_camera_quality` is read on every
-use as well, but the phone only asks for it when the Camera app comes to the
-foreground, so a change reaches a player the next time they open the camera
-rather than the next time they take a photo. `gphone_addon_hosts` and
-`gphone_addon_catalog` are the same shape: read whenever asked for, and asked
-for once, when a player's phone UI loads — so a change reaches them when they
-next reconnect.
+Seventeen of the twenty-one are read on every use rather than cached, so
+changing one with `set` from the live console takes effect on the next request
+and needs no restart. `gphone_blabber_edit_window` and
+`gphone_notification_retention` are read once at resource start, so a change to
+either needs a restart, for the reasons given under them below.
+`gphone_media_retention` and `gphone_orphan_owner_table` are the third and
+fourth exceptions and the mildest: both are read whenever the orphan sweep runs,
+which is at resource start and again on `gphonemedia prune`, so a change to
+either takes effect on the next sweep rather than needing a restart.
+`gphone_camera_quality` is read on every use as well, but the phone only asks
+for it when the Camera app comes to the foreground, so a change reaches a player
+the next time they open the camera rather than the next time they take a photo.
+`gphone_addon_hosts` and `gphone_addon_catalog` are the same shape: read
+whenever asked for, and asked for once, when a player's phone UI loads — so a
+change reaches them when they next reconnect.
 
+- **`gphone_standalone`** — run gPhone with no framework resource at all. Off by
+  default, and the only convar here that changes where gPhone's _identity_ comes
+  from, which is why it is opt-in rather than inferred. gPhone cannot tell "this
+  server has no framework" apart from "the framework has not started yet": FiveM
+  starts resources in `server.cfg` order, `ensure gphone` above
+  `ensure qbx_core` is a legal config, and a resource that is not yet running
+  answers an export probe exactly the way one that does not exist does. Guessing
+  standalone on a qb server would key that server's rows on license identifiers
+  instead of citizenids — a silent identity switch on a live database — so
+  gPhone waits to be told instead. Setting it while a qb or ESX core is present
+  is a misconfiguration rather than an override: the real framework wins and
+  gPhone says so once in the console, rather than quietly picking one. A value
+  that is neither on nor off (`1`/`true`/`yes`/`on` against
+  empty/`0`/`false`/`no`/`off`) is read as off and reported once, because
+  `set gphone_standalone yes-please` is an operator who meant to enable this and
+  has not.
 - **`gphone_admin_aces`** — which ace objects grant gPhone admin: the phone's
   Developer Tools, and the `gphone*` console commands. The default recognises
   two, and the second is the interesting one. `command` is the near-universal

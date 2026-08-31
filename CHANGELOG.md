@@ -34,6 +34,21 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**`gphone_phone_numbers` is a new table — run `gphoneschema apply` from your
+server console after updating, or import the regenerated `gphone.sql` /
+`gphone.esx.sql` on a fresh install.** It carries `id`, `citizenid`, `number`,
+`status`, `created_at` and `updated_at`, with a `status` key, a
+`citizenid_status` key, and two unique keys, `number_unique` and
+`citizenid_unique`. It is how gPhone issues a phone number on a server running
+with no framework, where there is no framework to issue one — a number is
+generated at random on a player's first connection and stays with them across
+reconnects. **On qb and ESX the table is created and stays empty**, and the
+framework's own number is used exactly as before; nothing about an existing
+server's numbering changes. It is created on every framework rather than only on
+standalone because `gphone.sql` and `gphone.esx.sql` differ only in their
+foreign keys onto `players`, and a third artifact would be a third thing to
+import the wrong one of.
+
 **`gphone_contacts` gained a `ringtone` column — run `gphoneschema apply` from
 your server console after updating, or import the regenerated `gphone.sql` /
 `gphone.esx.sql` on a fresh install.** Contacts can now carry a per-contact
@@ -239,6 +254,21 @@ Every convar below defaults to the behaviour a server already had, so an update
 that sets none of them changes nothing for your players.
 
 ### Added
+
+- gPhone now runs **standalone**, with no framework resource at all, when you
+  set the new `gphone_standalone` convar. Identity comes from the player's FiveM
+  `license:` identifier, so a phone belongs to the player rather than the
+  character — the same way it does on ESX. The mode is opt-in rather than
+  detected on purpose: "no framework is installed" and "the framework has not
+  started yet" are indistinguishable from inside the resource, and guessing
+  standalone on a qb server would silently re-key a live database onto license
+  identifiers. Setting the convar while a qb or ESX core is present is treated
+  as a misconfiguration — the real framework wins and gPhone says so once in the
+  console. Standalone servers import `gphone.esx.sql`, get gPhone-issued phone
+  numbers, and do not see the Bank or Hodlr apps, because there is no money for
+  them to move and an app that errors on every tap is worse than one that is
+  absent. Marketplace is unaffected. See "Running with no framework" in the
+  README for what else the mode gives up. (MICA-151)
 
 - **A deleted Contact, Note or photo can be restored again**, within a shared
   window (`gphone_restore_window_days`, default 30 days) after the delete.
