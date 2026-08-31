@@ -64,16 +64,31 @@ const collectFetchNuiCalls = (): { action: string; file: string }[] => {
     if (file.includes('/mocks/') || file.endsWith('.test.ts')) continue;
     const text = readFileSync(file, 'utf8');
     /**
-     * The generic is optional and may itself contain generics.
+     * The generic is optional and may itself contain generics, to any depth.
      *
      * `<[^>]*>` stopped at the first `>`, which for `fetchNui<Record<number, Engagement>>(...)`
      * lands inside the `Record` — so the call did not match, the action looked uncalled, and
-     * this test reported a live route as dead weight. One level of nesting is enough for every
-     * shape in this codebase and keeps it a scanner rather than a parser.
+     * this test reported a live route as dead weight. The fix for that counted exactly one
+     * level of nesting and said one was enough for every shape in this codebase. That expired:
+     * `fetchNui<Partial<Record<AppCapability, boolean>>>('checkCapabilities')` is two, and the
+     * scanner reported the freshly-wired capabilities route as dead weight (MICA-151).
+     *
+     * Counting levels is the wrong shape of fix — each new depth is a silent blind spot until
+     * somebody writes that depth and gets a false alarm. So the generic is matched lazily and
+     * anchored on the `(` that must follow it. Depth stops mattering: the match ends at
+     * whichever `>` precedes the call's own paren.
+     *
+     * The character class is what keeps that honest. A bare `[\s\S]*?` backtracks across
+     * newlines and a function body, so `fetchNui<T = unknown>(` — the *declaration* in
+     * `sdk/host/iframe/fetchNui.ts` — ran on until it found `remoteCall<T>('service')` and
+     * reported `service` as an action `web/` calls. Barring `(`, `)` and a newline inside the
+     * generic confines a match to one call site on one line, which is every real one here.
+     *
+     * It stays a scanner rather than a parser, and it fails closed in both directions: a call
+     * site it cannot read reports a live route as dead weight, never a dead route as live. A
+     * generic broken across lines would be the former — loud, and fixed by reading this note.
      */
-    for (const m of text.matchAll(
-      /fetchNui\s*(?:<(?:[^<>]|<[^<>]*>)*>)?\s*\(\s*['"]([a-zA-Z][\w]*)['"]/g
-    )) {
+    for (const m of text.matchAll(/fetchNui\s*(?:<[^()\n]*?>)?\s*\(\s*['"]([a-zA-Z][\w]*)['"]/g)) {
       found.push({ action: m[1], file: relative(ROOT, file) });
     }
   }
