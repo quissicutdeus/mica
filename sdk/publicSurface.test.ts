@@ -767,7 +767,25 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'useSystemHardware',
     'useTheme',
     'useTimer',
-    'useWallpaper'
+    'useWallpaper',
+    // Captured by MICA-180, which added the arm below that reports a name on the live
+    // surface no baseline mentions. These were already public and already reachable; all
+    // that was missing was the record of anybody deciding so. Appended rather than sorted
+    // in, following the MICA-173 entry above: the diff that adds a promise should be
+    // legible as one.
+    'ALL_CAPABILITIES',
+    'PRIVACY_NOTICE_TEXT',
+    'RecentlyDeleted',
+    'useAppRegistryWrite',
+    'useClockWrite',
+    'useDisplayWrite',
+    'useKeybindsWrite',
+    'useLockScreen',
+    'useLockScreenWrite',
+    'useNotificationSettingsWrite',
+    'useSystemHardwareWrite',
+    'useThemeWrite',
+    'useWallpaperWrite'
   ],
   '@gphone/sdk (add-on bundle)': [
     'ALL_PERMISSIONS',
@@ -935,7 +953,28 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'useSystemHardware',
     'useTheme',
     'useTimer',
-    'useWallpaper'
+    'useWallpaper',
+    // Captured by MICA-180, which added the arm below that reports a name on the live
+    // surface no baseline mentions. These were already public and already reachable; all
+    // that was missing was the record of anybody deciding so. Appended rather than sorted
+    // in, following the MICA-173 entry above: the diff that adds a promise should be
+    // legible as one.
+    'ALL_CAPABILITIES',
+    'PRIVACY_NOTICE_TEXT',
+    'RecentlyDeleted',
+    'useAppRegistryWrite',
+    'useClockWrite',
+    'useDisplayWrite',
+    'useKeybindsWrite',
+    'useLockScreen',
+    'useLockScreenWrite',
+    'useNotificationSettingsWrite',
+    'useSystemHardwareWrite',
+    'useThemeWrite',
+    'useWallpaperWrite',
+    'placeholderAvatar',
+    'placeholderPhoto',
+    'placeholderPhotos'
   ],
   '@gphone/sdk/app': ['defineApp', 'lazyBadge'],
   '@gphone/sdk/core': ['NowPlayingCard', 'useCaptureZoomBoost', 'useNuiBridge']
@@ -1240,7 +1279,22 @@ const BASELINE_VOCABULARIES: Record<string, string[]> = {
     'storage',
     'system-hardware',
     'theme',
-    'wallpaper'
+    'wallpaper',
+    // Captured by MICA-180, which added the arm below that reports a name on the live
+    // surface no baseline mentions. These were already public and already reachable; all
+    // that was missing was the record of anybody deciding so. Appended rather than sorted
+    // in, following the MICA-173 entry above: the diff that adds a promise should be
+    // legible as one.
+    'app-registry-write',
+    'clock-write',
+    'display-write',
+    'keybinds-write',
+    'lock-screen',
+    'lock-screen-write',
+    'notification-settings-write',
+    'system-hardware-write',
+    'theme-write',
+    'wallpaper-write'
   ]
 };
 
@@ -1350,6 +1404,87 @@ const breakingChanges = (live: Surface, baseline: Surface): Break[] => {
 };
 
 const describeBreak = (b: Break): string => `${b.where}: ${b.what} (${b.kind})`;
+
+/** A name on the live surface that no baseline records a decision about. */
+interface Addition {
+  where: string;
+  what: string;
+  kind: 'export' | 'type export' | 'vocabulary member';
+}
+
+/**
+ * The other direction, and the one this file used to leave alone (MICA-180).
+ *
+ * `breakingChanges` above walks the *baseline* and asks whether each frozen name is still
+ * there, so it can only ever see a removal. The docblock at the top of this file said so
+ * outright — "a surface can still *widen* by `git add` with nobody deciding it should be
+ * public. That is a review question, not a build one." That was a defensible call when the
+ * SDK was a directory in this tree. It stopped being one when the SDK became a package an
+ * outside author compiles against, because a widening is a **promise**: the moment an
+ * add-on imports a name, removing it is a break, and under the old behaviour nobody ever
+ * decided to make the promise.
+ *
+ * The mechanism is not hypothetical. `scripts/generate-barrels.js` globs `sdk/host/*.ts`
+ * into `host/index.ts`, and `index.ts` re-exports that whole barrel — so writing a file in
+ * that directory publishes every export in it, at `git add` time, with nothing reacting.
+ * MICA-179 walked into it one ticket after MICA-176 deliberately put `host/seam/` a
+ * directory down to avoid exactly that glob. When the people who know about the trap fall
+ * into it, the trap is the problem.
+ *
+ * So this walks the *live* surface instead and reports names the baselines do not mention.
+ * The cost is a line per genuine addition, which is the price of having decided.
+ *
+ * `derived` is the deliberate exemption, kept to names whose publication is not a per-name
+ * decision at all: `sdk/icons.ts` is generated and its entire contract is that every icon
+ * is republished, so demanding a baseline edit per icon would be ceremony for a choice
+ * nobody makes. It exempts additions only — an icon that *disappears* is still a removal,
+ * and `breakingChanges` still sees it.
+ *
+ * Props are deliberately out of scope. A new prop is a widening too, but an optional one
+ * breaks nobody and the arm above already treats it that way; this exists for names
+ * entering the surface, which is what the barrel glob does silently.
+ *
+ * Pure, like its neighbour, so the probes at the bottom can drive it with input this repo
+ * does not have.
+ */
+const undeclaredAdditions = (
+  live: Surface,
+  baseline: Surface,
+  derived: ReadonlySet<string>
+): Addition[] => {
+  const additions: Addition[] = [];
+
+  for (const [entry, names] of Object.entries(live.exports)) {
+    const frozen = new Set(baseline.exports[entry] ?? []);
+    for (const name of names) {
+      if (!frozen.has(name) && !derived.has(name)) {
+        additions.push({ where: entry, what: name, kind: 'export' });
+      }
+    }
+  }
+
+  for (const [entry, names] of Object.entries(live.types ?? {})) {
+    const frozen = new Set(baseline.types?.[entry] ?? []);
+    for (const name of names) {
+      if (!frozen.has(name) && !derived.has(name)) {
+        additions.push({ where: entry, what: name, kind: 'type export' });
+      }
+    }
+  }
+
+  for (const [vocabulary, members] of Object.entries(live.vocabularies ?? {})) {
+    const frozen = new Set(baseline.vocabularies?.[vocabulary] ?? []);
+    for (const member of members) {
+      if (!frozen.has(member)) {
+        additions.push({ where: vocabulary, what: member, kind: 'vocabulary member' });
+      }
+    }
+  }
+
+  return additions;
+};
+
+const describeAddition = (a: Addition): string => `${a.where}: ${a.what} (${a.kind} added)`;
 
 // ---------------------------------------------------------------------------
 // `index.ts` against `addon.ts`
@@ -1756,6 +1891,42 @@ describe('the SDK public surface (MICA-125)', () => {
     ).toEqual([]);
   });
 
+  it('publishes nothing nobody decided to publish', () => {
+    // The icons barrel is generated and republishes every icon on purpose, so its members
+    // are derived rather than decided and adding one should cost nothing. Read from the
+    // barrel rather than listed here, so this exemption cannot drift from what it exempts.
+    const derived = new Set(namedReexports('icons.ts'));
+    expect(
+      derived.size,
+      'no names parsed out of icons.ts — the exemption would then be empty, which is safe ' +
+        'but means every new icon starts failing this gate for no reason'
+    ).toBeGreaterThan(0);
+
+    const found = undeclaredAdditions(
+      { exports: exportsNow, props: {}, vocabularies: vocabulariesNow, types: typesNow },
+      {
+        exports: BASELINE_EXPORTS,
+        props: {},
+        vocabularies: BASELINE_VOCABULARIES,
+        types: BASELINE_TYPE_EXPORTS
+      },
+      derived
+    ).map(describeAddition);
+
+    expect(
+      found,
+      'these names are on the published surface and no baseline records a decision to put ' +
+        'them there. Adding a file under `sdk/host/` is enough to do this on its own: the ' +
+        'barrel is globbed, so the export ships at `git add` time. Publishing is a one-way ' +
+        'door — once an add-on imports one of these, taking it away is a break that costs a ' +
+        '`SDK_CONTRACT_VERSION` bump — so it should be something somebody chose. If these ' +
+        'should be public, add them to the baseline in this commit and the promise is on ' +
+        'the record. If they should not, they want `sdk/host/seam/` or another directory ' +
+        'the barrel generator does not glob. Neither costs a version bump: an addition ' +
+        'breaks nobody, and this gate asks who decided rather than forbidding it.'
+    ).toEqual([]);
+  });
+
   describe('an add-on reaches the same names the typechecker showed it', () => {
     const indexNamed = namedReexports('index.ts');
     const addonNamed = namedReexports('addon.ts');
@@ -1953,6 +2124,71 @@ describe('the SDK public surface (MICA-125)', () => {
           surface({ '@gphone/sdk': ['Button'] })
         )
       ).toEqual([]);
+    });
+
+    // The widening arm (MICA-180). The pair above is the whole reason it exists: an
+    // addition is not a break and must keep passing `breakingChanges`, so the question
+    // "did anybody decide to publish this" needs its own check rather than a stricter
+    // version of that one.
+    it('sees an export nobody decided to publish', () => {
+      expect(
+        undeclaredAdditions(
+          surface({ '@gphone/sdk': ['Button', 'Skeleton'] }),
+          surface({ '@gphone/sdk': ['Button'] }),
+          new Set()
+        ).map(describeAddition)
+      ).toEqual(['@gphone/sdk: Skeleton (export added)']);
+    });
+
+    it('lets a name through once the baseline records it', () => {
+      expect(
+        undeclaredAdditions(
+          surface({ '@gphone/sdk': ['Button', 'Skeleton'] }),
+          surface({ '@gphone/sdk': ['Button', 'Skeleton'] }),
+          new Set()
+        )
+      ).toEqual([]);
+    });
+
+    it('exempts a derived name, so a new icon costs nothing', () => {
+      expect(
+        undeclaredAdditions(
+          surface({ '@gphone/sdk': ['Button', 'PizzaIcon'] }),
+          surface({ '@gphone/sdk': ['Button'] }),
+          new Set(['PizzaIcon'])
+        )
+      ).toEqual([]);
+    });
+
+    it('still reports a derived name that disappears, which is a removal', () => {
+      // The exemption is one-directional on purpose: `derived` says "adding one of these
+      // was nobody's decision", not "this name is outside the contract".
+      expect(
+        breakingChanges(
+          surface({ '@gphone/sdk': ['Button'] }),
+          surface({ '@gphone/sdk': ['Button', 'PizzaIcon'] })
+        ).map(describeBreak)
+      ).toEqual(['@gphone/sdk: PizzaIcon (export removed)']);
+    });
+
+    it('sees a vocabulary member nobody decided to publish', () => {
+      expect(
+        undeclaredAdditions(
+          { exports: {}, props: {}, vocabularies: { ALL_PERMISSIONS: ['contacts', 'banking'] } },
+          { exports: {}, props: {}, vocabularies: { ALL_PERMISSIONS: ['contacts'] } },
+          new Set()
+        ).map(describeAddition)
+      ).toEqual(['ALL_PERMISSIONS: banking (vocabulary member added)']);
+    });
+
+    it('sees a type-only export nobody decided to publish', () => {
+      expect(
+        undeclaredAdditions(
+          { exports: {}, props: {}, types: { '@gphone/sdk': ['Note', 'Draft'] } },
+          { exports: {}, props: {}, types: { '@gphone/sdk': ['Note'] } },
+          new Set()
+        ).map(describeAddition)
+      ).toEqual(['@gphone/sdk: Draft (type export added)']);
     });
 
     it('replays the ReactionBar break of 2026-08-28', () => {
