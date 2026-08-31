@@ -172,6 +172,7 @@ CREATE TABLE IF NOT EXISTS `gphone_contacts` (
     `phone` varchar(20) NOT NULL,
     `email` varchar(100) DEFAULT NULL,
     `avatar` mediumblob DEFAULT NULL,
+    `ringtone` ENUM('classic', 'chime', 'beacon', 'pulse', 'ascent') DEFAULT NULL,
     `favorite` tinyint(1) DEFAULT 0,
     `status` ENUM('active', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,

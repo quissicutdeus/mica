@@ -1,3 +1,12 @@
+/**
+ * The client's ringtone choices (`web/src/shell/state/audio.ts`'s `RingtoneId`),
+ * mirrored here rather than imported — `shared/` is read by `server/`, which must not
+ * depend on `web/`. Keep the two lists in sync by hand; a mismatch fails loudly, since
+ * the server-side `enum` column (`gphone_contacts.ringtone`) rejects anything not in
+ * this list.
+ */
+export type RingtoneId = 'classic' | 'chime' | 'beacon' | 'pulse' | 'ascent';
+
 export interface Contact {
   id: number;
   citizenid: string;
@@ -6,6 +15,13 @@ export interface Contact {
   phone: string;
   email?: string;
   avatar?: string; // Base64 string from blob
+  /**
+   * Per-contact ringtone override (MICA-142). Null means "use the system ringtone" —
+   * that is the default, and a null is never backfilled to `'classic'`: a contact with
+   * no override must keep following the player's system-wide choice even after the
+   * system default changes.
+   */
+  ringtone?: RingtoneId | null;
   favorite: boolean;
   status?: 'active' | 'deleted' | 'moderated';
   created_at: Date | string;

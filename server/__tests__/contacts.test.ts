@@ -32,7 +32,7 @@ vi.mock('../lib/proximity', () => ({
   findNearbyVisiblePlayers: vi.fn(async () => proximity.nearby)
 }));
 
-import '../services/Contacts';
+import { contacts } from '../services/Contacts';
 import { __resetRateLimits } from '../lib/rateLimit';
 
 const SHARE_EVENT = 'gphone:server:contacts:share';
@@ -198,5 +198,75 @@ describe('contacts:share', () => {
       expect(incoming[0][2].phone).toBe('555-7777');
       expect(incoming[0][2].sender.citizenid).toBe('CID_A');
     });
+  });
+});
+
+/**
+ * MICA-142 — a nullable per-contact ringtone override, through the generic CRUD path
+ * `defineService` derives (not the hand-written `share` handler above). `null` must stay
+ * writable and must stay the default: it is what makes a contact fall back to the system
+ * ringtone rather than being backfilled to `classic`.
+ */
+describe('contacts:ringtone (MICA-142)', () => {
+  const genericCall = async (action: 'create' | 'update' | 'get', data: unknown) => {
+    const handler = handlers.get(`gphone:server:contacts:${action}`);
+    if (!handler) throw new Error(`no handler for contacts:${action}`);
+    await (handler as any)('cb-1', data);
+  };
+
+  const lastReplyTo = (event: string) => {
+    const call = (globalThis.emitNet as any).mock.calls
+      .filter((args: unknown[]) => args[0] === event)
+      .pop();
+    return call?.[3];
+  };
+
+  it('declares the value domain as the client RingtoneId union, nullable with no default', () => {
+    // `contacts.repo` rather than only `contacts.resolved` — the allowlist §2.9 actually
+    // checks a payload key against is the repository's, and the two must agree.
+    expect(contacts.repo.tableColumns).toContain('ringtone');
+    expect(contacts.resolved.columnRules.ringtone).toMatchObject({
+      type: 'enum',
+      values: ['classic', 'chime', 'beacon', 'pulse', 'ascent']
+    });
+  });
+
+  it('is client-writable on create', async () => {
+    dbMock.insert.mockResolvedValue(42);
+
+    await genericCall('create', { firstname: 'Ada', phone: '555-0100', ringtone: 'chime' });
+
+    const [sql, params] = dbMock.insert.mock.calls[0];
+    expect(String(sql)).toContain('`ringtone`');
+    expect(params).toContain('chime');
+  });
+
+  it('accepts null on update, so a contact can fall back to the system ringtone', async () => {
+    dbMock.update.mockResolvedValue(true);
+
+    await genericCall('update', { id: 3, ringtone: null });
+
+    expect(dbMock.update.mock.calls[0][1]).toContain(null);
+  });
+
+  it('rejects a value outside the union rather than forwarding it to SQL', async () => {
+    await genericCall('update', { id: 3, ringtone: 'airhorn' });
+
+    expect(dbMock.update).not.toHaveBeenCalled();
+    const reply = lastReplyTo('gphone:client:contacts:updated');
+    expect(reply.error).toMatch(/'ringtone' must be one of/);
+  });
+
+  it('comes back on a read, so a saved override is not silently dropped', async () => {
+    dbMock.query.mockResolvedValue([
+      { id: 3, citizenid: 'CID_A', firstname: 'Ada', phone: '555-0100', ringtone: 'beacon' }
+    ]);
+
+    await genericCall('get', {});
+
+    const reply = lastReplyTo('gphone:client:contacts:receive');
+    expect(reply).toEqual(
+      expect.arrayContaining([expect.objectContaining({ ringtone: 'beacon' })])
+    );
   });
 });

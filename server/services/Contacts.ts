@@ -24,6 +24,15 @@ export const contacts = defineService<Contact>({
     email: { type: 'string', length: 100 },
     // Base64 image data. Blob rather than text to match the existing table.
     avatar: 'blob',
+    /**
+     * Per-contact ringtone override (MICA-142). The value domain is the client's
+     * existing `RingtoneId` union (`web/src/shell/state/audio.ts`), mirrored in
+     * `shared/types.ts` rather than invented again here. Nullable, and no `default` —
+     * null means "use the system ringtone" and must stay the default rather than being
+     * backfilled to `classic`; a client clears the override by writing `null`, which
+     * `assertWritableValue` always accepts ahead of the enum check.
+     */
+    ringtone: { type: 'enum', values: ['classic', 'chime', 'beacon', 'pulse', 'ascent'] },
     favorite: { type: 'bool', default: 0, clientFilterable: true }
   },
   indexes: [

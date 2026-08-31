@@ -34,6 +34,13 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**`gphone_contacts` gained a `ringtone` column — run `gphoneschema apply` from
+your server console after updating, or import the regenerated `gphone.sql` /
+`gphone.esx.sql` on a fresh install.** Contacts can now carry a per-contact
+ringtone override, one of the client's existing ringtone choices. It is nullable
+with no default, and null means "use the system ringtone" — an existing contact
+is never backfilled to a specific tone.
+
 **`gphone_messages_reactions` is a new table — run `gphoneschema apply` from
 your server console after updating, or import the regenerated `gphone.sql` /
 `gphone.esx.sql` on a fresh install.** Native Messages (SMS-style threads) can

@@ -57,7 +57,7 @@ const ALL = [
 
 describe('shipped repositories — declared client write policy', () => {
   it.each([
-    ['contacts', ['firstname', 'lastname', 'phone', 'email', 'avatar', 'favorite']],
+    ['contacts', ['firstname', 'lastname', 'phone', 'email', 'avatar', 'ringtone', 'favorite']],
     ['conversations', ['name']],
     ['notes', ['title', 'content']],
     // `kind` and `data` only. The media table carries nine more columns, and every one is
