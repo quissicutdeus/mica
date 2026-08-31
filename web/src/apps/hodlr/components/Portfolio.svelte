@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { EmptyState, Skeleton, onAppForeground } from '@gphone/sdk';
-  import { useHodlr } from '../store';
+  import { useHodlr, buyPriceOf, sellPriceOf } from '../store';
   import Chart from './Chart.svelte';
 
   let { onbuy, onsell }: { onbuy: () => void; onsell: () => void } = $props();
@@ -9,6 +9,10 @@
   const { priceStore, portfolioStore, loadPrice, loadPortfolio } = useHodlr();
 
   let loaded = $state(false);
+
+  /** Buy and sell are genuinely different numbers once a spread exists (MICA-147/149). */
+  const buyPrice = $derived(buyPriceOf($priceStore));
+  const sellPrice = $derived(sellPriceOf($priceStore));
 
   /**
    * The market refuses every trade until it has restored its price after a restart
@@ -42,6 +46,20 @@
       <p class="text-on-surface-variant text-body-small">gCoin price</p>
       {#if open}
         <p class="text-on-surface text-title-large">${$priceStore.current}</p>
+        <!-- Buy and sell, side by side rather than folded into one number — a spread
+             means they can genuinely differ (MICA-147/MICA-149), and showing only the
+             mid/reference price here would leave Trade's own quote as the first time a
+             player learns which one they actually pay or receive. -->
+        <div class="mt-2 flex gap-4">
+          <div>
+            <p class="text-on-surface-variant text-body-small">Buy</p>
+            <p class="text-on-surface text-body-medium">${buyPrice}</p>
+          </div>
+          <div>
+            <p class="text-on-surface-variant text-body-small">Sell</p>
+            <p class="text-on-surface text-body-medium">${sellPrice}</p>
+          </div>
+        </div>
       {:else}
         <p class="text-on-surface-variant text-title-large">Closed</p>
         <p class="text-on-surface-variant text-body-small">

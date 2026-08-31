@@ -390,6 +390,7 @@ set gphone_admin_aces "gphone.admin,command"
 set gphone_rate_limit 60
 set gphone_bank_transfer_max 50000
 set gphone_hodlr_trade_max 50000
+set gphone_hodlr_spread_pct 2
 set gphone_max_accounts_per_app 3
 set gphone_bluetooth_range 15
 set gphone_bluetooth_max_nearby 5
@@ -411,6 +412,7 @@ setr gphone_addon_catalog ""
 | `gphone_rate_limit`             | integer              | `60`                   | Requests per player, per action, per minute           |
 | `gphone_bank_transfer_max`      | integer              | `50000`                | Ceiling on one player-to-player send                  |
 | `gphone_hodlr_trade_max`        | integer              | `50000`                | Ceiling on what one Hodlr buy or sell is worth        |
+| `gphone_hodlr_spread_pct`       | number, percent      | `2`                    | Gap between Hodlr's buy and sell quotes, around mid   |
 | `gphone_max_accounts_per_app`   | integer              | `3`                    | Identities one player may hold in one social app      |
 | `gphone_bluetooth_range`        | integer, meters      | `15`                   | How far a proximity share reaches                     |
 | `gphone_bluetooth_max_nearby`   | integer              | `5`                    | How many phones one proximity share reaches           |
@@ -425,7 +427,7 @@ setr gphone_addon_catalog ""
 | `gphone_addon_hosts`            | hostname list        | empty (off)            | Hosts a Store add-on may be fetched from              |
 | `gphone_addon_catalog`          | https URL            | empty (off)            | The add-on catalog the Store lists                    |
 
-Thirteen of the seventeen are read on every use rather than cached, so changing
+Fourteen of the eighteen are read on every use rather than cached, so changing
 one with `set` from the live console takes effect on the next request and needs
 no restart. `gphone_blabber_edit_window` and `gphone_notification_retention` are
 read once at resource start, so a change to either needs a restart, for the
@@ -495,6 +497,16 @@ next reconnect.
   position. Per trade, not per session: the rate limit bounds how many requests
   a player makes, this bounds what one of them can be worth. A non-numeric or
   non-positive value falls back to 50000.
+- **`gphone_hodlr_spread_pct`** — the gap between what a buy costs and what a
+  sell nets, in percent of the mid/reference price the chart plots: a buy
+  settles slightly above mid, a sell slightly below, each rounded against the
+  trader (up for a buy, down for a sell) rather than to nearest, so a fractional
+  cent is never handed back for free. This is the real brake on rapid
+  buy-then-sell round-tripping — it costs the spread every time, by construction
+  — rather than a cooldown or a position limit, neither of which this release
+  adds. `0` is accepted and means exactly what it says: no spread, Hodlr trades
+  at a single flat price the way it always has. Only a negative or non-numeric
+  value falls back to the default of `2`.
 - **`gphone_max_accounts_per_app`** — how many identities one player may hold in
   one social app; Blabber's `@handle`s are the only current consumer. Capped
   because the handle namespace is public and finite: with no limit, one player

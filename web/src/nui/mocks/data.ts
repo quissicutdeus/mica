@@ -274,6 +274,21 @@ export const mockHodlrPriceHistory: PricePoint[] = [
 ];
 export const mockHodlrHolding = { quantity: 3 };
 
+/**
+ * A stand-in spread (MICA-147/MICA-149), quoting buy above and sell below
+ * `mockHodlrPrice` — the mid/reference price, unchanged.
+ *
+ * The real spread (its width, whether it moves with volatility or holds constant) is
+ * server business logic for `server/services/Hodlr.ts` to decide, not this file's — a 2%
+ * band picked only so the two numbers actually differ and the UI's three-price display is
+ * provably wired correctly ahead of Cody's real numbers landing. `buy`/`sell` below charge
+ * and pay at these, not at the flat mid, so a mock trade exercises the same two-price shape
+ * a real one will.
+ */
+const MOCK_HODLR_SPREAD_FRACTION = 0.02;
+export const mockHodlrBuyPrice = Math.round(mockHodlrPrice * (1 + MOCK_HODLR_SPREAD_FRACTION / 2));
+export const mockHodlrSellPrice = Math.round(mockHodlrPrice * (1 - MOCK_HODLR_SPREAD_FRACTION / 2));
+
 // GTA V / FiveM Core Characters
 const gtaCoreContacts: Contact[] = [
   {

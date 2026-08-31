@@ -17,7 +17,9 @@ import {
   loadPortfolio,
   priceStore,
   portfolioStore,
-  tradeFailureMessage
+  tradeFailureMessage,
+  buyPriceOf,
+  sellPriceOf
 } from './store';
 
 /**
@@ -126,6 +128,27 @@ describe('hodlr store', () => {
       expect(get(priceStore)).toEqual({ ready: true, current: 520, history });
     });
 
+    it('publishes a spread quote alongside the mid price, unchanged (MICA-147/149)', async () => {
+      const history = [{ price: 480, recorded_at: '2026-08-27T00:00:00Z' }];
+      service.call.mockResolvedValue({
+        ready: true,
+        current: 520,
+        buyPrice: 525,
+        sellPrice: 515,
+        history
+      });
+
+      await loadPrice();
+
+      expect(get(priceStore)).toEqual({
+        ready: true,
+        current: 520,
+        buyPrice: 525,
+        sellPrice: 515,
+        history
+      });
+    });
+
     it('publishes the portfolio as the server reports it', async () => {
       service.call.mockResolvedValue({
         ready: true,
@@ -174,6 +197,26 @@ describe('hodlr store', () => {
 
       expect(get(priceStore).ready).toBe(false);
       expect(get(portfolioStore).ready).toBe(false);
+    });
+  });
+
+  /**
+   * MICA-147/MICA-149: buying and selling are genuinely different numbers once a
+   * spread exists. The fallback matters as much as the read — a reply that predates the
+   * spread (or a fixture that never mentions it, like most of this file's own `beforeEach`)
+   * must still quote one honest number rather than `undefined`.
+   */
+  describe('buyPriceOf / sellPriceOf', () => {
+    it('reads the spread quotes when the server sends them', () => {
+      const info = { ready: true, current: 500, buyPrice: 510, sellPrice: 490, history: [] };
+      expect(buyPriceOf(info)).toBe(510);
+      expect(sellPriceOf(info)).toBe(490);
+    });
+
+    it('falls back to the mid price when no spread has been sent', () => {
+      const info = { ready: true, current: 500, history: [] };
+      expect(buyPriceOf(info)).toBe(500);
+      expect(sellPriceOf(info)).toBe(500);
     });
   });
 

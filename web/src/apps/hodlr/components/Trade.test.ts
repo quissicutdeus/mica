@@ -60,6 +60,38 @@ describe('Trade', () => {
   const enter = (value: string) =>
     fireEvent.input(screen.getByPlaceholderText('Quantity'), { target: { value } });
 
+  /**
+   * MICA-147/MICA-149: a spread means buy and sell are genuinely different numbers,
+   * and pricing both sides off `current` was the bug this replaces — a buy quoted at the
+   * sell price undercharges whatever the server actually settles at.
+   */
+  it('quotes and totals a buy at buyPrice, not at the mid or the sell price', async () => {
+    priceStore.set({ ready: true, current: 10, buyPrice: 12, sellPrice: 9, history: [] });
+    render(Trade, { props: { side: 'buy', onback: () => {} } });
+
+    expect(screen.getByText('Buy gCoin at $12 each')).toBeTruthy();
+
+    await enter('3');
+    expect(screen.getByText('Cost: $36')).toBeTruthy();
+  });
+
+  it('quotes and totals a sell at sellPrice, not at the mid or the buy price', async () => {
+    priceStore.set({ ready: true, current: 10, buyPrice: 12, sellPrice: 9, history: [] });
+    render(Trade, { props: { side: 'sell', onback: () => {} } });
+
+    expect(screen.getByText('Sell gCoin at $9 each')).toBeTruthy();
+
+    await enter('3');
+    expect(screen.getByText('Proceeds: $27')).toBeTruthy();
+  });
+
+  it('falls back to the mid price on both sides when no spread has been sent', async () => {
+    priceStore.set({ ready: true, current: 10, history: [] });
+    render(Trade, { props: { side: 'buy', onback: () => {} } });
+
+    expect(screen.getByText('Buy gCoin at $10 each')).toBeTruthy();
+  });
+
   it('refuses a sell above the holding and says how many gCoin there actually are', async () => {
     render(Trade, { props: { side: 'sell', onback: () => {} } });
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Button, useAppAction } from '@gphone/sdk';
-  import { useHodlr } from '../store';
+  import { useHodlr, buyPriceOf, sellPriceOf } from '../store';
 
   let { side, onback }: { side: 'buy' | 'sell'; onback: () => void } = $props();
 
@@ -9,7 +9,13 @@
 
   let quantity = $state<number | ''>('');
 
-  const price = $derived($priceStore.current);
+  /**
+   * The side actually being traded, not the mid/reference — buying and selling are
+   * genuinely different numbers once a spread exists (MICA-147/MICA-149), and pricing
+   * both sides off `current` was the bug: a buy quoted here at the sell price undercharges
+   * whatever the server actually settles at.
+   */
+  const price = $derived(side === 'buy' ? buyPriceOf($priceStore) : sellPriceOf($priceStore));
   /**
    * The market is closed until it has restored its price after a restart (MICA-130). The
    * Portfolio screen already disables the buttons that reach here, so this is the second

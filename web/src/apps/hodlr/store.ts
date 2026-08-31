@@ -24,9 +24,27 @@ const service = () => useService('hodlr');
  */
 export interface PriceInfo {
   ready: boolean;
+  /** The mid/reference price — what `history` charts, and a spread's own center. */
   current: number;
+  /**
+   * What buying costs per unit right now, and what selling nets (MICA-147/MICA-149).
+   *
+   * Optional, and deliberately falls back to `current` via `buyPriceOf`/`sellPriceOf`
+   * below rather than requiring the field: the spread itself is server business logic
+   * (`server/services/Hodlr.ts`, not built by this ticket's web half), so a reply that
+   * predates it — or a test fixture that never mentions it — still quotes one honest
+   * number instead of `undefined`.
+   */
+  buyPrice?: number;
+  sellPrice?: number;
   history: PricePoint[];
 }
+
+/** What a buy actually costs per unit — the spread's upper quote, or `current` without one. */
+export const buyPriceOf = (info: PriceInfo): number => info.buyPrice ?? info.current;
+
+/** What a sell actually nets per unit — the spread's lower quote, or `current` without one. */
+export const sellPriceOf = (info: PriceInfo): number => info.sellPrice ?? info.current;
 
 export interface Portfolio {
   ready: boolean;

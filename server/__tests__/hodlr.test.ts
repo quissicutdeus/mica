@@ -45,7 +45,7 @@ vi.mock('../services/HodlrMarket', () => ({
 }));
 
 import { __resetRateLimits } from '../lib/rateLimit';
-import '../services/Hodlr';
+import { quoteSpread } from '../services/Hodlr';
 
 /**
  * Hodlr's `buy` and `sell`, which are the only things that ever move a holding — the
@@ -119,10 +119,12 @@ describe('hodlr: buy and sell', () => {
     });
 
     it('credits the bank and reports the remaining quantity on success', async () => {
+      // Mid is 10; the default 2% spread settles a sell at floor(10 * 0.99) = 9, not the
+      // bare mid — see `describe('the buy/sell spread')` for the spread math itself.
       const reply = await call(SELL, { quantity: 5 });
 
-      expect(player.addMoney).toHaveBeenCalledWith('bank', 50);
-      expect(reply).toEqual({ ok: true, quantity: 0, price: 10, proceeds: 50 });
+      expect(player.addMoney).toHaveBeenCalledWith('bank', 45);
+      expect(reply).toEqual({ ok: true, quantity: 0, price: 9, proceeds: 45 });
     });
 
     it('refunds the coins when the bank credit fails after the decrement committed', async () => {
@@ -173,13 +175,15 @@ describe('hodlr: buy and sell', () => {
     });
 
     it('debits the cost and credits the coins as a relative increment', async () => {
+      // Mid is 10; the default 2% spread settles a buy at ceil(10 * 1.01) = 11, not the
+      // bare mid — see `describe('the buy/sell spread')` for the spread math itself.
       const reply = await call(BUY, { quantity: 3 });
 
-      expect(player.removeMoney).toHaveBeenCalledWith('bank', 30);
+      expect(player.removeMoney).toHaveBeenCalledWith('bank', 33);
       expect(increments()).toEqual([
         ['UPDATE `gphone_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ?', [3, HOLDING.id]]
       ]);
-      expect(reply).toEqual({ ok: true, quantity: 8, price: 10, cost: 30 });
+      expect(reply).toEqual({ ok: true, quantity: 8, price: 11, cost: 33 });
     });
 
     /**
@@ -200,9 +204,10 @@ describe('hodlr: buy and sell', () => {
       const reply = await call(BUY, { quantity: 3 });
 
       expect(reply).toEqual({ ok: false, reason: 'credit_failed' });
-      expect(player.removeMoney).toHaveBeenCalledWith('bank', 30);
+      // Buy settles at 11 (mid 10 plus the default 2% spread), not the bare mid.
+      expect(player.removeMoney).toHaveBeenCalledWith('bank', 33);
       // The money comes back, and it is the same amount that was taken.
-      expect(player.addMoney).toHaveBeenCalledWith('bank', 30);
+      expect(player.addMoney).toHaveBeenCalledWith('bank', 33);
     });
 
     it('refunds the debit when the increment matched no row', async () => {
@@ -214,7 +219,7 @@ describe('hodlr: buy and sell', () => {
       const reply = await call(BUY, { quantity: 3 });
 
       expect(reply).toEqual({ ok: false, reason: 'credit_failed' });
-      expect(player.addMoney).toHaveBeenCalledWith('bank', 30);
+      expect(player.addMoney).toHaveBeenCalledWith('bank', 33);
     });
 
     it('says so loudly when it can neither credit coins nor give the money back', async () => {
@@ -252,9 +257,17 @@ describe('hodlr: buy and sell', () => {
     });
 
     it('quotes the live price with the history behind it', async () => {
+      // MICA-147/149: `buyPrice`/`sellPrice` are the spread's two quotes around `current`,
+      // the mid/reference price the chart still plots unchanged.
       const reply = await call('gphone:server:hodlr:price', {});
 
-      expect(reply).toEqual({ ready: true, current: 10, history: HISTORY });
+      expect(reply).toEqual({
+        ready: true,
+        current: 10,
+        buyPrice: 11,
+        sellPrice: 9,
+        history: HISTORY
+      });
     });
   });
 
@@ -267,9 +280,28 @@ describe('hodlr: buy and sell', () => {
    * what one of them is worth.
    */
   describe('per-trade value cap', () => {
+    /**
+     * Spread-neutral for this whole block, not just inside `withConvar` — MICA-147/149's
+     * spread reads its own convar independently of the trade-max one, and this block's
+     * numbers (`price: 10`, `cost: 50_000`, and the exact-boundary quantities) were all
+     * chosen against a flat mid price. Forcing the spread convar to `'0'` here keeps this
+     * describe testing exactly what its name says — the cap — without also becoming a
+     * second, accidental test of the spread math that `describe('the buy/sell spread')`
+     * below already owns.
+     */
+    beforeEach(() => {
+      (globalThis as any).GetConvar = (name: string, fallback: string) =>
+        name === 'gphone_hodlr_spread_pct' ? '0' : fallback;
+    });
+
     const withConvar = (value: string, run: () => Promise<void>) => {
       const previous = (globalThis as any).GetConvar;
-      (globalThis as any).GetConvar = () => value;
+      (globalThis as any).GetConvar = (name: string, fallback: string) =>
+        name === 'gphone_hodlr_trade_max'
+          ? value
+          : name === 'gphone_hodlr_spread_pct'
+            ? '0'
+            : fallback;
       return run().finally(() => {
         (globalThis as any).GetConvar = previous;
       });
@@ -470,6 +502,152 @@ describe('hodlr: buy and sell', () => {
       expect(finalStored()).toBe(3);
       expect(replyA).toMatchObject({ ok: true, quantity: 3 });
       expect(replyB).toMatchObject({ ok: true, quantity: 3 });
+    });
+  });
+});
+
+/**
+ * MICA-147/MICA-149: `quoteSpread` is a pure function of the mid price and the
+ * operator's spread percentage, so it is tested directly rather than only through `buy`/
+ * `sell` — the boundary/rounding decision `AGENTS.md`'s brief for this ticket asked to be
+ * documented and tested is exactly here, not spread across trade-flow assertions that also
+ * have money and coins to track.
+ */
+describe('quoteSpread — the buy/sell spread (MICA-147/149)', () => {
+  it('splits the spread evenly above and below mid when both quotes land on whole numbers', () => {
+    // 500 at a 2% spread: half-spread is 1%, i.e. +/-5 — no rounding to disambiguate.
+    expect(quoteSpread(500, 2)).toEqual({ buy: 505, sell: 495 });
+  });
+
+  it('is a real, non-degenerate spread at the lowest price the market ever quotes', () => {
+    // HodlrMarket.ts's FLOOR is 50; even there a 2% spread is a full 2-unit gap (51/49),
+    // never collapsing to a single price two quotes could round back together into.
+    expect(quoteSpread(50, 2)).toEqual({ buy: 51, sell: 49 });
+  });
+
+  it('accepts a spread of exactly 0 as a real configuration, not a fallback trigger', () => {
+    expect(quoteSpread(500, 0)).toEqual({ buy: 500, sell: 500 });
+  });
+
+  /**
+   * The rounding boundary the ticket named explicitly: MICA-130 already had to fix a
+   * boundary that rounded a downward move back to the value it started from and let a
+   * player keep it for free. `Math.round` on a spread quote would occasionally do the same
+   * thing in miniature — rounding a fractional cent *toward* the trader on whichever side
+   * happened to land past the midpoint of a cent. `Math.ceil`/`Math.floor` never do: every
+   * fraction, however small, resolves against the trader.
+   */
+  describe('rounding always resolves against the trader, never toward them', () => {
+    it('rounds a fractional buy quote up, not to nearest', () => {
+      // 101 at 1% half-spread: 101 * 1.01 = 102.01. Nearest would still round to 102, so
+      // this specifically needs a fraction large enough that `Math.round` and `Math.ceil`
+      // would disagree, to prove `ceil` and not `round` is what is actually running.
+      expect(quoteSpread(101, 2).buy).toBe(103); // ceil(102.01) = 103, round(102.01) = 102
+    });
+
+    it('rounds a fractional sell quote down, not to nearest', () => {
+      // 101 at 1% half-spread: 101 * 0.99 = 99.99. `Math.round` would round this up to
+      // 100 — a whole unit in the trader's favour — where `floor` gives 99.
+      expect(quoteSpread(101, 2).sell).toBe(99); // floor(99.99) = 99, round(99.99) = 100
+    });
+
+    it('never lets the sell quote go negative at an extreme, operator-misconfigured spread', () => {
+      expect(quoteSpread(50, 500).sell).toBe(0);
+    });
+  });
+
+  describe('the spread convar (gphone_hodlr_spread_pct)', () => {
+    const withSpreadConvar = (value: string, run: () => Promise<void> | void) => {
+      const previous = (globalThis as any).GetConvar;
+      (globalThis as any).GetConvar = (name: string, fallback: string) =>
+        name === 'gphone_hodlr_spread_pct' ? value : fallback;
+      return Promise.resolve(run()).finally(() => {
+        (globalThis as any).GetConvar = previous;
+      });
+    };
+
+    const call = async (event: string, data: unknown) => {
+      (globalThis as any).source = 1;
+      (globalThis as any).emitNet = vi.fn();
+      const handler = handlers.get(event);
+      if (!handler) throw new Error(`no handler for ${event}`);
+      await handler('cb-1', data);
+      return (globalThis.emitNet as any).mock.calls.at(-1)?.[3];
+    };
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      __resetRateLimits();
+      market.price = 10;
+      market.ready = true;
+      wallet.bank = 1000;
+      player.getMoney.mockImplementation(() => wallet.bank);
+      player.removeMoney.mockImplementation(() => true);
+      player.addMoney.mockImplementation(() => true);
+      dbMock.query.mockResolvedValue([
+        { id: 7, citizenid: 'CID_CALLER', quantity: 5, status: 'active' }
+      ]);
+      dbMock.update.mockResolvedValue(1);
+    });
+
+    it('widens the settled buy and sell price when an operator sets a wider spread', async () => {
+      await withSpreadConvar('50', async () => {
+        // mid 10, 50% spread: half-spread 25%, buy = ceil(12.5) = 13, sell = floor(7.5) = 7
+        // — chosen to disagree with the 2% default's 11/9, so this actually proves the
+        // convar moved the quote rather than merely landing on the same numbers by luck.
+        const priceReply = (await call('gphone:server:hodlr:price', {})) as {
+          buyPrice: number;
+          sellPrice: number;
+        };
+        expect(priceReply.buyPrice).toBe(13);
+        expect(priceReply.sellPrice).toBe(7);
+      });
+    });
+
+    it('falls back to the 2% default when the convar is not a usable number', async () => {
+      await withSpreadConvar('not-a-number', async () => {
+        const priceReply = (await call('gphone:server:hodlr:price', {})) as {
+          buyPrice: number;
+          sellPrice: number;
+        };
+        expect(priceReply.buyPrice).toBe(11);
+        expect(priceReply.sellPrice).toBe(9);
+      });
+    });
+
+    it('honours an explicit 0 rather than treating it as unset', async () => {
+      await withSpreadConvar('0', async () => {
+        const priceReply = (await call('gphone:server:hodlr:price', {})) as {
+          buyPrice: number;
+          sellPrice: number;
+        };
+        expect(priceReply.buyPrice).toBe(10);
+        expect(priceReply.sellPrice).toBe(10);
+      });
+    });
+
+    it('settles an actual buy at the convar-configured spread, not the default', async () => {
+      await withSpreadConvar('40', async () => {
+        // mid 10, 40% spread: half-spread 20%, buy = ceil(12) = 12.
+        const reply = (await call('gphone:server:hodlr:buy', { quantity: 2 })) as {
+          ok: boolean;
+          price: number;
+          cost: number;
+        };
+        expect(reply).toMatchObject({ ok: true, price: 12, cost: 24 });
+      });
+    });
+
+    it('settles an actual sell at the convar-configured spread, not the default', async () => {
+      await withSpreadConvar('40', async () => {
+        // mid 10, 40% spread: half-spread 20%, sell = floor(8) = 8.
+        const reply = (await call('gphone:server:hodlr:sell', { quantity: 2 })) as {
+          ok: boolean;
+          price: number;
+          proceeds: number;
+        };
+        expect(reply).toMatchObject({ ok: true, price: 8, proceeds: 16 });
+      });
     });
   });
 });

@@ -48,6 +48,62 @@ const repo = hodlr.repo;
 const TRADE_MAX_CONVAR = 'gphone_hodlr_trade_max';
 const DEFAULT_TRADE_MAX = 50_000;
 
+const SPREAD_CONVAR = 'gphone_hodlr_spread_pct';
+/**
+ * The mock UI shipped against before this landed (`web/src/nui/mocks/data.ts`) picked 2%
+ * "only so the two numbers actually differ" and left the real width to this file. 2% is
+ * kept as the real default too: small enough that a single trade is not a punishing fee,
+ * large enough that round-tripping buy-then-sell at the same tick is a guaranteed loss
+ * rather than a coin flip against the walk's own noise (`MAX_STEP_PCT` in
+ * `HodlrMarket.ts` is 3% *per tick*, so a spread much narrower than that would be inside
+ * the walk's own jitter and would not reliably discourage rapid round-tripping — the
+ * self-limiting property MICA-147/MICA-149 are relying on instead of a cooldown).
+ */
+const DEFAULT_SPREAD_PCT = 2;
+
+/**
+ * The bid-ask spread, in percent of the mid/reference price — an operator-facing knob,
+ * read per call the same way `tradeMax()` reads `gphone_hodlr_trade_max`.
+ *
+ * Unlike `tradeMax`, `0` is accepted rather than falling back to the default: a spread of
+ * zero is a real, meaningful choice (an operator who wants Hodlr to behave like the old
+ * single-price coin), where a trade max of zero would make trading impossible outright and
+ * is almost certainly a misconfiguration. Only a negative or non-finite value is rejected.
+ */
+const spreadPct = (): number => {
+  const raw = Number.parseFloat(GetConvar(SPREAD_CONVAR, String(DEFAULT_SPREAD_PCT)));
+  return Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_SPREAD_PCT;
+};
+
+/**
+ * The two quotes a spread turns one mid price into, split evenly above and below it —
+ * "quote buy slightly above mid, sell slightly below" is the ticket's own reading, and an
+ * even split is the plain one: neither side of a trade is treated as the "real" price with
+ * the other side discounted from it.
+ *
+ * **Rounding is asymmetric on purpose, and always against the trader.** `Math.ceil` on the
+ * buy quote and `Math.floor` on the sell quote means a fractional cent is never handed back
+ * to the player who triggered it — the same direction real bid-ask spreads round in, and
+ * the same lesson MICA-130 already paid for once (a boundary that rounds *toward* the
+ * player, even by a fraction, is a free option the first exploit finds). Plain
+ * `Math.round` would occasionally round a fraction the trader's way, which is a smaller
+ * version of exactly that mistake. `HodlrMarket.test.ts`-style boundary coverage lives in
+ * this file's own test for the same reason: the two directions have to be pinned, not
+ * merely "close enough" to nearest.
+ *
+ * The sell quote is additionally floored at 0 — meaningful only at an operator-configured
+ * spread wide enough to drive it negative (nothing in the ordinary FLOOR=50/CEIL=5000 band
+ * `HodlrMarket.ts` walks within does), and paying a player a negative amount is not an
+ * outcome to let arithmetic produce by accident.
+ */
+export const quoteSpread = (mid: number, pct: number): { buy: number; sell: number } => {
+  const halfFraction = pct / 100 / 2;
+  return {
+    buy: Math.ceil(mid * (1 + halfFraction)),
+    sell: Math.max(0, Math.floor(mid * (1 - halfFraction)))
+  };
+};
+
 /**
  * The ceiling on what one buy or sell may move, in money rather than in coins — a coin cap
  * would mean something different at 50 than at 5000. Read per call, the way `Bank.ts` reads
@@ -131,14 +187,21 @@ app.registerEvent('portfolio', async (source, cbId, data, citizenid) => {
 app.registerEvent('price', async () => {
   const history = await getPriceHistory();
   if (!isMarketReady()) return { ...withoutAQuote, history };
-  return { ready: true, current: getCurrentPrice(), history };
+  const current = getCurrentPrice();
+  const { buy: buyPrice, sell: sellPrice } = quoteSpread(current, spreadPct());
+  return { ready: true, current, buyPrice, sellPrice, history };
 });
 
 app.registerEvent('buy', async (source, cbId, data, citizenid, player) => {
   if (!isMarketReady()) return MARKET_CLOSED;
 
   const quantity = requirePositiveInt(fields(data).quantity, 'quantity');
-  const price = getCurrentPrice();
+  // Quoted once, above the debit, for the same reason `sell` already documents at its own
+  // call: the cap has to be checked before any money moves, and settling at the price the
+  // request was priced against is the fairer of the two readings. `quoteSpread` is a pure
+  // function of `getCurrentPrice()` and `spreadPct()` — no `await` inside it — so this is
+  // still one synchronous read, not a second round trip that could see a different price.
+  const price = quoteSpread(getCurrentPrice(), spreadPct()).buy;
   const cost = price * quantity;
 
   // Before the holding is touched, so a refused trade does not create a row for a player
@@ -219,8 +282,8 @@ app.registerEvent('sell', async (source, cbId, data, citizenid, player) => {
   const quantity = requirePositiveInt(fields(data).quantity, 'quantity');
   // Quoted once, above the decrement, because the cap has to be checked before any coin
   // moves — and settling at the price the request was priced against is the fairer of the
-  // two readings anyway.
-  const price = getCurrentPrice();
+  // two readings anyway. `quoteSpread` is pure and synchronous, same reasoning as `buy`.
+  const price = quoteSpread(getCurrentPrice(), spreadPct()).sell;
   const proceeds = price * quantity;
 
   if (proceeds > tradeMax()) {

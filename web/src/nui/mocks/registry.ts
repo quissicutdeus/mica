@@ -25,9 +25,11 @@ import {
   mockContacts,
   mockConversations,
   mockEmails,
+  mockHodlrBuyPrice,
   mockHodlrHolding,
   mockHodlrPrice,
   mockHodlrPriceHistory,
+  mockHodlrSellPrice,
   mockListings,
   mockLocationShare,
   mockMedia,
@@ -1371,9 +1373,13 @@ const mockRegistry: Record<string, MockHandler> = {
   // `ready` is the market's own state rather than a loading flag: the server withholds the
   // quote until it has restored the price from storage after a restart (MICA-130). The
   // browser has no restart to survive, so the mock market is always open.
+  // `buyPrice`/`sellPrice` (MICA-147/MICA-149) are the stand-in spread from
+  // `data.ts` — `current` stays the mid/reference price the chart plots, unchanged.
   'hodlr:price': () => ({
     ready: true,
     current: mockHodlrPrice,
+    buyPrice: mockHodlrBuyPrice,
+    sellPrice: mockHodlrSellPrice,
     history: mockHodlrPriceHistory
   }),
   'hodlr:portfolio': () => ({
@@ -1387,8 +1393,8 @@ const mockRegistry: Record<string, MockHandler> = {
     return {
       ok: true,
       quantity: mockHodlrHolding.quantity,
-      price: mockHodlrPrice,
-      cost: quantity * mockHodlrPrice
+      price: mockHodlrBuyPrice,
+      cost: quantity * mockHodlrBuyPrice
     };
   },
   'hodlr:sell': ({ quantity }: { quantity: number }) => {
@@ -1399,8 +1405,8 @@ const mockRegistry: Record<string, MockHandler> = {
     return {
       ok: true,
       quantity: mockHodlrHolding.quantity,
-      price: mockHodlrPrice,
-      proceeds: quantity * mockHodlrPrice
+      price: mockHodlrSellPrice,
+      proceeds: quantity * mockHodlrSellPrice
     };
   },
 

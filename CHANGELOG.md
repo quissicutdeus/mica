@@ -80,6 +80,17 @@ location at the player's current position. Columns are `id`, `citizenid`,
 indexed by `status` and `citizenid_status` like every other owner-scoped table;
 `x`/`y`/`z` are resolved server-side and are never client-writable.
 
+**Hodlr now trades on a spread instead of a single flat price — a real change to
+your economy, controlled by a new convar, `gphone_hodlr_spread_pct` (default
+`2`, meaning 2%).** A buy settles slightly above the mid/reference price the
+chart plots and a sell settles slightly below it, each rounded against the
+trader rather than to nearest, so round-tripping a buy into an immediate sell is
+a guaranteed small loss rather than free. `portfolio`'s valuation is unaffected
+— it still uses the flat mid price. Set `gphone_hodlr_spread_pct 0` to keep the
+old single-price behavior exactly. This ships with no cooldown and no per-trade
+position limit beyond the existing `gphone_hodlr_trade_max` — the spread itself
+is what discourages rapid trading, by construction.
+
 **`gphone_messages_reactions` is a new table — run `gphoneschema apply` from
 your server console after updating, or import the regenerated `gphone.sql` /
 `gphone.esx.sql` on a fresh install.** Native Messages (SMS-style threads) can
