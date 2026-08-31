@@ -28,6 +28,19 @@ declarations against a frozen list of the schema as it stood on 2026-08-29, so
 anything the tables have grown since then has to be written down before the
 build goes green. What it still cannot see is listed at the top of that file.
 
+**One section is not written for an owner at all.** `For add-on authors` under
+each release answers a different person's question — somebody maintaining a
+`core: false` add-on outside this repo, asking whether their bundle still
+compiles and whether its manifest still asks for the right things. It is kept
+separate rather than folded into the prose above because the two readers act on
+different things: an owner runs `gphoneschema apply`, an author rebuilds and
+republishes. That silence is checked as well:
+`server/__tests__/sdkChangelog.test.ts` fails the build when the SDK's published
+contract version moves without being named there, and when a host hook is added,
+removed or moved behind a different permission — or the permission vocabulary
+itself grows or shrinks — without the same. What it still cannot see is listed
+at the top of that file.
+
 Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ## Unreleased
@@ -435,6 +448,40 @@ they are replicated.
   tick rounded back to 50 and was discarded, so a holder sitting there had no
   downside at all. Both boundaries now turn a step around rather than swallowing
   it (MICA-130).
+
+### For add-on authors
+
+Everything above is written for a server owner. This part is not. It is for
+somebody maintaining a `core: false` add-on outside this repo, and it answers
+one question: does that bundle still compile against this release, and does its
+manifest still ask for the right things.
+
+**The contract this release publishes is `v1`.** That is `SDK_CONTRACT_VERSION`,
+exported from `@gphone/sdk`, and it is the number to branch on. It moves when
+the SDK's published surface moves and at no other time — the exported names of
+each entry point, values and types alike; the props of every exported component;
+and the members of every exported string vocabulary such as `ALL_PERMISSIONS`.
+`MICA_VERSION` is not that number: it is the running phone's CalVer build
+stamp, it moves on every push to `main`, and inside an add-on's own bundle it is
+deliberately the empty string. Nothing in the phone consults either one at
+install or boot time; this is a number to read and act on, not a compatibility
+gate the shell enforces.
+
+**No name on that surface was removed or renamed under `v1`**, so an add-on
+compiled against it still resolves every import it makes. Two changes recorded
+under _Action required_ above do break published add-ons all the same, because
+they are shapes a name-level contract cannot express: the eight read hooks that
+split from a `-write` half, which moves every setter out of the hook that used
+to return it, and `ReactionBar`'s props. Read those two entries if your add-on
+repaints the phone, changes a system setting, or draws a reaction row.
+
+**The design system is out of contract.** `app.css`, `app-utilities.css` and
+`app-reset.css` ship inside the package, and `v1` does not move when they
+change. An add-on's CSS is inlined at that add-on's own build, so no bundle can
+have compiled against one stylesheet and then been handed another — and a number
+that moved for a colour tweak would stop meaning anything for the one case it
+exists to serve. The utility classes are still worth reading a diff for; they
+are just not a versioned promise.
 
 ## 2026-08-27
 
