@@ -19,6 +19,7 @@ import Messages from '../apps/messages/index.svelte';
 import Music from '../apps/music/index.svelte';
 import Notes from '../apps/notes/index.svelte';
 import Phone from '../apps/phone/index.svelte';
+import Places from '../apps/places/index.svelte';
 import Settings from '../apps/settings/index.svelte';
 import Snek from '../apps/snek/index.svelte';
 import Store from '../apps/store/index.svelte';
@@ -53,6 +54,7 @@ const APPS: Record<string, AppComponent> = {
   music: Music,
   notes: Notes,
   phone: Phone,
+  places: Places,
   settings: Settings,
   snek: Snek,
   store: Store

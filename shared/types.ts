@@ -420,6 +420,28 @@ export interface Note {
 }
 
 /**
+ * A place the player named and kept, from the Places app (MICA-65).
+ *
+ * `x`/`y`/`z` are a snapshot at the moment the place was saved, resolved the same way a
+ * shared location is — server-side, from the sender's own live position
+ * (`server/services/Media.ts`'s `shareLocation`, `server/lib/playerCoords.ts`) — never
+ * accepted as client-reported coordinates. `street_label` is cosmetic display text only,
+ * the same trust level `shareLocation`'s own `label` carries.
+ */
+export interface SavedPlace {
+  id: number;
+  citizenid: string;
+  name: string;
+  street_label?: string;
+  x: number;
+  y: number;
+  z: number;
+  status?: 'active' | 'deleted' | 'moderated';
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+/**
  * Enough of a media row to draw it, and nothing that identifies its owner.
  *
  * What crosses the wire wherever media appears somewhere its uploader does not own the
@@ -499,6 +521,28 @@ export interface HodlrHolding {
   citizenid: string;
   quantity: number;
   status?: 'active' | 'deleted';
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+/**
+ * A place the player named and kept, from the Places app (MICA-65).
+ *
+ * `x`/`y`/`z` are a snapshot at the moment the place was saved, resolved the same way a
+ * shared location is — server-side, from the sender's own live position
+ * (`server/services/Media.ts`'s `shareLocation`, `server/lib/playerCoords.ts`) — never
+ * accepted as client-reported coordinates. `street_label` is cosmetic display text only,
+ * the same trust level `shareLocation`'s own `label` carries.
+ */
+export interface SavedPlace {
+  id: number;
+  citizenid: string;
+  name: string;
+  street_label?: string;
+  x: number;
+  y: number;
+  z: number;
+  status?: 'active' | 'deleted' | 'moderated';
   created_at: Date | string;
   updated_at: Date | string;
 }

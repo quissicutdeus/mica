@@ -21,7 +21,16 @@ import { ServiceEndpoint, ServiceOptions } from './ServiceEndpoint';
  */
 
 export type ColumnType =
-  'string' | 'text' | 'mediumtext' | 'int' | 'bool' | 'json' | 'blob' | 'timestamp' | 'enum';
+  | 'string'
+  | 'text'
+  | 'mediumtext'
+  | 'int'
+  | 'float'
+  | 'bool'
+  | 'json'
+  | 'blob'
+  | 'timestamp'
+  | 'enum';
 
 /**
  * The most a column of each type can actually hold, in characters.
@@ -48,6 +57,11 @@ const MAX_LENGTH_BY_TYPE: Record<ColumnType, number | null> = {
   blob: 16777215,
   // Not length-limited; range- or value-checked instead.
   int: null,
+  // No range check today (MICA-65's coordinates are the first `float` column, and
+  // they are server-resolved from `playerCoords`, never client-writable — there is no
+  // payload path `assertWritableValue` would need to bound). A future client-writable
+  // float would need the same `INT_MIN`/`INT_MAX`-style pair `int` has, added then.
+  float: null,
   bool: null,
   timestamp: null,
   enum: null

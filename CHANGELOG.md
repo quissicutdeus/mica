@@ -72,6 +72,14 @@ every gPhone table carries. Three new exports,
 `LockPhone`/`UnlockPhone`/`IsPhoneLocked`, let another resource force the lock
 screen up or down independently of the passcode.
 
+**`gphone_places` is a new table — run `gphoneschema apply` from your server
+console after updating, or import the regenerated `gphone.sql` /
+`gphone.esx.sql` on a fresh install.** The Places app can now save a named
+location at the player's current position. Columns are `id`, `citizenid`,
+`name`, `street_label`, `x`, `y`, `z`, `status`, `created_at` and `updated_at`,
+indexed by `status` and `citizenid_status` like every other owner-scoped table;
+`x`/`y`/`z` are resolved server-side and are never client-writable.
+
 **`gphone_messages_reactions` is a new table — run `gphoneschema apply` from
 your server console after updating, or import the regenerated `gphone.sql` /
 `gphone.esx.sql` on a fresh install.** Native Messages (SMS-style threads) can

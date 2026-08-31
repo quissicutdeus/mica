@@ -18,6 +18,7 @@ import type {
   NotificationItem,
   PhoneCallLogEntry,
   Report,
+  SavedPlace,
   Transaction
 } from '@shared/types';
 import {
@@ -32,6 +33,7 @@ import {
   mockMedia,
   mockMessages,
   mockNotes,
+  mockSavedPlaces,
   sampleAvatars
 } from './data';
 import { defineMockCrud } from './defineMockCrud';
@@ -1849,6 +1851,17 @@ const mockRegistry: Record<string, MockHandler> = {
   shareLocation: async () => ({ id: mockLocationShare.id, media: mockLocationShare }),
   // Purely local in game (`SetNewWaypoint`); nothing for the browser to do but succeed.
   setWaypoint: async () => ({ ok: true }),
+
+  // Places (MICA-65) — saved places only; recently-shared locations read `mockMedia`
+  // above, filtered to `kind === 'location'`, the same way the real app will.
+  // PENDING (Cody): stands in for `defineService({ id: 'places', ... })` — no
+  // `registerEvent` handler exists on the server for any of these four yet.
+  ...defineMockCrud<SavedPlace>(mockSavedPlaces, {
+    list: 'getSavedPlaces',
+    create: 'createSavedPlace',
+    update: 'updateSavedPlace',
+    remove: 'deleteSavedPlace'
+  }),
 
   // Mail
   ...defineMockCrud<Mail>(

@@ -198,6 +198,22 @@ export const ROUTES: readonly Route[] = [
   route('clearAllNotifications', 'notifications', 'clearAllNotifications'),
   route('restoreNotifications', 'notifications', 'restoreNotifications'),
 
+  // Places (MICA-65) — saved places only. Recently-shared locations reuse `media`'s own
+  // routes above rather than a second read; sharing the player's current position and
+  // setting a waypoint reuse `shareLocation`/`setWaypoint` too. `places` is `core: true`,
+  // so it keeps named routes rather than the generic per-service route Notes uses.
+  //
+  // PENDING (Cody): no `registerEvent` handler exists yet for any of these four — the web
+  // half is wired against `web/src/nui/mocks/registry.ts` only. `defineService({ id:
+  // 'places', ... })` is expected to produce exactly these four action names (`get`,
+  // `create`, `update`, `delete`), matching the convention `createCrudStore` already
+  // assumes for a generic-service app; declared here instead because a core app keeps
+  // named routes (`routes.test.ts` cross-references them).
+  route('getSavedPlaces', 'places', 'get'),
+  route('createSavedPlace', 'places', 'create'),
+  route('updateSavedPlace', 'places', 'update'),
+  route('deleteSavedPlace', 'places', 'delete'),
+
   // Settings — every stored preference, owned by a citizenid rather than a browser
   // profile. Not an app: `settings` is a service the shell reads on behalf of every
   // `useStorage` namespace, the Settings app included.

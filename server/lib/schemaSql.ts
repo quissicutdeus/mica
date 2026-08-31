@@ -30,6 +30,10 @@ const SQL_TYPES: Record<ColumnType, (def: ColumnDef) => string> = {
   text: () => 'text',
   mediumtext: () => 'mediumtext',
   int: () => 'int(11)',
+  // Single precision: GTA V world coordinates need sub-metre precision, not the ~15
+  // significant digits `double` would give a value nothing computes further from —
+  // `gphone_places` (MICA-65) is the first column of this type.
+  float: () => 'float',
   bool: () => 'tinyint(1)',
   json: () => 'longtext',
   blob: () => 'mediumblob',

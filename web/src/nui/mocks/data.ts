@@ -7,7 +7,8 @@ import type {
   Note,
   MediaItem,
   MediaPreview,
-  PricePoint
+  PricePoint,
+  SavedPlace
 } from '@shared/types';
 import { placeholderAvatar, placeholderPhoto, placeholderPhotos } from '../../lib/placeholderImage';
 
@@ -228,6 +229,40 @@ export const mockNotes: Note[] = [
     content:
       '# Los Santos Jobs\n\n## Pacific Standard Heist\n### Diamond Casino Robbery\n#### Cayo Perico Freight',
     ...ts()
+  }
+];
+
+/**
+ * MICA-65 — saved places. `x`/`y`/`z` sit near `mockLocationShare` and the LS Customs
+ * fixtures elsewhere in this file, so a "Set Waypoint" tap in the browser lands somewhere
+ * recognizable rather than in the ocean.
+ *
+ * PENDING (Cody): stands in for a real `gphone_places` table — no server service exists
+ * for this yet (`shared/routes.ts`'s `getSavedPlaces`/`createSavedPlace`/
+ * `updateSavedPlace`/`deleteSavedPlace`).
+ */
+export const mockSavedPlaces: SavedPlace[] = [
+  {
+    id: 1,
+    citizenid: 'mock-id',
+    name: 'Home',
+    street_label: 'Vespucci Beach',
+    x: 215.3,
+    y: -810.6,
+    z: 30.7,
+    status: 'active',
+    ...ts(3 * 24 * 3600_000)
+  },
+  {
+    id: 2,
+    citizenid: 'mock-id',
+    name: 'Work',
+    street_label: 'Textile City',
+    x: -34.9,
+    y: -652.4,
+    z: 33.5,
+    status: 'active',
+    ...ts(24 * 3600_000)
   }
 ];
 

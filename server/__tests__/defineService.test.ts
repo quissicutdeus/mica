@@ -609,6 +609,27 @@ describe('child tables', () => {
   });
 });
 
+describe('float columns (MICA-65)', () => {
+  it('emits a plain SQL float, not a display-width int', () => {
+    const sql = toChildTableSql({ name: 't0', columns: { x: 'float' } });
+    expect(sql).toContain('`x` float DEFAULT NULL');
+  });
+
+  it('carries no length, value or int-style range check', () => {
+    const resolved = resolveAppSchema({
+      id: 'floatcheck',
+      schema: { x: 'float' }
+    });
+    expect(resolved.columnRules.x).toEqual({
+      type: 'float',
+      maxLength: null,
+      values: null,
+      min: null,
+      max: null
+    });
+  });
+});
+
 describe('timestamp and enum columns', () => {
   it('emits ON UPDATE CURRENT_TIMESTAMP only when asked', () => {
     const withOnUpdate = toChildTableSql({
