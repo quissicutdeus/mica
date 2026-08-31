@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 import { ALL_CAPABILITIES, defineApp } from './manifest';
+import { MICA_VERSION } from './version';
 import { appRegistryStore } from '../shell/state/registry';
 import { currentApp, openApp, goHome } from '../shell/state/navigation';
 
@@ -398,5 +399,83 @@ describe('ALL_CAPABILITIES', () => {
     // import turns a check that looks strict into one that accepts everything.
     expect(ALL_CAPABILITIES.length).toBeGreaterThan(0);
     expect(ALL_CAPABILITIES).toContain('money');
+  });
+});
+
+describe('defineApp: version', () => {
+  afterEach(() => {
+    vi.doUnmock('./version');
+    vi.resetModules();
+  });
+
+  it('defaults to the running build stamp, because a bundled app is this build', () => {
+    const manifest = defineApp({
+      id: 'stamped',
+      tile: { bg: 'bg-indigo-600' },
+      icon: null,
+      core: false
+    });
+
+    // Not pinned to a literal — the stamp is computed from `git log` at build time, so any
+    // assertion on its value would fail on the next push. What matters is that the default
+    // fired at all, and that it is the same string `MICA_VERSION` reports.
+    expect(manifest.version).toBe(MICA_VERSION);
+    expect(manifest.version).toBeTruthy();
+  });
+
+  it('omits the field entirely when there is no build stamp, rather than setting it empty', async () => {
+    // The state an add-on bundle is actually in: `vite.addon.config.ts` defines
+    // `__MICA_VERSION__` as `''` on purpose (MICA-170), because a bundle is compiled
+    // once and then installed by whatever phone fetches it. So does any third-party bundler
+    // that has never heard of the identifier.
+    vi.resetModules();
+    vi.doMock('./version', () => ({
+      MICA_VERSION: '',
+      MICA_BUILD_INFO: '',
+      SDK_CONTRACT_VERSION: '1'
+    }));
+    const { defineApp: defineWithoutStamp } = await import('./manifest');
+
+    const manifest = defineWithoutStamp({
+      id: 'unstamped',
+      tile: { bg: 'bg-indigo-600' },
+      icon: null,
+      core: false
+    });
+
+    // `in`, not `=== undefined`: present-and-undefined would still overwrite a real version
+    // wherever a manifest is spread onward, which is the bug this shape exists to avoid.
+    expect('version' in manifest).toBe(false);
+    expect(manifest.version).toBeUndefined();
+  });
+
+  it('lets an author-declared version win over the default either way', async () => {
+    expect(
+      defineApp({
+        id: 'declared',
+        tile: { bg: 'bg-indigo-600' },
+        icon: null,
+        core: false,
+        version: '2.3.4'
+      }).version
+    ).toBe('2.3.4');
+
+    vi.resetModules();
+    vi.doMock('./version', () => ({
+      MICA_VERSION: '',
+      MICA_BUILD_INFO: '',
+      SDK_CONTRACT_VERSION: '1'
+    }));
+    const { defineApp: defineWithoutStamp } = await import('./manifest');
+
+    expect(
+      defineWithoutStamp({
+        id: 'declared-addon',
+        tile: { bg: 'bg-indigo-600' },
+        icon: null,
+        core: false,
+        version: '2.3.4'
+      }).version
+    ).toBe('2.3.4');
   });
 });

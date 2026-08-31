@@ -639,7 +639,34 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
   validateManifestPermissions(id, manifest.permissions ?? [], ALL_PERMISSIONS);
 
   return {
-    version: MICA_VERSION,
+    /**
+     * Defaulted to the running build's stamp, and **omitted entirely when there is no stamp
+     * to give** — never set to the empty string.
+     *
+     * The default is right where it applies: an app compiled into this build *is* this
+     * build, which is the same reasoning `shell/state/appUpdates.ts` rests on when it skips
+     * non-remote apps ("its version is the phone's own, and there is nowhere newer to get it
+     * from"). Inside a `core: false` add-on bundle, though, `MICA_VERSION` is `''` by
+     * design (MICA-170): a bundle is compiled once and then installed by whatever phone
+     * fetches it, so the host's build stamp is genuinely unknowable at authoring time. So is
+     * it for any third-party bundler that never heard of `__MICA_VERSION__`.
+     *
+     * `''` and absent are different claims. `''` says "this manifest has a version, and it
+     * is empty", which is a value no reader can do anything honest with; absent says "this
+     * app did not state one", which is exactly the truth and a state `AppManifest.version?:`
+     * already models. Every reader was already built for it: `compareVersions` returns
+     * `null` — *not orderable* — for a non-string and documents "or absent" as one of its
+     * two `null` cases, and the Store's `{app.version || '1.0.0'}` (`AppDetails.svelte`) and
+     * `{app.version || '1.0'}` (`CatalogList.svelte`) are `||` rather than `??`, so they
+     * already fired on `''` and behave identically now. Nothing changes for a player; what
+     * changes is that the manifest stops asserting something it does not know.
+     *
+     * Conditional spread rather than `MICA_VERSION || undefined`, so the key is genuinely
+     * absent instead of present-and-undefined — an object that gets spread onward (the
+     * registry copies manifests) should not carry a key that overwrites a real version with
+     * nothing.
+     */
+    ...(MICA_VERSION ? { version: MICA_VERSION } : {}),
     permissions: [],
     defaultProps: {},
     ...manifest,
