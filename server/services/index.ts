@@ -7,6 +7,7 @@ import './Battery';
 import './Blabber';
 import './BlabberDms';
 import './Blocklist';
+import './Capabilities';
 import './Contacts';
 import './Conversations';
 import './Highscores';

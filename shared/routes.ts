@@ -35,6 +35,14 @@ export const ROUTES: readonly Route[] = [
   // Admin
   route('checkAdmin', 'admin', 'check'),
 
+  // Capabilities — what this server can do, so the launcher can hide what it cannot. The
+  // same shape as `checkAdmin` above and for the same reason: a server-known fact the UI
+  // reads to decide what to *show*, never a boundary. `money: false` only in standalone,
+  // where `FrameworkBridge` has no framework to move money through; Bank and Hodlr have
+  // nothing behind them there. On the `shell` service because it is a question about the
+  // phone rather than about any app on it.
+  route('checkCapabilities', 'shell', 'capabilities'),
+
   // Bank — read-only history backed by the banking resource's export rather than a table,
   // plus one write: a player-to-player transfer resolved by phone number server-side.
   route('getTransactions', 'bank', 'getTransactions'),
