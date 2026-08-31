@@ -81,7 +81,11 @@ beforeEach(() => {
   framework.kind = 'standalone';
   dbMock.single.mockResolvedValue(null);
   dbMock.insert.mockResolvedValue(1);
+  dbMock.update.mockResolvedValue(true);
 });
+
+/** A row as `readAssignedRow` selects it. */
+const row = (number: string, status = 'active') => ({ id: 42, number, status });
 
 describe('the generated number', () => {
   const draws = (samples: number): string[] =>
@@ -171,7 +175,7 @@ describe('assigning a number', () => {
   it('never issues a second one to a player who already has theirs', async () => {
     // A reconnecting player keeps their number, or every contact anybody saved for them
     // points at somebody else. That is what makes this a table rather than a runtime value.
-    dbMock.single.mockResolvedValue({ number: '5561234' });
+    dbMock.single.mockResolvedValue(row('5561234'));
 
     await expect(ensureNumber(CITIZEN)).resolves.toBe('5561234');
     expect(dbMock.insert).not.toHaveBeenCalled();
@@ -206,7 +210,7 @@ describe('assigning a number', () => {
     // A duplicate can come from either key and they mean opposite things. A duplicate
     // citizenid is not a collision to retry — no new candidate resolves it — so the row is
     // re-read and the winner's number is returned.
-    dbMock.single.mockResolvedValueOnce(null).mockResolvedValue({ number: '5567777' });
+    dbMock.single.mockResolvedValueOnce(null).mockResolvedValue(row('5567777'));
     dbMock.insert.mockRejectedValue(duplicate());
 
     await expect(ensureNumber(CITIZEN)).resolves.toBe('5567777');
@@ -238,9 +242,100 @@ describe('assigning a number', () => {
   });
 });
 
+/**
+ * The soft-delete wedge, and why this is a suite rather than a comment.
+ *
+ * `citizenid_unique` is on the citizenid alone, and `defineService` supplies a `status` ENUM
+ * carrying `'deleted'` on every table by construction. So a row that ever reached
+ * `status = 'deleted'` occupies that citizenid's slot permanently — `lib/retention.ts` is
+ * explicit that nothing in this codebase ever hard-deletes a soft-deleted row, because the
+ * moderation system depends on one surviving forever, so no sweep ever frees it. Every
+ * subsequent insert for that player then violates the key whichever number it carries,
+ * `ensureNumber` burns all its attempts, and the symptom is a player who silently never gets
+ * a phone number again.
+ *
+ * It is unreachable today: `write: 'server'` and `disableDelete` leave no path that sets
+ * `'deleted'` on this table. It is still a landmine for whoever adds a "release a number"
+ * action or a character-cleanup sweep, and the fix — assignment restores rather than inserts
+ * — is invisible in the code it protects. So it is pinned here the way
+ * `reachability.test.ts` pins the reachable set: a structural assumption nothing else would
+ * notice being broken.
+ */
+describe('a soft-deleted row never wedges a citizenid', () => {
+  it('hands back the number and brings the row back to active', async () => {
+    dbMock.single.mockResolvedValue(row('5561234', 'deleted'));
+
+    await expect(ensureNumber(CITIZEN)).resolves.toBe('5561234');
+
+    expect(dbMock.update).toHaveBeenCalledTimes(1);
+    const [query, params] = dbMock.update.mock.calls[0];
+    expect(String(query)).toContain('`status` = ?');
+    expect(params).toContain('active');
+    // Ownership-scoped, with the citizenid the server resolved — not an unscoped write.
+    expect(params).toContain(CITIZEN);
+    // And never a second row: the wedge is that inserting is impossible, not that it is slow.
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('caches the reclaimed number, so the synchronous bridge sees it too', async () => {
+    dbMock.single.mockResolvedValue(row('5561234', 'deleted'));
+
+    await ensureNumber(CITIZEN);
+
+    expect(numberFor(CITIZEN)).toBe('5561234');
+  });
+
+  it('leaves a live row completely alone', async () => {
+    // The unchanged path, asserted so the reactivation cannot start firing on every connect.
+    dbMock.single.mockResolvedValue(row('5561234', 'active'));
+
+    await expect(ensureNumber(CITIZEN)).resolves.toBe('5561234');
+
+    expect(dbMock.update).not.toHaveBeenCalled();
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('claims a soft-deleted row reached through the citizenid_unique violation', async () => {
+    // The path a race takes: nothing on the pre-check, the insert refused by the citizenid
+    // key, and a soft-deleted row behind it. No new candidate can ever get past that key, so
+    // retrying is the wrong answer however many attempts are left.
+    dbMock.single.mockResolvedValueOnce(null).mockResolvedValue(row('5567777', 'deleted'));
+    dbMock.insert.mockRejectedValue(duplicate());
+
+    await expect(ensureNumber(CITIZEN)).resolves.toBe('5567777');
+
+    expect(dbMock.insert).toHaveBeenCalledTimes(1);
+    expect(dbMock.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('still retries when the violation was a genuine number collision', async () => {
+    // The other key, unchanged. Nothing exists for this citizenid, so the claim finds no row
+    // and the loop generates another candidate — which is what a `number_unique` clash means.
+    dbMock.single.mockResolvedValue(null);
+    dbMock.insert.mockRejectedValueOnce(duplicate()).mockResolvedValue(1);
+
+    await expect(ensureNumber(CITIZEN)).resolves.toMatch(/^\d{7}$/);
+
+    expect(dbMock.insert).toHaveBeenCalledTimes(2);
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  it('returns the number even when the reactivation itself fails, and says so', async () => {
+    // The row is theirs either way and every read of this table is status-blind by design.
+    // Refusing to tell a player their own number because a status column would not move is
+    // worse than a stale status with a line in the log.
+    dbMock.single.mockResolvedValue(row('5561234', 'deleted'));
+    dbMock.update.mockResolvedValue(false);
+
+    await expect(ensureNumber(CITIZEN)).resolves.toBe('5561234');
+
+    expect(String(vi.mocked(console.error).mock.calls[0][0])).toContain('reactivate');
+  });
+});
+
 describe('reading a number back', () => {
   it('scopes the lookup by citizenid', async () => {
-    dbMock.single.mockResolvedValue({ number: '5561234' });
+    dbMock.single.mockResolvedValue(row('5561234'));
 
     await expect(readNumber(CITIZEN)).resolves.toBe('5561234');
     expect(dbMock.single.mock.calls[0][1]).toEqual([CITIZEN]);

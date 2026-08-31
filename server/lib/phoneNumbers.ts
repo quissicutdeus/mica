@@ -70,15 +70,52 @@ export const __resetAssignedNumbers = (): void => {
   assigned.clear();
 };
 
-/** The stored number for a citizenid, or null when they have never been assigned one. */
-export const readNumber = async (citizenid: string): Promise<string | null> => {
+/** A player's row, as the assignment path needs to see it. */
+export interface AssignedNumberRow {
+  id: number;
+  number: string;
+  status: string;
+}
+
+/**
+ * A citizenid's row, **whatever status it is in**.
+ *
+ * Status-blind on purpose, and this is the half of MICA-151's soft-delete invariant that
+ * lives outside the declaration. `citizenid_unique` is on the citizenid alone, so a row that
+ * has been soft-deleted still occupies that citizenid's slot — and `lib/retention.ts` is
+ * explicit that nothing in this codebase ever hard-deletes a soft-deleted row, because the
+ * moderation system depends on one surviving forever. A read that filtered on
+ * `status = 'active'` would therefore report "this player has no number" about a row that
+ * makes issuing them one impossible, and the assignment loop would burn every attempt on a
+ * constraint no new candidate can satisfy.
+ *
+ * The row is the player's identity rather than a piece of their content, so the right answer
+ * is always to find it and use it. `ensureNumber` reactivates it; see its note.
+ */
+export const readAssignedRow = async (citizenid: string): Promise<AssignedNumberRow | null> => {
   if (!citizenid) return null;
-  const row = await Database.single<{ number: string } | null>(
-    `SELECT \`number\` FROM \`${PHONE_NUMBERS_TABLE}\` WHERE \`citizenid\` = ? LIMIT 1`,
+  return await Database.single<AssignedNumberRow | null>(
+    `SELECT \`id\`, \`number\`, \`status\` FROM \`${PHONE_NUMBERS_TABLE}\`
+     WHERE \`citizenid\` = ? LIMIT 1`,
     [citizenid]
   );
+};
+
+/**
+ * The stored number for a citizenid, or null when they have never been assigned one.
+ *
+ * Built on `readAssignedRow` rather than issuing its own narrower query, so there is one
+ * definition of "this player's row" and it cannot become status-blind in one place and not
+ * the other. A soft-deleted number is still that player's number — it is what
+ * `findOfflineByCitizenId` should render for them, and what `ensureNumber` will hand back.
+ */
+export const readNumber = async (citizenid: string): Promise<string | null> => {
+  const row = await readAssignedRow(citizenid);
   return row?.number ?? null;
 };
+
+/** The status a live row carries. The only other value the enum permits is `deleted`. */
+export const ACTIVE_STATUS = 'active';
 
 /** Whoever holds this number, or null. The reverse of `readNumber`, for dialling. */
 export const readCitizenIdByNumber = async (number: string): Promise<string | null> => {

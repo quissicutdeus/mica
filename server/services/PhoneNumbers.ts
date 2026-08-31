@@ -2,12 +2,13 @@ import { defineService } from '../lib/defineService';
 import { detectFramework, FrameworkBridge } from '../lib/FrameworkBridge';
 import { onPlayerLoaded } from '../lib/shell';
 import {
+  ACTIVE_STATUS,
   generatePhoneNumber,
   isDuplicateEntry,
   MAX_ASSIGN_ATTEMPTS,
   numberFor,
   PHONE_NUMBERS_TABLE,
-  readNumber,
+  readAssignedRow,
   rememberNumber,
   type PhoneNumberRow
 } from '../lib/phoneNumbers';
@@ -75,10 +76,88 @@ export const phoneNumbers = defineService<PhoneNumberRow>({
      * which is what makes a number stable across a reconnect rather than reissued.
      */
     { name: 'number_unique', columns: ['number'], unique: true },
+    /**
+     * **`citizenid_unique` is on the citizenid alone, and is deliberately status-blind.**
+     *
+     * That is not an oversight, and it is the one thing about this table a later change can
+     * get wrong without any suite noticing, so it is written down here rather than left to be
+     * rediscovered against a live database.
+     *
+     * `defineService` supplies a `status` ENUM carrying `'deleted'` on every table by
+     * construction, and `lib/retention.ts` is explicit that **nothing in this codebase ever
+     * hard-deletes a soft-deleted row** — the moderation system depends on one surviving
+     * forever, and there is no sweep that eventually frees the slot. So a row here that ever
+     * reached `status = 'deleted'` would occupy its citizenid's slot permanently: every
+     * subsequent insert for that player violates this key no matter which number it carries,
+     * `ensureNumber` burns all its attempts on a collision no new candidate can resolve, and
+     * the symptom is a player who silently never gets a phone number again.
+     *
+     * Adding `status` to the key would be the wrong fix twice over. It would let one player
+     * hold several numbers, which is the thing this key exists to prevent, and it would make
+     * "which of these is theirs" a question with more than one answer everywhere the number is
+     * read — `findOfflineByCitizenId`, the cache, the reverse lookup by number.
+     *
+     * The right fix is that **assignment restores rather than inserts**: `ensureNumber` treats
+     * an existing row of any status as this player's number and brings it back to `'active'`.
+     * A phone number is the player's identity, not a piece of their content, so a number
+     * returning after a soft-delete is the correct behaviour rather than a workaround — and
+     * doing it there makes the whole class of bug unreachable instead of merely documented.
+     *
+     * Not reachable today: `write: 'server'` and `disableDelete` leave no path that sets
+     * `'deleted'` on this table at all. The next person to add one — a "release a number"
+     * action, a character-cleanup sweep — should find this note before they find the bug.
+     */
     { name: 'citizenid_unique', columns: ['citizenid'], unique: true }
   ],
   options: { disableGet: true, disableDelete: true }
 });
+
+/**
+ * This player's existing row, brought back to life if it needs it.
+ *
+ * The other half of the `citizenid_unique` invariant documented on the index above. A row
+ * here is the player's identity rather than a piece of their content, so any status is still
+ * *their* number: a soft-deleted row is reactivated and its number returned, not treated as
+ * an obstacle. Without that, a single soft-delete would wedge the citizenid forever —
+ * `lib/retention.ts` never hard-deletes, so nothing would ever free the slot — and the
+ * symptom would be a player who silently never gets a number again.
+ *
+ * **Not `Repository.restore`**, which is the right method for a player undoing their own
+ * delete and the wrong one here: it is bounded by a `windowDays` measured off `updated_at`,
+ * so a row soft-deleted longer ago than the restore window would match nothing and this would
+ * be back to the wedge. A number has to come back regardless of how long it has been gone.
+ *
+ * The ownership-scoped `update` rather than anything unscoped: the citizenid is the one the
+ * server resolved for this connection, never a payload, so this is the ordinary predicate
+ * path and not a bypass of it (§2.9).
+ *
+ * A failed reactivation is logged and the number is still returned. The row is theirs either
+ * way, every read of this table is status-blind by design, and refusing to tell a player
+ * their own number because a status column would not move is a worse outcome than a stale
+ * status with a line in the log.
+ */
+const claimExistingRow = async (citizenid: string): Promise<string | null> => {
+  const row = await readAssignedRow(citizenid);
+  if (!row) return null;
+
+  if (row.status !== ACTIVE_STATUS) {
+    const reactivated = await phoneNumbers.repo.update(
+      row.id,
+      { status: ACTIVE_STATUS } as Partial<PhoneNumberRow>,
+      citizenid
+    );
+    if (!reactivated) {
+      console.error(
+        `[gphone] could not reactivate the soft-deleted phone number row for ${citizenid}. ` +
+          `They keep the number ${row.number} — every read of ${PHONE_NUMBERS_TABLE} is ` +
+          `status-blind on purpose — but the row is still marked '${row.status}'.`
+      );
+    }
+  }
+
+  rememberNumber(citizenid, row.number);
+  return row.number;
+};
 
 /**
  * The number for a citizenid, assigning one the first time and never again.
@@ -96,10 +175,10 @@ export const phoneNumbers = defineService<PhoneNumberRow>({
  *   papered over by handing out a number somebody already has.
  *
  * A duplicate can come from either key, and they mean opposite things. A duplicate `number`
- * is an ordinary collision: generate another. A duplicate `citizenid` means this player was
- * assigned a number by a concurrent connect between the read above and the insert — so the
- * row is re-read and the winner's number is returned, rather than looping until the attempts
- * run out on a conflict no new candidate can resolve.
+ * is an ordinary collision: generate another. A duplicate `citizenid` means a row for this
+ * player already exists — a concurrent connect won the race, or a soft-deleted row from
+ * before is still holding the slot — so `claimExistingRow` takes it, rather than looping
+ * until the attempts run out on a conflict no new candidate can resolve.
  *
  * Returns null on failure rather than throwing. The caller is a player-loaded subscriber, and
  * `dispatchPlayerLoaded` is explicit that a subscriber must not be able to fail a connection;
@@ -112,11 +191,8 @@ export const ensureNumber = async (citizenid: string): Promise<string | null> =>
   const cached = numberFor(citizenid);
   if (cached) return cached;
 
-  const existing = await readNumber(citizenid);
-  if (existing) {
-    rememberNumber(citizenid, existing);
-    return existing;
-  }
+  const existing = await claimExistingRow(citizenid);
+  if (existing) return existing;
 
   for (let attempt = 1; attempt <= MAX_ASSIGN_ATTEMPTS; attempt++) {
     const candidate = generatePhoneNumber();
@@ -136,13 +212,17 @@ export const ensureNumber = async (citizenid: string): Promise<string | null> =>
         return null;
       }
 
-      // Either the number was taken, or this player was assigned one by a concurrent
-      // connect. Only the second is settled by looking.
-      const raced = await readNumber(citizenid);
-      if (raced) {
-        rememberNumber(citizenid, raced);
-        return raced;
-      }
+      /**
+       * A duplicate came from one of the two keys and they mean opposite things.
+       *
+       * `number_unique` is an ordinary collision: nothing exists for this citizenid, this
+       * returns null, and the loop generates another candidate. `citizenid_unique` means a
+       * row for this player is already there — put there by a concurrent connect, or sitting
+       * soft-deleted from before — and no new candidate will ever get past it, so the row is
+       * claimed and returned instead of retried.
+       */
+      const claimed = await claimExistingRow(citizenid);
+      if (claimed) return claimed;
     }
   }
 
