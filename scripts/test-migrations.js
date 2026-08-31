@@ -346,12 +346,19 @@ const seedFixtures = async (connection, hasPlayers) => {
 };
 
 /**
- * Put the participants table back into the shape a server that has never migrated has.
+ * Put the participants table, and the conversations table, back into the shape a server
+ * that has never migrated has.
  *
  * Without this the harness proves far less than it appears to. `gphone.sql` is generated
  * from the current declaration, so a fresh import already carries the unique key — both
  * `information_schema` guards would find their work done, skip, and report a pass having
- * executed no DDL at all. Regressing the index is what makes the `ADD`/`DROP` path real.
+ * executed no DDL at all. Regressing the index (0001) and dropping the pair-key columns
+ * (0002) is what makes each migration's real DDL path execute rather than no-op.
+ *
+ * Dropping `pair_key` first, rather than the two ordinary columns first, is deliberate:
+ * MySQL/MariaDB drop an index automatically when the last column it covers is dropped, so
+ * this one statement also removes `pair_key_unique` — there is nothing else indexing
+ * `participant_a`/`participant_b` to worry about disturbing by dropping them after.
  */
 const regressToPreMigrationShape = async (connection) => {
   await connection.query(
@@ -360,6 +367,10 @@ const regressToPreMigrationShape = async (connection) => {
   await connection.query(
     'ALTER TABLE gphone_messages_participants ADD KEY conversation_participant (conversation_id, citizenid)'
   );
+
+  await connection.query('ALTER TABLE gphone_messages_conversations DROP COLUMN pair_key');
+  await connection.query('ALTER TABLE gphone_messages_conversations DROP COLUMN participant_a');
+  await connection.query('ALTER TABLE gphone_messages_conversations DROP COLUMN participant_b');
 };
 
 /* -------------------------------------------------------------- assertions */
@@ -437,6 +448,13 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   );
   check(`${schemaFile}: a fresh install has the migration pre-seeded`, Number(seeded), 1);
 
+  const seeded0002 = await scalar(
+    connection,
+    'SELECT COUNT(*) FROM gphone_schema_migrations WHERE id = ?',
+    ['0002_conversations_pair_key']
+  );
+  check(`${schemaFile}: a fresh install has 0002 pre-seeded too`, Number(seeded0002), 1);
+
   const freshRun = await server.runPendingMigrations();
   check(`${schemaFile}: a fresh install applies nothing`, freshRun.applied, []);
   check(`${schemaFile}: a fresh install fails nothing`, freshRun.failed, null);
@@ -480,7 +498,8 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   const result = await server.runPendingMigrations();
   check(`${schemaFile}: reports no failure`, result.failed, null);
   check(`${schemaFile}: applied the migration`, result.applied, [
-    '0001_repair_conversation_participants'
+    '0001_repair_conversation_participants',
+    '0002_conversations_pair_key'
   ]);
   check(`${schemaFile}: nothing left over`, result.remaining, []);
 
@@ -571,6 +590,98 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
     String(forgedUpdatedAt)
   );
 
+  step(`${schemaFile} — MICA-161: the pair key, backfilled from 0001's own fixtures`);
+  const pairRow = async (id) => {
+    const [rows] = await connection.query(
+      'SELECT participant_a, participant_b, pair_key FROM gphone_messages_conversations WHERE id = ?',
+      [id]
+    );
+    return rows[0];
+  };
+
+  const genuinePair = await pairRow(ids.genuine);
+  check(
+    `1. the genuine pair is backfilled, order-independent`,
+    [genuinePair.participant_a, genuinePair.participant_b].sort(),
+    ['CIT_A', 'CIT_B']
+  );
+  check(`1. and its pair_key is normalised`, genuinePair.pair_key, 'CIT_A|CIT_B');
+
+  const forgedPair = await pairRow(ids.forged);
+  check(
+    `2. a thread 0001 flipped to a group gets no pair key`,
+    [forgedPair.participant_a, forgedPair.participant_b, forgedPair.pair_key],
+    [null, null, null]
+  );
+
+  const liveDupesPair = await pairRow(ids.liveDupes);
+  check(
+    `3. the deduplicated live-duplicates thread still resolves to its real pair`,
+    [liveDupesPair.participant_a, liveDupesPair.participant_b].sort(),
+    ['CIT_A', 'CIT_VICTIM']
+  );
+
+  const closedDupesPair = await pairRow(ids.closedDupes);
+  check(
+    `4. a pair whose only other member already left keeps a pair key`,
+    [closedDupesPair.participant_a, closedDupesPair.participant_b].sort(),
+    ['CIT_A', 'CIT_VICTIM2']
+  );
+
+  const conversationIndexes = await indexesOn(connection, 'gphone_messages_conversations');
+  check(
+    `${schemaFile}: pair_key_unique is unique — none of 0001's fixtures collide`,
+    conversationIndexes.includes('pair_key_unique (unique)'),
+    true
+  );
+
+  let pairRejected = null;
+  try {
+    // The exact pair `genuine` already holds, with the two citizenids reversed —
+    // `LEAST`/`GREATEST` must still see them as the same pair.
+    await connection.query(
+      `INSERT INTO gphone_messages_conversations (citizenid, is_group, participant_a, participant_b, status)
+       VALUES (?, 0, ?, ?, 'active')`,
+      ['CIT_B', 'CIT_B', 'CIT_A']
+    );
+  } catch (error) {
+    pairRejected = error.code;
+  }
+  check(`a fresh duplicate pair is rejected by the database`, pairRejected, 'ER_DUP_ENTRY');
+
+  // But a *soft-deleted* duplicate must not block a later, genuinely new active pair —
+  // `pair_key`'s CASE only ever gives an `active` row a non-null key, so a deleted row
+  // occupies no slot in the unique index for a fresh pair to collide with. A pair with no
+  // existing row at all (`CIT_A`/`CIT_EAVESDROPPER` — a group member in `forged`, never a
+  // pair on its own), so this cannot be confused with `genuine`'s still-live active row.
+  const [deletedDup] = await connection.query(
+    `INSERT INTO gphone_messages_conversations (citizenid, is_group, participant_a, participant_b, status)
+     VALUES (?, 0, ?, ?, 'deleted')`,
+    ['CIT_A', 'CIT_A', 'CIT_EAVESDROPPER']
+  );
+  let freshAfterDeleteRejected = null;
+  let freshAfterDeleteId = null;
+  try {
+    const [inserted] = await connection.query(
+      `INSERT INTO gphone_messages_conversations (citizenid, is_group, participant_a, participant_b, status)
+       VALUES (?, 0, ?, ?, 'active')`,
+      ['CIT_A', 'CIT_EAVESDROPPER', 'CIT_A']
+    );
+    freshAfterDeleteId = inserted.insertId;
+  } catch (error) {
+    freshAfterDeleteRejected = error.code;
+  }
+  check(
+    `a soft-deleted duplicate does not block a fresh active pair`,
+    freshAfterDeleteRejected,
+    null
+  );
+
+  await connection.query('DELETE FROM gphone_messages_conversations WHERE id IN (?, ?)', [
+    deletedDup.insertId,
+    freshAfterDeleteId
+  ]);
+
   step(`${schemaFile} — running it a second time`);
   const rowsBefore = await scalar(connection, 'SELECT COUNT(*) FROM gphone_messages_participants');
   const second = await server.runPendingMigrations();
@@ -591,7 +702,8 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   const replay = await server.runPendingMigrations();
   check(`a forced replay still succeeds`, replay.failed, null);
   check(`a forced replay applies cleanly`, replay.applied, [
-    '0001_repair_conversation_participants'
+    '0001_repair_conversation_participants',
+    '0002_conversations_pair_key'
   ]);
   check(
     `a forced replay changes no rows`,
@@ -604,6 +716,128 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
     replayIndexes.includes('conversation_participant_unique (unique)'),
     true
   );
+  const replayConversationIndexes = await indexesOn(connection, 'gphone_messages_conversations');
+  check(
+    `a forced replay leaves pair_key_unique alone too`,
+    replayConversationIndexes.includes('pair_key_unique (unique)'),
+    true
+  );
+};
+
+/* ---------------------------------- MICA-161: the duplicate-tolerance branch */
+
+/**
+ * The one thing `runVariant`'s shared fixtures above cannot exercise: a server that
+ * already has more than one active thread for the same pair by the time it upgrades.
+ * The decision (`docs/schema-and-services.md`, via the `gphone-service` skill) is not to
+ * repair that — a merge that mishandles which thread's read state or history is
+ * authoritative corrupts something a player can see, silently — so the migration has to
+ * *tolerate* it: add `pair_key_unique` as a plain, non-unique index instead of failing
+ * `gphoneschema apply` outright.
+ *
+ * A dedicated database, the same way `runSweepFixtures` gets its own. The unique-vs-plain
+ * decision is table-wide, so proving the plain branch needs a table where a duplicate
+ * pair is the *only* thing in it — mixing this into `runVariant`'s shared fixtures would
+ * make that function's own "pair_key_unique is unique" assertion false.
+ */
+const runPairKeyDuplicateFixture = async ({ connection, schemaFile, server }) => {
+  const database = 'gphone_pairkey_duplicate';
+  step(`${schemaFile} — MICA-161: a server with a pre-existing duplicate pair`);
+
+  await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+  await connection.query(`CREATE DATABASE \`${database}\``);
+  await connection.changeUser({ database });
+  await connection.query(PLAYERS_TABLE);
+  await connection.query('INSERT INTO players (citizenid) VALUES (?), (?)', ['CIT_A', 'CIT_B']);
+  await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+
+  // A server that has never applied either migration.
+  await connection.query('DELETE FROM gphone_schema_migrations');
+  await regressToPreMigrationShape(connection);
+
+  const conversation = async () => {
+    const [result] = await connection.query(
+      "INSERT INTO gphone_messages_conversations (citizenid, is_group, status) VALUES ('CIT_A', 0, 'active')"
+    );
+    return result.insertId;
+  };
+  const participant = async (conversationId, citizenid, role) => {
+    await connection.query(
+      `INSERT INTO gphone_messages_participants (conversation_id, citizenid, role, left_at, status)
+       VALUES (?, ?, ?, NULL, 'active')`,
+      [conversationId, citizenid, role]
+    );
+  };
+
+  // The residue `reconcilePairDuplicate`'s post-hoc check could not always catch before
+  // `pair_key_unique` existed: two genuinely separate threads, both alive, for the same
+  // two people — the ordinary MICA-156 race, from before this fix, left uncleaned.
+  const first = await conversation();
+  await participant(first, 'CIT_A', 'admin');
+  await participant(first, 'CIT_B', 'member');
+
+  const second = await conversation();
+  await participant(second, 'CIT_A', 'admin');
+  await participant(second, 'CIT_B', 'member');
+
+  const result = await server.runPendingMigrations();
+  check(
+    `${database}: the migration still succeeds over a pre-existing duplicate`,
+    result.failed,
+    null
+  );
+  check(`${database}: it applied both migrations`, result.applied, [
+    '0001_repair_conversation_participants',
+    '0002_conversations_pair_key'
+  ]);
+
+  const firstKey = await scalar(
+    connection,
+    'SELECT pair_key FROM gphone_messages_conversations WHERE id = ?',
+    [first]
+  );
+  const secondKey = await scalar(
+    connection,
+    'SELECT pair_key FROM gphone_messages_conversations WHERE id = ?',
+    [second]
+  );
+  check(
+    `both threads backfill to the same, real pair key`,
+    [firstKey, secondKey],
+    ['CIT_A|CIT_B', 'CIT_A|CIT_B']
+  );
+
+  const indexes = await indexesOn(connection, 'gphone_messages_conversations');
+  check(
+    `pair_key_unique exists`,
+    indexes.some((i) => i.startsWith('pair_key_unique')),
+    true
+  );
+  check(
+    `but it is not unique — the migration did not fail, and it did not merge anything`,
+    indexes.includes('pair_key_unique (unique)'),
+    false
+  );
+
+  // Genuinely non-unique, not merely reported as such: a third duplicate must be
+  // accepted, because refusing it would be enforcing a constraint the declaration says
+  // this server does not actually have.
+  let thirdRejected = null;
+  try {
+    const third = await conversation();
+    await participant(third, 'CIT_A', 'admin');
+    await participant(third, 'CIT_B', 'member');
+  } catch (error) {
+    thirdRejected = error.code;
+  }
+  check(`a third duplicate is accepted rather than refused`, thirdRejected, null);
+
+  // Running it again must neither fail nor try to upgrade the index it already decided
+  // not to make unique — `SchemaMigrator`'s planner (and this migration's own
+  // `hasIndex` guard) sees `pair_key_unique` present by name and leaves it alone.
+  const secondRun = await server.runPendingMigrations();
+  check(`a second run reports nothing pending`, secondRun.applied, []);
+  check(`and no failure`, secondRun.failed, null);
 };
 
 /* --------------------------------------------- MICA-152: the orphan sweep */
@@ -878,6 +1112,11 @@ const main = async () => {
     // been imported anywhere. If it is not valid SQL, that is a MICA-150 finding.
     await runVariant({ connection, schemaFile: 'gphone.sql', hasPlayers: true, server });
     await runVariant({ connection, schemaFile: 'gphone.esx.sql', hasPlayers: false, server });
+
+    // MICA-161. One schema file is enough: the pair-key DDL and the unique-vs-plain
+    // decision do not depend on which framework's owner table gPhone is pointed at, unlike
+    // the sweep just below, which genuinely differs by framework.
+    await runPairKeyDuplicateFixture({ connection, schemaFile: 'gphone.sql', server });
 
     // MICA-152. Both frameworks, because the sweep's whole job is to be the cascade ESX
     // does not have — and because "qb is unchanged" is a claim worth executing rather than

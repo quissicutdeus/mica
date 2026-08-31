@@ -4,6 +4,7 @@ import { Conversation } from '@shared/types';
 import { Database } from '../lib/Database';
 import { AuditLogger } from '../lib/AuditLogger';
 import { resolveByPhone } from '../lib/PlayerDirectory';
+import { CITIZENID_MAX_LENGTH } from '@shared/framework';
 import {
   conversationIdFrom,
   fields,
@@ -11,6 +12,15 @@ import {
   isRecord,
   optionalString
 } from '../lib/payload';
+
+/**
+ * The pair-key generated column's own width (MICA-161): two citizenids at
+ * `CITIZENID_MAX_LENGTH` each, joined by one separator byte that cannot appear in a
+ * citizenid — `'|'` is not a character `resolveByPhone`/the framework bridge ever hands
+ * back, so it cannot be produced by one citizenid alone and mistaken for the boundary
+ * between two.
+ */
+const PAIR_KEY_MAX_LENGTH = CITIZENID_MAX_LENGTH * 2 + 1;
 
 /**
  * Conversations: owner on both axes, with membership declared alongside.
@@ -49,11 +59,67 @@ export const conversations = defineService<Conversation>({
     // and never read from a payload. See the note on `isGroup` in the create handler.
     is_group: { type: 'bool', notNull: true, default: 0, clientWritable: false },
     // The only generic write. `update` scopes it to the creator.
-    name: { type: 'string', length: 50 }
+    name: { type: 'string', length: 50 },
+    /**
+     * The two sides of a 1:1 thread, snapshotted at creation (MICA-161's half of
+     * MICA-156). Null for a group thread — there is no pair for a generated column to
+     * normalise — and never client-writable: the `create` handler is the only writer,
+     * the same way `is_group` is. Deliberately not a foreign key onto `players`: that
+     * would cascade-delete the whole thread, history included, the moment *either*
+     * party's character is removed, where today only the creator's own FK does that.
+     * Changing that blast radius is a decision for its own ticket, not a side effect of
+     * closing this race.
+     */
+    participant_a: { type: 'string', length: CITIZENID_MAX_LENGTH, clientWritable: false },
+    participant_b: { type: 'string', length: CITIZENID_MAX_LENGTH, clientWritable: false },
+    /**
+     * The normalised pair key `pair_key_unique` constrains. `LEAST`/`GREATEST` over the
+     * columns above so the two racers in a 1:1 create — who each know "me" and "the other
+     * one" in the opposite order — land on the identical string regardless of who created
+     * the row.
+     *
+     * `NULL` in two cases, both deliberate, since a unique index treats every `NULL` as
+     * distinct from every other and therefore constrains nothing between them — the same
+     * technique `gphone_blabber`'s `(account_id, mouth_of)` index uses for a mouth-less
+     * post:
+     *
+     * - **A group thread.** `participant_a`/`participant_b` are both `NULL`, and `CONCAT`
+     *   (so the whole expression) returns `NULL` the instant either input is, with no
+     *   `CASE` needed to say so.
+     * - **A non-`active` row** — admin-deleted, or a duplicate this same service's own
+     *   `reconcilePairDuplicate` has already discarded. Without the `CASE`, a pair that
+     *   was legitimately deleted or reconciled away would permanently block two people
+     *   from ever starting a fresh 1:1 with each other again: the index does not know
+     *   "used to collide," only "collides now," and a soft-deleted row still occupies it.
+     *   This mirrors `findOneToOne`'s own `status = 'active'` filter, which already
+     *   treats a non-active pair as not existing.
+     *
+     * `private: true` withholds it from the generic list projection on principle, though
+     * `disableGet` below already means nothing reads through that path — the columns it is
+     * built from are no more secret than what `findForCitizen`'s hydrated participant list
+     * already hands every member of a thread.
+     *
+     * **Mirrored by hand in `server/migrations/0002_conversations_pair_key.ts`.** A
+     * migration is frozen at the moment it shipped and must not import a service module
+     * whose shape can move out from under it (the same reason `0001` hardcodes its own
+     * table and index names rather than importing them) — so the two copies of this
+     * expression have to be kept in sync by eye rather than by the type system.
+     */
+    pair_key: {
+      type: 'string',
+      length: PAIR_KEY_MAX_LENGTH,
+      clientWritable: false,
+      private: true,
+      generatedAs:
+        "CASE WHEN `status` = 'active' " +
+        "THEN CONCAT(LEAST(`participant_a`, `participant_b`), '|', GREATEST(`participant_a`, `participant_b`)) " +
+        'ELSE NULL END'
+    }
   },
   indexes: [
     { name: 'citizenid_status_updated', columns: ['citizenid', 'status', 'updated_at'] },
-    { name: 'updated_at', columns: ['updated_at'] }
+    { name: 'updated_at', columns: ['updated_at'] },
+    { name: 'pair_key_unique', columns: ['pair_key'], unique: true }
   ],
   childTables: [
     {
@@ -293,9 +359,14 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
    */
   const isGroup = others.length > 1;
 
+  // The other side of a 1:1 thread, or null for a group (or a solo, participant-less)
+  // one — there is no pair for `pair_key_unique` to constrain. Read once so the create
+  // below, the pre-check, and the post-insert reconciliation all agree on it.
+  const pairCitizenId = !isGroup && others.length === 1 ? others[0] : null;
+
   // Logic for 1-on-1: existing check
-  if (!isGroup && others.length === 1) {
-    const existing = await conversationRepo.findOneToOne(citizenid, others[0]);
+  if (pairCitizenId) {
+    const existing = await conversationRepo.findOneToOne(citizenid, pairCitizenId);
     if (existing) return existing;
   }
 
@@ -305,9 +376,38 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     is_group: isGroup,
     // Provided name, or the one resolved from the phone, or the contact object the UI
     // sometimes sends instead of a citizenid.
-    name: requestedName ?? targetName ?? nameOf(participant) ?? undefined
+    name: requestedName ?? targetName ?? nameOf(participant) ?? undefined,
+    // Explicit `null` rather than `undefined` for a group thread: `Repository.create`
+    // builds its column list from `Object.keys`, which keeps a key set to `undefined`
+    // (only `delete` or never-assigning it would drop it), and the driver underneath
+    // treats `undefined` as a bind-parameter error rather than a SQL NULL. `null` is what
+    // `pair_key`'s generated expression turns into a `NULL` pair key, which a unique
+    // index never treats as a collision.
+    participant_a: pairCitizenId ? citizenid : null,
+    participant_b: pairCitizenId ?? null
   };
-  let conversationId = await conversationRepo.createConversation(newConv);
+
+  let conversationId: number;
+  try {
+    conversationId = await conversationRepo.createConversation(newConv);
+  } catch (error) {
+    /**
+     * `pair_key_unique` refusing a genuinely simultaneous insert (MICA-161, closing the
+     * gap `reconcilePairDuplicate` below narrows but cannot reach): a conversation only
+     * becomes *a pair* once its participant rows exist, which is after this very insert, so
+     * there was nothing for a guard on the insert to test until the pair key existed too.
+     * This is the loser of that race finding out immediately rather than after the fact —
+     * the winner already committed the same normalised pair, so it is there to look up
+     * rather than something to reconcile. Anything else is a genuine failure and must not
+     * be swallowed as though it were this one.
+     */
+    const message = error instanceof Error ? error.message : '';
+    if (pairCitizenId && /duplicate/i.test(message)) {
+      const winner = await conversationRepo.findOneToOne(citizenid, pairCitizenId);
+      if (winner) return winner;
+    }
+    throw error;
+  }
 
   await conversationRepo.addParticipant(conversationId, citizenid, 'admin');
   for (const memberCitizenId of others) {
@@ -324,14 +424,18 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
    * Reconciling here rather than guarding the insert, because a conversation is only *a
    * pair* once its participant rows exist — which is after the insert. By this line both
    * racers are visible to each other, and both resolve the same lowest id, so the loser
-   * stands down and returns the winner. It narrows the window rather than closing it; the
-   * residue needs a uniquely-indexed pair key, tracked as MICA-156's second half.
+   * stands down and returns the winner. This used to only narrow the window: the residue —
+   * both racers' inserts landing before either's participant rows did — needed a
+   * uniquely-indexed pair key, which `pair_key_unique` now is (MICA-161). The `catch`
+   * above is what actually closes that residue; this reconciliation still runs because two
+   * inserts can each succeed (their pair keys committed far enough apart not to collide)
+   * and still both be racing to become *the* canonical thread for this pair.
    */
-  if (!isGroup && others.length === 1) {
+  if (pairCitizenId) {
     conversationId = await conversationRepo.reconcilePairDuplicate(
       conversationId,
       citizenid,
-      others[0]
+      pairCitizenId
     );
   }
 

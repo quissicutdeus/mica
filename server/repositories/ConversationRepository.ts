@@ -202,14 +202,18 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
    * matter who asks first. Whoever is not that id stands down. Without the total order, two
    * racers each seeing the other would each defer, and both threads would be discarded.
    *
-   * **It narrows the window; it does not close it.** If both re-checks run before either has
-   * written its participant rows, both still see only themselves and both survive. That
-   * residue needs a uniquely-indexed pair key on the conversations table, which needs
-   * generated-column support in `defineService` and a decided story for duplicates that
-   * already exist on live servers — MICA-156's second half, tracked separately. What this
-   * removes is the wide window between the service's `findOneToOne` and its `create`, which
-   * spans two round trips and is where two people opening a chat at the same moment actually
-   * collide.
+   * **It narrows the window; on its own it does not close it.** If both re-checks run before
+   * either has written its participant rows, both still see only themselves and both
+   * survive. That residue needed a uniquely-indexed pair key on the conversations table —
+   * `pair_key_unique`, generated-column support in `defineService`, and a decided story for
+   * duplicates already on live servers, all landed in MICA-161. The service's `create`
+   * catches the duplicate-key error that index now throws for a genuinely simultaneous
+   * insert and resolves it by looking the winner up, so this method's own remaining job is
+   * the case *that* insert-level check cannot see: two inserts landing far enough apart to
+   * both succeed (different pair-key commit timing) while still racing to be the pair's
+   * canonical thread. What this removes on its own is the wide window between the service's
+   * `findOneToOne` and its `create`, which spans two round trips and is where two people
+   * opening a chat at the same moment actually collide.
    *
    * **Never discards anything that holds a message.** The reconciliation is only ever run
    * against a thread this request just created, but a message can in principle be written

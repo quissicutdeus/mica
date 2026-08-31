@@ -58,6 +58,16 @@ const columnSql = (name: string, def: ColumnDef): string => {
     throw new Error(`schemaSql: unknown column type '${def.type}' on '${name}'.`);
   }
 
+  /**
+   * A generated column's value comes entirely from the expression — no NOT NULL/DEFAULT/
+   * ON UPDATE modifier below applies, and MySQL rejects several of them outright alongside
+   * `GENERATED ALWAYS AS (...)`. VIRTUAL rather than STORED/PERSISTENT: nothing here needs
+   * the value on disk, and both MySQL and MariaDB index a VIRTUAL column just as well.
+   */
+  if (def.generatedAs) {
+    return `    \`${name}\` ${type(def)} GENERATED ALWAYS AS (${def.generatedAs}) VIRTUAL`;
+  }
+
   const parts = [`\`${name}\``, type(def)];
   if (def.notNull) parts.push('NOT NULL');
 

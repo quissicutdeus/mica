@@ -123,6 +123,17 @@ const planFor = (
       continue;
     }
 
+    /**
+     * A generated column's live `COLUMN_TYPE` never echoes back the `GENERATED ALWAYS
+     * AS (...)` clause `declaredType` derives it with — `information_schema` reports only
+     * the base type — so a textual comparison would print permanent false drift on every
+     * server that already has it set up exactly right. Presence by name is what the index
+     * comparison below already settles for, and the same reasoning applies here: a changed
+     * expression is a rename in a stable's clothing and needs a migration to notice, not a
+     * comparison this planner cannot make reliably.
+     */
+    if (column.def.generatedAs) continue;
+
     const expectedType = declaredType(column.name, column.def);
     if (!typesAgree(expectedType, existing.type)) {
       plan.drift.push(

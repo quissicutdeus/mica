@@ -41,6 +41,19 @@ ringtone override, one of the client's existing ringtone choices. It is nullable
 with no default, and null means "use the system ringtone" — an existing contact
 is never backfilled to a specific tone.
 
+**`gphone_messages_conversations` gained `participant_a`, `participant_b` and a
+generated `pair_key` column, plus a migration (`0003_conversations_pair_key`) —
+run `gphoneschema apply` from your server console after updating, or import the
+regenerated `gphone.sql` / `gphone.esx.sql` on a fresh install.** A 1:1 thread's
+two participants are now snapshotted onto the conversation row itself and
+normalised into `pair_key`, which a unique index constrains — closing the race
+where two people opening a chat at the same moment could end up with two threads
+for the same pair. The migration backfills the new columns for existing
+one-to-one threads and adds the index; if your server already has more than one
+active thread for the same pair (a residue of that race before this fix), the
+index is added as a plain, non-unique key instead — nothing is merged or
+deleted, and no message history is touched.
+
 **`gphone_messages_reactions` is a new table — run `gphoneschema apply` from
 your server console after updating, or import the regenerated `gphone.sql` /
 `gphone.esx.sql` on a fresh install.** Native Messages (SMS-style threads) can

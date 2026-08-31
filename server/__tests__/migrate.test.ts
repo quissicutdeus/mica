@@ -180,6 +180,56 @@ describe('planAppMigration', () => {
     expect(plan.additive).toEqual([]);
     expect(plan.drift).toEqual(['gphone_widgets.id is missing and cannot be added safely']);
   });
+
+  describe('a generated column (MICA-161)', () => {
+    const genSchema = resolveAppSchema({
+      id: 'genwidgets',
+      schema: {
+        a: 'string',
+        b: 'string',
+        pair: { type: 'string', length: 101, generatedAs: 'CONCAT(`a`, `b`)' }
+      }
+    });
+    const genShape = expectedShape(genSchema);
+
+    /** A live `pair` whose `information_schema` type never echoes the expression back. */
+    const genLiveTypeOf = (name: string): string => {
+      if (name === 'a' || name === 'b') return 'varchar(255)';
+      if (name === 'pair') return 'varchar(101)';
+      return declaredTypeOf(name);
+    };
+    const genLive = (): LiveTable => ({
+      exists: true,
+      columns: genShape.columns.map((c) => ({
+        name: c.name,
+        type: genLiveTypeOf(c.name),
+        nullable: !c.def.notNull
+      })),
+      indexes: ['PRIMARY', ...genShape.indexes.map((i) => i.name)]
+    });
+
+    it('is satisfied by presence alone — the live type never matches the declared expression', () => {
+      // If this printed drift, it would print it forever: `information_schema` never
+      // reports the `GENERATED ALWAYS AS (...)` clause back, so a byte-for-byte
+      // comparison against the declaration can never agree, even when the column is
+      // exactly as declared.
+      const plan = planAppMigration(genSchema, genLive());
+      expect(plan.additive).toEqual([]);
+      expect(plan.drift).toEqual([]);
+      expect(isNoop(plan)).toBe(true);
+    });
+
+    it('is still added, plainly, when missing', () => {
+      const live = genLive();
+      live.columns = live.columns.filter((c) => c.name !== 'pair');
+
+      const plan = planAppMigration(genSchema, live);
+      expect(sqlOf(plan)).toEqual([
+        'ALTER TABLE `gphone_genwidgets` ADD COLUMN `pair` varchar(101) ' +
+          'GENERATED ALWAYS AS (CONCAT(`a`, `b`)) VIRTUAL'
+      ]);
+    });
+  });
 });
 
 import { SchemaMigrator } from '../lib/SchemaMigrator';

@@ -154,6 +154,28 @@ export interface ColumnDef {
   private?: boolean;
   /** Foreign key onto another table. */
   references?: ColumnReference;
+  /**
+   * Emit this column as `GENERATED ALWAYS AS (<expression>) VIRTUAL` instead of an
+   * ordinary column (MICA-161).
+   *
+   * The expression may reference only literal SQL and other columns **on this same
+   * table** — a generated column cannot look across a join, so it is no substitute for
+   * one. `pair_key` on `gphone_messages_conversations` is the first use: a normalised
+   * `LEAST`/`GREATEST` over two citizenid columns on the same row, so it can carry a
+   * unique index without a repair migration touching a single row of data.
+   *
+   * Implies not-client-writable regardless of `clientWritable` — MySQL/MariaDB reject an
+   * explicit value for a virtual generated column outright, so `resolveAppSchema` throws
+   * if `clientWritable: true` is declared alongside this rather than silently ignoring
+   * the conflict. `default`/`defaultNow` make the same mistake from the other direction —
+   * a generated column takes its value from the expression, never a literal — and are
+   * rejected the same way.
+   *
+   * VIRTUAL rather than STORED/PERSISTENT: nothing here needs the value materialised on
+   * disk, and both MySQL and MariaDB can still carry a secondary (including unique)
+   * index on a VIRTUAL column.
+   */
+  generatedAs?: string;
 }
 
 /**
@@ -408,7 +430,7 @@ const normalizeColumn = (spec: ColumnType | ColumnDef): ColumnDef =>
  * client write path at all, so `server` and `members` opt every field out wholesale.
  */
 const isClientWritable = (def: ColumnDef, write: AccessDefinition['write']): boolean =>
-  write === 'owner' && def.clientWritable !== false;
+  write === 'owner' && def.clientWritable !== false && !def.generatedAs;
 
 /**
  * A field is filterable if it opted in, and **writability has nothing to do with it**.
@@ -645,6 +667,26 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
         `defineService('${id}'): '${name}' is both 'private' and 'clientFilterable'. A ` +
           'column withheld from the read projection but accepted as a filter can be ' +
           'tested for without ever being returned.'
+      );
+    }
+    /**
+     * A generated column takes its value from `generatedAs` alone. `clientWritable: true`
+     * would be a lie `isClientWritable` already ignores — MySQL/MariaDB refuse an explicit
+     * value for a virtual generated column outright — so a declaration that says both is
+     * corrected here rather than silently doing the safe thing and leaving the
+     * contradiction on the page. `default`/`defaultNow` are the same mistake the other way:
+     * neither is legal SQL alongside `GENERATED ALWAYS AS (...)`.
+     */
+    if (def.generatedAs && def.clientWritable === true) {
+      throw new Error(
+        `defineService('${id}'): '${name}' is 'generatedAs' but also 'clientWritable: true'. ` +
+          'A generated column can never accept a client-written value.'
+      );
+    }
+    if (def.generatedAs && (def.default !== undefined || def.defaultNow)) {
+      throw new Error(
+        `defineService('${id}'): '${name}' is 'generatedAs' but also declares a default. A ` +
+          'generated column takes its value from the expression alone.'
       );
     }
     fields.push({ name, def });

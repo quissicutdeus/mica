@@ -364,4 +364,103 @@ describe('the declaration', () => {
     expect(conversations.resolved.columns).toContain('is_group');
     expect(conversations.repo['clientWritable']).not.toContain('is_group');
   });
+
+  it('keeps participant_a/participant_b/pair_key out of the client-writable set too (MICA-161)', () => {
+    for (const column of ['participant_a', 'participant_b', 'pair_key']) {
+      expect(conversations.resolved.columns).toContain(column);
+      expect(conversations.repo['clientWritable']).not.toContain(column);
+    }
+  });
+});
+
+/**
+ * MICA-161. `pair_key_unique` is what actually closes the gap `reconcilePairDuplicate`
+ * (tested above) only narrows: a genuinely simultaneous insert for the same pair now fails
+ * at the database rather than quietly producing two live threads.
+ */
+describe('conversations:create — participant_a/participant_b and the unique-index race', () => {
+  /**
+   * The row handed to the conversation insert, not the participant inserts, decoded into
+   * a plain `{ column: value }` object — the two are positional in the SQL and the params
+   * array, and re-deriving that mapping by hand in each assertion would just be this
+   * function inlined and duplicated.
+   */
+  const conversationInsertColumns = (): Record<string, unknown> => {
+    const call = dbMock.insert.mock.calls.find(
+      ([sql]) =>
+        typeof sql === 'string' && sql.includes('INSERT INTO `gphone_messages_conversations`')
+    ) as [string, unknown[]] | undefined;
+    if (!call) throw new Error('no insert into gphone_messages_conversations');
+    const [sql, params] = call;
+    const names = (sql.match(/\(([^)]+)\)/)?.[1] ?? '')
+      .split(',')
+      .map((c) => c.trim().replace(/`/g, ''));
+    return Object.fromEntries(names.map((name, i) => [name, params[i]]));
+  };
+
+  beforeEach(() => {
+    directory.byPhone.set('555-0100', { citizenid: 'CIT_B' });
+  });
+
+  it('stamps participant_a/participant_b on a 1:1 create', async () => {
+    await call('create', { phone: '555-0100' });
+
+    const columns = conversationInsertColumns();
+    expect([columns.participant_a, columns.participant_b].sort()).toEqual(['CIT_A', 'CIT_B']);
+  });
+
+  it('writes participant_a/participant_b as null, not undefined, on a group create', async () => {
+    directory.byPhone.set('555-0200', { citizenid: 'CIT_C' });
+
+    await call('create', { phone: '555-0100', participants: ['555-0200'] });
+
+    const columns = conversationInsertColumns();
+    // `undefined` specifically, not merely falsy: `Object.keys` cannot tell an
+    // explicit `undefined` from an absent key apart, and an `undefined` bind parameter
+    // is a driver error rather than the SQL NULL a group thread's pair key needs.
+    expect(columns.participant_a).toBeNull();
+    expect(columns.participant_b).toBeNull();
+  });
+
+  it('resolves to the winner rather than throwing when the insert loses the pair_key race', async () => {
+    const winner = { id: 555, citizenid: 'CIT_B', is_group: false };
+    dbMock.insert.mockRejectedValueOnce(
+      Object.assign(new Error("Duplicate entry 'CIT_A|CIT_B' for key 'pair_key_unique'"), {
+        code: 'ER_DUP_ENTRY'
+      })
+    );
+    // `findOneToOne` misses on the pre-check (nothing seeded yet) and then finds the
+    // winner once the create fails — `dbMock.query` backs both calls, so the second
+    // mockResolvedValueOnce is what the post-failure lookup sees.
+    dbMock.query.mockResolvedValueOnce([]).mockResolvedValueOnce([winner]);
+
+    const created = await call('create', { phone: '555-0100' });
+
+    expect(created).toEqual(winner);
+    // No participant rows were written for a create that never actually happened.
+    expect(participantsAdded()).toEqual([]);
+  });
+
+  it('still throws when the create fails for a reason that has nothing to do with the pair key', async () => {
+    dbMock.insert.mockRejectedValueOnce(new Error('ER_LOCK_WAIT_TIMEOUT: Lock wait timeout'));
+
+    const reply = await call('create', { phone: '555-0100' });
+
+    expect(reply).toMatchObject({ error: expect.stringContaining('Lock wait timeout') });
+  });
+
+  it('does not touch the duplicate-key fallback for a group thread, which has no pair', async () => {
+    directory.byPhone.set('555-0200', { citizenid: 'CIT_C' });
+    dbMock.insert.mockRejectedValueOnce(
+      Object.assign(new Error("Duplicate entry 'x' for key 'pair_key_unique'"), {
+        code: 'ER_DUP_ENTRY'
+      })
+    );
+
+    const reply = await call('create', { phone: '555-0100', participants: ['555-0200'] });
+
+    // No `pairCitizenId` for a group, so the catch re-throws unconditionally rather than
+    // trying a `findOneToOne` lookup that could never apply to it.
+    expect(reply).toMatchObject({ error: expect.stringContaining('Duplicate entry') });
+  });
 });

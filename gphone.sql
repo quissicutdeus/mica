@@ -195,6 +195,9 @@ CREATE TABLE IF NOT EXISTS `gphone_messages_conversations` (
     `citizenid` varchar(50) NOT NULL,
     `is_group` tinyint(1) NOT NULL DEFAULT 0,
     `name` varchar(50) DEFAULT NULL,
+    `participant_a` varchar(50) DEFAULT NULL,
+    `participant_b` varchar(50) DEFAULT NULL,
+    `pair_key` varchar(101) GENERATED ALWAYS AS (CASE WHEN `status` = 'active' THEN CONCAT(LEAST(`participant_a`, `participant_b`), '|', GREATEST(`participant_a`, `participant_b`)) ELSE NULL END) VIRTUAL,
     `status` ENUM('active', 'archived', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -203,6 +206,7 @@ CREATE TABLE IF NOT EXISTS `gphone_messages_conversations` (
     KEY `citizenid_status` (`citizenid`, `status`),
     KEY `citizenid_status_updated` (`citizenid`, `status`, `updated_at`),
     KEY `updated_at` (`updated_at`),
+    UNIQUE KEY `pair_key_unique` (`pair_key`),
     CONSTRAINT `fk_conversations_citizenid` FOREIGN KEY (`citizenid`)
         REFERENCES `players` (`citizenid`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
@@ -609,4 +613,5 @@ CREATE TABLE IF NOT EXISTS `gphone_schema_migrations` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 INSERT IGNORE INTO `gphone_schema_migrations` (`id`) VALUES
-  ('0001_repair_conversation_participants');
+  ('0001_repair_conversation_participants'),
+  ('0002_conversations_pair_key');

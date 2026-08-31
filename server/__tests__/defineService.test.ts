@@ -650,6 +650,82 @@ describe('timestamp and enum columns', () => {
   });
 });
 
+describe('generated columns (MICA-161)', () => {
+  it('emits GENERATED ALWAYS AS (...) VIRTUAL rather than an ordinary column definition', () => {
+    const sql = toChildTableSql({
+      name: 't6',
+      columns: {
+        a: 'string',
+        b: 'string',
+        pair: { type: 'string', length: 101, generatedAs: 'CONCAT(`a`, `b`)' }
+      }
+    });
+
+    expect(sql).toContain('`pair` varchar(101) GENERATED ALWAYS AS (CONCAT(`a`, `b`)) VIRTUAL');
+    // None of the ordinary-column modifiers apply to a generated one.
+    expect(sql).not.toMatch(/`pair`[^,]*NOT NULL/);
+    expect(sql).not.toMatch(/`pair`[^,]*DEFAULT/);
+  });
+
+  it('is never client-writable, even on an owner-write table with no clientWritable flag', () => {
+    const resolved = resolveAppSchema({
+      id: 'genwrite',
+      access: { read: 'owner', write: 'owner' },
+      schema: {
+        a: 'string',
+        pair: { type: 'string', length: 50, generatedAs: 'CONCAT(`a`, `a`)' }
+      }
+    });
+
+    expect(resolved.clientWritable).not.toContain('pair');
+    expect(resolved.clientWritable).toContain('a');
+  });
+
+  it('refuses generatedAs paired with an explicit clientWritable: true', () => {
+    expect(() =>
+      resolveAppSchema({
+        id: 'genconflict',
+        schema: {
+          pair: { type: 'string', generatedAs: "CONCAT('a','b')", clientWritable: true }
+        }
+      })
+    ).toThrow(/generatedAs.*but also 'clientWritable: true'/);
+  });
+
+  it('refuses generatedAs paired with a default', () => {
+    expect(() =>
+      resolveAppSchema({
+        id: 'gendefault',
+        schema: {
+          pair: { type: 'string', generatedAs: "CONCAT('a','b')", default: 'x' }
+        }
+      })
+    ).toThrow(/generatedAs.*but also declares a default/);
+  });
+
+  it('refuses generatedAs paired with defaultNow', () => {
+    expect(() =>
+      resolveAppSchema({
+        id: 'gendefaultnow',
+        schema: {
+          pair: { type: 'timestamp', generatedAs: 'NOW()', defaultNow: true }
+        }
+      })
+    ).toThrow(/generatedAs.*but also declares a default/);
+  });
+
+  it('still carries a columnRule, so a stray write attempt is still checked rather than crashing', () => {
+    const resolved = resolveAppSchema({
+      id: 'genrule',
+      schema: {
+        pair: { type: 'string', length: 12, generatedAs: "CONCAT('a','b')" }
+      }
+    });
+
+    expect(resolved.columnRules.pair).toMatchObject({ type: 'string', maxLength: 12 });
+  });
+});
+
 describe('toSqlFile', () => {
   it('marks the output generated so nobody hand-edits it', () => {
     const file = toSqlFile(resolveAppSchema(notesDefinition));

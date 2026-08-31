@@ -59,6 +59,13 @@ export interface Conversation {
   citizenid: string;
   is_group: boolean;
   name?: string;
+  /**
+   * The two sides of a 1:1 thread (MICA-161), null for a group thread. Set once at
+   * creation by the server and never client-writable — see `gphone_messages_conversations`
+   * in `server/services/Conversations.ts` for the generated `pair_key` these back.
+   */
+  participant_a?: string | null;
+  participant_b?: string | null;
   status?: 'active' | 'archived' | 'deleted' | 'moderated';
   created_at: Date | string;
   updated_at: Date | string;
