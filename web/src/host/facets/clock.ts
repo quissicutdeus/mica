@@ -1,4 +1,6 @@
+import { get } from 'svelte/store';
 import { registerFacet } from '../../sdk/host/current';
+import { registerClockPreference } from '../../sdk/host/seam/clockPreference';
 import { time, is24Hour, formattedTime } from '../../shell/state/time';
 
 /**
@@ -28,3 +30,14 @@ export function clock() {
 }
 
 registerFacet('clock', clock);
+
+/**
+ * `formatTime`'s default, installed rather than imported.
+ *
+ * MICA-172: `lib/sdk/formatters.ts` used to import `is24Hour` straight out of
+ * `shell/state/time.ts`, which put that module's module-scope `usePersisted` call inside
+ * the shared SDK chunk and killed boot before any facet had registered. It installs from
+ * here for the same reason `storage.ts` installs the settings hydrator: this file is
+ * reached only through `host/registerFacets.ts`, which only `src/main.ts` imports.
+ */
+registerClockPreference(() => get(is24Hour));

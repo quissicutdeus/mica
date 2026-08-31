@@ -1,5 +1,4 @@
-import { get } from 'svelte/store';
-import { is24Hour } from '../../shell/state/time';
+import { is24HourNow } from '../../sdk/host/seam/clockPreference';
 
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', {
@@ -17,7 +16,7 @@ export function formatTime(isoString?: string | number | Date, override24Hour?: 
   const date = isoString instanceof Date ? isoString : new Date(isoString);
   if (isNaN(date.getTime())) return '';
 
-  const use24 = override24Hour ?? get(is24Hour);
+  const use24 = override24Hour ?? is24HourNow();
 
   if (use24) {
     const hours = date.getHours().toString().padStart(2, '0');
