@@ -2,7 +2,7 @@ import { writable, derived, get } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
 import type { Contact, Conversation, Message, ReactionSummary } from '@shared/types';
 import type { UIConversation, UIMessage } from '@gphone/sdk';
-import { createReactionStore } from '../sdk/kit/createReactionStore';
+import { createReactionStore } from '../../../sdk/kit/createReactionStore';
 
 import { citizenid, fetchCitizenId } from './account';
 import { contacts } from './contacts';

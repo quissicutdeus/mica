@@ -13,5 +13,23 @@
     "unicorn/no-array-sort": "off",
     "unicorn/no-array-reverse": "off"
   },
-  "ignorePatterns": ["**/node_modules/**", "**/dist/**", "web/**", "gphone.sql", "fxmanifest.lua"]
+  // `web/**` and `sdk/**` are both excluded for the same reason, and it is a division of
+  // labour rather than a suppression: those two packages are linted by their own flat
+  // eslint configs with `typescript-eslint` type-checked rules, which oxlint does not
+  // replicate — and they must run from inside their own `node_modules` to resolve
+  // TypeScript 6.x (AGENTS.md §3, and the docblock in `web/eslint.config.js`).
+  // `pnpm lint` fans out to all three, so nothing here goes unlinted.
+  //
+  // MICA-172 added `sdk/**`: the SDK left `web/src/`, so `web/**` stopped covering it
+  // and oxlint began reporting 17 pre-existing findings in code it had never seen. Those
+  // are recorded on the ticket rather than fixed here — two of the five errors sit in
+  // files that ticket froze byte-identical (`permissions.ts`, `coreBoundary.test.ts`).
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "web/**",
+    "sdk/**",
+    "gphone.sql",
+    "fxmanifest.lua"
+  ]
 }

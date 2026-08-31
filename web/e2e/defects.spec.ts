@@ -43,7 +43,7 @@ test.describe('Backspace closes the open item before leaving the app', () => {
   // Backspace jumped straight home from a detail view.
   //
   // Only Contacts is covered here: Notes is an add-on and is not on the home screen of a
-  // fresh install. `src/sdk/backNavigation.test.ts` covers both statically, and covers
+  // fresh install. `sdk/backNavigation.test.ts` covers both statically, and covers
   // the whole class rather than two instances.
   test('Contacts', async ({ page }) => {
     await openApp(page, 'Contacts');

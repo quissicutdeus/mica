@@ -4,7 +4,7 @@
   import { createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/phone/sheetDrag';
   import { isDrawerOpen, openDrawer, drawerDragProgress, drawerDragPhase } from './state/appDrawer';
   import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
-  import SearchIcon from '../sdk/ui/icons/SearchIcon.svelte';
+  import SearchIcon from '../../../sdk/ui/icons/SearchIcon.svelte';
 
   /** Just the pill that opens the (now-merged) App Drawer, always focused there. */
   let collapsedBarRef = $state<HTMLElement | null>(null);

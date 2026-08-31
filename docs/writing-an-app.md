@@ -78,7 +78,7 @@ The display name is derived from it — `journal` becomes "Journal",
 id cannot express it ("GPS"). Keep it under about eight characters or it
 truncates under the icon; that is why "Administration" is called "Admin".
 
-`color` is a utility **class** from `web/src/sdk/app-utilities.css` (e.g.
+`color` is a utility **class** from `sdk/app-utilities.css` (e.g.
 `bg-blue-500`), not a color. It is interpolated into a `class` attribute, so a
 hex string renders an icon with no background at all. `defineApp` warns about
 that in dev, along with a capitalised id and an id another app has already
@@ -251,11 +251,11 @@ backwards through one. It takes the same `service` option, so an add-on's paged
 feed goes through the generic route too — Blabber's `feed` and `followingFeed`
 are the worked examples.
 
-**The hook.** A core app's hook goes in `web/src/sdk/host/`; an add-on exports
-its own from its own directory, beside the store, because `sdk/host/` ships
-inside gPhone — `apps/notes/store.ts` exports `useNotes`,
-`apps/blabber/store.ts` exports `useBlabber`. Either way the store itself is
-never reached by path from another app; the hook is the only handle.
+**The hook.** A core app's hook goes in `sdk/host/`; an add-on exports its own
+from its own directory, beside the store, because `sdk/host/` ships inside
+gPhone — `apps/notes/store.ts` exports `useNotes`, `apps/blabber/store.ts`
+exports `useBlabber`. Either way the store itself is never reached by path from
+another app; the hook is the only handle.
 
 ### Your app runs in a frame
 

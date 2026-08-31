@@ -31,7 +31,7 @@ import {
   INCUMBENT_MARGIN,
   MAX_AUDIBLE_BROADCASTS,
   joinOffsetSeconds
-} from '../../sdk/lib/musicBroadcast';
+} from '../../../../sdk/lib/musicBroadcast';
 
 /**
  * Other people's music, and the two rules the ticket promoted from open questions to
@@ -428,7 +428,7 @@ describe('the global mute survives a restart and the per-person list is bounded'
     // and why the module-scope `Map` still backs storage under jsdom.
     vi.resetModules();
     await import('../../host/facets/storage');
-    const { useStorage } = await import('../../sdk/host/useStorage');
+    const { useStorage } = await import('../../../../sdk/host/useStorage');
     const storage = useStorage('settings');
     storage.setItem('musicMutedBroadcasters', ['a', 'a', '', 7, 'b']);
     storage.setItem('musicMuteNearby', true);

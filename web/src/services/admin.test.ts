@@ -12,13 +12,13 @@ import { get } from 'svelte/store';
 const loadAdmin = async (browser: boolean, reply: () => Promise<unknown>) => {
   vi.resetModules();
   const fetchNui = vi.fn(reply);
-  vi.doMock('../sdk/lib/isBrowser', () => ({ isBrowser: () => browser }));
+  vi.doMock('../../../sdk/lib/isBrowser', () => ({ isBrowser: () => browser }));
   vi.doMock('../nui/fetchNui', () => ({ fetchNui, isBrowser: () => browser }));
   return { ...(await import('./admin')), fetchNui };
 };
 
 beforeEach(() => vi.resetModules());
-afterEach(() => vi.doUnmock('../sdk/lib/isBrowser'));
+afterEach(() => vi.doUnmock('../../../sdk/lib/isBrowser'));
 
 const grants = async () => ({ isAdmin: true });
 

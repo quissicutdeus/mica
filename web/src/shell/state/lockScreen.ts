@@ -1,5 +1,5 @@
 import { writable, get } from 'svelte/store';
-import { usePersisted } from '../../sdk/host/usePersisted';
+import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { hasPasscode } from '../../services/passcode';
 
 /**
@@ -10,7 +10,7 @@ import { hasPasscode } from '../../services/passcode';
  * makes there.
  */
 
-import type { AutoLockPolicy, AutoLockPolicyChoice } from '../../sdk/vocabulary/shell';
+import type { AutoLockPolicy, AutoLockPolicyChoice } from '../../../../sdk/vocabulary/shell';
 
 export const AUTO_LOCK_POLICY_CHOICES: readonly AutoLockPolicyChoice[] = [
   {

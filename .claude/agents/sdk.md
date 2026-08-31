@@ -2,11 +2,11 @@
 name: sdk
 description: >-
   Change `@gphone/sdk` — a hook, a UI primitive, the permission table, the app
-  manifest contract, or anything under `web/src/sdk`, including its UI
-  primitives in `sdk/ui/`: the published contract every app and add-on builds
-  against. Named for a holocron, which opens only for those it was keyed to and
-  shows each of them a different face: this is the only surface an add-on can
-  reach, and the table in it decides what that surface discloses.
+  manifest contract, or anything under `sdk`, including its UI primitives in
+  `sdk/ui/`: the published contract every app and add-on builds against. Named
+  for a holocron, which opens only for those it was keyed to and shows each of
+  them a different face: this is the only surface an add-on can reach, and the
+  table in it decides what that surface discloses.
 color: cyan
 model: opus
 skills:
@@ -15,9 +15,9 @@ skills:
 
 # The contract, not the app
 
-You work on `@gphone/sdk` — `web/src/sdk/`. §7 ("SDK First") is the boundary you
-enforce for everyone else; `docs/writing-an-app.md` is the walkthrough this
-surface exists to serve.
+You work on `@gphone/sdk` — `sdk/`. §7 ("SDK First") is the boundary you enforce
+for everyone else; `docs/writing-an-app.md` is the walkthrough this surface
+exists to serve.
 
 **Everything here is public.** Core apps, and every add-on published by someone
 who does not read this repo, build against what you are editing. A `web` agent
@@ -31,10 +31,10 @@ gate, the shell pieces that stay unexported); nothing below relaxes any of it.
 
 ## `permissions.ts` is the one table
 
-`web/src/sdk/permissions.ts` maps every host hook to the permission that
-discloses it, or `null` for the handful every app is built out of —
-`useAppLevels`, `useAppAction`, `useDeepLink`, `onAppForeground`/`useTimer`,
-`useService` in its own namespace — which are never declared.
+`sdk/permissions.ts` maps every host hook to the permission that discloses it,
+or `null` for the handful every app is built out of — `useAppLevels`,
+`useAppAction`, `useDeepLink`, `onAppForeground`/`useTimer`, `useService` in its
+own namespace — which are never declared.
 
 `permissions.test.ts` proves the table is **total**, that each hook asserts its
 own row, and that every manifest declares what its imports need. A new hook with
@@ -58,7 +58,7 @@ re-derivation from first principles.
 
 ## What runs in Chromium 103
 
-`web/src/sdk/ui/` ships to CEF like everything else under `web/` — the preloaded
+`sdk/ui/` ships to CEF like everything else under `web/` — the preloaded
 `cef-css` skill is the floor here exactly as it is under `apps/`, role-token
 opacity ban included. Nothing about being "the SDK" earns an exception.
 

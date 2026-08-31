@@ -1,4 +1,4 @@
-import { registerFacet } from '../../sdk/host/current';
+import { registerFacet } from '../../../../sdk/host/current';
 import { devToolsUnlocked, lockDevTools } from '../../shell/state/devtools';
 
 /**

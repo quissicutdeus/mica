@@ -1,4 +1,4 @@
-import { usePersisted } from '../../sdk/host/usePersisted';
+import { usePersisted } from '../../../../sdk/host/usePersisted';
 
 /**
  * Flashlight quick-toggle state, phone-only for now — no game-world light source yet.

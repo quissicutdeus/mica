@@ -14,13 +14,13 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
  * until that was untangled.
  *
  * MICA-172 then finished the job: the SDK-owned half **moved into the SDK**, from
- * `web/src/lib/sdk/` to `web/src/sdk/lib/`. So the seam this file guards is no longer two
+ * `web/src/lib/sdk/` to `sdk/lib/`. So the seam this file guards is no longer two
  * sibling directories under `lib/` — it is now:
  *
- * - `web/src/sdk/lib/` — owned by `@gphone/sdk`, and travelling with it out of `web/`. It
+ * - `sdk/lib/` — owned by `@gphone/sdk`, and travelling with it out of `web/`. It
  *   must stay bundle-safe and **self-contained**: see rule 4, which is the strong form of
  *   what used to be a list of forbidden directories.
- * - `web/src/lib/` — owned by the shell. Nothing under `web/src/sdk/` may reach it. It
+ * - `web/src/lib/` — owned by the shell. Nothing under `sdk/` may reach it. It
  *   stays in `web/` when the SDK leaves, and `phone/` is the only owner left in it.
  *
  * `lib/phone/` may import the SDK's half (`debug.ts` uses `isBrowser`). The reverse is the
@@ -50,7 +50,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
  * **`m3.ts` is SDK-owned**, confirmed rather than assumed: it is reached from
  * `sdk/index.ts`, `sdk/addon.ts`, `sdk/ui/NowPlayingCard.svelte`, both theme facets and
  * `sdk/cef.test.ts`, and a decision on MICA-172 puts the design system on the SDK side.
- * `app.css`, `app-utilities.css` and `app-reset.css` moved to `web/src/sdk/` on MICA-172
+ * `app.css`, `app-utilities.css` and `app-reset.css` moved to `sdk/` on MICA-172
  * for the same reason: eight files under `shell/` already import `@gphone/sdk`, so an SDK
  * primitive depending on a stylesheet outside the package was a reverse edge — and a
  * primitive that renders unstyled unless the consumer separately remembers a CSS import
@@ -71,7 +71,13 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 
 const LIB = __dirname;
 const SRC = join(LIB, '..');
-const SDK = join(SRC, 'sdk');
+/**
+ * MICA-172: `sdk/` is a workspace package at the repo root now, a sibling of `web/`
+ * rather than a directory inside it — so this climbs out of `web/src/` to find it. That
+ * relocation is the whole point of the rules below: a specifier that cannot be spelled
+ * from inside the package is one the package cannot carry when it leaves.
+ */
+const SDK = resolve(SRC, '..', '..', 'sdk');
 
 /** The SDK-owned half, at its MICA-172 home inside the package it belongs to. */
 const SDK_LIB = join(SDK, 'lib');
@@ -79,7 +85,11 @@ const PHONE_OWNED = join(LIB, 'phone');
 
 const walk = (path: string): string[] => {
   if (!statSync(path).isDirectory()) return [path];
-  return readdirSync(path).flatMap((entry) => walk(join(path, entry)));
+  // MICA-172: `sdk/` is a workspace package at the repo root now and carries its own
+  // `node_modules`. Walking into it would scan every dependency's source.
+  return readdirSync(path)
+    .filter((entry) => entry !== 'node_modules')
+    .flatMap((entry) => walk(join(path, entry)));
 };
 
 const isSource = (file: string) => /\.(ts|svelte)$/.test(file) && !file.endsWith('.test.ts');
@@ -112,11 +122,9 @@ describe('the SDK owns its own implementation', () => {
     expect(strays, 'put it in sdk/lib (the SDK can reach it) or lib/phone (it cannot)').toEqual([]);
     expect(
       dirs.sort(),
-      'lib/ is the phone half only — an SDK-owned helper goes in web/src/sdk/lib'
+      'lib/ is the phone half only — an SDK-owned helper goes in sdk/lib'
     ).toEqual(['phone']);
-    expect(existsSync(SDK_LIB), 'the SDK-owned half moved to web/src/sdk/lib on MICA-172').toBe(
-      true
-    );
+    expect(existsSync(SDK_LIB), 'the SDK-owned half moved to sdk/lib on MICA-172').toBe(true);
   });
 
   it('finds modules on both sides to check', () => {
@@ -131,10 +139,10 @@ describe('the SDK owns its own implementation', () => {
    * the build rather than being caught at review. Test files under `sdk/` are checked too —
    * an SDK suite reaching for `lib/phone` is the same misfiling, one commit earlier.
    *
-   * This walks all of `web/src/sdk/`, so it covers `sdk/lib/` as a subset. Rule 4 is the
+   * This walks all of `sdk/`, so it covers `sdk/lib/` as a subset. Rule 4 is the
    * sharper check for that subdirectory specifically.
    */
-  it('nothing under web/src/sdk imports lib/phone', () => {
+  it('nothing under sdk imports lib/phone', () => {
     const offenders = walk(SDK)
       .filter((f) => /\.(ts|svelte)$/.test(f))
       .flatMap((file) =>
@@ -152,12 +160,12 @@ describe('the SDK owns its own implementation', () => {
 
   /**
    * `sdk/lib/` has to stay bundle-safe, and MICA-172 makes that concrete: this directory
-   * leaves `web/` with the package, so a relative specifier that climbs out of `web/src/sdk/`
+   * leaves `web/` with the package, so a relative specifier that climbs out of `sdk/`
    * is one that **cannot be spelled at all** once the SDK is a root-level workspace package.
    *
    * So the rule is no longer a blocklist of directory names (`shell`, `services`, `nui`,
    * `apps`). It is the strong form: **resolve every relative specifier and require it to stay
-   * inside `web/src/sdk/`.** That subsumes the old list and closes what it missed — a reach
+   * inside `sdk/`.** That subsumes the old list and closes what it missed — a reach
    * into `web/src/host/` or `web/src/lib/phone/` was not in the blocklist and would have
    * passed, and `web/src/host/` is exactly where the shell-backed facets moved on this ticket.
    *
@@ -173,7 +181,7 @@ describe('the SDK owns its own implementation', () => {
    * `host/registerFacets` to stand in for the shell, the same way `sdk/barrelCycle.test.ts`
    * does. That is a statement about the test, not an edge in the shipped package.
    */
-  it('nothing under web/src/sdk/lib resolves outside the SDK', () => {
+  it('nothing under sdk/lib resolves outside the SDK', () => {
     const offenders = walk(SDK_LIB)
       .filter(isSource)
       .flatMap((file) =>
@@ -190,7 +198,7 @@ describe('the SDK owns its own implementation', () => {
     expect(
       offenders,
       'sdk/lib ships inside @gphone/sdk and leaves web/ with it — a specifier that climbs out ' +
-        'of web/src/sdk cannot be spelled once the SDK is its own package. Ask through a host ' +
+        'of sdk cannot be spelled once the SDK is its own package. Ask through a host ' +
         'seam or a facet instead.'
     ).toEqual([]);
   });

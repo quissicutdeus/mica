@@ -1,6 +1,6 @@
 import { derived, get, type Readable } from 'svelte/store';
-import { usePersisted } from '../../sdk/host/usePersisted';
-import type { AppNotificationPolicy, NotificationSource } from '../../sdk/vocabulary/shell';
+import { usePersisted } from '../../../../sdk/host/usePersisted';
+import type { AppNotificationPolicy, NotificationSource } from '../../../../sdk/vocabulary/shell';
 import { toastsEnabled, notificationSoundEnabled, badgesEnabled } from './notificationSettings';
 import { contacts } from '../../services/contacts';
 

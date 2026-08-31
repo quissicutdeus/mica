@@ -1,4 +1,4 @@
-import { registerFacet } from '../../sdk/host/current';
+import { registerFacet } from '../../../../sdk/host/current';
 import { submitReport } from '../../services/reports';
 import type { SubmitReportInput } from '@gphone/sdk';
 

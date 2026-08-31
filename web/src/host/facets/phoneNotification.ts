@@ -1,5 +1,5 @@
-import type { SendNotificationOptions } from '../../sdk/host/facets';
-import { registerFacet } from '../../sdk/host/current';
+import type { SendNotificationOptions } from '../../../../sdk/host/facets';
+import { registerFacet } from '../../../../sdk/host/current';
 import { toast } from '../../shell/state/toast';
 
 // MICA-179: defined once in the host contract; re-exported so existing importers keep working.

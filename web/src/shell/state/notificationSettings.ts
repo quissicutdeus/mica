@@ -1,4 +1,4 @@
-import { usePersisted } from '../../sdk/host/usePersisted';
+import { usePersisted } from '../../../../sdk/host/usePersisted';
 
 /**
  * Persistent user settings for OS notifications.

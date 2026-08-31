@@ -10,17 +10,17 @@
     groupNotificationsByConversation,
     type NotificationConversationGroup
   } from './lib/notificationGrouping';
-  import Avatar from '../sdk/ui/Avatar.svelte';
-  import AirplaneIcon from '../sdk/ui/icons/AirplaneIcon.svelte';
-  import ArchiveIcon from '../sdk/ui/icons/ArchiveIcon.svelte';
-  import BluetoothIcon from '../sdk/ui/icons/BluetoothIcon.svelte';
-  import CheckIcon from '../sdk/ui/icons/CheckIcon.svelte';
-  import ChevronDownIcon from '../sdk/ui/icons/ChevronDownIcon.svelte';
-  import CloseIcon from '../sdk/ui/icons/CloseIcon.svelte';
-  import FlashlightIcon from '../sdk/ui/icons/FlashlightIcon.svelte';
-  import MoonIcon from '../sdk/ui/icons/MoonIcon.svelte';
-  import SignalIcon from '../sdk/ui/icons/SignalIcon.svelte';
-  import TrashIcon from '../sdk/ui/icons/TrashIcon.svelte';
+  import Avatar from '../../../sdk/ui/Avatar.svelte';
+  import AirplaneIcon from '../../../sdk/ui/icons/AirplaneIcon.svelte';
+  import ArchiveIcon from '../../../sdk/ui/icons/ArchiveIcon.svelte';
+  import BluetoothIcon from '../../../sdk/ui/icons/BluetoothIcon.svelte';
+  import CheckIcon from '../../../sdk/ui/icons/CheckIcon.svelte';
+  import ChevronDownIcon from '../../../sdk/ui/icons/ChevronDownIcon.svelte';
+  import CloseIcon from '../../../sdk/ui/icons/CloseIcon.svelte';
+  import FlashlightIcon from '../../../sdk/ui/icons/FlashlightIcon.svelte';
+  import MoonIcon from '../../../sdk/ui/icons/MoonIcon.svelte';
+  import SignalIcon from '../../../sdk/ui/icons/SignalIcon.svelte';
+  import TrashIcon from '../../../sdk/ui/icons/TrashIcon.svelte';
   import {
     clearAllNotifications,
     clearNotifications,

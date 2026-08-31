@@ -45,9 +45,9 @@
   } from './state/nearbyMusic';
   import { openApp } from './state/navigation';
   import { closeShade } from './state/shade';
-  import SpeakerIcon from '../sdk/ui/icons/SpeakerIcon.svelte';
-  import SpeakerOffIcon from '../sdk/ui/icons/SpeakerOffIcon.svelte';
-  import UsersIcon from '../sdk/ui/icons/UsersIcon.svelte';
+  import SpeakerIcon from '../../../sdk/ui/icons/SpeakerIcon.svelte';
+  import SpeakerOffIcon from '../../../sdk/ui/icons/SpeakerOffIcon.svelte';
+  import UsersIcon from '../../../sdk/ui/icons/UsersIcon.svelte';
 
   const nearby = $derived($nearbyBroadcasts.length);
   const audible = $derived($audibleBroadcasts.length);

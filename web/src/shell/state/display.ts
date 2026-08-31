@@ -1,6 +1,6 @@
-import { captureZoomBoost } from '../../sdk/host/seam/captureZoom';
+import { captureZoomBoost } from '../../../../sdk/host/seam/captureZoom';
 import { derived, get, writable } from 'svelte/store';
-import { usePersisted } from '../../sdk/host/usePersisted';
+import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { isTypingTarget } from './keybinds';
 
 /**

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import TrashIcon from '../sdk/ui/icons/TrashIcon.svelte';
+  import TrashIcon from '../../../sdk/ui/icons/TrashIcon.svelte';
   import { iconDragState, isRemovableOrigin } from './state/iconDrag';
 
   let element = $state<HTMLElement | null>(null);

@@ -1,5 +1,5 @@
-import type { AppActionOptions } from '../../sdk/host/facets';
-import { registerFacet } from '../../sdk/host/current';
+import type { AppActionOptions } from '../../../../sdk/host/facets';
+import { registerFacet } from '../../../../sdk/host/current';
 import { writable } from 'svelte/store';
 import { toast } from '../../shell/state/toast';
 import { messageOf } from '@gphone/sdk';

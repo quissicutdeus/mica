@@ -27,9 +27,9 @@ import {
   setRingtone,
   RINGTONE_OPTIONS
 } from './audio';
-import type { RingMode, RingtoneId } from '../../sdk/vocabulary/audio';
+import type { RingMode, RingtoneId } from '../../../../sdk/vocabulary/audio';
 import { get } from 'svelte/store';
-import { useStorage } from '../../sdk/host/useStorage';
+import { useStorage } from '../../../../sdk/host/useStorage';
 import { charge } from './charge';
 
 describe('audio', () => {

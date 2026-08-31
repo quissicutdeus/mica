@@ -19,11 +19,11 @@
     SHADE_DRAG_REVEAL_DISTANCE,
     STATUS_BAR_MAX_NOTIFICATION_ICONS
   } from './state/display';
-  import LightningWarningIcon from '../sdk/ui/icons/LightningWarningIcon.svelte';
-  import SignalIcon from '../sdk/ui/icons/SignalIcon.svelte';
-  import BluetoothIcon from '../sdk/ui/icons/BluetoothIcon.svelte';
-  import MusicNoteIcon from '../sdk/ui/icons/MusicNoteIcon.svelte';
-  import BatteryIcon from '../sdk/ui/icons/BatteryIcon.svelte';
+  import LightningWarningIcon from '../../../sdk/ui/icons/LightningWarningIcon.svelte';
+  import SignalIcon from '../../../sdk/ui/icons/SignalIcon.svelte';
+  import BluetoothIcon from '../../../sdk/ui/icons/BluetoothIcon.svelte';
+  import MusicNoteIcon from '../../../sdk/ui/icons/MusicNoteIcon.svelte';
+  import BatteryIcon from '../../../sdk/ui/icons/BatteryIcon.svelte';
   import VolumeHud from './VolumeHud.svelte';
   import NotificationShade from './NotificationShade.svelte';
   import DragGhost from './DragGhost.svelte';

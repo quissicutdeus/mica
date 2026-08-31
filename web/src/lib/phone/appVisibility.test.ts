@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { capabilitiesSatisfy, manifestVisible, type VisibilityFacts } from './appVisibility';
-import type { AppManifest } from '../../sdk/manifest';
+import type { AppManifest } from '../../../../sdk/manifest';
 
 const app = (extra: Partial<AppManifest> = {}): AppManifest =>
   ({

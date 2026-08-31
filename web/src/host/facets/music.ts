@@ -1,4 +1,4 @@
-import { registerFacet } from '../../sdk/host/current';
+import { registerFacet } from '../../../../sdk/host/current';
 import {
   musicSource,
   musicStatus,
@@ -43,9 +43,9 @@ import {
   toggleMuteAllNearby,
   unmuteBroadcaster
 } from '../../shell/state/nearbyMusic';
-import { MAX_AUDIBLE_BROADCASTS } from '../../sdk/lib/musicBroadcast';
+import { MAX_AUDIBLE_BROADCASTS } from '../../../../sdk/lib/musicBroadcast';
 import { isYouTubeSource, thumbnailUrlFor } from '@shared/youtube';
-import { describeMusicError } from '../../sdk/lib/musicErrors';
+import { describeMusicError } from '../../../../sdk/lib/musicErrors';
 
 /**
  * Implementation of the `useMusic` facet — see the `useMusic` hook doc for the contract.

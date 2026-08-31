@@ -19,10 +19,10 @@ const serviceMock = vi.hoisted(() => ({
 vi.mock('../../services/settings', () => serviceMock);
 
 import { appRegistryStore, getFirstBootTime, type AppManifest } from './registry';
-import { hydrateSettings, useStorage } from '../../sdk/host/useStorage';
-import { setTrustedRemoteAppHosts, sha256Hex } from '../../sdk/remoteAppSecurity';
+import { hydrateSettings, useStorage } from '../../../../sdk/host/useStorage';
+import { setTrustedRemoteAppHosts, sha256Hex } from '../../../../sdk/remoteAppSecurity';
 import { capabilities, capabilitiesKnown } from '../../services/capabilities';
-import type { CatalogEntry } from '../../sdk/catalog';
+import type { CatalogEntry } from '../../../../sdk/catalog';
 
 const fetchResponse = (text: string, ok = true, status = 200): Response =>
   ({ ok, status, statusText: '', text: () => Promise.resolve(text) }) as Response;

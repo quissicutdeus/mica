@@ -8,18 +8,18 @@
 import '../../host/registerFacets';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get, writable } from 'svelte/store';
-import { createInProcessHost } from '../../sdk/host/inProcess/createInProcessHost';
-import { registerFacet, resetHostsForTest } from '../../sdk/host/current';
+import { createInProcessHost } from '../../../../sdk/host/inProcess/createInProcessHost';
+import { registerFacet, resetHostsForTest } from '../../../../sdk/host/current';
 import { createIframeHostServer } from './IframeHostServer';
-import { defineApp } from '../../sdk/manifest';
-import { DENIED_FACETS } from '../../sdk/permissions';
+import { defineApp } from '../../../../sdk/manifest';
+import { DENIED_FACETS } from '../../../../sdk/permissions';
 import { is24Hour as shellIs24Hour } from '../state/time';
-import type { ToFrame } from '../../sdk/host/iframe/messages';
-import '../../sdk/host/useContacts';
-import '../../sdk/host/useDisplay';
-import '../../sdk/host/useWallpaper';
-import '../../sdk/host/useSystemHardware';
-import '../../sdk/host/useTheme';
+import type { ToFrame } from '../../../../sdk/host/iframe/messages';
+import '../../../../sdk/host/useContacts';
+import '../../../../sdk/host/useDisplay';
+import '../../../../sdk/host/useWallpaper';
+import '../../../../sdk/host/useSystemHardware';
+import '../../../../sdk/host/useTheme';
 
 /** A namespaced storage key. Built, not quoted: a `gphone:` literal reads as a net event to `server/__tests__/eventNames.test.ts`. */
 const storageKey = (app: string, key: string) => `gphone:${app}:${key}`;

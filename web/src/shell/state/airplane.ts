@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { usePersisted } from '../../sdk/host/usePersisted';
+import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { cellServiceEnabled, setCellServiceEnabled } from './signal';
 import { bluetoothEnabled, setBluetoothEnabled } from './bluetooth';
 

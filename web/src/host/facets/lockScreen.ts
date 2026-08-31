@@ -1,5 +1,5 @@
 import { readable } from 'svelte/store';
-import { registerFacet } from '../../sdk/host/current';
+import { registerFacet } from '../../../../sdk/host/current';
 import { autoLockPolicy, AUTO_LOCK_POLICY_CHOICES } from '../../shell/state/lockScreen';
 import { hasPasscode } from '../../services/passcode';
 

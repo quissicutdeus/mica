@@ -4,20 +4,20 @@ import { get, writable } from 'svelte/store';
 // `./keybinds.ts`, which imports `appRegistryStore` from this file — going through the
 // barrel here would close that cycle and leave `appRegistryStore` unset when `keybinds.ts`
 // evaluates its module-level `derived(appRegistryStore, ...)`.
-import { type AppComponent, type AppManifest, defineApp } from '../../sdk/manifest';
-import { clearAppStorage } from '../../sdk/host/useStorage';
+import { type AppComponent, type AppManifest, defineApp } from '../../../../sdk/manifest';
+import { clearAppStorage } from '../../../../sdk/host/useStorage';
 import { messageOf } from '@gphone/sdk';
 import { capabilities, capabilitiesKnown } from '../../services/capabilities';
-import { usePersisted } from '../../sdk/host/usePersisted';
+import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { placeOnHomeGridIfAbsent } from './homeGrid';
 import {
   getTrustedRemoteAppHosts,
   isTrustedRemoteUrl,
   matchesHash
-} from '../../sdk/remoteAppSecurity';
-import { isCatalogEntry, type CatalogEntry } from '../../sdk/catalog';
+} from '../../../../sdk/remoteAppSecurity';
+import { isCatalogEntry, type CatalogEntry } from '../../../../sdk/catalog';
 
-export type { AppManifest } from '../../sdk/manifest';
+export type { AppManifest } from '../../../../sdk/manifest';
 
 /**
  * Manifests eagerly, components lazily, and the split is the point.

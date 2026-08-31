@@ -1,5 +1,5 @@
 import { derived, readable } from 'svelte/store';
-import { usePersisted } from '../../sdk/host/usePersisted';
+import { usePersisted } from '../../../../sdk/host/usePersisted';
 
 /**
  * Whether the phone animates, and the one place that question is answered.
@@ -64,7 +64,7 @@ import { usePersisted } from '../../sdk/host/usePersisted';
  * a `requestAnimationFrame` loop of its own. Those are per-call-site problems.
  */
 
-import type { MotionPreference } from '../../sdk/vocabulary/display';
+import type { MotionPreference } from '../../../../sdk/vocabulary/display';
 
 export const MOTION_PREFERENCE_DEFAULT: MotionPreference = 'system';
 

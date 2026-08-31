@@ -12,8 +12,8 @@ import * as fetchNuiModule from '../nui/fetchNui';
  * applied. Pointing the seam at this module's spied namespace makes the single
  * `vi.spyOn(fetchNuiModule, 'fetchNui')` below cover both routes.
  */
-import { registerNuiTransport } from '../sdk/nui/transport';
-import * as thumbnailModule from '../sdk/lib/thumbnail';
+import { registerNuiTransport } from '../../../sdk/nui/transport';
+import * as thumbnailModule from '../../../sdk/lib/thumbnail';
 
 const row = (id: number, extra: Record<string, unknown> = {}) => ({
   id,

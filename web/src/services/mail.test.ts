@@ -12,7 +12,7 @@ import * as fetchNuiModule from '../nui/fetchNui';
  * applied. Pointing the seam at this module's spied namespace makes the single
  * `vi.spyOn(fetchNuiModule, 'fetchNui')` below cover both routes.
  */
-import { registerNuiTransport } from '../sdk/nui/transport';
+import { registerNuiTransport } from '../../../sdk/nui/transport';
 
 describe('mailStore', () => {
   beforeEach(() => {

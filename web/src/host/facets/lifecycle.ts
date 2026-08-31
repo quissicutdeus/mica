@@ -1,4 +1,4 @@
-import { registerFacet } from '../../sdk/host/current';
+import { registerFacet } from '../../../../sdk/host/current';
 import { onDestroy } from 'svelte';
 import { currentApp, goHome, consumeAppProps } from '../../shell/state/navigation';
 import { registerHandler } from '../../shell/state/keybinds';

@@ -59,11 +59,11 @@ Native CSS nesting **is** fine — postcss handles it.
 
 ## Where styles live
 
-- `web/src/sdk/app.css` — Material 3 tokens (`--color-*`, `--radius-*`,
-  `--text-*`, `--shadow-elevation-*`, `--duration-*`, `--ease-*`) plus the few
-  rules that don't fit the utility model.
-- `web/src/sdk/app-utilities.css` — hand-authored flat utilities, one class per
-  call site, each resolving to a token. **Check for an existing class before
+- `sdk/app.css` — Material 3 tokens (`--color-*`, `--radius-*`, `--text-*`,
+  `--shadow-elevation-*`, `--duration-*`, `--ease-*`) plus the few rules that
+  don't fit the utility model.
+- `sdk/app-utilities.css` — hand-authored flat utilities, one class per call
+  site, each resolving to a token. **Check for an existing class before
   inventing one**; prefer the existing scale over an arbitrary value; add a
   class here rather than an inline `style=`.
 - A component `<style>` block only for what a utility genuinely can't express

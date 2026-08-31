@@ -2,7 +2,7 @@ import { derived } from 'svelte/store';
 import { isAdmin } from '../../services/admin';
 import { capabilities } from '../../services/capabilities';
 import { manifestVisible } from '../../lib/phone/appVisibility';
-import type { AppManifest } from '../../sdk/manifest';
+import type { AppManifest } from '../../../../sdk/manifest';
 
 /**
  * `lib/appVisibility.ts`'s rule, wired to the two stores that answer it — one question,

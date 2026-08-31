@@ -20,7 +20,7 @@
   import { callStore } from '../services/call';
   import { openApp } from './state/navigation';
   import { fade } from '@gphone/sdk';
-  import PhoneIcon from '../sdk/ui/icons/PhoneIcon.svelte';
+  import PhoneIcon from '../../../sdk/ui/icons/PhoneIcon.svelte';
 
   /**
    * `gphone_emergency_number` does not exist as a convar yet — reading one from `web/`

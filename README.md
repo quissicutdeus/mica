@@ -968,10 +968,11 @@ gphone/
 ├── client/                       # Client-side systems (Animation, Battery, Camera, Call, Relay, etc.)
 ├── server/                       # Server-side services, FrameworkBridge, AuditLogger, & Database access
 ├── shared/                       # Shared types, interfaces, and constants
+├── sdk/                          # @gphone/sdk: the only thing an app may import — its own workspace package
 ├── web/                          # Svelte 5 + Vite frontend application (hand-written CSS)
 │   └── src/
 │       ├── apps/                 # One directory per app — the registry discovers them, nothing registers them
-│       ├── sdk/                  # @gphone/sdk: the only thing an app may import
+│       ├── host/                 # The phone's implementations of the SDK's facet contract
 │       ├── shell/                # The phone around the apps: frame, launcher, navigation, state
 │       └── services/             # Stores backing the SDK hooks; apps reach these through the SDK, never by path
 ├── docker/serve/                 # The demo image's static file server (Go, stdlib only)

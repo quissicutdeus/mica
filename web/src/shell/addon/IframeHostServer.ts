@@ -1,16 +1,16 @@
 import { get } from 'svelte/store';
-import type { Host } from '../../sdk/host/protocol';
-import { AppPermissionError } from '../../sdk/host/protocol';
-import { facets } from '../../sdk/host/current';
-import { permissionOfFacet, DENIED_FACETS } from '../../sdk/permissions';
-import type { AppManifest } from '../../sdk/manifest';
+import type { Host } from '../../../../sdk/host/protocol';
+import { AppPermissionError } from '../../../../sdk/host/protocol';
+import { facets } from '../../../../sdk/host/current';
+import { permissionOfFacet, DENIED_FACETS } from '../../../../sdk/permissions';
+import type { AppManifest } from '../../../../sdk/manifest';
 import type {
   ToFrame,
   ToShell,
   HydratePayload,
   AddOnConstants
-} from '../../sdk/host/iframe/messages';
-import { isCallbackRef } from '../../sdk/host/iframe/messages';
+} from '../../../../sdk/host/iframe/messages';
+import { isCallbackRef } from '../../../../sdk/host/iframe/messages';
 import { themeStyleStore } from '../state/theme';
 import { is24Hour } from '../state/time';
 import { messageOf } from '@gphone/sdk';

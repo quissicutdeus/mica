@@ -9,7 +9,7 @@ import '../../host/registerFacets';
 import { describe, it, expect } from 'vitest';
 import { time, is24Hour, formattedTime } from './time';
 import { get } from 'svelte/store';
-import { useStorage } from '../../sdk/host/useStorage';
+import { useStorage } from '../../../../sdk/host/useStorage';
 
 describe('time store', () => {
   it('formats time in 12-hour format by default', () => {

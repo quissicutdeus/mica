@@ -1,4 +1,4 @@
-import { registerFacet } from '../../sdk/host/current';
+import { registerFacet } from '../../../../sdk/host/current';
 import { onDestroy } from 'svelte';
 import { clearAppEvents, subscribeAppEvent } from '../../shell/state/appEvents';
 import type { AppEvent } from '@gphone/sdk';

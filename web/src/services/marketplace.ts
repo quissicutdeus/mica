@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { useService } from '../sdk/host/useService';
+import { useService } from '../../../sdk/host/useService';
 import type { Listing } from '@shared/types';
 import type { CreateListingInput, ListingPage } from '@gphone/sdk';
 

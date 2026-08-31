@@ -1,6 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import { isBrowser } from '@gphone/sdk';
-import { usePersisted } from '../../sdk/host/usePersisted';
+import { usePersisted } from '../../../../sdk/host/usePersisted';
 
 import type { TimeState } from '@gphone/sdk';
 

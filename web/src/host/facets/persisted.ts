@@ -1,11 +1,11 @@
-import type { PersistedOptions } from '../../sdk/host/facets';
-import { registerFacet } from '../../sdk/host/current';
+import type { PersistedOptions } from '../../../../sdk/host/facets';
+import { registerFacet } from '../../../../sdk/host/current';
 import { writable, type Writable } from 'svelte/store';
 import { storage as storageFacet } from './storage';
 import {
   registerPersistedRehydrate,
   registerPersistedReset
-} from '../../sdk/host/seam/persistedRegistry';
+} from '../../../../sdk/host/seam/persistedRegistry';
 import { markUnsynced } from '../settingsSync';
 
 // MICA-179: defined once in the host contract; re-exported so existing importers keep working.

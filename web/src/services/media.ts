@@ -1,9 +1,9 @@
 import { get } from 'svelte/store';
-import { createPagedStore } from '../sdk/createPagedStore';
+import { createPagedStore } from '../../../sdk/createPagedStore';
 import { fetchNui } from '../nui/fetchNui';
 import { makeThumbnail } from '@gphone/sdk';
 import type { MediaItem, MediaPreview } from '@shared/types';
-import type { DeletedMediaItem } from '../sdk/vocabulary/media';
+import type { DeletedMediaItem } from '../../../sdk/vocabulary/media';
 
 /**
  * Three columns, seven rows.

@@ -4,7 +4,7 @@ import { isBatteryDead } from './charge';
 import { isPhoneOpen } from './phoneOpen';
 import { addNotificationItem, clearNotifications } from '../../services/notifications';
 import { notificationAllows } from './notificationPolicy';
-import type { ToastMessage } from '../../sdk/vocabulary/shell';
+import type { ToastMessage } from '../../../../sdk/vocabulary/shell';
 
 let toastCounter = 0;
 

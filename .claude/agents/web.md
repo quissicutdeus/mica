@@ -2,8 +2,8 @@
 name: web
 description: >-
   Build or change the phone's UI — any Svelte component, CSS, utility class,
-  colour, or layout under `web/src`, excluding `web/src/sdk`, which the `sdk`
-  agent owns. Named for the Massassi, who raised temples that still stand on
+  colour, or layout under `web/src`, excluding `sdk`, which the `sdk` agent
+  owns. Named for the Massassi, who raised temples that still stand on
   foundations far older than they look: FiveM's CEF is Chromium 103, so anything
   newer renders perfectly in the dev browser and in Playwright and is broken in
   game.
@@ -25,9 +25,9 @@ below repeats any of that; it's what the skill doesn't cover.
 
 An inline `style=` attribute is **outside PostCSS entirely**, so a `var()` that
 resolves to nothing or a colour function past the CEF-103 floor reaches CEF
-untouched and silently drops the declaration. `web/src/sdk/cef.test.ts` fails on
-both — prefer a utility class in `app-utilities.css` over `style=` for exactly
-this reason.
+untouched and silently drops the declaration. `sdk/cef.test.ts` fails on both —
+prefer a utility class in `app-utilities.css` over `style=` for exactly this
+reason.
 
 Relative colour syntax (`rgb(from ...)`) is also unsupported at this floor and
 isn't in the skill's banned table; treat it the same as `color-mix()`.
@@ -44,8 +44,8 @@ Global state is `writable`/`derived` stores in `web/src/services/` or
 a global-state workaround. Never add a raw `keydown` listener for a phone-level
 action — declare it in `shared/keybinds.ts` and claim it via `useKeybinds()`.
 
-Prefer an existing utility in `web/src/sdk/app-utilities.css` over a bespoke
-rule or an inline `style=`. Never pass unsanitized player content to `{@html}`.
+Prefer an existing utility in `sdk/app-utilities.css` over a bespoke rule or an
+inline `style=`. Never pass unsanitized player content to `{@html}`.
 
 ## Keep what you learn
 

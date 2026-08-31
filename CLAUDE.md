@@ -36,9 +36,9 @@ is running:
   Carries §2.9 and the `defineService` rules.
 - `web` — `web/src/`: any component, CSS, utility class or layout. Carries the
   Chromium 103 floor and the `Screen` sizing rules.
-- `sdk` — `web/src/sdk/`: a hook, a UI primitive, the permission table, the
-  manifest contract. Carries the rule that everything here is public and breaks
-  add-ons nobody in this repo can see.
+- `sdk` — `sdk/`: a hook, a UI primitive, the permission table, the manifest
+  contract. Carries the rule that everything here is public and breaks add-ons
+  nobody in this repo can see.
 - `docs` — `docs/`, README, this file. Carries "write from the code, not from
   the docs".
 - `e2e` — `web/e2e/`: Playwright specs and flake. Carries `retries: 0` and what

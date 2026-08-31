@@ -17,8 +17,8 @@ const serviceMock = vi.hoisted(() => ({
 }));
 vi.mock('../services/settings', () => serviceMock);
 
-import { usePersisted } from '../sdk/host/usePersisted';
-import { clearAppStorage, hydrateSettings, useStorage } from '../sdk/host/useStorage';
+import { usePersisted } from '../../../sdk/host/usePersisted';
+import { clearAppStorage, hydrateSettings, useStorage } from '../../../sdk/host/useStorage';
 import { __resetSettingsSync } from './settingsSync';
 
 /**

@@ -91,7 +91,7 @@ an answer:
 
 `MusicPlayer.svelte` reads the player's `onError` frames and puts the phone into
 `musicStatus: 'error'` with a reason and the raw code
-(`web/src/sdk/lib/musicErrors.ts`):
+(`sdk/lib/musicErrors.ts`):
 
 | On screen                          | Reason          | Codes      |
 | ---------------------------------- | --------------- | ---------- |

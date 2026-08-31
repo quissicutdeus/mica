@@ -1,10 +1,10 @@
 <script lang="ts">
   import { toast } from './state/toast';
-  import type { ToastAction, ToastMessage } from '../sdk/vocabulary/shell';
+  import type { ToastAction, ToastMessage } from '../../../sdk/vocabulary/shell';
   import { fly } from '@gphone/sdk';
-  import CloseIcon from '../sdk/ui/icons/CloseIcon.svelte';
-  import SendIcon from '../sdk/ui/icons/SendIcon.svelte';
-  import Avatar from '../sdk/ui/Avatar.svelte';
+  import CloseIcon from '../../../sdk/ui/icons/CloseIcon.svelte';
+  import SendIcon from '../../../sdk/ui/icons/SendIcon.svelte';
+  import Avatar from '../../../sdk/ui/Avatar.svelte';
   import { appRegistryStore } from './state/registry';
   import SwipeableToast from './SwipeableToast.svelte';
 

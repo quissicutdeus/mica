@@ -8,7 +8,7 @@
 import '../../host/registerFacets';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
-import { clearAppStorage } from '../../sdk/host/useStorage';
+import { clearAppStorage } from '../../../../sdk/host/useStorage';
 import { privacyNoticeSeen, markPrivacyNoticeSeen, PRIVACY_NOTICE_TEXT } from './privacyNotice';
 
 describe('privacy notice first-run flag (MICA-70)', () => {

@@ -1,8 +1,8 @@
 import { parseRemoteAppConfig, type RemoteAppConfigPayload } from '@shared/nui';
 import { fetchNui } from '../../nui/fetchNui';
-import { setRemoteCatalogUrl } from '../../sdk/catalog';
+import { setRemoteCatalogUrl } from '../../../../sdk/catalog';
 import { appRegistryStore } from './registry';
-import { setTrustedRemoteAppHosts } from '../../sdk/remoteAppSecurity';
+import { setTrustedRemoteAppHosts } from '../../../../sdk/remoteAppSecurity';
 
 /**
  * The one thing that ever fills the remote add-on trust boundary in a shipped build.

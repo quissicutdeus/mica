@@ -1,6 +1,6 @@
-import { registerFacet } from '../../sdk/host/current';
+import { registerFacet } from '../../../../sdk/host/current';
 import { audio } from '../../shell/state/audio';
-import type { SoundEffect } from '../../sdk/vocabulary/audio';
+import type { SoundEffect } from '../../../../sdk/vocabulary/audio';
 
 /**
  * The phone's sound effects.

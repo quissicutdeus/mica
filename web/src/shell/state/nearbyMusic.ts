@@ -1,5 +1,5 @@
 import { derived, get, writable, type Readable, type Writable } from 'svelte/store';
-import { usePersisted } from '../../sdk/host/usePersisted';
+import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { isPlaylistId, isVideoId } from '@shared/youtube';
 import { MAX_NEARBY_BROADCASTS } from '@shared/musicBroadcast';
 import type { AudibleBroadcast, NearbyBroadcast } from '@gphone/sdk';
@@ -7,7 +7,7 @@ import {
   MAX_AUDIBLE_BROADCASTS,
   joinOffsetSeconds,
   rankAudible
-} from '../../sdk/lib/musicBroadcast';
+} from '../../../../sdk/lib/musicBroadcast';
 
 /**
  * Other people's music. MICA-111 phase 2, the phone's half.

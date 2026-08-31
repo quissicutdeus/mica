@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { hydrateSettings } from '../sdk/host/useStorage';
+  import { hydrateSettings } from '../../../sdk/host/useStorage';
   import { migrateAppDrawerHintForExistingSaves } from './state/onboarding';
   import { appRegistryStore } from './state/registry';
   import { loadRemoteAppConfig } from './state/remoteAppConfig';
@@ -23,7 +23,7 @@
   } from './state/display';
   import { get } from 'svelte/store';
   import { callStore } from '../services/call';
-  import type { CallStatus } from '../sdk/vocabulary/call';
+  import type { CallStatus } from '../../../sdk/vocabulary/call';
   import { contacts } from '../services/contacts';
   import { isPreviewingPhoto } from '../services/camera';
   import PhoneFrame from './PhoneFrame.svelte';
@@ -38,9 +38,9 @@
   import ToastContainer from './ToastHost.svelte';
   import ErrorBoundary from './ErrorBoundary.svelte';
   import NotNetworkScreen from './NotNetworkScreen.svelte';
-  import HostProvider from '../sdk/HostProvider.svelte';
-  import { hostForApp } from '../sdk/host/inProcess/createInProcessHost';
-  import { installSystemHost } from '../sdk/host/inProcess/system';
+  import HostProvider from '../../../sdk/HostProvider.svelte';
+  import { hostForApp } from '../../../sdk/host/inProcess/createInProcessHost';
+  import { installSystemHost } from '../../../sdk/host/inProcess/system';
   import { clampedSignalLevel } from './state/signal';
   import { audio } from './state/audio';
   import { isPhoneOpen } from './state/phoneOpen';

@@ -1,4 +1,4 @@
-import { registerNuiTransport } from '../sdk/nui/transport';
+import { registerNuiTransport } from '../../../sdk/nui/transport';
 import { getTransport } from './transport';
 
 /**

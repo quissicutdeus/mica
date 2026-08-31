@@ -21,10 +21,10 @@ import {
   type AppComponent,
   type AppPermission,
   type AppProps
-} from './sdk/manifest';
-import { HOST_CONTEXT_KEY } from './sdk/host/protocol';
-import { createInProcessHost } from './sdk/host/inProcess/createInProcessHost';
-import { registerHost } from './sdk/host/current';
+} from '../../sdk/manifest';
+import { HOST_CONTEXT_KEY } from '../../sdk/host/protocol';
+import { createInProcessHost } from '../../sdk/host/inProcess/createInProcessHost';
+import { registerHost } from '../../sdk/host/current';
 
 /**
  * Test-only SDK surface. **Not exported from `@gphone/sdk`** — importing this pulls in

@@ -1,4 +1,4 @@
-import { registerFacet } from '../../sdk/host/current';
+import { registerFacet } from '../../../../sdk/host/current';
 import { fetchSettings } from '../../services/settings';
 import { isUnsynced, markUnsynced, queueClearApp, queueRemove, queueWrite } from '../settingsSync';
 import {
@@ -6,8 +6,8 @@ import {
   persistedResetsFor,
   registerPersistedRehydrate,
   registerPersistedReset
-} from '../../sdk/host/seam/persistedRegistry';
-import { registerSettingsHydrator } from '../../sdk/host/seam/settingsHydration';
+} from '../../../../sdk/host/seam/persistedRegistry';
+import { registerSettingsHydrator } from '../../../../sdk/host/seam/settingsHydration';
 
 const memoryStore = new Map<string, string>();
 

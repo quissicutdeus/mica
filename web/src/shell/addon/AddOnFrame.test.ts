@@ -10,14 +10,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import AddOnFrame from './AddOnFrame.svelte';
 import { appRegistryStore } from '../state/registry';
-import { createInProcessHost } from '../../sdk/host/inProcess/createInProcessHost';
-import { defineApp, type AppManifest } from '../../sdk/manifest';
+import { createInProcessHost } from '../../../../sdk/host/inProcess/createInProcessHost';
+import { defineApp, type AppManifest } from '../../../../sdk/manifest';
 // Registered by import alone. The reload test below drives a real `hello` through the real
 // server, and its `hydrate` payload reads every one of these facets for its constants.
-import '../../sdk/host/useDisplay';
-import '../../sdk/host/useWallpaper';
-import '../../sdk/host/useSystemHardware';
-import '../../sdk/host/useTheme';
+import '../../../../sdk/host/useDisplay';
+import '../../../../sdk/host/useWallpaper';
+import '../../../../sdk/host/useSystemHardware';
+import '../../../../sdk/host/useTheme';
 
 /**
  * jsdom does not execute an iframe's `srcdoc`, so nothing inside the frame ever really

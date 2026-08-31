@@ -37,13 +37,20 @@
     // `vite build`" without a second resolution graph to keep in sync.
     "paths": {
       "@shared/*": ["../shared/*"],
-      // MICA-172: explicit, and it must stay ahead of the `@gphone/sdk/*` wildcard below.
-      // `testing.ts` moved to `src/testing.ts` when the in-process facets left the SDK — it
-      // renders an app the way the shell does, so it is a phone helper, not a package export.
-      // The specifier is unchanged; only what backs it moved.
+      // MICA-172: explicit and first, and it is the one specifier that does NOT resolve
+      // into the package. `testing.ts` renders an app the way the shell does, so it is a
+      // phone helper rather than published contract (`sdk/publicSurface.test.ts` says so),
+      // and it stays on this side. Documented in `docs/writing-an-app.md`, so the name is
+      // kept even though a package subpath pointing back into the consumer reads oddly.
       "@gphone/sdk/testing": ["./src/testing.ts"],
-      "@gphone/sdk": ["./src/sdk/index.ts"],
-      "@gphone/sdk/*": ["./src/sdk/*"]
+      // The `@gphone/sdk/*` wildcard is deliberately GONE. Once `sdk/` is a real workspace
+      // package its subpaths resolve through its own `exports` map, so the wildcard is
+      // unnecessary — and it was actively harmful twice: it hid a broken `@gphone/sdk/testing`
+      // resolution behind a fallback, and it made `@gphone/sdk/lib/m3` typecheck while failing
+      // at `vite build`, because `vite.config.ts` has no matching alias. Enumerate instead.
+      "@gphone/sdk": ["../sdk/index.ts"],
+      "@gphone/sdk/app": ["../sdk/app.ts"],
+      "@gphone/sdk/core": ["../sdk/core.ts"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte"]

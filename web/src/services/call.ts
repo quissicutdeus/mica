@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
-import type { CallState, CallStatus } from '../sdk/vocabulary/call';
+import type { CallState, CallStatus } from '../../../sdk/vocabulary/call';
 
 const initialState: CallState = {
   status: 'idle',

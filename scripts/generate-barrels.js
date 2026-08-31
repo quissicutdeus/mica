@@ -57,8 +57,8 @@ ${lines}
  * until an add-on tries to import it and cannot.
  */
 const generateIconIndex = () => {
-  const dir = 'web/src/sdk/icons.ts';
-  const iconDir = path.resolve(__dirname, '..', 'web/src/sdk/ui/icons');
+  const dir = 'sdk/icons.ts';
+  const iconDir = path.resolve(__dirname, '..', 'sdk/ui/icons');
 
   if (!fs.existsSync(iconDir)) {
     console.warn(`Directory not found: ${iconDir}`);
@@ -137,8 +137,8 @@ generateIndex('server/services', 'import');
 // `protocol`/`current`/`guard` are the host protocol's own plumbing, not SDK surface: the
 // shell and `sdk/index.ts` import them by path, and an app reaches `AppPermissionError`/
 // `Host` only through `sdk/index.ts`'s own re-export (MICA-16 step 3).
-generateIndex('web/src/sdk/host', 'export', ['protocol', 'current', 'guard']);
-generateIndex('web/src/sdk/kit', 'export');
+generateIndex('sdk/host', 'export', ['protocol', 'current', 'guard']);
+generateIndex('sdk/kit', 'export');
 generateIconIndex();
 generateMigrationsIndex();
 console.log('Done.');

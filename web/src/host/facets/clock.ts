@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
-import { registerFacet } from '../../sdk/host/current';
-import { registerClockPreference } from '../../sdk/host/seam/clockPreference';
+import { registerFacet } from '../../../../sdk/host/current';
+import { registerClockPreference } from '../../../../sdk/host/seam/clockPreference';
 import { time, is24Hour, formattedTime } from '../../shell/state/time';
 
 /**

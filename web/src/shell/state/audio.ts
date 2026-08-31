@@ -1,5 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
-import { usePersisted } from '../../sdk/host/usePersisted';
+import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { isBatteryDead } from './charge';
 import { isBrowser } from '@gphone/sdk';
 import type {
@@ -8,7 +8,7 @@ import type {
   RingtoneId,
   RingtoneOption,
   SoundEffect
-} from '../../sdk/vocabulary/audio';
+} from '../../../../sdk/vocabulary/audio';
 
 const sanitizeVolume = (value: unknown): number => {
   const n = Number(value);

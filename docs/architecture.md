@@ -27,20 +27,19 @@ read that before this.
 | `web/src/shell/`               | CEF+browser  | The OS: `Shell.svelte`, `PhoneFrame`, `Launcher`, `ToastHost`                |
 | `web/src/shell/state/`         | CEF+browser  | State the phone itself owns: navigation, keybinds, hardware, size            |
 | `web/src/services/`            | CEF+browser  | Client-side cache of each server service. Reached via the SDK                |
-| `web/src/sdk/`                 | CEF+browser  | `@gphone/sdk` — the public surface for apps (AGENTS.md §2.7)                 |
-| `web/src/sdk/ui/`              | CEF+browser  | UI primitives and icons apps may build with                                  |
+| `sdk/`                         | CEF+browser  | `@gphone/sdk` — the public surface for apps (AGENTS.md §2.7)                 |
+| `sdk/ui/`                      | CEF+browser  | UI primitives and icons apps may build with                                  |
 | `web/src/apps/`                | CEF+browser  | One dir per app: `manifest.ts` + `index.svelte` + `Icon.svelte`              |
 | `web/src/nui/`                 | CEF+browser  | The bridge: transport, `fetchNui`, `useNuiEvent`, browser mocks              |
 | `web/src/lib/`                 | CEF+browser  | Helpers with no gPhone state and no I/O — formatters, markdown               |
 
 Seven `index.ts` files in that tree are **generated** by
 `scripts/generate-barrels.js` — `client/services/`, `client/game/`,
-`server/services/`, `server/migrations/`, `web/src/sdk/host/`,
-`web/src/sdk/kit/`, and `web/src/sdk/icons.ts`. Add a file to the directory; do
-not edit the index. They are committed, and `pnpm verify` regenerates them as
-its first step, so a hand-added hook is picked up without a build — the
-generator used to run only inside `build` and `watch`, both of which come
-_after_ the typecheck gate.
+`server/services/`, `server/migrations/`, `sdk/host/`, `sdk/kit/`, and
+`sdk/icons.ts`. Add a file to the directory; do not edit the index. They are
+committed, and `pnpm verify` regenerates them as its first step, so a hand-added
+hook is picked up without a build — the generator used to run only inside
+`build` and `watch`, both of which come _after_ the typecheck gate.
 
 The migrations barrel is the odd member: an ordered **array** rather than
 re-exports, because the runner iterates it in apply order and a module imported

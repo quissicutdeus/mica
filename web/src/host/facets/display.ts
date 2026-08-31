@@ -1,4 +1,4 @@
-import { registerFacet } from '../../sdk/host/current';
+import { registerFacet } from '../../../../sdk/host/current';
 import {
   displaySize,
   DISPLAY_SIZE_DEFAULT,

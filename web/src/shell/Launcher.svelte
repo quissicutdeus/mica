@@ -3,7 +3,7 @@
   import { badgeAllowed } from './state/notificationPolicy';
   import { get } from 'svelte/store';
   import { appVisible } from './state/appVisibility';
-  import AppIcon from '../sdk/ui/AppIcon.svelte';
+  import AppIcon from '../../../sdk/ui/AppIcon.svelte';
   import { attachLongPressDrag } from '../lib/phone/longPressDrag';
   import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/phone/pointerDrag';
   import { abandonSheetDrag, DRAWER_OPEN_COMMIT } from '../lib/phone/sheetDrag';

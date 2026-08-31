@@ -9,7 +9,7 @@ import { get } from 'svelte/store';
  * and the failure reads as fixture trouble rather than as a stub that never applied. Stub
  * the seam and both sides of it are covered.
  */
-import * as fetchNuiModule from '../sdk/nui/transport';
+import * as fetchNuiModule from '../../../sdk/nui/transport';
 
 describe('contacts store', () => {
   beforeEach(() => {

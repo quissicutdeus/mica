@@ -1,5 +1,5 @@
-import type { CancelTimer } from '../../sdk/host/facets';
-import { registerFacet } from '../../sdk/host/current';
+import type { CancelTimer } from '../../../../sdk/host/facets';
+import { registerFacet } from '../../../../sdk/host/current';
 import { onAppUnmount } from './lifecycle';
 
 // MICA-179: defined once in the host contract; re-exported so existing importers keep working.

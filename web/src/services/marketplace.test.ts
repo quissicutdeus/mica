@@ -10,9 +10,9 @@ const serviceMock = vi.hoisted(() => ({ call: vi.fn() }));
  * because assertions happened to fail nearby. The `import type` below is inert at runtime
  * and exists solely so the compiler fails if this path ever stops resolving.
  */
-import type * as UseServiceModule from '../sdk/host/useService';
+import type * as UseServiceModule from '../../../sdk/host/useService';
 void (null as unknown as typeof UseServiceModule);
-vi.mock('../sdk/host/useService', () => ({ useService: () => serviceMock }));
+vi.mock('../../../sdk/host/useService', () => ({ useService: () => serviceMock }));
 
 import {
   feedStore,

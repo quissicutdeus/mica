@@ -1,11 +1,11 @@
 import { get } from 'svelte/store';
-import { usePersisted } from '../../sdk/host/usePersisted';
+import { usePersisted } from '../../../../sdk/host/usePersisted';
 
 // The wording itself lives in `sdk/privacyNotice.ts`, state-free, so `sdk/addon.ts` can
 // re-export it into a sandboxed add-on bundle unchanged. Re-exported here too, so anything
 // already importing this file for the "seen" flag can reach the text from the one place
 // it actually lives without a second import line.
-export { PRIVACY_NOTICE_TEXT } from '../../sdk/privacyNotice';
+export { PRIVACY_NOTICE_TEXT } from '../../../../sdk/privacyNotice';
 
 /**
  * Shown once, to every character — new and existing alike.

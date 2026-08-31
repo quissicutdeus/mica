@@ -1,4 +1,4 @@
-import { registerFacet } from '../../sdk/host/current';
+import { registerFacet } from '../../../../sdk/host/current';
 import { fetchNui } from '../../nui/fetchNui';
 import { GENERIC_SERVICE_ACTION } from '@shared/rpc';
 

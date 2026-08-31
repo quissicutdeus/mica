@@ -1,5 +1,5 @@
 import { readable } from 'svelte/store';
-import { registerFacet } from '../../sdk/host/current';
+import { registerFacet } from '../../../../sdk/host/current';
 import { charge } from '../../shell/state/charge';
 import { signalLevel, cellServiceEnabled } from '../../shell/state/signal';
 import { bluetoothEnabled, isBluetoothDiscoverable } from '../../shell/state/bluetooth';

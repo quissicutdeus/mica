@@ -153,15 +153,15 @@ not work around it.
    or `scripts/generate-barrels.js` output paths without asking.
 7. **SDK First.** Everything in `web/src/apps/`, and every external add-on,
    consumes the OS strictly through `@gphone/sdk` — the data and OS-service
-   hooks, the UI primitives in `web/src/sdk/ui/`, and the four an app is built
-   out of: `useAppLevels`, `useAppAction`, `useDeepLink`, `onAppForeground`. The
+   hooks, the UI primitives in `sdk/ui/`, and the four an app is built out of:
+   `useAppLevels`, `useAppAction`, `useDeepLink`, `onAppForeground`. The
    exhaustive list is the SDK's own exports;
    [`docs/writing-an-app.md`](docs/writing-an-app.md) is the walkthrough. Three
    things that list will not tell you:
 
    - **Relative imports out of an app are prohibited** — into `shell/`,
-     `services/`, `nui/`, `lib/` or `sdk/` by path.
-     `web/src/sdk/boundary.test.ts` enforces it.
+     `services/`, `nui/`, `lib/` or `sdk/` by path. `sdk/boundary.test.ts`
+     enforces it.
    - **`useNuiBridge` is on `@gphone/sdk/core`, and only a `core: true` app may
      import it.** It is the raw transport, and `boundary.test.ts` refuses it to
      add-ons. A `core: false` bundle has no NUI at all: it runs in a sandboxed
@@ -364,10 +364,9 @@ No external state libraries — no Redux, Zustand, XState, Nanostores.
 ## 5. Styling
 
 Plain, hand-written CSS — no Tailwind, no CSS framework, no CSS modules, no
-styled-components. Two files carry the whole system: `web/src/sdk/app.css`
-(Material 3 design tokens on `:root`) and `web/src/sdk/app-utilities.css` (a
-flat, hand-authored utility layer, one class per call site, each resolving to a
-token).
+styled-components. Two files carry the whole system: `sdk/app.css` (Material 3
+design tokens on `:root`) and `sdk/app-utilities.css` (a flat, hand-authored
+utility layer, one class per call site, each resolving to a token).
 
 - **Reach for an existing class in `app-utilities.css` before inventing one**,
   and prefer the scale already there over an arbitrary value. Add a class rather
@@ -435,9 +434,8 @@ Player-supplied strings — message bodies, contact names, note contents — mus
 never reach `{@html}` unsanitized. `marked` passes raw HTML through by default
 and has no built-in sanitizer.
 
-- Render user content only via the sanitizing helper in
-  `web/src/sdk/lib/markdown.ts`. Never call `marked.parse()` directly in a
-  component.
+- Render user content only via the sanitizing helper in `sdk/lib/markdown.ts`.
+  Never call `marked.parse()` directly in a component.
 - Never add `a` to the DOMPurify allowlist. Anchor navigation reloads the CEF
   instance and drops all state, so a link in a message body is a griefing
   vector.
@@ -454,10 +452,10 @@ defacement.
 `permissions` on a manifest is enforced. A `core: false` add-on runs in a
 sandboxed `<iframe sandbox="allow-scripts" srcdoc>` with an opaque origin and no
 route to the shell but `postMessage`, and the **shell** re-checks every
-permission against `HOOK_OF_FACET` in `web/src/sdk/permissions.ts` before
-answering a call — the frame's own check is a courtesy, not the boundary. A
-`core: true` app still runs in-process. §2.9 stays the boundary for privileged
-server actions either way.
+permission against `HOOK_OF_FACET` in `sdk/permissions.ts` before answering a
+call — the frame's own check is a courtesy, not the boundary. A `core: true` app
+still runs in-process. §2.9 stays the boundary for privileged server actions
+either way.
 
 **Declaring more than the scan finds is fine. Declaring less is a lie to the
 person reading it.** The per-permission detail, the outbound `networkHosts`
@@ -486,13 +484,12 @@ convention — is in [`docs/architecture.md`](docs/architecture.md).
 
 Two things about it are rules rather than layout, so they live here. **The
 barrels are generated** — `client/services/index.ts`, `client/game/index.ts`,
-`server/services/index.ts`, `server/migrations/index.ts`,
-`web/src/sdk/host/index.ts`, `web/src/sdk/kit/index.ts` and
-`web/src/sdk/icons.ts`, all written by `scripts/generate-barrels.js`, which
-`pnpm verify` runs as its first step: **add a file to the directory; do not edit
-the index.** And **`shared/types.ts` is a path alias, not a workspace package**
-(§3), while `shared/richText.ts` holds the one `@handle` tokenizer the UI
-renders from and the server notifies from.
+`server/services/index.ts`, `server/migrations/index.ts`, `sdk/host/index.ts`,
+`sdk/kit/index.ts` and `sdk/icons.ts`, all written by
+`scripts/generate-barrels.js`, which `pnpm verify` runs as its first step: **add
+a file to the directory; do not edit the index.** And **`shared/types.ts` is a
+path alias, not a workspace package** (§3), while `shared/richText.ts` holds the
+one `@handle` tokenizer the UI renders from and the server notifies from.
 
 ### A NUI round trip touches three files, and fails silently if one is missing
 

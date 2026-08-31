@@ -1,6 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import { isBrowser } from '@gphone/sdk';
-import { usePersisted } from '../../sdk/host/usePersisted';
+import { usePersisted } from '../../../../sdk/host/usePersisted';
 
 /**
  * Cellular network service state. Defaults to ON (true) and persists across reloads.

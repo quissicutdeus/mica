@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Contact } from '@shared/types';
-import type { AppManifest } from '../../sdk/manifest';
+import type { AppManifest } from '../../../../sdk/manifest';
 import type { UIConversation } from '@gphone/sdk';
 import { searchEverything, SEARCH_RESULTS_PER_GROUP } from './searchResults';
 

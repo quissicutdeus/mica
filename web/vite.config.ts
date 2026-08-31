@@ -144,12 +144,12 @@ export default defineConfig({
       // to `src/sdk/index.ts/testing`, which is not a path.
       '@gphone/sdk/testing': path.resolve(import.meta.dirname, './src/testing.ts'),
       // The leaf a manifest imports. Same ordering rule as above, and the reason it exists
-      // is in `src/sdk/app.ts`: a manifest that imports the full barrel closes a cycle,
+      // is in `../sdk/app.ts`: a manifest that imports the full barrel closes a cycle,
       // because the barrel reaches the registry and the registry globs every manifest.
-      '@gphone/sdk/app': path.resolve(import.meta.dirname, './src/sdk/app.ts'),
+      '@gphone/sdk/app': path.resolve(import.meta.dirname, '../sdk/app.ts'),
       // Core-only surface. Same ordering rule as `/testing` above.
-      '@gphone/sdk/core': path.resolve(import.meta.dirname, './src/sdk/core.ts'),
-      '@gphone/sdk': path.resolve(import.meta.dirname, './src/sdk/index.ts')
+      '@gphone/sdk/core': path.resolve(import.meta.dirname, '../sdk/core.ts'),
+      '@gphone/sdk': path.resolve(import.meta.dirname, '../sdk/index.ts')
     },
     conditions: ['browser']
   },
@@ -191,7 +191,18 @@ export default defineConfig({
     // (`docs/dev-loop.md`) because it broke DOMPurify's sanitization without any test
     // noticing on its own.
     environment: 'node',
-    include: ['src/**/*.test.ts', 'src/**/*.spec.ts', '../shared/**/*.test.ts'],
+    // MICA-172: `../sdk/**` mirrors the `../shared/**` entry beside it. The SDK is its
+    // own workspace package now, but it deliberately does NOT get a third Vitest project:
+    // that would mean a second copy of the Svelte plugin, the jsdom opt-in convention, the
+    // `@shared` alias and the `@material/material-color-utilities` inline workaround — and
+    // four copies of a convention is how two of them end up disagreeing. Reaching across a
+    // package boundary in this include is the established precedent, not a new one.
+    include: [
+      'src/**/*.test.ts',
+      'src/**/*.spec.ts',
+      '../shared/**/*.test.ts',
+      '../sdk/**/*.test.ts'
+    ],
     /**
      * Parallel again, and this is the single biggest cost in the local loop: the suite
      * runs in ~12s against ~70s serialized.

@@ -4,7 +4,7 @@
   import { get } from 'svelte/store';
   import { registerHandler } from './state/keybinds';
   import { attachLongPressDrag } from '../lib/phone/longPressDrag';
-  import AppIcon from '../sdk/ui/AppIcon.svelte';
+  import AppIcon from '../../../sdk/ui/AppIcon.svelte';
   import { appRegistryStore } from './state/registry';
   import { appVisible } from './state/appVisibility';
   import { homeGridItems, openFolderId, renameFolder, type HomeGridFolder } from './state/homeGrid';

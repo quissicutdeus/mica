@@ -1,6 +1,6 @@
-import { registerFacet } from '../../sdk/host/current';
+import { registerFacet } from '../../../../sdk/host/current';
 import { setAutoLockPolicy } from '../../shell/state/lockScreen';
-import type { AutoLockPolicy } from '../../sdk/vocabulary/shell';
+import type { AutoLockPolicy } from '../../../../sdk/vocabulary/shell';
 import { setPasscodeRemote, clearPasscodeRemote } from '../../services/passcode';
 
 /**

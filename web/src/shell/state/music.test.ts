@@ -860,7 +860,7 @@ describe('surviving a restart', () => {
   const restart = async (seed: Record<string, unknown>) => {
     vi.resetModules();
     await import('../../host/facets/storage');
-    const { useStorage } = await import('../../sdk/host/useStorage');
+    const { useStorage } = await import('../../../../sdk/host/useStorage');
     const storage = useStorage('settings');
     for (const [key, value] of Object.entries(seed)) storage.setItem(key, value);
     await import('../../host/registerFacets');

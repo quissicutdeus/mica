@@ -1,0 +1,50 @@
+{
+  "extends": "@tsconfig/svelte/tsconfig.json",
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
+    "target": "ES2021",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "typeRoots": ["./node_modules/@types", "../node_modules/@types"],
+    "types": ["node", "svelte", "vite/client"],
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "noUnusedLocals": true,
+    "moduleDetection": "force",
+    /**
+     * MICA-172. TypeScript is pinned to 6.x here for the same reason `web/` is, and it is
+     * the SDK's own reason rather than an inherited one: this package contains 85 `.svelte`
+     * files, so it needs `svelte-check`, which needs `svelte2tsx`, which needs the stable
+     * programmatic compiler API that does not land until TS 7.1. Both packages unblock at
+     * the same moment; there is no version split to design for.
+     *
+     * `@shared` is a sibling from here rather than something to climb out of `web/` to reach
+     * — one of the four reasons this package moved to the root. The `@gphone/sdk` self-
+     * reference exists because the SDK's own test files import through the public specifier
+     * (`barrelCycle.test.ts`, `boundary.test.ts`) to stand where an app stands.
+     */
+    "paths": {
+      "@shared/*": ["../shared/*"],
+      "@gphone/sdk": ["./index.ts"],
+      "@gphone/sdk/app": ["./app.ts"],
+      "@gphone/sdk/core": ["./core.ts"],
+      "@gphone/sdk/testing": ["../web/src/testing.ts"]
+    }
+  },
+  /**
+   * `../web/src/vite-env.d.ts` is here for one reason and it is worth stating: this
+   * package's own **test** files import phone modules to stand in for the shell
+   * (`boundary.test.ts` renders `Shell.svelte`, `useSound.test.ts` reaches
+   * `shell/state/audio`). TypeScript pulls those in transitively, and they need the
+   * phone's ambient globals — `GetParentResourceName`, `mockCalls`, the dev-harness
+   * `window` hooks — which live in that file. The SDK's own ambient surface is
+   * `./env.d.ts` and is much smaller.
+   *
+   * So: the SDK's **source** has no edge into `web/`, but its **suite** does, and this
+   * line is where that shows up in configuration rather than being hidden.
+   */
+  "include": ["**/*.ts", "**/*.svelte", "../web/src/vite-env.d.ts"]
+}

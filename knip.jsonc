@@ -11,7 +11,7 @@
   // thing this config exists to prevent.
   "ignoreExportsUsedInFile": true,
   // `@public` marks an export as SDK surface for add-ons rather than something this repo
-  // is expected to consume. It is a narrow exemption on purpose: `src/sdk/index.ts` is
+  // is expected to consume. It is a narrow exemption on purpose: `sdk/index.ts` is
   // still not an entry point, so an exported *component* nobody renders is reported as
   // before. Only what someone has deliberately labelled public is exempt, and the label
   // sits next to the code rather than in this file.
@@ -46,23 +46,30 @@
       ]
     },
     "web": {
-      // `src/sdk/icons.ts` is an entry point rather than ordinary code: it is generated,
-      // and deliberately republishes every icon so an add-on can import any of them. Its
-      // exports being unused inside this repo is the intended state.
-      //
-      // `src/sdk/index.ts` is deliberately NOT listed. Treating the whole SDK as public
-      // API would stop knip ever reporting an unused export from it — and an exported,
-      // complete, unused component is exactly what this found last time.
-      // `src/sdk/host/iframe/facets/*.ts` twins are reached only through the add-on
-      // build's alias (`web/vite.addon.config.ts`), never by a static import in this repo.
-      "entry": [
-        "src/sdk/icons.ts",
-        "src/sdk/addon.ts",
-        "src/sdk/host/iframe/facets/*.ts",
-        "e2e/**/*.spec.ts",
-        "*.config.ts"
-      ],
+      "entry": ["e2e/**/*.spec.ts", "*.config.ts"],
       "project": ["src/**/*.{ts,svelte}"]
+    },
+    // MICA-172: its own workspace now that `sdk/` is a root-level package. Same entry
+    // reasoning as when these lines lived under `web`:
+    //
+    // `icons.ts` is an entry point rather than ordinary code — generated, and deliberately
+    // republishing every icon so an add-on can import any of them. Its exports being unused
+    // inside this repo is the intended state.
+    //
+    // `index.ts` is deliberately NOT listed. Treating the whole SDK as public API would stop
+    // knip ever reporting an unused export from it — and an exported, complete, unused
+    // component is exactly what this found last time.
+    //
+    // `host/iframe/facets/*.ts` twins are reached only through the add-on build's alias
+    // (`web/vite.addon.config.ts`), never by a static import in this repo.
+    //
+    // The `jsdom` wart noted in `ignoreDependencies` above now applies here too: this
+    // package's suite runs under `web`'s Vitest project (its `include` globs `../sdk/**`),
+    // so knip attributes SDK test files to a package.json that is not the one declaring the
+    // test runner's environment. Extend that note rather than switching the check off.
+    "sdk": {
+      "entry": ["icons.ts", "addon.ts", "host/iframe/facets/*.ts"],
+      "project": ["**/*.{ts,svelte}"]
     }
   }
 }

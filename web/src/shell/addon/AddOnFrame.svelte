@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import type { AppManifest } from '../../sdk/manifest';
-  import type { Host } from '../../sdk/host/protocol';
+  import type { AppManifest } from '../../../../sdk/manifest';
+  import type { Host } from '../../../../sdk/host/protocol';
   import { appRegistryStore } from '../state/registry';
   import { createIframeHostServer } from './IframeHostServer';
   import { srcdocFor } from './srcdoc';

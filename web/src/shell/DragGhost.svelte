@@ -1,5 +1,5 @@
 <script lang="ts">
-  import AppIcon from '../sdk/ui/AppIcon.svelte';
+  import AppIcon from '../../../sdk/ui/AppIcon.svelte';
   import { iconDragState } from './state/iconDrag';
   import { PHONE_WIDTH } from './state/display';
 

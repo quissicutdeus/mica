@@ -1,4 +1,4 @@
-import { registerFacet } from '../../sdk/host/current';
+import { registerFacet } from '../../../../sdk/host/current';
 import { appRegistryStore, bundledAddOns, getFirstBootTime } from '../../shell/state/registry';
 import { appUpdateCount, appUpdates } from '../../shell/state/appUpdates';
 

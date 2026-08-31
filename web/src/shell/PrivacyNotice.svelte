@@ -11,7 +11,7 @@
    * so the two can never drift apart.
    */
   import { fade, focusTrap } from '@gphone/sdk';
-  import Button from '../sdk/ui/Button.svelte';
+  import Button from '../../../sdk/ui/Button.svelte';
   import { PRIVACY_NOTICE_TEXT, markPrivacyNoticeSeen } from './state/privacyNotice';
 
   let dialogRef = $state<HTMLElement | null>(null);

@@ -1,5 +1,5 @@
-import type { AppLevelsConfig } from '../../sdk/host/facets';
-import { registerFacet } from '../../sdk/host/current';
+import type { AppLevelsConfig } from '../../../../sdk/host/facets';
+import { registerFacet } from '../../../../sdk/host/current';
 import { onDestroy } from 'svelte';
 import { registerHandler } from '../../shell/state/keybinds';
 

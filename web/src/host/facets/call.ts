@@ -1,4 +1,4 @@
-import { registerFacet } from '../../sdk/host/current';
+import { registerFacet } from '../../../../sdk/host/current';
 import { callStore } from '../../services/call';
 import { callLog, loadCallLog } from '../../services/callLog';
 

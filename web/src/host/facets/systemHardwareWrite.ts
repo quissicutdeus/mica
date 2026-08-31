@@ -1,4 +1,4 @@
-import { registerFacet } from '../../sdk/host/current';
+import { registerFacet } from '../../../../sdk/host/current';
 import { charge } from '../../shell/state/charge';
 import { setSignal, toggleCellService } from '../../shell/state/signal';
 import { toggleBluetooth } from '../../shell/state/bluetooth';
@@ -10,7 +10,7 @@ import {
   setRingtone,
   audio
 } from '../../shell/state/audio';
-import type { RingtoneId } from '../../sdk/vocabulary/audio';
+import type { RingtoneId } from '../../../../sdk/vocabulary/audio';
 
 /**
  * Implementation of the `useSystemHardwareWrite` facet — see the `useSystemHardwareWrite`

@@ -1,7 +1,11 @@
 import { derived, get, writable, type Readable, type Writable } from 'svelte/store';
-import { usePersisted } from '../../sdk/host/usePersisted';
+import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { parseYouTubeSource, isPlaylistId, isVideoId } from '@shared/youtube';
-import { reasonForCode, type MusicError, type MusicErrorReason } from '../../sdk/lib/musicErrors';
+import {
+  reasonForCode,
+  type MusicError,
+  type MusicErrorReason
+} from '../../../../sdk/lib/musicErrors';
 import { callStore } from '../../services/call';
 import type {
   MusicNowPlaying,

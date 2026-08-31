@@ -2,7 +2,7 @@
   import { closedPhoneToast } from './state/toast';
   import { frameMargin, phoneBox, viewportSize } from './state/display';
   import { fly } from '@gphone/sdk';
-  import Avatar from '../sdk/ui/Avatar.svelte';
+  import Avatar from '../../../sdk/ui/Avatar.svelte';
   import { appRegistryStore } from './state/registry';
 
   let current = $derived($closedPhoneToast);

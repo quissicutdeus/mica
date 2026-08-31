@@ -176,7 +176,7 @@ ${
  * once already.
  */
 const registerInAppContract = () => {
-  const relative = 'web/src/sdk/appContract.test.ts';
+  const relative = 'sdk/appContract.test.ts';
   const full = path.join(ROOT, relative);
   let contract = fs.readFileSync(full, 'utf8');
 
@@ -255,7 +255,7 @@ export const ${id} = createCrudStore<${Pascal}Row, Pick<${Pascal}Row, 'title'>>(
   );
 
   write(
-    `web/src/sdk/host/use${Pascal}.ts`,
+    `sdk/host/use${Pascal}.ts`,
     `import { ${id} } from '../../services/${id}';
 
 /** OS Service Hook for ${title}. */
@@ -269,7 +269,7 @@ export function use${Pascal}() {
 // --- the generated barrel ------------------------------------------------------------
 
 if (WITH_SERVICE) {
-  // `web/src/sdk/host/index.ts` is generated and committed, and until now only `build`
+  // `sdk/host/index.ts` is generated and committed, and until now only `build`
   // and `watch` regenerated it. `pnpm verify` typechecks long before it builds, so the
   // app this script had just written failed its own closing instruction — on the one
   // import the script itself generated. Doing it here fixes the barrel, but the tree is
@@ -316,12 +316,12 @@ if (WITH_SERVICE) {
 
   console.log(`\n\x1b[1mThe permission table is also hand-curated. Update it:\x1b[0m\n`);
   console.log(
-    `  \x1b[2mweb/src/sdk/permissions.ts\x1b[0m — add a row \`use${Pascal}: '${id}'\`, unless the\n` +
+    `  \x1b[2msdk/permissions.ts\x1b[0m — add a row \`use${Pascal}: '${id}'\`, unless the\n` +
       `  new hook is only ever called by ${title}'s own store through \`useService\`, in\n` +
       `  which case no hook file and no row are needed at all.`
   );
   console.log(
-    `\n  \x1b[2mweb/src/sdk/manifest.ts\x1b[0m — add '${id}' to \`ALL_PERMISSIONS\` (and so to the\n` +
+    `\n  \x1b[2msdk/manifest.ts\x1b[0m — add '${id}' to \`ALL_PERMISSIONS\` (and so to the\n` +
       `  \`AppPermission\` union it derives).`
   );
   console.log(

@@ -11,7 +11,7 @@ import { get } from 'svelte/store';
 import { airplaneModeEnabled, toggleAirplaneMode } from './airplane';
 import { cellServiceEnabled, setCellServiceEnabled } from './signal';
 import { bluetoothEnabled, setBluetoothEnabled } from './bluetooth';
-import { useStorage } from '../../sdk/host/useStorage';
+import { useStorage } from '../../../../sdk/host/useStorage';
 
 describe('Airplane Mode Store', () => {
   beforeEach(() => {

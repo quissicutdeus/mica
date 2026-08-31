@@ -2,7 +2,7 @@
  * The in-process facet set — one side of the SDK's host seam, and the shell's half of it.
  *
  * MICA-176. Until this file existed the choice between the two facet sets was made by
- * a build alias: every `useXxx.ts` hook opened with `import '../sdk/host/inProcess/inProcess/facets/<name>';`
+ * a build alias: every `useXxx.ts` hook opened with `import '../../../sdk/host/inProcess/inProcess/facets/<name>';`
  * and `facetSwap()` in `vite.addon.config.ts` rewrote that one specifier to
  * `iframe/facets/<name>` for the add-on build. One source line, two resolutions, decided
  * by a `resolveId` plugin — so what an add-on bundle actually contained was a property of
@@ -16,7 +16,7 @@
  * **Nothing in `current.ts`'s or `guard.ts`'s import graph may reach this file.** Those two
  * (and `system.ts`, `createInProcessHost.ts`) are deliberately free of any module that
  * imports `shell/`; `current.ts`'s only reference to a facet is the type-only
- * `import type { Facets } from '../sdk/host/facets'`. This file is the opposite — 46 of the 48
+ * `import type { Facets } from '../../../sdk/host/facets'`. This file is the opposite — 46 of the 48
  * modules below import `shell/`, `services/` or `nui/` by value — so it is imported *by*
  * the entry point and *by nothing else*. Importing it from a hook, from `guard.ts`, or
  * from anything either of those reaches recreates exactly the cycle that arrangement exists
@@ -39,7 +39,7 @@
  * `host facet 'persisted' is not loaded`.
  *
  * Before MICA-176 nothing had to say this: each hook imported its own facet, so
- * `audio.ts`'s `import { usePersisted } from '../sdk/host/usePersisted'` *was* the guarantee that
+ * `audio.ts`'s `import { usePersisted } from '../../../sdk/host/usePersisted'` *was* the guarantee that
  * `persisted` had registered — ES modules finish evaluating a dependency before the
  * importer's body runs. Moving the choice of facet set to the entry point is what gives
  * that guarantee up, and this line is what replaces it.

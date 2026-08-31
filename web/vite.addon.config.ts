@@ -38,7 +38,7 @@ function addOnEntries(): Plugin {
       if (!id.startsWith(VIRTUAL)) return null;
       const app = id.slice(VIRTUAL.length);
       return [
-        `import '${path.resolve(here, 'src/sdk/app.css')}';`,
+        `import '${path.resolve(here, '../sdk/app.css')}';`,
         `import manifest from '${path.join(appsDir, app, 'manifest.ts')}';`,
         `import App from '${path.join(appsDir, app, 'index.svelte')}';`,
         `import { bootAddOn } from '@gphone/sdk';`,
@@ -59,32 +59,8 @@ function addOnEntries(): Plugin {
  * `src/main.ts` imports `sdk/host/inProcess/registerFacets`, `bootAddOn` imports
  * `sdk/host/iframe/registerFacets`, and no hook names a concrete facet module. Do not
  * reintroduce a resolver plugin for this — `sdk/seam.test.ts` resolves every specifier on
- * the add-on graph to a real path and fails on anything under `src/sdk/host/inProcess/`.
+ * the add-on graph to a real path and fails on anything under `sdk/host/inProcess/`.
  */
-
-const SHELL_TIME_RE = /(^|\/)shell\/state\/time$/;
-
-/**
- * `src/lib/formatters.ts` — a plain formatting helper, re-exported from `@gphone/sdk`'s
- * `utils.ts` and so reachable from every add-on — imports `is24Hour` directly from
- * `shell/state/time.ts` for `formatTime`'s default. Redirects it (and anything else
- * resolving `.../shell/state/time`) to a real, tested module instead of the shell's own
- * file: `src/sdk/host/iframe/shims/time.ts`, which exposes the same live `clock` facet
- * state (`time`, `is24Hour`, `formattedTime`) via `remoteStore` — no wall-clock timer of
- * its own, just a subscription to what the shell already ticks and pushes down.
- */
-function shellTimeShim(): Plugin {
-  const target = path.resolve(here, 'src/sdk/host/iframe/shims/time.ts');
-  return {
-    name: 'gphone-shell-time-shim',
-    resolveId: {
-      order: 'pre',
-      handler(id) {
-        return SHELL_TIME_RE.test(id) ? target : null;
-      }
-    }
-  };
-}
 
 // MICA-129: matches the bare specifier and any subpath (`@gphone/sdk/core/whatever`),
 // so a future file added under `sdk/core.ts` doesn't reopen the confusing-error gap this
@@ -95,7 +71,8 @@ const CORE_ENTRY_RE = /^@gphone\/sdk\/core(\/.*)?$/;
  * `@gphone/sdk/core` has no `resolve.alias` entry in this config, unlike the shell's own
  * `vite.config.ts` — deliberately: `useNuiBridge` is the raw transport and `boundary.test.ts`
  * already refuses it to any `core: false` app at the source level. But `tsconfig.app.json`
- * resolves the specifier fine (it maps `@gphone/sdk/*` to `src/sdk/*` for everybody), so an
+ * resolves the specifier fine (`sdk/tsconfig.json` maps it, and the package's own `exports`
+ * names it), so an
  * add-on that imports it typechecks clean and only then hits Rollup's generic "could not
  * resolve" here — a confusing failure for something that is refused on purpose, not a build
  * misconfiguration. This intercepts the specifier first and fails with the actual rule
@@ -192,7 +169,7 @@ function noUnsubstitutedDefines(): Plugin {
               `[gPhone] ${file} still contains unsubstituted build-time identifier(s): ` +
                 `${found.join(', ')}. An add-on bundle runs in a sandboxed iframe where these ` +
                 `are undeclared, so each one silently falls back to whatever default ` +
-                `src/sdk/version.ts holds instead of failing. Add it to this config's ` +
+                `sdk/version.ts holds instead of failing. Add it to this config's ` +
                 `\`define\` block — with a deliberate value for an add-on, which is not ` +
                 `automatically the shell's (see the block's comment).`
             );
@@ -226,7 +203,6 @@ if (!process.env.ADDON_ID && ids.length > 1) {
 export default defineConfig({
   plugins: [
     addOnEntries(),
-    shellTimeShim(),
     refuseCoreEntry(),
     svelte(),
     inlineCss(),
@@ -270,8 +246,8 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: '@shared', replacement: path.resolve(here, '../shared') },
-      { find: '@gphone/sdk/app', replacement: path.resolve(here, 'src/sdk/app.ts') },
-      { find: '@gphone/sdk', replacement: path.resolve(here, 'src/sdk/addon.ts') }
+      { find: '@gphone/sdk/app', replacement: path.resolve(here, '../sdk/app.ts') },
+      { find: '@gphone/sdk', replacement: path.resolve(here, '../sdk/addon.ts') }
       /**
        * MICA-172 deleted the `nui/fetchNui` alias that used to sit here.
        *

@@ -1,6 +1,6 @@
 {
   "$schema": "https://typedoc.org/schema.json",
-  "entryPoints": ["src/sdk/index.ts"],
+  "entryPoints": ["../sdk/index.ts"],
   "tsconfig": "tsconfig.docs.json",
   "excludeExternals": true,
   "name": "@gphone/sdk",

@@ -4,7 +4,7 @@
   import { get } from 'svelte/store';
   import { attachDragGesture } from '../lib/phone/pointerDrag';
   import { createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/phone/sheetDrag';
-  import AppIcon from '../sdk/ui/AppIcon.svelte';
+  import AppIcon from '../../../sdk/ui/AppIcon.svelte';
   import { appRegistryStore } from './state/registry';
   import { appVisible } from './state/appVisibility';
   import { dockAppIds, DOCK_SLOT_COUNT } from './state/dock';

@@ -1,4 +1,4 @@
-import { registerFacet } from '../../sdk/host/current';
+import { registerFacet } from '../../../../sdk/host/current';
 import { get } from 'svelte/store';
 import { setDisplaySize } from '../../shell/state/display';
 import { homeGridColumns, homeGridRows } from '../../shell/state/homeGridSettings';

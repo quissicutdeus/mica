@@ -5,8 +5,8 @@
   import { attachDragGesture } from '../lib/phone/pointerDrag';
   import { createSheetClose } from '../lib/phone/sheetDrag';
   import { attachLongPressDrag } from '../lib/phone/longPressDrag';
-  import AppIcon from '../sdk/ui/AppIcon.svelte';
-  import SearchIcon from '../sdk/ui/icons/SearchIcon.svelte';
+  import AppIcon from '../../../sdk/ui/AppIcon.svelte';
+  import SearchIcon from '../../../sdk/ui/icons/SearchIcon.svelte';
   import { isAdmin } from '../services/admin';
   import { capabilities } from '../services/capabilities';
   import { appVisible } from './state/appVisibility';

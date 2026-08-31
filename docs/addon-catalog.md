@@ -108,12 +108,12 @@ dependency on anything the shell serves. The built-in add-ons land at
 The bundle's `default`/`manifest` exports, if any, are not read by the shell —
 that information now lives on the `CatalogEntry` instead (see above). What the
 shell actually calls is `bootAddOn` (`@gphone/sdk`, re-exported from
-`web/src/sdk/host/iframe/boot.ts`), which the bundle's own entry code is
-expected to invoke once it's running inside the sandboxed frame —
-`hello`-handshaking with the shell, then waiting for `hydrate` before rendering.
-See [`docs/writing-an-app.md`](writing-an-app.md#your-app-runs-in-a-frame) for
-what the sandbox means for the app code itself, and
-[`docs/security.md`](security.md) for the trust model this supports.
+`sdk/host/iframe/boot.ts`), which the bundle's own entry code is expected to
+invoke once it's running inside the sandboxed frame — `hello`-handshaking with
+the shell, then waiting for `hydrate` before rendering. See
+[`docs/writing-an-app.md`](writing-an-app.md#your-app-runs-in-a-frame) for what
+the sandbox means for the app code itself, and [`docs/security.md`](security.md)
+for the trust model this supports.
 
 ## Telling a player their copy is out of date
 

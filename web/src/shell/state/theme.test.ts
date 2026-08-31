@@ -21,7 +21,7 @@ import {
   sanitizeTheme,
   DEFAULT_THEME
 } from './theme';
-import { DEFAULT_SEED, TOKEN_NAMES } from '../../sdk/lib/m3';
+import { DEFAULT_SEED, TOKEN_NAMES } from '../../../../sdk/lib/m3';
 
 describe('theme store', () => {
   beforeEach(() => {
