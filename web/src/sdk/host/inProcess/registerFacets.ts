@@ -49,6 +49,10 @@
  * module-scope hook call that needs a different facet first fails the whole suite rather
  * than one screen in game. `storage.ts` is not listed separately: `persisted.ts` imports
  * it, so it is evaluated first anyway.
+ *
+ * **Do not alphabetise this line back into the list below.** It reads as an arbitrary
+ * exception and is not one: the list is otherwise sorted, and this one entry is ordered by
+ * a dependency the sort cannot see.
  */
 import './facets/persisted';
 

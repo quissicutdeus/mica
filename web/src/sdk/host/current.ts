@@ -17,10 +17,17 @@ const warnedHooks = new Set<string>();
 /**
  * The facet registry, keyed by facet name. Populated at runtime by each facet module's
  * own `registerFacet(...)` call at its bottom — never imported directly by `current.ts`,
- * `guard.ts`, `system.ts` or `createInProcessHost.ts`. A facet is only in here once the
- * hook file that owns it has been imported somewhere on the page, which is what breaks
- * the import cycle those four files would otherwise sit on: nothing in this graph needs
- * to import a facet module (which imports `shell/`) to build a `Host`.
+ * `guard.ts`, `system.ts` or `createInProcessHost.ts`. That is what breaks the import cycle
+ * those four files would otherwise sit on: nothing in this graph needs to import a facet
+ * module (which imports `shell/`) to build a `Host`.
+ *
+ * What fills it is the **entry point**, not the hook (MICA-176). A bundle imports exactly
+ * one of `host/inProcess/registerFacets` (the shell, from `src/main.ts`) or
+ * `host/iframe/registerFacets` (an add-on, from `bootAddOn`), and that import is the only
+ * thing deciding whether a facet name answers with the shell-backed implementation or its
+ * sandboxed twin. Before that ticket each hook pulled its own facet on by a side-effect
+ * import and a `resolveId` plugin rewrote the specifier for the add-on build, which meant
+ * the same source line resolved two ways and no one could read which from the source.
  */
 const facetRecord: Partial<Facets> = {};
 
@@ -31,7 +38,7 @@ function registerFacet<K extends keyof Facets>(name: K, fn: Facets[K]): void {
 
 /**
  * The live facet surface every `Host` shares. Reading a facet that has not registered
- * itself yet — the hook file that owns it was never imported — throws rather than
+ * itself yet — this bundle imported neither `registerFacets` set — throws rather than
  * silently returning `undefined`, since a `Host.facets.<name>()` call site expects a
  * function to be there.
  */
@@ -51,8 +58,19 @@ const facets: Facets = new Proxy({} as Facets, {
     const name = prop as keyof Facets;
     const fn = facetRecord[name];
     if (fn === undefined) {
+      /**
+       * Names the fix, deliberately. Since MICA-176 a hook no longer carries its facet, so
+       * "the hook was never imported" would send the reader to the wrong file — the answer is
+       * always that this bundle never picked a facet set. The overwhelmingly common case is a
+       * new unit test, which has neither entry point, so that instruction goes first.
+       */
       throw new Error(
-        `[gPhone] host facet '${String(name)}' is not loaded — the hook that owns it was never imported`
+        `[gPhone] host facet '${String(name)}' is not loaded — nothing has registered a facet ` +
+          `set in this bundle. A unit test must import 'sdk/host/inProcess/registerFacets' as ` +
+          `its first import (it stands in for the shell). The shell itself does that from ` +
+          `src/main.ts and an add-on gets 'sdk/host/iframe/registerFacets' from bootAddOn, so ` +
+          `seeing this outside a test means an entry point lost its import — or that this facet ` +
+          `module is missing from the set it belongs to, which sdk/seam.test.ts checks.`
       );
     }
     return fn;
@@ -96,7 +114,7 @@ function markSystemHostWarned(hookName: string): boolean {
 /**
  * @internal Test-only: clears the host registry, system host and warned-hook set between
  * test cases. Deliberately leaves `facetRecord` alone — facet modules self-register once,
- * at import time, via a side-effect import (`import './inProcess/facets/theme'`), and
+ * at import time, when the file's `registerFacets` import pulls them on, and
  * vitest does not re-evaluate a module between test cases in the same file unless the
  * module registry itself is reset (`vi.resetModules()`). Clearing the facet record here
  * would make every host test that runs after the first one in a file throw

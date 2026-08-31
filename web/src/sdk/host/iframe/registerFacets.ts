@@ -16,6 +16,9 @@
  * `iframe/facets/` reaches a module-scope `usePersisted` today, but an add-on's own code is
  * free to build a settings store at module scope, and the two sets staying the same shape
  * is worth more than the one line saved.
+ *
+ * **Do not alphabetise this line back into the list below** — see the in-process set for
+ * the dependency the sort cannot see.
  */
 import './facets/persisted';
 
