@@ -41,11 +41,19 @@ import { join, relative } from 'node:path';
  * type, both barrels). An add-on resolves these names, so their implementation is SDK-owned
  * by definition.
  *
- * **`lib/sdk/` — SDK-internal, not public.** `errors`, `focusTrap`, `dominantColor`,
- * `musicErrors`, `musicBroadcast`, `seed`. None is exported from `sdk/index.ts`,
- * `sdk/addon.ts` or `sdk/core.ts`; each is a dependency of something that is. They are
- * SDK-owned because the SDK cannot be moved without them, not because an add-on can name
- * them. `musicBroadcast` and `seed` were the two the ticket flagged, and both are
+ * **`lib/sdk/` — SDK-internal, not public.** `dominantColor`, `musicErrors`,
+ * `musicBroadcast`, `seed`. None is exported from `sdk/index.ts`, `sdk/addon.ts` or
+ * `sdk/core.ts`; each is a dependency of something that is. They are SDK-owned because the
+ * SDK cannot be moved without them, not because an add-on can name them.
+ *
+ * `errors` (`messageOf`) and `focusTrap` were in this second group when MICA-171 wrote it
+ * and are now in the first: MICA-172 exports both from `sdk/utils.ts`, on the owner's
+ * call, because an add-on writing its own modal had no focus trap and an add-on catching a
+ * rejected `useService` call had no safe way to read the message. The split itself did not
+ * move — both were already SDK-owned, which is why promoting them was a one-line barrel
+ * change rather than a migration. That is the split doing its job.
+ *
+ * `musicBroadcast` and `seed` were the two the ticket flagged, and both are
  * SDK-owned for the same structural reason: the iframe facet twins
  * (`sdk/host/iframe/facets/music.ts`, `.../theme.ts`) may import nothing from `shell/`, so
  * the constants and the seed sanitizer were pulled out of `shell/state/` and `m3.ts`

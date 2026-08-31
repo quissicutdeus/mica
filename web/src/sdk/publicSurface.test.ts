@@ -405,6 +405,17 @@ const vocabularies = (module: Record<string, unknown>): Record<string, string[]>
  * nobody. The only reason to edit this list is a removal, and editing it instead of
  * bumping `SDK_CONTRACT_VERSION` is a deliberate, reviewable lie in a diff rather than a
  * silence.
+ *
+ * `focusTrap` and `messageOf` (MICA-172) are the exception that proves the rule, and they
+ * were written down on purpose. An addition is invisible to this gate until it is in the
+ * baseline — so an export added and then removed two months later is a silent narrowing,
+ * which is the one failure this whole file exists to prevent and the only one a *new*
+ * export is uniquely exposed to. Recording them at the moment they were added is what makes
+ * their eventual removal a reported break rather than nothing at all.
+ *
+ * Adding them does **not** move `SDK_CONTRACT_VERSION`, for the same reason `ALL_CAPABILITIES`
+ * below does not: nothing compiled against v1 loses a name it was resolving. Bumping the pin
+ * would announce a break to add-on authors that has not happened.
  */
 const BASELINE_EXPORTS: Record<string, string[]> = {
   '@gphone/sdk': [
@@ -509,6 +520,7 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'fade',
     'fetchCatalog',
     'filterByQuery',
+    'focusTrap',
     'fly',
     'formatCurrency',
     'formatDate',
@@ -522,6 +534,7 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'isBrowser',
     'loadImage',
     'makeThumbnail',
+    'messageOf',
     'onAppForeground',
     'onAppMount',
     'onAppUnmount',
@@ -682,6 +695,7 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'encodeCanvas',
     'fade',
     'filterByQuery',
+    'focusTrap',
     'fly',
     'formatCurrency',
     'formatDate',
@@ -693,6 +707,7 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'isBrowser',
     'loadImage',
     'makeThumbnail',
+    'messageOf',
     'onAppForeground',
     'onAppMount',
     'onAppUnmount',

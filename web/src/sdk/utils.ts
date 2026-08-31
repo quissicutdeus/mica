@@ -59,3 +59,51 @@ export {
  * becomes script.
  */
 export { tokenizeRichText } from '@shared/richText';
+
+/**
+ * Keep Tab inside a modal surface, and put focus back where it came from on close.
+ *
+ * **A deliberate widening of the published surface (MICA-172), and a one-way door.**
+ * Three of the SDK's own primitives already use it — `ConfirmDialog`, `ReportDialog` and
+ * `PhotoPickerModal` — and an add-on that needs a modal the kit does not ship had no way to
+ * reach it. The alternative was for every add-on author to write their own trap, and a
+ * hand-rolled focus trap is the kind of thing that is quietly got wrong: the surface still
+ * looks right, Tab still moves, and the only person who finds out is a keyboard or
+ * screen-reader user who was told "dialog" and handed the screen behind it. That is an
+ * accessibility bug with no route back to its cause, which is exactly the class of failure
+ * this repo would rather make impossible than document.
+ *
+ * Exported here rather than from a barrel line of its own because it is the same kind of
+ * thing as everything above: DOM behaviour with no gPhone state behind it, implemented in
+ * `lib/sdk/` and therefore bundle-safe for a sandboxed add-on. Going through `utils.ts` is
+ * also what gives it index/addon parity for free — both barrels `export *` from this file,
+ * so it cannot end up resolvable to the typechecker and missing at `vite build`, which is
+ * the divergence `publicSurface.test.ts`'s parity arm exists to catch.
+ *
+ * `FocusTrapOptions` travels with it. An add-on wrapping this in a component of its own has
+ * to name the options object to pass `enabled` or `returnFocusTo` through, and an action
+ * whose parameter type is unnameable is an action you can only use in its default shape.
+ *
+ * ```svelte
+ * <div role="dialog" aria-modal="true" use:focusTrap={{ returnFocusTo: () => opener }}>
+ * ```
+ */
+export { focusTrap } from '../lib/sdk/focusTrap';
+export type { FocusTrapOptions } from '../lib/sdk/focusTrap';
+
+/**
+ * The message to show a player for something that was thrown.
+ *
+ * The second half of MICA-172's widening, and public for a narrower reason than
+ * `focusTrap`: an add-on cannot avoid catching. Every `useService(id).call(...)` can reject,
+ * `useAppAction` hands a thrown value straight to a toast, and `catch` in TypeScript gives
+ * you `unknown` — so the add-on author writes `err.message`, which throws a second time
+ * inside the catch the first time a string or a `null` arrives instead of an `Error`. Four
+ * SDK modules already route through this for that reason (`lazyBadge`, `ReportDialog`, and
+ * both `appAction` facet twins); the fifth caller was always going to be an add-on.
+ *
+ * Takes the fallback as a required argument rather than defaulting one. There is no generic
+ * message worth showing a player, and a default would put "Something went wrong" into every
+ * add-on that forgot to think about it.
+ */
+export { messageOf } from '../lib/sdk/errors';
