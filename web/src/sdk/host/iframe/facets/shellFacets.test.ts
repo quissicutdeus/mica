@@ -5,7 +5,7 @@
  * picks the iframe twins for an add-on — so a test file, having neither entry point, says
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
-import '../../inProcess/registerFacets';
+import '../../../../host/registerFacets';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 import { fakeTransport } from '../__fixtures__/fakeTransport';
@@ -20,30 +20,30 @@ import { hydrateStorage } from '../storageCache';
 vi.mock('../../../../nui/fetchNui', () => ({ fetchNui: vi.fn() }));
 vi.mock('../../../../services/notifications', () => ({ addNotificationItem: vi.fn() }));
 
-import { appAction as inAppAction } from '../../inProcess/facets/appAction';
-import { appEvents as inAppEvents } from '../../inProcess/facets/appEvents';
-import { appRegistry as inAppRegistry } from '../../inProcess/facets/appRegistry';
-import { appRegistryWrite as inAppRegistryWrite } from '../../inProcess/facets/appRegistryWrite';
-import { clock as inClock } from '../../inProcess/facets/clock';
-import { clockWrite as inClockWrite } from '../../inProcess/facets/clockWrite';
-import { devTools as inDevTools } from '../../inProcess/facets/devTools';
-import { display as inDisplay } from '../../inProcess/facets/display';
-import { displayWrite as inDisplayWrite } from '../../inProcess/facets/displayWrite';
-import { keybinds as inKeybinds } from '../../inProcess/facets/keybinds';
-import { keybindsWrite as inKeybindsWrite } from '../../inProcess/facets/keybindsWrite';
-import { navigation as inNavigation } from '../../inProcess/facets/navigation';
-import { lifecycle as inLifecycle } from '../../inProcess/facets/lifecycle';
-import { notificationSettings as inNotificationSettings } from '../../inProcess/facets/notificationSettings';
-import { notificationSettingsWrite as inNotificationSettingsWrite } from '../../inProcess/facets/notificationSettingsWrite';
-import { phoneNotification as inPhoneNotification } from '../../inProcess/facets/phoneNotification';
-import { sound as inSound } from '../../inProcess/facets/sound';
-import { systemHardware as inSystemHardware } from '../../inProcess/facets/systemHardware';
-import { systemHardwareWrite as inSystemHardwareWrite } from '../../inProcess/facets/systemHardwareWrite';
-import { theme as inTheme } from '../../inProcess/facets/theme';
-import { themeWrite as inThemeWrite } from '../../inProcess/facets/themeWrite';
-import { wallpaper as inWallpaper } from '../../inProcess/facets/wallpaper';
-import { wallpaperWrite as inWallpaperWrite } from '../../inProcess/facets/wallpaperWrite';
-import { storage as inStorage } from '../../inProcess/facets/storage';
+import { appAction as inAppAction } from '../../../../host/facets/appAction';
+import { appEvents as inAppEvents } from '../../../../host/facets/appEvents';
+import { appRegistry as inAppRegistry } from '../../../../host/facets/appRegistry';
+import { appRegistryWrite as inAppRegistryWrite } from '../../../../host/facets/appRegistryWrite';
+import { clock as inClock } from '../../../../host/facets/clock';
+import { clockWrite as inClockWrite } from '../../../../host/facets/clockWrite';
+import { devTools as inDevTools } from '../../../../host/facets/devTools';
+import { display as inDisplay } from '../../../../host/facets/display';
+import { displayWrite as inDisplayWrite } from '../../../../host/facets/displayWrite';
+import { keybinds as inKeybinds } from '../../../../host/facets/keybinds';
+import { keybindsWrite as inKeybindsWrite } from '../../../../host/facets/keybindsWrite';
+import { navigation as inNavigation } from '../../../../host/facets/navigation';
+import { lifecycle as inLifecycle } from '../../../../host/facets/lifecycle';
+import { notificationSettings as inNotificationSettings } from '../../../../host/facets/notificationSettings';
+import { notificationSettingsWrite as inNotificationSettingsWrite } from '../../../../host/facets/notificationSettingsWrite';
+import { phoneNotification as inPhoneNotification } from '../../../../host/facets/phoneNotification';
+import { sound as inSound } from '../../../../host/facets/sound';
+import { systemHardware as inSystemHardware } from '../../../../host/facets/systemHardware';
+import { systemHardwareWrite as inSystemHardwareWrite } from '../../../../host/facets/systemHardwareWrite';
+import { theme as inTheme } from '../../../../host/facets/theme';
+import { themeWrite as inThemeWrite } from '../../../../host/facets/themeWrite';
+import { wallpaper as inWallpaper } from '../../../../host/facets/wallpaper';
+import { wallpaperWrite as inWallpaperWrite } from '../../../../host/facets/wallpaperWrite';
+import { storage as inStorage } from '../../../../host/facets/storage';
 
 import { appAction } from './appAction';
 import { appEvents } from './appEvents';

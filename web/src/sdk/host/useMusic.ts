@@ -76,4 +76,4 @@ export type {
   MusicStatus,
   NearbyBroadcast,
   QueueEntry
-} from './inProcess/facets/music';
+} from '../../host/facets/music';

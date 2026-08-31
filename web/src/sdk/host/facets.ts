@@ -108,8 +108,8 @@ import type { ToastMessage } from '../../shell/state/toast';
 import type { WallpaperState } from '../../shell/state/wallpaper';
 import type { ReactionStore } from '../kit/createReactionStore';
 import type { AppComponent, AppManifest } from '../manifest';
-import type { ReactionTarget } from './inProcess/facets/accounts';
-import type { WallpaperPreset } from './inProcess/facets/wallpaper';
+import type { ReactionTarget } from '../../host/facets/accounts';
+import type { WallpaperPreset } from '../../host/facets/wallpaper';
 import type { KeybindAction } from '@shared/keybinds';
 import type {
   Account,

@@ -1,5 +1,5 @@
 import { guarded } from './guard';
-import type { AppLevelsConfig } from './inProcess/facets/appLevels';
+import type { AppLevelsConfig } from '../../host/facets/appLevels';
 export type { AppLevelsConfig };
 
 /**

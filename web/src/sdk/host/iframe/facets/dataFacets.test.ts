@@ -5,7 +5,7 @@
  * picks the iframe twins for an add-on — so a test file, having neither entry point, says
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
-import '../../inProcess/registerFacets';
+import '../../../../host/registerFacets';
 import { describe, it, expect, vi } from 'vitest';
 import { fakeTransport } from '../__fixtures__/fakeTransport';
 import type { ToShell } from '../messages';
@@ -16,22 +16,22 @@ import type { ToShell } from '../messages';
 // `services/*`) never touches a real transport.
 vi.mock('../../../../nui/fetchNui', () => ({ fetchNui: vi.fn() }));
 
-import { account as inAccount } from '../../inProcess/facets/account';
-import { accounts as inAccounts } from '../../inProcess/facets/accounts';
-import { admin as inAdmin } from '../../inProcess/facets/admin';
-import { call as inCall } from '../../inProcess/facets/call';
-import { camera as inCamera } from '../../inProcess/facets/camera';
-import { contacts as inContacts } from '../../inProcess/facets/contacts';
-import { highscores as inHighscores } from '../../inProcess/facets/highscores';
-import { location as inLocation } from '../../inProcess/facets/location';
-import { mail as inMail } from '../../inProcess/facets/mail';
-import { marketplace as inMarketplace } from '../../inProcess/facets/marketplace';
-import { media as inMedia } from '../../inProcess/facets/media';
-import { messages as inMessages } from '../../inProcess/facets/messages';
-import { notifications as inNotifications } from '../../inProcess/facets/notifications';
-import { reports as inReports } from '../../inProcess/facets/reports';
-import { report as inReport } from '../../inProcess/facets/report';
-import { service as inService } from '../../inProcess/facets/service';
+import { account as inAccount } from '../../../../host/facets/account';
+import { accounts as inAccounts } from '../../../../host/facets/accounts';
+import { admin as inAdmin } from '../../../../host/facets/admin';
+import { call as inCall } from '../../../../host/facets/call';
+import { camera as inCamera } from '../../../../host/facets/camera';
+import { contacts as inContacts } from '../../../../host/facets/contacts';
+import { highscores as inHighscores } from '../../../../host/facets/highscores';
+import { location as inLocation } from '../../../../host/facets/location';
+import { mail as inMail } from '../../../../host/facets/mail';
+import { marketplace as inMarketplace } from '../../../../host/facets/marketplace';
+import { media as inMedia } from '../../../../host/facets/media';
+import { messages as inMessages } from '../../../../host/facets/messages';
+import { notifications as inNotifications } from '../../../../host/facets/notifications';
+import { reports as inReports } from '../../../../host/facets/reports';
+import { report as inReport } from '../../../../host/facets/report';
+import { service as inService } from '../../../../host/facets/service';
 
 import { account } from './account';
 import { accounts } from './accounts';

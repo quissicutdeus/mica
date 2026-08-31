@@ -5,7 +5,7 @@
  * picks the iframe twins for an add-on — so a test file, having neither entry point, says
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
-import '../../sdk/host/inProcess/registerFacets';
+import '../../host/registerFacets';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -68,7 +68,7 @@ const load = async (systemAsksForReduce: boolean) => {
    * has an empty one. Re-importing the set here is what repopulates it; without this line
    * the first hook call after a reset throws `host facet '<name>' is not loaded`.
    */
-  await import('../../sdk/host/inProcess/registerFacets');
+  await import('../../host/registerFacets');
   const mql = fakeMql(systemAsksForReduce);
   const matchMedia = vi.fn((media: string) => {
     mql.media = media;
@@ -186,7 +186,7 @@ describe('reduced motion', () => {
   it('survives a host with no matchMedia at all', async () => {
     vi.resetModules();
     // MICA-176: `resetModules` discarded the facet registry — see `motion.test.ts`'s note.
-    await import('../../sdk/host/inProcess/registerFacets');
+    await import('../../host/registerFacets');
     vi.stubGlobal('matchMedia', undefined);
     const mod = await import('./motion');
     expect(get(mod.systemPrefersReducedMotion)).toBe(false);

@@ -19,4 +19,4 @@ export function useWallpaper() {
 }
 
 /** @public — SDK surface for add-ons; no in-repo app needs to name these. */
-export type { WallpaperState, WallpaperPreset } from './inProcess/facets/wallpaper';
+export type { WallpaperState, WallpaperPreset } from '../../host/facets/wallpaper';

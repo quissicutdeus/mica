@@ -10,7 +10,7 @@
  * `usePersisted` there cannot wait for whenever an app happens to import `@gphone/sdk`.
  * A second import of an already-evaluated module is free.
  */
-import './host/inProcess/registerFacets';
+import '../host/registerFacets';
 export * from './manifest';
 export * from './components';
 export * from './icons';

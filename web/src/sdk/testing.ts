@@ -4,7 +4,7 @@
  * the shell, and gets the in-process facets. Before this ticket every hook pulled its own
  * facet onto the graph, so a test never had to say which side it was on.
  */
-import './host/inProcess/registerFacets';
+import '../host/registerFacets';
 import { vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 import type { Component } from 'svelte';

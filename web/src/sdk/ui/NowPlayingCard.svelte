@@ -62,7 +62,7 @@
     MusicRepeat,
     MusicSource,
     MusicStatus
-  } from '../host/inProcess/facets/music';
+  } from '../../host/facets/music';
   import { thumbnailUrlFor } from '@shared/youtube';
   import { describeMusicError } from '../../lib/sdk/musicErrors';
   import { formatDuration } from '../../lib/sdk/formatters';

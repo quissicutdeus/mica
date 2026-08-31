@@ -5,7 +5,7 @@
  * picks the iframe twins for an add-on — so a test file, having neither entry point, says
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
-import '../../sdk/host/inProcess/registerFacets';
+import '../../host/registerFacets';
 import { describe, it, expect } from 'vitest';
 import { time, is24Hour, formattedTime } from './time';
 import { get } from 'svelte/store';

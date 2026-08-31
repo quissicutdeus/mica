@@ -9,7 +9,7 @@
  * picks the iframe twins for an add-on — so a test file, having neither entry point, says
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
-import '../../sdk/host/inProcess/registerFacets';
+import '../../host/registerFacets';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { callStore } from '../../services/call';
@@ -859,11 +859,11 @@ describe('surviving a restart', () => {
    */
   const restart = async (seed: Record<string, unknown>) => {
     vi.resetModules();
-    await import('../../sdk/host/inProcess/facets/storage');
+    await import('../../host/facets/storage');
     const { useStorage } = await import('../../sdk/host/useStorage');
     const storage = useStorage('settings');
     for (const [key, value] of Object.entries(seed)) storage.setItem(key, value);
-    await import('../../sdk/host/inProcess/registerFacets');
+    await import('../../host/registerFacets');
     return import('./music');
   };
 

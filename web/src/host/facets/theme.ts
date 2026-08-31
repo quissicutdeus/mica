@@ -1,0 +1,33 @@
+import { registerFacet } from '../../sdk/host/current';
+import {
+  themeStore,
+  schemeStore,
+  isLightMode,
+  DEFAULT_THEME,
+  type ThemeState,
+  type ThemeMode
+} from '../../shell/state/theme';
+import { seedFromRgbString, sanitizeSeed } from '../../lib/sdk/m3';
+
+export type { ThemeState, ThemeMode };
+
+/**
+ * Implementation of the `useTheme` facet — see the `useTheme` hook doc for the usage
+ * contract. Read-only: changing the seed, the mode, or resetting either is `useThemeWrite`
+ * (MICA-127) — a player picking a theme is a much bigger ask than an app rendering one.
+ */
+export function theme() {
+  return {
+    themeStore,
+    schemeStore,
+    isLightMode,
+    defaultTheme: DEFAULT_THEME,
+    /** Convert an `rgb()`/`rgba()` string — what a color picker emits — into a seed. */
+    seedFromRgbString,
+    sanitizeSeed
+  };
+}
+
+/** @public — SDK surface for add-ons; no in-repo app needs to name it. */
+
+registerFacet('theme', theme);

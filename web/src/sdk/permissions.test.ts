@@ -9,7 +9,7 @@
  * picks the iframe twins for an add-on — so a test file, having neither entry point, says
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
-import './host/inProcess/registerFacets';
+import '../host/registerFacets';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -215,7 +215,7 @@ describe('the permission table is total', () => {
 describe('HOOK_OF_FACET', () => {
   it('names a hook for every facet, and that hook exists in PERMISSION_OF', () => {
     // The Facets interface is type-only; read the facet names from the facets directory.
-    const dir = join(__dirname, 'host/inProcess/facets');
+    const dir = join(__dirname, '..', 'host', 'facets');
     const names = readdirSync(dir)
       .filter((f) => f !== 'index.ts' && f.endsWith('.ts'))
       .map((f) => f.replace(/\.svelte\.ts$|\.ts$/, ''));

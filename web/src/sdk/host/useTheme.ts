@@ -18,4 +18,4 @@ export function useTheme() {
 }
 
 /** @public — SDK surface for add-ons; no in-repo app needs to name it. */
-export type { ThemeState, ThemeMode } from './inProcess/facets/theme';
+export type { ThemeState, ThemeMode } from '../../host/facets/theme';

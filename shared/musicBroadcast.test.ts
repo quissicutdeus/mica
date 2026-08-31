@@ -9,7 +9,7 @@
  * picks the iframe twins for an add-on — so a test file, having neither entry point, says
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
-import '../web/src/sdk/host/inProcess/registerFacets';
+import '../web/src/host/registerFacets';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { parseMusicBroadcasts, parseMusicBroadcastVolumes } from './nui';
 import { MUSIC_BROADCASTS_NUI_ACTION, MUSIC_BROADCAST_VOLUMES_NUI_ACTION } from './musicBroadcast';
@@ -159,7 +159,7 @@ const announce = async (rows: Record<string, unknown>[]) => {
 beforeEach(async () => {
   vi.resetModules();
   // MICA-176: `resetModules` discarded the facet registry — see `motion.test.ts`'s note.
-  await import('../web/src/sdk/host/inProcess/registerFacets');
+  await import('../web/src/host/registerFacets');
   tickCallbacks = new Map();
   nextTickId = 0;
   now = 1000;

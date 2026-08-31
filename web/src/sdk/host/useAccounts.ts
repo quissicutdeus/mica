@@ -1,5 +1,5 @@
 import { guarded } from './guard';
-export type { ReactionTarget } from './inProcess/facets/accounts';
+export type { ReactionTarget } from '../../host/facets/accounts';
 
 /**
  * Social identities — the `@handle`s a player posts under, shared by every social app.

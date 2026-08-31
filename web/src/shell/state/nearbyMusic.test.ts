@@ -9,7 +9,7 @@
  * picks the iframe twins for an add-on — so a test file, having neither entry point, says
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
-import '../../sdk/host/inProcess/registerFacets';
+import '../../host/registerFacets';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 import {
@@ -427,13 +427,13 @@ describe('the global mute survives a restart and the per-person list is bounded'
     // (importing the set evaluates `shell/state/nearbyMusic.ts`, the module under test),
     // and why the module-scope `Map` still backs storage under jsdom.
     vi.resetModules();
-    await import('../../sdk/host/inProcess/facets/storage');
+    await import('../../host/facets/storage');
     const { useStorage } = await import('../../sdk/host/useStorage');
     const storage = useStorage('settings');
     storage.setItem('musicMutedBroadcasters', ['a', 'a', '', 7, 'b']);
     storage.setItem('musicMuteNearby', true);
 
-    await import('../../sdk/host/inProcess/registerFacets');
+    await import('../../host/registerFacets');
     const mod = await import('./nearbyMusic');
     expect(get(mod.mutedBroadcasters)).toEqual(['a', 'b']);
     expect(get(mod.muteAllNearby)).toBe(true);

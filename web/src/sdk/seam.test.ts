@@ -50,7 +50,7 @@ const FILES = KIT.flatMap(walk).filter((f) => /\.(svelte|ts)$/.test(f) && !f.end
  * moment a specifier changes shape, and says nothing while it does. Two things were already
  * invisible to it:
  *
- * - `sdk/host/useMail.ts`'s `export { unreadMailCount } from './inProcess/facets/mail'` —
+ * - `sdk/host/useMail.ts`'s `export { unreadMailCount } from '../host/facets/mail'` —
  *   a real value edge from an add-on-reachable file into `services/mail.ts`, three modules
  *   deep. It begins `./`, not `../`, so it never matched, and `inProcess/` was not in the
  *   forbidden list at all. Four hook files had six such edges between them and only
@@ -76,14 +76,14 @@ const FORBIDDEN_DIRS = [
   join(SRC, 'services'),
   join(SRC, 'nui'),
   /**
-   * `sdk/host/inProcess/facets/` joins the list in MICA-176. It is the shell-backed half
+   * `host/facets/` joins the list in MICA-176. It is the shell-backed half
    * of the host seam — 46 of its 48 modules import `shell/`, `services/` or `nui/` by value
    * — and since `facetSwap()` was deleted nothing rewrites a path into it. An add-on's entry
    * imports `sdk/host/iframe/registerFacets` and the shell's imports
-   * `sdk/host/inProcess/registerFacets`, so a file on the add-on graph naming a facet by
+   * `host/registerFacets`, so a file on the add-on graph naming a facet by
    * value is now a real edge rather than one a resolver plugin will redirect. Type-only
    * references are still fine and are why `iframe/facets/*.ts` may write
-   * `typeof import('../../inProcess/facets/mail')`: erased at build time, never resolved.
+   * `typeof import('../host/facets/mail')`: erased at build time, never resolved.
    *
    * `facets/`, not the whole of `inProcess/`. Its three other modules — `system.ts`,
    * `createInProcessHost.ts`, `settingsSync.ts` — are not classified by where they sit: the
@@ -93,7 +93,7 @@ const FORBIDDEN_DIRS = [
    * directory blanket. A directory ban here would have been the shape-matching mistake this
    * rewrite exists to stop, one level up.
    */
-  join(SDK, 'host', 'inProcess', 'facets')
+  join(SRC, 'host')
 ];
 
 const inForbiddenDir = (file: string) =>
@@ -257,12 +257,12 @@ describe('the kit does not reach the shell', () => {
  * `sdk/host/*.ts` and `sdk/host/*.svelte.ts` (excluding `sdk/host/inProcess/**`) are the
  * thin `guarded('useX').facets.x(...)` wrappers (MICA-16 step 3) — they resolve a `Host`
  * and delegate. The bodies that actually reach `shell/`, `services/` and `nui/` live under
- * `sdk/host/inProcess/facets/`, which is the one place in the host API allowed to import
+ * `host/facets/`, which is the one place in the host API allowed to import
  * them.
  *
  * MICA-176 makes this sharper than it was. A hook may no longer name a concrete facet
  * module *at all* — not `./inProcess/facets/contacts` for its side effect, and not
- * `export { unreadMailCount } from './inProcess/facets/mail'` for a value, which is what
+ * `export { unreadMailCount } from '../host/facets/mail'` for a value, which is what
  * four of them were doing. Which facet set a bundle contains is now decided by its entry
  * point (`src/main.ts` or `bootAddOn`), and a hook that names one takes that decision back.
  */
@@ -286,7 +286,7 @@ describe('the host hooks do not reach the shell', () => {
       .flatMap((f) => findOffenders(f));
     expect(
       offenders.sort(),
-      'move the import into sdk/host/inProcess/facets/ — a hook file only resolves a Host and delegates'
+      'move the import into host/facets/ — a hook file only resolves a Host and delegates'
     ).toEqual([]);
   });
 });
@@ -369,7 +369,7 @@ describe('the iframe transport and the add-on barrel do not reach the shell', ()
 /**
  * Every in-process facet has an iframe twin, and both boot sets are exhaustive.
  *
- * `sdk/host/inProcess/facets/*.ts` is what a hook resolves to inside the shell; once an
+ * `host/facets/*.ts` is what a hook resolves to inside the shell; once an
  * add-on runs in its own iframe, the same hook must resolve to a twin under
  * `sdk/host/iframe/facets/` that goes over the transport instead. A facet added to one side
  * and forgotten on the other is a hook that silently works in-process and throws (or worse,
@@ -383,7 +383,7 @@ describe('the iframe transport and the add-on barrel do not reach the shell', ()
  * not listed fails the suite instead.
  */
 
-const IN_PROCESS_FACETS = join(HOST_IN_PROCESS, 'facets');
+const IN_PROCESS_FACETS = join(SRC, 'host', 'facets');
 const IFRAME_FACETS = join(IFRAME_DIR, 'facets');
 
 const facetNames = (dir: string, exclude: string[]): string[] =>
@@ -400,7 +400,7 @@ const bootSet = (registerFacetsFile: string): string[] =>
     .sort();
 
 describe('every in-process facet has an iframe twin', () => {
-  it('sdk/host/iframe/facets/*.ts file names equal sdk/host/inProcess/facets/*.ts file names (minus index.ts)', () => {
+  it('sdk/host/iframe/facets/*.ts file names equal web/src/host/facets/*.ts file names', () => {
     const inProcess = facetNames(IN_PROCESS_FACETS, ['index.ts']);
     const iframe = facetNames(IFRAME_FACETS, ['_shared.ts']);
     expect(inProcess.length).toBeGreaterThan(20);
@@ -409,8 +409,8 @@ describe('every in-process facet has an iframe twin', () => {
 });
 
 describe('the boot facet sets are exhaustive', () => {
-  it('sdk/host/inProcess/registerFacets.ts imports every in-process facet', () => {
-    expect(bootSet(join(HOST_IN_PROCESS, 'registerFacets.ts'))).toEqual(
+  it('host/registerFacets.ts imports every in-process facet', () => {
+    expect(bootSet(join(SRC, 'host', 'registerFacets.ts'))).toEqual(
       facetNames(IN_PROCESS_FACETS, ['index.ts'])
     );
   });
@@ -429,7 +429,7 @@ describe('the boot facet sets are exhaustive', () => {
    * the whole seam moot by dragging the shell-backed facets into an add-on bundle.
    */
   it('only an entry point imports the in-process facet set', () => {
-    const target = join(HOST_IN_PROCESS, 'registerFacets.ts');
+    const target = join(SRC, 'host', 'registerFacets.ts');
     /**
      * The four core-side entry points, and nothing else. `main.ts` is the shell's;
      * `index.ts` is `@gphone/sdk`'s core-side barrel and the mirror of `addon.ts` reaching
