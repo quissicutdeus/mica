@@ -1,4 +1,4 @@
-import { isBrowser } from '../sdk/isBrowser';
+import { isBrowser } from '@gphone/sdk';
 
 interface DebugEvent {
   action: string;

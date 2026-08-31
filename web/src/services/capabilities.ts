@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
-import { isBrowser } from '../lib/sdk/isBrowser';
+import { isBrowser } from '@gphone/sdk';
 import { ALL_CAPABILITIES, type AppCapability } from '../sdk/manifest';
 import type { CapabilitySet } from '../lib/phone/appVisibility';
 

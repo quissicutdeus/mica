@@ -28,7 +28,13 @@ export { DEFAULT_SEED, sanitizeSeed, seedFromRgbString };
  * the state layers are composited numerically in {@link composite} rather than deferred
  * to the browser. Nothing downstream needs a color function newer than CSS 2. That is
  * also what lets `sdk/` stay at zero opacity modifiers under `cef.test.ts`: a state
- * layer is a flat opaque color here, not `bg-surface/8`.
+ * layer is a flat opaque color here, rather than a role token carrying an opacity
+ * modifier.
+ *
+ * That last phrase is deliberately not spelled as the literal class. MICA-172 moved this
+ * file into `src/sdk/`, which `cef.test.ts` scans as raw source text — it cannot tell a doc
+ * comment from markup, so naming the forbidden form here would fail the very rule this
+ * sentence describes.
  *
  * ## Why not MCU's own helpers
  *

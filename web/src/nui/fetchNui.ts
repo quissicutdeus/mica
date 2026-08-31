@@ -78,7 +78,7 @@ export async function fetchNui<T = unknown>(
  * re-export let callers of this module get the predicate without a second import, and its
  * last consumers left when `useNuiBridge` and the two store factories moved onto
  * `sdk/nui/transport`. `isBrowser` is still public — `sdk/utils.ts` exports it straight from
- * `lib/sdk/isBrowser`, which is where it lives. `pnpm deadcode` is what noticed it; no other
+ * `sdk/lib/isBrowser`, which is where it lives. `pnpm deadcode` is what noticed it; no other
  * gate would have, which is the argument for it being in the set.
  */
 

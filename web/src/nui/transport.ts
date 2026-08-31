@@ -1,4 +1,4 @@
-import { isBrowser } from '../lib/sdk/isBrowser';
+import { isBrowser } from '../sdk/lib/isBrowser';
 import { MockRegistry } from './mocks/registry';
 
 export interface ITransportAdapter {

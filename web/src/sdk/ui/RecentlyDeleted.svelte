@@ -3,7 +3,7 @@
   import ConfirmDialog from './ConfirmDialog.svelte';
   import EmptyState from './EmptyState.svelte';
   import TrashIcon from './icons/TrashIcon.svelte';
-  import { formatRelativeTime } from '../../lib/sdk/formatters';
+  import { formatRelativeTime } from '../lib/formatters';
 
   /**
    * One soft-deleted row, as any of Contacts, Notes or Media can describe it.

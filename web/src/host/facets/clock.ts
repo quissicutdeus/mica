@@ -34,7 +34,7 @@ registerFacet('clock', clock);
 /**
  * `formatTime`'s default, installed rather than imported.
  *
- * MICA-172: `lib/sdk/formatters.ts` used to import `is24Hour` straight out of
+ * MICA-172: `sdk/lib/formatters.ts` used to import `is24Hour` straight out of
  * `shell/state/time.ts`, which put that module's module-scope `usePersisted` call inside
  * the shared SDK chunk and killed boot before any facet had registered. It installs from
  * here for the same reason `storage.ts` installs the settings hydrator: this file is

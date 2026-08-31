@@ -1,11 +1,10 @@
 <script lang="ts">
   import { badgeAllowed } from './state/notificationPolicy';
   import { get } from 'svelte/store';
-  import { fade, fly } from '../lib/sdk/motion';
+  import { fade, fly, focusTrap } from '@gphone/sdk';
   import { attachDragGesture } from '../lib/phone/pointerDrag';
   import { createSheetClose } from '../lib/phone/sheetDrag';
   import { attachLongPressDrag } from '../lib/phone/longPressDrag';
-  import { focusTrap } from '../lib/sdk/focusTrap';
   import AppIcon from '../sdk/ui/AppIcon.svelte';
   import SearchIcon from '../sdk/ui/icons/SearchIcon.svelte';
   import { isAdmin } from '../services/admin';

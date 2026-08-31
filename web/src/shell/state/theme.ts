@@ -6,7 +6,7 @@ import {
   cssVarBlock,
   sanitizeSeed,
   type M3Tokens
-} from '../../lib/sdk/m3';
+} from '../../sdk/lib/m3';
 
 /**
  * The phone's active color theme.

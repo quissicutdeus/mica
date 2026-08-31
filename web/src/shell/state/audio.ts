@@ -1,7 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { usePersisted } from '../../sdk/host/usePersisted';
 import { isBatteryDead } from './charge';
-import { isBrowser } from '../../lib/sdk/isBrowser';
+import { isBrowser } from '@gphone/sdk';
 
 export type SoundEffect = 'click' | 'pop' | 'camera' | 'notification' | 'ringtone';
 

@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { fade } from '../../lib/sdk/motion';
+  import { fade } from '../lib/motion';
   import Button from './Button.svelte';
-  import { focusTrap } from '../../lib/sdk/focusTrap';
+  import { focusTrap } from '../lib/focusTrap';
 
   interface Props {
     title: string;

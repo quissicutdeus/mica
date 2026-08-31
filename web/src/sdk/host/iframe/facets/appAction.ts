@@ -2,7 +2,7 @@ import type { AppActionOptions } from '../../facets';
 import { registerFacet } from '../../current';
 import type { Facets } from '../../facets';
 import { writable } from 'svelte/store';
-import { messageOf } from '../../../../lib/sdk/errors';
+import { messageOf } from '../../../lib/errors';
 import { remoteCall } from '../remote';
 
 type Twin = ReturnType<Facets['appAction']>;

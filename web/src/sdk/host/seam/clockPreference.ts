@@ -1,7 +1,7 @@
 /**
  * Whether this player reads clocks in 24-hour time, and the one-slot seam behind it.
  *
- * MICA-172. `formatTime` in `lib/sdk/formatters.ts` needs this for its default, and
+ * MICA-172. `formatTime` in `sdk/lib/formatters.ts` needs this for its default, and
  * `formatters` is re-exported from `@gphone/sdk`'s `utils.ts` — so it is reachable from
  * every add-on and from every corner of the shell. It used to reach the value by importing
  * `is24Hour` directly out of `shell/state/time.ts`, and that single import was the last

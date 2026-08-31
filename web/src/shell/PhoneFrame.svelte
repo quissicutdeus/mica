@@ -2,7 +2,7 @@
   import { anySheetOpen } from './state/sheets';
   import { onMount, type Snippet } from 'svelte';
   import { get } from 'svelte/store';
-  import { fly, fade } from '../lib/sdk/motion';
+  import { fly, fade } from '@gphone/sdk';
   import { formattedTime, formattedDate } from './state/time';
   import { goHome, currentApp } from './state/navigation';
   import { displayCharge, isBatteryDead } from './state/charge';

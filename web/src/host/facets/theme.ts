@@ -7,7 +7,7 @@ import {
   type ThemeState,
   type ThemeMode
 } from '../../shell/state/theme';
-import { seedFromRgbString, sanitizeSeed } from '../../lib/sdk/m3';
+import { seedFromRgbString, sanitizeSeed } from '../../sdk/lib/m3';
 
 export type { ThemeState, ThemeMode };
 

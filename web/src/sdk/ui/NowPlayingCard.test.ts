@@ -70,7 +70,7 @@ const VIDEO = 'dQw4w9WgXcQ';
 
 /** The extraction is the camera-and-canvas half; `dominantColor.test.ts` owns it. */
 const dominant = vi.hoisted(() => vi.fn<(url: string) => Promise<string | null>>());
-vi.mock('../../lib/sdk/dominantColor', () => ({ dominantColorFrom: dominant }));
+vi.mock('../lib/dominantColor', () => ({ dominantColorFrom: dominant }));
 
 beforeEach(() => {
   resetMusicForTest();

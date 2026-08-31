@@ -9,7 +9,7 @@ import { time } from './state/time';
 import { hydrateSettings } from '../sdk/host/useStorage';
 import { bootstrapStores, resetBootstrapState } from './state/bootstrap';
 import { toast } from './state/toast';
-import { messageOf } from '../lib/sdk/errors';
+import { messageOf } from '@gphone/sdk';
 import { APP_EVENT_NUI_ACTION, parseAppEventEnvelope } from '@shared/appEvents';
 import {
   MUSIC_BROADCASTS_NUI_ACTION,

@@ -1,4 +1,4 @@
-import { is24HourNow } from '../../sdk/host/seam/clockPreference';
+import { is24HourNow } from '../host/seam/clockPreference';
 
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', {

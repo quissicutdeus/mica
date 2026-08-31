@@ -2,7 +2,7 @@ import { registerFacet } from '../../current';
 import type { Facets } from '../../facets';
 import { store, type AsTwin } from './_shared';
 import { constants } from '../constants';
-import { seedFromRgbString, sanitizeSeed } from '../../../../lib/sdk/seed';
+import { seedFromRgbString, sanitizeSeed } from '../../../lib/seed';
 
 type Twin = AsTwin<ReturnType<Facets['theme']>>;
 

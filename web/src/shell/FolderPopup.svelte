@@ -1,10 +1,9 @@
 <script lang="ts">
   import { badgeAllowed } from './state/notificationPolicy';
-  import { fade } from '../lib/sdk/motion';
+  import { fade, focusTrap } from '@gphone/sdk';
   import { get } from 'svelte/store';
   import { registerHandler } from './state/keybinds';
   import { attachLongPressDrag } from '../lib/phone/longPressDrag';
-  import { focusTrap } from '../lib/sdk/focusTrap';
   import AppIcon from '../sdk/ui/AppIcon.svelte';
   import { appRegistryStore } from './state/registry';
   import { appVisible } from './state/appVisibility';

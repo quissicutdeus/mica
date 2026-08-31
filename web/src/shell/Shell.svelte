@@ -7,7 +7,7 @@
   import { refreshCapabilities } from '../services/capabilities';
   import { createNuiMessageRouter } from './nuiMessages';
   import { installDevHarness, seedBrowserPhone } from './devHarness';
-  import { isBrowser } from '../lib/sdk/isBrowser';
+  import { isBrowser } from '@gphone/sdk';
   import { currentApp, runningApps, openApp, goHome, closePhone } from './state/navigation';
   import { dispatchKey, isTypingTarget, registerHandler } from './state/keybinds';
   import { findAction } from '@shared/keybinds';

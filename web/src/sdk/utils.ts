@@ -9,14 +9,14 @@
  * app — `hashStringToCardNumber` was a `utils/` file used by nothing but Bank, and now
  * lives there.
  *
- * Every implementation below is in `lib/sdk/`, never `lib/phone/`, and that is checked
- * rather than observed: `lib/ownership.test.ts` (MICA-171) splits `lib/` by owner and
- * fails if anything under `sdk/` reaches the phone-owned half. Adding a re-export here
- * whose module lives in `lib/phone/` is the thing it catches — move the module, or do
- * not export it.
+ * Every implementation below is in `sdk/lib/`, never `lib/phone/`, and that is checked
+ * rather than observed: `lib/ownership.test.ts` (MICA-171, and MICA-172 once the
+ * SDK-owned half moved in here) fails if anything under `sdk/` reaches the phone-owned
+ * half. Adding a re-export here whose module lives in `lib/phone/` is the thing it
+ * catches — move the module, or do not export it.
  */
-export { isBrowser } from '../lib/sdk/isBrowser';
-export { filterByQuery } from '../lib/sdk/filterByQuery';
+export { isBrowser } from './lib/isBrowser';
+export { filterByQuery } from './lib/filterByQuery';
 export {
   formatCurrency,
   formatDate,
@@ -24,9 +24,9 @@ export {
   formatRelativeTime,
   formatTime,
   formatTimestamp
-} from '../lib/sdk/formatters';
-export { renderMarkdown } from '../lib/sdk/markdown';
-export { useScrollDetect } from '../lib/sdk/useScrollDetect';
+} from './lib/formatters';
+export { renderMarkdown } from './lib/markdown';
+export { useScrollDetect } from './lib/useScrollDetect';
 /**
  * Image encoding, and the downscale every photo is stored with (MICA-110).
  *
@@ -44,7 +44,7 @@ export {
   makeThumbnail,
   THUMBNAIL_MAX_DIMENSION,
   THUMBNAIL_QUALITY
-} from '../lib/sdk/thumbnail';
+} from './lib/thumbnail';
 
 /**
  * Split player-written text into styleable pieces — text, `@mention`, `#tag`.
@@ -75,7 +75,7 @@ export { tokenizeRichText } from '@shared/richText';
  *
  * Exported here rather than from a barrel line of its own because it is the same kind of
  * thing as everything above: DOM behaviour with no gPhone state behind it, implemented in
- * `lib/sdk/` and therefore bundle-safe for a sandboxed add-on. Going through `utils.ts` is
+ * `sdk/lib/` and therefore bundle-safe for a sandboxed add-on. Going through `utils.ts` is
  * also what gives it index/addon parity for free — both barrels `export *` from this file,
  * so it cannot end up resolvable to the typechecker and missing at `vite build`, which is
  * the divergence `publicSurface.test.ts`'s parity arm exists to catch.
@@ -88,8 +88,8 @@ export { tokenizeRichText } from '@shared/richText';
  * <div role="dialog" aria-modal="true" use:focusTrap={{ returnFocusTo: () => opener }}>
  * ```
  */
-export { focusTrap } from '../lib/sdk/focusTrap';
-export type { FocusTrapOptions } from '../lib/sdk/focusTrap';
+export { focusTrap } from './lib/focusTrap';
+export type { FocusTrapOptions } from './lib/focusTrap';
 
 /**
  * The message to show a player for something that was thrown.
@@ -106,4 +106,4 @@ export type { FocusTrapOptions } from '../lib/sdk/focusTrap';
  * message worth showing a player, and a default would put "Something went wrong" into every
  * add-on that forgot to think about it.
  */
-export { messageOf } from '../lib/sdk/errors';
+export { messageOf } from './lib/errors';

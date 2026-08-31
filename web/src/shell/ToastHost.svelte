@@ -1,6 +1,6 @@
 <script lang="ts">
   import { toast, type ToastMessage, type ToastAction } from './state/toast';
-  import { fly } from '../lib/sdk/motion';
+  import { fly } from '@gphone/sdk';
   import CloseIcon from '../sdk/ui/icons/CloseIcon.svelte';
   import SendIcon from '../sdk/ui/icons/SendIcon.svelte';
   import Avatar from '../sdk/ui/Avatar.svelte';

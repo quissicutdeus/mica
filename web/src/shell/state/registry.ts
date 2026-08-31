@@ -6,7 +6,7 @@ import { get, writable } from 'svelte/store';
 // evaluates its module-level `derived(appRegistryStore, ...)`.
 import { type AppComponent, type AppManifest, defineApp } from '../../sdk/manifest';
 import { clearAppStorage } from '../../sdk/host/useStorage';
-import { messageOf } from '../../lib/sdk/errors';
+import { messageOf } from '@gphone/sdk';
 import { capabilities, capabilitiesKnown } from '../../services/capabilities';
 import { usePersisted } from '../../sdk/host/usePersisted';
 import { placeOnHomeGridIfAbsent } from './homeGrid';

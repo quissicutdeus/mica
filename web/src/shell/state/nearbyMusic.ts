@@ -6,7 +6,7 @@ import {
   MAX_AUDIBLE_BROADCASTS,
   joinOffsetSeconds,
   rankAudible
-} from '../../lib/sdk/musicBroadcast';
+} from '../../sdk/lib/musicBroadcast';
 
 /**
  * Other people's music. MICA-111 phase 2, the phone's half.

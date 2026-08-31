@@ -1,7 +1,7 @@
 <script lang="ts">
   import { closedPhoneToast } from './state/toast';
   import { frameMargin, phoneBox, viewportSize } from './state/display';
-  import { fly } from '../lib/sdk/motion';
+  import { fly } from '@gphone/sdk';
   import Avatar from '../sdk/ui/Avatar.svelte';
   import { appRegistryStore } from './state/registry';
 

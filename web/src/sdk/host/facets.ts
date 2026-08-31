@@ -39,8 +39,8 @@
  * `CancelTimer`) existed as hand-kept duplicates on both sides. One definition each now.
  */
 
-import type { M3Tokens, sanitizeSeed, seedFromRgbString } from '../../lib/sdk/m3';
-import type { describeMusicError } from '../../lib/sdk/musicErrors';
+import type { M3Tokens, sanitizeSeed, seedFromRgbString } from '../lib/m3';
+import type { describeMusicError } from '../lib/musicErrors';
 import type { AccountSearchQuery, FollowListQuery, FollowPage } from '../../services/accounts';
 import type { SendMoneyInput, SendMoneyOutcome } from '../../services/bank';
 import type { CallState, CallStatus } from '../../services/call';

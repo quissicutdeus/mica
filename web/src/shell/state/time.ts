@@ -1,5 +1,5 @@
 import { writable, derived } from 'svelte/store';
-import { isBrowser } from '../../lib/sdk/isBrowser';
+import { isBrowser } from '@gphone/sdk';
 import { usePersisted } from '../../sdk/host/usePersisted';
 
 /** Hours and minutes, as rendered by `useClock`. */

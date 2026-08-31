@@ -14,7 +14,7 @@ import {
   placeholderAvatar,
   placeholderPhoto,
   placeholderPhotos
-} from '../../lib/sdk/placeholderImage';
+} from '../../sdk/lib/placeholderImage';
 
 /** Inject created_at / updated_at timestamps into a mock object. Accepts an optional offset (ms before now). */
 const ts = (offsetMs: number = 0) => {

@@ -3,10 +3,9 @@
   import type { NotificationItem } from '@shared/types';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
-  import { fade, fly } from '../lib/sdk/motion';
+  import { fade, fly, focusTrap } from '@gphone/sdk';
   import { attachDragGesture } from '../lib/phone/pointerDrag';
   import { createSheetClose } from '../lib/phone/sheetDrag';
-  import { focusTrap } from '../lib/sdk/focusTrap';
   import {
     groupNotificationsByConversation,
     type NotificationConversationGroup

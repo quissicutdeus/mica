@@ -13,7 +13,7 @@ import * as fetchNuiModule from '../nui/fetchNui';
  * `vi.spyOn(fetchNuiModule, 'fetchNui')` below cover both routes.
  */
 import { registerNuiTransport } from '../sdk/nui/transport';
-import * as thumbnailModule from '../lib/sdk/thumbnail';
+import * as thumbnailModule from '../sdk/lib/thumbnail';
 
 const row = (id: number, extra: Record<string, unknown> = {}) => ({
   id,

@@ -3,7 +3,7 @@ import { compareVersions } from '../../lib/phone/semver';
 import { fetchCatalog, getRemoteCatalogUrl, type CatalogEntry } from '../../sdk/catalog';
 import { appRegistryStore } from './registry';
 import type { AppManifest } from '../../sdk/manifest';
-import { messageOf } from '../../lib/sdk/errors';
+import { messageOf } from '@gphone/sdk';
 
 /**
  * Whether an installed add-on has fallen behind the catalog.

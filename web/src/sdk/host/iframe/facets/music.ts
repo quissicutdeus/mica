@@ -2,8 +2,8 @@ import { registerFacet } from '../../current';
 import type { Facets } from '../../facets';
 import { fn, store, type AsTwin } from './_shared';
 import { isYouTubeSource, thumbnailUrlFor } from '@shared/youtube';
-import { describeMusicError } from '../../../../lib/sdk/musicErrors';
-import { MAX_AUDIBLE_BROADCASTS } from '../../../../lib/sdk/musicBroadcast';
+import { describeMusicError } from '../../../lib/musicErrors';
+import { MAX_AUDIBLE_BROADCASTS } from '../../../lib/musicBroadcast';
 
 type Twin = AsTwin<ReturnType<Facets['music']>>;
 

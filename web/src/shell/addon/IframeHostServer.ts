@@ -13,7 +13,7 @@ import type {
 import { isCallbackRef } from '../../sdk/host/iframe/messages';
 import { themeStyleStore } from '../state/theme';
 import { is24Hour } from '../state/time';
-import { messageOf } from '../../lib/sdk/errors';
+import { messageOf } from '@gphone/sdk';
 
 /** The guest end of the channel: the window a frame is currently running. */
 export interface GuestWindow {

@@ -1,7 +1,7 @@
 import { derived, get, writable, type Readable, type Writable } from 'svelte/store';
 import { usePersisted } from '../../sdk/host/usePersisted';
 import { parseYouTubeSource, isPlaylistId, isVideoId } from '@shared/youtube';
-import { reasonForCode, type MusicError, type MusicErrorReason } from '../../lib/sdk/musicErrors';
+import { reasonForCode, type MusicError, type MusicErrorReason } from '../../sdk/lib/musicErrors';
 import { callStore } from '../../services/call';
 
 /** Re-exported so the player's failures are named from one module — see `lib/musicErrors`. */

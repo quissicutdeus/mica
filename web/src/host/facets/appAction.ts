@@ -2,7 +2,7 @@ import type { AppActionOptions } from '../../sdk/host/facets';
 import { registerFacet } from '../../sdk/host/current';
 import { writable } from 'svelte/store';
 import { toast } from '../../shell/state/toast';
-import { messageOf } from '../../lib/sdk/errors';
+import { messageOf } from '@gphone/sdk';
 
 // MICA-179: defined once in the host contract; re-exported so existing importers keep working.
 export type { AppActionOptions } from '../../sdk/host/facets';

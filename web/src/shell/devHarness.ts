@@ -1,5 +1,5 @@
 import { debugData } from '../lib/phone/debug';
-import { placeholderAvatar } from '../lib/sdk/placeholderImage';
+import { placeholderAvatar } from '@gphone/sdk';
 import { appRegistryStore } from './state/registry';
 import { openApp } from './state/navigation';
 import {

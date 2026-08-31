@@ -42,7 +42,7 @@ export type { ResolvedKeybindAction } from '../shell/state/keybinds';
 export type { RunningApp } from '../shell/state/navigation';
 export type { ToastMessage } from '../shell/state/toast';
 export type { AppEvent } from '../shell/state/appEvents';
-export type { M3Tokens } from '../lib/sdk/m3';
+export type { M3Tokens } from './lib/m3';
 export type { FollowPage, FollowListQuery, AccountSearchQuery } from '../services/accounts';
 export type { ListingPage, CreateListingInput } from '../services/marketplace';
 export type { SendMoneyOutcome, SendMoneyInput } from '../services/bank';
@@ -53,11 +53,7 @@ export type { AppUpdate, AppUpdateKind } from '../shell/state/appUpdates';
  * Mirrors `index.ts`'s own re-export (MICA-129 closed the gap): `lib/` is state-free and
  * I/O-free by definition (AGENTS.md §8), so this bundles into a sandboxed add-on unchanged.
  */
-export {
-  placeholderAvatar,
-  placeholderPhoto,
-  placeholderPhotos
-} from '../lib/sdk/placeholderImage';
+export { placeholderAvatar, placeholderPhoto, placeholderPhotos } from './lib/placeholderImage';
 export * from './types';
 export * from './version';
 /**
@@ -79,6 +75,6 @@ export { PRIVACY_NOTICE_TEXT } from './privacyNotice';
  * cannot import `shell/` by any route, so this is the only way it can honour Settings >
  * Display > Motion at all.
  */
-export { fade, fly } from '../lib/sdk/motion';
+export { fade, fly } from './lib/motion';
 
 export { bootAddOn } from './host/iframe/boot';
