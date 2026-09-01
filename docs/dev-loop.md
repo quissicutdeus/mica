@@ -199,6 +199,28 @@ first database that had the duplicates the migration existed to remove. Every
 mocked assertion passed. Re-introducing that bug today fails this harness on the
 fixture named `3-CIT_VICTIM`, which is the whole argument for the file.
 
+### `pnpm test:schema`, and the CI job that runs both
+
+`scripts/test-schema.js` (MICA-203) takes the same harness one step further.
+For each framework shape in turn it creates the owner table the way the
+framework ships it — qb `players`, and ESX `users` with no explicit collation so
+it takes the server default, which is the shape that refused a join in
+MICA-197 — imports the matching `gphone*.sql`, runs the migrator, seeds a few
+rows, and calls the real repository methods that name an owner table
+(`ConversationRepository.findForCitizen`, `findParticipantsForConversations`,
+`PlayerDirectory.resolveByPhone` and the rest) through the bundled server code
+with `oxmysql` stubbed by a real client. A statement that only fails against a
+real schema fails here.
+
+Both scripts accept a database from the environment instead of starting Docker:
+set `MICA_DB_HOST`, `MICA_DB_PORT`, `MICA_DB_USER` and
+`MICA_DB_PASSWORD` and they connect there; leave them unset and they start the
+throwaway container as before. Neither has a "no database, nothing to do" branch
+— unreachable is exit 1. That is what lets the `schema` job in
+`.github/workflows/build-test.yml` run both against a MariaDB service container
+on every push, so each path is one script rather than a local one and a CI copy.
+Still not part of `pnpm verify`, for the reason above.
+
 ### It drives the real module, deliberately
 
 `scripts/test-migrations.js` bundles `server/lib/migrations.ts` and

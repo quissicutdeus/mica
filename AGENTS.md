@@ -546,10 +546,11 @@ correctness requirement, not a preference), and the worked example.
 | web    | `pnpm test:unit:web`    | Stores, utils, SDK, components                                    |
 | e2e    | `pnpm test:e2e`         | Playwright over `web/` against the mock transport                 |
 
-What the suites **cannot** catch: anything that needs the game. The Chromium-103
-gap (§6), the client/server relay layers above, framework bridge behavior, and
-SQL that only fails against a real schema. Playwright drives a modern Chromium
-against mocks — **a green suite is not evidence a NUI feature works in game.**
+What `pnpm verify` **cannot** catch: anything that needs the game — the
+client/server relay layers above and framework bridge behavior. CI adds two
+gates verify lacks: Playwright in a real Chromium 103 (§6), and `test:schema`,
+the repositories against MariaDB on both framework shapes. Playwright drives
+mocks — **a green suite is not evidence a NUI feature works in game.**
 
 E2E note: `webServer` builds a bundle and serves it with
 `vite preview --strictPort` on port 4173 (`web/playwright.config.ts`),
