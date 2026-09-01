@@ -112,6 +112,48 @@ export default defineConfig({
   },
   projects: [
     /**
+     * CEF floor: Chromium 103 (2022 branch point).
+     *
+     * Runs only when CEF_FLOOR_CHROMIUM environment variable points to a Chromium 103
+     * executable. When not set, prints a message and skips without reporting as passed.
+     * This is intentionally loud, never silent — a gate that stays quiet when it cannot
+     * run reads as a pass.
+     *
+     * Download Chromium r1002910 (Linux_x64) from chromium-browser-snapshots to test
+     * this project. The executable is typically at <unzipped>/chrome-linux/chrome.
+     *
+     *   export CEF_FLOOR_CHROMIUM=/path/to/chrome-linux/chrome
+     *   pnpm test:e2e
+     */
+    ...(process.env.CEF_FLOOR_CHROMIUM
+      ? [
+          {
+            name: 'cef-floor',
+            use: {
+              ...devices['Desktop Chrome'],
+              viewport: { width: 1280, height: 960 },
+              launchOptions: {
+                executablePath: process.env.CEF_FLOOR_CHROMIUM
+              }
+            }
+          }
+        ]
+      : (() => {
+          if (process.env.CI) {
+            throw new Error(
+              'CEF_FLOOR_CHROMIUM is not set. CI must provide the Chromium 103 binary path. ' +
+                'The cef-floor project is not optional in CI.'
+            );
+          }
+          // In local runs, print a message that this project is being skipped, never silent.
+          console.log(
+            '\n[cef-floor] Skipped: CEF_FLOOR_CHROMIUM not set. ' +
+              'To test Chromium 103 compatibility, download r1002910 and set: ' +
+              'export CEF_FLOOR_CHROMIUM=/path/to/chrome-linux/chrome\n'
+          );
+          return [];
+        })()),
+    /**
      * Every spec, in the default scheme.
      *
      * The suite used to run twice over — once dark, once light — for roughly double the

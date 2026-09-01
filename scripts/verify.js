@@ -102,7 +102,7 @@ const isConfig = (p) =>
 const GATE_INPUTS = {
   container: (p) =>
     p.startsWith('docker/') || p === 'Dockerfile' || p === 'compose.yaml' || p.endsWith('.go'),
-  lint: (p) => /\.(ts|js|mjs|cjs|svelte)$/.test(p),
+  lint: (p) => /\.(ts|js|mjs|cjs|svelte|css)$/.test(p),
   typecheck: (p) => /\.(ts|svelte)$/.test(p),
   unit: (p) => /\.(ts|svelte)$/.test(p),
   e2e: (p) => /^(web|sdk|shared)\//.test(p),

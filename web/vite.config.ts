@@ -160,7 +160,8 @@ export default defineConfig({
   build: {
     outDir: '../dist/web',
     emptyOutDir: true,
-    target: 'chrome92',
+    target: 'chrome103',
+    cssTarget: 'chrome103',
     rollupOptions: {
       onwarn(warning, warn) {
         if (warning.code === 'INEFFECTIVE_DYNAMIC_IMPORT') return;

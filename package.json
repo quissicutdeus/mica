@@ -4,6 +4,9 @@
   "version": "1.0.0",
   "description": "An open-source TypeScript phone for FiveM",
   "type": "module",
+  "browserslist": [
+    "chrome 103"
+  ],
   "scripts": {
     "build": "node scripts/generate-barrels.js && pnpm typecheck && pnpm build:nocheck",
     "build:nocheck": "pnpm clearbuild && node scripts/generate-barrels.js && node build/build-bundle.js && pnpm build:web && node scripts/check-license-banner.js",
@@ -41,9 +44,10 @@
     "lint:agents": "node scripts/check-agents-size.js",
     "lint:actions": "node scripts/check-action-versions.js",
     "lint:ts": "oxlint .",
+    "lint:css": "stylelint \"**/*.{css,svelte}\" --custom-syntax postcss-html",
     "lint:web": "pnpm --filter web lint",
     "lint:sdk": "pnpm --filter @gphone/sdk lint",
-    "lint": "concurrently -c \"cyan,magenta,blue\" -n \"ts,web,sdk\" \"pnpm:lint:ts\" \"pnpm:lint:web\" \"pnpm:lint:sdk\"",
+    "lint": "concurrently -c \"cyan,magenta,blue,green\" -n \"ts,web,sdk,css\" \"pnpm:lint:ts\" \"pnpm:lint:web\" \"pnpm:lint:sdk\" \"pnpm:lint:css\"",
     "demo": "docker compose up --build",
     "demo:up": "docker compose up -d --build",
     "demo:down": "docker compose down",
@@ -73,8 +77,11 @@
     "markdownlint-cli2": "^0.23.2",
     "mysql2": "^3.24.2",
     "oxlint": "^1.80.0",
+    "postcss-html": "^2.0.0",
     "prettier": "^3.9.6",
     "prettier-plugin-svelte": "^4.1.1",
+    "stylelint": "^17.14.1",
+    "stylelint-no-unsupported-browser-features": "^8.1.1",
     "typescript": "^7.0.2",
     "typescript-ast-parser": "npm:typescript@~6.0.3",
     "vitest": "^4.1.11",
