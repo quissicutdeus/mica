@@ -9,6 +9,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { renderAppIcons } from './lib/app-icons.js';
+
 /**
  * Emit a `catalog.json` describing the add-on bundles that were just built.
  *
@@ -26,9 +28,16 @@ import { pathToFileURL } from 'node:url';
  * and into a file that decides what players are offered.
  *
  * So each manifest is bundled with esbuild and imported, and the catalog is built from the
- * object `defineApp` actually returned. `.svelte` imports are stubbed, because a manifest's
- * `icon` is a component and `CatalogEntry.icon` is an optional string: the component cannot
- * cross into JSON and nothing downstream wants it to.
+ * object `defineApp` actually returned. `.svelte` imports are stubbed in *that* bundle: it
+ * exists to read a manifest object, and a component is not part of one.
+ *
+ * ## The icon is rendered, not referenced
+ *
+ * A manifest's `icon` is a component and `CatalogEntry.icon` is a string, so each
+ * `Icon.svelte` is compiled, rendered to static SVG and inlined as a `data:` URI. That
+ * lives in `scripts/lib/app-icons.js`, which carries the reasoning and can be tested
+ * without a built `dist/`; omitting it is what left a catalog install with a coloured tile
+ * and no glyph.
  *
  * ## What it refuses to do
  *
@@ -69,7 +78,8 @@ const addOnIds = () =>
   });
 
 /**
- * Stubs every `.svelte` import: an icon component cannot be JSON and is not wanted here.
+ * Stubs every `.svelte` import: this bundle exists to read manifest objects, and a
+ * component is not part of one. The icons get their own pass — see `lib/app-icons.js`.
  *
  * CommonJS and a `Proxy`, not `export default`, and both halves are load-bearing. Reaching
  * `defineApp` pulls in SDK modules that take *named* imports from `.svelte` files —
@@ -117,6 +127,7 @@ const { build } = await import(
 const work = mkdtempSync(join(tmpdir(), 'gphone-catalog-'));
 let manifests;
 let isCatalogEntry;
+let tileFromColorClasses;
 try {
   const entry = join(work, 'entry.js');
   // `isCatalogEntry` comes out of the same bundle as the manifests, so what validates the
@@ -125,6 +136,7 @@ try {
     entry,
     `${ids.map((id, i) => `import m${i} from ${JSON.stringify(join(appsDir, id, 'manifest.ts'))};`).join('\n')}
 export { isCatalogEntry } from ${JSON.stringify(join(root, 'sdk/catalog.ts'))};
+export { tileFromColorClasses } from ${JSON.stringify(join(root, 'sdk/manifest.ts'))};
 export default [${ids.map((_, i) => `m${i}`).join(', ')}];`
   );
 
@@ -160,6 +172,13 @@ export default [${ids.map((_, i) => `m${i}`).join(', ')}];`
   const loaded = await import(pathToFileURL(out).href);
   manifests = loaded.default;
   isCatalogEntry = loaded.isCatalogEntry;
+  // The tile's two roles, split by the same function `defineApp` splits them with, rather
+  // than by a regex here that would drift from it.
+  tileFromColorClasses = loaded.tileFromColorClasses;
+
+  // `render` is bundled alongside the components rather than imported separately: a server
+  // component and the runtime that renders it have to be the same copy of Svelte's
+  // internals, and esbuild gives each bundle its own.
 } finally {
   rmSync(work, { recursive: true, force: true });
 }
@@ -179,6 +198,25 @@ const REQUIRED = ['id', 'name', 'description', 'color'];
  * is the honest reading of the same sentence rather than a placeholder.
  */
 const fallbackVersion = process.env.MICA_CALVER?.trim();
+
+/**
+ * Every icon, rendered before the rows are built.
+ *
+ * One esbuild pass for all of them, so the map below stays synchronous. The tile's two
+ * roles are split by the SDK's own `tileFromColorClasses` rather than by a regex here that
+ * would drift from `defineApp`.
+ */
+const icons = await renderAppIcons({
+  root,
+  appsDir,
+  apps: manifests.map((manifest, i) => ({
+    id: manifest.id ?? ids[i],
+    fg: manifest.color ? tileFromColorClasses(manifest.color)?.fg : undefined
+  }))
+}).catch((error) => {
+  console.error(`generate-catalog: ${error.message}`);
+  process.exit(1);
+});
 
 const entries = manifests.map((manifest, i) => {
   const id = manifest.id ?? ids[i];
@@ -222,6 +260,7 @@ const entries = manifests.map((manifest, i) => {
     bundleUrl: `${origin}/addons/${id}.js`,
     sha256: createHash('sha256').update(readFileSync(bundle)).digest('hex'),
     color: manifest.color,
+    icon: icons[i],
     permissions: manifest.permissions ?? [],
     ...(manifest.requires ? { requires: manifest.requires } : {}),
     ...(manifest.requiresNetwork === undefined
