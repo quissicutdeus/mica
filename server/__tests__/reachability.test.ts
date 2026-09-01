@@ -305,18 +305,27 @@ describe('the contract and the registered surface agree', () => {
     expect(orphaned).toEqual([]);
   });
 
-  it('answers nothing its own contract does not declare', () => {
+  it('answers nothing that is not declared, by any service', () => {
     /**
-     * `registerEvent` already throws at startup for this, so reaching the assertion at all
-     * means every service with a contract loaded cleanly. Pinned anyway: the throw is a
-     * runtime guard inside one method, and this is the statement of the rule.
+     * `registerEvent` throws at startup both for a service with no contract at all and for one
+     * whose contract does not name the action — so reaching this assertion means every service
+     * loaded cleanly, which is most of the proof. Pinned anyway, and not as belt-and-braces:
+     * the throw lives inside one method and this is the statement of the rule, which is what a
+     * reader looking for "must every action be declared?" will find.
      */
     const undeclared = [...registered].filter((entry) => {
       const [service, action] = entry.split(':');
       const contract = contractFor(service ?? '');
-      return contract ? !(action! in contract.actions) : false;
+      return !contract || !(action! in contract.actions);
     });
 
     expect(undeclared).toEqual([]);
+  });
+
+  it('has a custom surface at all, so neither direction is vacuous', () => {
+    // Both checks above pass trivially against an empty set. This is what says the module graph
+    // really did load every service, which is the thing that makes them mean something.
+    expect(registered.size).toBeGreaterThan(80);
+    expect(allContracts().length).toBeGreaterThan(15);
   });
 });

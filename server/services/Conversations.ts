@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { PlayerFacingError } from '../lib/errors';
 import { ConversationRepository } from '../repositories/ConversationRepository';
 import { defineService } from '../lib/defineService';
 import { Conversation, Participant } from '@gphone/shared/types';
@@ -414,7 +415,9 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
    * right.
    */
   if (uniquePhones.length + members.size > MAX_CONVERSATION_MEMBERS) {
-    throw new Error(`A conversation can hold at most ${MAX_CONVERSATION_MEMBERS} people.`);
+    throw new PlayerFacingError(
+      `A conversation can hold at most ${MAX_CONVERSATION_MEMBERS} people.`
+    );
   }
 
   // Group members: each entry is a phone number, resolved the same way the 1-on-1 target
@@ -559,7 +562,7 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
   const participants = await conversationRepo.findParticipants(id);
   const self = participants.find((p) => p.citizenid === citizenid);
 
-  if (!self) throw new Error('Not a participant');
+  if (!self) throw new PlayerFacingError('Not a participant');
 
   if (self.role === 'admin') {
     // Admin deletes (soft delete) on behalf of the whole thread, so this is a

@@ -70,7 +70,7 @@ describe('Marketplace service', () => {
 
     it('rejects a negative price', async () => {
       const reply = await call('create', { title: 'Bike', price: -1, description: 'nice bike' });
-      expect(reply.error).toMatch(/valid price/);
+      expect(reply.error).toMatch(/price/);
     });
 
     it('drops attachments the caller does not own', async () => {
@@ -126,7 +126,7 @@ describe('Marketplace service', () => {
         ]
       });
 
-      expect(reply.error).toBe('You can attach at most 4 photos.');
+      expect(reply.error).toMatch(/attachments/);
       // Not one ownership lookup, and not the listing row either.
       expect(dbMock.single).not.toHaveBeenCalled();
       expect(dbMock.insert).not.toHaveBeenCalled();

@@ -152,7 +152,9 @@ describe('hodlr: buy and sell', () => {
     ])('rejects %s before touching the holding', async (_label, payload) => {
       const reply = await call(SELL, payload);
 
-      expect(reply).toEqual({ error: 'A valid quantity is required.' });
+      // The rule is the contract's now, so the message names the field rather than restating
+      // the rule. What it refuses is unchanged, plus a ceiling `requirePositiveInt` never had.
+      expect(reply).toMatchObject({ error: expect.any(String) });
       expect(dbMock.update).not.toHaveBeenCalled();
       expect(player.addMoney).not.toHaveBeenCalled();
     });
@@ -245,7 +247,7 @@ describe('hodlr: buy and sell', () => {
     it('rejects a fractional quantity before pricing it', async () => {
       const reply = await call(BUY, { quantity: 0.5 });
 
-      expect(reply).toEqual({ error: 'A valid quantity is required.' });
+      expect(reply).toMatchObject({ error: expect.stringContaining('quantity') });
       expect(player.removeMoney).not.toHaveBeenCalled();
     });
   });
@@ -354,12 +356,17 @@ describe('hodlr: buy and sell', () => {
       });
     });
 
-    it('caps a quantity so large it would otherwise reach SQL as a number', async () => {
-      // `requirePositiveInt` is happy with 1e20; the cap is what stops it, and it stops it
-      // before the value is ever handed to the database or the framework's money API.
+    it('refuses a quantity so large it would otherwise reach SQL as a number', async () => {
+      /**
+       * `requirePositiveInt` was happy with 1e20 and the per-trade value cap caught it a step
+       * later, which was the right answer arrived at by luck: `price * quantity` has already
+       * overflowed into a float by then, so the cap was comparing a number nobody could hold.
+       * `quantity` is an `int(11)` and the contract now says so, which refuses it a step
+       * earlier and for the reason that is actually true.
+       */
       const reply = await call(SELL, { quantity: 1e20 });
 
-      expect(reply).toEqual({ ok: false, reason: 'exceeds_limit' });
+      expect(reply).toMatchObject({ error: expect.stringContaining('quantity') });
       expect(dbMock.update).not.toHaveBeenCalled();
     });
   });

@@ -4,6 +4,7 @@
 
 import { requirePositiveInt } from './payload';
 import { MAX_ATTACHMENTS } from '@gphone/shared/attachments';
+import { PlayerFacingError } from './errors';
 
 /**
  * Keep only the attachments whose photo the sender actually owns.
@@ -46,7 +47,7 @@ export const resolveOwnedAttachments = async (
   // Before the loop, and before anything is parsed: the only check an attacker cannot make
   // expensive is the one that reads a length.
   if (raw.length > MAX_ATTACHMENTS) {
-    throw new Error(`You can attach at most ${MAX_ATTACHMENTS} photos.`);
+    throw new PlayerFacingError(`You can attach at most ${MAX_ATTACHMENTS} photos.`);
   }
 
   const seen = new Set<number>();

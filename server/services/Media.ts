@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { PlayerFacingError } from '../lib/errors';
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { MediaItem } from '@gphone/shared/types';
 import { findNearbyVisiblePlayers } from '../lib/proximity';
@@ -88,7 +89,7 @@ const MAX_MEDIA_DATA_LENGTH = 4 * 1024 * 1024;
  */
 const assertStorableData = (value: unknown): void => {
   if (typeof value === 'string' && value.length > MAX_MEDIA_DATA_LENGTH) {
-    throw new Error('That photo is too large to store.');
+    throw new PlayerFacingError('That photo is too large to store.');
   }
 };
 
@@ -449,7 +450,7 @@ export const media = defineService<MediaItem, typeof mediaContract>({
 
         // Zero rows inserted, so no insert id: the predicate refused. This is the only way
         // the quota says no now — there is no separate check that could disagree with it.
-        if (!id) throw new Error(QUOTA_FULL_MESSAGE);
+        if (!id) throw new PlayerFacingError(QUOTA_FULL_MESSAGE);
         return id;
       }
 
@@ -659,7 +660,8 @@ app.registerEvent('getDeleted', async (_source, _cbId, _data, citizenid) => {
  */
 app.registerEvent('item', async (_source, _cbId, data, citizenid) => {
   const row = await repo.findById(data.id, citizenid);
-  if (!row || row.status !== 'active') throw new Error('That photo could not be found.');
+  if (!row || row.status !== 'active')
+    throw new PlayerFacingError('That photo could not be found.');
 
   return row;
 });
@@ -734,7 +736,8 @@ app.registerEvent('thumbnail', async (_source, _cbId, data, citizenid) => {
  */
 app.registerEvent('drop', async (source, _cbId, data, citizenid) => {
   const owned = await repo.findById(data.mediaId, citizenid);
-  if (!owned || owned.status !== 'active') throw new Error('That photo could not be found.');
+  if (!owned || owned.status !== 'active')
+    throw new PlayerFacingError('That photo could not be found.');
 
   const nearby = await findNearbyVisiblePlayers(source, citizenid);
   // One person, not one phone: two sources resolving to the same character is one copy and
@@ -813,7 +816,7 @@ app.registerEvent('shareLocation', async (source, _cbId, data, citizenid) => {
   const label = data.label?.trim() || undefined;
 
   const coords = playerCoords(source);
-  if (!coords) throw new Error('Could not determine your location.');
+  if (!coords) throw new PlayerFacingError('Could not determine your location.');
   const [x, y, z] = coords;
 
   const privileged = repo as unknown as {

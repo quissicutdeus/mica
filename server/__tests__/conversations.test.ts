@@ -39,6 +39,7 @@ vi.mock('../lib/PlayerDirectory', () => ({
 }));
 
 import { conversations } from '../services/Conversations';
+import { GENERIC_ERROR_MESSAGE } from '../lib/errors';
 
 const call = async (action: string, data: unknown) => {
   const handler = handlers.get(`gphone:server:conversations:${action}`);
@@ -459,12 +460,21 @@ describe('conversations:create — participant_a/participant_b and the unique-in
     expect(participantsAdded()).toEqual([]);
   });
 
-  it('still throws when the create fails for a reason that has nothing to do with the pair key', async () => {
+  it('still fails when the create fails for a reason that has nothing to do with the pair key', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     dbMock.insert.mockRejectedValueOnce(new Error('ER_LOCK_WAIT_TIMEOUT: Lock wait timeout'));
 
     const reply = await call('create', { phone: '555-0100' });
 
-    expect(reply).toMatchObject({ error: expect.stringContaining('Lock wait timeout') });
+    /**
+     * The failure still reaches the caller as a failure — what changed is that the driver's
+     * own text does not. A lock-wait timeout names the statement that waited, and a player
+     * reading it learns the schema and can act on none of it. The stack goes to the log,
+     * which is where a server owner can do something about it (`lib/errors.ts`).
+     */
+    expect(reply).toMatchObject({ error: GENERIC_ERROR_MESSAGE });
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
   });
 
   it('does not touch the duplicate-key fallback for a group thread, which has no pair', async () => {
@@ -475,10 +485,16 @@ describe('conversations:create — participant_a/participant_b and the unique-in
       })
     );
 
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+
     const reply = await call('create', { phone: '555-0100', participants: ['555-0200'] });
 
     // No `pairCitizenId` for a group, so the catch re-throws unconditionally rather than
-    // trying a `findOneToOne` lookup that could never apply to it.
-    expect(reply).toMatchObject({ error: expect.stringContaining('Duplicate entry') });
+    // trying a `findOneToOne` lookup that could never apply to it. The re-thrown driver error
+    // is not a player's to read, so what reaches them is the generic sentence and what
+    // reaches the log is the whole thing.
+    expect(reply).toMatchObject({ error: GENERIC_ERROR_MESSAGE });
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
   });
 });

@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { PlayerFacingError } from '../lib/errors';
 import { defineService, SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { reportsContract } from '@gphone/shared/contracts/reports';
@@ -130,7 +131,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   // The contract bounds the string; this is the allowlist, and it is a registry apps declare
   // into rather than a list `shared/` could hold.
   if (!isReportableTable(table)) {
-    throw new Error('That kind of content cannot be reported.');
+    throw new PlayerFacingError('That kind of content cannot be reported.');
   }
 
   const targetId = data.targetId;
@@ -142,12 +143,12 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
 
   const target = await summariseTarget(table, targetId);
   if (!target.exists) {
-    throw new Error('That content no longer exists.');
+    throw new PlayerFacingError('That content no longer exists.');
   }
 
   // Reporting your own content is not moderation, it is noise in the queue.
   if (target.citizenid === citizenid) {
-    throw new Error('You cannot report your own content.');
+    throw new PlayerFacingError('You cannot report your own content.');
   }
 
   const id = await repo.create({
@@ -213,7 +214,7 @@ const logContentViewed = async (
  * and `gphonecharge` already shipped once with its gate in the wrong place.
  */
 app.registerEvent('queue', async (source, cbId, data, citizenid) => {
-  if (!isAdmin(source)) throw new Error('Not authorised.');
+  if (!isAdmin(source)) throw new PlayerFacingError('Not authorised.');
 
   const pending = await repo.findAll({ resolution: 'pending' } as Partial<Report>);
   // Oldest first: a queue that surfaces the newest report first starves the backlog.
@@ -231,7 +232,7 @@ app.registerEvent('queue', async (source, cbId, data, citizenid) => {
  * times and the pending list is the one that has to stay small and fast.
  */
 app.registerEvent('history', async (source, cbId, data, citizenid) => {
-  if (!isAdmin(source)) throw new Error('Not authorised.');
+  if (!isAdmin(source)) throw new PlayerFacingError('Not authorised.');
 
   const rows = await repo.findAllResolved();
   const sorted = rows.sort(
@@ -248,12 +249,12 @@ app.registerEvent('history', async (source, cbId, data, citizenid) => {
  * decision while leaving the consequence in place, which is worse than no undo at all.
  */
 app.registerEvent('reopen', async (source, cbId, data, citizenid) => {
-  if (!isAdmin(source)) throw new Error('Not authorised.');
+  if (!isAdmin(source)) throw new PlayerFacingError('Not authorised.');
 
   const id = data.id;
   const report = await repo.findById(id);
-  if (!report) throw new Error('No such report.');
-  if (report.resolution === 'pending') throw new Error('That report is already open.');
+  if (!report) throw new PlayerFacingError('No such report.');
+  if (report.resolution === 'pending') throw new PlayerFacingError('That report is already open.');
 
   /**
    * Claim before restoring, not after. The claim carries the resolution this handler read,
@@ -262,7 +263,7 @@ app.registerEvent('reopen', async (source, cbId, data, citizenid) => {
    */
   const previous = report.resolution;
   if (!(await repo.claimResolution(id, previous, 'pending'))) {
-    throw new Error('That report is already open.');
+    throw new PlayerFacingError('That report is already open.');
   }
 
   if (previous === 'actioned' && isReportableTable(report.target_table)) {
@@ -287,19 +288,20 @@ app.registerEvent('reopen', async (source, cbId, data, citizenid) => {
 
 /** Dismiss a report, or moderate what it points at. */
 app.registerEvent('resolve', async (source, cbId, data, citizenid) => {
-  if (!isAdmin(source)) throw new Error('Not authorised.');
+  if (!isAdmin(source)) throw new PlayerFacingError('Not authorised.');
 
   const { id, action } = data;
 
   const report = await repo.findById(id);
-  if (!report) throw new Error('No such report.');
-  if (report.resolution !== 'pending') throw new Error('That report is already resolved.');
+  if (!report) throw new PlayerFacingError('No such report.');
+  if (report.resolution !== 'pending')
+    throw new PlayerFacingError('That report is already resolved.');
 
   // Checked before the claim, so a report that cannot be moderated is refused without
   // being claimed and released again. Only reachable if the allowlist shrank after the
   // report was filed.
   if (action === 'moderate' && !isReportableTable(report.target_table)) {
-    throw new Error('That content is no longer moderatable.');
+    throw new PlayerFacingError('That content is no longer moderatable.');
   }
 
   const resolution: ReportResolution = action === 'moderate' ? 'actioned' : 'dismissed';
@@ -311,7 +313,7 @@ app.registerEvent('resolve', async (source, cbId, data, citizenid) => {
    * that one goes on to take the content down.
    */
   if (!(await repo.claimResolution(id, 'pending', resolution))) {
-    throw new Error('That report is already resolved.');
+    throw new PlayerFacingError('That report is already resolved.');
   }
 
   if (action === 'moderate') {

@@ -22,6 +22,9 @@ vi.mock('../lib/AuditLogger', () => auditMock);
 
 import { Repository } from '../lib/Repository';
 import { ServiceEndpoint, ServiceOptions } from '../lib/ServiceEndpoint';
+import { GENERIC_ERROR_MESSAGE, PlayerFacingError } from '../lib/errors';
+import { defineContract } from '@gphone/shared/contract';
+import { s } from '@gphone/shared/schema';
 
 interface TestRow {
   id: number;
@@ -323,5 +326,152 @@ describe('ServiceEndpoint — authentication and registration', () => {
     const [, src, cbId] = emitted[0];
     expect(src).toBe(5);
     expect(cbId).toBe('cb-1');
+  });
+});
+
+/**
+ * The contract boundary: what a custom action accepts, and what a caller is told when it does
+ * not. `test_contract` rather than `test`, so the endpoints mounted above stay contract-free
+ * and keep exercising the generic path.
+ */
+const boundaryContract = defineContract({
+  id: 'test_contract',
+  actions: {
+    rename: { input: s.object({ id: s.positiveInt(), title: s.string({ max: 10 }) }) },
+    refuse: { input: s.none() },
+    burst: { input: s.none() }
+  }
+});
+
+const mountContract = () => {
+  handlers = new Map();
+  emitted = [];
+
+  (globalThis as Record<string, unknown>).onNet = (event: string, cb: Handler) => {
+    handlers.set(event, cb);
+  };
+  (globalThis as Record<string, unknown>).emitNet = (...args: unknown[]) => {
+    emitted.push(args);
+  };
+  (globalThis as Record<string, unknown>).source = 5;
+
+  return new ServiceEndpoint<TestRow, typeof boundaryContract>('test_contract', new TestRepo(), {
+    contract: boundaryContract,
+    disableGet: true,
+    disableCreate: true,
+    disableUpdate: true,
+    disableDelete: true
+  });
+};
+
+const callContract = async (action: string, data: unknown) => {
+  const handler = handlers.get(`gphone:server:test_contract:${action}`);
+  if (!handler) throw new Error(`no handler registered for '${action}'`);
+  await handler('cb-1', data);
+};
+
+describe('ServiceEndpoint — a custom action is validated by its contract', () => {
+  it('parses the payload before the handler sees it', async () => {
+    const app = mountContract();
+    let seen: unknown;
+    app.registerEvent('rename', async (_source, _cbId, data) => {
+      seen = data;
+      return true;
+    });
+
+    await callContract('rename', { id: '4', title: 'ok' });
+
+    // Coerced by the schema, so the handler receives a number rather than the string the
+    // payload carried — the coercion `requirePositiveInt` used to do in each handler.
+    expect(seen).toEqual({ id: 4, title: 'ok' });
+  });
+
+  it('refuses a payload the schema does not accept, without running the handler', async () => {
+    const app = mountContract();
+    const ran = vi.fn();
+    app.registerEvent('rename', async () => ran());
+
+    await callContract('rename', { id: 4, title: 'far too long a title' });
+
+    expect(lastReply().error).toContain('title');
+    expect(ran).not.toHaveBeenCalled();
+  });
+
+  it('refuses at startup an action the contract does not declare', () => {
+    const app = mountContract();
+
+    expect(() =>
+      // @ts-expect-error — the type refuses it first, which is the point; this proves the
+      // runtime does too, for a build where the type error was ignored.
+      app.registerEvent('undeclared', async () => true)
+    ).toThrow(/does not declare/);
+  });
+
+  it('refuses at startup a custom action on a service with no contract at all', () => {
+    const { app } = mount();
+
+    expect(() => app.registerEvent('somethingCustom', async () => true)).toThrow(
+      /without a contract/
+    );
+  });
+});
+
+/**
+ * Which errors a player is allowed to read.
+ *
+ * Every throw used to leave through one line with its message intact, so a driver failure
+ * carrying the statement text that failed reached a toast looking exactly like a deliberate
+ * refusal. See `lib/errors.ts`.
+ */
+describe('ServiceEndpoint — what an error discloses', () => {
+  it('forwards a PlayerFacingError, which is a refusal somebody wrote', async () => {
+    const app = mountContract();
+    app.registerEvent('refuse', async () => {
+      throw new PlayerFacingError('You cannot do that yet.');
+    });
+
+    await callContract('refuse', undefined);
+
+    expect(lastReply()).toEqual({ error: 'You cannot do that yet.' });
+  });
+
+  it('forwards a SchemaError, which names a field and nothing else', async () => {
+    const app = mountContract();
+    app.registerEvent('rename', async () => true);
+
+    await callContract('rename', { id: 0, title: 'ok' });
+
+    expect(lastReply().error).toContain('id');
+    expect(lastReply().error).not.toBe(GENERIC_ERROR_MESSAGE);
+  });
+
+  it('replaces anything else with one generic sentence, and logs the stack', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const app = mountContract();
+    app.registerEvent('refuse', async () => {
+      throw new Error("ER_PARSE_ERROR: You have an error in your SQL syntax near 'SELECT'");
+    });
+
+    await callContract('refuse', undefined);
+
+    expect(lastReply()).toEqual({ error: GENERIC_ERROR_MESSAGE });
+    // The whole error object, so the stack goes to the log rather than to the player.
+    expect(logged).toHaveBeenCalled();
+    expect(String(JSON.stringify(lastReply()))).not.toContain('SELECT');
+    logged.mockRestore();
+  });
+
+  it('says nothing about the database when a repository invariant fires', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const app = mountContract();
+    app.registerEvent('refuse', async () => {
+      throw new Error("[Repository] update on 'gphone_test' requires a citizenid.");
+    });
+
+    await callContract('refuse', undefined);
+
+    expect(lastReply().error).not.toContain('gphone_test');
+    expect(lastReply().error).not.toContain('[Repository]');
+    logged.mockRestore();
   });
 });

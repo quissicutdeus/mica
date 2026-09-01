@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { PlayerFacingError } from '../lib/errors';
 import { randomBytes, scrypt } from 'node:crypto';
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
@@ -303,7 +304,7 @@ app.registerEvent('check', async (source, cbId, data, citizenid) => {
     // Told plainly rather than answered `false`. A lockout the player cannot see is a lock
     // screen that looks broken, and the number leaks nothing: they already know they have
     // been guessing.
-    throw new Error(`Too many attempts. Try again in ${Math.ceil(waitMs / 1000)}s.`);
+    throw new PlayerFacingError(`Too many attempts. Try again in ${Math.ceil(waitMs / 1000)}s.`);
   }
 
   const row = await repo.findByCitizenId(citizenid);

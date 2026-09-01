@@ -2,12 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { PlayerFacingError } from '../lib/errors';
 import { defineService, SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
-import { isReactableTable, isPlausibleEmoji } from '../lib/reactions';
+import { isReactableTable } from '../lib/reactions';
 import { Account } from '@gphone/shared/types';
-import { fields, optionalString, pageBounds, requirePositiveInt } from '../lib/payload';
+import { pageBounds, requirePositiveInt } from '../lib/payload';
+import { accountsContract } from '@gphone/shared/contracts/accounts';
 import { buildDeepLink } from '@gphone/shared/deepLink';
 
 /**
@@ -78,7 +80,8 @@ class AccountRepository extends SchemaRepository<Account> {
   }
 }
 
-export const accounts = defineService<Account>({
+export const accounts = defineService<Account, typeof accountsContract>({
+  contract: accountsContract,
   id: 'accounts',
   /**
    * Previewed by **handle**, not bio. The handle identifies the account and cannot be
@@ -326,8 +329,7 @@ const maxPerApp = (): number => {
  * decides what the UI draws.
  */
 app.registerEvent('mine', async (source, cbId, data, citizenid) => {
-  const appId = optionalString(fields(data).app);
-  if (!appId) throw new Error('An app id is required.');
+  const appId = data.app;
 
   const rows = await Database.query<Account[]>(
     `SELECT * FROM \`gphone_accounts\`
@@ -340,14 +342,16 @@ app.registerEvent('mine', async (source, cbId, data, citizenid) => {
 });
 
 app.registerEvent('create', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const appId = optionalString(body.app);
-  const handle = optionalString(body.handle)?.toLowerCase();
-  const displayName = optionalString(body.display_name) ?? null;
+  const appId = data.app;
+  // Folded before the pattern is applied, which is why the pattern is not in the contract:
+  // refusing a capital the server is about to lowercase anyway would be a worse rule.
+  const handle = data.handle.toLowerCase();
+  const displayName = data.display_name ?? null;
 
-  if (!appId) throw new Error('An app id is required.');
-  if (!handle || !HANDLE_PATTERN.test(handle)) {
-    throw new Error('A handle is 3–32 characters, using lowercase letters, numbers and _.');
+  if (!HANDLE_PATTERN.test(handle)) {
+    throw new PlayerFacingError(
+      'A handle is 3–32 characters, using lowercase letters, numbers and _.'
+    );
   }
 
   /**
@@ -363,7 +367,9 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     [citizenid, appId]
   );
   if ((held ?? 0) >= limit) {
-    throw new Error(`You already hold ${limit} accounts here. Delete one to make room.`);
+    throw new PlayerFacingError(
+      `You already hold ${limit} accounts here. Delete one to make room.`
+    );
   }
 
   /**
@@ -376,7 +382,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     'SELECT `id` FROM `gphone_accounts` WHERE `app` = ? AND `handle` = ? LIMIT 1',
     [appId, handle]
   );
-  if (taken) throw new Error(`@${handle} is taken.`);
+  if (taken) throw new PlayerFacingError(`@${handle} is taken.`);
 
   try {
     const id = await repo.createWithinCap(
@@ -386,7 +392,9 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     // Zero rows inserted, so no insert id: the cap predicate refused. Reached only when a
     // concurrent create took the last slot between the count above and this statement.
     if (!id) {
-      throw new Error(`You already hold ${limit} accounts here. Delete one to make room.`);
+      throw new PlayerFacingError(
+        `You already hold ${limit} accounts here. Delete one to make room.`
+      );
     }
     return { id, citizenid, app: appId, handle, display_name: displayName, status: 'active' };
   } catch (error) {
@@ -396,8 +404,8 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     if (/duplicate/i.test(message)) {
       // `{ cause }` is the constructor's ES2022 form; this repo's lib target is ES2021, so
       // the property is set directly instead — same effect, portable to the older lib.
-      const takenError = new Error(`@${handle} is taken.`);
-      (takenError as Error & { cause?: unknown }).cause = error;
+      const takenError = new PlayerFacingError(`@${handle} is taken.`);
+      (takenError as PlayerFacingError & { cause?: unknown }).cause = error;
       throw takenError;
     }
     throw error;
@@ -416,21 +424,19 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
  * unique index making it idempotent, and a delete scoped to the caller's own account.
  */
 app.registerEvent('follow', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const appId = optionalString(body.app);
-  if (!appId) throw new Error('An app id is required.');
+  const appId = data.app;
 
-  const follower = await ownedAccount(body.follower_account_id, citizenid, appId);
-  if (!follower) throw new Error('That account is not yours.');
+  const follower = await ownedAccount(data.follower_account_id, citizenid, appId);
+  if (!follower) throw new PlayerFacingError('That account is not yours.');
 
-  const followeeId = requirePositiveInt(body.followee_account_id, 'followee account id');
+  const followeeId = data.followee_account_id;
 
   /**
    * Following yourself is refused rather than stored. It would put your own posts in your
    * Following feed, which already has them nowhere else to be, and inflate both counts by one
    * for everybody.
    */
-  if (followeeId === follower.id) throw new Error('You cannot follow yourself.');
+  if (followeeId === follower.id) throw new PlayerFacingError('You cannot follow yourself.');
 
   /**
    * The target must exist, be active, and be **in the same app**. Not decoration: a row linking
@@ -442,7 +448,7 @@ app.registerEvent('follow', async (source, cbId, data, citizenid) => {
      WHERE \`id\` = ? AND \`app\` = ? AND \`status\` = 'active' LIMIT 1`,
     [followeeId, appId]
   );
-  if (!followee) throw new Error('That account is no longer available.');
+  if (!followee) throw new PlayerFacingError('That account is no longer available.');
 
   try {
     await Database.insert(
@@ -484,14 +490,10 @@ app.registerEvent('follow', async (source, cbId, data, citizenid) => {
 });
 
 app.registerEvent('unfollow', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const appId = optionalString(body.app);
-  if (!appId) throw new Error('An app id is required.');
+  const follower = await ownedAccount(data.follower_account_id, citizenid, data.app);
+  if (!follower) throw new PlayerFacingError('That account is not yours.');
 
-  const follower = await ownedAccount(body.follower_account_id, citizenid, appId);
-  if (!follower) throw new Error('That account is not yours.');
-
-  const followeeId = requirePositiveInt(body.followee_account_id, 'followee account id');
+  const followeeId = data.followee_account_id;
 
   // Scoped to the caller's own account, so a row id is not authorization to remove somebody
   // else's follow (§2.9).
@@ -510,21 +512,19 @@ app.registerEvent('unfollow', async (source, cbId, data, citizenid) => {
  * cheaper to implement than to explain.
  */
 app.registerEvent('block', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const appId = optionalString(body.app);
-  if (!appId) throw new Error('An app id is required.');
+  const appId = data.app;
 
-  const blocker = await ownedAccount(body.blocker_account_id, citizenid, appId);
-  if (!blocker) throw new Error('That account is not yours.');
+  const blocker = await ownedAccount(data.blocker_account_id, citizenid, appId);
+  if (!blocker) throw new PlayerFacingError('That account is not yours.');
 
-  const blockedId = requirePositiveInt(body.blocked_account_id, 'blocked account id');
-  if (blockedId === blocker.id) throw new Error('You cannot block yourself.');
+  const blockedId = data.blocked_account_id;
+  if (blockedId === blocker.id) throw new PlayerFacingError('You cannot block yourself.');
 
   const blocked = await Database.single<{ id: number }>(
     "SELECT `id` FROM `gphone_accounts` WHERE `id` = ? AND `app` = ? AND `status` = 'active' LIMIT 1",
     [blockedId, appId]
   );
-  if (!blocked) throw new Error('That account is no longer available.');
+  if (!blocked) throw new PlayerFacingError('That account is no longer available.');
 
   try {
     await Database.insert(
@@ -548,14 +548,10 @@ app.registerEvent('block', async (source, cbId, data, citizenid) => {
 });
 
 app.registerEvent('unblock', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const appId = optionalString(body.app);
-  if (!appId) throw new Error('An app id is required.');
+  const blocker = await ownedAccount(data.blocker_account_id, citizenid, data.app);
+  if (!blocker) throw new PlayerFacingError('That account is not yours.');
 
-  const blocker = await ownedAccount(body.blocker_account_id, citizenid, appId);
-  if (!blocker) throw new Error('That account is not yours.');
-
-  const blockedId = requirePositiveInt(body.blocked_account_id, 'blocked account id');
+  const blockedId = data.blocked_account_id;
 
   // Scoped to the caller's own account, so a row id is not authorization to lift somebody
   // else's block (§2.9). Unblocking does not restore any follow the block cascade removed.
@@ -578,24 +574,20 @@ app.registerEvent('unblock', async (source, cbId, data, citizenid) => {
  * the same emoji twice is one reaction, not an error.
  */
 app.registerEvent('react', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const appId = optionalString(body.app);
-  if (!appId) throw new Error('An app id is required.');
+  const account = await ownedAccount(data.account_id, citizenid, data.app);
+  if (!account) throw new PlayerFacingError('That account is not yours.');
 
-  const account = await ownedAccount(body.account_id, citizenid, appId);
-  if (!account) throw new Error('That account is not yours.');
-
-  const targetTable = optionalString(body.target_table);
-  if (!isReactableTable(targetTable)) throw new Error('That cannot be reacted to.');
-  const targetId = requirePositiveInt(body.target_id, 'target id');
-
-  if (!isPlausibleEmoji(body.emoji)) throw new Error('That is not a single emoji.');
+  // Bound as a value by the contract; this is the namespace allowlist, which is a registry
+  // apps declare into rather than a list a schema could hold.
+  const targetTable = data.target_table;
+  if (!isReactableTable(targetTable)) throw new PlayerFacingError('That cannot be reacted to.');
+  const targetId = data.target_id;
 
   try {
     await Database.insert(
       `INSERT INTO \`gphone_account_reactions\`
        (\`account_id\`, \`target_table\`, \`target_id\`, \`emoji\`) VALUES (?, ?, ?, ?)`,
-      [account.id, targetTable, targetId, body.emoji]
+      [account.id, targetTable, targetId, data.emoji]
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
@@ -605,24 +597,19 @@ app.registerEvent('react', async (source, cbId, data, citizenid) => {
 });
 
 app.registerEvent('unreact', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const appId = optionalString(body.app);
-  if (!appId) throw new Error('An app id is required.');
+  const account = await ownedAccount(data.account_id, citizenid, data.app);
+  if (!account) throw new PlayerFacingError('That account is not yours.');
 
-  const account = await ownedAccount(body.account_id, citizenid, appId);
-  if (!account) throw new Error('That account is not yours.');
-
-  const targetTable = optionalString(body.target_table);
-  if (!isReactableTable(targetTable)) throw new Error('That cannot be reacted to.');
-  const targetId = requirePositiveInt(body.target_id, 'target id');
-  if (!isPlausibleEmoji(body.emoji)) throw new Error('That is not a single emoji.');
+  const targetTable = data.target_table;
+  if (!isReactableTable(targetTable)) throw new PlayerFacingError('That cannot be reacted to.');
+  const targetId = data.target_id;
 
   // Scoped to the caller's own account, so a row id is not authorization to remove somebody
   // else's reaction (§2.9).
   await Database.update(
     `DELETE FROM \`gphone_account_reactions\`
      WHERE \`account_id\` = ? AND \`target_table\` = ? AND \`target_id\` = ? AND \`emoji\` = ?`,
-    [account.id, targetTable, targetId, body.emoji]
+    [account.id, targetTable, targetId, data.emoji]
   );
   return true;
 });
@@ -633,24 +620,14 @@ app.registerEvent('unreact', async (source, cbId, data, citizenid) => {
  * page of messages rather than one per row.
  */
 app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const appId = optionalString(body.app);
-  if (!appId) throw new Error('An app id is required.');
+  const appId = data.app;
 
-  const targetTable = optionalString(body.target_table);
-  if (!isReactableTable(targetTable)) throw new Error('That cannot be reacted to.');
+  const targetTable = data.target_table;
+  if (!isReactableTable(targetTable)) throw new PlayerFacingError('That cannot be reacted to.');
 
-  const raw = Array.isArray(body.target_ids) ? body.target_ids : [];
-  const targetIds = raw
-    .map((value) => {
-      try {
-        return requirePositiveInt(value, 'target id');
-      } catch {
-        return null;
-      }
-    })
-    .filter((id): id is number => id !== null)
-    .slice(0, 60);
+  // Deduplicated rather than trimmed: the contract bounds the count, and a repeated id would
+  // otherwise add a placeholder and a bind parameter for a row already named.
+  const targetIds = [...new Set(data.target_ids)];
 
   if (targetIds.length === 0) return {};
 
@@ -704,16 +681,13 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
  * privileged act, and only the *button* needs an identity.
  */
 app.registerEvent('follows', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const appId = optionalString(body.app);
-  if (!appId) throw new Error('An app id is required.');
-
-  const accountId = requirePositiveInt(body.account_id, 'account id');
+  const appId = data.app;
+  const accountId = data.account_id;
 
   const viewer =
-    body.viewer_account_id === undefined || body.viewer_account_id === null
+    data.viewer_account_id === undefined || data.viewer_account_id === null
       ? null
-      : await ownedAccount(body.viewer_account_id, citizenid, appId);
+      : await ownedAccount(data.viewer_account_id, citizenid, appId);
 
   const [followers, following, mine, blocked] = await Promise.all([
     Database.scalar<number>(
@@ -772,15 +746,12 @@ app.registerEvent('follows', async (source, cbId, data, citizenid) => {
  * a bare `id` ambiguous.
  */
 const followList = async (
-  data: unknown,
+  data: { app: string; account_id: number; cursor?: number | null; limit?: number },
   direction: 'followers' | 'following'
 ): Promise<{ rows: Account[]; nextCursor: number | null }> => {
-  const body = fields(data);
-  const appId = optionalString(body.app);
-  if (!appId) throw new Error('An app id is required.');
-
-  const accountId = requirePositiveInt(body.account_id, 'account id');
-  const { limit, cursor } = pageBounds(body, paging);
+  const appId = data.app;
+  const accountId = data.account_id;
+  const { limit, cursor } = pageBounds(data, paging);
 
   /**
    * Which end of the relation is the subject and which is the row being listed. Both are literals
@@ -845,12 +816,10 @@ app.registerEvent('following', (source, cbId, data) => followList(data, 'followi
  * the account named X," the same fact a handle button anywhere in the app already exposes.
  */
 app.registerEvent('search', async (source, cbId, data) => {
-  const body = fields(data);
-  const appId = optionalString(body.app);
-  if (!appId) throw new Error('An app id is required.');
+  const appId = data.app;
 
-  const q = optionalString(body.q)?.slice(0, 64) ?? '';
-  const { limit, cursor } = pageBounds(body, paging);
+  const q = data.q;
+  const { limit, cursor } = pageBounds(data, paging);
 
   const projection = accounts.resolved.publicColumns.map((column) => `\`${column}\``).join(', ');
   const cursorClause = cursor === null ? '' : ' AND `id` < ?';

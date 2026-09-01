@@ -4,7 +4,8 @@
 
 import { defineService } from '../lib/defineService';
 import type { HodlrHolding } from '@gphone/shared/types';
-import { fields, requirePositiveInt } from '../lib/payload';
+import { defineContract } from '@gphone/shared/contract';
+import { s } from '@gphone/shared/schema';
 import { getCurrentPrice, getPriceHistory, isMarketReady } from './HodlrMarket';
 import { Database } from '../lib/Database';
 
@@ -18,7 +19,36 @@ import { Database } from '../lib/Database';
  * live in `HodlrMarket.ts`, a plain module rather than another `defineService`, because
  * nobody owns a global price the way a player owns a holding.
  */
-export const hodlr = defineService<HodlrHolding>({
+
+/**
+ * Hodlr's contract, declared here rather than in `shared/contracts/`.
+ *
+ * Hodlr is `core: false`, and `shared/` is core — `sdk/coreBoundary.test.ts` refuses core any
+ * mention of an app the Store installs. So an add-on declares its contract in its own resource,
+ * next to the `defineService` call it belongs to, which is exactly what an external one writes.
+ */
+export const hodlrContract = defineContract({
+  id: 'hodlr',
+  actions: {
+    /** The caller's own holding and what it is worth. The citizenid is the whole predicate. */
+    portfolio: { input: s.none() },
+    /** The live price and its history. A property of the market, identical for every caller. */
+    price: { input: s.none() },
+    /**
+     * A whole number of coins, and the ceiling is `int(11)`'s.
+     *
+     * `requirePositiveInt` refused a fraction and a negative and said nothing about the top,
+     * so `Number.MAX_SAFE_INTEGER` reached the arithmetic: `price * quantity` overflows into a
+     * float long before MySQL is asked to hold it, and the per-trade cap it is then compared
+     * against is checked in that same broken currency.
+     */
+    buy: { input: s.object({ quantity: s.int({ min: 1, max: 2147483647 }) }) },
+    sell: { input: s.object({ quantity: s.int({ min: 1, max: 2147483647 }) }) }
+  }
+});
+
+export const hodlr = defineService<HodlrHolding, typeof hodlrContract>({
+  contract: hodlrContract,
   id: 'hodlr',
   access: { read: 'owner', write: 'server' },
   schema: {
@@ -199,7 +229,7 @@ app.registerEvent('price', async () => {
 app.registerEvent('buy', async (source, cbId, data, citizenid, player) => {
   if (!isMarketReady()) return MARKET_CLOSED;
 
-  const quantity = requirePositiveInt(fields(data).quantity, 'quantity');
+  const { quantity } = data;
   // Quoted once, above the debit, for the same reason `sell` already documents at its own
   // call: the cap has to be checked before any money moves, and settling at the price the
   // request was priced against is the fairer of the two readings. `quoteSpread` is a pure
@@ -283,7 +313,7 @@ app.registerEvent('buy', async (source, cbId, data, citizenid, player) => {
 app.registerEvent('sell', async (source, cbId, data, citizenid, player) => {
   if (!isMarketReady()) return MARKET_CLOSED;
 
-  const quantity = requirePositiveInt(fields(data).quantity, 'quantity');
+  const { quantity } = data;
   // Quoted once, above the decrement, because the cap has to be checked before any coin
   // moves — and settling at the price the request was priced against is the fairer of the
   // two readings anyway. `quoteSpread` is pure and synchronous, same reasoning as `buy`.

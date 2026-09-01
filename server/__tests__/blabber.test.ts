@@ -767,23 +767,36 @@ describe('engagement', () => {
     expect(dbMock.query).not.toHaveBeenCalled();
   });
 
-  it('caps the number of ids it will answer for', async () => {
+  it('refuses an over-cap list rather than answering for part of it', async () => {
     // The ids become a placeholder list, so an unbounded array is both injection-shaped and a
-    // way to ask for one enormous query (§2.9).
+    // way to ask for one enormous query (§2.9). It used to `slice(0, 60)`, which meant a feed
+    // page longer than sixty silently answered nothing for its tail — engagement that existed
+    // and did not render. The bound is the contract's and it is a refusal.
     dbMock.query.mockResolvedValue([]);
 
-    await call('engagement', { ids: Array.from({ length: 500 }, (_, i) => i + 1) });
+    const reply = await call('engagement', { ids: Array.from({ length: 500 }, (_, i) => i + 1) });
 
-    // First query is the caller's own accounts; the counts follow with the capped list.
-    const countCall = dbMock.query.mock.calls[1];
-    expect((countCall[1] as unknown[]).length).toBe(60);
+    expect(reply).toMatchObject({ error: expect.stringContaining('ids') });
+    expect(dbMock.query).not.toHaveBeenCalled();
   });
 
-  it('drops ids that are not positive integers rather than failing the page', async () => {
+  it('refuses a list carrying an id that is not a positive integer', async () => {
+    // Dropping them silently answered a page the caller did not ask for, with no way to tell
+    // that some of it was missing.
     dbMock.query.mockResolvedValue([]);
 
-    await call('engagement', { ids: [1, 'x', -2, 0, 3.5, 4] });
+    const reply = await call('engagement', { ids: [1, 'x', -2, 0, 3.5, 4] });
 
+    expect(reply).toMatchObject({ error: expect.stringContaining('ids') });
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates a repeated id rather than binding it twice', async () => {
+    dbMock.query.mockResolvedValue([]);
+
+    await call('engagement', { ids: [1, 4, 1, 4] });
+
+    // First query is the caller's own accounts; the counts follow with the deduplicated list.
     const countCall = dbMock.query.mock.calls[1];
     expect(countCall[1]).toEqual([1, 4]);
   });

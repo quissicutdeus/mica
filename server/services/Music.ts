@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // The server half of the music service: who is playing out loud, and who can hear it.
+import { PlayerFacingError } from '../lib/errors';
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { musicContract } from '@gphone/shared/contracts/music';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
@@ -253,7 +254,7 @@ const positionAnchor = (b: Broadcast, now: number): number => now - positionOf(b
 app.registerEvent('broadcastStart', async (source, _cbId, data, citizenid) => {
   const body = data;
   const parsed = sourceFrom(body);
-  if (!parsed) throw new Error('That is not a YouTube link.');
+  if (!parsed) throw new PlayerFacingError('That is not a YouTube link.');
 
   const now = Date.now();
   const startedAt = now - positionFrom(body.positionMs);

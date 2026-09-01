@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { PlayerFacingError } from '../lib/errors';
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { SavedPlace } from '@gphone/shared/types';
 import { placesContract } from '@gphone/shared/contracts/places';
@@ -69,14 +70,14 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   // Trimmed, not capped: the contract already refused anything over the column's length, so
   // trimming here can only ever shorten a name that already fits.
   const name = data.name.trim();
-  if (!name) throw new Error('A name is required.');
+  if (!name) throw new PlayerFacingError('A name is required.');
 
   // Cosmetic display text only, the same trust level `shareLocation`'s own `label`
   // carries — never resolved against anything, never used to authorize a read.
   const streetLabel = data.street_label?.trim() || undefined;
 
   const coords = playerCoords(source);
-  if (!coords) throw new Error('Could not determine your location.');
+  if (!coords) throw new PlayerFacingError('Could not determine your location.');
   const [x, y, z] = coords;
 
   // `street_label` only when actually sent, rather than as an explicit `undefined` —

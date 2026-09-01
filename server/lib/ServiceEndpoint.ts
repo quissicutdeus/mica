@@ -14,7 +14,8 @@ import {
   type ContractAction,
   type ServiceContract
 } from '@gphone/shared/contract';
-import { parseInput, type Schema } from '@gphone/shared/schema';
+import { parseInput, SchemaError, type Schema } from '@gphone/shared/schema';
+import { GENERIC_ERROR_MESSAGE, PlayerFacingError } from './errors';
 
 // Once per process, not once per service: `on('playerDropped')` would otherwise be registered
 // thirteen times and do the same sweep thirteen times per disconnect.
@@ -115,7 +116,9 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
         typeof value === 'boolean';
 
       if (!isScalar) {
-        throw new Error(`Field '${column}' on ${this.serviceName} must be a scalar value.`);
+        throw new PlayerFacingError(
+          `Field '${column}' on ${this.serviceName} must be a scalar value.`
+        );
       }
       picked[column] = value;
     }
@@ -176,7 +179,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
     try {
       return requirePositiveInt(raw, 'cursor');
     } catch {
-      throw new Error(`A cursor for ${this.serviceName} must be a positive row id.`);
+      throw new PlayerFacingError(`A cursor for ${this.serviceName} must be a positive row id.`);
     }
   }
 
@@ -186,7 +189,9 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
     try {
       return requirePositiveInt(raw, 'numeric id');
     } catch {
-      throw new Error(`A valid numeric id is required for this ${this.serviceName} operation.`);
+      throw new PlayerFacingError(
+        `A valid numeric id is required for this ${this.serviceName} operation.`
+      );
     }
   }
 
@@ -277,7 +282,9 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
         async (source: number, cbId: CallbackId, data: unknown, citizenid: string) => {
           const fields = this.sanitizeWrite(data);
           if (Object.keys(fields).length === 0) {
-            throw new Error(`No writable fields supplied for ${this.serviceName} create.`);
+            throw new PlayerFacingError(
+              `No writable fields supplied for ${this.serviceName} create.`
+            );
           }
 
           const newItem = { ...fields, citizenid };
@@ -295,7 +302,9 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
           const id = this.requireId(data);
           const fields = this.sanitizeWrite(data);
           if (Object.keys(fields).length === 0) {
-            throw new Error(`No writable fields supplied for ${this.serviceName} update.`);
+            throw new PlayerFacingError(
+              `No writable fields supplied for ${this.serviceName} update.`
+            );
           }
 
           const success = await this.repository.update(id, fields as any, citizenid);
@@ -383,21 +392,29 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
     ) => Promise<any>
   ) {
     const contract = this.options.contract;
-    const declared = contract?.actions[action];
 
-    if (contract && !declared) {
+    if (!contract) {
+      throw new Error(
+        `ServiceEndpoint('${this.serviceName}') registered the custom action '${action}' ` +
+          'without a contract. A registered net event is reachable whether or not anything ' +
+          'calls it, so every hand-written action declares what it accepts — in ' +
+          `shared/contracts/${this.serviceName}.ts, or beside the service's own ` +
+          'defineService call if it belongs to an add-on.'
+      );
+    }
+
+    const declared = contract.actions[action];
+    if (!declared) {
       throw new Error(
         `ServiceEndpoint('${this.serviceName}') registered '${action}', which its contract ` +
-          'does not declare. A registered net event is reachable whether or not anything ' +
-          `calls it, so add it to shared/contracts/${contract.id}.ts with an input schema, ` +
-          'or do not register it.'
+          'does not declare. Add it with an input schema, or do not register it.'
       );
     }
 
     registerCustomAction(this.serviceName, action);
     this.bind(
       action,
-      declared?.input,
+      declared.input,
       handler as (
         source: number,
         cbId: CallbackId,
@@ -471,9 +488,22 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
           emitNet(clientEventName, src, cbId, result);
         }
       } catch (error) {
-        console.error(`Error in ${eventName}:`, error);
+        /**
+         * Only two kinds of error carry a message a player may read, and this is the whole
+         * allowlist: a `PlayerFacingError` a handler raised deliberately, and a `SchemaError`
+         * a declaration raised about the payload. See `lib/errors.ts`.
+         *
+         * Everything else used to leave through this same line with its message intact, which
+         * meant the class of an error was invisible on the wire: a driver failure carrying the
+         * statement text that failed, and a `Repository` invariant carrying a table name, both
+         * reached a toast looking exactly like "You cannot follow yourself." The stack is what
+         * a server owner needs and the player needs none of it.
+         */
+        const disclosable = error instanceof PlayerFacingError || error instanceof SchemaError;
+        if (!disclosable) console.error(`Error in ${eventName}:`, error);
+
         emitNet(clientEventName, src, cbId, {
-          error: error instanceof Error ? error.message : 'Unknown error'
+          error: disclosable ? error.message : GENERIC_ERROR_MESSAGE
         });
       }
     });

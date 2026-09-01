@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Database } from './Database';
+import { PlayerFacingError } from './errors';
 import type { ColumnRule, ResolvedMembership } from './defineService';
 
 /**
@@ -110,21 +111,22 @@ export abstract class Repository<T> {
 
     /**
      * These messages reach **players**, not developers, which is easy to miss.
-     * `ServiceEndpoint` puts `error.message` on the wire, `fetchNui` throws it, and
-     * `useAppAction` shows it in a toast — so no `[Repository]` prefix and no table name.
-     * Every other throw in this class is a programming error the player can never trigger;
-     * these are the ones an ordinary long contact name reaches.
+     * `ServiceEndpoint` forwards them and `useAppAction` shows them in a toast — so no
+     * `[Repository]` prefix and no table name. Every other throw in this class is a
+     * programming error the player can never trigger; these are the ones an ordinary long
+     * contact name reaches, and `PlayerFacingError` is now what says which is which. Before
+     * it, every throw in this file left the server through the same line as these four.
      */
     if (rule.values && !rule.values.includes(String(value))) {
-      throw new Error(`'${column}' must be one of: ${rule.values.join(', ')}.`);
+      throw new PlayerFacingError(`'${column}' must be one of: ${rule.values.join(', ')}.`);
     }
 
     if (rule.maxLength !== null && typeof value === 'string' && value.length > rule.maxLength) {
-      throw new Error(`'${column}' is limited to ${rule.maxLength} characters.`);
+      throw new PlayerFacingError(`'${column}' is limited to ${rule.maxLength} characters.`);
     }
 
     if (rule.type === 'int' && typeof value === 'number' && !Number.isInteger(value)) {
-      throw new Error(`'${column}' must be a whole number.`);
+      throw new PlayerFacingError(`'${column}' must be a whole number.`);
     }
 
     /**
@@ -142,7 +144,7 @@ export abstract class Repository<T> {
       rule.max !== null &&
       (value < rule.min || value > rule.max)
     ) {
-      throw new Error(`'${column}' must be between ${rule.min} and ${rule.max}.`);
+      throw new PlayerFacingError(`'${column}' must be between ${rule.min} and ${rule.max}.`);
     }
   }
 

@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { PlayerFacingError } from '../lib/errors';
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
@@ -13,7 +14,7 @@ import {
   activeAccount
 } from './Accounts';
 import { BlabberDm } from '@gphone/shared/types';
-import { fields, optionalString, requirePositiveInt } from '../lib/payload';
+import { blabberDmsContract } from '@gphone/shared/contracts/blabber_dms';
 import { buildDeepLink } from '@gphone/shared/deepLink';
 
 const APP = 'blabber';
@@ -34,7 +35,8 @@ const APP = 'blabber';
  * character. That is what makes DMs work between alts without either side learning who is
  * behind the other.
  */
-export const blabberDms = defineService<BlabberDm>({
+export const blabberDms = defineService<BlabberDm, typeof blabberDmsContract>({
+  contract: blabberDmsContract,
   id: 'blabber_dms',
   reportable: { label: 'Direct message', previewColumn: 'body' },
   reactable: { label: 'Direct message' },
@@ -99,21 +101,14 @@ const myAccounts = async (citizenid: string): Promise<number[]> =>
  * Without it a client walks account ids and reads anyone's messages.
  */
 app.registerEvent('get', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const mine = await ownedAccount(body.account_id, citizenid, APP);
-  if (!mine) throw new Error('That account is not yours.');
+  const mine = await ownedAccount(data.account_id, citizenid, APP);
+  if (!mine) throw new PlayerFacingError('That account is not yours.');
 
-  const peer = requirePositiveInt(body.peer_account_id, 'peer account id');
-  const limit = Math.min(
-    typeof body.limit === 'number' && Number.isInteger(body.limit) && body.limit > 0
-      ? body.limit
-      : 40,
-    80
-  );
-  const cursor =
-    body.cursor === undefined || body.cursor === null
-      ? null
-      : requirePositiveInt(body.cursor, 'cursor');
+  const peer = data.peer_account_id;
+  // Clamped rather than refused: a high limit is a legitimate request with a wrong number in
+  // it, which is the same call `ServiceEndpoint`'s own paging makes.
+  const limit = Math.min(data.limit ?? 40, 80);
+  const cursor = data.cursor ?? null;
 
   const params: unknown[] = [mine.id, peer, peer, mine.id];
   const cursorClause = cursor === null ? '' : ' AND `id` < ?';
@@ -200,15 +195,16 @@ app.registerEvent('threads', async (source, cbId, data, citizenid) => {
 });
 
 app.registerEvent('send', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const text = optionalString(body.body)?.trim();
-  if (!text) throw new Error('A message needs something in it.');
+  // Trimmed, not capped — the contract already refused anything over the column's length, so
+  // trimming can only ever shorten a body that already fits. Whitespace-only is still empty.
+  const text = data.body.trim();
+  if (!text) throw new PlayerFacingError('A message needs something in it.');
 
-  const mine = await ownedAccount(body.account_id, citizenid, APP);
-  if (!mine) throw new Error('That account is not yours to send from.');
+  const mine = await ownedAccount(data.account_id, citizenid, APP);
+  if (!mine) throw new PlayerFacingError('That account is not yours to send from.');
 
-  const peerId = requirePositiveInt(body.peer_account_id, 'peer account id');
-  if (peerId === mine.id) throw new Error('You cannot message yourself.');
+  const peerId = data.peer_account_id;
+  if (peerId === mine.id) throw new PlayerFacingError('You cannot message yourself.');
 
   /**
    * The recipient has to exist and be a Blabber account. Checked rather than trusted, because
@@ -216,7 +212,7 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
    * or at an account in another app's namespace.
    */
   const peer = await activeAccount(peerId, APP);
-  if (!peer) throw new Error('No such account.');
+  if (!peer) throw new PlayerFacingError('No such account.');
 
   /**
    * Bidirectional, unlike the feed/profile filters above: a DM has exactly two participants,
@@ -225,7 +221,7 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
    * history stays readable; a block doesn't retroactively hide it, only refuses a new send.
    */
   if ((await accountHasBlocked(mine.id, peer.id)) || (await accountHasBlocked(peer.id, mine.id))) {
-    throw new Error("You can't message this account.");
+    throw new PlayerFacingError("You can't message this account.");
   }
 
   const id = await repo.create({
@@ -278,11 +274,10 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
  * authorization: there is no id a player can pass that clears somebody else's unread count.
  */
 app.registerEvent('read', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const mine = await ownedAccount(body.account_id, citizenid, APP);
-  if (!mine) throw new Error('That account is not yours.');
+  const mine = await ownedAccount(data.account_id, citizenid, APP);
+  if (!mine) throw new PlayerFacingError('That account is not yours.');
 
-  const peer = requirePositiveInt(body.peer_account_id, 'peer account id');
+  const peer = data.peer_account_id;
   return await Database.update(
     `UPDATE \`gphone_blabber_dms\` SET \`read_at\` = CURRENT_TIMESTAMP
      WHERE \`to_account\` = ? AND \`from_account\` = ? AND \`read_at\` IS NULL`,

@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { PlayerFacingError } from '../lib/errors';
 import { defineService, SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { highscoresContract } from '@gphone/shared/contracts/highscores';
@@ -84,7 +85,7 @@ app.registerEvent('submit', async (source, cbId, data, citizenid) => {
   // The contract bounds `app`'s shape; this is what says which games exist. The list names an
   // app the Store installs, so it cannot live in `shared/` — see the contract's own note.
   if (!isKnownApp(data.app)) {
-    throw new Error('Unknown game.');
+    throw new PlayerFacingError('Unknown game.');
   }
 
   await repo.upsertBest(citizenid, data.app, data.score);
@@ -105,7 +106,7 @@ app.registerEvent('submit', async (source, cbId, data, citizenid) => {
  */
 app.registerEvent('top', async (source, cbId, data) => {
   if (!isKnownApp(data.app)) {
-    throw new Error('Unknown game.');
+    throw new PlayerFacingError('Unknown game.');
   }
 
   const rows = await repo.top(data.app, 10);

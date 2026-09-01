@@ -2,13 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { PlayerFacingError } from '../lib/errors';
 import { defineService } from '../lib/defineService';
 import { ownedAccount, accountHasBlocked, accountsByHandle, accountsOwnedBy } from './Accounts';
 // Media is a declared app; reuse its derived repository rather than a second instance, so
 // the attachment-ownership check runs against the same allowlist Messages already uses.
 import { media } from './Media';
 import { Blab } from '@gphone/shared/types';
-import { fields, optionalString, pageBounds, requirePositiveInt } from '../lib/payload';
+import { pageBounds, requirePositiveInt } from '../lib/payload';
+import { defineContract } from '@gphone/shared/contract';
+import { s } from '@gphone/shared/schema';
 import { resolveOwnedAttachments } from '../lib/attachments';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
@@ -67,7 +70,97 @@ const EDIT_WINDOW_SECONDS = ((): number => {
  * an edit invisible to pagination: `id` never changes, so fixing a typo cannot move a post
  * under a reader mid-scroll.
  */
-export const blabber = defineService<Blab>({
+
+/**
+ * Blabber's contract, declared here rather than in `shared/contracts/`.
+ *
+ * Blabber is `core: false`, and `shared/` is core — `sdk/coreBoundary.test.ts` refuses core any
+ * mention of an app the Store installs, because an add-on is not in this repository and a core
+ * file naming one works for what ships in-tree and silently does not for anybody else's. So an
+ * add-on declares its contract in its own resource, beside the `defineService` call it belongs
+ * to; this is the shape an external add-on writes, which is the point of it being here rather
+ * than a special case.
+ *
+ * `update` and `delete` are **not** here. Editing and deleting a Blab ride the generic
+ * ownership-scoped path, where the write allowlist and `access.editWindow` are what validate
+ * them. Everything else this file registers by hand is below.
+ *
+ * None of these schemas is an authorization check. `ownedAccount` decides whether the acting
+ * account belongs to the session and runs in every handler that takes one: an `account_id` is a
+ * number in a payload, and nothing about a payload proves whose it is (§2.9).
+ */
+const page = {
+  cursor: s.positiveInt().nullable().optional(),
+  limit: s.positiveInt().optional()
+};
+
+export const blabberContract = defineContract({
+  id: 'blabber',
+  actions: {
+    create: {
+      input: s.object({
+        account_id: s.positiveInt(),
+        /**
+         * `gphone_blabber.body` is a varchar(280), and this is that number. It used to be
+         * unbounded here and bounded only by the column, which in non-strict MySQL means a
+         * post silently stored shorter than it was written.
+         */
+        body: s.string({ max: 280 }).optional(),
+        reply_to: s.positiveInt().nullable().optional(),
+        mouth_of: s.positiveInt().nullable().optional(),
+        attachments: s.array(s.object({ photo_id: s.positiveInt() }), { max: 4 }).optional()
+      })
+    },
+
+    ear: { input: s.object({ account_id: s.positiveInt(), blab_id: s.positiveInt() }) },
+    unear: { input: s.object({ account_id: s.positiveInt(), blab_id: s.positiveInt() }) },
+
+    /**
+     * Counts for a page of posts. The ids are interpolated as a placeholder list, so the bound
+     * is what stops one request asking for one enormous query — and the handler's own
+     * `slice(0, 60)` meant a feed page longer than sixty silently answered nothing for its
+     * tail. Refused past 200 now, which is far above any window the app renders.
+     */
+    engagement: { input: s.object({ ids: s.array(s.positiveInt(), { max: 200 }) }) },
+
+    /** `account_id` is optional: a viewer with no claimed account sees the unfiltered feed. */
+    feed: { input: s.object({ account_id: s.positiveInt().nullable().optional(), ...page }) },
+
+    view: {
+      input: s.object({
+        id: s.positiveInt(),
+        /** Only meaningful on an initial open, and only if it belongs to this subtree. */
+        anchorId: s.positiveInt().nullable().optional(),
+        ...page
+      })
+    },
+
+    /** An empty `q` stays legal — clearing a search box is a real thing to do. */
+    search: { input: s.object({ q: s.string({ max: 64 }), ...page }) },
+    search_tags: { input: s.object({ q: s.string({ max: 32 }) }) },
+    by_tag: { input: s.object({ tag: s.string({ min: 1, max: 32 }), ...page }) },
+    trending_tags: { input: s.none() },
+
+    profile: {
+      input: s.object({
+        account_id: s.positiveInt(),
+        /**
+         * Which half of a profile to page. `blabs` is what the app sends for the top-level
+         * timeline; the handler tests for `replies` and everything else is the other tab, so
+         * the pair is declared rather than a boolean invented here.
+         */
+        tab: s.enum(['blabs', 'replies']).optional(),
+        viewer_account_id: s.positiveInt().nullable().optional(),
+        ...page
+      })
+    },
+
+    following: { input: s.object({ account_id: s.positiveInt(), ...page }) }
+  }
+});
+
+export const blabber = defineService<Blab, typeof blabberContract>({
+  contract: blabberContract,
   id: APP,
   reportable: { label: 'Blab', previewColumn: 'body' },
   access: {
@@ -346,27 +439,28 @@ const visibleTarget = async (raw: unknown, what: string): Promise<Blab> => {
   const id = requirePositiveInt(raw, what);
   const target = await repo.findById(id);
   if (!target || target.status !== 'active') {
-    throw new Error('That Blab is no longer available.');
+    throw new PlayerFacingError('That Blab is no longer available.');
   }
   return target;
 };
 
 app.registerEvent('create', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const text = optionalString(body.body)?.trim() ?? '';
+  // Trimmed, not capped: the contract already refused anything over the column's length, so
+  // trimming can only ever shorten a body that already fits.
+  const text = data.body?.trim() ?? '';
 
   /**
    * The account id arrives in the payload, and nothing about the payload proves it belongs to
    * the session that sent it (§2.9). Without this, a player could post as anyone's handle by
    * guessing an id.
    */
-  const account = await ownedAccount(body.account_id, citizenid, APP);
-  if (!account) throw new Error('That account is not yours to post from.');
+  const account = await ownedAccount(data.account_id, citizenid, APP);
+  if (!account) throw new PlayerFacingError('That account is not yours to post from.');
 
   const replyParent =
-    body.reply_to === undefined || body.reply_to === null
+    data.reply_to === undefined || data.reply_to === null
       ? null
-      : await visibleTarget(body.reply_to, 'reply target');
+      : await visibleTarget(data.reply_to, 'reply target');
   const replyTo = replyParent?.id ?? null;
   // Inherited, never walked: the parent is either top-level (root_id null, so it becomes the
   // root) or itself a reply (root_id already the true top-level ancestor, so it passes through
@@ -374,11 +468,11 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   const rootId = replyParent === null ? null : (replyParent.root_id ?? replyParent.id);
 
   const mouthOf =
-    body.mouth_of === undefined || body.mouth_of === null
+    data.mouth_of === undefined || data.mouth_of === null
       ? null
-      : (await visibleTarget(body.mouth_of, 'mouth target')).id;
+      : (await visibleTarget(data.mouth_of, 'mouth target')).id;
 
-  const attachments = await resolveOwnedAttachments(body.attachments, citizenid, mediaRepo);
+  const attachments = await resolveOwnedAttachments(data.attachments, citizenid, mediaRepo);
 
   /**
    * The rule the DDL cannot express: something to say, something to repeat, or something to
@@ -389,10 +483,10 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
    * and would render as an empty row nobody can explain.
    */
   if (!text && mouthOf === null && attachments.length === 0) {
-    throw new Error('A Blab needs something in it.');
+    throw new PlayerFacingError('A Blab needs something in it.');
   }
   if (mouthOf !== null && replyTo !== null) {
-    throw new Error('A Blab can reply or mouth, not both.');
+    throw new PlayerFacingError('A Blab can reply or mouth, not both.');
   }
 
   try {
@@ -481,8 +575,8 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     if (mouthOf !== null && /duplicate/i.test(message)) {
       // `{ cause }` is the constructor's ES2022 form; this repo's lib target is ES2021, so
       // the property is set directly instead — same effect, portable to the older lib.
-      const already = new Error('You have already mouthed that.');
-      (already as Error & { cause?: unknown }).cause = error;
+      const already = new PlayerFacingError('You have already mouthed that.');
+      (already as PlayerFacingError & { cause?: unknown }).cause = error;
       throw already;
     }
     throw error;
@@ -497,11 +591,10 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
  * player's point of view the ear is exactly as applied as they wanted.
  */
 app.registerEvent('ear', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const account = await ownedAccount(body.account_id, citizenid, APP);
-  if (!account) throw new Error('That account is not yours.');
+  const account = await ownedAccount(data.account_id, citizenid, APP);
+  if (!account) throw new PlayerFacingError('That account is not yours.');
 
-  const target = await visibleTarget(body.blab_id, 'blab id');
+  const target = await visibleTarget(data.blab_id, 'blab id');
 
   try {
     await Database.insert(
@@ -516,11 +609,10 @@ app.registerEvent('ear', async (source, cbId, data, citizenid) => {
 });
 
 app.registerEvent('unear', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const account = await ownedAccount(body.account_id, citizenid, APP);
-  if (!account) throw new Error('That account is not yours.');
+  const account = await ownedAccount(data.account_id, citizenid, APP);
+  if (!account) throw new PlayerFacingError('That account is not yours.');
 
-  const blabId = requirePositiveInt(body.blab_id, 'blab id');
+  const blabId = data.blab_id;
   // Scoped to the caller's own account, so a row id is not authorization to remove somebody
   // else's ear (§2.9).
   await Database.update(
@@ -545,24 +637,14 @@ const byId = (rows: { parent?: number; blab_id?: number; total: number }[]) =>
   new Map(rows.map((row) => [Number(row.parent ?? row.blab_id), Number(row.total)]));
 
 app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const raw = Array.isArray(body.ids) ? body.ids : [];
-
   /**
-   * Every id is validated and the list is capped before any of it reaches SQL. The ids are
-   * interpolated as a placeholder list, so an unbounded array is both an injection-shaped risk
-   * and a way to ask for one enormous query (§2.9).
+   * Every id is validated and the list is bounded by the contract before any of it reaches
+   * SQL — the ids are interpolated as a placeholder list, so an unbounded array is both an
+   * injection-shaped risk and a way to ask for one enormous query (§2.9). Deduplicated here
+   * rather than trimmed: a repeated id would otherwise add a placeholder and a bind parameter
+   * for a row already named.
    */
-  const ids = raw
-    .map((value) => {
-      try {
-        return requirePositiveInt(value, 'blab id');
-      } catch {
-        return null;
-      }
-    })
-    .filter((id): id is number => id !== null)
-    .slice(0, 60);
+  const ids = [...new Set(data.ids)];
 
   if (ids.length === 0) return {};
 
@@ -652,7 +734,7 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
  * service's follower lists needed the same thing, at which point copying it a third time was the
  * wrong move — it is `pageBounds` in `lib/payload.ts` now.
  */
-const pageOf = (body: Record<string, unknown>) => pageBounds(body, paging);
+const pageOf = (body: { cursor?: number | null; limit?: number }) => pageBounds(body, paging);
 
 /**
  * The public feed — every account's top-level Blabs, newest first. Supersedes the generic
@@ -666,13 +748,12 @@ const pageOf = (body: Record<string, unknown>) => pageBounds(body, paging);
  * only ever narrows what an authenticated viewer sees, never what an anonymous read returns.
  */
 app.registerEvent('feed', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const { limit, cursor } = pageOf(body);
+  const { limit, cursor } = pageOf(data);
 
   const viewer =
-    body.account_id === undefined || body.account_id === null
+    data.account_id === undefined || data.account_id === null
       ? null
-      : await ownedAccount(body.account_id, citizenid, APP);
+      : await ownedAccount(data.account_id, citizenid, APP);
 
   const projection = blabber.resolved.publicColumns.map((column) => `\`${column}\``).join(', ');
   const cursorClause = cursor === null ? '' : ' AND `id` < ?';
@@ -711,9 +792,8 @@ app.registerEvent('feed', async (source, cbId, data, citizenid) => {
  * reply's own top-level ancestor at all.
  */
 app.registerEvent('view', async (source, cbId, data) => {
-  const body = fields(data);
-  const id = requirePositiveInt(body.id, 'blab id');
-  const { limit, cursor } = pageBounds(body, paging);
+  const id = data.id;
+  const { limit, cursor } = pageBounds(data, paging);
 
   const requested = await repo.findById(id);
   if (!requested || requested.status !== 'active') {
@@ -733,10 +813,9 @@ app.registerEvent('view', async (source, cbId, data) => {
    * here (§2.9). `findById` rather than a second `findFlattenedPage` call: this only needs to
    * know the row exists and shares this root, not its hydrated shape.
    */
-  const rawAnchor = body.anchorId;
+  const candidate = data.anchorId;
   let anchorId: number | null = null;
-  if (cursor === null && rawAnchor !== undefined && rawAnchor !== null) {
-    const candidate = requirePositiveInt(rawAnchor, 'anchor id');
+  if (cursor === null && candidate !== undefined && candidate !== null) {
     const owns = await repo.findById(candidate);
     if (owns && owns.status === 'active' && (owns.id === rootId || owns.root_id === rootId)) {
       anchorId = candidate;
@@ -764,9 +843,8 @@ app.registerEvent('view', async (source, cbId, data) => {
  * everything else, landing on its flattened root screen.
  */
 app.registerEvent('search', async (source, cbId, data) => {
-  const body = fields(data);
-  const q = optionalString(body.q)?.slice(0, 64) ?? '';
-  const { limit, cursor } = pageBounds(body, paging);
+  const q = data.q;
+  const { limit, cursor } = pageBounds(data, paging);
 
   const projection = blabber.resolved.publicColumns.map((column) => `\`${column}\``).join(', ');
   const cursorClause = cursor === null ? '' : ' AND `id` < ?';
@@ -797,8 +875,7 @@ app.registerEvent('search', async (source, cbId, data) => {
  * this LIKE-prefix query runs against.
  */
 app.registerEvent('search_tags', async (source, cbId, data) => {
-  const body = fields(data);
-  const q = optionalString(body.q)?.slice(0, 32) ?? '';
+  const q = data.q;
 
   const rows = await Database.query<{ tag: string; uses: number }[]>(
     `SELECT \`tag\`, COUNT(*) AS uses FROM \`gphone_blabber_tags\`
@@ -818,11 +895,10 @@ app.registerEvent('search_tags', async (source, cbId, data) => {
  * `#cars` or `#carpet`.
  */
 app.registerEvent('by_tag', async (source, cbId, data) => {
-  const body = fields(data);
-  const tag = optionalString(body.tag)?.slice(0, 32);
-  if (!tag) throw new Error('A tag is required.');
+  const tag = data.tag.trim();
+  if (!tag) throw new PlayerFacingError('A tag is required.');
 
-  const { limit, cursor } = pageBounds(body, paging);
+  const { limit, cursor } = pageBounds(data, paging);
   const projection = blabber.resolved.publicColumns.map((column) => `b.\`${column}\``).join(', ');
   const cursorClause = cursor === null ? '' : ' AND b.`id` < ?';
 
@@ -864,11 +940,10 @@ app.registerEvent('trending_tags', async () => {
 });
 
 app.registerEvent('profile', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const accountId = requirePositiveInt(body.account_id, 'account id');
-  const repliesOnly = body.tab === 'replies';
+  const accountId = data.account_id;
+  const repliesOnly = data.tab === 'replies';
 
-  const { limit, cursor } = pageOf(body);
+  const { limit, cursor } = pageOf(data);
 
   /**
    * Optional, and checked the same way `following`'s and `follows`'s viewer is: an absent or
@@ -877,9 +952,9 @@ app.registerEvent('profile', async (source, cbId, data, citizenid) => {
    * profile's account, never the reverse.
    */
   const viewer =
-    body.viewer_account_id === undefined || body.viewer_account_id === null
+    data.viewer_account_id === undefined || data.viewer_account_id === null
       ? null
-      : await ownedAccount(body.viewer_account_id, citizenid, APP);
+      : await ownedAccount(data.viewer_account_id, citizenid, APP);
   const viewerBlocksAuthor = viewer ? await accountHasBlocked(viewer.id, accountId) : false;
 
   /**
@@ -946,12 +1021,10 @@ app.registerEvent('profile', async (source, cbId, data, citizenid) => {
  * conversation with no way to see what it was replying to.
  */
 app.registerEvent('following', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
+  const viewer = await ownedAccount(data.account_id, citizenid, APP);
+  if (!viewer) throw new PlayerFacingError('That account is not yours.');
 
-  const viewer = await ownedAccount(body.account_id, citizenid, APP);
-  if (!viewer) throw new Error('That account is not yours.');
-
-  const { limit, cursor } = pageOf(body);
+  const { limit, cursor } = pageOf(data);
 
   const projection = blabber.resolved.publicColumns.map((column) => `\`${column}\``).join(', ');
   const cursorClause = cursor === null ? '' : ' AND `id` < ?';

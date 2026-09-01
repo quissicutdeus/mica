@@ -2,10 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { PlayerFacingError } from '../lib/errors';
 import { defineService } from '../lib/defineService';
 import { Listing } from '@gphone/shared/types';
 import { MarketplaceRepository } from '../repositories/MarketplaceRepository';
-import { fields, optionalString, requirePositiveInt, pageBounds } from '../lib/payload';
+import { pageBounds } from '../lib/payload';
+import { marketplaceContract } from '@gphone/shared/contracts/marketplace';
 import { resolveOwnedAttachments } from '../lib/attachments';
 import { media } from './Media';
 import { Database } from '../lib/Database';
@@ -29,7 +31,8 @@ import { resolve as resolvePlayer } from '../lib/PlayerDirectory';
  * actions are the only writes this table permits, hand-validated rather than
  * generic-CRUD.
  */
-export const marketplace = defineService<Listing>({
+export const marketplace = defineService<Listing, typeof marketplaceContract>({
+  contract: marketplaceContract,
   id: 'marketplace',
   reportable: { label: 'Listing', previewColumn: 'title' },
   access: { read: 'public', write: 'owner' },
@@ -100,28 +103,18 @@ if (!paging) {
 }
 
 /** Non-negative integer price, or throws. Zero is a legitimate "free" listing. */
-const requirePrice = (raw: unknown): number => {
-  if (typeof raw !== 'number' && typeof raw !== 'string') {
-    throw new Error('A valid price is required.');
-  }
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < 0) {
-    throw new Error('A valid price is required.');
-  }
-  return value;
-};
-
 app.registerEvent('create', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const title = optionalString(body.title)?.trim();
-  const description = optionalString(body.description)?.trim();
-  const price = requirePrice(body.price);
-  if (!title) throw new Error('A listing needs a title.');
-  if (!description) throw new Error('A listing needs a description.');
+  // Trimmed rather than capped: the contract refused anything over the column's length, so
+  // what is left to catch is a value that was nothing but whitespace.
+  const title = data.title.trim();
+  const description = data.description.trim();
+  const price = data.price;
+  if (!title) throw new PlayerFacingError('A listing needs a title.');
+  if (!description) throw new PlayerFacingError('A listing needs a description.');
 
   // No `.slice()` any more: the cap is applied inside the resolver, before it does the work
   // the cap is supposed to bound (MICA-154).
-  const attachments = await resolveOwnedAttachments(body.attachments, citizenid, mediaRepo);
+  const attachments = await resolveOwnedAttachments(data.attachments, citizenid, mediaRepo);
 
   const id = await Database.insert(
     'INSERT INTO `gphone_marketplace` (`citizenid`, `title`, `price`, `description`, `status`) VALUES (?, ?, ?, ?, ?)',
@@ -157,13 +150,13 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
  * asking.
  */
 app.registerEvent('view', async (source, cbId, data, citizenid) => {
-  const id = requirePositiveInt(fields(data).id, 'listing id');
+  const id = data.id;
   const projection = marketplace.resolved.publicColumns.map((c) => `\`${c}\``).join(', ');
   const row = await Database.single<any>(
     `SELECT ${projection} FROM \`gphone_marketplace\` WHERE \`id\` = ? AND \`status\` = 'active'`,
     [id]
   );
-  if (!row) throw new Error('That listing is no longer available.');
+  if (!row) throw new PlayerFacingError('That listing is no longer available.');
 
   const owner = await Database.single<{ citizenid: string }>(
     'SELECT `citizenid` FROM `gphone_marketplace` WHERE `id` = ?',
@@ -206,8 +199,7 @@ app.registerEvent('feed', async (source, cbId, data) => {
 });
 
 app.registerEvent('search', async (source, cbId, data) => {
-  const body = fields(data);
-  const q = optionalString(body.q)?.slice(0, 64) ?? '';
+  const q = data.q;
   const { limit, cursor } = pageBounds(data, paging);
   const projection = marketplace.resolved.publicColumns.map((c) => `\`${c}\``).join(', ');
   const cursorClause = cursor === null ? '' : ' AND `id` < ?';
@@ -276,10 +268,10 @@ const requireOwnedActiveListing = async (id: number, citizenid: string): Promise
     [id]
   );
   if (!row || row.citizenid !== citizenid) {
-    throw new Error('That listing is not yours to change.');
+    throw new PlayerFacingError('That listing is not yours to change.');
   }
   if (row.status !== 'active') {
-    throw new Error('Only an active listing can change status.');
+    throw new PlayerFacingError('Only an active listing can change status.');
   }
 };
 
@@ -305,19 +297,19 @@ const transitionActiveListing = async (
   );
 
 app.registerEvent('markSold', async (source, cbId, data, citizenid) => {
-  const id = requirePositiveInt(fields(data).id, 'listing id');
+  const id = data.id;
   await requireOwnedActiveListing(id, citizenid);
   if (!(await transitionActiveListing(id, citizenid, 'sold'))) {
-    throw new Error('Only an active listing can change status.');
+    throw new PlayerFacingError('Only an active listing can change status.');
   }
   return true;
 });
 
 app.registerEvent('remove', async (source, cbId, data, citizenid) => {
-  const id = requirePositiveInt(fields(data).id, 'listing id');
+  const id = data.id;
   await requireOwnedActiveListing(id, citizenid);
   if (!(await transitionActiveListing(id, citizenid, 'removed'))) {
-    throw new Error('Only an active listing can change status.');
+    throw new PlayerFacingError('Only an active listing can change status.');
   }
   return true;
 });
