@@ -10,6 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ChevronRightIcon,
     SettingsSection,
     useAppRegistry,
+    AppIconTile,
     type AppManifest
   } from '@gphone/sdk';
 
@@ -57,18 +58,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             onclick={() => onselect(app.id)}
             class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center gap-3 p-3 text-left transition-colors"
           >
-            <div
-              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg {app.color} shadow-elevation-1"
-            >
-              {#if typeof app.icon === 'string' && app.icon.startsWith('http')}
-                <img src={app.icon} alt="" class="size-icon-md object-contain invert filter" />
-              {:else if typeof app.icon === 'function'}
-                {@const IconComp = app.icon}
-                <IconComp />
-              {:else}
-                <span class="text-on-surface text-body-medium">{app.name.charAt(0)}</span>
-              {/if}
-            </div>
+            <AppIconTile name={app.name} icon={app.icon} color={app.color} size="sm" />
             <div class="min-w-0 flex-1">
               <span class="text-on-surface block truncate font-medium">{app.name}</span>
               <span class="text-on-surface-variant text-body-small block truncate"

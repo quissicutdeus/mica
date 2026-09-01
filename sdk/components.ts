@@ -23,6 +23,7 @@
  * Nothing speculative, either. `ActionSheet` was written, exported, and used by no app;
  * it is deleted rather than kept warm for an app that might want it.
  */
+export { default as AppIconTile } from './ui/AppIconTile.svelte';
 export { default as Avatar } from './ui/Avatar.svelte';
 export { default as Button } from './ui/Button.svelte';
 export { default as ConfirmDialog } from './ui/ConfirmDialog.svelte';

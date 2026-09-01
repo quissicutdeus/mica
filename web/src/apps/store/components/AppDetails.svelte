@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { type AppManifest, type AppUpdate, formatDate } from '@gphone/sdk';
+  import { AppIconTile, Screen, type AppManifest, type AppUpdate, formatDate } from '@gphone/sdk';
   import { formatPermission, getAppStorageSize } from '../appInfo';
 
   /**
@@ -40,42 +40,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const system = $derived(app.core);
 </script>
 
-<!-- FULL APP DETAILS VIEW PAGE -->
-<div class="bg-surface text-on-surface flex h-full w-full flex-col">
-  <!-- Top Navigation Header -->
-  <div
-    class="pt-safe-top border-outline-variant bg-surface flex shrink-0 items-center justify-between border-b px-4 pb-3 backdrop-blur"
-  >
-    <button
-      onclick={() => onback()}
-      class="text-secondary hover:text-secondary text-body-small duration-short ease-standard flex items-center gap-1 transition"
-      aria-label="Back to Store"
-    >
-      <svg class="size-icon-sm" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-      </svg>
-      Back
-    </button>
-    <span class="text-on-surface-variant text-body-small tracking-wider uppercase">
-      App Details
-    </span>
-    <div class="w-10"></div>
-  </div>
+<!--
+  `Screen`, like every other page in the phone, rather than a header of its own.
 
-  <!-- App Details Page Body -->
-  <div class="flex-1 space-y-5 overflow-y-auto p-4">
+  This one hand-rolled its back button and title, so it was the one screen in the Store that
+  did not match the Store — a different back affordance, a different type scale, and its own
+  safe-area handling to keep in step. The title was the literal words "App Details", which
+  names the template rather than what is on it: the player tapped an app and the header
+  should say which one.
+-->
+<Screen title={app.name} onback={() => onback()}>
+  <div class="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
     <!-- Hero Header Box -->
     <div class="flex flex-col items-center space-y-3 pt-2 text-center">
-      <div
-        class="flex h-20 w-20 items-center justify-center rounded-lg {app.color} shadow-elevation-3"
-      >
-        {#if typeof app.icon === 'string'}
-          <img src={app.icon} alt={app.name} class="h-10 w-10 object-contain invert filter" />
-        {:else if app.icon}
-          {@const IconComp = app.icon}
-          <IconComp />
-        {/if}
-      </div>
+      <AppIconTile name={app.name} icon={app.icon} color={app.color} size="xl" />
 
       <div>
         <h3 class="text-on-surface text-xl font-semibold">{app.name}</h3>
@@ -243,4 +221,4 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {/if}
     </div>
   </div>
-</div>
+</Screen>

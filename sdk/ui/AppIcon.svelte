@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import type { Component, Snippet } from 'svelte';
   import type { Readable } from 'svelte/store';
+  import AppIconTile from './AppIconTile.svelte';
   import { useSound } from '../host/useSound';
   import { useWallpaper } from '../host/useWallpaper';
 
@@ -63,14 +64,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   class="group relative flex cursor-pointer flex-col items-center gap-2"
   onclick={handleClick}
 >
-  <div
-    class="h-14 w-14 rounded-lg {color} shadow-elevation-3 duration-short ease-standard relative flex cursor-pointer items-center justify-center transition-transform group-hover:scale-105 group-active:scale-95"
-  >
-    {#if typeof Icon === 'string'}
-      <img src={Icon} alt={name} class="pointer-events-none h-8 w-8 object-contain" />
-    {:else if Icon}
-      <Icon />
-    {/if}
+  <div class="relative">
+    <AppIconTile
+      {name}
+      icon={Icon}
+      {color}
+      size="lg"
+      class="duration-short ease-standard cursor-pointer transition-transform group-hover:scale-105 group-active:scale-95"
+    />
 
     {#if displayBadge > 0}
       <!-- Unread badge.

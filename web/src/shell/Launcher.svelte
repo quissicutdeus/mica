@@ -285,7 +285,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       />
                     {:else if app.icon}
                       {@const Icon = app.icon}
-                      <Icon />
+                      <!-- Sized explicitly: an icon left to its own default paints h-8 w-8,
+                           which is larger than the mosaic cell holding it. -->
+                      <Icon class="h-3 w-3" />
                     {/if}
                   </div>
                 {/each}

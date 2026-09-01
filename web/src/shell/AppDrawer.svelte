@@ -12,6 +12,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { createSheetClose } from '../lib/phone/sheetDrag';
   import { attachLongPressDrag } from '../lib/phone/longPressDrag';
   import AppIcon from '../../../sdk/ui/AppIcon.svelte';
+  import AppIconTile from '../../../sdk/ui/AppIconTile.svelte';
   import SearchIcon from '../../../sdk/ui/icons/SearchIcon.svelte';
   import { isAdmin } from '../services/admin';
   import { capabilities } from '../services/capabilities';
@@ -296,17 +297,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                  no icon of its own, so it gets a neutral monogram rather than borrowing some
                  other app's identity. -->
             {#if result.kind === 'app'}
-              <div
-                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg {result.manifest
-                  .color} text-white"
-              >
-                {#if typeof result.manifest.icon === 'string'}
-                  <img src={result.manifest.icon} alt="" class="h-5 w-5 object-contain" />
-                {:else if result.manifest.icon}
-                  {@const Icon = result.manifest.icon}
-                  <Icon class="h-5 w-5" />
-                {/if}
-              </div>
+              <AppIconTile
+                name={result.manifest.name}
+                icon={result.manifest.icon}
+                color={result.manifest.color}
+                size="sm"
+              />
             {:else}
               <div
                 class="bg-surface-container-highest text-on-surface-variant text-label-large flex h-9 w-9 shrink-0 items-center justify-center rounded-full uppercase"

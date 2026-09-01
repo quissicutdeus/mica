@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { AppManifest } from '@gphone/sdk';
+  import { AppIconTile, type AppManifest } from '@gphone/sdk';
 
   /**
    * The Store's catalog tab — every add-on on offer, installed or not.
@@ -43,20 +43,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           onclick={() => onselect(app)}
           class="flex min-w-0 flex-1 items-center gap-3 text-left"
         >
-          <div
-            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl {app.color} shadow-elevation-1"
-          >
-            {#if typeof app.icon === 'string'}
-              <img
-                src={app.icon}
-                alt={app.name}
-                class="size-icon-lg object-contain invert filter"
-              />
-            {:else if app.icon}
-              {@const IconComp = app.icon}
-              <IconComp />
-            {/if}
-          </div>
+          <AppIconTile name={app.name} icon={app.icon} color={app.color} size="md" />
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
               <span class="text-on-surface text-body-medium truncate">{app.name}</span>

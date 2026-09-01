@@ -17,6 +17,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useAppRegistryWrite,
     useNotificationSettings,
     useNotificationSettingsWrite,
+    AppIconTile,
     type AppManifest
   } from '@gphone/sdk';
 
@@ -107,18 +108,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <div class="space-y-6 p-4">
   <div class="flex items-center gap-3">
-    <div
-      class="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg {app.color} shadow-elevation-3"
-    >
-      {#if typeof app.icon === 'string' && app.icon.startsWith('http')}
-        <img src={app.icon} alt="" class="h-7 w-7 object-contain invert filter" />
-      {:else if typeof app.icon === 'function'}
-        {@const IconComp = app.icon}
-        <IconComp />
-      {:else}
-        <span class="text-on-surface text-lg font-bold">{app.name.charAt(0)}</span>
-      {/if}
-    </div>
+    <AppIconTile name={app.name} icon={app.icon} color={app.color} size="lg" />
     <div class="min-w-0">
       <p class="text-on-surface text-body-large truncate">{app.name}</p>
       <p class="text-on-surface-variant text-body-small truncate">
