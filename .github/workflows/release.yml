@@ -41,12 +41,6 @@ jobs:
             echo "skip=" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Create GitHub Release
-        if: steps.tag.outputs.skip == ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ steps.tag.outputs.tag }}" --title "${{ steps.tag.outputs.tag }}" --generate-notes
-
       # MICA-125: the release is where @gphone/sdk is published.
       #
       # Not npm, deliberately -- an npm name is permanent, publishing means keeping two
@@ -82,8 +76,24 @@ jobs:
         if: steps.tag.outputs.skip == ''
         run: node scripts/pack-release.js "${{ steps.tag.outputs.tag }}"
 
-      - name: Attach them to the release
+      # Created *with* its assets, in one call, and that ordering is the whole point.
+      #
+      # This used to be two steps — `gh release create`, then `gh release upload` — which is
+      # the ordinary shape and is impossible here: releases on this repository are
+      # **immutable**, so a release that exists cannot take an asset afterwards. Both halves
+      # of v2026.08.31.41 and .42 are the evidence, and neither can ever be repaired; the
+      # upload answered `HTTP 422: Cannot upload assets to an immutable release`.
+      #
+      # So packing happens before the release exists, and the tarballs are arguments to the
+      # call that creates it. A pack failure now leaves a pushed tag and no release, rather
+      # than a release nobody can ever fill — the tag step above still runs first, because
+      # the `skip` output it computes is what gates every step below it.
+      - name: Create the release with both tarballs attached
         if: steps.tag.outputs.skip == ''
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ steps.tag.outputs.tag }}" dist/release/*.tgz
+        run: |
+          gh release create "${{ steps.tag.outputs.tag }}" \
+            --title "${{ steps.tag.outputs.tag }}" \
+            --generate-notes \
+            dist/release/*.tgz
