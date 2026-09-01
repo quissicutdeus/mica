@@ -1,0 +1,27 @@
+{
+  "name": "my-gphone-addon",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "watch": "vite build --watch",
+    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings"
+  },
+  "dependencies": {
+    "@gphone/sdk": "github:quissicutdeus/gPhone#dev&path:/sdk",
+    "@gphone/shared": "github:quissicutdeus/gPhone#dev&path:/shared"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@tsconfig/svelte": "^5.0.8",
+    "@types/node": "^26.2.0",
+    "autoprefixer": "^10.5.4",
+    "postcss": "^8.5.26",
+    "postcss-preset-env": "^11.4.0",
+    "svelte": "^5.56.10",
+    "svelte-check": "^4.7.6",
+    "typescript": "~6.0.3",
+    "vite": "^8.2.2"
+  }
+}

@@ -1,0 +1,394 @@
+import { defineConfig, type Plugin } from 'vite';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import fs from 'node:fs';
+
+/**
+ * The add-on build, out of tree.
+ *
+ * This file is the standalone twin of gPhone's own `web/vite.addon.config.ts`, and it has
+ * to be a twin rather than an import: the phone's config lives in the `web` workspace,
+ * which an add-on author does not have. Everything the shell relies on about a bundle is
+ * decided here — one self-contained ES chunk, its CSS inlined, the Chromium 103 lowering
+ * applied, the `core: true` surface refused — so a change to this file changes what your
+ * bundle *is*, not merely how fast it builds.
+ *
+ * gPhone's `web/src/lib/addonTemplate.test.ts` compares the two files knob for knob and
+ * fails the phone's own build if they diverge, so the copy you are reading is checked
+ * against the original rather than left to rot. That check runs in gPhone's repo, though,
+ * not in yours: if you edit the build options below, you are on your own.
+ */
+
+const here = import.meta.dirname;
+const require = createRequire(import.meta.url);
+
+/**
+ * The SDK package root, found through the one subpath its `exports` map publishes that is
+ * a plain file at the package root.
+ *
+ * `require.resolve('@gphone/sdk')` would work too and is shorter — but it resolves to
+ * `index.ts`, the **shell** barrel, and pointing at the wrong one of those two files is
+ * precisely the mistake `sdkRoot` exists to make impossible to write by accident. Going
+ * through a stylesheet makes the choice of barrel explicit one line down.
+ */
+const sdkRoot = path.dirname(require.resolve('@gphone/sdk/app.css'));
+
+/**
+ * `@gphone/sdk` means two different files, and an add-on needs the second one.
+ *
+ * The package's `exports` map resolves `.` to `index.ts` — the barrel the phone's own
+ * shell builds against, which reaches `sdk/host/inProcess/**` and expects to be running
+ * in the shell's JavaScript context. An add-on bundle runs in a sandboxed iframe and has
+ * none of that; its barrel is `addon.ts`, whose host facets talk `postMessage`.
+ *
+ * The package does not publish `addon.ts` under a subpath of its own (gPhone's
+ * `sdk/publicSurface.test.ts` records that as today's deliberate answer), so the swap is
+ * this alias' job — exactly as it is `web/vite.addon.config.ts`'s job inside the phone's
+ * own repo. **Do not remove it.** Without it your bundle compiles the shell barrel
+ * instead, and `requireIframeFacets()` below is the backstop that says so in those words
+ * rather than leaving you with whatever error comes out first.
+ */
+const SDK_ADDON_BARREL = path.join(sdkRoot, 'addon.ts');
+
+const MANIFEST = path.join(here, 'src/manifest.ts');
+const COMPONENT = path.join(here, 'src/index.svelte');
+
+/**
+ * Comments out, before anything below reads a property out of the manifest.
+ *
+ * Not fastidiousness: the very first build of this template failed on its own sample
+ * manifest, because the doc comment above `core: false` explains what `core: true` would
+ * mean and a bare `/core:\s*true/` over the raw file found the prose. gPhone's own
+ * discovery greps unstripped manifest text and has the same hole pointing the other way —
+ * a `core: true` app whose comment mentions `core: false` reads as an add-on there. This
+ * strips block comments and whole-line `//` comments, which is where prose lives; a `//`
+ * inside a string (a URL in `description`) truncates its own line and no other, and no
+ * property below is read from a line that could contain one.
+ */
+const withoutComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+/**
+ * The add-on's id, read from the manifest text.
+ *
+ * Text, not an import: this runs while Vite is reading its config, long before anything
+ * can compile a `.ts` file that imports Svelte components. gPhone's own add-on discovery
+ * reads the same manifests the same way, for the same reason.
+ */
+function readManifest(): { id: string } {
+  if (!fs.existsSync(MANIFEST)) {
+    throw new Error(
+      `[gphone-addon] no manifest at ${MANIFEST} — an add-on is a manifest and a component.`
+    );
+  }
+  const source = withoutComments(fs.readFileSync(MANIFEST, 'utf8'));
+
+  /**
+   * The boundary, enforced where it ships.
+   *
+   * AGENTS.md §2.7: `core: true` means "ships with the phone and cannot be uninstalled",
+   * and it is what gates `@gphone/sdk/core` — the raw NUI transport. Nothing outside
+   * gPhone's own repo can be `core: true`: the Store installs `core: false` add-ons and
+   * runs them in a sandboxed iframe. gPhone enforces this with a build plugin in a config
+   * you do not have and a test that scans a directory you do not have, so it is enforced
+   * here instead, in the file that travels with the template.
+   *
+   * Refusing anything that is not literally `core: false` — rather than only refusing
+   * `core: true` — is deliberate: an omitted `core` is not a licence, it is a manifest
+   * `defineApp` will reject anyway, and a value this cannot read is a value it must not
+   * wave through.
+   */
+  if (/^\s*core:\s*true\s*,?\s*$/m.test(source)) {
+    throw new Error(
+      `[gphone-addon] ${path.relative(here, MANIFEST)} declares \`core: true\`. An add-on built ` +
+        `outside gPhone's own repo is always \`core: false\`: \`core: true\` means the app ships ` +
+        `with the phone and cannot be uninstalled, and it is the flag that gates ` +
+        `@gphone/sdk/core (the raw NUI transport). The Store installs \`core: false\` bundles ` +
+        `and runs them in a sandboxed iframe with no NUI at all, so a \`core: true\` bundle here ` +
+        `would not gain the access it claims — it would simply be wrong about itself.`
+    );
+  }
+  if (!/^\s*core:\s*false\s*,?\s*$/m.test(source)) {
+    throw new Error(
+      `[gphone-addon] ${path.relative(here, MANIFEST)} does not declare \`core: false\`. It is a ` +
+        `required manifest field and this build refuses to guess it.`
+    );
+  }
+
+  const id = /^\s*id:\s*'([a-z][a-z0-9_]*)'/m.exec(source)?.[1];
+  if (!id) {
+    throw new Error(
+      `[gphone-addon] could not read \`id: '...'\` from ${path.relative(here, MANIFEST)}. It must be ` +
+        `a single-quoted lower_snake_case literal — it is the bundle filename, the storage ` +
+        `namespace, the event segment and the deep-link scheme, so it is read as text here ` +
+        `rather than evaluated.`
+    );
+  }
+  return { id };
+}
+
+const VIRTUAL = '\0gphone-addon-entry';
+
+/**
+ * The entry point, synthesised rather than written into `src/`.
+ *
+ * It is four lines and every one of them is load-bearing in a way that is easy to get
+ * subtly wrong by hand — the stylesheet import (the iframe has no `<link>` to load one
+ * from), and `bootAddOn`, which installs the `postMessage` transport and the iframe facet
+ * set before it mounts. Generating it keeps those out of the part of the project you edit.
+ */
+function addonEntry(): Plugin {
+  return {
+    name: 'gphone-addon-entry',
+    resolveId(source) {
+      const i = source.indexOf('gphone-addon-entry');
+      return i === -1 ? null : VIRTUAL;
+    },
+    load(source) {
+      if (source !== VIRTUAL) return null;
+      return [
+        `import '@gphone/sdk/app.css';`,
+        `import manifest from ${JSON.stringify(MANIFEST)};`,
+        `import App from ${JSON.stringify(COMPONENT)};`,
+        `import { bootAddOn } from '@gphone/sdk';`,
+        `void bootAddOn(manifest, App);`
+      ].join('\n');
+    }
+  };
+}
+
+// Matches the bare specifier and any subpath, so a file added under the package's `core`
+// entry cannot reopen the gap.
+const CORE_ENTRY_RE = /^@gphone\/sdk\/core(\/.*)?$/;
+
+/**
+ * `@gphone/sdk/core` is refused outright.
+ *
+ * `useNuiBridge` is the raw NUI transport: any registered callback, by name, including the
+ * ones with server-side effects. It is reserved for `core: true` apps. The package's
+ * `exports` map publishes `./core` — it has to, because the phone's own core apps resolve
+ * through it — so an import of it typechecks in your editor and would otherwise reach
+ * Rollup and fail with a generic "could not resolve". This turns that into the actual
+ * rule, at build time, with the alternative named.
+ *
+ * Reach your own server through `useService(id).call(...)` instead: an add-on's own
+ * service actions, scoped to your app id, which is the access this boundary is drawn to
+ * leave you.
+ */
+function refuseCoreEntry(): Plugin {
+  return {
+    name: 'gphone-refuse-core-entry',
+    resolveId: {
+      order: 'pre',
+      handler(source) {
+        if (!CORE_ENTRY_RE.test(source)) return null;
+        this.error(
+          `[gphone-addon] an add-on may not import @gphone/sdk/core — it is the raw NUI transport, ` +
+            `reserved for core: true apps that ship with the phone. A core: false bundle runs in a ` +
+            `sandboxed iframe with no NUI at all, so this import cannot work at runtime even if the ` +
+            `build let it through. Reach your own server actions through useService(id) instead.`
+        );
+      }
+    }
+  };
+}
+
+/**
+ * The bundle must actually contain the **iframe** facet set.
+ *
+ * The other half of the barrel swap at the top of this file, and the reason that alias is
+ * safe to depend on. `sdk/host/iframe/registerFacets` is pulled in by `bootAddOn` and by
+ * nothing else; it is what makes `useContacts()`, `useSound()` and the rest resolve to
+ * `postMessage`-backed twins instead of to shell-side modules that are not there. If the
+ * alias is removed the build fails loudly on its own (the shell barrel does not export
+ * `bootAddOn`), but a graph that ends up mounting your component *without* that import is
+ * an add-on whose every hook throws `host facet 'x' is not loaded` at whoever opens it —
+ * so this asserts the positive rather than trusting the negative.
+ *
+ * Note what it deliberately does **not** ban: `sdk/host/inProcess/createInProcessHost` and
+ * `sdk/host/inProcess/system` are legitimately on the add-on graph. They are shell-free,
+ * and `bootAddOn` builds its own host out of the first. Banning the directory by name is
+ * the shape-matching mistake gPhone's `sdk/seam.test.ts` documents at length; the
+ * classification is by what a module imports, not by where it sits.
+ */
+function requireIframeFacets(): Plugin {
+  let seen = false;
+  return {
+    name: 'gphone-addon-require-iframe-facets',
+    buildStart() {
+      seen = false;
+    },
+    transform(_code, id) {
+      if (id.replace(/\\/g, '/').endsWith('/sdk/host/iframe/registerFacets.ts')) seen = true;
+      return null;
+    },
+    generateBundle: {
+      order: 'post',
+      handler() {
+        if (!seen) {
+          this.error(
+            `[gphone-addon] this bundle does not contain the SDK's iframe facet set ` +
+              `(sdk/host/iframe/registerFacets). An add-on that boots without it mounts fine ` +
+              `and then throws "host facet 'x' is not loaded" on the first hook it uses. The ` +
+              `usual cause is the \`@gphone/sdk\` alias in this file being removed or ` +
+              `retargeted, so the bundle compiled the package's \`index.ts\` (the shell ` +
+              `barrel) instead of \`addon.ts\`.`
+          );
+        }
+      }
+    }
+  };
+}
+
+/**
+ * Inline the CSS into the entry chunk.
+ *
+ * The Store hands the bundle to a sandboxed iframe as a `data:` module URL. There is no
+ * document to put a `<link>` in and no server to fetch a sibling `.css` from, so a
+ * stylesheet emitted as a separate asset is a stylesheet that never loads.
+ *
+ * `order: 'post'` because Vite's own `vite:css-post` plugin writes that asset in the post
+ * stage; a normal-stage hook here runs before it exists and silently inlines an empty
+ * string.
+ */
+function inlineCss(): Plugin {
+  return {
+    name: 'gphone-addon-inline-css',
+    generateBundle: {
+      order: 'post',
+      handler(_options, bundle) {
+        const cssFiles = Object.keys(bundle).filter((f) => f.endsWith('.css'));
+        const css = cssFiles
+          .map((f) => (bundle[f] as { source: string | Uint8Array }).source.toString())
+          .join('\n');
+        for (const f of cssFiles) delete bundle[f];
+        const inject = `(function(){var s=document.createElement('style');s.textContent=${JSON.stringify(css)};document.head.appendChild(s);})();\n`;
+        for (const chunk of Object.values(bundle)) {
+          if (chunk.type === 'chunk' && chunk.isEntry) chunk.code = inject + chunk.code;
+        }
+      }
+    }
+  };
+}
+
+/**
+ * No `__MICA_*__` identifier may survive into the output.
+ *
+ * `sdk/version.ts` reads two build-time globals behind `typeof` guards. Inside the add-on
+ * iframe an unsubstituted identifier is simply undeclared, the guard holds, and the
+ * fallback fires — so a missing `define` does not throw, it produces a bundle that is
+ * confidently wrong about what it is running on. gPhone shipped exactly that for a while
+ * (MICA-170). This fails the build instead.
+ *
+ * If a future SDK adds an identifier this does not know about, the fix is to add it to
+ * `define` below with a value that is honest for an add-on — which is not automatically
+ * the phone's, see that block.
+ */
+function noUnsubstitutedDefines(): Plugin {
+  const IDENTIFIER = /__MICA_[A-Za-z0-9_]*__/g;
+  return {
+    name: 'gphone-addon-no-unsubstituted-defines',
+    generateBundle: {
+      order: 'post',
+      handler(_options, bundle) {
+        for (const [file, chunk] of Object.entries(bundle)) {
+          const text =
+            chunk.type === 'chunk'
+              ? chunk.code
+              : typeof chunk.source === 'string'
+                ? chunk.source
+                : new TextDecoder().decode(chunk.source);
+          const found = [...new Set(text.match(IDENTIFIER) ?? [])];
+          if (found.length > 0) {
+            this.error(
+              `[gphone-addon] ${file} still contains unsubstituted build-time identifier(s): ` +
+                `${found.join(', ')}. Inside the add-on iframe these are undeclared, so each one ` +
+                `silently falls back to whatever default the SDK holds instead of failing. Add it ` +
+                `to this config's \`define\` block with a value that is true for an add-on.`
+            );
+          }
+        }
+      }
+    }
+  };
+}
+
+const { id } = readManifest();
+
+export default defineConfig({
+  plugins: [
+    addonEntry(),
+    refuseCoreEntry(),
+    svelte(),
+    requireIframeFacets(),
+    inlineCss(),
+    // Last, deliberately — it reads the finished chunk text, including what `inlineCss()`
+    // has prepended by then.
+    noUnsubstitutedDefines()
+  ],
+  /**
+   * Both identifiers are the **empty string**, and that is the honest value rather than an
+   * oversight.
+   *
+   * `__MICA_VERSION__` is the running phone's CalVer build stamp. Your bundle is compiled
+   * once and then loaded by whatever phone installs it, so at build time it genuinely does
+   * not know. `''` is the encoding the SDK already gives to "not a version" — its
+   * `lib/semver.ts` reads it as *not orderable* rather than folding it into "up to date" —
+   * and `MICA_VERSION` is documented to be checked for truthiness before use.
+   *
+   * The number you *can* act on is `SDK_CONTRACT_VERSION`, a plain source constant in the
+   * SDK that needs no `define` and is correct in every bundle however it was built.
+   */
+  define: {
+    __MICA_VERSION__: JSON.stringify(''),
+    __MICA_BUILD_INFO__: JSON.stringify('')
+  },
+  publicDir: false,
+  resolve: {
+    alias: [{ find: /^@gphone\/sdk$/, replacement: SDK_ADDON_BARREL }],
+    conditions: ['browser']
+  },
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    /**
+     * FiveM's release CEF is Chromium 103 (AGENTS.md §6). `chrome92` is the floor gPhone's
+     * own add-on build targets, deliberately below 103 rather than at it. Raising this
+     * produces a bundle that runs in your browser and throws in game, and nothing in any
+     * test suite — yours or gPhone's — can catch that.
+     */
+    target: 'chrome92',
+    cssCodeSplit: false,
+    /**
+     * Always minified, and not only for size. The shell `encodeURIComponent`s this file
+     * into a `data:` module URL on every open of your app; an unminified bundle is
+     * measurably slower to boot.
+     */
+    minify: true,
+    lib: {
+      entry: { [id]: 'gphone-addon-entry' },
+      formats: ['es'],
+      fileName: (_format, name) => `${name}.js`
+    },
+    rollupOptions: {
+      treeshake: {
+        /**
+         * `marked` and `dompurify` reach an add-on only through the SDK's `renderMarkdown`
+         * re-export. Neither declares `sideEffects: false`, so without this every add-on
+         * carries a Markdown parser and a sanitiser whether or not it renders Markdown.
+         * Both are pure on import.
+         */
+        moduleSideEffects: (moduleId: string) =>
+          !/node_modules\/(marked|dompurify)\//.test(moduleId)
+      },
+      /**
+       * One chunk, nothing shared. The iframe that loads this bundle has no `<script>` tag
+       * and no import map for a second file, so a shared vendor chunk is a chunk that can
+       * never be fetched. `codeSplitting: false` is rolldown's own option for it; the
+       * rollup-era `inlineDynamicImports` / `manualChunks` do not do this on Vite 8.
+       */
+      output: { codeSplitting: false, preserveModules: false }
+    }
+  }
+});

@@ -105,6 +105,42 @@ dependency on anything the shell serves. The built-in add-ons land at
 `web/public/addons/<id>.js` (gitignored); an operator-hosted catalog entry's
 `bundleUrl` points at the equivalent file on their own host.
 
+### Where a third-party bundle comes from
+
+Neither of those two files is available to somebody who has not cloned this
+repository, and the whole point of a catalog is that the interesting entries
+come from people who have not. `tools/addon-template/` (MICA-175) is the
+standalone project that closes that gap:
+
+```sh
+pnpm dlx degit quissicutdeus/gPhone/tools/addon-template my-addon
+cd my-addon && pnpm install && pnpm build   # -> dist/<id>.js
+```
+
+It carries its own copy of the build decisions — one ES chunk with
+`codeSplitting: false`, the stylesheet inlined into it, `target: 'chrome92'`,
+minified, `__MICA_VERSION__` and `__MICA_BUILD_INFO__` substituted with the
+empty string — so what it emits has the same shape a `bundleUrl` is expected to
+serve. `web/src/lib/addonTemplate.test.ts` fails this repo's build if the two
+configs stop agreeing on any of that.
+
+Two things about it belong on this page rather than in the template:
+
+- **It installs `@gphone/sdk` and `@gphone/shared` as git dependencies on this
+  repository, because neither is published.** The template's README carries the
+  four consequences (an `overrides` entry for the SDK's own `workspace:*`,
+  `blockExoticSubdeps: false`, both in `pnpm-workspace.yaml` because pnpm 11
+  ignores the `pnpm` field in `package.json`, and a ref that has to be `dev`
+  today because `main` predates the packaged SDK).
+- **The template refuses `@gphone/sdk/core` and a `core: true` manifest at build
+  time**, since `refuseCoreEntry()` and `sdk/boundary.test.ts` are both in files
+  an outside author does not have. That is a courtesy that fails early. The
+  boundary an operator is actually relying on is the one on this page — the host
+  allowlist, the `sha256` check, and the sandboxed frame — plus the shell's
+  re-check of every declared permission. **Nothing about a bundle's provenance
+  is evidence about its contents**: a bundle built from the template is exactly
+  as untrusted as any other bytes at a `bundleUrl`.
+
 The bundle's `default`/`manifest` exports, if any, are not read by the shell —
 that information now lives on the `CatalogEntry` instead (see above). What the
 shell actually calls is `bootAddOn` (`@gphone/sdk`, re-exported from

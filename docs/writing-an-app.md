@@ -7,6 +7,13 @@ re-read on every turn.
 
 ## Start it
 
+**This page assumes you have this repository checked out.** If you do not — if
+you are writing a `core: false` add-on for somebody else's server and have no
+business in gPhone's own tree — start at
+[Building an add-on outside this repo](#building-an-add-on-outside-this-repo)
+instead, then come back here for everything from [The manifest](#the-manifest)
+onwards, which is identical either way.
+
 ```sh
 pnpm new:app journal            # the app
 pnpm new:app journal --service  # and its server half, if it owns a table
@@ -289,6 +296,86 @@ opaque origin. Practically:
   `addons` half is `build-addons.mjs --watch`) and serves it in the same frame,
   so a break shows up there too — but only once the watch rebuild lands, so read
   its output rather than the shell's.
+
+### Building an add-on outside this repo
+
+MICA-175. Everything above assumes `web/src/apps/<id>/` and
+`pnpm --filter web build:addons`, which both need a clone. An add-on author has
+no reason to have one, so `tools/addon-template/` is a standalone project that
+emits the same bundle from anywhere:
+
+```sh
+pnpm dlx degit quissicutdeus/gPhone/tools/addon-template my-addon
+cd my-addon
+pnpm install
+pnpm build          # -> dist/<id>.js
+pnpm check          # svelte-check, optional and not run by the build
+```
+
+`degit` lifts the subdirectory out of GitHub's repository tarball — no clone, no
+`.git`. The template's own `README.md` is the reference; the parts that are
+decisions rather than instructions are below.
+
+**Two packages, neither published.** An add-on's imports resolve `@gphone/sdk`
+_and_ `@gphone/shared` (the SDK re-exports from it, so its names are inside the
+SDK's own type surface — MICA-186). Both are `private: true` here, both are
+consumed as source with no build step, and neither is on npm. The template
+installs both as **git dependencies on this repository** with the subdirectory
+named by `#path:` — pnpm resolves that through GitHub's codeload tarball rather
+than cloning, and pins the resolved commit in the author's lockfile.
+
+That costs four things, none of them hidden, and all four are in the template's
+`pnpm-workspace.yaml` and README:
+
+- `@gphone/sdk` declares `"@gphone/shared": "workspace:*"`, which resolves to
+  nothing outside this monorepo — `pnpm install` fails with
+  `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND`, talking about a workspace that is not the
+  author's. An `overrides` entry redirects that one specifier at the same git
+  source, and its ref must match the two dependencies' ref exactly.
+- That override is a git dependency reached as a _sub_dependency, which pnpm 11
+  refuses by default, so the template sets `blockExoticSubdeps: false`. It is a
+  supply-chain guard, it applies project-wide rather than to the one override,
+  and switching it off is a real cost rather than a formality.
+- Both settings live in `pnpm-workspace.yaml` even for a one-package project:
+  **pnpm 11 no longer reads the `pnpm` field in `package.json`.** It warns and
+  ignores it, so a `pnpm.overrides` block there looks right, does nothing, and
+  leaves you reading the same `workspace:*` error.
+- The template names `#dev`, and today it has to: the packaged form of the SDK —
+  `sdk/` as a root-level package with an `exports` map (MICA-172) — exists
+  only on `dev`. `refs/heads/main` predates it and so does every `v2026.*` tag.
+  An author should pin a commit sha as soon as they are past the first build;
+  there is no version number worth pinning instead, since the tags are CalVer
+  build stamps and `MICA_VERSION` is deliberately empty in an add-on bundle
+  (MICA-170 — the constant `1.0.0` some older notes describe is long gone).
+
+**The boundary travels with the template.** `refuseCoreEntry()` in
+`web/vite.addon.config.ts` and `sdk/boundary.test.ts`'s scan of `web/src/apps/`
+are both in files an out-of-tree author does not have, so the template's own
+`vite.config.ts` carries the enforcement: it refuses `@gphone/sdk/core` and any
+subpath at `resolveId`, and it refuses a manifest that does not say
+`core: false` before Vite has finished reading its config. Both fail the build
+with the rule in the message. They are conveniences that fail early — the
+enforcing boundary is still the sandbox and the shell's own permission re-check
+(§7) — but without them the template would be handing out a route to
+`useNuiBridge`.
+
+**What it does _not_ carry, and cannot.** `utilityClasses.test.ts` scans
+`web/src` only, so an out-of-tree app gets no check that a class it writes
+exists in `app-utilities.css` — a token with no rule behind it renders as
+nothing, with no error. Neither does anything out there run `cef.test.ts`. The
+template's README states the Chromium 103 rules; enforcing them is on the
+author.
+
+**`postcss.config.js` is the one file people will delete.** This repo's add-on
+build inherits `web/postcss.config.js` by accident of Vite's config discovery.
+Out of tree there is nothing to inherit from, and the consequence is not
+cosmetic: `sdk/app-utilities.css` — inlined into every add-on bundle — nests in
+about thirty places, and native CSS nesting is Chromium 112. Without that config
+the bundle renders correctly in every browser an author can test in and drops
+those blocks in game. `web/src/lib/addonTemplate.test.ts` fails this repo's
+build if the template loses it, along with every other decision the two configs
+have to agree on (`target: 'chrome92'`, `codeSplitting: false`, CSS inlining,
+the `__MICA_*__` substitutions).
 
 ## More wiring rules inside the app
 

@@ -1,0 +1,38 @@
+{
+  "extends": "@tsconfig/svelte/tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2021",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node", "svelte", "vite/client"],
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "noUnusedLocals": true,
+    "moduleDetection": "force",
+    "paths": {
+      /**
+       * `@gphone/sdk` resolves to `addon.ts`, not to the package's `.` export.
+       *
+       * The package's `exports` map points `.` at `index.ts`, the barrel gPhone's own
+       * shell builds against. An add-on gets `addon.ts` — a smaller surface whose host
+       * facets talk `postMessage` rather than calling into a shell that is not there. It
+       * is `vite.config.ts`'s alias that performs that swap at build time, and this line
+       * is what makes the typechecker agree with it.
+       *
+       * Without it your editor autocompletes names your bundle does not contain, and the
+       * first you hear of it is a build error — or, worse, no error at all and a
+       * component that renders and then does nothing.
+       */
+      "@gphone/sdk": ["./node_modules/@gphone/sdk/addon.ts"]
+    }
+  },
+  /**
+   * `env.d.ts` is the SDK's own ambient environment — the `*.svelte` module declaration
+   * and the two `__MICA_*__` build-time globals its `version.ts` reads behind `typeof`
+   * guards. TypeScript picks up a `.d.ts` from a dependency only when something points at
+   * it, so it is named here rather than being left to luck.
+   */
+  "include": ["src/**/*.ts", "src/**/*.svelte", "./node_modules/@gphone/sdk/env.d.ts"]
+}
