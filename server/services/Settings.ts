@@ -6,7 +6,7 @@
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { PhoneSetting } from '@gphone/shared/types';
-import { fields } from '../lib/payload';
+import { settingsContract } from '@gphone/shared/contracts/settings';
 import { onPlayerLoaded } from '../lib/shell';
 
 /**
@@ -102,7 +102,8 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
 
 let settingsRepo: SettingsRepository | null = null;
 
-export const settings = defineService<PhoneSetting>({
+export const settings = defineService<PhoneSetting, typeof settingsContract>({
+  contract: settingsContract,
   id: 'settings',
   access: { read: 'owner', write: 'owner' },
   schema: {
@@ -148,13 +149,13 @@ const app = settings.app;
  * through `useAppAction`'s error toast, so it carries no table name and no `[Repository]`
  * prefix.
  */
-const namespaceOf = (data: unknown): { app: string; key: string } => {
-  const payload = fields(data);
-  const appId = String(payload.app ?? '').trim();
-  const key = String(payload.key ?? '').trim();
+const namespaceOf = (data: { app: string; key: string }): { app: string; key: string } => {
+  const appId = data.app.trim();
+  const key = data.key.trim();
 
-  if (!appId || appId.length > 32) throw new Error('That setting could not be saved.');
-  if (!key || key.length > 64) throw new Error('That setting could not be saved.');
+  // The contract already refused anything longer than the column, so what is left to catch is
+  // a value that was nothing but whitespace — length-legal and still not a namespace.
+  if (!appId || !key) throw new Error('That setting could not be saved.');
 
   return { app: appId, key };
 };
@@ -179,7 +180,7 @@ app.registerEvent('set', async (_source, _cbId, data, citizenid) => {
 
   // Already JSON when it leaves `useStorage`. Stringified again here only if a caller
   // handed us something else, so the column always holds one parseable value.
-  const raw = fields(data).value;
+  const raw = data.value;
   const value = typeof raw === 'string' ? raw : JSON.stringify(raw ?? null);
 
   if (value.length > MAX_VALUE_LENGTH) {
@@ -199,8 +200,8 @@ app.registerEvent('remove', async (_source, _cbId, data, citizenid) => {
 
 app.registerEvent('clearApp', async (_source, _cbId, data, citizenid) => {
   if (!settingsRepo) return false;
-  const appId = String(fields(data).app ?? '').trim();
-  if (!appId || appId.length > 32) throw new Error('That app could not be cleared.');
+  const appId = data.app.trim();
+  if (!appId) throw new Error('That app could not be cleared.');
   await settingsRepo.clearApp(citizenid, appId);
   return true;
 });

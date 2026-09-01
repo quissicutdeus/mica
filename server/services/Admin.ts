@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
+import { adminContract } from '@gphone/shared/contracts/admin';
 
 /**
  * Whether the caller counts as an admin.
@@ -47,7 +48,8 @@ export const adminAces = (): string[] => {
   // An empty or whitespace-only convar would otherwise lock everyone out silently.
   return parsed.length > 0 ? parsed : [...DEFAULT_ADMIN_ACES];
 };
-const app = new ServiceEndpoint<never>('admin', null, {
+const app = new ServiceEndpoint<never, typeof adminContract>('admin', null, {
+  contract: adminContract,
   disableGet: true,
   disableCreate: true,
   disableUpdate: true,

@@ -95,11 +95,20 @@ describe('the source address a server reports', () => {
 
     (globalThis as any).source = 5;
     (globalThis as any).emitNet = vi.fn();
-    // A steered payload changes nothing: the answer is a property of the server.
-    await handler!('cb-1', { url: 'https://evil.example/', citizenid: 'CIT_B' });
+    await handler!('cb-1', undefined);
 
     expect((globalThis.emitNet as any).mock.calls[0]?.[3]).toEqual({
       url: 'https://git.example.com/rp/gphone-fork'
+    });
+
+    // A steered payload changes nothing because it never arrives: the answer is a property
+    // of the server, so the contract declares no payload at all and one sent anyway is
+    // refused rather than ignored.
+    (globalThis as any).emitNet = vi.fn();
+    await handler!('cb-2', { url: 'https://evil.example/', citizenid: 'CIT_B' });
+
+    expect((globalThis.emitNet as any).mock.calls[0]?.[3]).toMatchObject({
+      error: expect.any(String)
     });
   });
 });

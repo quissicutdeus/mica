@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
+import { shellContract } from '@gphone/shared/contracts/shell';
 
 /**
  * Where this server says its source lives (MICA-192, AGPL §13).
@@ -55,7 +56,8 @@ export const sourceUrl = (): string => {
   return configured;
 };
 
-const app = new ServiceEndpoint<never>('shell', null, {
+const app = new ServiceEndpoint<never, typeof shellContract>('shell', null, {
+  contract: shellContract,
   disableGet: true,
   disableCreate: true,
   disableUpdate: true,

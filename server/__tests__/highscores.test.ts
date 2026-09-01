@@ -99,11 +99,23 @@ describe('highscores:submit', () => {
     expect(dbMock.query).toHaveBeenCalledTimes(1);
   });
 
-  it('upserts using the caller citizenid, never a payload citizenid', async () => {
-    await call('submit', { app: 'snek', score: 50, citizenid: 'SOMEONE_ELSE' }, PLAYER);
+  it('upserts using the caller citizenid, and refuses a payload that names one', async () => {
+    await call('submit', { app: 'snek', score: 50 }, PLAYER);
     const [, params] = dbMock.query.mock.calls[0];
     expect(params).toContain(PLAYER);
-    expect(params).not.toContain('SOMEONE_ELSE');
+
+    dbMock.query.mockClear();
+    const reply = await call(
+      'submit',
+      { app: 'snek', score: 50, citizenid: 'SOMEONE_ELSE' },
+      PLAYER
+    );
+
+    // It was already unreadable — `upsertBest` takes the resolved citizenid and nothing
+    // else. The contract turns "unread" into "refused", so the request does not succeed
+    // while carrying a field the sender believed was doing something.
+    expect(reply).toMatchObject({ error: expect.stringContaining('citizenid') });
+    expect(dbMock.query).not.toHaveBeenCalled();
   });
 
   it('never overwrites a higher stored score with a lower one, via GREATEST in SQL', async () => {

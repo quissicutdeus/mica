@@ -87,16 +87,25 @@ describe('bank: sendMoney', () => {
     );
   });
 
-  it('truncates an oversized note before it ever reaches the transfer log', async () => {
+  it('refuses an oversized note rather than truncating it into the transfer log', async () => {
+    // It used to `slice(0, 140)`, which wrote a log line that was not the one the sender
+    // typed and told them the transfer succeeded exactly as asked. The bound is the
+    // contract's now, and a note past it is a refusal.
     bridge.byPhone.set('555-0002', { citizenid: 'CID_TARGET', source: 2 });
-    const longNote = 'x'.repeat(500);
 
-    await call({ phone: '555-0002', amount: 50, note: longNote });
+    const reply = await call({ phone: '555-0002', amount: 50, note: 'x'.repeat(500) });
+
+    expect(reply).toMatchObject({ error: expect.stringContaining('note') });
+    expect(transferMock).not.toHaveBeenCalled();
+  });
+
+  it('still trims a note that fits, so padding cannot pass for length', async () => {
+    bridge.byPhone.set('555-0002', { citizenid: 'CID_TARGET', source: 2 });
+
+    await call({ phone: '555-0002', amount: 50, note: '   lunch   ' });
 
     const [[{ reason }]] = transferMock.mock.calls;
-    const prefix = 'Phone transfer: ';
-    expect(reason.startsWith(prefix)).toBe(true);
-    expect(reason.length).toBe(prefix.length + 140);
+    expect(reason).toBe('Phone transfer: lunch');
   });
 
   it('refuses an amount over the configured cap without ever calling transfer', async () => {
@@ -129,7 +138,9 @@ describe('bank: sendMoney', () => {
   it('rejects a malformed phone number before resolving anything', async () => {
     const reply = await call({ phone: 12345, amount: 100 });
 
-    expect(reply).toEqual({ error: 'A valid recipient phone number is required.' });
+    // The contract refuses a non-string before `phoneNumberFrom` is reached; a blank string
+    // is length-legal and still not a number, which is what that helper is still for.
+    expect(reply).toMatchObject({ error: expect.stringContaining('phone') });
     expect(transferMock).not.toHaveBeenCalled();
   });
 
@@ -138,7 +149,7 @@ describe('bank: sendMoney', () => {
 
     const reply = await call({ phone: '555-0002', amount: 0 });
 
-    expect(reply).toEqual({ error: 'A valid amount is required.' });
+    expect(reply).toMatchObject({ error: expect.stringContaining('amount') });
     expect(transferMock).not.toHaveBeenCalled();
   });
 });

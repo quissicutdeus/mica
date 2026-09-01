@@ -4,9 +4,9 @@
 
 // The server half of the music service: who is playing out loud, and who can hear it.
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
+import { musicContract } from '@gphone/shared/contracts/music';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { playerCoords } from '../lib/playerCoords';
-import { fields } from '../lib/payload';
 import { isPlaylistId, isVideoId, parseYouTubeSource } from '@gphone/shared/youtube';
 import {
   DEFAULT_MAX_NEARBY,
@@ -59,7 +59,8 @@ import {
  */
 
 /** No table: this service is signalling, so every generic CRUD action is off. */
-const app = new ServiceEndpoint<never>('music', null, {
+const app = new ServiceEndpoint<never, typeof musicContract>('music', null, {
+  contract: musicContract,
   disableGet: true,
   disableCreate: true,
   disableUpdate: true,
@@ -250,7 +251,7 @@ const positionAnchor = (b: Broadcast, now: number): number => now - positionOf(b
  * server's idea of the current track to lag the client's by one.
  */
 app.registerEvent('broadcastStart', async (source, _cbId, data, citizenid) => {
-  const body = fields(data);
+  const body = data;
   const parsed = sourceFrom(body);
   if (!parsed) throw new Error('That is not a YouTube link.');
 
@@ -291,7 +292,7 @@ app.registerEvent('broadcastUpdate', async (source, _cbId, data) => {
   const current = broadcasts.get(source);
   if (!current) return { ok: false, reason: 'not_broadcasting' as const };
 
-  const body = fields(data);
+  const body = data;
   const now = Date.now();
   const next: Broadcast = { ...current };
 

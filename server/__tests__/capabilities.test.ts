@@ -132,16 +132,29 @@ describe('what the handler answers over the wire', () => {
     expect(calls[0][3]).toEqual({ money: false });
   });
 
-  it('answers the same for every payload a client could send', async () => {
-    // Nothing in the request is read, so there is nothing here to steer. Asserting it
-    // rather than assuming it is what keeps that true if the handler grows an argument.
+  it('answers the same for every empty payload, and refuses a steered one', async () => {
+    /**
+     * Nothing in the request is read, so there is nothing here to steer — and the contract
+     * now says so rather than leaving it to the handler happening not to look. The three
+     * shapes an argument-less call can arrive as are answered; anything else is a client
+     * asserting something nobody asked it for, and is refused.
+     */
     framework.kind = 'qb';
-    for (const hostile of [undefined, null, 42, 'money', { money: false }, [1, 2, 3]]) {
+    for (const empty of [undefined, null, {}]) {
       (globalThis as any).emitNet = vi.fn();
       (globalThis as any).source = 5;
-      await handlers.get(REQUEST_EVENT)!(2, hostile);
-      expect((globalThis.emitNet as any).mock.calls[0][3], JSON.stringify(hostile)).toEqual({
+      await handlers.get(REQUEST_EVENT)!(2, empty);
+      expect((globalThis.emitNet as any).mock.calls[0][3], JSON.stringify(empty)).toEqual({
         money: true
+      });
+    }
+
+    for (const steered of [42, 'money', { money: false }, [1, 2, 3]]) {
+      (globalThis as any).emitNet = vi.fn();
+      (globalThis as any).source = 5;
+      await handlers.get(REQUEST_EVENT)!(2, steered);
+      expect((globalThis.emitNet as any).mock.calls[0][3], JSON.stringify(steered)).toMatchObject({
+        error: expect.any(String)
       });
     }
   });

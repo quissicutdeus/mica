@@ -69,16 +69,24 @@ describe('lockscreen:status (MICA-60)', () => {
     expect(reply).toEqual({ hasPasscode: true });
   });
 
-  it('reads only the caller citizenid, never one from the payload', async () => {
-    await call('status', { citizenid: 'CIT_VICTIM' });
+  it('reads only the caller citizenid, and refuses a payload that names one', async () => {
+    await call('status', {});
     expect(dbMock.single.mock.calls[0][1]).toEqual(['CIT_A']);
+
+    dbMock.single.mockClear();
+    const reply = await call('status', { citizenid: 'CIT_VICTIM' });
+
+    expect(reply).toMatchObject({ error: expect.stringContaining('payload') });
+    expect(dbMock.single).not.toHaveBeenCalled();
   });
 });
 
 describe('lockscreen:set (MICA-60)', () => {
   it('refuses a passcode that is not all digits', async () => {
     const reply = await call('set', { passcode: '12ab' });
-    expect(reply).toMatchObject({ error: expect.stringMatching(/4 to 6 digits/) });
+    // The rule is the contract's now. Its message names the field rather than restating the
+    // rule, which is the trade for having it in one place instead of ninety-seven.
+    expect(reply).toMatchObject({ error: expect.stringContaining('passcode') });
     expect(queryCalls()).toHaveLength(0);
   });
 
@@ -117,9 +125,15 @@ describe('lockscreen:set (MICA-60)', () => {
     expect(hashA).not.toBe(hashB);
   });
 
-  it('writes under the caller citizenid, never one from the payload', async () => {
-    await call('set', { passcode: '123456', citizenid: 'CIT_VICTIM' });
+  it('writes under the caller citizenid, and refuses a payload that names one', async () => {
+    await call('set', { passcode: '123456' });
     expect(queryCalls()[0][1][0]).toBe('CIT_A');
+
+    dbMock.query.mockClear();
+    const reply = await call('set', { passcode: '123456', citizenid: 'CIT_VICTIM' });
+
+    expect(reply).toMatchObject({ error: expect.stringContaining('citizenid') });
+    expect(queryCalls()).toHaveLength(0);
   });
 });
 
@@ -155,17 +169,30 @@ describe('lockscreen:check (MICA-60)', () => {
     expect(Object.keys(reply)).toEqual(['ok']);
   });
 
-  it('answers false for a non-string guess rather than throwing', async () => {
+  it('answers false for a malformed guess rather than throwing', async () => {
+    // A string of the wrong shape still pays the full KDF cost and answers `false` — see the
+    // contract for why `check` is bounded but not patterned while `set` is both.
     await setAndCapture('482091');
-    const reply = await call('check', { passcode: 482091 });
-    expect(reply).toEqual({ ok: false });
+    expect(await call('check', { passcode: '12ab' })).toEqual({ ok: false });
+    expect(await call('check', { passcode: '' })).toEqual({ ok: false });
   });
 
-  it('checks only the caller citizenid, never one from the payload', async () => {
+  it('refuses a guess that is not a string at all', async () => {
+    // Distinct from the case above: a number was never a guess, and the client sending one
+    // is broken rather than wrong.
     await setAndCapture('482091');
-    await call('check', { passcode: '482091', citizenid: 'CIT_VICTIM' });
-    // The lookup is keyed on the resolved caller, not the payload's claim.
+    const reply = await call('check', { passcode: 482091 });
+    expect(reply).toMatchObject({ error: expect.stringContaining('passcode') });
+  });
+
+  it('checks only the caller citizenid, and refuses a payload that names one', async () => {
+    await setAndCapture('482091');
+    await call('check', { passcode: '482091' });
+    // The lookup is keyed on the resolved caller. There is no payload claim to prefer it to.
     expect(dbMock.single.mock.calls.at(-1)?.[1]).toEqual(['CIT_A']);
+
+    const reply = await call('check', { passcode: '482091', citizenid: 'CIT_VICTIM' });
+    expect(reply).toMatchObject({ error: expect.stringContaining('citizenid') });
   });
 });
 
@@ -184,9 +211,15 @@ describe('lockscreen:clear (MICA-60)', () => {
     expect(reply).toEqual({ ok: true });
   });
 
-  it('clears only the caller citizenid, never one from the payload', async () => {
-    await call('clear', { citizenid: 'CIT_VICTIM' });
+  it('clears only the caller citizenid, and refuses a payload that names one', async () => {
+    await call('clear', {});
     expect(queryCalls()[0][1]).toEqual(['CIT_A']);
+
+    dbMock.query.mockClear();
+    const reply = await call('clear', { citizenid: 'CIT_VICTIM' });
+
+    expect(reply).toMatchObject({ error: expect.stringContaining('payload') });
+    expect(queryCalls()).toHaveLength(0);
   });
 });
 

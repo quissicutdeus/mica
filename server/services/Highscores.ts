@@ -4,7 +4,7 @@
 
 import { defineService, SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { fields } from '../lib/payload';
+import { highscoresContract } from '@gphone/shared/contracts/highscores';
 import { resolveMany } from '../lib/PlayerDirectory';
 import type { Highscore, LeaderboardEntry } from '@gphone/shared/types';
 
@@ -18,19 +18,10 @@ type KnownApp = (typeof KNOWN_APPS)[number];
 const isKnownApp = (value: unknown): value is KnownApp =>
   typeof value === 'string' && (KNOWN_APPS as readonly string[]).includes(value);
 
-/** Above this, a score is not a play session, it's a bug or a modified client. */
-const MAX_PLAUSIBLE_SCORE = 1_000_000;
-
-function requireScore(raw: unknown): number {
-  if (typeof raw !== 'number' && typeof raw !== 'string') {
-    throw new Error('A valid score is required.');
-  }
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < 0 || value > MAX_PLAUSIBLE_SCORE) {
-    throw new Error('A valid score is required.');
-  }
-  return value;
-}
+/**
+ * Above a million a score is not a play session, it's a bug or a modified client. The bound is
+ * declared in `shared/contracts/highscores.ts` and enforced before either handler runs.
+ */
 
 class HighscoreRepository extends SchemaRepository<Highscore> {
   /**
@@ -67,7 +58,8 @@ class HighscoreRepository extends SchemaRepository<Highscore> {
  * rule, and reads go through `top`'s ordered, name-resolved projection. Neither is something the
  * generic paths can express.
  */
-export const highscores = defineService<Highscore>({
+export const highscores = defineService<Highscore, typeof highscoresContract>({
+  contract: highscoresContract,
   id: 'highscores',
   access: { read: 'owner', write: 'owner' },
   schema: {
@@ -89,13 +81,13 @@ const repo = highscores.repo as HighscoreRepository;
 
 /** Submit a run's score. Only ever raises the caller's own stored best. */
 app.registerEvent('submit', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  if (!isKnownApp(body.app)) {
+  // The contract bounds `app`'s shape; this is what says which games exist. The list names an
+  // app the Store installs, so it cannot live in `shared/` — see the contract's own note.
+  if (!isKnownApp(data.app)) {
     throw new Error('Unknown game.');
   }
-  const score = requireScore(body.score);
 
-  await repo.upsertBest(citizenid, body.app, score);
+  await repo.upsertBest(citizenid, data.app, data.score);
   return { ok: true };
 });
 
@@ -112,12 +104,11 @@ app.registerEvent('submit', async (source, cbId, data, citizenid) => {
  * the score is real and belongs on the board whether or not the character still exists.
  */
 app.registerEvent('top', async (source, cbId, data) => {
-  const body = fields(data);
-  if (!isKnownApp(body.app)) {
+  if (!isKnownApp(data.app)) {
     throw new Error('Unknown game.');
   }
 
-  const rows = await repo.top(body.app, 10);
+  const rows = await repo.top(data.app, 10);
   const directory = await resolveMany(rows.map((row) => row.citizenid));
 
   const entries: LeaderboardEntry[] = rows.map((row) => ({

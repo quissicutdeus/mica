@@ -408,8 +408,12 @@ describe('sync', () => {
     expect(backdatedBy).toBeLessThanOrEqual(12 * 3600 * 1000);
     expect(backdatedBy).toBeGreaterThan(11 * 3600 * 1000);
 
+    // A position that is not a number at all is refused outright now, rather than read as
+    // zero: "the client sent nothing usable" and "the track is at the start" are different
+    // statements, and silently turning the first into the second is how a broadcast ends up
+    // resynchronising every listener to a position nobody asked for.
     await call(START, 1, { videoId: OTHER_VIDEO, positionMs: 'not a number' });
-    expect(Date.now() - activeBroadcasts()[0].startedAt).toBeLessThan(2_000);
+    expect(activeBroadcasts()[0].videoId).toBe(VIDEO);
   });
 });
 

@@ -4,7 +4,7 @@
 
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { SavedPlace } from '@gphone/shared/types';
-import { fields, optionalString } from '../lib/payload';
+import { placesContract } from '@gphone/shared/contracts/places';
 import { playerCoords } from '../lib/playerCoords';
 
 const MAX_NAME_LENGTH = 100;
@@ -35,7 +35,8 @@ export class PlacesRepository extends SchemaRepository<SavedPlace> {
   }
 }
 
-export const places = defineService<SavedPlace>({
+export const places = defineService<SavedPlace, typeof placesContract>({
+  contract: placesContract,
   id: 'places',
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
@@ -65,13 +66,14 @@ const repo = places.repo as PlacesRepository;
  * a collision — `ServiceEndpoint` never wires the generic one when `disableCreate` is set.
  */
 app.registerEvent('create', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const name = optionalString(body.name)?.trim().slice(0, MAX_NAME_LENGTH);
+  // Trimmed, not capped: the contract already refused anything over the column's length, so
+  // trimming here can only ever shorten a name that already fits.
+  const name = data.name.trim();
   if (!name) throw new Error('A name is required.');
 
   // Cosmetic display text only, the same trust level `shareLocation`'s own `label`
   // carries — never resolved against anything, never used to authorize a read.
-  const streetLabel = optionalString(body.street_label)?.trim().slice(0, MAX_STREET_LABEL_LENGTH);
+  const streetLabel = data.street_label?.trim() || undefined;
 
   const coords = playerCoords(source);
   if (!coords) throw new Error('Could not determine your location.');

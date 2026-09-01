@@ -4,6 +4,7 @@
 
 import { detectFramework } from '../lib/FrameworkBridge';
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
+import { shellContract } from '@gphone/shared/contracts/shell';
 
 /**
  * What this server is actually able to do, so the UI can hide what it cannot.
@@ -68,7 +69,8 @@ export const capabilities = (): Capabilities => ({
   money: detectFramework() !== 'standalone'
 });
 
-const app = new ServiceEndpoint<never>('shell', null, {
+const app = new ServiceEndpoint<never, typeof shellContract>('shell', null, {
+  contract: shellContract,
   disableGet: true,
   disableCreate: true,
   disableUpdate: true,

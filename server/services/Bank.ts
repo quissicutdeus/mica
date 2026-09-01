@@ -6,7 +6,7 @@ import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { BankingBridge } from '../lib/BankingBridge';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { phoneNumberFrom } from '../lib/netGuard';
-import { fields, requirePositiveInt, optionalString } from '../lib/payload';
+import { bankContract } from '@gphone/shared/contracts/bank';
 import { transfer, type PaymentOutcome } from '../lib/Payments';
 import { Transaction } from '@gphone/shared/types';
 
@@ -20,7 +20,8 @@ import { Transaction } from '@gphone/shared/types';
  * the phone to their schema and read data their in-memory cache has already moved
  * past. `BankingBridge` adapts, the same way `FrameworkBridge` does for cores.
  */
-const app = new ServiceEndpoint<Transaction>('bank', null, {
+const app = new ServiceEndpoint<Transaction, typeof bankContract>('bank', null, {
+  contract: bankContract,
   disableGet: true,
   disableCreate: true,
   disableUpdate: true,
@@ -40,8 +41,11 @@ const transferMax = (): number => {
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_TRANSFER_MAX;
 };
 
-/** Player-supplied, never player-facing — only ever reaches `Payments.transfer`'s own server log. */
-const MAX_NOTE_LENGTH = 140;
+/**
+ * A note is player-supplied and never player-facing — it only ever reaches
+ * `Payments.transfer`'s own server log. Its 140-character bound is declared in
+ * `shared/contracts/bank.ts` and enforced before this file runs.
+ */
 
 /**
  * `Payments.transfer`'s own doc comment says "no client-facing endpoint, deliberately":
@@ -63,17 +67,16 @@ app.registerEvent(
     data,
     citizenid
   ): Promise<PaymentOutcome | { ok: false; reason: 'exceeds_limit' }> => {
-    const body = fields(data);
-    const phone = phoneNumberFrom(body.phone);
+    // `phoneNumberFrom` still runs: the contract bounds the string, and this is what turns a
+    // blank-but-present number into a refusal before it reaches somebody else's lookup.
+    const phone = phoneNumberFrom(data.phone);
     if (!phone) {
       throw new Error('A valid recipient phone number is required.');
     }
-    const amount = requirePositiveInt(body.amount, 'amount');
-    // Trimmed before the length cap, not after — an untrimmed payload could otherwise pad
-    // its way past `MAX_NOTE_LENGTH` with whitespace and still read as the full note.
-    const note = optionalString(
-      typeof body.note === 'string' ? body.note.trim() : body.note
-    )?.slice(0, MAX_NOTE_LENGTH);
+    const { amount } = data;
+    // Trimmed here rather than capped here: the contract's `max` is what a note may be, and a
+    // payload that padded its way to the limit with whitespace ends up shorter, never longer.
+    const note = data.note?.trim() || undefined;
 
     if (amount > transferMax()) {
       return { ok: false, reason: 'exceeds_limit' };

@@ -215,19 +215,25 @@ describe('settings service', () => {
       expect(params[3]).toBe('50');
     });
 
-    it('writes under the caller citizenid, never one from the payload', async () => {
+    it('writes under the caller citizenid, and refuses a payload that names one', async () => {
       // The obvious attack on a table keyed by citizenid: name somebody else's and write
-      // their theme. The session decides, and the payload's copy is ignored.
-      await call('set', {
+      // their theme. The session has always decided; what changed is that the payload's copy
+      // is refused rather than ignored, so the write does not succeed while carrying it.
+      await call('set', { app: 'settings', key: 'theme', value: '"dark"' });
+
+      const [, params] = dbMock.query.mock.calls[0];
+      expect(params[0]).toBe(CID);
+
+      dbMock.query.mockClear();
+      const reply = await call('set', {
         app: 'settings',
         key: 'theme',
         value: '"dark"',
         citizenid: 'VICTIM99'
       });
 
-      const [, params] = dbMock.query.mock.calls[0];
-      expect(params[0]).toBe(CID);
-      expect(params).not.toContain('VICTIM99');
+      expect(reply).toMatchObject({ error: expect.stringContaining('citizenid') });
+      expect(dbMock.query).not.toHaveBeenCalled();
     });
   });
 });

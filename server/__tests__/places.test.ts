@@ -93,8 +93,10 @@ describe('places:create (MICA-65)', () => {
   });
 
   it('refuses an empty or missing name, without touching the database', async () => {
+    // A missing `name` is refused by the contract, a whitespace-only one by the handler:
+    // the second is length-legal and still not a name, which no schema can say.
     let reply = await call('create', {});
-    expect(reply).toMatchObject({ error: expect.stringMatching(/name is required/i) });
+    expect(reply).toMatchObject({ error: expect.stringContaining('name') });
 
     reply = await call('create', { name: '   ' });
     expect(reply).toMatchObject({ error: expect.stringMatching(/name is required/i) });
@@ -111,28 +113,44 @@ describe('places:create (MICA-65)', () => {
     expect(dbMock.insert).not.toHaveBeenCalled();
   });
 
-  it('caps an oversized name and street_label rather than rejecting outright', async () => {
-    await call('create', { name: 'H'.repeat(500), street_label: 'S'.repeat(500) });
+  it('refuses an oversized name or street_label rather than capping it', async () => {
+    // It used to `slice(0, 100)` and `slice(0, 255)`. A place saved under a name that is not
+    // the one that was typed is the same failure a silently truncating column produces, and
+    // both bounds are the declared column lengths, so a refusal costs nothing legitimate.
+    let reply = await call('create', { name: 'H'.repeat(500) });
+    expect(reply).toMatchObject({ error: expect.stringContaining('name') });
 
-    const [, params] = dbMock.insert.mock.calls[0] as [string, string[]];
-    expect(params[0].length).toBe(100);
-    expect(params.find((p) => typeof p === 'string' && p.startsWith('S'))?.length).toBe(255);
+    reply = await call('create', { name: 'Home', street_label: 'S'.repeat(500) });
+    expect(reply).toMatchObject({ error: expect.stringContaining('street_label') });
+
+    expect(dbMock.insert).not.toHaveBeenCalled();
   });
 
-  it('ignores any x/y/z the payload sends — position always comes from the server', async () => {
-    await call('create', { name: 'Home', x: 0, y: 0, z: 0 });
+  it('takes the position from the server, and refuses a payload that names one', async () => {
+    await call('create', { name: 'Home' });
 
     const [, params] = dbMock.insert.mock.calls[0];
-    // The resolved native position, not the payload's zeros.
+    // The resolved native position. There is nothing from the payload to prefer it over.
     expect(params).toEqual(expect.arrayContaining([100, 200, 30]));
-    expect(params).not.toEqual(expect.arrayContaining([0]));
+
+    dbMock.insert.mockClear();
+    const reply = await call('create', { name: 'Home', x: 0, y: 0, z: 0 });
+
+    expect(reply).toMatchObject({ error: expect.stringContaining('x') });
+    expect(dbMock.insert).not.toHaveBeenCalled();
   });
 
-  it('writes under the caller citizenid, never one the payload names', async () => {
-    await call('create', { name: 'Home', citizenid: 'CIT_VICTIM' });
+  it('writes under the caller citizenid, and refuses a payload that names one', async () => {
+    await call('create', { name: 'Home' });
 
     const [, params] = dbMock.insert.mock.calls[0];
     expect(params.at(-1)).toBe('CIT_A');
+
+    dbMock.insert.mockClear();
+    const reply = await call('create', { name: 'Home', citizenid: 'CIT_VICTIM' });
+
+    expect(reply).toMatchObject({ error: expect.stringContaining('citizenid') });
+    expect(dbMock.insert).not.toHaveBeenCalled();
   });
 });
 

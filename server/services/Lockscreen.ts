@@ -5,7 +5,7 @@
 import { randomBytes, scrypt } from 'node:crypto';
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { fields, optionalString } from '../lib/payload';
+import { lockscreenContract } from '@gphone/shared/contracts/lockscreen';
 
 /**
  * The lock screen's passcode (MICA-60): display state, not a security boundary. Nothing
@@ -53,7 +53,8 @@ export class LockscreenRepository extends SchemaRepository<LockscreenRow> {
   }
 }
 
-export const lockscreen = defineService<LockscreenRow>({
+export const lockscreen = defineService<LockscreenRow, typeof lockscreenContract>({
+  contract: lockscreenContract,
   id: 'lockscreen',
   // `write: 'server'` disables the generic create/update outright — nothing about this
   // row is ever written through the generic path, only through the named actions below,
@@ -266,10 +267,7 @@ app.registerEvent('status', async (source, cbId, data, citizenid) => {
 
 /** `set` — replace (or create) the caller's own passcode. Never anyone else's: `citizenid` is the caller's own, resolved server-side. */
 app.registerEvent('set', async (source, cbId, data, citizenid) => {
-  const passcode = optionalString(fields(data).passcode);
-  if (!passcode || !PASSCODE_PATTERN.test(passcode)) {
-    throw new Error('A passcode must be 4 to 6 digits.');
-  }
+  const { passcode } = data;
 
   const salt = randomBytes(16).toString(HASH_ENCODING);
   const hash = await hashPasscode(passcode, salt);
@@ -295,8 +293,10 @@ app.registerEvent('set', async (source, cbId, data, citizenid) => {
  * only ever calls this when `getPasscodeStatus` already said one exists.
  */
 app.registerEvent('check', async (source, cbId, data, citizenid) => {
-  const passcode = optionalString(fields(data).passcode);
-  if (!passcode) return { ok: false };
+  // A guess of the wrong shape answers `false` rather than erroring — see the contract for
+  // why `check` is bounded but not patterned while `set` is both.
+  const { passcode } = data;
+  if (!PASSCODE_PATTERN.test(passcode)) return { ok: false };
 
   const waitMs = lockedOutFor(citizenid);
   if (waitMs > 0) {
