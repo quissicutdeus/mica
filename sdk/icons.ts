@@ -47,6 +47,7 @@ export { default as RepeatOneIcon } from './ui/icons/RepeatOneIcon.svelte';
 export { default as ReplyIcon } from './ui/icons/ReplyIcon.svelte';
 export { default as SearchIcon } from './ui/icons/SearchIcon.svelte';
 export { default as SendIcon } from './ui/icons/SendIcon.svelte';
+export { default as SettingsIcon } from './ui/icons/SettingsIcon.svelte';
 export { default as ShareIcon } from './ui/icons/ShareIcon.svelte';
 export { default as ShareSquareIcon } from './ui/icons/ShareSquareIcon.svelte';
 export { default as ShuffleIcon } from './ui/icons/ShuffleIcon.svelte';

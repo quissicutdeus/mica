@@ -30,6 +30,19 @@ test('a standalone shade notification opens the app it points at', async ({ page
   await expect(page.getByRole('dialog', { name: 'Notification Shade' })).toBeHidden();
 });
 
+test('the shade opens Settings directly, without a notification to tap', async ({ page }) => {
+  await page.goto('/');
+  await openShade(page);
+
+  // The quick-settings tiles cover one-tap switches; this is the way to everything else
+  // without closing the drawer and hunting the home screen for the app. Same contract as
+  // a notification tap: the app opens and the drawer gets out of its way.
+  await page.getByRole('button', { name: 'Open Settings' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Notification Shade' })).toBeHidden();
+});
+
 test('a notification inside a group opens too', async ({ page }) => {
   // A separate code path from the standalone row, and the one a busy phone actually
   // shows: three Messages fixtures collapse into a group whose header expands rather

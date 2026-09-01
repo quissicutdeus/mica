@@ -17,6 +17,7 @@
   import CheckIcon from '../../../sdk/ui/icons/CheckIcon.svelte';
   import ChevronDownIcon from '../../../sdk/ui/icons/ChevronDownIcon.svelte';
   import CloseIcon from '../../../sdk/ui/icons/CloseIcon.svelte';
+  import SettingsIcon from '../../../sdk/ui/icons/SettingsIcon.svelte';
   import FlashlightIcon from '../../../sdk/ui/icons/FlashlightIcon.svelte';
   import MoonIcon from '../../../sdk/ui/icons/MoonIcon.svelte';
   import SignalIcon from '../../../sdk/ui/icons/SignalIcon.svelte';
@@ -252,6 +253,19 @@
     }
   };
 
+  /**
+   * Settings, from the drawer.
+   *
+   * The quick-settings tiles below cover the switches worth one tap; everything they do not
+   * -- ringtones, shortcuts, an app's permissions -- meant closing the shade, finding the
+   * home screen and opening Settings by hand. Same `openApp` then `closeShade` as a
+   * notification tap: leaving the drawer open over the app it just launched would cover it.
+   */
+  const openSettings = () => {
+    openApp('settings');
+    closeShade();
+  };
+
   const clearSingle = async (id: number) => {
     await clearNotifications([id]);
   };
@@ -446,6 +460,16 @@
             <ArchiveIcon class="size-icon-sm" />
           </button>
         {/if}
+
+        <button
+          type="button"
+          class="bg-surface text-on-surface-variant hover:bg-surface-container hover:text-primary duration-short ease-standard rounded-full p-2 transition-colors"
+          onclick={openSettings}
+          title="Settings"
+          aria-label="Open Settings"
+        >
+          <SettingsIcon class="size-icon-sm" />
+        </button>
 
         <button
           type="button"
