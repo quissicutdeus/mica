@@ -106,6 +106,51 @@ function constantsFor(): AddOnConstants {
   };
 }
 
+/**
+ * What one frame may hold and how fast it may ask (MICA-196).
+ *
+ * Nothing bounded any of this. `subscriptions` grew one entry per `subscribe` and each
+ * entry is a **live store listener in the shell**, so a loop in a frame — malicious, or a
+ * `$effect` that resubscribes on every push — could hold thousands of them and keep every
+ * store they touch fanning out to a dead sandbox for the life of the page. `instances` was
+ * keyed on `facet:JSON(factoryArgs)`, and while `pinAppId` stops the *app id* in there from
+ * being a lie, the rest of the key is still whatever the frame sent, so it is a map an
+ * add-on can grow by asking. And `call` had no rate at all, on a channel where each message
+ * can reach a real facet and, through `service`, the server.
+ *
+ * Exported so the tests name these rather than hardcoding a number that would silently stop
+ * meaning the limit if it were tuned.
+ *
+ * The numbers are chosen against real bursts, the way `server/lib/rateLimit.ts` chooses
+ * its own. A frame's heaviest honest moment is the one just after `hydrate`, when its
+ * stores subscribe and its first screen loads: tens of messages, not hundreds. Sixty a
+ * second sustained is nothing an add-on can honestly need and still leaves a slow machine's
+ * opening burst untouched.
+ */
+export const ADDON_LIMITS = {
+  /**
+   * Fixed window, matching `rateLimit.ts`'s shape rather than importing it — that module is
+   * FiveM server code (it reads `GetConvar` and hooks `playerDropped`) and nothing in `web/`
+   * can load it. A window needs a counter and a start time; a token bucket needs a per-key
+   * refill timestamp and float arithmetic, and the two only differ at a burst boundary where
+   * the honest answer is "ask again in a moment" either way.
+   */
+  windowMs: 10_000,
+  /**
+   * Counted over `call` **and** `subscribe` together. A subscribe/unsubscribe loop is a call
+   * flood spelled differently, and a limit that only saw `call` would watch it go past.
+   */
+  requestsPerWindow: 600,
+  /** Live store listeners held in the shell on this frame's behalf. */
+  subscriptions: 200,
+  /**
+   * Distinct `facet(factoryArgs)` objects cached for this frame. Every facet twin but
+   * `service` passes `[]` or the pinned app id, so an honest frame sits far below this —
+   * the headroom is for `service`, whose id varies within the app's own namespace.
+   */
+  instances: 128
+} as const;
+
 export function createIframeHostServer(opts: IframeHostServerOptions) {
   const { host, manifest, guest } = opts;
   const post = (msg: ToFrame) => guest()?.postMessage(msg, '*');
@@ -117,6 +162,33 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   let stopTheme: (() => void) | undefined;
   /** The window whose `hello` was last answered — how a reload is recognised. */
   let hydrated: unknown;
+  /** The fixed request window: when it opened, and how many have arrived in it. */
+  let windowStartedAt = 0;
+  let requestsInWindow = 0;
+
+  /**
+   * Record one inbound `call`/`subscribe` and say whether to answer it.
+   *
+   * Refuses rather than tearing the frame down. A frame over its budget is far more likely
+   * to be a resubscribe loop in somebody's add-on than an attack, and killing the app over
+   * a bug it can recover from would trade a bounded cost for an unbounded one. `call`
+   * answers the refusal as an ordinary failed reply, so the add-on's own `await` rejects
+   * and it can say so; `subscribe` logs, which is what it already does for every refusal.
+   *
+   * The window is not reset by `forgetGuest`: a reload is exactly what a frame trying to
+   * shed its budget would do, and the budget belongs to the frame rather than to the
+   * document in it.
+   */
+  function withinBudget(): boolean {
+    const at = Date.now();
+    if (at - windowStartedAt >= ADDON_LIMITS.windowMs) {
+      windowStartedAt = at;
+      requestsInWindow = 1;
+      return true;
+    }
+    requestsInWindow += 1;
+    return requestsInWindow <= ADDON_LIMITS.requestsPerWindow;
+  }
 
   /**
    * Whose server service this add-on may name.
@@ -248,6 +320,15 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     const key = `${facet}:${JSON.stringify(pinnedArgs)}`;
     let obj = instances.get(key);
     if (!obj) {
+      // MICA-196: the key is partly frame-supplied, so this map is one an add-on can
+      // grow by asking. Refusing a *new* one rather than evicting: every cached facet may
+      // be holding live state on the frame's behalf, and dropping one at random would make
+      // an add-on's own object silently stop working instead of failing where it asked.
+      if (instances.size >= ADDON_LIMITS.instances) {
+        throw new Error(
+          `[gPhone] '${host.appId}' has too many live facet instances (${ADDON_LIMITS.instances})`
+        );
+      }
       const factory = (facets as unknown as Record<string, (...a: unknown[]) => unknown>)[facet];
       obj = factory(...pinnedArgs) as Record<string, unknown>;
       instances.set(key, obj);
@@ -304,6 +385,12 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
 
   async function call(msg: Extract<ToShell, { kind: 'call' }>) {
     try {
+      if (!withinBudget()) {
+        throw new Error(
+          `[gPhone] '${host.appId}' is calling the shell too fast ` +
+            `(over ${ADDON_LIMITS.requestsPerWindow} in ${ADDON_LIMITS.windowMs}ms)`
+        );
+      }
       requireMember(msg.facet, msg.member);
       const obj = instance(msg.facet, msg.factoryArgs);
       const member = obj[msg.member];
@@ -325,6 +412,23 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
 
   function subscribe(msg: Extract<ToShell, { kind: 'subscribe' }>) {
     try {
+      if (!withinBudget()) {
+        throw new Error(
+          `[gPhone] '${host.appId}' is calling the shell too fast ` +
+            `(over ${ADDON_LIMITS.requestsPerWindow} in ${ADDON_LIMITS.windowMs}ms)`
+        );
+      }
+      // Each entry is a live store listener in the shell, and a store goes on fanning out
+      // to one whether or not the frame is still reading. Counted before the facet is
+      // built, so an over-budget subscribe costs nothing at all. An id already in the map
+      // is a replacement rather than a new listener — see the `hello` path, which drops the
+      // previous document's whole set — so it is not counted against the cap twice.
+      if (!subscriptions.has(msg.id) && subscriptions.size >= ADDON_LIMITS.subscriptions) {
+        throw new Error(
+          `[gPhone] '${host.appId}' holds too many live subscriptions ` +
+            `(${ADDON_LIMITS.subscriptions})`
+        );
+      }
       requireMember(msg.facet, msg.member);
       const obj = instance(msg.facet, msg.factoryArgs);
       const member = obj[msg.member];

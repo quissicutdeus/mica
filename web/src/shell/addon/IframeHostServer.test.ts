@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get, writable } from 'svelte/store';
 import { createInProcessHost } from '../../../../sdk/host/inProcess/createInProcessHost';
 import { registerFacet, resetHostsForTest } from '../../../../sdk/host/current';
-import { createIframeHostServer } from './IframeHostServer';
+import { ADDON_LIMITS, createIframeHostServer } from './IframeHostServer';
 import { defineApp } from '../../../../sdk/manifest';
 import { DENIED_FACETS } from '../../../../sdk/permissions';
 import { is24Hour as shellIs24Hour } from '../state/time';
@@ -1039,6 +1039,132 @@ describe('IframeHostServer', () => {
       from({ kind: 'hello', appId: 'probe' });
       expect(posted.filter((m) => m.kind === 'hydrate')).toHaveLength(1);
       error.mockRestore();
+    });
+  });
+
+  /**
+   * MICA-196. None of this was bounded. A `subscribe` entry is a live store listener in
+   * the shell, so a resubscribe loop in a frame — a bug as easily as an attack — held
+   * thousands of them and kept every store it touched fanning out to a dead sandbox for the
+   * life of the page. `instances` is keyed partly on what the frame sent. And `call` had no
+   * rate at all, on a channel that reaches real facets and, through `service`, the server.
+   */
+  describe('per-frame limits', () => {
+    const callMsg = (id: number) => ({
+      kind: 'call',
+      id,
+      facet: 'contacts',
+      factoryArgs: [],
+      member: 'addContact',
+      args: ['ab']
+    });
+
+    it('answers up to the request budget and refuses past it, rather than going quiet', async () => {
+      const { posted, from } = server();
+      for (let id = 1; id <= ADDON_LIMITS.requestsPerWindow + 1; id++) from(callMsg(id));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const answered = posted.filter((m) => m.kind === 'reply' && (m as any).ok === true);
+      expect(answered).toHaveLength(ADDON_LIMITS.requestsPerWindow);
+
+      // A reply, not silence: the add-on's own `await` rejects and it can say so. A
+      // dropped message would leave the promise pending for the life of the frame.
+      const refused = posted.find(
+        (m) => m.kind === 'reply' && (m as any).id === ADDON_LIMITS.requestsPerWindow + 1
+      ) as any;
+      expect(refused).toMatchObject({ ok: false });
+      expect(refused.error.message).toMatch(/calling the shell too fast/);
+    });
+
+    it('counts subscribes against the same budget as calls', async () => {
+      // A subscribe/unsubscribe loop never holds more than one live subscription, so the
+      // live cap below cannot see it at all — it is a call flood spelled differently, and a
+      // budget that only counted `call` would watch it go past.
+      const { posted, from } = server();
+      for (let id = 1; id <= ADDON_LIMITS.requestsPerWindow; id++) {
+        from({
+          kind: 'subscribe',
+          id,
+          facet: 'contacts',
+          factoryArgs: [],
+          member: 'contactsStore'
+        });
+        from({ kind: 'unsubscribe', id });
+      }
+      posted.length = 0;
+
+      from(callMsg(9999));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const refused = posted.find((m) => m.kind === 'reply' && (m as any).id === 9999) as any;
+      expect(refused).toMatchObject({ ok: false });
+      expect(refused.error.message).toMatch(/calling the shell too fast/);
+    });
+
+    it('refuses a subscription past the live cap, and holds no listener for it', () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { posted, from } = server();
+      for (let id = 1; id <= ADDON_LIMITS.subscriptions + 1; id++) {
+        from({
+          kind: 'subscribe',
+          id,
+          facet: 'contacts',
+          factoryArgs: [],
+          member: 'contactsStore'
+        });
+      }
+      posted.length = 0;
+
+      // One push per *held* subscription, and the one past the cap holds nothing.
+      store.set(2);
+      expect(posted.filter((m) => m.kind === 'push')).toHaveLength(ADDON_LIMITS.subscriptions);
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining("add-on 'probe' subscribe failed"),
+        expect.any(Error)
+      );
+      error.mockRestore();
+    });
+
+    it('refuses a new facet instance past the cap, and keeps the ones already built', async () => {
+      registerFacet(
+        'service' as any,
+        ((id: string) => ({ id, call: () => Promise.resolve('ok') })) as any
+      );
+      const { posted, from } = server([]);
+      // Each id is inside the app's own namespace, so every one of these is a call the
+      // service rule allows — the cap is the only thing standing in the way.
+      for (let i = 0; i <= ADDON_LIMITS.instances; i++) {
+        from({
+          kind: 'call',
+          id: i + 1,
+          facet: 'service',
+          factoryArgs: [`probe_${i}`],
+          member: 'call',
+          args: ['list']
+        });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const ok = posted.filter((m) => m.kind === 'reply' && (m as any).ok === true);
+      expect(ok).toHaveLength(ADDON_LIMITS.instances);
+      const refused = posted.find(
+        (m) => m.kind === 'reply' && (m as any).id === ADDON_LIMITS.instances + 1
+      ) as any;
+      expect(refused.error.message).toMatch(/too many live facet instances/);
+
+      // Refused, not evicted: a cached facet may hold live state on the frame's behalf, so
+      // an already-built one must keep working rather than disappear under the add-on.
+      posted.length = 0;
+      from({
+        kind: 'call',
+        id: 5000,
+        facet: 'service',
+        factoryArgs: ['probe_0'],
+        member: 'call',
+        args: ['list']
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(posted[0]).toMatchObject({ ok: true });
     });
   });
 
