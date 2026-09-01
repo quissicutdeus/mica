@@ -18,7 +18,8 @@ import { ROLE_NAMES, TOKEN_NAMES } from './lib/m3';
  * opacity modifiers landing before the token migration; the budget below is what keeps
  * that count from creeping back up.
  *
- * The `:has()` and container-query rules have no such fallback and are absolute.
+ * The `:has()` and container-query rules are now caught by stylelint
+ * (plugin/no-unsupported-browser-features) and are no longer tested here.
  *
  * Note what none of this can do: a green run here is not evidence that anything renders
  * in game. Real verification is `nui_devTools`, checking the *computed* value.
@@ -45,14 +46,10 @@ const OPACITY_MODIFIER = new RegExp(
 );
 
 /**
- * `has-[...]:`, `group-has-checked:`. The trailing colon is required so the pattern
- * cannot fire on ordinary prose in a comment — which is exactly how a structural test
- * in this repo has drawn a false positive before.
+ * Pattern `has-[...]:`, `group-has-checked:` is now caught by stylelint.
+ * Pattern `@container`, `@min-[400px]:`, `@max-[400px]:` is now caught by stylelint.
+ * The regexes are retired with the tests.
  */
-const HAS_VARIANT = /\b(?:group-|peer-)?has-(?:\[[^\]]*\]|[a-z-]+):/g;
-
-/** `@container`, `@min-[400px]:`, `@max-[400px]:`. */
-const CONTAINER_QUERY = /@container\b|@(?:min|max)-\[/g;
 
 /**
  * How many opacity modifiers each file is still allowed.
@@ -250,17 +247,5 @@ describe('CEF capability baseline (AGENTS.md §6)', () => {
     );
 
     expect(offenders, 'an inline style bypasses PostCSS — write rgb()/rgba()').toEqual([]);
-  });
-
-  it('uses no :has() variant', () => {
-    // Chromium 105. Nothing in the tree uses one today; use Svelte state instead.
-    const offenders = FILES.filter(({ text }) => HAS_VARIANT.test(text)).map((f) => f.path);
-    expect(offenders, 'use Svelte state rather than :has()').toEqual([]);
-  });
-
-  it('uses no container query', () => {
-    // Chromium 105. Also clean today.
-    const offenders = FILES.filter(({ text }) => CONTAINER_QUERY.test(text)).map((f) => f.path);
-    expect(offenders, 'use Svelte state rather than a container query').toEqual([]);
   });
 });
