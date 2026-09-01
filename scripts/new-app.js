@@ -200,12 +200,21 @@ const registerInAppContract = () => {
   const full = path.join(ROOT, relative);
   let contract = fs.readFileSync(full, 'utf8');
 
-  if (contract.includes(`../apps/${id}/index.svelte`)) return;
+  if (contract.includes(`../web/src/apps/${id}/index.svelte`)) return;
 
-  const importLine = `import ${Pascal} from '../apps/${id}/index.svelte';`;
+  const importLine = `import ${Pascal} from '../web/src/apps/${id}/index.svelte';`;
   const imports = [
-    ...contract.matchAll(/^import \w+ from '\.\.\/apps\/\w+\/index\.svelte';$/gm)
+    ...contract.matchAll(/^import \w+ from '\.\.\/web\/src\/apps\/\w+\/index\.svelte';$/gm)
   ].map((m) => m[0]);
+  // An empty match would make the `replace` below an insert at index 0 — String.replace('', x)
+  // prepends — which silently fuses the new import onto whatever line 1 happens to be. Louder
+  // to stop here than to hand back a file that no longer parses the way it reads.
+  if (imports.length === 0) {
+    throw new Error(
+      `${relative}: found no '../web/src/apps/<id>/index.svelte' imports to sort against. ` +
+        'The path this script writes has drifted from the one the file uses; fix it here.'
+    );
+  }
   const sortedImports = [...imports, importLine].toSorted((a, b) => a.localeCompare(b));
   contract = contract.replace(imports.join('\n'), sortedImports.join('\n'));
 
