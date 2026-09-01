@@ -10,7 +10,7 @@ import { get, writable } from 'svelte/store';
 // evaluates its module-level `derived(appRegistryStore, ...)`.
 import { type AppComponent, type AppManifest, defineApp } from '../../../../sdk/manifest';
 import { clearAppStorage } from '../../../../sdk/host/useStorage';
-import { messageOf } from '@gphone/sdk';
+import { isBrowser, messageOf } from '@gphone/sdk';
 import { capabilities, capabilitiesKnown } from '../../services/capabilities';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { placeOnHomeGridIfAbsent } from './homeGrid';
@@ -20,6 +20,7 @@ import {
   matchesHash
 } from '../../../../sdk/remoteAppSecurity';
 import { isCatalogEntry, type CatalogEntry } from '../../../../sdk/catalog';
+import { toast } from './toast';
 
 export type { AppManifest } from '../../../../sdk/manifest';
 
@@ -150,6 +151,54 @@ const isKnownApp = (appId: string): boolean =>
     addOnIds.has(appId)
   );
 
+/** One prompt per session: several apps failing is still one deploy to recover from. */
+let staleBuildPrompted = false;
+
+/**
+ * Offer a reload when a chunk will not load.
+ *
+ * The usual cause is a deploy landing under an open page: the assets are content-hashed, so
+ * the new build writes new filenames and the old ones stop existing, while this page goes on
+ * holding the URLs it was built with. Nothing about caching causes it and no cache header
+ * fixes it — `docker/serve` already sends `no-cache` for the entry document and `immutable`
+ * for the hashed assets, which is correct — the file the page asks for is simply gone.
+ *
+ * **Browser only, and the gate is not optional.** AGENTS.md §6 bans `window.location` in
+ * CEF, where it reloads the whole instance and drops every bit of state the phone is
+ * holding. In game the situation cannot arise anyway: the NUI page is served from the
+ * resource's own files and is torn down and rebuilt whenever the resource restarts, so
+ * there is no long-lived page to strand.
+ *
+ * Offered rather than done: a chunk can also fail because the app itself is broken or the
+ * network dropped, and reloading on a loop is a worse failure than the one it is chasing.
+ * The wording says what is known and lets the player decide.
+ */
+const offerReloadForStaleBuild = (): void => {
+  if (!isBrowser() || staleBuildPrompted) return;
+  staleBuildPrompted = true;
+
+  toast.show({
+    app: 'system',
+    source: 'feedback',
+    title: 'gPhone could not load that app',
+    message: 'If it updated while this page was open, reloading will pick up the new version.',
+    type: 'error',
+    // Sticky: it is asking for a decision, and a prompt that vanishes after four seconds is
+    // one the player has to reproduce the fault to see again.
+    duration: 0,
+    persist: false,
+    actions: [
+      {
+        label: 'Reload',
+        variant: 'success',
+        onClick: () => {
+          window.location.reload();
+        }
+      }
+    ]
+  });
+};
+
 /**
  * Fetch an app's component, once.
  *
@@ -175,6 +224,7 @@ const loadComponent = async (appId: string): Promise<AppComponent | undefined> =
         `gPhone App Registry: failed to load '${appId}'`,
         messageOf(error, 'unknown error')
       );
+      offerReloadForStaleBuild();
       return undefined;
     });
 
