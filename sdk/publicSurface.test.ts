@@ -1640,16 +1640,27 @@ const packageExports = (): Record<string, unknown> => {
  * actually types. `ENTRY_FILES` says what each one has to resolve to.
  */
 const SUBPATH_OF_ENTRY: Record<string, string> = {
-  '@gphone/sdk': '.',
+  '@gphone/sdk (add-on bundle)': '.',
   '@gphone/sdk/app': './app',
   '@gphone/sdk/core': './core'
 };
 
 /**
  * Frozen above, published by nobody — see the second-to-last paragraph of the docblock.
- * `addon.ts` is reached through `vite.addon.config.ts`'s alias, never through the package.
+ *
+ * `index.ts` is the **shell's** barrel, and MICA-125 made `.` resolve to `addon.ts`
+ * instead. The bare specifier is target-dependent by nature: in this repo the shell build
+ * and the add-on build alias `@gphone/sdk` to different files, so the map can be right for
+ * exactly one audience, and the audience that reads a map rather than an alias is the one
+ * outside this repo. That is add-on authors.
+ *
+ * So the shell reaches its own barrel through `web/vite.config.ts`, the way `addon.ts` used
+ * to be reached, and an outside consumer resolving `@gphone/sdk` now gets the barrel it can
+ * actually use. Publishing `index.ts` under some subpath of its own was considered and
+ * rejected: it exports six shell-only names backed by shell state and no `bootAddOn`, so a
+ * subpath for it would be a supported way to reach something unusable.
  */
-const UNPUBLISHED_BY_DESIGN = ['@gphone/sdk (add-on bundle)'];
+const UNPUBLISHED_BY_DESIGN = ['@gphone/sdk'];
 
 /** Subpaths publishing the design system rather than a module. Out of contract (above). */
 const isStylesheet = (subpath: string): boolean => subpath.endsWith('.css');

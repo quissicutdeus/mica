@@ -1,6 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
-import { createRequire } from 'node:module';
 import path from 'node:path';
 import fs from 'node:fs';
 
@@ -21,36 +20,26 @@ import fs from 'node:fs';
  */
 
 const here = import.meta.dirname;
-const require = createRequire(import.meta.url);
 
 /**
- * The SDK package root, found through the one subpath its `exports` map publishes that is
- * a plain file at the package root.
+ * No alias for `@gphone/sdk` — the package resolves to the right barrel on its own.
  *
- * `require.resolve('@gphone/sdk')` would work too and is shorter — but it resolves to
- * `index.ts`, the **shell** barrel, and pointing at the wrong one of those two files is
- * precisely the mistake `sdkRoot` exists to make impossible to write by accident. Going
- * through a stylesheet makes the choice of barrel explicit one line down.
+ * This used to be the most important line in the file. `@gphone/sdk` names two different
+ * barrels: `index.ts`, which the phone's shell builds against and which reaches modules
+ * expecting to run in the shell's own JavaScript context, and `addon.ts`, whose host
+ * facets talk `postMessage` because an add-on runs in a sandboxed iframe. The package's
+ * `exports` map used to resolve `.` to the first of those, so every project like this one
+ * had to alias its way to the second, correctly, forever.
+ *
+ * MICA-125 pointed `.` at `addon.ts` instead. The bare specifier is target-dependent by
+ * nature and the map can only be right for one audience; the audience that reads a map
+ * rather than writing an alias is the one outside gPhone's repo, which is you. The shell
+ * aliases to its own barrel now, since it always has a Vite config to do it in.
+ *
+ * `requireIframeFacets()` below still checks the outcome rather than trusting it, and it
+ * is worth keeping for that reason: it asserts the bundle really did get the iframe facet
+ * set, whatever resolution happened to produce it.
  */
-const sdkRoot = path.dirname(require.resolve('@gphone/sdk/app.css'));
-
-/**
- * `@gphone/sdk` means two different files, and an add-on needs the second one.
- *
- * The package's `exports` map resolves `.` to `index.ts` — the barrel the phone's own
- * shell builds against, which reaches `sdk/host/inProcess/**` and expects to be running
- * in the shell's JavaScript context. An add-on bundle runs in a sandboxed iframe and has
- * none of that; its barrel is `addon.ts`, whose host facets talk `postMessage`.
- *
- * The package does not publish `addon.ts` under a subpath of its own (gPhone's
- * `sdk/publicSurface.test.ts` records that as today's deliberate answer), so the swap is
- * this alias' job — exactly as it is `web/vite.addon.config.ts`'s job inside the phone's
- * own repo. **Do not remove it.** Without it your bundle compiles the shell barrel
- * instead, and `requireIframeFacets()` below is the backstop that says so in those words
- * rather than leaving you with whatever error comes out first.
- */
-const SDK_ADDON_BARREL = path.join(sdkRoot, 'addon.ts');
-
 const MANIFEST = path.join(here, 'src/manifest.ts');
 const COMPONENT = path.join(here, 'src/index.svelte');
 
@@ -197,14 +186,18 @@ function refuseCoreEntry(): Plugin {
 /**
  * The bundle must actually contain the **iframe** facet set.
  *
- * The other half of the barrel swap at the top of this file, and the reason that alias is
- * safe to depend on. `sdk/host/iframe/registerFacets` is pulled in by `bootAddOn` and by
- * nothing else; it is what makes `useContacts()`, `useSound()` and the rest resolve to
- * `postMessage`-backed twins instead of to shell-side modules that are not there. If the
- * alias is removed the build fails loudly on its own (the shell barrel does not export
- * `bootAddOn`), but a graph that ends up mounting your component *without* that import is
- * an add-on whose every hook throws `host facet 'x' is not loaded` at whoever opens it —
- * so this asserts the positive rather than trusting the negative.
+ * `sdk/host/iframe/registerFacets` is pulled in by `bootAddOn` and by nothing else; it is
+ * what makes `useContacts()`, `useSound()` and the rest resolve to `postMessage`-backed
+ * twins instead of to shell-side modules that are not there. A graph that mounts your
+ * component *without* it is an add-on whose every hook throws `host facet 'x' is not
+ * loaded` at whoever opens it — so this asserts the positive rather than trusting that
+ * resolution went the right way.
+ *
+ * It matters less than it did, now that `@gphone/sdk` resolves to `addon.ts` through the
+ * package rather than through an alias this file had to get right. It is kept because the
+ * thing it checks is the outcome, not the mechanism: a `resolve.alias` added here later, a
+ * dependency override, or a future change to the package's `exports` map would all show up
+ * as the same failure.
  *
  * Note what it deliberately does **not** ban: `sdk/host/inProcess/createInProcessHost` and
  * `sdk/host/inProcess/system` are legitimately on the add-on graph. They are shell-free,
@@ -231,9 +224,9 @@ function requireIframeFacets(): Plugin {
             `[gphone-addon] this bundle does not contain the SDK's iframe facet set ` +
               `(sdk/host/iframe/registerFacets). An add-on that boots without it mounts fine ` +
               `and then throws "host facet 'x' is not loaded" on the first hook it uses. The ` +
-              `usual cause is the \`@gphone/sdk\` alias in this file being removed or ` +
-              `retargeted, so the bundle compiled the package's \`index.ts\` (the shell ` +
-              `barrel) instead of \`addon.ts\`.`
+              `usual cause is \`@gphone/sdk\` having resolved to the package's \`index.ts\` ` +
+              `(the shell barrel) rather than \`addon.ts\` — check for a \`resolve.alias\` ` +
+              `or a dependency override redirecting it.`
           );
         }
       }
@@ -346,7 +339,8 @@ export default defineConfig({
   },
   publicDir: false,
   resolve: {
-    alias: [{ find: /^@gphone\/sdk$/, replacement: SDK_ADDON_BARREL }],
+    // No `@gphone/sdk` alias: the package's own `exports` map resolves it to `addon.ts`.
+    // See the note at the top of this file for why that was not always true.
     conditions: ['browser']
   },
   build: {
