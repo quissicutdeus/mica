@@ -74,12 +74,10 @@ Run `pnpm format` to format code across the workspace.
 ### In-game commands
 
 `gphoneschema`, `gphonemedia`, `gphonecharge`, `gphoneseed` and `gphonecall`,
-all admin-gated by `isAdmin` in `server/services/Admin.ts` — the
-`gphone_admin_aces` convar, defaulting to `gphone.admin` and `command`. The
-server console (`source` 0) is trusted. **Two subcommands are gated harder and
-take the console and nobody else**: `gphoneschema apply`, which changes a live
-schema (§8), and `gphonemedia prune`, which deletes rows. Each command, its
-arguments, and its dry run:
+all admin-gated by `isAdmin` in `server/services/Admin.ts`.
+**`gphoneschema apply` (changes a live schema, §8) and `gphonemedia prune`
+(deletes rows) take the server console and nobody else.** Every command, its
+gating, arguments and dry run:
 [`docs/in-game-commands.md`](docs/in-game-commands.md).
 
 ### The two Vitest projects
@@ -179,12 +177,9 @@ not work around it.
    calculator's digits) must early-return on `event.defaultPrevented`.
 
    Handlers are a **stack per action, not a slot**, `useAppLevels` requires an
-   `appId`, and the dispatcher runs only the topmost handler that is unscoped or
-   owned by the **foreground** app. Shell handlers pass no id and are the
-   fallback. `scope: 'game'` actions rebind in FiveM's Key Bindings menu;
-   `scope: 'phone'` actions rebind in gPhone's Shortcuts screen. **Both must
-   refuse to fire while a text field has focus.** Why a stack rather than a
-   slot, and why residency forces the `appId`:
+   `appId`, and only the topmost handler that is unscoped or owned by the
+   **foreground** app runs. **No action fires while a text field has focus.**
+   The stack, the scopes and why residency forces the `appId`:
    [`docs/writing-an-app.md`](docs/writing-an-app.md).
 
 8. **Never report work complete without running the §9 checklist.**
@@ -269,30 +264,17 @@ not work around it.
     the only other legal names. No `feature/`, no tool-generated names, no
     `claude/…`.
 
-    **Take the slugged form when the bare key is already checked out
-    somewhere.** Git refuses a second checkout of one branch, so a stale
-    worktree holding `MICA-136` makes the plain key unavailable — that is
-    ordinary, not an error to route around, and `MICA-136-player-loaded` is
-    equally legal. `git worktree list` shows what is holding it; see the pruning
-    procedure in [`docs/dev-loop.md`](docs/dev-loop.md) before removing any.
-
     **Committing straight to `dev` is fine, and is the normal path here.** This
     is a solo repo; a branch per change buys nothing when nobody is reviewing.
-    Take a ticket branch when the work is long enough to want its own CI
-    history, or when you want a PR to think in — neither is required, and the
-    rule above governs the name only if you make one.
+    Take a ticket branch when the work wants its own CI history or a PR to think
+    in — neither is required, and the rule above governs the name only if you
+    make one.
 
-    **Enforced in one place, and it is a local hook.** `scripts/pre-push.js`
-    judges names via `scripts/check-branch-name.js` and then runs `check:fast`.
-    It judges the _remote_ ref of each push, so
-    `git push origin HEAD:refs/heads/MICA-56` is legal from a
-    differently-named local branch. Deletions are exempt, and a delete-only push
-    skips `check:fast`.
-
-    **A push that never reaches a local hook is not checked at all** — the web
-    UI, or anything pushed by an app. Nothing covers those: GitHub refuses a
-    `branch_name_pattern` ruleset on this repository (`422 Invalid rule`), so do
-    not re-add one without confirming the API accepts it first.
+    **Enforced by a local hook only**, which judges the _remote_ ref: a push
+    that never reaches one is unchecked, and no server-side rule covers that.
+    Take the slugged form when a worktree already holds the bare key. The
+    `ticket-flow` skill has both, and why re-adding a GitHub ruleset does not
+    work.
 
 The `ticket-flow` skill carries the working detail behind §2.11 and §2.12 —
 reading a ticket, commit-message shape, PR body, filing a backlog item.
@@ -691,3 +673,18 @@ complete example to copy from; Bank is the example with no table.
 
 `pnpm verify` before calling it done (§9). Then run it in game — a green suite
 is not evidence a NUI feature works (§6, §8).
+
+---
+
+## 12. Licensing
+
+Every source file carries an SPDX header in its own comment syntax; `REUSE.toml`
+covers what cannot hold one (lockfiles, JSON, generated barrels, assets).
+`pnpm new:app` writes one into what it scaffolds. **Do not strip a header, and
+do not introduce a licence that is not AGPL-3.0-or-later.**
+
+`reuse lint` is the check, and is deliberately not a `pnpm verify` gate — it is
+a Python tool, and making it one would make it an install requirement
+everywhere. `LICENSES/` holds the text the spec reads and the root `LICENSE` is
+what GitHub reads; both must exist. Every emitted bundle carries a one-line
+notice, gated by `scripts/check-license-banner.js` at the end of the build.
