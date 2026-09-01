@@ -26,6 +26,16 @@ concurrency:
   group: verify-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Least privilege, stated once for every job.
+#
+# Without this the workflow runs on whatever the repository's default token scope is —
+# read/write on most repos, and something an operator can change under it without either
+# side noticing. Nothing here writes to GitHub: no image is pushed, no comment posted, no
+# ref moved. `contents: read` is what checkout needs and nothing more, and a job that ever
+# does need more declares its own block rather than widening this one.
+permissions:
+  contents: read
+
 jobs:
   verify:
     name: Verify

@@ -32,6 +32,16 @@ concurrency:
   group: deploy-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
+# Least privilege, stated once for every job.
+#
+# Without this the workflow runs on whatever the repository's default token scope is —
+# read/write on most repos, and something an operator can change under it without either
+# side noticing. Nothing here writes to GitHub: no image is pushed, no comment posted, no
+# ref moved. `contents: read` is what checkout needs and nothing more, and a job that ever
+# does need more declares its own block rather than widening this one.
+permissions:
+  contents: read
+
 jobs:
   deploy-dev:
     # This condition is *routing*, and routing only. The pass/fail gate is a step below.
