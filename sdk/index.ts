@@ -48,6 +48,16 @@ export { setTrustedRemoteAppHosts, getTrustedRemoteAppHosts } from './remoteAppS
  * with nothing reactive about it, so there is no facet or permission to gate it behind
  * (the same reasoning `MICA_BUILD_INFO` above already rests on).
  */
+export {
+  MICA_SOURCE_URL,
+  LICENSE_COPYRIGHT,
+  LICENSE_FREEDOMS,
+  LICENSE_NAME,
+  LICENSE_SPDX,
+  LICENSE_SOURCE_OFFER,
+  LICENSE_WARRANTY,
+  sourceUrlForBuild
+} from './licenseNotice';
 export { PRIVACY_NOTICE_TEXT } from './privacyNotice';
 /**
  * `svelte/transition`'s `fade` and `fly`, wrapped so they honour Settings > Display >

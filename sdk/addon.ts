@@ -65,6 +65,16 @@ export * from './version';
  * MICA-70's privacy-disclosure string — plain, state-free text, so it bundles into a
  * sandboxed add-on unchanged. Mirrors `index.ts`'s own re-export.
  */
+export {
+  MICA_SOURCE_URL,
+  LICENSE_COPYRIGHT,
+  LICENSE_FREEDOMS,
+  LICENSE_NAME,
+  LICENSE_SPDX,
+  LICENSE_SOURCE_OFFER,
+  LICENSE_WARRANTY,
+  sourceUrlForBuild
+} from './licenseNotice';
 export { PRIVACY_NOTICE_TEXT } from './privacyNotice';
 /** @public */
 /**

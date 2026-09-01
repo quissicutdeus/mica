@@ -1042,9 +1042,14 @@ the licence's sense, which is the whole point of the Affero clause — running a
 fork without publishing it is the case §13 exists to cover, and it applies
 whether or not you distribute the resource to anyone else.
 
-Making that offer is on you today: gPhone does not yet surface a Source link in
-Settings > About, and until it does there is nothing in the phone pointing a
-player at your source. MICA-192 tracks adding one.
+Settings > About > License carries the notice and the address this build says
+its source lives at, with a button that copies it — a player cannot open a link
+from inside the phone, because anchor navigation reloads the CEF instance and
+drops everything they were doing.
+
+The address currently points at this repository, on the branch the running build
+came from. **If you run a fork, that is the wrong answer and pointing it at
+yours is not yet configurable** — MICA-192 tracks the convar that will.
 
 ### If you are writing an add-on
 

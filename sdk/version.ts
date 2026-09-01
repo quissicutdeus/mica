@@ -95,3 +95,20 @@ export const MICA_BUILD_INFO: string =
     : MICA_VERSION
       ? `v${MICA_VERSION}-dev`
       : '';
+
+/**
+ * The branch this build came from, on its own rather than embedded in the line above.
+ *
+ * `MICA_BUILD_INFO` has carried the branch since it existed, welded into
+ * `v<calver> (<branch>@<sha>)` for a human to read. MICA-192 needs it as a value —
+ * `licenseNotice.ts` builds the §13 source address out of it — and picking it back out of
+ * the display string with a regex would mean re-deriving something `vite.config.ts` already
+ * had and threw away.
+ *
+ * Empty on the same terms as `MICA_VERSION`: an add-on bundle is compiled once and run by
+ * whatever phone installs it, so the host's branch is not knowable when the bundle is
+ * written. `sourceUrlForBuild` degrades to the repository root rather than inventing a
+ * `/tree/` path for a branch it cannot name.
+ */
+export const MICA_BRANCH: string =
+  typeof __MICA_BRANCH__ !== 'undefined' ? __MICA_BRANCH__ : '';

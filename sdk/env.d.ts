@@ -32,6 +32,7 @@ declare module '*.svelte' {
 
 declare const __MICA_VERSION__: string;
 declare const __MICA_BUILD_INFO__: string;
+declare const __MICA_BRANCH__: string;
 
 interface Window {
   /**

@@ -25,6 +25,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import LockScreen from './panes/LockScreen.svelte';
   import Network from './panes/Network.svelte';
   import Notifications from './panes/Notifications.svelte';
+  import License from './panes/License.svelte';
   import Privacy from './panes/Privacy.svelte';
   import DeveloperTools from './panes/DeveloperTools.svelte';
   import Shortcuts from './panes/Shortcuts.svelte';
@@ -55,7 +56,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     | 'shortcuts'
     | 'devtools'
     | 'about'
-    | 'privacy';
+    | 'privacy'
+    | 'license';
   let pane = $state<Pane>('root');
 
   const PANE_TITLES: Record<Pane, string> = {
@@ -69,7 +71,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     shortcuts: 'Shortcuts',
     devtools: 'Developer Tools',
     about: 'About',
-    privacy: 'Privacy'
+    privacy: 'Privacy',
+    license: 'License'
   };
 
   /**
@@ -99,6 +102,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         open: () => pane === 'privacy',
         close: () => (pane = 'about'),
         title: () => PANE_TITLES.privacy
+      },
+      // License is reached from About too, and needs its own level for the same reason.
+      {
+        open: () => pane === 'license',
+        close: () => (pane = 'about'),
+        title: () => PANE_TITLES.license
       },
       {
         open: () => selectedApp !== null,
@@ -219,9 +228,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {:else if pane === 'devtools'}
     <DeveloperTools onhide={hideDevTools} />
   {:else if pane === 'about'}
-    <About ontapbuild={tapBuildRow} onprivacy={() => (pane = 'privacy')} />
+    <About
+      ontapbuild={tapBuildRow}
+      onprivacy={() => (pane = 'privacy')}
+      onlicense={() => (pane = 'license')}
+    />
   {:else if pane === 'privacy'}
     <Privacy />
+  {:else if pane === 'license'}
+    <License />
   {:else}
     <div class="p-4">
       <div

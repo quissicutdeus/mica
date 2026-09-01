@@ -790,7 +790,18 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'useNotificationSettingsWrite',
     'useSystemHardwareWrite',
     'useThemeWrite',
-    'useWallpaperWrite'
+    'useWallpaperWrite',
+    // MICA-192: the licence notice a player reads in Settings > About, published
+    // for the same reason PRIVACY_NOTICE_TEXT is — an add-on carries the same licence.
+    'MICA_BRANCH',
+    'MICA_SOURCE_URL',
+    'LICENSE_COPYRIGHT',
+    'LICENSE_FREEDOMS',
+    'LICENSE_NAME',
+    'LICENSE_SOURCE_OFFER',
+    'LICENSE_SPDX',
+    'LICENSE_WARRANTY',
+    'sourceUrlForBuild'
   ],
   '@gphone/sdk (add-on bundle)': [
     'ALL_PERMISSIONS',
@@ -980,7 +991,18 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'useWallpaperWrite',
     'placeholderAvatar',
     'placeholderPhoto',
-    'placeholderPhotos'
+    'placeholderPhotos',
+    // MICA-192: the licence notice a player reads in Settings > About, published
+    // for the same reason PRIVACY_NOTICE_TEXT is — an add-on carries the same licence.
+    'MICA_BRANCH',
+    'MICA_SOURCE_URL',
+    'LICENSE_COPYRIGHT',
+    'LICENSE_FREEDOMS',
+    'LICENSE_NAME',
+    'LICENSE_SOURCE_OFFER',
+    'LICENSE_SPDX',
+    'LICENSE_WARRANTY',
+    'sourceUrlForBuild'
   ],
   '@gphone/sdk/app': ['defineApp', 'lazyBadge'],
   '@gphone/sdk/core': ['NowPlayingCard', 'useCaptureZoomBoost', 'useNuiBridge']

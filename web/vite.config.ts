@@ -135,7 +135,10 @@ export default defineConfig({
   base: './',
   define: {
     __MICA_VERSION__: JSON.stringify(version),
-    __MICA_BUILD_INFO__: JSON.stringify(buildInfo)
+    __MICA_BUILD_INFO__: JSON.stringify(buildInfo),
+    // MICA-192: the branch on its own, for the §13 source address. `buildInfo` above
+    // already contains it, welded into a string meant for a human to read.
+    __MICA_BRANCH__: JSON.stringify(gitInfo.branch)
   },
   resolve: {
     alias: {

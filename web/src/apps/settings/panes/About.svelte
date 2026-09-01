@@ -15,7 +15,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     formatDate
   } from '@gphone/sdk';
 
-  let { ontapbuild, onprivacy } = $props<{ ontapbuild: () => void; onprivacy: () => void }>();
+  let { ontapbuild, onprivacy, onlicense } = $props<{
+    ontapbuild: () => void;
+    onprivacy: () => void;
+    onlicense: () => void;
+  }>();
 
   const { myPhoneNumber } = useAccount();
   const { getFirstBootTime } = useAppRegistry();
@@ -105,6 +109,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class="hover:bg-surface-container-high active:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
       >
         <span class="text-on-surface font-medium">Privacy</span>
+        <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
+      </button>
+      <!-- MICA-192. A row for the same reason Privacy is one: the notice is five
+           paragraphs and inlining it would bury OS Version under a wall of legal text.
+           Directly under the build line on purpose — §13 asks which version's source, and
+           the row above names the version. -->
+      <button
+        type="button"
+        onclick={onlicense}
+        class="hover:bg-surface-container-high active:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+      >
+        <span class="text-on-surface font-medium">License</span>
         <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
       </button>
     </div>

@@ -239,7 +239,8 @@ export default defineConfig({
    */
   define: {
     __MICA_VERSION__: JSON.stringify(''),
-    __MICA_BUILD_INFO__: JSON.stringify('')
+    __MICA_BUILD_INFO__: JSON.stringify(''),
+    __MICA_BRANCH__: JSON.stringify('')
   },
   // `outDir` (`public/addons`) sits inside the shell's `publicDir` (`public/`, Vite's
   // default) so the main `vite build` can pick the bundles up through its own publicDir

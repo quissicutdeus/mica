@@ -335,7 +335,8 @@ export default defineConfig({
    */
   define: {
     __MICA_VERSION__: JSON.stringify(''),
-    __MICA_BUILD_INFO__: JSON.stringify('')
+    __MICA_BUILD_INFO__: JSON.stringify(''),
+    __MICA_BRANCH__: JSON.stringify('')
   },
   publicDir: false,
   resolve: {
