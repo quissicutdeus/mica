@@ -1450,28 +1450,6 @@ const mockRegistry: Record<string, MockHandler> = {
   getMessages: ({ conversation_id }: { conversation_id: number }) => {
     return mockMessages[conversation_id] || [];
   },
-  receiveMessage: async (payload?: { conversation_id?: number; message?: string }) => {
-    const convId = payload?.conversation_id || 1;
-    const msgText = payload?.message || '1... 🤬😡🗯️‼️';
-    const conv = mockConversations.find((c) => c.id === convId);
-    if (conv) {
-      conv.unread_count = (conv.unread_count || 0) + 1;
-      const newMsg: Message = {
-        id: Math.floor(Math.random() * 1000000),
-        conversation_id: convId,
-        citizenid: (conv as Conversation & { cit?: string }).cit || 'cit-ursula',
-        status: 'active',
-        message: msgText,
-        attachments: [],
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      conv.last_message = newMsg;
-      if (!mockMessages[convId]) mockMessages[convId] = [];
-      mockMessages[convId].push(newMsg);
-    }
-    return true;
-  },
   sendMessage: async (payload: {
     conversation_id: number;
     message: string;

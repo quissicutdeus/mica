@@ -11,6 +11,7 @@ import {
   UNIMPLEMENTED_ACTIONS,
   serverEventFor
 } from '@gphone/shared/routes';
+import { requestEventFor } from '@gphone/shared/rpc';
 
 /**
  * The NUI round trip has three layers — `web/` calls, `client/` relays, `server/`
@@ -170,27 +171,72 @@ const collectClientCallbacks = (): Set<string> => {
   return names;
 };
 
-const mockRegistryKeys = (): Set<string> => {
+/**
+ * The `mockRegistry` object literal in `web/src/nui/mocks/registry.ts`, and nothing else.
+ *
+ * Bounded at both ends, deliberately (MICA-195). This used to slice from the first
+ * occurrence of the word `mockRegistry` to the end of the file, which starts in a doc
+ * comment forty lines early and runs on through `export const MockRegistry = { has, handle }`
+ * — so `has` and `handle` scanned as mock keys. Harmless while the only question asked was
+ * "does every route have a mock"; the reverse question below would have reported both as
+ * mocks answering nothing.
+ */
+const mockRegistrySource = (): string => {
   const text = readFileSync(join(ROOT, 'web', 'src', 'nui', 'mocks', 'registry.ts'), 'utf8');
-  const body = text.slice(text.indexOf('mockRegistry'));
-  const keys = new Set<string>();
-  for (const m of body.matchAll(/^\s{2}([a-zA-Z][\w]*)\s*:/gm)) keys.add(m[1]);
-  // The CRUD handlers are spread in from `defineMockCrud(fixtures, { list: 'getMail' })`
-  // rather than written as literal keys, so they are named in the call and not in the
-  // object. Same reason the fetch scanner has to read `createCrudStore` declarations.
-  for (const call of body.matchAll(/defineMockCrud\s*(?:<[\s\S]*?>)?\s*\(/g)) {
-    const window = body.slice(call.index!, call.index! + 600);
-    for (const m of window.matchAll(/\b(?:list|create|update|remove)\s*:\s*['"](\w+)['"]/g)) {
-      keys.add(m[1]);
+  const start = text.search(/^const mockRegistry\b[^\n]*=\s*\{$/m);
+  const end = start === -1 ? -1 : text.indexOf('\n};', start);
+  if (start === -1 || end === -1) {
+    throw new Error('mocks/registry.ts no longer declares `const mockRegistry ... = {` … `};`');
+  }
+  return text.slice(start, end);
+};
+
+/**
+ * Every action the browser mock answers, split by how it is reached.
+ *
+ * `named` is a bare key — `getNotes: ...` — answered when `fetchNui('getNotes')` is called
+ * with that exact name, so it has to be a route or a client-only action to be reachable at
+ * all. `scoped` is a `'<service>:<action>'` key, the add-on path: `useService(id).call(...)`
+ * arrives as the one generic `svc` action and `resolveGeneric` dispatches it by that pair,
+ * so its counterpart is not a route but the server event the pair names.
+ */
+const mockRegistryKeys = (): { named: Set<string>; scoped: Set<string> } => {
+  const body = mockRegistrySource();
+  const named = new Set<string>();
+  const scoped = new Set<string>();
+  // Exactly two spaces of indent is the object's own key, never a nested one.
+  for (const m of body.matchAll(/^ {2}(?:([a-zA-Z][\w]*)|'([a-zA-Z][\w]*:[a-zA-Z][\w]*)')\s*:/gm)) {
+    if (m[1]) named.add(m[1]);
+    else scoped.add(m[2]);
+  }
+  /**
+   * The CRUD handlers are spread in from `defineMockCrud(fixtures, { list: 'getMail' })`
+   * rather than written as literal keys, so they are named in the call and not in the
+   * object. Same reason the fetch scanner has to read `createCrudStore` declarations.
+   *
+   * The second argument only. A fixed window after the call used to read the *options*
+   * object too, where `remove: 'soft'` says how the server deletes rather than what the
+   * action is called — so `soft` scanned as a mock. Harmless while nothing asked whether
+   * a mock was reachable; the reverse check below would have reported it as one nothing
+   * routes to. The events object holds strings and comments and nothing nested, so a
+   * brace-free match is exactly its extent. Notes declares scoped names here
+   * (`list: 'notes:get'`), which the old `\w+` could not match at all.
+   */
+  for (const call of body.matchAll(
+    /defineMockCrud\s*(?:<[\s\S]*?>)?\s*\(\s*\w+\s*,\s*(\{[^{}]*\})/g
+  )) {
+    for (const m of call[1].matchAll(/\b(?:list|create|update|remove)\s*:\s*['"]([\w:]+)['"]/g)) {
+      if (m[1].includes(':')) scoped.add(m[1]);
+      else named.add(m[1]);
     }
   }
-  return keys;
+  return { named, scoped };
 };
 
 const FETCH_CALLS = [...collectFetchNuiCalls(), ...collectCrudStoreEvents()];
 const CRUD_EVENTS = collectCrudStoreEvents();
 const CLIENT_CALLBACKS = collectClientCallbacks();
-const MOCKS = mockRegistryKeys();
+const { named: MOCKS, scoped: SCOPED_MOCKS } = mockRegistryKeys();
 const ROUTE_ACTIONS = new Set(ROUTES.map((r) => r.action));
 const HANDLED = new Set<string>([
   ...ROUTE_ACTIONS,
@@ -205,6 +251,9 @@ describe('route table', () => {
     expect(FETCH_CALLS.length).toBeGreaterThan(20);
     expect(CLIENT_CALLBACKS.size).toBeGreaterThan(5);
     expect(MOCKS.size).toBeGreaterThan(20);
+    // The add-on path's mocks. Blabber, Marketplace, Hodlr and Notes all reach the server
+    // through `useService`, so a scan that found none of theirs is reading the wrong block.
+    expect(SCOPED_MOCKS.size).toBeGreaterThan(10);
     // The declarative half specifically. If `createCrudStore` were renamed and this
     // collector quietly stopped matching, the dead-weight check would start failing for
     // reasons that have nothing to do with dead weight. The floor tracks the real count,
@@ -274,10 +323,45 @@ describe('no dead weight', () => {
 
   it('every route and client-only action has a browser mock', () => {
     // Without a mock the feature is broken in `pnpm dev` and in Playwright while
-    // working in game — the same class of bug, pointing the other way.
+    // working in game — the same class of bug, pointing the other way. Since MICA-195
+    // the transport no longer hides this at runtime either: an unmocked action rejects,
+    // and `web/e2e/support/test.ts` fails the spec that provoked it. This is the static
+    // half, and the only half that sees a call made with `quiet: true`.
     const missing = [...ROUTE_ACTIONS, ...CLIENT_ONLY_ACTIONS, ...UNIMPLEMENTED_ACTIONS].filter(
       (a) => !MOCKS.has(a)
     );
-    expect(missing.toSorted()).toEqual([]);
+    expect(
+      missing.toSorted(),
+      'no browser mock answers this action, so the feature is dead in pnpm dev and in ' +
+        'Playwright while working in game — add it to web/src/nui/mocks/registry.ts'
+    ).toEqual([]);
+  });
+
+  it('every browser mock answers something the transport can actually carry', () => {
+    // The reverse direction. A named mock nothing routes to is unreachable: `fetchNui`
+    // with that name would work in the browser and hit no NUI callback in game, which is
+    // the mock hiding a missing route, or it is dead weight left behind by a route that
+    // was deleted — either way the registry is describing a surface that does not exist.
+    const unrouted = [...MOCKS].filter((a) => !HANDLED.has(a));
+    expect(
+      unrouted.toSorted(),
+      'this mock answers an action that is neither a route nor a client-only action, so ' +
+        'nothing in game would answer the same call — route it, or delete the mock'
+    ).toEqual([]);
+
+    // A scoped mock claims the server answers `gphone:server:<service>:<action>`. The
+    // claim is checked against what the server really registered at import, the same
+    // way the routes above are: a `'journal:archive'` mock with no such event answers a
+    // call in the browser that the game would leave hanging for 15s.
+    const unregistered = [...SCOPED_MOCKS]
+      .map((key) => key.split(':') as [string, string])
+      .filter(([service, action]) => !registeredServerEvents.has(requestEventFor(service, action)))
+      .map(([service, action]) => `${service}:${action} -> ${requestEventFor(service, action)}`);
+    expect(
+      unregistered.toSorted(),
+      'this scoped mock answers a generic service call the server never registered, so ' +
+        'an add-on that works in the browser times out in game — register the action, ' +
+        'or delete the mock'
+    ).toEqual([]);
   });
 });
