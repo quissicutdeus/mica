@@ -83,7 +83,7 @@ const seenManifestIds = new Set<string>();
  * The two maps are genuinely different facts. This one is what the resource contains; the
  * other is what has been installed since boot.
  */
-const bundledComponents: Record<string, () => Promise<unknown>> = {};
+const bundledComponents = new Map<string, () => Promise<unknown>>();
 
 /**
  * Components that have finished loading — core apps, or a `core: false` fixture
@@ -95,16 +95,16 @@ const bundledComponents: Record<string, () => Promise<unknown>> = {};
  * Nothing evicts it: a component is code, the CEF page never unloads, and re-parsing an
  * app the player has already opened once is exactly the cost this change removes.
  */
-const loadedComponents: Record<string, AppComponent> = {};
+const loadedComponents = new Map<string, AppComponent>();
 
 /** Loads in flight, so opening an app twice in quick succession imports it once. */
-const loading: Record<string, Promise<AppComponent | undefined>> = {};
+const loading = new Map<string, Promise<AppComponent | undefined>>();
 
 /**
  * Registered since boot: a core app's reinstall, or a `core: false` runtime fixture
  * `registerApp` accepted under `import.meta.env.DEV`. Cleared by `unregisterApp`.
  */
-const componentRegistry: Record<string, AppComponent> = {};
+const componentRegistry = new Map<string, AppComponent>();
 
 /**
  * Add-on bundle text — never a component, and never executed by the shell.
@@ -117,10 +117,10 @@ const componentRegistry: Record<string, AppComponent> = {};
  * *source*, handed to the sandboxed iframe transport to run — the shell itself never
  * `import()`s it.
  */
-const addOnSources: Record<string, string> = {};
+const addOnSources = new Map<string, string>();
 
 /** Fetches in flight for `getAddOnSource`, mirroring `loading` above. */
-const sourceLoads: Record<string, Promise<string | undefined>> = {};
+const sourceLoads = new Map<string, Promise<string | undefined>>();
 
 /**
  * A component only ever exists for a core app, or a `core: false` runtime fixture
@@ -129,22 +129,21 @@ const sourceLoads: Record<string, Promise<string | undefined>> = {};
  * glob's own loader so a dev fixture (or a reinstall) may shadow it; the glob is fallback.
  */
 /**
- * Read a map keyed by app id without reaching its prototype.
+ * Every map here is a `Map`, and that is the point rather than a style preference.
  *
- * Every one of these is a plain object, so `map[appId]` answers for `constructor`,
- * `toString` and `__proto__` as readily as for `notes` — and an app id is not something
- * this module chooses. It arrives from a deep link, an add-on's `postMessage`, or a saved
- * home-grid row. `loadComponent('constructor')` used to return `Object`'s constructor and
- * `isKnownApp('toString')` used to answer true; CodeQL's `js/unvalidated-dynamic-method-call`
- * pointed at the call, and the read underneath it was the actual problem.
+ * They were plain objects keyed by app id, so `map[appId]` answered for `constructor`,
+ * `toString` and `__proto__` as readily as for `notes`: `loadComponent('constructor')`
+ * returned `Object`'s constructor and `isKnownApp('toString')` said true. An app id is not
+ * something this module chooses — it arrives from a deep link, an add-on's `postMessage`,
+ * or a home-grid row saved by an earlier build.
+ *
+ * A `hasOwnProperty` guard at each read fixed that and left the shape it came from, so the
+ * next read added here would have to remember. `Map.get` has no prototype to reach through
+ * at all — the same guarantee with nothing to remember, and what CodeQL's
+ * `js/unvalidated-dynamic-method-call` is asking for at the `loader()` call below.
  */
-const own = <T>(map: Record<string, T>, appId: string): T | undefined =>
-  // `hasOwnProperty.call` rather than `Object.hasOwn`, which `web/`'s `lib` does not declare
-  // — and changing a TypeScript target for one call is not a trade worth making.
-  Object.prototype.hasOwnProperty.call(map, appId) ? map[appId] : undefined;
-
 const resolveComponent = (appId: string): AppComponent | undefined =>
-  own(componentRegistry, appId) ?? own(loadedComponents, appId);
+  componentRegistry.get(appId) ?? loadedComponents.get(appId);
 
 /**
  * Whether an app exists at all, as opposed to whether its code has arrived yet.
@@ -159,10 +158,10 @@ const resolveComponent = (appId: string): AppComponent | undefined =>
  */
 const isKnownApp = (appId: string): boolean =>
   Boolean(
-    own(componentRegistry, appId) ||
-    own(bundledComponents, appId) ||
-    own(loadedComponents, appId) ||
-    own(addOnSources, appId) !== undefined ||
+    componentRegistry.has(appId) ||
+    bundledComponents.has(appId) ||
+    loadedComponents.has(appId) ||
+    addOnSources.has(appId) ||
     addOnIds.has(appId)
   );
 
@@ -225,23 +224,16 @@ const loadComponent = async (appId: string): Promise<AppComponent | undefined> =
   const already = resolveComponent(appId);
   if (already) return already;
 
-  /**
-   * `Object.hasOwn` before the lookup, and the lookup's result checked before it is called.
-   *
-   * `bundledComponents` is a plain object built from `import.meta.glob`, so a plain index
-   * reaches its prototype: `loadComponent('constructor')` returns a function, and calling
-   * it is a call to whatever was found rather than to a chunk loader. An app id arriving
-   * from a deep link or an add-on's `postMessage` is not something this function chooses,
-   * which is what CodeQL's `js/unvalidated-dynamic-method-call` is pointing at. Own
-   * properties only, and it still has to look like a loader before it is invoked.
-   */
-  const loader = own(bundledComponents, appId);
-  if (typeof loader !== 'function') return undefined;
+  const inFlight = loading.get(appId);
+  if (inFlight) return inFlight;
 
-  loading[appId] ??= loader()
+  const loader = bundledComponents.get(appId);
+  if (!loader) return undefined;
+
+  const load = loader()
     .then((module) => {
       const component = (module as { default: AppComponent }).default;
-      loadedComponents[appId] = component;
+      loadedComponents.set(appId, component);
       return component;
     })
     .catch((error) => {
@@ -257,7 +249,8 @@ const loadComponent = async (appId: string): Promise<AppComponent | undefined> =
       return undefined;
     });
 
-  return loading[appId];
+  loading.set(appId, load);
+  return load;
 };
 
 /**
@@ -273,15 +266,18 @@ const loadComponent = async (appId: string): Promise<AppComponent | undefined> =
  * rather than retried on every render, mirroring `loadComponent`.
  */
 const getAddOnSource = (appId: string): Promise<string | undefined> => {
-  const cached = own(addOnSources, appId);
+  const cached = addOnSources.get(appId);
   if (cached !== undefined) return Promise.resolve(cached);
   if (!addOnIds.has(appId)) return Promise.resolve(undefined);
 
-  sourceLoads[appId] ??= fetch(`./addons/${appId}.js`)
+  const inFlight = sourceLoads.get(appId);
+  if (inFlight) return inFlight;
+
+  const load = fetch(`./addons/${appId}.js`)
     .then(async (response) => {
       if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
       const text = await response.text();
-      addOnSources[appId] = text;
+      addOnSources.set(appId, text);
       return text;
     })
     .catch((error) => {
@@ -292,7 +288,8 @@ const getAddOnSource = (appId: string): Promise<string | undefined> => {
       return undefined;
     });
 
-  return sourceLoads[appId];
+  sourceLoads.set(appId, load);
+  return load;
 };
 
 for (const path in manifestFiles) {
@@ -322,7 +319,7 @@ for (const path in manifestFiles) {
     // `import()`/execute it in-process.
     if (manifest.core && appComponents[componentPath]) {
       // The loader, not the component. Called when the app is first opened.
-      bundledComponents[manifest.id] = appComponents[componentPath];
+      bundledComponents.set(manifest.id, appComponents[componentPath]);
     }
 
     // Core apps start installed on OS startup.
@@ -604,7 +601,7 @@ function createAppRegistry() {
           'gPhone App Registry error: add-ons register through registerAddOn(manifest, source).'
         );
       }
-      componentRegistry[validatedManifest.id] = component;
+      componentRegistry.set(validatedManifest.id, component);
       record(validatedManifest);
     },
     /**
@@ -619,7 +616,7 @@ function createAppRegistry() {
       const validatedManifest = defineApp(manifest);
       assertCapabilitiesAvailable(validatedManifest);
       if (source !== undefined) {
-        addOnSources[validatedManifest.id] = source;
+        addOnSources.set(validatedManifest.id, source);
       } else if (!addOnIds.has(validatedManifest.id)) {
         throw new Error(
           `gPhone App Registry error: '${validatedManifest.id}' was registered with no ` +
@@ -658,13 +655,13 @@ function createAppRegistry() {
        * mount the "not part of this build" placeholder. This only ever clears a runtime
        * registration: a reinstalled core app, or a dev-only `core: false` fixture.
        */
-      delete componentRegistry[appId];
+      componentRegistry.delete(appId);
       // The source text, and the fetch that produced it. Unlike `bundledComponents` (never
       // deleted — the glob's loader is a fact about the build, not the install), a bundled
       // add-on's fetched text is treated the same as a remote/dev one's here: gone on
       // uninstall, and lazily re-fetched by `getAddOnSource` on the next install/open.
-      delete addOnSources[appId];
-      delete sourceLoads[appId];
+      addOnSources.delete(appId);
+      sourceLoads.delete(appId);
       clearAppStorage(appId);
       update((apps) => apps.filter((a) => a.id !== appId));
     },
