@@ -76,24 +76,34 @@ jobs:
         if: steps.tag.outputs.skip == ''
         run: node scripts/pack-release.js "${{ steps.tag.outputs.tag }}"
 
-      # Created *with* its assets, in one call, and that ordering is the whole point.
+      # Draft, then attach, then publish — and every part of that order is load-bearing.
       #
-      # This used to be two steps — `gh release create`, then `gh release upload` — which is
-      # the ordinary shape and is impossible here: releases on this repository are
-      # **immutable**, so a release that exists cannot take an asset afterwards. Both halves
-      # of v2026.08.31.41 and .42 are the evidence, and neither can ever be repaired; the
-      # upload answered `HTTP 422: Cannot upload assets to an immutable release`.
+      # Releases on this repository are **immutable**: a published release cannot take an
+      # asset afterwards. `gh release create ... file.tgz` does not help, because it creates
+      # the release and *then* uploads to it, which is the same `HTTP 422` one step further
+      # in. A draft is the exception — it is not sealed until it is published — so the
+      # tarballs go on while it is still a draft and publishing seals them in with it.
       #
-      # So packing happens before the release exists, and the tarballs are arguments to the
-      # call that creates it. A pack failure now leaves a pushed tag and no release, rather
-      # than a release nobody can ever fill — the tag step above still runs first, because
-      # the `skip` output it computes is what gates every step below it.
-      - name: Create the release with both tarballs attached
+      # v2026.08.31.41 and .42 are what this cost: both were published empty, both stamped
+      # `immutable=true` at creation, and neither could be repaired afterwards even with the
+      # repository setting turned off, because immutability is fixed when the release is
+      # made rather than read at upload time. They were deleted rather than left as two
+      # releases promising an SDK they do not carry.
+      - name: Draft the release with both tarballs attached
         if: steps.tag.outputs.skip == ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ steps.tag.outputs.tag }}" \
+            --draft \
             --title "${{ steps.tag.outputs.tag }}" \
             --generate-notes \
             dist/release/*.tgz
+
+      # Separate step so a failure here is legible as "the assets are on, publishing failed"
+      # rather than being buried in the call that did both.
+      - name: Publish it, sealing the assets in
+        if: steps.tag.outputs.skip == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${{ steps.tag.outputs.tag }}" --draft=false
