@@ -245,6 +245,306 @@ export const SAFE_IMPLICIT_FACETS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * What a sandboxed add-on may name on each facet, one row per reachable facet.
+ *
+ * ## Why this is a positive list and not an exception list
+ *
+ * It replaces `IframeHostServer`'s `MEMBER_ALLOWLIST`, which said the opposite thing: a
+ * facet **absent** from that table was unrestricted, and a facet present in it exposed only
+ * what it named. That is default-allow, and it failed in the way default-allow always
+ * fails — quietly, one facet at a time, whenever somebody added a member and did not think
+ * about the sandbox. Its own comments are the record of that. MICA-63 had to go and add
+ * `notificationSettings` after an add-on could mute a rival app. MICA-127 split
+ * `appRegistryWrite`/`notificationSettingsWrite` out and then had to name them here with
+ * **empty** lists, because deleting their write members from the old rows would have
+ * reopened every one of them on the new facet name. MICA-162 found `keybinds-write` —
+ * `setBinding` takes any `actionId`, `resetBindings` wipes every override on the phone —
+ * and needed a fourth empty row for the same reason. Four tickets, each closing one
+ * instance of one gap, with nothing between them but somebody noticing.
+ *
+ * `PERMISSION_OF` and `HOOK_OF_FACET` above are proved total by `permissions.test.ts`; this
+ * table was the one in the group that nothing checked. It is checked now, and it is
+ * default-deny: a facet with no row is unreachable, and a member not named is unreachable,
+ * so a new host member is refused until somebody writes it down.
+ *
+ * ## Where the rows come from
+ *
+ * Each row is what the facet's **iframe twin** actually sends over the wire —
+ * `sdk/host/iframe/facets/<facet>.ts`, the code an add-on's own `@gphone/sdk` resolves to —
+ * minus the members deliberately blocked below. That bound is the point: the twin is the
+ * SDK, so a member it never names is one no honest add-on can be calling, and a raw
+ * `postMessage` naming it is by definition reaching past the SDK. `permissions.test.ts`
+ * checks both halves — every non-denied facet has a row, and every member in a row is a
+ * name its twin file actually mentions, so a rename cannot leave a dead entry behind.
+ *
+ * A facet whose twin runs entirely inside the frame gets an **empty** row rather than no
+ * row: `appLevels` (built on `lifecycle.onBack`, which is pinned), `timer` (all local),
+ * `persisted` (built on the `storage` facet). Empty and absent mean the same thing to
+ * `requireMember`, and saying it out loud is what distinguishes "nothing crosses the wire
+ * here" from "nobody has looked at this yet".
+ *
+ * ## The rows that are narrower than the wire
+ *
+ * Five facets deliberately allow less than their twin offers. The twin's own local throws
+ * (`appRegistryWrite`'s `refused()`, and its siblings') are the polite half of this pair,
+ * not the enforcing half — they are code inside the sandbox, and a raw `postMessage` skips
+ * them entirely, which is exactly the boundary this table is.
+ *
+ * - `appRegistry` reads the installed list and the first-boot time. `installFromCatalog`,
+ *   `registerAddOn` and `unregisterApp` live on `appRegistryWrite` and no add-on installs
+ *   or removes an app, whatever its manifest declares.
+ * - `notificationSettings` reads, never writes (MICA-63). Deciding what interrupts the
+ *   player is the player's, through Settings.
+ * - `keybindsWrite` is empty (MICA-162): both members are unscoped global writes with no
+ *   legitimate add-on use. An app that wants a shortcut declares it in its manifest.
+ * - `systemHardwareWrite` keeps the three reversible "how does this session sound" controls
+ *   — `setVolume`, `setRingMode`, `previewRingtone` — and drops the seven device-wide ones.
+ *   `setCharge`/`setSignal` falsify a hardware readout; `toggleBluetooth`/`toggleCellService`
+ *   cut connectivity for every other app; `setRingtone`/`setVolumeStep` change a persisted
+ *   device preference, unlike `previewRingtone`, which auditions and persists nothing; and
+ *   `toggleMute` silences the whole device.
+ * - `storage` has no `getItem`: the twin answers reads from the hydrate snapshot and only
+ *   writes cross the wire.
+ */
+export const FACET_MEMBERS: Readonly<Record<string, readonly string[]>> = {
+  // Player data.
+  account: [
+    'myPhoneNumber',
+    'bankBalance',
+    'transactions',
+    'transactionsLoaded',
+    'citizenid',
+    'fetchPhoneNumber',
+    'fetchBalance',
+    'fetchTransactions',
+    'fetchCitizenId'
+  ],
+  accounts: [
+    'getMyAccounts',
+    'getAccounts',
+    'createAccount',
+    'updateAccount',
+    'getFollowStats',
+    'getFollowers',
+    'getFollowing',
+    'searchAccounts',
+    'followAccount',
+    'unfollowAccount',
+    'blockAccount',
+    'unblockAccount',
+    'getReactionsFor',
+    'reactToTarget',
+    'unreactToTarget'
+  ],
+  admin: ['isAdmin', 'refreshAdmin'],
+  bank: ['sendMoney'],
+  call: [
+    'callStore',
+    'startCall',
+    'endCall',
+    'answerCall',
+    'toggleSpeaker',
+    'callLog',
+    'loadCallLog'
+  ],
+  camera: ['isTakingPhoto', 'isPreviewingPhoto'],
+  contacts: [
+    'contactsStore',
+    'favoriteContacts',
+    'addContact',
+    'shareContact',
+    'getDeletedContacts',
+    'restoreContact'
+  ],
+  highscores: ['submitScore', 'getLeaderboard'],
+  location: ['shareLocation', 'setWaypoint'],
+  mail: [
+    'mailStore',
+    'unreadMailCount',
+    'deleteMail',
+    'markAsRead',
+    'archiveMail',
+    'addReceivedMail'
+  ],
+  marketplace: [
+    'feedStore',
+    'mineStore',
+    'loadFeed',
+    'searchListings',
+    'loadMine',
+    'viewListing',
+    'postListing',
+    'markSold',
+    'removeListing'
+  ],
+  media: [
+    'media',
+    'capturePhoto',
+    'deletePhoto',
+    'dropNearby',
+    'fullMedia',
+    'getDeletedMedia',
+    'restoreMedia'
+  ],
+  messages: [
+    'conversationsStore',
+    'unreadMessagesCount',
+    'sendMessage',
+    'addReceivedMessage',
+    'startText',
+    'messageReactions',
+    'loadMessageReactions',
+    'toggleMessageReaction'
+  ],
+  notifications: [
+    'notificationsStore',
+    'unreadCount',
+    'totalUnread',
+    'loaded',
+    'load',
+    'markRead',
+    'clear',
+    'clearAll'
+  ],
+  report: ['submit'],
+  reports: [
+    'pendingReports',
+    'resolvedReports',
+    'pendingReportCount',
+    'loadPendingReports',
+    'loadReportHistory',
+    'resolveReport',
+    'reopenReport'
+  ],
+  storage: ['setItem', 'removeItem', 'markUnsynced', 'clear'],
+
+  // The phone itself.
+  appAction: ['notify'],
+  appEvents: ['on', 'onAny', 'clear'],
+  appLevels: [],
+  appRegistry: ['registryStore', 'getFirstBootTime'],
+  appRegistryWrite: [],
+  clock: ['time', 'is24Hour', 'formattedTime'],
+  clockWrite: ['setIs24Hour'],
+  devTools: ['devToolsUnlocked', 'unlock', 'lock'],
+  display: [
+    'displaySize',
+    'phoneScale',
+    'phoneBox',
+    'isSizeLimited',
+    'motionPreference',
+    'reducedMotion',
+    'homeGridColumns',
+    'homeGridRows'
+  ],
+  displayWrite: ['setDisplaySize', 'setMotionPreference', 'setHomeGridSize'],
+  keybinds: ['onKeybind', 'bindings', 'groups', 'findConflict'],
+  keybindsWrite: [],
+  lifecycle: ['currentApp', 'onBack', 'goHome', 'consumeDeepLink'],
+  lockScreen: ['hasPasscode', 'autoLockPolicy', 'autoLockPolicyChoices'],
+  lockScreenWrite: ['setAutoLockPolicy', 'setPasscode', 'clearPasscode'],
+  music: [
+    'musicSource',
+    'musicQueue',
+    'musicIndex',
+    'musicNowPlaying',
+    'musicError',
+    'musicPosition',
+    'musicRepeat',
+    'musicShuffle',
+    'musicHasNext',
+    'musicHasPrevious',
+    'musicStatus',
+    'musicVolume',
+    'musicMuted',
+    'playSource',
+    'enqueue',
+    'playQueueIndex',
+    'removeFromQueue',
+    'clearQueue',
+    'nextTrack',
+    'previousTrack',
+    'seekMusic',
+    'cycleRepeat',
+    'setRepeat',
+    'toggleShuffle',
+    'pauseMusic',
+    'resumeMusic',
+    'stopMusic',
+    'setMusicVolume',
+    'setMusicMuted',
+    'toggleMusicMute',
+    'nearbyBroadcasts',
+    'audibleBroadcasts',
+    'mutedBroadcasters',
+    'muteAllNearby',
+    'muteBroadcaster',
+    'unmuteBroadcaster',
+    'toggleBroadcasterMute',
+    'clearMutedBroadcasters',
+    'setMuteAllNearby',
+    'toggleMuteAllNearby'
+  ],
+  navigation: ['currentApp', 'openApp', 'goHome', 'closePhone'],
+  notificationSettings: [
+    'toastsEnabled',
+    'notificationSoundEnabled',
+    'badgesEnabled',
+    'dndEnabled',
+    'appNotificationPolicies',
+    'customisedNotificationApps'
+  ],
+  notificationSettingsWrite: [],
+  persisted: [],
+  phoneNotification: ['sendNotification', 'dismissNotification', 'toast'],
+  service: ['call'],
+  sound: ['play'],
+  sourceUrl: ['sourceUrl', 'refreshSourceUrl'],
+  systemHardware: [
+    'charge',
+    'signalLevel',
+    'cellServiceEnabled',
+    'bluetoothEnabled',
+    'isBluetoothDiscoverable',
+    'soundVolume',
+    'soundMuted',
+    'volumeStep',
+    'ringMode',
+    'ringModeChoices',
+    'ringtone',
+    'ringtoneChoices'
+  ],
+  systemHardwareWrite: ['setVolume', 'setRingMode', 'previewRingtone'],
+  theme: ['themeStore', 'schemeStore', 'isLightMode'],
+  themeWrite: ['setThemeSeed', 'setThemeMode', 'resetTheme'],
+  timer: [],
+  wallpaper: [
+    'wallpaperStore',
+    'wallpaperBackground',
+    'wallpaperNeedsContrast',
+    'activeSeed',
+    'backgroundForSeed',
+    'seedFromImage'
+  ],
+  wallpaperWrite: ['setWallpaperSeed', 'setPresetWallpaper', 'setWallpaperImage', 'resetWallpaper']
+};
+
+/**
+ * The members reachable on `facet` from inside a sandbox, or `undefined` if the facet is
+ * not reachable at all.
+ *
+ * Through a `Map` rather than indexing the object: the facet name arrives off the wire, and
+ * a plain `FACET_MEMBERS[facet]` lookup would resolve `'toString'` to
+ * `Object.prototype.toString` and read as a row of one. A `Map` has no inherited keys to
+ * find, so the attacker-controlled string can only ever name a row somebody wrote.
+ */
+const FACET_MEMBER_INDEX = new Map<string, readonly string[]>(Object.entries(FACET_MEMBERS));
+
+export function membersOfFacet(facet: string): readonly string[] | undefined {
+  return FACET_MEMBER_INDEX.get(facet);
+}
+
+/**
  * Cheap Levenshtein distance. Every comparison here is against a permission name — under
  * twenty characters, roughly thirty of them — so the naive O(n·m) table is nowhere near
  * worth replacing with anything smarter.

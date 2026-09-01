@@ -80,12 +80,20 @@ beforeEach(() => {
   resetHostsForTest();
   // A stand-in facet: a store member and a function member that takes a callback and returns a release.
   store = writable(1);
+  /**
+   * The member names are real `contacts` members, not invented ones, because
+   * `requireMember` is default-deny since MICA-196: it checks the name against
+   * `FACET_MEMBERS` before the facet is ever constructed, so a stand-in called `watch`
+   * would be refused before any of this ran. What each one *does* here is still a
+   * stand-in — `restoreContact` takes a callback and hands back a release, which is the
+   * shape the callback-ref and handle machinery below needs to exercise.
+   */
   registerFacet(
     'contacts' as any,
     (() => ({
       contactsStore: store,
       addContact: (first: string) => Promise.resolve({ id: first.length }),
-      watch: (cb: (n: number) => void) => {
+      restoreContact: (cb: (n: number) => void) => {
         cb(42);
         return () => cb(-1);
       }
@@ -231,7 +239,7 @@ describe('IframeHostServer', () => {
       id: 1,
       facet: 'contacts',
       factoryArgs: [],
-      member: 'watch',
+      member: 'restoreContact',
       args: [{ __cb: 3 }]
     });
     await Promise.resolve();
@@ -271,9 +279,13 @@ describe('IframeHostServer', () => {
       );
       registerFacet(
         'appEvents' as any,
+        // `onAny` because `FACET_MEMBERS` has to allow the name before the facet is built
+        // at all (MICA-196). This test is about *which app id the factory is handed*, so
+        // what the member is underneath does not matter — a store is simply the shape a
+        // `subscribe` needs.
         ((appId?: unknown) => {
           built.push({ facet: 'appEvents', appId });
-          return { eventsStore: writable([]), emit: () => true };
+          return { onAny: writable([]), clear: () => true };
         }) as any
       );
       registerFacet(
@@ -317,7 +329,7 @@ describe('IframeHostServer', () => {
         id: 2,
         facet: 'appEvents',
         factoryArgs: ['mail'],
-        member: 'eventsStore'
+        member: 'onAny'
       });
       expect(built).toEqual([{ facet: 'appEvents', appId: 'probe' }]);
     });

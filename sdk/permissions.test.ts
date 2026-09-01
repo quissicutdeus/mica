@@ -15,7 +15,7 @@
  */
 import '../web/src/host/registerFacets';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { ALL_PERMISSIONS, defineApp } from './manifest';
 import {
@@ -24,6 +24,8 @@ import {
   permissionOfFacet,
   DENIED_FACETS,
   SAFE_IMPLICIT_FACETS,
+  FACET_MEMBERS,
+  membersOfFacet,
   validateManifestPermissions
 } from './permissions';
 import { bundledAddOns, registeredApps } from '../web/src/shell/state/registry';
@@ -294,6 +296,111 @@ describe('every implicit facet is classified (MICA-33)', () => {
     // non-implicit entries (see this block's own doc comment above).
     const stale = [...SAFE_IMPLICIT_FACETS].filter((f) => !implicitFacets.includes(f));
     expect(stale, 'remove it from SAFE_IMPLICIT_FACETS — no longer an implicit facet').toEqual([]);
+  });
+});
+
+/**
+ * MICA-196: the third table in this file, and the one nothing used to check.
+ *
+ * `PERMISSION_OF` and `HOOK_OF_FACET` are proved total above. `FACET_MEMBERS` replaces the
+ * `MEMBER_ALLOWLIST` that used to live in `IframeHostServer.ts`, which was default-*allow*
+ * — a facet absent from it exposed every member — and so failed one facet at a time, four
+ * tickets deep (MICA-63, -127, -162, each closing one instance). Default-deny only helps
+ * if it is also total: a facet with no row is a facet an add-on cannot use at all, which is
+ * a loud failure rather than a silent opening, but it is still a failure, so this is what
+ * makes adding a facet mean adding a row.
+ */
+describe('every reachable facet declares its members (MICA-196)', () => {
+  const TWINS = join(__dirname, 'host', 'iframe', 'facets');
+  const facets = Object.keys(HOOK_OF_FACET);
+  const reachable = facets.filter((f) => !DENIED_FACETS.has(f));
+
+  it('finds at least the facets this test was written against', () => {
+    // The same sanity floor the implicit-facet block above uses, and for the same reason:
+    // a shape change to `HOOK_OF_FACET` that made `facets` empty would pass every check
+    // below vacuously.
+    expect(facets.length).toBeGreaterThanOrEqual(50);
+    expect(reachable.length).toBeGreaterThanOrEqual(45);
+  });
+
+  it('every facet an add-on can reach has a row', () => {
+    const missing = reachable.filter((f) => membersOfFacet(f) === undefined);
+    expect(
+      missing,
+      'add a row to FACET_MEMBERS in permissions.ts — an empty one if nothing crosses the wire'
+    ).toEqual([]);
+  });
+
+  it('has no row for a facet that is denied outright, or that is not a facet at all', () => {
+    // A row for a denied facet reads as "these members are reachable" and is never true —
+    // `requireMember` refuses the facet before it ever looks at the row.
+    const denied = Object.keys(FACET_MEMBERS).filter((f) => DENIED_FACETS.has(f));
+    expect(denied, 'remove it: DENIED_FACETS already refuses the whole facet').toEqual([]);
+
+    const unknown = Object.keys(FACET_MEMBERS).filter((f) => !facets.includes(f));
+    expect(unknown, 'remove it from FACET_MEMBERS — no such facet').toEqual([]);
+  });
+
+  /**
+   * The member half. A row is bounded by what the facet's own iframe twin sends over the
+   * wire, so a member no twin mentions is either a typo or a name that was renamed out from
+   * under the table — both of which read as a working allowance and are not one.
+   *
+   * Read from the twin's source rather than from a constructed facet object: constructing
+   * one needs a live host and, for several, real factory arguments. The twins name every
+   * member as a string literal (`fn('contacts', [], 'addContact')`, `subscribe('onAny', …)`),
+   * which is exactly what this looks for.
+   */
+  it('every member named is one its own iframe twin actually sends', () => {
+    const stale: string[] = [];
+    for (const facet of reachable) {
+      const members = membersOfFacet(facet) ?? [];
+      if (members.length === 0) continue;
+      const file = ['.ts', '.svelte.ts']
+        .map((ext) => join(TWINS, `${facet}${ext}`))
+        .find(existsSync);
+      if (!file) {
+        stale.push(`${facet}: no twin under sdk/host/iframe/facets`);
+        continue;
+      }
+      const source = readFileSync(file, 'utf8');
+      for (const member of members) {
+        if (!new RegExp(`['"]${member}['"]`).test(source)) {
+          stale.push(`${facet}.${member}: the twin never names it`);
+        }
+      }
+    }
+    expect(stale.sort(), 'a renamed or removed member left a dead row behind').toEqual([]);
+  });
+
+  it('names every member once, so a row cannot quietly say the same thing twice', () => {
+    const duplicated = Object.entries(FACET_MEMBERS)
+      .filter(([, members]) => new Set(members).size !== members.length)
+      .map(([facet]) => facet);
+    expect(duplicated).toEqual([]);
+  });
+
+  /**
+   * The five rows that are deliberately narrower than their twin. Asserted by name because
+   * the reasoning is the ticket, not the table: each of these was a real hole somebody
+   * found, and a future row edit that quietly re-opens one should redden the build rather
+   * than pass because the member does appear in the twin.
+   */
+  it('keeps the writes no add-on may reach out of reach', () => {
+    expect(membersOfFacet('appRegistryWrite')).toEqual([]);
+    expect(membersOfFacet('notificationSettingsWrite')).toEqual([]);
+    expect(membersOfFacet('keybindsWrite')).toEqual([]);
+    expect(membersOfFacet('systemHardwareWrite')).toEqual([
+      'setVolume',
+      'setRingMode',
+      'previewRingtone'
+    ]);
+    for (const member of ['installFromCatalog', 'registerAddOn', 'unregisterApp']) {
+      expect(membersOfFacet('appRegistry')).not.toContain(member);
+    }
+    for (const member of ['setDndEnabled', 'setAppNotificationPolicy', 'setToastsEnabled']) {
+      expect(membersOfFacet('notificationSettings')).not.toContain(member);
+    }
   });
 });
 

@@ -6,7 +6,7 @@ import { get } from 'svelte/store';
 import type { Host } from '../../../../sdk/host/protocol';
 import { AppPermissionError } from '../../../../sdk/host/protocol';
 import { facets } from '../../../../sdk/host/current';
-import { permissionOfFacet, DENIED_FACETS } from '../../../../sdk/permissions';
+import { permissionOfFacet, DENIED_FACETS, membersOfFacet } from '../../../../sdk/permissions';
 import type { AppManifest } from '../../../../sdk/manifest';
 import type {
   ToFrame,
@@ -165,103 +165,31 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
    */
   const CONFIG_APP_ID_FACETS: ReadonlySet<string> = new Set(['appLevels']);
 
-  /**
-   * Members an add-on may reach on a facet that is otherwise core-only.
-   *
-   * `appRegistry` is the whole reason this exists: `permissionOfFacet` gates the facet,
-   * not the member, so an add-on holding `app-registry` (the Store declares it, and a
-   * Store-installed add-on may declare it too) could call `installFromCatalog`,
-   * `registerAddOn` or `unregisterApp` and install or delete apps. The iframe twin refuses
-   * those locally, but the twin is code inside the sandbox — a raw `postMessage` skips it
-   * entirely, which is exactly the boundary this server is.
-   *
-   * A facet absent from this table is unrestricted; a facet present in it exposes only the
-   * members listed.
-   */
-  const MEMBER_ALLOWLIST: Partial<Record<string, readonly string[]>> = {
-    appRegistry: ['registryStore', 'getFirstBootTime'],
-    /**
-     * `notificationSettings` reads, never writes (MICA-63). The facet's stores were always
-     * read-only across the wire — `remoteStore` addresses a member, so a `Writable`'s `.set`
-     * was never reachable — but the per-app policy needs *setters*, and those are top-level
-     * members that a raw `postMessage` could call. An add-on holding `notification-settings`
-     * would otherwise be able to mute a rival app, unmute itself, or switch off the player's
-     * Do Not Disturb. Deciding what interrupts the player is the player's, through Settings.
-     */
-    notificationSettings: [
-      'toastsEnabled',
-      'notificationSoundEnabled',
-      'badgesEnabled',
-      'dndEnabled',
-      'appNotificationPolicies',
-      'customisedNotificationApps'
-    ],
-    /**
-     * MICA-127: an empty list, not an absent entry. `appRegistry`/`notificationSettings`
-     * above split their write halves into their own facet — `appRegistryWrite`,
-     * `notificationSettingsWrite` — so their own `MEMBER_ALLOWLIST` rows could shrink to
-     * read members only. But `requireMember` treats a facet **absent** from this table as
-     * unrestricted, so simply deleting the write members from those two rows would have
-     * reopened every one of them here, on the new facet name, the moment a manifest declared
-     * the new `-write` permission. Naming the write facet with an empty list keeps the same
-     * "no add-on installs or removes an app" guarantee the old row enforced, regardless of
-     * what any manifest declares — the guest twin's own `refused()` throws are the polite
-     * half of this pair, not the enforcing half.
-     */
-    appRegistryWrite: [],
-    /** Same reasoning as `appRegistryWrite` above: no add-on changes another's notification
-     * policy or the player's Do Not Disturb, regardless of permission. */
-    notificationSettingsWrite: [],
-    /**
-     * MICA-162: `keybinds-write`'s two members are both unscoped global writes —
-     * `setBinding` takes an arbitrary `actionId`, not just one the calling app owns, and
-     * `resetBindings` wipes every override on the phone, not just the caller's. Neither has
-     * a legitimate add-on use: an app that wants its own shortcut declares it in its
-     * manifest (`keybinds`) and lets the player rebind it from Settings > Shortcuts, the
-     * same as every other app. Empty, not absent, for the `appRegistryWrite` reason above —
-     * only `settings` (core, in-process) declares this permission today, but the block must
-     * hold regardless of what a future manifest declares.
-     */
-    keybindsWrite: [],
-    /**
-     * MICA-162: `system-hardware-write`'s ten members split on whether the write is a
-     * reversible, self-contained "how does this session sound/feel" preference or a
-     * device-wide state change with no legitimate add-on reason.
-     *
-     * Grantable: `setVolume`, `setRingMode` and `previewRingtone` are ordinary
-     * experience controls — turning the phone down, silencing it for a scene, auditioning
-     * a tone — visible to the player and trivially reversible from Settings.
-     *
-     * Hard-blocked, and deliberately a stricter cut than just the three most obviously
-     * device-wide ones (`setCharge`, `toggleBluetooth`, `toggleCellService` — falsifying
-     * hardware readouts or cutting connectivity phone-wide, breaking every other app's use
-     * of it): `setSignal` is the same falsified-readout shape as `setCharge`; `setRingtone`
-     * and `setVolumeStep` permanently change a *persisted* device-wide preference (the
-     * player's actual ringtone, the hardware volume-key step) with no plausible add-on need
-     * — unlike `previewRingtone`, which only auditions a tone and persists nothing; and
-     * `toggleMute` silences the whole device's audio for every other app too, not just the
-     * caller's own session. None of the six has a legitimate add-on use case, full stop —
-     * the same bar `appRegistryWrite`/`notificationSettingsWrite` apply above.
-     */
-    systemHardwareWrite: ['setVolume', 'setRingMode', 'previewRingtone']
-  };
-
-  // `DENIED_FACETS` is imported from `sdk/permissions.ts`, not declared here (MICA-33):
-  // see that file's doc comment for which facets and why. It used to be a local set with
-  // a second, independently hand-typed copy in `IframeHostServer.test.ts` — two places the
-  // same five names had to agree, with nothing checking that they did, or that a sixth
-  // bare-function facet ever gets added to either. `permissions.test.ts` now proves every
-  // *implicit* facet is classified as this shape or the safe one; a facet that instead
-  // requires a real permission (`clearAppStorage`/`appStorageBytes`) is denied here for
-  // the same shape reason but needs no such proof, since its permission already gates it.
+  // `DENIED_FACETS` and `membersOfFacet` are imported from `sdk/permissions.ts`, not
+  // declared here (MICA-33, MICA-196): see that file's doc comments for which facets
+  // and why. `DENIED_FACETS` used to be a local set with a second, independently hand-typed
+  // copy in `IframeHostServer.test.ts` — two places the same five names had to agree, with
+  // nothing checking that they did, or that a sixth bare-function facet ever gets added to
+  // either. `permissions.test.ts` now proves every *implicit* facet is classified as this
+  // shape or the safe one; a facet that instead requires a real permission
+  // (`clearAppStorage`/`appStorageBytes`) is denied here for the same shape reason but
+  // needs no such proof, since its permission already gates it.
+  //
+  // The per-member table moved for the same reason and one more: it used to be default-
+  // *allow*, so a facet nobody had thought about exposed everything, and four separate
+  // tickets each closed one instance of that. `FACET_MEMBERS` is default-deny and total,
+  // which is what makes the next one a test failure rather than a discovery.
 
   /** Throws unless `member` is reachable on `facet` from inside the sandbox. */
   function requireMember(facet: string, member: string): void {
     if (DENIED_FACETS.has(facet)) {
       throw new Error(`[gPhone] '${facet}' is not reachable directly`);
     }
-    const allowed = MEMBER_ALLOWLIST[facet];
-    if (allowed && !allowed.includes(member)) {
+    const allowed = membersOfFacet(facet);
+    if (!allowed) {
+      throw new Error(`[gPhone] '${facet}' is not reachable from an add-on`);
+    }
+    if (!allowed.includes(member)) {
       throw new Error(`[gPhone] '${facet}.${member}' is core only`);
     }
   }
