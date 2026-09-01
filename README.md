@@ -437,6 +437,8 @@ you intend to change something.
 set gphone_standalone ""
 set gphone_admin_aces "gphone.admin,command"
 set gphone_rate_limit 60
+set gphone_lockscreen_scrypt_cost 16384
+set gphone_lockscreen_max_attempts 5
 set gphone_bank_transfer_max 50000
 set gphone_hodlr_trade_max 50000
 set gphone_hodlr_spread_pct 2
@@ -457,29 +459,31 @@ setr gphone_addon_hosts ""
 setr gphone_addon_catalog ""
 ```
 
-| Convar                          | Type                 | Default                | Controls                                               |
-| ------------------------------- | -------------------- | ---------------------- | ------------------------------------------------------ |
-| `gphone_standalone`             | boolean              | empty (off)            | Run with no framework resource at all                  |
-| `gphone_admin_aces`             | comma-separated aces | `gphone.admin,command` | Who counts as a gPhone admin                           |
-| `gphone_rate_limit`             | integer              | `60`                   | Requests per player, per action, per minute            |
-| `gphone_bank_transfer_max`      | integer              | `50000`                | Ceiling on one player-to-player send                   |
-| `gphone_hodlr_trade_max`        | integer              | `50000`                | Ceiling on what one Hodlr buy or sell is worth         |
-| `gphone_hodlr_spread_pct`       | number, percent      | `2`                    | Gap between Hodlr's buy and sell quotes, around mid    |
-| `gphone_emergency_number`       | phone number         | `911`                  | Always connects, regardless of any block               |
-| `gphone_max_accounts_per_app`   | integer              | `3`                    | Identities one player may hold in one social app       |
-| `gphone_bluetooth_range`        | integer, meters      | `15`                   | How far a proximity share reaches                      |
-| `gphone_bluetooth_max_nearby`   | integer              | `5`                    | How many phones one proximity share reaches            |
-| `gphone_music_range`            | integer, meters      | `30`                   | How far music from a phone is heard (needs `setr`)     |
-| `gphone_music_max_nearby`       | integer              | `8`                    | Broadcasters one listener is told about at once        |
-| `gphone_blabber_edit_window`    | integer, seconds     | `900`                  | How long a Blab stays editable by its author           |
-| `gphone_notification_retention` | integer, days        | `30`                   | How long notification rows are kept                    |
-| `gphone_restore_window_days`    | integer, days        | `30`                   | How long a deleted Contact/Note/Media stays restorable |
-| `gphone_camera_quality`         | integer, 1-100       | `95`                   | Encode quality of a stored photo (needs `setr`)        |
-| `gphone_media_quota_mb`         | integer, MiB         | `64`                   | Storage one player's photo library may occupy          |
-| `gphone_media_retention`        | integer, days        | `0` (off)              | How long stored media is kept, if you want a limit     |
-| `gphone_orphan_owner_table`     | `table.column`       | empty (off)            | Overrides which table the orphan sweep checks against  |
-| `gphone_addon_hosts`            | hostname list        | empty (off)            | Hosts a Store add-on may be fetched from               |
-| `gphone_addon_catalog`          | https URL            | empty (off)            | The add-on catalog the Store lists                     |
+| Convar                           | Type                 | Default                | Controls                                                   |
+| -------------------------------- | -------------------- | ---------------------- | ---------------------------------------------------------- |
+| `gphone_standalone`              | boolean              | empty (off)            | Run with no framework resource at all                      |
+| `gphone_admin_aces`              | comma-separated aces | `gphone.admin,command` | Who counts as a gPhone admin                               |
+| `gphone_rate_limit`              | integer              | `60`                   | Requests per player, per action, per minute                |
+| `gphone_lockscreen_scrypt_cost`  | power of two         | `16384`                | Lock screen passcode hashing cost — lower on weak hardware |
+| `gphone_lockscreen_max_attempts` | integer              | `5`                    | Wrong passcodes before a one-minute lockout                |
+| `gphone_bank_transfer_max`       | integer              | `50000`                | Ceiling on one player-to-player send                       |
+| `gphone_hodlr_trade_max`         | integer              | `50000`                | Ceiling on what one Hodlr buy or sell is worth             |
+| `gphone_hodlr_spread_pct`        | number, percent      | `2`                    | Gap between Hodlr's buy and sell quotes, around mid        |
+| `gphone_emergency_number`        | phone number         | `911`                  | Always connects, regardless of any block                   |
+| `gphone_max_accounts_per_app`    | integer              | `3`                    | Identities one player may hold in one social app           |
+| `gphone_bluetooth_range`         | integer, meters      | `15`                   | How far a proximity share reaches                          |
+| `gphone_bluetooth_max_nearby`    | integer              | `5`                    | How many phones one proximity share reaches                |
+| `gphone_music_range`             | integer, meters      | `30`                   | How far music from a phone is heard (needs `setr`)         |
+| `gphone_music_max_nearby`        | integer              | `8`                    | Broadcasters one listener is told about at once            |
+| `gphone_blabber_edit_window`     | integer, seconds     | `900`                  | How long a Blab stays editable by its author               |
+| `gphone_notification_retention`  | integer, days        | `30`                   | How long notification rows are kept                        |
+| `gphone_restore_window_days`     | integer, days        | `30`                   | How long a deleted Contact/Note/Media stays restorable     |
+| `gphone_camera_quality`          | integer, 1-100       | `95`                   | Encode quality of a stored photo (needs `setr`)            |
+| `gphone_media_quota_mb`          | integer, MiB         | `64`                   | Storage one player's photo library may occupy              |
+| `gphone_media_retention`         | integer, days        | `0` (off)              | How long stored media is kept, if you want a limit         |
+| `gphone_orphan_owner_table`      | `table.column`       | empty (off)            | Overrides which table the orphan sweep checks against      |
+| `gphone_addon_hosts`             | hostname list        | empty (off)            | Hosts a Store add-on may be fetched from                   |
+| `gphone_addon_catalog`           | https URL            | empty (off)            | The add-on catalog the Store lists                         |
 
 Seventeen of the twenty-one are read on every use rather than cached, so
 changing one with `set` from the live console takes effect on the next request

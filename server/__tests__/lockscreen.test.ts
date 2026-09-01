@@ -27,6 +27,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 
 import '../services/Lockscreen';
 import { __resetRateLimits } from '../lib/rateLimit';
+import { __resetLockscreenAttempts, __setLockscreenClock } from '../services/Lockscreen';
 
 const call = async (action: string, data: unknown, citizenid = 'CIT_A') => {
   const handler = handlers.get(`gphone:server:lockscreen:${action}`);
@@ -44,6 +45,8 @@ const queryCalls = () => dbMock.query.mock.calls;
 beforeEach(() => {
   vi.clearAllMocks();
   __resetRateLimits();
+  __resetLockscreenAttempts();
+  __setLockscreenClock();
   dbMock.single.mockResolvedValue(null);
   dbMock.query.mockResolvedValue(undefined);
 });
@@ -197,5 +200,120 @@ describe('lockscreen — no generic action survives', () => {
       'gphone:server:lockscreen:set',
       'gphone:server:lockscreen:status'
     ]);
+  });
+});
+
+/**
+ * MICA-164. The PIN was stored as one salted SHA-256 pass, which CodeQL flags as
+ * `js/insufficient-password-hash` and is right to: a salt defeats a table built for every
+ * player at once and does nothing for the attacker holding one row, who can try all 10,000
+ * four-digit candidates in milliseconds. A small keyspace is the argument *for* a memory-hard
+ * KDF, not against it.
+ *
+ * scrypt rather than the Argon2id the ticket names: `dependencies` is empty, `node:crypto`
+ * has no Argon2, and the server is bundled so a native binding is not an option. The
+ * deviation is deliberate and recorded in `Lockscreen.ts`.
+ */
+describe('the passcode KDF (MICA-164)', () => {
+  const storedHash = async (passcode: string): Promise<string> => {
+    await call('set', { passcode });
+    const row = queryCalls().at(-1)?.[1];
+    return row[1];
+  };
+
+  it('does not store the passcode as a bare SHA-256 of salt and passcode', async () => {
+    const hash = await storedHash('482091');
+    const salt = queryCalls().at(-1)?.[1][2];
+
+    // The exact shape the old implementation wrote. If this ever matches again, the KDF has
+    // been reverted to something a laptop can exhaust over lunch.
+    const { createHash } = await import('node:crypto');
+    const legacy = createHash('sha256').update(`${salt}:482091`).digest().toString('hex');
+    expect(hash).not.toBe(legacy);
+  });
+
+  it('still stores a 64-character hex digest, which is what the column holds', async () => {
+    expect(await storedHash('482091')).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  /**
+   * The absent-row case has to cost what the present one costs.
+   *
+   * Returning early on a missing row answered in a millisecond while a real check paid the
+   * full KDF — a timing oracle for whether a citizenid has a passcode. Asserted as a floor
+   * rather than a comparison between the two paths: a slow machine makes this number bigger,
+   * never smaller, so the only way to fail it is to stop doing the work.
+   */
+  it('pays the KDF cost even when no row exists, so absence is not timeable', async () => {
+    dbMock.single.mockResolvedValue(null);
+
+    const started = Date.now();
+    expect(await call('check', { passcode: '482091' })).toEqual({ ok: false });
+
+    expect(Date.now() - started).toBeGreaterThan(5);
+  });
+
+  it('verifies a passcode it hashed itself', async () => {
+    await call('set', { passcode: '482091' });
+    dbMock.single.mockResolvedValue({
+      passcode_hash: queryCalls().at(-1)?.[1][1],
+      passcode_salt: queryCalls().at(-1)?.[1][2]
+    });
+
+    expect(await call('check', { passcode: '482091' })).toEqual({ ok: true });
+    expect(await call('check', { passcode: '482092' })).toEqual({ ok: false });
+  });
+});
+
+describe('passcode attempt limiting (MICA-164)', () => {
+  const wrong = () => call('check', { passcode: '000000' });
+
+  beforeEach(async () => {
+    await call('set', { passcode: '482091' });
+    dbMock.single.mockResolvedValue({
+      passcode_hash: queryCalls().at(-1)?.[1][1],
+      passcode_salt: queryCalls().at(-1)?.[1][2]
+    });
+  });
+
+  it('locks out after the configured number of wrong guesses', async () => {
+    for (let i = 0; i < 5; i++) expect(await wrong()).toEqual({ ok: false });
+
+    // The sixth is refused rather than answered, and says how long for: a lockout the player
+    // cannot see is a lock screen that looks broken. It arrives as `{ error }` rather than a
+    // rejection because that is how `ServiceEndpoint` delivers a message to a player.
+    expect(await call('check', { passcode: '482091' })).toEqual({
+      error: expect.stringMatching(/Too many attempts\. Try again in \d+s\./)
+    });
+  });
+
+  it('lets the right passcode through again once the lockout expires', async () => {
+    let clock = 1_000_000;
+    __setLockscreenClock(() => clock);
+    for (let i = 0; i < 5; i++) await wrong();
+    expect(await wrong()).toEqual({ error: expect.stringContaining('Too many attempts') });
+
+    clock += 60_001;
+    expect(await call('check', { passcode: '482091' })).toEqual({ ok: true });
+  });
+
+  it('clears the streak on a correct passcode, so guessing is priced and using it is not', async () => {
+    for (let i = 0; i < 4; i++) await wrong();
+    expect(await call('check', { passcode: '482091' })).toEqual({ ok: true });
+
+    // Four more would have tripped the lockout had the streak survived.
+    for (let i = 0; i < 4; i++) expect(await wrong()).toEqual({ ok: false });
+  });
+
+  /**
+   * The lockout is keyed by citizenid rather than source because FiveM recycles server ids —
+   * the same reason `rateLimit.forgetSource` exists. A source-keyed one is a reconnect away
+   * from being reset by the person it is meant to slow down.
+   */
+  it('does not lock out a different player because this one was guessing', async () => {
+    for (let i = 0; i < 5; i++) await wrong();
+    expect(await wrong()).toEqual({ error: expect.stringContaining('Too many attempts') });
+
+    expect(await call('check', { passcode: '000000' }, 'CIT_B')).toEqual({ ok: false });
   });
 });

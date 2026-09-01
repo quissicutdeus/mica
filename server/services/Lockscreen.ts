@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes, scrypt } from 'node:crypto';
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { fields, optionalString } from '../lib/payload';
@@ -60,10 +60,15 @@ export const lockscreen = defineService<LockscreenRow>({
   // each of which validates and hashes before anything reaches SQL.
   access: { read: 'owner', write: 'server' },
   schema: {
-    // Salted SHA-256, hex-encoded (64 chars). Not a runtime dependency: `node:crypto` is
-    // a Node built-in the FXServer runtime already ships, and a 4-6 digit PIN has so
-    // little entropy that a heavier KDF (scrypt/argon2) buys nothing a salt does not
-    // already buy against a rainbow table built for every player at once.
+    // Salted scrypt, hex-encoded (64 chars for a 32-byte key). Still no runtime
+    // dependency: scrypt is in `node:crypto`, which the FXServer runtime already ships.
+    //
+    // This comment used to argue the opposite — that a 4-6 digit PIN has too little
+    // entropy for a heavier KDF to buy anything a salt does not. MICA-164 overturned it,
+    // and the reasoning is in `hashPasscode` below: a salt beats a table built for every
+    // player at once, and does nothing about the attacker holding one row, for whom 10,000
+    // candidates against a bare digest is milliseconds of work. A small keyspace is the
+    // case *for* a memory-hard KDF, not against it.
     passcode_hash: { type: 'string', length: 64, clientWritable: false },
     passcode_salt: { type: 'string', length: 32, clientWritable: false }
   },
@@ -94,8 +99,80 @@ const PASSCODE_PATTERN = /^\d{4,6}$/;
 
 const HASH_ENCODING = 'hex';
 
-const hashPasscode = (passcode: string, salt: string): string =>
-  createHash('sha256').update(`${salt}:${passcode}`).digest().toString(HASH_ENCODING);
+/**
+ * scrypt, not a bare digest, and not Argon2id either.
+ *
+ * The old shape was one salted SHA-256 pass, on the recorded argument that "a 4-6 digit PIN
+ * has so little entropy that a heavier KDF buys nothing a salt does not already buy". Half
+ * of that is right — the salt does defeat a table built for every player at once — and half
+ * of it is not. A salt does nothing about the attacker who has the row in front of them:
+ * 10,000 candidates against one SHA-256 each is work measured in milliseconds. A memory-hard
+ * KDF is precisely the tool for a small keyspace, because it prices each of those 10,000
+ * guesses rather than trying to make the keyspace bigger. CodeQL flags the old shape as
+ * `js/insufficient-password-hash`, and it is right to.
+ *
+ * scrypt rather than the Argon2id MICA-164 asked for, because Argon2id means the repo's
+ * first runtime dependency — `dependencies` is empty today, `node:crypto` has no Argon2, and
+ * the server is bundled, so a native binding is not even an option. scrypt is memory-hard,
+ * already in the runtime, and closes the same gap. That is a deliberate deviation from the
+ * ticket, recorded here rather than left for a reader to notice.
+ *
+ * Async throughout: see `nodeCrypto.d.ts` on why `scryptSync` would stutter the whole
+ * server's tick for one player unlocking their phone.
+ */
+const KEY_LENGTH = 32;
+
+/**
+ * Cost, tunable because "tuned for my box" is not a defensible default for somebody else's.
+ *
+ * `N` is scrypt's work factor and must be a power of two; 16384 is Node's own default and
+ * costs ~16MB and on the order of 50-100ms per verification, which is the right price for an
+ * action a player takes when they open their phone and never in a loop. An operator on weak
+ * hardware turns it down; one who cares more than we do turns it up.
+ */
+const COST_CONVAR = 'gphone_lockscreen_scrypt_cost';
+const DEFAULT_COST = 16384;
+const BLOCK_SIZE = 8;
+
+const scryptCost = (): number => {
+  const raw = Number.parseInt(GetConvar(COST_CONVAR, String(DEFAULT_COST)), 10);
+  // A non-power-of-two, a zero, or a typo makes Node throw rather than quietly weaken the
+  // hash — but a throw here is a player who cannot unlock their phone, so an unusable value
+  // falls back to the default and says so once.
+  if (!Number.isInteger(raw) || raw < 2 || (raw & (raw - 1)) !== 0) {
+    console.warn(
+      `[gPhone] ${COST_CONVAR} is '${GetConvar(COST_CONVAR, '')}', which is not a power of ` +
+        `two of at least 2. Using ${DEFAULT_COST}.`
+    );
+    return DEFAULT_COST;
+  }
+  return raw;
+};
+
+/**
+ * Stands in for a missing row's salt so the absent case costs what the present one costs.
+ * Generated once per server start rather than a constant: nothing depends on its value, and
+ * a fixed one in the source is a needless thing to explain.
+ */
+const DECOY_SALT = randomBytes(16).toString(HASH_ENCODING);
+
+const hashPasscode = (passcode: string, salt: string): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const N = scryptCost();
+    scrypt(
+      passcode,
+      salt,
+      KEY_LENGTH,
+      // `maxmem` is derived, not chosen: Node refuses a call needing more than it, and the
+      // requirement is `128 * N * r`. Doubling it leaves room for the allocator rather than
+      // sitting exactly on the limit.
+      { N, r: BLOCK_SIZE, p: 1, maxmem: 256 * N * BLOCK_SIZE },
+      (err, derivedKey) => {
+        if (err) reject(err);
+        else resolve(derivedKey.toString(HASH_ENCODING));
+      }
+    );
+  });
 
 /**
  * Constant-time over the two hex digest *strings*, rather than pulling in `Buffer` and
@@ -122,6 +199,62 @@ const timingSafeStringEqual = (a: string, b: string): boolean => {
 };
 
 /**
+ * How many guesses a citizenid gets, and how long a wrong streak costs.
+ *
+ * The transport limiter (`lib/rateLimit.ts`) already caps every action at 60 calls per
+ * player per minute, and for a PIN that is not a limit at all: 10,000 candidates at 60 a
+ * minute is under three hours of unattended scripting, and 4-digit PINs are not drawn
+ * uniformly. This is the purpose-built one MICA-164 asks for, and it sits on top of the
+ * generic cap rather than replacing it.
+ *
+ * Keyed by **citizenid, not source**. FiveM recycles server ids — `rateLimit.forgetSource`
+ * and `lib/shell.ts` both exist because of it — so a source-keyed lockout is one reconnect
+ * away from being reset by the person it is meant to slow down.
+ *
+ * A successful entry clears the streak: the limit exists to price guessing, and somebody who
+ * just proved they know the passcode is not guessing.
+ */
+const ATTEMPTS_CONVAR = 'gphone_lockscreen_max_attempts';
+const DEFAULT_MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 60_000;
+
+interface AttemptRecord {
+  failures: number;
+  lockedUntil: number;
+}
+
+const attempts = new Map<string, AttemptRecord>();
+
+/** Test seam, matching `__setRateLimitClock`. A lockout is all clock. */
+let now: () => number = () => Date.now();
+export const __setLockscreenClock = (fn?: () => number): void => {
+  now = fn ?? (() => Date.now());
+};
+export const __resetLockscreenAttempts = (): void => attempts.clear();
+
+const maxAttempts = (): number => {
+  const raw = Number.parseInt(GetConvar(ATTEMPTS_CONVAR, String(DEFAULT_MAX_ATTEMPTS)), 10);
+  return Number.isInteger(raw) && raw > 0 ? raw : DEFAULT_MAX_ATTEMPTS;
+};
+
+const lockedOutFor = (citizenid: string): number => {
+  const record = attempts.get(citizenid);
+  if (!record) return 0;
+  const remaining = record.lockedUntil - now();
+  return remaining > 0 ? remaining : 0;
+};
+
+const recordFailure = (citizenid: string): void => {
+  const record = attempts.get(citizenid) ?? { failures: 0, lockedUntil: 0 };
+  record.failures += 1;
+  if (record.failures >= maxAttempts()) {
+    record.lockedUntil = now() + LOCKOUT_MS;
+    record.failures = 0;
+  }
+  attempts.set(citizenid, record);
+};
+
+/**
  * `status` — whether a passcode is set, and nothing else. The lock screen shows a "set a
  * passcode" prompt or a PIN pad based on this alone; it never learns the passcode itself,
  * the hash, or the salt.
@@ -139,8 +272,11 @@ app.registerEvent('set', async (source, cbId, data, citizenid) => {
   }
 
   const salt = randomBytes(16).toString(HASH_ENCODING);
-  const hash = hashPasscode(passcode, salt);
+  const hash = await hashPasscode(passcode, salt);
   await repo.upsert(citizenid, hash, salt);
+  // Setting a passcode clears any standing lockout: the person who just set it is not the
+  // person the lockout was slowing down.
+  attempts.delete(citizenid);
   return { ok: true };
 });
 
@@ -162,11 +298,30 @@ app.registerEvent('check', async (source, cbId, data, citizenid) => {
   const passcode = optionalString(fields(data).passcode);
   if (!passcode) return { ok: false };
 
+  const waitMs = lockedOutFor(citizenid);
+  if (waitMs > 0) {
+    // Told plainly rather than answered `false`. A lockout the player cannot see is a lock
+    // screen that looks broken, and the number leaks nothing: they already know they have
+    // been guessing.
+    throw new Error(`Too many attempts. Try again in ${Math.ceil(waitMs / 1000)}s.`);
+  }
+
   const row = await repo.findByCitizenId(citizenid);
+
+  /**
+   * The KDF runs whether or not a row exists.
+   *
+   * Returning early on a missing row made "no passcode set" answer in a millisecond while a
+   * real check took the full scrypt cost — a timing oracle for whether a citizenid has a
+   * passcode, and by extension whether it exists at all. The absent case now pays the same
+   * price against a throwaway salt, and its result is discarded.
+   */
+  const candidate = await hashPasscode(passcode, row?.passcode_salt ?? DECOY_SALT);
   if (!row) return { ok: false };
 
-  const candidate = hashPasscode(passcode, row.passcode_salt);
   const ok = timingSafeStringEqual(candidate, row.passcode_hash);
+  if (ok) attempts.delete(citizenid);
+  else recordFailure(citizenid);
   return { ok };
 });
 

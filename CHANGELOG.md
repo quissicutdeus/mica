@@ -268,6 +268,18 @@ that sets none of them changes nothing for your players.
 
 ### Added
 
+- The lock screen passcode is stored with **scrypt** rather than a single salted
+  SHA-256 pass, and wrong guesses are now rate limited on the server rather than
+  only in the UI. Two new convars come with it: `gphone_lockscreen_scrypt_cost`
+  (default `16384`, and it must be a power of two) tunes the hashing cost for
+  operators on weak hardware, and `gphone_lockscreen_max_attempts` (default `5`)
+  sets how many wrong passcodes cost a one-minute lockout. **Nothing is required
+  of you** — no schema change, no migration, and no existing passcode to
+  convert, since the lock screen has not shipped in a release yet. A salt only
+  ever defeated a table built for every player at once; it did nothing for
+  anyone holding a single row, for whom ten thousand four-digit candidates
+  against a bare digest is a few milliseconds of work.
+
 - gPhone now runs **standalone**, with no framework resource at all, when you
   set the new `gphone_standalone` convar. Identity comes from the player's FiveM
   `license:` identifier, so a phone belongs to the player rather than the
