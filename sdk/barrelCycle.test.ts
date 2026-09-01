@@ -18,7 +18,7 @@ import { useNuiBridge } from '@gphone/sdk/core';
  * The SDK barrel must be importable from a module that runs early.
  *
  * It was not, and the cycle was this: `@gphone/sdk` re-exports `useAppRegistry`, which
- * imports `shell/state/registry.ts`, which globs every `apps/*​/manifest.ts` **eagerly** —
+ * imports `shell/state/registry.ts`, which globs every manifest under `apps/` **eagerly** —
  * and every manifest imported the barrel back while it was still evaluating. Every binding
  * came out `undefined`, and the symptom was `useService is not a function` on a line that
  * plainly imports it.

@@ -1997,7 +1997,7 @@ const mockRegistry: Record<string, MockHandler> = {
   clearAppSettings: async (data?: { app?: string }) => {
     if (!data?.app) return false;
     const prefix = `${data.app}:`;
-    for (const composite of [...mockSettings.keys()]) {
+    for (const composite of mockSettings.keys()) {
       if (composite.startsWith(prefix)) mockSettings.delete(composite);
     }
     return true;

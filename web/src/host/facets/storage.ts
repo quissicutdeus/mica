@@ -45,7 +45,7 @@ export function clearAppStorage(appId: string): void {
         if (key.startsWith(prefix)) window.localStorage.removeItem(key);
       }
     } else {
-      for (const key of [...memoryStore.keys()]) {
+      for (const key of memoryStore.keys()) {
         if (key.startsWith(prefix)) memoryStore.delete(key);
       }
     }

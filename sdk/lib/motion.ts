@@ -48,7 +48,7 @@ export const prefersReducedMotion = (): boolean =>
 
 /** A delay is motion the player is made to wait through, so it goes with the animation. */
 const still = <P extends { duration?: number; delay?: number }>(params?: P): P =>
-  ({ ...(params ?? {}), duration: 0, delay: 0 }) as P;
+  ({ ...params, duration: 0, delay: 0 }) as P;
 
 export const fade = (node: Element, params?: FadeParams): TransitionConfig =>
   svelteFade(node, prefersReducedMotion() ? still(params) : params);

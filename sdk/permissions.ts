@@ -252,7 +252,9 @@ export const SAFE_IMPLICIT_FACETS: ReadonlySet<string> = new Set([
 function editDistance(a: string, b: string): number {
   const rows = a.length + 1;
   const cols = b.length + 1;
-  const dp: number[][] = Array.from({ length: rows }, () => new Array<number>(cols).fill(0));
+  const dp: number[][] = Array.from({ length: rows }, () =>
+    Array.from<number>({ length: cols }).fill(0)
+  );
   for (let i = 0; i < rows; i++) dp[i][0] = i;
   for (let j = 0; j < cols; j++) dp[0][j] = j;
   for (let i = 1; i < rows; i++) {

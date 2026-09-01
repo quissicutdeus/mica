@@ -83,7 +83,7 @@ export const openApp = (appName: string, props: Record<string, unknown> = {}) =>
 
     // Merged, not replaced: a plain launch passes `{}` and must not wipe the props a
     // deep link set earlier. A deep link passes its own keys and those win.
-    resolved = { id, props: { ...(existing?.props ?? {}), ...props } };
+    resolved = { id, props: { ...existing?.props, ...props } };
 
     // Recency is tracked beside the list, never *as* its order.
     //

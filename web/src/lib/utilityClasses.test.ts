@@ -238,7 +238,7 @@ function findShadowPairings(files: string[]): ClassUsage[] {
     for (const match of source.matchAll(classAttrRe)) {
       const shadows = stripInterpolations(match[1])
         .split(/\s+/)
-        .filter((token) => /^shadow-/.test(token));
+        .filter((token) => token.startsWith('shadow-'));
       if (shadows.length > 1) {
         pairings.push({
           file: rel,
@@ -463,7 +463,7 @@ describe('an app icon owns its shape, not its color', () => {
     for (const file of icons) {
       const source = fs.readFileSync(file, 'utf8');
       const fallback = /class:\s*className\s*=\s*'([^']*)'/.exec(source)?.[1];
-      const colors = (fallback ?? '').split(/\s+/).filter((t) => /^text-/.test(t));
+      const colors = (fallback ?? '').split(/\s+/).filter((t) => t.startsWith('text-'));
       if (colors.length > 0) {
         offenders.push(`  ${path.relative(WEB_SRC, file)} — "${colors.join(' ')}"`);
       }

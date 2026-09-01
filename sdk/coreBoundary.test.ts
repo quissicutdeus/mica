@@ -91,7 +91,10 @@ const walk = (dir: string): string[] => {
     if (statSync(full).isDirectory()) {
       if (entry === 'mocks' || entry === 'node_modules') continue;
       out.push(...walk(full));
-    } else if (/\.(ts|svelte)$/.test(entry) && !/\.test\.ts$/.test(entry)) {
+    } else if (
+      (entry.endsWith('.ts') || entry.endsWith('.svelte')) &&
+      !entry.endsWith('.test.ts')
+    ) {
       out.push(full);
     }
   }

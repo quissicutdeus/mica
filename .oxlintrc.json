@@ -11,25 +11,48 @@
     // `lib: ["es2021"]` on purpose, so oxlint's suggested fix doesn't compile.
     // oxlint is syntax-only and can't see the lib target to know that.
     "unicorn/no-array-sort": "off",
-    "unicorn/no-array-reverse": "off"
+    "unicorn/no-array-reverse": "off",
+
+    // MICA-183. Both are off deliberately rather than suppressed at 62 call sites, and
+    // both were read before being turned off.
+    //
+    // `consistent-function-scoping` fires 52 times across `web/` and `sdk/`, and every one
+    // is a helper closure inside a test or a store — `const repo = () => …`, `const call =
+    // async (…) => …`. It has been enabled over `client/`, `server/` and `shared/` since
+    // this config existed, warning on every run, and nothing has ever been moved because of
+    // it. That is measured evidence it does not earn its place here, not a guess.
+    "unicorn/consistent-function-scoping": "off",
+
+    // Svelte 5's `$props()` has to be the initialiser of a destructuring declaration, so a
+    // component that declares its props type and reads none of them can only be written
+    // `let {}: AppProps = $props()`. `sdk/host/__fixtures__/UsesContacts.svelte` is exactly
+    // that — a fixture whose whole job is to call `useContacts()` under a props type. Naming
+    // a binding to satisfy the rule just trades this for `noUnusedLocals`, which is what
+    // happened on the first attempt.
+    "eslint/no-empty-pattern": "off",
+
+    // Fires 10 times, and every occurrence is on an object the enclosing function has just
+    // constructed and solely owns: a `new WebSocket` in `nui/transport.ts`, a `new Image`
+    // inside the promise in `sdk/lib/thumbnail.ts`. The failure this rule exists to catch —
+    // silently replacing a handler somebody else registered — cannot happen there. Rewriting
+    // them would mean an `AbortController` per site to remove paired handlers on settle,
+    // which is machinery for no behavioural change. Worth re-reading if a handler is ever
+    // attached to an element the function did not create.
+    "unicorn/prefer-add-event-listener": "off"
   },
-  // `web/**` and `sdk/**` are both excluded for the same reason, and it is a division of
-  // labour rather than a suppression: those two packages are linted by their own flat
-  // eslint configs with `typescript-eslint` type-checked rules, which oxlint does not
-  // replicate — and they must run from inside their own `node_modules` to resolve
-  // TypeScript 6.x (AGENTS.md §3, and the docblock in `web/eslint.config.js`).
-  // `pnpm lint` fans out to all three, so nothing here goes unlinted.
+  // MICA-183: oxlint now reads `web/` and `sdk/` too.
   //
-  // MICA-172 added `sdk/**`: the SDK left `web/src/`, so `web/**` stopped covering it
-  // and oxlint began reporting 17 pre-existing findings in code it had never seen. Those
-  // are recorded on the ticket rather than fixed here — two of the five errors sit in
-  // files that ticket froze byte-identical (`permissions.ts`, `coreBoundary.test.ts`).
-  "ignorePatterns": [
-    "**/node_modules/**",
-    "**/dist/**",
-    "web/**",
-    "sdk/**",
-    "gphone.sql",
-    "fxmanifest.lua"
-  ]
+  // It used to skip both, on the reasoning that each is linted by its own flat eslint config
+  // with `typescript-eslint` type-checked rules oxlint does not replicate, and that each must
+  // run from inside its own `node_modules` to resolve TypeScript 6.x (AGENTS.md §3). All of
+  // that is still true — `pnpm lint` still fans out to all three, and this does not replace
+  // either of them.
+  //
+  // What the skip cost was a *second opinion*, not coverage. oxlint's `unicorn`/`sonarjs`
+  // rules are ones the eslint configs do not enable at all, so nothing was double-checking
+  // that half. Letting it look found 88 things across the two packages: 11 errors, all fixed
+  // in the commit that changed this line, and 77 warnings from two rules now turned off above
+  // with the reasoning beside them.
+  //
+  "ignorePatterns": ["**/node_modules/**", "**/dist/**", "gphone.sql", "fxmanifest.lua"]
 }

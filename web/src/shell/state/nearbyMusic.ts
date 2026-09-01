@@ -397,7 +397,7 @@ export function receiveNearbyBroadcasts(list: readonly unknown[]): void {
 
   // Nobody keeps a join offset for a broadcast that is over. Left to grow, this map would
   // be the one thing in the module that never shrinks on a busy server.
-  for (const token of [...offsets.keys()]) if (!seen.has(token)) offsets.delete(token);
+  for (const token of offsets.keys()) if (!seen.has(token)) offsets.delete(token);
 
   rosterStore.set(rows);
   recompute();
