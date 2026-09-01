@@ -46,3 +46,37 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "${{ steps.tag.outputs.tag }}" --title "${{ steps.tag.outputs.tag }}" --generate-notes
+
+      # MICA-125: the release is where @gphone/sdk is published.
+      #
+      # Not npm, deliberately -- an npm name is permanent, publishing means keeping two
+      # packages in lockstep forever, and the git-dependency path MICA-175 proved already
+      # works. A versioned tarball on the release that already exists gets an outside
+      # add-on author a real version to pin without taking that one-way door. The reasoning
+      # is on the ticket and in scripts/pack-release.js.
+      #
+      # No `pnpm install` and no `cache: 'pnpm'`: `pnpm pack` reads a manifest and archives
+      # files, so nothing here needs node_modules and a cache would be restored for nothing.
+      - uses: pnpm/action-setup@v6
+        if: steps.tag.outputs.skip == ''
+        name: Install pnpm 11
+        with:
+          version: 11
+
+      - name: Install Node.js 26
+        if: steps.tag.outputs.skip == ''
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+
+      # Both packages or neither: the SDK depends on @gphone/shared, so a consumer given
+      # only the first gets a 404 on a dependency it cannot see.
+      - name: Pack the SDK and shared
+        if: steps.tag.outputs.skip == ''
+        run: node scripts/pack-release.js "${{ steps.tag.outputs.tag }}"
+
+      - name: Attach them to the release
+        if: steps.tag.outputs.skip == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ steps.tag.outputs.tag }}" dist/release/*.tgz

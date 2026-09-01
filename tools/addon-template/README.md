@@ -38,15 +38,51 @@ An add-on's imports resolve **two** workspace packages — `@gphone/sdk` (the
 contract: hooks, UI primitives, the manifest helper, the design system) and
 `@gphone/shared` (the wire vocabulary: types, routes, keybinds, rich text).
 `@gphone/sdk` re-exports from `@gphone/shared` and both are `"private": true` in
-gPhone's monorepo. **Neither is on npm, and there is no plan here that makes
-them so.** Both are also consumed _as source_ — no build step, no `main`, no
-`.d.ts` — so whatever route you get them by has to deliver TypeScript and Svelte
-files that your own toolchain compiles.
+gPhone's monorepo. **Neither is on npm, and that is a decision rather than an
+omission** — see "Why not npm" below. Both are also consumed _as source_ — no
+build step, no `main`, no `.d.ts` — so whatever route you get them by has to
+deliver TypeScript and Svelte files that your own toolchain compiles.
 
-The route this template takes is a **git dependency on the gPhone repository,
-with the subdirectory named by `#path:`**. `pnpm` resolves that through GitHub's
-codeload tarball (it does not clone), pins the resolved commit in your lockfile,
-and hard-links it into your store like any other package.
+There are two routes. Take the first unless you specifically want the second.
+
+### Route 1: release tarballs (recommended)
+
+Every gPhone release attaches both packages as tarballs. You get a real version
+to pin, and you are not tracking a moving branch.
+
+```jsonc
+// package.json — one release, both packages
+"dependencies": {
+  "@gphone/sdk": "https://github.com/quissicutdeus/gPhone/releases/download/v2026.08.31.1/gphone-sdk-1.20260831.1.tgz"
+}
+```
+
+```yaml
+# pnpm-workspace.yaml — the SDK's own dependency on @gphone/shared
+overrides:
+  '@gphone/shared': 'https://github.com/quissicutdeus/gPhone/releases/download/v2026.08.31.1/gphone-shared-1.20260831.1.tgz'
+```
+
+**Both tarballs, from the same release, always.** The SDK asks for an exact
+`@gphone/shared` version and the matching tarball is the only thing that
+provides it; take them from different releases and `pnpm` tells you so rather
+than installing something incoherent.
+
+The version reads `<contract>.<yyyymmdd>.<n>`. The **major is
+`SDK_CONTRACT_VERSION`** — the number your add-on branches on, which moves only
+when the published surface breaks. The rest is the release's CalVer, flattened;
+it is a build stamp and orders monotonically, and it does not claim to encode
+"feature" versus "fix".
+
+This route needs the one `overrides` line and nothing else. It does **not** need
+`blockExoticSubdeps: false`, which route 2 does.
+
+### Route 2: a git dependency on the repository
+
+Use this if you need something newer than the last release — the packaged form
+of the SDK moves on `dev` before it reaches a tag. `pnpm` resolves it through
+GitHub's codeload tarball (it does not clone), pins the resolved commit in your
+lockfile, and hard-links it into your store like any other package.
 
 ```jsonc
 // package.json
@@ -56,9 +92,11 @@ and hard-links it into your store like any other package.
 }
 ```
 
-### What it costs
+### What route 2 costs
 
-Five things, and none of them is hidden:
+Five things, and none of them is hidden. Route 1 pays only the first, in a
+simpler form: the SDK asks for an exact version rather than a workspace, so the
+override is a URL and there is no `blockExoticSubdeps` to switch off.
 
 1. **`@gphone/sdk` declares `"@gphone/shared": "workspace:*"`.** That specifier
    means "the copy in gPhone's monorepo" and resolves to nothing anywhere else —
@@ -102,19 +140,34 @@ Five things, and none of them is hidden:
    bundle means two component registries and two sets of context keys, whose
    symptom is a component that renders and then silently stops reacting.
 
-### The routes not taken
+### Why not npm
 
-- **npm.** Would remove every line above. It needs somebody to publish two
-  packages that are currently marked private, and that is a decision about the
-  project rather than about this template.
-- **`pnpm pack` tarballs.** Works, and needs no network at build time — but
-  `pnpm pack` rewrites `workspace:*` to a bare `1.0.0`, so you still need the
-  override, _plus_ somewhere to host two `.tgz` files, _plus_ a clone to produce
-  them from. Strictly more moving parts than the git dependency, for the same
-  result.
-- **Vendoring a copy of `sdk/` and `shared/` into your project.** No install
-  ceremony at all, and no upgrade path either: you would be hand-merging an SDK
-  you did not write.
+Asked and answered rather than never considered. npm would remove the override
+line and nothing else, and it costs more than it removes:
+
+- **An npm name is permanent**, and unpublishing has a 72-hour window. That is a
+  commitment made before there is a release process to back it.
+- **It is two packages in lockstep, forever.** Every SDK release needs a
+  matching `@gphone/shared` release with a real range. Miss one and
+  `pnpm add @gphone/sdk` fails at install for everybody, not just for you.
+- **gPhone is AGPL-3.0-or-later with no linking exception** — the build inlines
+  the SDK into your bundle, so an add-on you distribute is a derivative work and
+  carries the same licence. A one-line `pnpm add` makes it very easy to not
+  notice that. Getting a tarball URL from a release page does not.
+
+The door is not locked. If enough people are building add-ons that the override
+line is the thing standing in the way, it opens.
+
+- **Vendoring a copy of `sdk/` and `shared/` into your project** stays a bad
+  idea: no install ceremony at all, and no upgrade path either — you would be
+  hand-merging an SDK you did not write.
+
+> **One caveat on route 1, stated rather than glossed.** The recipe was verified
+> against local `.tgz` files, which is what `pnpm pack` produces and what the
+> release job uploads. The `https://` form above has not been installed from a
+> real release yet, because the release job that attaches these tarballs has not
+> run on `main` at the time of writing. If it misbehaves, route 2 works today
+> and is proven.
 
 ## What is in here
 

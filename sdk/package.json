@@ -2,6 +2,13 @@
   "name": "@gphone/sdk",
   "private": true,
   "version": "1.0.0",
+  "//files": "MICA-125. Consumed as source, so the tarball ships source: every .ts, .svelte and .css, minus the suites. Without this it shipped 324 files including 58 tests. Widen it rather than narrowing if a consumer build ever fails to resolve something — a file missing here is an error only the consumer sees.",
+  "files": [
+    "**/*.ts",
+    "**/*.svelte",
+    "**/*.css",
+    "!**/*.test.ts"
+  ],
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "//": "MICA-172. Consumed as source: the phone and every add-on bundle build this package through their own Vite pipeline, so there is no build step and no `main`. `@gphone/sdk/testing` is deliberately absent, because it resolves to `web/src/testing.ts` — a phone helper, not published contract (see `publicSurface.test.ts`). It stays an alias on the web side.",
