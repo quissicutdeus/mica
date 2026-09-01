@@ -48,11 +48,22 @@ const ROOT = join(__dirname, '..', '..');
 const ALLOWED_MONEY_FILES = new Set([
   'server/lib/Payments.ts',
   'server/services/Hodlr.ts',
-  // Implements `FrameworkPlayer.getMoney`/`removeMoney`/`addMoney` over qb and ESX, and
-  // reads the raw ESX `xPlayer.getMoney()` once while computing a pre-account cash balance.
-  // Plumbing, not a caller deciding to move money — `Payments.ts` and `Hodlr.ts` are the
-  // only two that do that.
-  'server/lib/FrameworkBridge.ts'
+  /**
+   * Implements `FrameworkPlayer.getMoney`/`removeMoney`/`addMoney` over qb and ESX, and reads
+   * the raw ESX `xPlayer.getMoney()` once while computing a pre-account cash balance.
+   * Plumbing, not a caller deciding to move money — `Payments.ts` and `Hodlr.ts` are the only
+   * two that do that.
+   *
+   * One entry per adapter since MICA-197 split the bridge by framework. Listed by name
+   * rather than by a `server/lib/framework/` prefix rule, deliberately: a new framework's
+   * file should have to be added here by whoever writes it, which is the moment to notice
+   * that it is about to move money.
+   */
+  'server/lib/FrameworkBridge.ts',
+  'server/lib/framework/esx.ts',
+  'server/lib/framework/qb.ts',
+  'server/lib/framework/qbx.ts',
+  'server/lib/framework/standalone.ts'
 ]);
 
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', '__tests__']);

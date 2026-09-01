@@ -2,1036 +2,92 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { citizenIdFromIdentifier, CITIZENID_MAX_LENGTH } from '@gphone/shared/framework';
+import { esxAdapter } from './framework/esx';
+import { qbAdapter } from './framework/qb';
+import { qbxAdapter } from './framework/qbx';
+import { reportStandaloneConflict, standaloneAdapter } from './framework/standalone';
 import {
-  citizenIdFromIdentifier,
-  describeIdentifierRejection,
-  CITIZENID_MAX_LENGTH
-} from '@gphone/shared/framework';
-import { Database } from './Database';
-import { numberFor, readCitizenIdByNumber, readNumber, PHONE_NUMBERS_TABLE } from './phoneNumbers';
-
-export interface FrameworkPlayer {
-  citizenid: string;
-  source: number;
-  phone?: string;
-  /**
-   * A balance, or `-Infinity` when the framework answered with something that is not one.
-   *
-   * The sentinel is deliberately unaffordable rather than `0`, so a caller comparing
-   * `getMoney(...) < amount` refuses at its existing insufficient-funds branch. See `balanceOf`.
-   */
-  getMoney(type: 'bank' | 'cash'): number;
-  /** `true` only when the framework said `true`. Anything else is a refusal — see `moved`. */
-  removeMoney(type: 'bank' | 'cash', amount: number): boolean;
-  /**
-   * Credit a player.
-   *
-   * Absent until now, which meant money could only ever flow *out* of a player: `getMoney`
-   * and `removeMoney` existed and nothing could pay anyone. A marketplace could take from a
-   * buyer and had no way to pay the seller, so it was a noticeboard.
-   *
-   * Fails **closed** like `removeMoney` — returns false when the framework exposes no handler,
-   * and equally when it answers with anything but a literal `true` — rather than the fail-open
-   * pattern `removeInventoryItem` uses. That trade is defensible for a consumable whose effect
-   * already happened; it is not defensible for money, where fail-open means inventing currency.
-   */
-  addMoney(type: 'bank' | 'cash', amount: number): boolean;
-  setMeta(key: string, value: any): void;
-  removeItem(item: string, count: number): boolean;
-  rawPlayer: any;
-}
+  removeInventoryItem as removeItemThroughInventory,
+  type FrameworkAdapter,
+  type FrameworkIdentity,
+  type FrameworkKind,
+  type FrameworkPlayer,
+  type OwnerTable
+} from './framework/runtime';
 
 /**
- * Another resource's exports.
+ * The one door every framework question goes through.
  *
- * Indirected through a variable for one reason: under Vitest the bundler supplies its
- * own module-scope `exports` binding that shadows FiveM's global, so a test cannot put a
- * fake `qbx_core` where this module will look. Production evaluates exactly the same
- * expression it always did — see `__setResourceLookup`.
- */
-type ResourceLookup = (name: string) => any;
-
-let resource: ResourceLookup = (name) => (exports as any)[name];
-
-/** Test seam, like `__resetBatteryCache`. Pass nothing to restore the real lookup. */
-export const __setResourceLookup = (fn?: ResourceLookup): void => {
-  resource = fn ?? ((name) => (exports as any)[name]);
-};
-
-/**
- * Does this resource expose this export? Used to *choose* a framework, never to call one.
+ * Everything under `framework/` used to be in this file — four frameworks' worth of
+ * branches interleaved across nine methods, eighteen hundred lines, and adding a fifth
+ * meant reading all four to find where its branches went. Each framework now has its own
+ * file exporting a `FrameworkAdapter`, and this picks between them (MICA-197).
  *
- * `exports` is a FiveM proxy that **throws** on a property whose resource is not running,
- * rather than answering `undefined` — the trap `client/lib/FrameworkBridge.ts` documents on
- * `getBankBalance`. Every framework branch below sits under one shared `try`, so before
- * MICA-150 that throw was harmless: it meant no qb core, and there was nothing after qb to
- * reach. With ESX added there is, and an unguarded probe for `qbx_core` on a pure ESX server
- * would abort the whole `getPlayer` before the ESX branch — the phone would never find a
- * player, and the one line in the console would name the wrong core.
+ * **The public static surface is unchanged**, deliberately: twenty-odd modules across
+ * `server/` import this class and none of them had to move.
  *
- * Swallowing is right *here* and only here, because a resource that is absent and a resource
- * that is present are the two answers this question has. Nothing below it swallows anything.
- */
-const exposes = (name: string, key: string): boolean => {
-  try {
-    return Boolean(resource(name)?.[key]);
-  } catch {
-    return false;
-  }
-};
-
-/**
- * Everything below this line exists because `player` is `any` (MICA-133).
+ * **Which adapter serves a call is decided per method**, because that is what the branch
+ * chains this replaces did: `getPlayer` probed `qbx_core.GetPlayer`, `getAllPlayers` probed
+ * `qbx_core.GetQBPlayers`, and `registerUsableItem` probed `qbx_core.CreateUseableItem` —
+ * three separate exports, each asked for immediately before it was called. A FiveM resource
+ * exposes each of its exports independently, so a build offering one and not another has to
+ * keep falling through to the next core; `FrameworkBridge.test.ts` pins exactly that with a
+ * qbx fake exposing only `GetQBPlayers`. See `serving`.
  *
- * The declarations on `FrameworkPlayer` — `removeMoney(): boolean`, `getMoney(): number` —
- * were decorative until now. Whatever qbx_core or qb-core handed back was returned straight
- * through, and `any` satisfies every signature, so TypeScript never objected. gPhone pins
- * `@citizenfx/*` exactly and pins neither of those resources: they belong to the operator and
- * move on the operator's schedule, which makes "RemoveMoney went async in the last release" an
- * ordinary event rather than a hypothetical.
- *
- * Every branch of that failure ran fail-open. A promise is truthy, so `!removeMoney(...)` never
- * tripped and `Payments` credited the payee whether or not the debit happened — money creation,
- * with no attacker, no error and no modified client. `Promise < amount` and `undefined < amount`
- * are both `false`, so the insufficient-funds check fell through to the debit the same way.
- *
- * `Payments` already declines to trust the framework's overdraw guard. These two coercions make
- * it decline to trust the framework's *answers* as well, which is the same decision applied one
- * level down.
+ * Once an adapter is chosen for a call it is **committed to**: a `null` from `getPlayer`
+ * after that means "not loaded", never "try the next core", which is what the old `if (!player)
+ * return null` inside each branch said.
  */
 
-/** Enough of a description to make a framework upgrade recognisable in a server log. */
-const shapeOf = (value: unknown): string => {
-  if (value === null) return 'null';
-  if (value === undefined) return 'undefined';
-  if (typeof (value as { then?: unknown }).then === 'function') return 'a promise';
-  if (typeof value === 'number') return Number.isNaN(value) ? 'NaN' : `the number ${value}`;
-  if (typeof value === 'object') return 'an object';
-  return `a ${typeof value} (${String(value)})`;
-};
-
-/**
- * Did money actually move?
- *
- * Only a literal `true` says so. A result object, a status code, a promise or `undefined` from
- * a renamed method all mean the same thing here — this code cannot tell — and the only safe
- * reading of "cannot tell" is that the move did not happen. Guessing the other way invents
- * currency, which is the one error no later correction fixes.
- *
- * A plain `false` is an ordinary refusal (an overdraw) and is not logged, for the same reason
- * `getPlayer` shouts about a nameless player but not an absent one. Only a *shapeless* answer
- * is evidence the contract moved.
- */
-const moved = (result: unknown, call: string, src: number): boolean => {
-  if (typeof result === 'boolean') return result;
-  console.error(
-    `[FrameworkBridge] ${call} for source ${src} answered with ${shapeOf(result)} rather than ` +
-      `a boolean. Treating the move as refused — the framework's contract has changed and ` +
-      `this cannot tell whether the money moved.`
-  );
-  return false;
-};
-
-/**
- * A balance, or a number that cannot be afforded.
- *
- * `-Infinity` rather than `0` or a throw: every caller asks `balance < amount`, and the sentinel
- * has to make that true for *any* amount, including a zero-cost one, so the refusal lands at the
- * existing insufficient-funds check instead of somewhere new. It is also not a balance anyone
- * could arrive at honestly, so it cannot be confused for one.
- */
-const balanceOf = (result: unknown, call: string, src: number): number => {
-  if (typeof result === 'number' && Number.isFinite(result)) return result;
-  console.error(
-    `[FrameworkBridge] ${call} for source ${src} answered with ${shapeOf(result)} rather than ` +
-      `a finite number. Reporting the balance as undeterminable, which reads as unaffordable ` +
-      `everywhere it is compared.`
-  );
-  return -Infinity;
-};
-
-/**
- * A loaded player the framework will not name.
- *
- * This used to synthesise `src_<source>` and carry on. A server id is not an identity:
- * it is assigned per connection and reused, so the next player to be given source 5
- * would have inherited the previous one's contacts, notes and photos — every
- * repository scopes by citizenid and this one looked perfectly valid.
- *
- * Returning null is what a missing player already does, and `ServiceEndpoint` answers
- * it with "Player not authenticated". A phone that refuses to open beats one showing
- * somebody else's messages.
- *
- * Module scope rather than a private static, because the ESX branches below are module-scope
- * functions and all three frameworks have to refuse an unnameable player the same way. A
- * second copy of this rule is a second place for it to stop being true.
- */
-const unidentified = (src: number, framework: string, why?: string): null => {
-  console.error(
-    `[FrameworkBridge] ${framework} returned a player for source ${src} with no usable ` +
-      `citizenid${why ? ` — ${why}` : ''}. Refusing to serve gPhone data rather than ` +
-      `inventing an identity.`
-  );
-  return null;
-};
-
-/* ──────────────────────────────────────────────────────────────────────────────
- * ESX (`es_extended`)
- *
- * The third framework, and the first that does not share qb's shape. Everything below
- * exists so that an `xPlayer` reaches the rest of this server as the qb-shaped object it
- * already knows how to read — which is what keeps ESX support inside this one file.
- * ────────────────────────────────────────────────────────────────────────────── */
-
-/**
- * The identity decision itself lives in `shared/framework.ts`, because the client bridge has
- * to make it too and the two targets cannot import each other. Re-exported here so that the
- * one place a reader looks for how ESX identity works is the bridge that uses it.
- */
 export { citizenIdFromIdentifier, CITIZENID_MAX_LENGTH };
+export type { FrameworkAdapter, FrameworkIdentity, FrameworkKind, FrameworkPlayer, OwnerTable };
+export { __setResourceLookup, __resetOfflineLookupWarnings } from './framework/runtime';
+export { __resetEsxMetaWarning } from './framework/esx';
+export { STANDALONE_CONVAR, __resetStandaloneWarnings } from './framework/standalone';
 
 /**
- * The ESX shared object, or null when `es_extended` is not the framework here.
+ * The frameworks, in the order they are asked.
  *
- * `exports.es_extended.getSharedObject()` is the supported route on ESX Legacy. The
- * `esx:getSharedObject` event is the pre-Legacy one and is kept strictly as a fallback for a
- * build old enough to have no export — deliberately second, because it costs an event
- * dispatch on a path `getPlayer` walks for every request.
+ * **The order is a compatibility decision, not a preference.** A qb core wins over
+ * es_extended when both are installed, because a live server does not change which string
+ * it calls a citizenid on the strength of a second resource being present — that would
+ * re-key every row its players own. qbx before qb-core for the same reason, one core over.
  *
- * Not cached, matching the qb branches, which call `GetCoreObject()` afresh every time. A
- * cached object survives an `ensure es_extended` and is then a handle onto a dead framework;
- * the call it replaces is a table lookup.
+ * Standalone is not in this list: it is never *detected*, only asked for. See below.
  */
-const esxCore = (): any => {
-  // Probed through `exposes` rather than accessed directly, for the reason it gives: on a
-  // server with no es_extended this lookup throws rather than answering undefined, and that
-  // throw would surface as "Error fetching all players" on a perfectly healthy qb server.
-  if (exposes('es_extended', 'getSharedObject')) {
-    return resource('es_extended').getSharedObject() ?? null;
-  }
+const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [qbxAdapter, qbAdapter, esxAdapter];
 
-  try {
-    if (!resource('es_extended')) return null;
-
-    let shared: any = null;
-    if (typeof emit === 'function') {
-      emit('esx:getSharedObject', (obj: any) => {
-        shared = obj;
-      });
-    }
-    return shared;
-  } catch {
-    return null;
-  }
-};
-
-/** A non-empty trimmed string, or null — ESX stores an absent value as `''` as often as nil. */
-const esxString = (value: unknown): string | null => {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
-
-/**
- * A player variable, under any of the names ESX and its addons have used for it.
- *
- * `xPlayer.get(key)` is the Legacy accessor, `xPlayer.variables[key]` is the table behind it,
- * and some addons write the field onto the player directly. All three are tried because the
- * alternative is picking one and having names render blank on every server that chose
- * another — silently, and looking like a UI bug rather than a bridge one. An accessor
- * installed by an addon can throw, which is treated as absent.
- */
-const esxVariable = (xPlayer: any, ...keys: readonly string[]): string | null => {
-  for (const key of keys) {
-    try {
-      const viaGet = typeof xPlayer?.get === 'function' ? xPlayer.get(key) : undefined;
-      const found =
-        esxString(viaGet) ?? esxString(xPlayer?.variables?.[key]) ?? esxString(xPlayer?.[key]);
-      if (found) return found;
-    } catch {
-      // An accessor that throws is the same as one that is not there.
-    }
+/** The first real framework answering on this server, or null. */
+const runningFramework = (): FrameworkAdapter | null => {
+  for (const adapter of FRAMEWORK_ADAPTERS) {
+    if (adapter.detect()) return adapter;
   }
   return null;
 };
 
 /**
- * `charinfo`, as the rest of the server expects to find it.
+ * The adapter answering for this server, or `null` when nothing is.
  *
- * `PlayerDirectory`, `Messages` and `Music` all read `PlayerData.charinfo.firstname` and
- * `.lastname` to render a name, and `getPlayerByPhone` matches on `.phone`. ESX keeps the
- * first two as `firstName`/`lastName` (esx_identity), and **a phone number is not core ESX at
- * all** — the community resources that add one disagree about the field, so the likely
- * spellings are tried and a server keeping it elsewhere gets `null`, which every reader
- * already handles.
- *
- * `getName()` is the last resort, split on the first space: it is the one thing every ESX
- * build has, and a single name rendered as a first name beats a blank one.
+ * `detectFramework` is this, named. Expressing both through one function is what makes the
+ * promise the old code made in prose — "one detection rather than two that can disagree" —
+ * structural: there is no second place for the framework to be decided.
  */
-const esxCharinfo = (
-  xPlayer: any
-): { firstname: string; lastname: string; phone: string | null } => {
-  let firstname = esxVariable(xPlayer, 'firstName', 'firstname');
-  let lastname = esxVariable(xPlayer, 'lastName', 'lastname');
+const activeAdapter = (): FrameworkAdapter | null => {
+  const framework = runningFramework();
 
-  if (!firstname && !lastname) {
-    let full: string | null = null;
-    try {
-      full = typeof xPlayer?.getName === 'function' ? esxString(xPlayer.getName()) : null;
-    } catch {
-      full = null;
-    }
-    if (full) {
-      const space = full.indexOf(' ');
-      firstname = space === -1 ? full : full.slice(0, space);
-      lastname = space === -1 ? null : esxString(full.slice(space + 1));
-    }
+  if (!standaloneAdapter.detect()) return framework;
+
+  // The convar set alongside a live framework is a misconfiguration rather than a
+  // preference, and the framework wins — see `reportStandaloneConflict` for why that
+  // direction and not the other.
+  if (framework) {
+    reportStandaloneConflict(framework.kind as 'qb' | 'esx');
+    return framework;
   }
 
-  return {
-    firstname: firstname ?? '',
-    lastname: lastname ?? '',
-    phone: esxVariable(xPlayer, 'phoneNumber', 'phone_number', 'phone')
-  };
+  return standaloneAdapter;
 };
-
-/**
- * ESX metadata as a plain table, or undefined.
- *
- * One reader: `Battery.ts` looks for a legacy `gphone_battery` value on
- * `rawPlayer.PlayerData.metadata` when the player has no row in gPhone's own table yet.
- * `xPlayer.getMeta()` with no key returns the whole table on ESX Legacy 1.10+; anything older
- * has no metadata to offer, and that reader already falls back to a full battery.
- */
-const esxMetadata = (xPlayer: any): Record<string, unknown> | undefined => {
-  try {
-    if (typeof xPlayer?.getMeta === 'function') {
-      const all = xPlayer.getMeta();
-      if (all && typeof all === 'object') return all as Record<string, unknown>;
-    }
-  } catch {
-    // An ESX build with no metadata support.
-  }
-  return undefined;
-};
-
-/**
- * An `xPlayer` wearing the qb shape.
- *
- * `getAllPlayers()` hands its records to five callers outside this file — `proximity.ts`,
- * `appEvents.ts`, `Signal.ts`, `Mail.ts` and `Music.ts` — and every one of them reads
- * `PlayerData.citizenid` or `PlayerData.charinfo` off them, as do the `rawPlayer` readers in
- * `PlayerDirectory`, `Messages` and `Battery`. Normalising once, here, is what keeps the ESX
- * adapter inside `FrameworkBridge`: the alternative is a framework check at each of those
- * eight sites, which is the duplication `getSourcesByCitizenId` was written to avoid.
- *
- * The real `xPlayer` is kept on `.xPlayer` rather than discarded, so anything that genuinely
- * needs ESX's own API has a route to it that is not another `exports` lookup.
- */
-const esxView = (xPlayer: any, citizenid: string, src: number) => ({
-  PlayerData: {
-    citizenid,
-    source: src,
-    charinfo: esxCharinfo(xPlayer),
-    metadata: esxMetadata(xPlayer)
-  },
-  xPlayer
-});
-
-/** gPhone's two money types in ESX's account names. `money` is ESX's word for cash. */
-const ESX_ACCOUNT: Record<'bank' | 'cash', string> = { bank: 'bank', cash: 'money' };
-
-/** A balance off an ESX account, coerced by the same rule as every other framework answer. */
-const esxBalance = (xPlayer: any, type: 'bank' | 'cash', src: number): number => {
-  const account = ESX_ACCOUNT[type];
-  const call = `ESX.getAccount('${account}')`;
-  try {
-    if (typeof xPlayer?.getAccount === 'function') {
-      return balanceOf(xPlayer.getAccount(account)?.money, call, src);
-    }
-    // Pre-account ESX exposes cash only, and only through `getMoney()`.
-    if (type === 'cash' && typeof xPlayer?.getMoney === 'function') {
-      return balanceOf(xPlayer.getMoney(), 'ESX.getMoney', src);
-    }
-  } catch (error) {
-    console.error(`[FrameworkBridge] ${call} for source ${src} threw:`, error);
-    return -Infinity;
-  }
-  return balanceOf(undefined, call, src);
-};
-
-/**
- * Move money on an ESX account, and prove it moved by reading the balance back.
- *
- * qb answers a money call with a boolean, so MICA-133's `moved` has something to judge.
- * **ESX's `addAccountMoney` and `removeAccountMoney` return nothing at all** — there is no
- * answer to coerce. Handing their `undefined` to `moved` would refuse every ESX transfer
- * that ever worked; treating "it did not throw" as success is exactly the fail-open
- * MICA-133 closed, one framework over. Neither is acceptable, so this asks the only source
- * that can settle it: the account itself.
- *
- * Both reads go through `esxBalance`, so they are coerced exactly like `getMoney` — a
- * `getAccount` that starts answering with a promise refuses here too, instead of producing a
- * comparison between two sentinels. The verdict then goes through `moved`, so there is still
- * one helper in this file that decides what "the money moved" means and one place a future
- * framework surprise has to get past.
- *
- * **It refuses before calling the framework** when the opening balance is undeterminable. A
- * blind write followed by a read it cannot interpret is strictly worse than not writing: it
- * manufactures the stranded case rather than avoiding it.
- *
- * ESX is single-threaded and both calls are synchronous, so nothing can move the balance
- * between the two reads. The comparison is `>=` in the requested direction rather than an
- * equality, because ESX rounds through `ESX.Math.Round`: a rounding unit of over-movement is
- * the framework's arithmetic, while anything that moved *less* than asked is the failure this
- * exists to catch.
- *
- * **It does not refuse an overdraw, and no framework branch here does.** qb's `RemoveMoney`
- * answers `false` when the player cannot afford it; ESX's `removeAccountMoney` takes the
- * account negative and this reads that as a completed debit, because it is one. Both callers
- * — `Payments.ts` and `Hodlr.ts` — check `getMoney` first for exactly this reason, stated at
- * `Payments.ts`: frameworks disagree about whether an overdraw refuses or clamps, so the
- * affordability decision does not belong to the framework. A guard here would put it back.
- */
-const esxMove = (
-  xPlayer: any,
-  direction: 'credit' | 'debit',
-  type: 'bank' | 'cash',
-  amount: number,
-  src: number
-): boolean => {
-  const account = ESX_ACCOUNT[type];
-  const method = direction === 'credit' ? 'addAccountMoney' : 'removeAccountMoney';
-  const call = `ESX.${method}('${account}')`;
-
-  if (typeof xPlayer?.[method] !== 'function') return moved(undefined, call, src);
-
-  const before = esxBalance(xPlayer, type, src);
-  if (!Number.isFinite(before)) return false; // `esxBalance` has already said why.
-
-  try {
-    xPlayer[method](account, amount);
-  } catch (error) {
-    console.error(`[FrameworkBridge] ${call} for source ${src} threw:`, error);
-    return false;
-  }
-
-  const after = esxBalance(xPlayer, type, src);
-  if (!Number.isFinite(after)) {
-    console.error(
-      `[FrameworkBridge] ${call} for source ${src} cannot be confirmed: the balance was ` +
-        `readable before the call and is not after. Treating the move as refused — but it ` +
-        `may have happened, so reconcile this account by hand.`
-    );
-    return false;
-  }
-
-  const settled = direction === 'credit' ? after >= before + amount : after <= before - amount;
-
-  if (!settled && direction === 'credit') {
-    // A debit that does not land is an ordinary overdraw, which ESX refuses silently the way
-    // a qb `RemoveMoney` returns a plain `false` — not worth a line. A *credit* that does not
-    // land is not ordinary: nothing was supposed to be able to decline it.
-    console.error(
-      `[FrameworkBridge] ${call} for source ${src} left the balance at ${after} after being ` +
-        `asked to add ${amount} to ${before}. Treating the credit as refused.`
-    );
-  }
-
-  return moved(settled, call, src);
-};
-
-/**
- * Consume an item from an ESX inventory.
- *
- * `xPlayer.removeInventoryItem` returns nothing, like ESX's money calls — but unlike money
- * this is allowed to fail open, because that is already the stated policy for items (see
- * `removeInventoryItem` below and the warning it prints). The trade is the one made there: a
- * consumable whose effect has already happened is not worth refusing over, and money is.
- * There is nothing to coerce because there is nothing returned.
- *
- * Falls through to the shared helper — and so to ox_inventory, which is common on ESX — when
- * the player object has no inventory call of its own.
- */
-const esxRemoveItem = (xPlayer: any, src: number, item: string, count: number): boolean => {
-  try {
-    if (typeof xPlayer?.removeInventoryItem === 'function') {
-      xPlayer.removeInventoryItem(item, count);
-      return true;
-    }
-  } catch (error) {
-    console.error(`[FrameworkBridge] ESX.removeInventoryItem('${item}') for ${src} threw:`, error);
-    return false;
-  }
-  return FrameworkBridge.removeInventoryItem(src, {}, item, count);
-};
-
-/**
- * Whether this build has already been reported as having nowhere to put metadata.
- *
- * A single flag, not a set of sources. What is being reported is a property of the
- * **es_extended build** — either it exposes `setMeta`/`set` or it does not — and that answer
- * is the same for every player on the server, so there is nothing per-player to remember.
- *
- * It was a `Set<number>` first, and that was wrong twice over: nothing removed from it, so it
- * grew for the life of the resource, and FiveM recycles server ids, so a recycled id would
- * stay silenced for whoever was assigned it next. `lib/rateLimit.ts`'s `forgetSource` and
- * `lib/shell.ts`'s `refusalsLogged` both clear on `playerDropped` for that second reason.
- * The fix here is not to clear it but to stop keying it per player, which also spares this
- * module a `playerDropped` handler it has never needed.
- */
-let esxMetaUnsupportedReported = false;
-
-/** Test seam, like `__setResourceLookup`. */
-export const __resetEsxMetaWarning = (): void => {
-  esxMetaUnsupportedReported = false;
-};
-
-/**
- * `setMeta` on ESX **degrades; it is not unsupported.**
- *
- * ESX Legacy 1.10+ has `xPlayer.setMeta`, which is the real twin and is used when present.
- * Older builds have only `xPlayer.set`, which writes a session variable that is not persisted
- * across a reconnect — less than qb offers, and honest about what it is. A build with neither
- * drops the write and says so once per player.
- *
- * Degrading is safe here specifically because of who calls it. The only caller is
- * `Battery.ts`, mirroring the charge onto the framework player for the benefit of *other*
- * resources; gPhone's own source of truth is its `gphone_battery` table, which is written
- * either way. So a dropped mirror costs a third-party integration and never the phone — and
- * that is why the decision is degrade rather than refuse, which for a write with no reader
- * inside gPhone would only turn a missing integration into a broken battery.
- */
-const esxSetMeta = (xPlayer: any, src: number, key: string, value: any): void => {
-  try {
-    if (typeof xPlayer?.setMeta === 'function') {
-      xPlayer.setMeta(key, value);
-      return;
-    }
-    if (typeof xPlayer?.set === 'function') {
-      xPlayer.set(key, value);
-      return;
-    }
-  } catch (error) {
-    console.error(`[FrameworkBridge] ESX setMeta('${key}') for source ${src} failed:`, error);
-    return;
-  }
-
-  if (!esxMetaUnsupportedReported) {
-    esxMetaUnsupportedReported = true;
-    console.warn(
-      `[FrameworkBridge] This es_extended build exposes neither setMeta nor set, so gPhone ` +
-        `cannot mirror metadata onto the framework player — '${key}' was dropped, first seen ` +
-        `for source ${src}. gPhone's own tables are unaffected. Reported once per resource ` +
-        `start, because this is a property of the build rather than of a player.`
-    );
-  }
-};
-
-/** An ESX `xPlayer` as a `FrameworkPlayer`, or null when it cannot be identified. */
-const esxFrameworkPlayer = (xPlayer: any, src: number): FrameworkPlayer | null => {
-  if (!xPlayer) return null;
-
-  let identifier: unknown = xPlayer.identifier;
-  if (identifier === undefined && typeof xPlayer.getIdentifier === 'function') {
-    identifier = xPlayer.getIdentifier();
-  }
-
-  const citizenid = citizenIdFromIdentifier(identifier);
-  if (!citizenid) return unidentified(src, 'es_extended', describeIdentifierRejection(identifier));
-
-  const view = esxView(xPlayer, citizenid, src);
-
-  return {
-    citizenid,
-    source: src,
-    phone: view.PlayerData.charinfo.phone ?? undefined,
-    getMoney: (type: 'bank' | 'cash') => esxBalance(xPlayer, type, src),
-    removeMoney: (type: 'bank' | 'cash', amount: number) =>
-      esxMove(xPlayer, 'debit', type, amount, src),
-    addMoney: (type: 'bank' | 'cash', amount: number) =>
-      esxMove(xPlayer, 'credit', type, amount, src),
-    setMeta: (key: string, value: any) => esxSetMeta(xPlayer, src, key, value),
-    removeItem: (item: string, count: number) => esxRemoveItem(xPlayer, src, item, count),
-    // The qb-shaped view, not the bare xPlayer: `PlayerDirectory`, `Messages` and `Battery`
-    // all read `rawPlayer.PlayerData`. ESX's own object is on `rawPlayer.xPlayer`.
-    rawPlayer: view
-  };
-};
-
-/**
- * Every connected ESX player, keyed by source, in the qb shape.
- *
- * Three accessors, tried in order, because they arrived in that order and a given build may
- * ship any of them: `GetExtendedPlayers()` (Legacy, xPlayers), the `ESX.Players` table behind
- * it, and `GetPlayers()` (ids only, oldest). The fan-out in `pushMany`, `proximity` and
- * `Signal` should not depend on which one an operator happens to be running.
- */
-const esxAllPlayers = (core: any): Record<number, unknown> => {
-  const out: Record<number, unknown> = {};
-
-  const add = (xPlayer: any): void => {
-    const src = Number(xPlayer?.source);
-    if (!Number.isFinite(src)) return;
-    const citizenid = citizenIdFromIdentifier(xPlayer?.identifier);
-    // Never list a player this cannot name — the reasoning is `unidentified`'s, and a
-    // nameless entry here would reach `proximity` and `pushMany` as a real recipient.
-    if (!citizenid) return;
-    out[src] = esxView(xPlayer, citizenid, src);
-  };
-
-  const extended =
-    typeof core?.GetExtendedPlayers === 'function' ? core.GetExtendedPlayers() : null;
-  if (Array.isArray(extended) && extended.length > 0) {
-    for (const xPlayer of extended) add(xPlayer);
-    return out;
-  }
-
-  if (core?.Players && typeof core.Players === 'object') {
-    for (const key of Object.keys(core.Players)) add(core.Players[key]);
-    if (Object.keys(out).length > 0) return out;
-  }
-
-  if (typeof core?.GetPlayers === 'function' && typeof core?.GetPlayerFromId === 'function') {
-    const ids = core.GetPlayers();
-    if (Array.isArray(ids)) for (const id of ids) add(core.GetPlayerFromId(Number(id)));
-  }
-
-  return out;
-};
-
-/* ──────────────────────────────────────────────────────────────────────────────
- * Standalone (no framework at all)
- *
- * The fourth adapter, and the first with nothing behind it. Everything below exists so a
- * server running gPhone and nothing else reaches the rest of this file as the qb-shaped
- * object it already knows how to read — the same trick the ESX section plays, with a
- * runtime that supplies an identity and nothing else.
- *
- * The blocker was one line: `ServiceEndpoint` refuses every action of every service when
- * `getPlayer` answers null, so with no framework the whole phone is inert. Answering here
- * unblocks all of it at once, and answering *honestly* — refusing money, degrading
- * metadata — is what keeps that from becoming a lie further down.
- * ────────────────────────────────────────────────────────────────────────────── */
-
-/**
- * The convar that turns standalone on, and why it is a convar rather than a deduction.
- *
- * **Standalone is never inferred from the absence of a framework**, because absence is not
- * something this code can observe. `exposes` swallows the throw FiveM's `exports` proxy
- * raises for a resource that has not started yet (see its own note, and `detectFramework`),
- * so "es_extended is three lines further down server.cfg" and "there is no framework here"
- * are the same answer to a probe, and gPhone's own `onResourceStart` fires inside exactly
- * that window. A server that auto-detected standalone would key that boot's rows on a
- * license identifier and the next boot's on a citizenid — one player, two phones, and no
- * error anywhere.
- *
- * An operator saying so cannot be raced. It is one line in `server.cfg` and it is the whole
- * opt-in.
- */
-export const STANDALONE_CONVAR = 'gphone_standalone';
-
-/**
- * What counts as on and off, and why a third bucket exists.
- *
- * `GetConvar` hands back a free-form string with no validation of its own — the fact
- * `orphanSweep.ts`'s `resolveOwnerOverride` documents at length for the convar that decides
- * which rows a sweep may delete. A value that is neither is **not** silently read as either:
- * `setr gphone_standalone yes-please` is an operator who meant to enable this and has not,
- * and the difference between that and a working phone is one console line they can act on.
- */
-const STANDALONE_ON = new Set(['1', 'true', 'yes', 'on', 'enabled']);
-const STANDALONE_OFF = new Set(['', '0', 'false', 'no', 'off', 'disabled']);
-
-/**
- * The one-shot flags for this adapter, and why each is a module-level boolean rather than a
- * `Set<number>`.
- *
- * Every one of them reports a property of the **server**, not of a player: there is no
- * framework, so there is no money, no metadata sink and no usable-item registrar, and that
- * is equally true for everyone connected. `esxMetaUnsupportedReported` records the same
- * reasoning and the mistake it replaced — a per-source set grows for the life of the
- * resource and, because FiveM recycles server ids, silences a recycled id for whoever is
- * assigned it next.
- */
-let standaloneConvarReported = false;
-let standaloneConflictReported = false;
-let standaloneMoneyReported = false;
-let standaloneMetaReported = false;
-let standaloneUsableItemReported = false;
-
-/** Test seam, like `__resetEsxMetaWarning`. Clears every once-per-resource-start flag above. */
-export const __resetStandaloneWarnings = (): void => {
-  standaloneConvarReported = false;
-  standaloneConflictReported = false;
-  standaloneMoneyReported = false;
-  standaloneMetaReported = false;
-  standaloneUsableItemReported = false;
-};
-
-/** Has the operator asked for standalone? Says so once when the value is unreadable. */
-const standaloneRequested = (): boolean => {
-  let raw: string;
-  try {
-    // `typeof` rather than a bare reference: an absent native must read as "not requested"
-    // rather than throw on a path `getPlayer` walks for every request.
-    raw = typeof GetConvar === 'function' ? String(GetConvar(STANDALONE_CONVAR, '')) : '';
-  } catch {
-    return false;
-  }
-
-  const value = raw.trim().toLowerCase();
-  if (STANDALONE_ON.has(value)) return true;
-  if (STANDALONE_OFF.has(value)) return false;
-
-  if (!standaloneConvarReported) {
-    standaloneConvarReported = true;
-    console.warn(
-      `[FrameworkBridge] ${STANDALONE_CONVAR} is set to '${raw}', which is neither on nor ` +
-        `off. Reading it as off, so gPhone is still waiting for a framework. Set it to '1' ` +
-        `(or true/yes/on) to run gPhone with no framework at all. Reported once per ` +
-        `resource start.`
-    );
-  }
-  return false;
-};
-
-/**
- * The convar is set **and** a real framework answered. Refuse standalone, loudly.
- *
- * Silently preferring either one is the failure this exists to prevent, and the two
- * preferences fail differently rather than one being safe. Preferring standalone re-keys
- * every row from a citizenid onto a license identifier, so a live server's players lose
- * every note, contact and message they own — a data migration performed by a typo.
- * Preferring the framework without saying so leaves an operator who believes they are
- * running standalone with a phone that works for reasons they do not understand, and a
- * `server.cfg` line that does nothing.
- *
- * So the framework wins, because it is the one holding the rows that already exist, and the
- * console says which line to delete. Once per resource start, for the reason above the flags.
- */
-const reportStandaloneConflict = (framework: 'qb' | 'esx'): void => {
-  if (standaloneConflictReported) return;
-  standaloneConflictReported = true;
-  const core = framework === 'qb' ? 'a qb core' : 'es_extended';
-  const kept = framework === 'qb' ? 'qb' : 'ESX';
-  console.error(
-    `[FrameworkBridge] ${STANDALONE_CONVAR} is set, but ${core} is running on this server. ` +
-      `Ignoring the convar and keeping ${kept} — it owns the identity every existing gPhone ` +
-      `row is keyed on, and switching that is a data migration rather than a fallback. ` +
-      `Remove '${STANDALONE_CONVAR}' from server.cfg, or remove the framework, so this ` +
-      `server has one answer. Reported once per resource start.`
-  );
-};
-
-/**
- * A player's `license:` identifier, which is the whole of their identity in standalone.
- *
- * `GetPlayerIdentifierByType` is the direct route and is what every modern FXServer has.
- * The scan over the numbered identifiers is the fallback for a build without it — the same
- * "try the accessor, then the table behind it" shape `esxVariable` uses, and for the same
- * reason: picking one and being wrong renders every player unidentifiable, silently.
- *
- * **`license:` specifically, not the first identifier that comes back.** `steam:` is absent
- * for anyone playing without Steam, `ip:` changes, and a `discord:` link can be revoked —
- * any of those as the key would hand a returning player a fresh, empty phone. Every FiveM
- * client has a license and keeps it.
- *
- * The identifier goes through `citizenIdFromIdentifier` at every call site rather than here,
- * so that one mapping in `shared/framework.ts` still decides what a citizenid is — including
- * its refusal to truncate an over-length one, which that file explains at length.
- */
-const standaloneIdentifier = (src: number): string | null => {
-  const player = String(src);
-
-  try {
-    if (typeof GetPlayerIdentifierByType === 'function') {
-      const direct = GetPlayerIdentifierByType(player, 'license');
-      if (typeof direct === 'string' && direct.trim().length > 0) return direct.trim();
-    }
-  } catch {
-    // An FXServer build without the native, or a source that has just dropped.
-  }
-
-  try {
-    if (
-      typeof GetNumPlayerIdentifiers === 'function' &&
-      typeof GetPlayerIdentifier === 'function'
-    ) {
-      const count = GetNumPlayerIdentifiers(player);
-      for (let index = 0; index < count; index++) {
-        const identifier = GetPlayerIdentifier(player, index);
-        if (typeof identifier === 'string' && identifier.startsWith('license:')) {
-          return identifier.trim();
-        }
-      }
-    }
-  } catch {
-    // Same.
-  }
-
-  return null;
-};
-
-/**
- * `charinfo`, as the rest of the server expects to find it — built from the only name a
- * frameworkless server has.
- *
- * `GetPlayerName` is the client's own display name. It is not a character name and this does
- * not pretend otherwise; it is what `PlayerDirectory`, `Messages` and `Music` render, and a
- * real name beats a blank one. Split on the first space exactly as `esxCharinfo` does with
- * `getName()`, so a two-word name lands in the two fields those readers expect.
- *
- * **`phone` comes from gPhone's own table**, because nothing in the FiveM runtime has a phone
- * number to offer and no framework is here to have issued one. `lib/phoneNumbers.ts` owns
- * that decision and the cache this reads; `services/PhoneNumbers.ts` owns the table and
- * assigns a number once, at connect. Null until that has happened, which every reader of
- * `charinfo.phone` already handles.
- */
-const standaloneCharinfo = (
-  src: number,
-  citizenid: string
-): { firstname: string; lastname: string; phone: string | null } => {
-  let full: string | null = null;
-  try {
-    full = typeof GetPlayerName === 'function' ? GetPlayerName(String(src))?.trim() || null : null;
-  } catch {
-    full = null;
-  }
-
-  const space = full ? full.indexOf(' ') : -1;
-
-  return {
-    firstname: !full ? '' : space === -1 ? full : full.slice(0, space),
-    lastname: !full || space === -1 ? '' : full.slice(space + 1).trim(),
-    phone: numberFor(citizenid)
-  };
-};
-
-/**
- * A standalone player wearing the qb shape, for the same reason `esxView` exists: five
- * callers outside this file read `PlayerData.citizenid` or `PlayerData.charinfo` off
- * whatever `getAllPlayers` returns, and three more read them off `rawPlayer`. Normalising
- * once, here, is what keeps the adapter inside `FrameworkBridge`.
- *
- * There is no framework object to keep alongside it — the `.xPlayer` slot ESX's view carries
- * has no twin here, because there is nothing to carry.
- */
-const standaloneView = (citizenid: string, src: number) => ({
-  PlayerData: {
-    citizenid,
-    source: src,
-    charinfo: standaloneCharinfo(src, citizenid),
-    metadata: undefined
-  }
-});
-
-/**
- * Say once that money was asked for and there is none.
- *
- * Deliberately **not** routed through `moved`/`balanceOf`, which log an error every time.
- * Those exist to catch a framework whose contract changed under us, and they shout because
- * that is a surprise worth investigating. This is not a surprise: it is the permanent,
- * documented state of a server with no framework, and an error per call would be noise that
- * teaches an operator to ignore the log.
- */
-const reportStandaloneMoney = (call: string, src: number): void => {
-  if (standaloneMoneyReported) return;
-  standaloneMoneyReported = true;
-  console.warn(
-    `[FrameworkBridge] ${call} was called for source ${src} and this server is running ` +
-      `standalone, which has no money of any kind. Refusing — every balance reads as ` +
-      `unaffordable and no transfer is ever reported as completed. An app that needs money ` +
-      `should be hidden on this server. Reported once per resource start.`
-  );
-};
-
-/**
- * `setMeta` **degrades, and says so once**, exactly as `esxSetMeta` does and for exactly the
- * same reason.
- *
- * The only caller is `Battery.ts`, mirroring the charge onto the framework player for the
- * benefit of *other* resources. gPhone's own source of truth is its `gphone_battery` table,
- * which is written either way — so a dropped mirror costs a third-party integration and
- * never the phone. On standalone there is no framework player to mirror onto and no third
- * party to read it, which makes this a no-op with a receipt rather than a failure.
- */
-const standaloneSetMeta = (src: number, key: string): void => {
-  if (standaloneMetaReported) return;
-  standaloneMetaReported = true;
-  console.warn(
-    `[FrameworkBridge] This server is running standalone, so there is no framework player to ` +
-      `mirror metadata onto — '${key}' was dropped, first seen for source ${src}. gPhone's ` +
-      `own tables are unaffected. Reported once per resource start, because this is a ` +
-      `property of the server rather than of a player.`
-  );
-};
-
-/** A standalone player as a `FrameworkPlayer`, or null when they cannot be identified. */
-const standaloneFrameworkPlayer = (src: number): FrameworkPlayer | null => {
-  const identifier = standaloneIdentifier(src);
-  const citizenid = citizenIdFromIdentifier(identifier);
-  if (!citizenid) {
-    return unidentified(src, 'standalone', describeIdentifierRejection(identifier));
-  }
-
-  const view = standaloneView(citizenid, src);
-
-  return {
-    citizenid,
-    source: src,
-    phone: view.PlayerData.charinfo.phone ?? undefined,
-    /**
-     * Fail closed, all three. `-Infinity` is the sentinel `balanceOf` documents: every caller
-     * asks `balance < amount`, and a balance that cannot be afforded for *any* amount lands
-     * the refusal at the existing insufficient-funds branch rather than somewhere new.
-     * `removeMoney` and `addMoney` answer false for the reason `moved` gives — the only safe
-     * reading of "this cannot tell whether the money moved" is that it did not, because
-     * guessing the other way invents currency.
-     */
-    getMoney: (type: 'bank' | 'cash') => {
-      reportStandaloneMoney(`getMoney('${type}')`, src);
-      return -Infinity;
-    },
-    removeMoney: (type: 'bank' | 'cash') => {
-      reportStandaloneMoney(`removeMoney('${type}')`, src);
-      return false;
-    },
-    addMoney: (type: 'bank' | 'cash') => {
-      reportStandaloneMoney(`addMoney('${type}')`, src);
-      return false;
-    },
-    setMeta: (key: string) => standaloneSetMeta(src, key),
-    // Straight to the shared helper, which tries ox_inventory and then fail-opens with a
-    // warning. That policy is stated where it lives and is not changed by there being no
-    // framework: a consumable whose effect has already happened is not worth refusing over.
-    removeItem: (item: string, count: number) =>
-      FrameworkBridge.removeInventoryItem(src, {}, item, count),
-    rawPlayer: view
-  };
-};
-
-/**
- * Every connected player, keyed by source, in the qb shape.
- *
- * `GetNumPlayerIndices`/`GetPlayerFromIndex` rather than the `GetPlayers()` helper: that pair
- * are declared natives on `@citizenfx/server` and present on every build, while the helper is
- * a runtime convenience with no typing behind it.
- *
- * **Never lists a player it cannot name**, which is `esxAllPlayers`'s rule and
- * `unidentified`'s reasoning: an entry here reaches `proximity` and `pushMany` as a real
- * recipient, and a nameless one would be somebody else's mail.
- */
-const standaloneAllPlayers = (): Record<number, unknown> => {
-  const out: Record<number, unknown> = {};
-  if (typeof GetNumPlayerIndices !== 'function' || typeof GetPlayerFromIndex !== 'function') {
-    return out;
-  }
-
-  const count = GetNumPlayerIndices();
-  for (let index = 0; index < count; index++) {
-    const src = Number(GetPlayerFromIndex(index));
-    if (!Number.isFinite(src) || src <= 0) continue;
-    const citizenid = citizenIdFromIdentifier(standaloneIdentifier(src));
-    if (!citizenid) continue;
-    out[src] = standaloneView(citizenid, src);
-  }
-  return out;
-};
-
-/**
- * Register a usable item with whatever is here to register one — which may be nothing.
- *
- * There is no `CreateUseableItem` without a framework. ox_inventory is the one inventory
- * common enough on a frameworkless server to be worth asking, and it is asked through
- * `exposes` so a build without it is an answer rather than a throw.
- *
- * Otherwise this is a no-op **with one line saying what the operator loses**: the item
- * exists, players can hold it, and using it will not open the phone. Every other way of
- * opening the phone still works. Silence here would be indistinguishable from a registration
- * that succeeded, which is the failure shape this repo cares most about.
- */
-const standaloneRegisterUsableItem = (item: string, cb: (source: number) => void): void => {
-  for (const key of ['RegisterUsableItem', 'CreateUseableItem']) {
-    if (exposes('ox_inventory', key)) {
-      resource('ox_inventory')[key](item, cb);
-      return;
-    }
-  }
-
-  if (standaloneUsableItemReported) return;
-  standaloneUsableItemReported = true;
-  console.warn(
-    `[FrameworkBridge] This server is running standalone and no inventory resource exposes a ` +
-      `usable-item registration, so '${item}' is not registered as usable — using the item in ` +
-      `an inventory will not open the phone. Reported once per resource start.`
-  );
-};
-
-/**
- * The framework's own table of characters, and the column in it that holds what gPhone
- * stores as a `citizenid`.
- *
- * gPhone creates neither. qb owns `players(citizenid)`; es_extended owns
- * `users(identifier)`, which MICA-150 decided maps directly onto `citizenid` — one phone
- * per player rather than per character, recorded on that ticket.
- *
- * **Both fields are interpolated into SQL as identifiers, so both are frozen literals in
- * this module and nothing else may supply one.** MySQL cannot parameterize a table or a
- * column name (§2.9), and the only safe way to build such a statement is from a closed set
- * the server author wrote. `orphanSweep.ts` re-checks what it gets back before it builds
- * anything, on the principle that a guard which lives only at the producer stops guarding
- * the moment a second producer appears.
- */
-export interface OwnerTable {
-  table: string;
-  column: string;
-}
-
-/** qb-core and qbx_core. Matches `schemaSql.OWNER_TABLE`, which the DDL points at. */
-const QB_OWNER_TABLE: OwnerTable = Object.freeze({ table: 'players', column: 'citizenid' });
-
-/** es_extended. The table `findOfflineByCitizenId` already reads, asked a different way. */
-const ESX_OWNER_TABLE: OwnerTable = Object.freeze({ table: 'users', column: 'identifier' });
-
-/**
- * **There is deliberately no "join the framework's character table" helper here**, and the
- * reason is worth keeping (MICA-197).
- *
- * The obvious way to put a name beside a row is a `LEFT JOIN` onto `ownerTable()`. It was
- * written that way first, and a throwaway MariaDB 11.8 loaded with `gphone.esx.sql` plus a
- * stock es_extended `users` refused it outright: MySQL errno 1267, *Illegal mix of
- * collations*. `schemaSql.TABLE_COLLATION` pins every gPhone column to `utf8mb4_unicode_ci`
- * while `users.identifier` takes the server default, which from MariaDB 11.4 is
- * `utf8mb4_uca1400_ai_ci` — and a **column-to-column** comparison, unlike one against a bound
- * parameter, has no coercible side to settle on.
- *
- * That is exactly the hazard `collationCheck.ts` was written for in MICA-157, and its
- * reasoning explicitly exempts ESX: no `players` table, no foreign key, nothing to check. A
- * join would have quietly reintroduced the requirement on the one install path nothing
- * verifies it on.
- *
- * `COLLATE` in the join condition makes the statement legal and stops the index on
- * `users.identifier` being usable, which trades a correctness bug for a full scan of the
- * framework's character table on every read. So the lookups here compare against **bound
- * parameters** instead — `findOfflineByCitizenIds` below — which are collation-coercible and
- * index-friendly, and `PlayerDirectory` is the one place a name comes from.
- */
-
-/**
- * What a framework's own records say about a player, online or not.
- *
- * Names are separate rather than pre-joined because the two frameworks store them
- * differently — qb inside a `charinfo` JSON column, ESX as two columns — and joining them is
- * the caller's presentation decision. `phone` is nullable because on ESX it is genuinely
- * absent from core.
- */
-export interface FrameworkIdentity {
-  citizenid: string;
-  firstname: string | null;
-  lastname: string | null;
-  phone: string | null;
-}
 
 /**
  * Which framework is answering for this server **right now** — and the third answer.
@@ -1068,127 +124,65 @@ export interface FrameworkIdentity {
  * other. `unknown` is unchanged in every other respect: with the convar unset and no
  * framework, this still answers `unknown`, and `usesEsx`'s truth table is untouched.
  */
-export type FrameworkKind = 'qb' | 'esx' | 'standalone' | 'unknown';
+export const detectFramework = (): FrameworkKind => activeAdapter()?.kind ?? 'unknown';
 
-export const detectFramework = (): FrameworkKind => {
-  const framework: Exclude<FrameworkKind, 'standalone'> =
-    exposes('qbx_core', 'GetPlayer') || exposes('qb-core', 'GetCoreObject')
-      ? 'qb'
-      : esxCore() !== null
-        ? 'esx'
-        : 'unknown';
+/**
+ * The adapter an **offline read** should use.
+ *
+ * `unknown` falls through to qb, which is what the branch chain this replaces did: with no
+ * framework detected it ran the `players` query, and doing so on a box that has no such
+ * table is harmless — `offlineLookup` degrades it to "no name" and says so once. Only the
+ * *destructive* caller distinguishes the third state, and that one asks `ownerTable`.
+ */
+const offlineAdapter = (): FrameworkAdapter => activeAdapter() ?? qbAdapter;
 
-  if (!standaloneRequested()) return framework;
-
-  if (framework !== 'unknown') {
-    reportStandaloneConflict(framework);
-    return framework;
+/**
+ * The adapter that can serve one particular call, or `null`.
+ *
+ * **Selection is per method, not per server, and that is what the code this replaces did.**
+ * `getPlayer` probed `qbx_core.GetPlayer`, `getAllPlayers` probed `qbx_core.GetQBPlayers`, and
+ * `registerUsableItem` probed `qbx_core.CreateUseableItem` — three different exports, each
+ * asked for immediately before it was called. A FiveM resource exposes each of its exports
+ * independently, so a build offering one and not another has to keep falling through to the
+ * next core exactly as it always has; `FrameworkBridge.test.ts` pins that with a qbx fake that
+ * exposes only `GetQBPlayers`.
+ *
+ * Standalone is asked last **and only when it is genuinely the verdict**. `standaloneAdapter`
+ * would otherwise claim every call the moment the convar is set, including on a server with a
+ * framework running — which is the misconfiguration `reportStandaloneConflict` refuses. This
+ * is the `detectFramework() === 'standalone'` guard that stood at the end of each old chain,
+ * written once.
+ */
+const serving = (can: (adapter: FrameworkAdapter) => boolean): FrameworkAdapter | null => {
+  for (const adapter of FRAMEWORK_ADAPTERS) {
+    if (can(adapter)) return adapter;
   }
-
-  return 'standalone';
+  return detectFramework() === 'standalone' && can(standaloneAdapter) ? standaloneAdapter : null;
 };
 
 /**
- * Is es_extended the framework answering for this server?
+ * **There is deliberately no "join the framework's character table" helper here**, and the
+ * reason is worth keeping (MICA-197).
  *
- * A qb core wins when both are installed, matching `getPlayer`: a live server does not change
- * which string it calls a citizenid on the strength of a second resource being present. With
- * no framework at all this is false, so the offline lookups below fall through to the qb
- * query — which is what they did before ESX existed, and what keeps a frameworkless test
- * behaving as it always has.
+ * The obvious way to put a name beside a row is a `LEFT JOIN` onto `ownerTable()`. It was
+ * written that way first, and a throwaway MariaDB 11.8 loaded with `gphone.esx.sql` plus a
+ * stock es_extended `users` refused it outright: MySQL errno 1267, *Illegal mix of
+ * collations*. `schemaSql.TABLE_COLLATION` pins every gPhone column to `utf8mb4_unicode_ci`
+ * while `users.identifier` takes the server default, which from MariaDB 11.4 is
+ * `utf8mb4_uca1400_ai_ci` — and a **column-to-column** comparison, unlike one against a bound
+ * parameter, has no coercible side to settle on.
  *
- * Expressed through `detectFramework` so there is one detection rather than two that can
- * disagree. The truth table is unchanged: `unknown` reads as "not ESX" here exactly as it
- * always did, because falling through to the qb query is the harmless answer for a *read*.
- * Only the destructive caller distinguishes the third state.
+ * That is exactly the hazard `collationCheck.ts` was written for in MICA-157, and its
+ * reasoning explicitly exempts ESX: no `players` table, no foreign key, nothing to check. A
+ * join would have quietly reintroduced the requirement on the one install path nothing
+ * verifies it on.
  *
- * **`standalone` reads as "not ESX" too, and that is not enough on its own** — the offline
- * lookups below check for it separately, because falling through to the qb `players` query
- * is only harmless where that table might exist. On standalone it certainly does not, and a
- * query against a missing table is an exception on a path that is only trying to render a
- * name. `offlineLookup` would swallow it, but once per resource start it would also print a
- * broken-table warning for a table that was never supposed to be there.
+ * `COLLATE` in the join condition makes the statement legal and stops the index on
+ * `users.identifier` being usable, which trades a correctness bug for a full scan of the
+ * framework's character table on every read. So the lookups here compare against **bound
+ * parameters** instead — `findOfflineByCitizenIds` below — which are collation-coercible and
+ * index-friendly, and `PlayerDirectory` is the one place a name comes from.
  */
-const usesEsx = (): boolean => detectFramework() === 'esx';
-
-/**
- * Is this server running with no framework at all, because its operator said so?
- *
- * The twin of `usesEsx`, and it exists for the same reason: one detection rather than two
- * that can disagree. Unlike `usesEsx` it is asked by the *offline* lookups as well, because
- * "not ESX" is not a safe stand-in for "query the qb `players` table" here — see the note on
- * `usesEsx`.
- */
-const usesStandalone = (): boolean => detectFramework() === 'standalone';
-
-const trimmedOrNull = (value: unknown): string | null => {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
-
-/**
- * `charinfo` comes back as a string from some drivers and an object from others, depending on
- * whether the column is `json` or `text` and on how oxmysql was configured. Both shapes reach
- * here, so both are handled rather than one being assumed — the same reason `Photos` coerces
- * its `image` column on the way out.
- */
-const parseCharinfo = (raw: unknown): Record<string, unknown> | null => {
-  if (raw && typeof raw === 'object') return raw as Record<string, unknown>;
-  if (typeof raw !== 'string') return null;
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-};
-
-const identityFromCharinfo = (citizenid: string, raw: unknown): FrameworkIdentity => {
-  const charinfo = parseCharinfo(raw);
-  return {
-    citizenid,
-    firstname: trimmedOrNull(charinfo?.firstname),
-    lastname: trimmedOrNull(charinfo?.lastname),
-    phone: trimmedOrNull(charinfo?.phone)
-  };
-};
-
-/**
- * An offline lookup that answers nothing rather than throwing.
- *
- * These read another resource's table, which gPhone neither creates nor migrates. The column
- * may be absent, the table may be absent, and on ESX the whole shape is a different framework
- * away — so a query here can fail for reasons that are not bugs in gPhone and must not become
- * an exception on a path that is only ever trying to render a name.
- *
- * Returning null degrades to exactly the pre-existing behaviour: an offline player with no
- * display name. That is a worse phone and a working one, where a throw would take down the
- * conversation being created around it. Logged once per distinct failure so a server owner
- * with a genuinely broken table is not left guessing.
- */
-const offlineLookupFailures = new Set<string>();
-
-const offlineLookup = async <T>(what: string, run: () => Promise<T | null>): Promise<T | null> => {
-  try {
-    return await run();
-  } catch (error) {
-    if (!offlineLookupFailures.has(what)) {
-      offlineLookupFailures.add(what);
-      console.error(
-        `[FrameworkBridge] ${what} failed. Offline players will render without a name until ` +
-          `this is fixed; nothing else is affected. Reported once per resource start.`,
-        error
-      );
-    }
-    return null;
-  }
-};
-
-/** Test seam, like `__setResourceLookup`. */
-export const __resetOfflineLookupWarnings = (): void => {
-  offlineLookupFailures.clear();
-};
 
 /* ──────────────────────────────────────────────────────────────────────────────
  * Who is online, without asking the framework every time (MICA-197)
@@ -1263,96 +257,21 @@ export class FrameworkBridge {
    * know", never as "there are no characters" — see `orphanSweep.ts`.
    */
   public static ownerTable(): OwnerTable | null {
-    switch (detectFramework()) {
-      case 'qb':
-        return QB_OWNER_TABLE;
-      case 'esx':
-        return ESX_OWNER_TABLE;
-      /**
-       * Standalone has no character table at all — gPhone is the only thing that knows a
-       * player exists — so there is nothing for the sweep to compare a citizenid against and
-       * it must skip. Spelled out rather than left to `default` because the two `null`s mean
-       * different things: `unknown` is "I cannot tell yet, come back later", and this is
-       * "there is nothing here to tell". Both must skip, and the reason a caller must never
-       * substitute a default for either is the same — `orphanSweep.ts` deletes on the
-       * strength of this answer, and a `players` table left over from a previous install
-       * would make every standalone row look unowned.
-       */
-      case 'standalone':
-        return null;
-      default:
-        return null;
-    }
+    return activeAdapter()?.ownerTable() ?? null;
   }
 
   /**
    * The framework's record of a player who may be offline, by citizenid.
    *
    * Behind the bridge rather than in `PlayerDirectory` because it is a framework question:
-   * qb keeps players in `players(citizenid)` with a `charinfo` JSON column, ESX keeps them in
-   * `users(identifier)` with `firstname`/`lastname` columns, and every other framework will
-   * keep them somewhere else again. `PlayerDirectory` asks who somebody is; this knows where
-   * to look.
-   *
-   * **ESX reads es_extended's own core `users` table and nothing else.** A phone number is
-   * not in it — that belongs to whichever community resource an operator installed — so ESX
-   * answers `phone: null` here rather than adopting one project's schema and being wrong for
-   * everyone who chose another.
+   * qb keeps players in `players(citizenid)` with a `charinfo` JSON column, ESX keeps them
+   * in `users(identifier)` with `firstname`/`lastname` columns, standalone keeps only the
+   * number gPhone itself issued, and every other framework will keep them somewhere else
+   * again. `PlayerDirectory` asks who somebody is; the adapter knows where to look.
    */
   public static async findOfflineByCitizenId(citizenid: string): Promise<FrameworkIdentity | null> {
     if (!citizenid) return null;
-
-    /**
-     * **Standalone has no framework record, so gPhone's own is the record.** There is no
-     * `players` and no `users` to read — which is why this comes ahead of the ESX branch,
-     * so the qb query below is never reached on a schema that has no such table — but there
-     * *is* a number, because `services/PhoneNumbers.ts` issued it.
-     *
-     * The name is null and stays null, deliberately. `GetPlayerName` answers only for a
-     * connected client, and this lookup exists precisely for players who are not; inventing
-     * a name from the last one seen would be a cache pretending to be a record. So an
-     * offline standalone player renders as a number without a name, which is what a phone
-     * with an unknown contact does anyway.
-     *
-     * Null when they have no number: on a standalone server a citizenid gPhone has never
-     * issued a number to is a player gPhone has no record of at all.
-     */
-    if (usesStandalone()) {
-      return await offlineLookup('the standalone phone-number lookup by citizenid', async () => {
-        const phone = await readNumber(citizenid);
-        if (!phone) return null;
-        return { citizenid, firstname: null, lastname: null, phone };
-      });
-    }
-
-    if (usesEsx()) {
-      return await offlineLookup('the es_extended `users` lookup by identifier', async () => {
-        const row = await Database.single<{
-          identifier: string;
-          firstname: unknown;
-          lastname: unknown;
-        }>('SELECT identifier, firstname, lastname FROM users WHERE identifier = ? LIMIT 1', [
-          citizenid
-        ]);
-        if (!row?.identifier) return null;
-        return {
-          citizenid: row.identifier,
-          firstname: trimmedOrNull(row.firstname),
-          lastname: trimmedOrNull(row.lastname),
-          // Not in core ESX. See the note above.
-          phone: null
-        };
-      });
-    }
-
-    return await offlineLookup('the `players` lookup by citizenid', async () => {
-      const row = await Database.single<{ citizenid: string; charinfo: unknown }>(
-        'SELECT citizenid, charinfo FROM players WHERE citizenid = ? LIMIT 1',
-        [citizenid]
-      );
-      if (!row?.citizenid) return null;
-      return identityFromCharinfo(row.citizenid, row.charinfo);
-    });
+    return await offlineAdapter().findOfflineByCitizenId(citizenid);
   }
 
   /**
@@ -1360,247 +279,45 @@ export class FrameworkBridge {
    *
    * `findOfflineByCitizenId` is a `LIMIT 1` read, so anything rendering a list of people —
    * a conversation's participants, a leaderboard's ten rows — paid one round trip per name.
-   * Same three framework branches, same frozen table and column literals, one `IN (…)`.
    *
    * Returned as a map rather than an array so a caller can ask about somebody the framework
    * has no record of and get the same "not found" a single lookup gives, rather than having
    * to match rows back up by position.
+   *
+   * **Bound parameters, never a join.** Putting the name beside a row with a `LEFT JOIN`
+   * onto the character table looks obviously right and is not: gPhone pins every column to
+   * `utf8mb4_unicode_ci` and es_extended's `users.identifier` takes the server default,
+   * which from MariaDB 11.4 is `utf8mb4_uca1400_ai_ci`. A column-to-column comparison
+   * across two collations is MySQL errno 1267 — verified against a throwaway MariaDB 11.8
+   * loaded with `gphone.esx.sql` — where a comparison against a parameter has a coercible
+   * side and settles. `collationCheck.ts` (MICA-157) exists for that hazard and
+   * explicitly exempts ESX on the grounds that nothing there joins to `users`. This is what
+   * keeps that true.
    */
   public static async findOfflineByCitizenIds(
     citizenids: readonly string[]
   ): Promise<Map<string, FrameworkIdentity>> {
-    const found = new Map<string, FrameworkIdentity>();
-
     const wanted = [...new Set(citizenids.filter(Boolean))];
-    if (wanted.length === 0) return found;
-
-    // Every one of these is a bound parameter; only the table and column names are
-    // interpolated, and those come from the frozen literals above (§2.9).
-    const placeholders = wanted.map(() => '?').join(', ');
-
-    if (usesStandalone()) {
-      // gPhone's own table is the record here — see `findOfflineByCitizenId`'s note. The
-      // name stays null for the reason it gives: `GetPlayerName` answers only for a
-      // connected client, and inventing one from the last seen would be a cache pretending
-      // to be a record.
-      await offlineLookup('the standalone phone-number lookup by citizenid', async () => {
-        const rows = await Database.query<{ citizenid: string; number: string }[]>(
-          `SELECT \`citizenid\`, \`number\` FROM \`${PHONE_NUMBERS_TABLE}\`
-           WHERE \`citizenid\` IN (${placeholders})`,
-          [...wanted]
-        );
-        for (const row of rows) {
-          if (!row?.citizenid) continue;
-          found.set(row.citizenid, {
-            citizenid: row.citizenid,
-            firstname: null,
-            lastname: null,
-            phone: row.number ?? null
-          });
-        }
-        return null;
-      });
-      return found;
-    }
-
-    if (usesEsx()) {
-      await offlineLookup('the es_extended `users` lookup by identifier', async () => {
-        const rows = await Database.query<
-          { identifier: string; firstname: unknown; lastname: unknown }[]
-        >(
-          `SELECT ${ESX_OWNER_TABLE.column}, firstname, lastname FROM ${ESX_OWNER_TABLE.table}
-           WHERE ${ESX_OWNER_TABLE.column} IN (${placeholders})`,
-          [...wanted]
-        );
-        for (const row of rows) {
-          if (!row?.identifier) continue;
-          found.set(row.identifier, {
-            citizenid: row.identifier,
-            firstname: trimmedOrNull(row.firstname),
-            lastname: trimmedOrNull(row.lastname),
-            // Not in core ESX. See `findOfflineByCitizenId`.
-            phone: null
-          });
-        }
-        return null;
-      });
-      return found;
-    }
-
-    await offlineLookup('the `players` lookup by citizenid', async () => {
-      const rows = await Database.query<{ citizenid: string; charinfo: unknown }[]>(
-        `SELECT ${QB_OWNER_TABLE.column}, charinfo FROM ${QB_OWNER_TABLE.table}
-         WHERE ${QB_OWNER_TABLE.column} IN (${placeholders})`,
-        [...wanted]
-      );
-      for (const row of rows) {
-        if (!row?.citizenid) continue;
-        found.set(row.citizenid, identityFromCharinfo(row.citizenid, row.charinfo));
-      }
-      return null;
-    });
-
-    return found;
+    if (wanted.length === 0) return new Map();
+    return await offlineAdapter().findOfflineByCitizenIds(wanted);
   }
 
   /**
    * The same, by phone number.
    *
-   * **ESX cannot answer this, and says so by answering nothing.** Core `users` has no phone
-   * column, so there is nothing to match on; guessing at `esx_phone`'s or another resource's
-   * table would be right for one server population and silently wrong for the rest. The
-   * caller already handles null — an offline player is simply not found — which is the same
-   * outcome as an unknown number.
+   * ESX answers nothing here and says so by answering nothing: core `users` has no phone
+   * column, so there is nothing to match on, and guessing at another resource's table would
+   * be right for one server population and silently wrong for the rest. Standalone answers
+   * it best of all, because gPhone issued the number itself.
    */
   public static async findOfflineByPhone(phone: string): Promise<FrameworkIdentity | null> {
     if (!phone) return null;
-
-    /**
-     * **Standalone can answer this, and it is the only framework that can answer it well.**
-     * gPhone issued the number itself, so the reverse lookup is a query against a table it
-     * owns rather than a guess at somebody else's schema — which is exactly why ESX below
-     * cannot: core `users` has no phone column, and picking one community resource's table
-     * would be right for one server population and silently wrong for the rest.
-     *
-     * This is what lets a standalone player start a conversation with, or dial, somebody who
-     * is offline. Without it they could only reach players who happened to be connected.
-     */
-    if (usesStandalone()) {
-      return await offlineLookup('the standalone phone-number lookup by number', async () => {
-        const citizenid = await readCitizenIdByNumber(phone);
-        if (!citizenid) return null;
-        return { citizenid, firstname: null, lastname: null, phone };
-      });
-    }
-
-    if (usesEsx()) return null;
-
-    return await offlineLookup('the `players` lookup by phone number', async () => {
-      const row = await Database.single<{ citizenid: string; charinfo: unknown }>(
-        `SELECT citizenid, charinfo FROM players
-     WHERE JSON_UNQUOTE(JSON_EXTRACT(charinfo, '$.phone')) = ?
-     LIMIT 1`,
-        [phone]
-      );
-      if (!row?.citizenid) return null;
-      return identityFromCharinfo(row.citizenid, row.charinfo);
-    });
+    return await offlineAdapter().findOfflineByPhone(phone);
   }
 
   public static getPlayer(src: number): FrameworkPlayer | null {
     try {
-      // QBX Core
-      if (exposes('qbx_core', 'GetPlayer')) {
-        const player = resource('qbx_core').GetPlayer(src);
-        if (!player) return null;
-        const citizenid = player.PlayerData?.citizenid || player.citizenid;
-        if (!citizenid) return unidentified(src, 'qbx_core');
-        const phone = player.PlayerData?.charinfo?.phone || null;
-        return {
-          citizenid,
-          source: src,
-          phone,
-          getMoney: (type: 'bank' | 'cash') => {
-            if (player.Functions?.GetMoney)
-              return balanceOf(player.Functions.GetMoney(type), 'GetMoney', src);
-            if (resource('qbx_core')?.GetMoney)
-              return balanceOf(resource('qbx_core').GetMoney(src, type), 'qbx_core.GetMoney', src);
-            // The player table, which is data rather than a call, and just as capable of
-            // holding a string where a number is declared.
-            return balanceOf(player.PlayerData?.money?.[type] ?? 0, 'PlayerData.money', src);
-          },
-          removeMoney: (type: 'bank' | 'cash', amount: number) => {
-            if (player.Functions?.RemoveMoney)
-              return moved(player.Functions.RemoveMoney(type, amount), 'RemoveMoney', src);
-            return false;
-          },
-          addMoney: (type: 'bank' | 'cash', amount: number) => {
-            if (player.Functions?.AddMoney)
-              return moved(player.Functions.AddMoney(type, amount), 'AddMoney', src);
-            if (resource('qbx_core')?.AddMoney)
-              return moved(
-                resource('qbx_core').AddMoney(src, type, amount),
-                'qbx_core.AddMoney',
-                src
-              );
-            return false;
-          },
-          setMeta: (key: string, value: any) => {
-            if (player.Functions?.SetMetaData) {
-              player.Functions.SetMetaData(key, value);
-            } else if (player.PlayerData?.metadata) {
-              player.PlayerData.metadata[key] = value;
-            }
-            try {
-              if (resource('qbx_core')?.SetMetaData) {
-                resource('qbx_core').SetMetaData(src, key, value);
-              }
-            } catch {
-              // ignore
-            }
-          },
-          removeItem: (item: string, count: number) => {
-            return FrameworkBridge.removeInventoryItem(src, player, item, count);
-          },
-          rawPlayer: player
-        };
-      }
-
-      // QB Core
-      if (exposes('qb-core', 'GetCoreObject')) {
-        const QBCore = resource('qb-core').GetCoreObject();
-        const player = QBCore?.Functions?.GetPlayer ? QBCore.Functions.GetPlayer(src) : null;
-        if (!player) return null;
-        const citizenid = player.PlayerData?.citizenid;
-        if (!citizenid) return unidentified(src, 'qb-core');
-        const phone = player.PlayerData?.charinfo?.phone || null;
-        return {
-          citizenid,
-          source: src,
-          phone,
-          getMoney: (type: 'bank' | 'cash') =>
-            player.Functions?.GetMoney
-              ? balanceOf(player.Functions.GetMoney(type), 'GetMoney', src)
-              : balanceOf(player.PlayerData?.money?.[type] ?? 0, 'PlayerData.money', src),
-          removeMoney: (type: 'bank' | 'cash', amount: number) =>
-            player.Functions?.RemoveMoney
-              ? moved(player.Functions.RemoveMoney(type, amount), 'RemoveMoney', src)
-              : false,
-          addMoney: (type: 'bank' | 'cash', amount: number) =>
-            player.Functions?.AddMoney
-              ? moved(player.Functions.AddMoney(type, amount), 'AddMoney', src)
-              : false,
-          setMeta: (key: string, value: any) => {
-            if (player.Functions?.SetMetaData) {
-              player.Functions.SetMetaData(key, value);
-            } else if (player.PlayerData?.metadata) {
-              player.PlayerData.metadata[key] = value;
-            }
-          },
-          removeItem: (item: string, count: number) => {
-            return FrameworkBridge.removeInventoryItem(src, player, item, count);
-          },
-          rawPlayer: player
-        };
-      }
-
-      // ESX. Last, so a server running a qb core and es_extended side by side keeps the
-      // identity it already has rows under — switching a live server's citizenid scheme is a
-      // data migration, not a fallback.
-      const esx = esxCore();
-      if (esx?.GetPlayerFromId) {
-        return esxFrameworkPlayer(esx.GetPlayerFromId(src), src);
-      }
-
-      /**
-       * Standalone, last of all — and only reached when neither core answered, which is the
-       * cheap ordering as well as the correct one: a server with a framework never pays for
-       * the convar read. `detectFramework` is what decides, so the misconfiguration case
-       * (convar set, framework present) has already been refused above by the branches that
-       * ran first, and is refused here too because `detectFramework` would not answer
-       * `standalone` for it.
-       */
-      if (detectFramework() === 'standalone') return standaloneFrameworkPlayer(src);
+      return serving((adapter) => adapter.canGetPlayer())?.getPlayer(src) ?? null;
     } catch (error) {
       console.error('[FrameworkBridge] Error getting player:', error);
     }
@@ -1617,24 +334,16 @@ export class FrameworkBridge {
     return player?.phone || null;
   }
 
+  /**
+   * Every connected player, keyed by source, in the qb shape.
+   *
+   * ESX and standalone records are normalised into that shape by their own adapters, so the
+   * five callers of this outside `server/lib/framework/` — `proximity.ts`, `appEvents.ts`,
+   * `Signal.ts`, `Mail.ts` and `Music.ts` — need no framework check of their own.
+   */
   public static getAllPlayers(): Record<string | number, any> {
     try {
-      if (exposes('qbx_core', 'GetQBPlayers')) {
-        return resource('qbx_core').GetQBPlayers() || {};
-      } else if (exposes('qb-core', 'GetCoreObject')) {
-        const QBCore = resource('qb-core').GetCoreObject();
-        return QBCore?.Functions?.GetQBPlayers ? QBCore.Functions.GetQBPlayers() : {};
-      }
-
-      // ESX records are normalised into the qb shape by `esxView`, so the five callers of
-      // this outside `FrameworkBridge` need no framework check of their own.
-      const esx = esxCore();
-      if (esx) return esxAllPlayers(esx);
-
-      // Standalone records are normalised into the qb shape by `standaloneView`, exactly as
-      // ESX's are, so the five callers of this outside `FrameworkBridge` need no framework
-      // check of their own.
-      if (detectFramework() === 'standalone') return standaloneAllPlayers();
+      return serving((adapter) => adapter.canListPlayers())?.getAllPlayers() ?? {};
     } catch (error) {
       console.error('[FrameworkBridge] Error fetching all players:', error);
     }
@@ -1768,55 +477,36 @@ export class FrameworkBridge {
     return null;
   }
 
+  /**
+   * Consume an item through whatever inventory this server has.
+   *
+   * The body moved to `framework/runtime.ts`, because three adapters call it and an adapter
+   * reaching back into the class that selects it would close a runtime cycle. The static
+   * stays here: it is part of the public surface, and `client/lib/FrameworkBridge.ts` has a
+   * twin of it.
+   */
   public static removeInventoryItem(
     src: number,
     player: any,
     item: string,
     count: number
   ): boolean {
-    if (player?.Functions?.RemoveItem) {
-      return player.Functions.RemoveItem(item, count);
-    }
-    try {
-      if (resource('ox_inventory')?.RemoveItem) {
-        return resource('ox_inventory').RemoveItem(src, item, count);
-      }
-    } catch {
-      // ox_inventory not present
-    }
-
-    // Deliberate fail-open, said out loud. A server with a framework but no recognized
-    // inventory gets the item's effect without the item being consumed; the alternative
-    // is a consumable that silently never works. A silent `return true` here reads as
-    // "removed" to every caller, which is the same lie `shareContact` used to tell.
-    console.warn(
-      `[FrameworkBridge] No inventory resource could remove '${item}' for source ${src}. ` +
-        `Allowing the action anyway — the item was not consumed.`
-    );
-    return true;
+    return removeItemThroughInventory(src, player, item, count);
   }
 
+  /**
+   * Register a usable item with whatever framework is here — which may be nothing.
+   *
+   * Each adapter answers whether it actually registered. The frameworkless case is
+   * `standaloneAdapter`'s, and it is the one that turns "nothing to register with" into a
+   * line saying what the operator loses rather than returning quietly, which reads exactly
+   * like a registration that worked.
+   */
   public static registerUsableItem(item: string, cb: (source: number) => void): void {
     try {
-      if (exposes('qbx_core', 'CreateUseableItem')) {
-        resource('qbx_core').CreateUseableItem(item, cb);
-      } else if (exposes('qb-core', 'GetCoreObject')) {
-        const QBCore = resource('qb-core').GetCoreObject();
-        if (QBCore?.Functions?.CreateUseableItem) {
-          QBCore.Functions.CreateUseableItem(item, cb);
-        }
-      } else {
-        // `ESX.RegisterUsableItem(item, cb)` — same contract, one name over.
-        const esx = esxCore();
-        if (esx?.RegisterUsableItem) {
-          esx.RegisterUsableItem(item, cb);
-        } else if (detectFramework() === 'standalone') {
-          // No framework means no `CreateUseableItem`. `standaloneRegisterUsableItem` asks
-          // ox_inventory and, failing that, says once what the operator loses — rather than
-          // returning quietly, which reads exactly like a registration that worked.
-          standaloneRegisterUsableItem(item, cb);
-        }
-      }
+      // The predicate registers: `serving` walks the adapters in order and stops at the
+      // first that says it handled it, which is the chain the old else-if ladder was.
+      serving((adapter) => adapter.registerUsableItem(item, cb));
     } catch (error) {
       console.error(`[FrameworkBridge] Framework item registration skipped for '${item}':`, error);
     }
