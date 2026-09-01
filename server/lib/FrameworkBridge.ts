@@ -231,12 +231,6 @@ const citizenBySource = new Map<number, string>();
  * now pays one when anybody in it is offline and none when everybody is loaded.
  */
 
-/** Test seam, like `__setResourceLookup`. */
-export const __resetSourceRegistry = (): void => {
-  sourceByCitizen.clear();
-  citizenBySource.clear();
-};
-
 export class FrameworkBridge {
   /**
    * Where this server keeps the characters gPhone's rows belong to — or `null`.
