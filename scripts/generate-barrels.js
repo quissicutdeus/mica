@@ -107,6 +107,22 @@ ${lines}
 const generateFxManifest = () => {
   const pkgPath = path.resolve(__dirname, '..', 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+  // npm allows `repository` as a plain URL string or as `{ type, url }`; the manifest
+  // wants the URL either way, and an absent field must not print as 'undefined'.
+  const repository =
+    typeof pkg.repository === 'string' ? pkg.repository : (pkg.repository?.url ?? '');
+  for (const [field, value] of Object.entries({
+    author: pkg.author,
+    version: pkg.version,
+    license: pkg.license,
+    description: pkg.description,
+    repository
+  })) {
+    if (!value)
+      throw new Error(
+        `generate-barrels: package.json has no usable '${field}' for fxmanifest.lua.`
+      );
+  }
 
   const manifest = `fx_version 'cerulean'
 game 'gta5'
@@ -115,7 +131,7 @@ author '${pkg.author}'
 version '${pkg.version}'
 license '${pkg.license}'
 description '${pkg.description}'
-repository '${pkg.repository}'
+repository '${repository}'
 
 lua54 'yes'
 node_version '22'

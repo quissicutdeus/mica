@@ -3,17 +3,33 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Verify that workflow actions are pinned to commit SHAs and check for newer majors.
+ * Every workflow action is pinned to a commit SHA, and none has fallen a major behind.
  *
- * Every `uses:` must be a full 40-hex commit SHA (with a version comment for reference).
- * This enforces supply-chain security: a moving tag like `@v7` can be force-pushed to point
- * at a different commit, which is a privilege escalation if that commit is malicious. SHA
- * pins are immutable.
+ * Two checks, in that order. A `uses:` must be a full 40-hex commit SHA with the version
+ * it was resolved from in a trailing comment (`@3d3c42e... # v7`). A `@v7` tag is a
+ * moving target -- GitHub re-points it at every v7.x release, and whoever can push to the
+ * action's repository can re-point it at anything -- so a tag is trust in a maintainer's
+ * account for as long as the workflow runs, where a SHA is trust in one reviewed commit
+ * (MICA-199). Then, from the comment, the script asks whether a newer MAJOR exists.
+ * Only the major, deliberately: drift inside a major is what the SHA pin exists to hold
+ * still, and drift across one is where a runtime deprecation lands.
  *
- * For any tag ref found (recovered from the comment), the script also reports whether a
- * newer major exists, so upgrades are deliberate and planned.
+ * `.github/dependabot.yml` used to watch the majors and was deleted -- every merge of one
+ * of its pull requests put dependabot[bot] in the repository's contributor list, which is
+ * not a trade worth making for a weekly bump. Renovate was considered for the SHA pins and
+ * not adopted for the same reason. This script opens no pull request and authors no
+ * commit; a bump is a human reading the release notes and resolving the tag by hand
+ * (`gh api repos/<owner>/<repo>/git/ref/tags/<tag>`, dereferencing an annotated tag once).
  *
- *   node scripts/check-action-versions.js            fail if SHAs are not pinned or a newer major exists
+ * It FAILS on anything it could not judge rather than passing quietly: a pin with no
+ * version comment, a comment that is not a `vN` tag, a rate limit, a network error. A
+ * version check that cannot reach the API and says nothing reads as "everything is
+ * current", which is the worst answer it could give -- so those are an exit code, not a
+ * warning. What it cannot see is whether the SHA is a real commit of that repository;
+ * `actions/checkout` refuses to resolve one that is not, so a fabricated pin fails the
+ * first workflow run that reaches it, loudly.
+ *
+ *   node scripts/check-action-versions.js            fail on an unpinned ref or a newer major
  *   node scripts/check-action-versions.js --list      print findings, always exit 0
  *   node scripts/check-action-versions.js --dir=DIR   scan DIR instead, to prove it fires
  *
@@ -129,17 +145,19 @@ for (const [repo, { refs, files }] of [...pins].sort()) {
       continue;
     }
 
-    // Extract the version tag from the comment (e.g., "v7" from "v7")
-    if (!comment) {
-      // No version comment, can't check for newer majors but the SHA is still pinned
-      current.push({ repo, ref, latest: '(no comment)' });
-      continue;
-    }
-
-    const version = comment.trim();
+    // The comment is the only record of which tag the SHA came from. Without it the
+    // major check has nothing to compare, and "could not check" is a failure here, not a
+    // pass -- see the docblock.
+    const version = (comment ?? '').trim();
     const pinned = VTAG.exec(version);
     if (!pinned) {
-      current.push({ repo, ref, latest: version });
+      unresolved.push({
+        repo,
+        ref,
+        version,
+        where,
+        why: version ? `comment '${version}' is not a vN tag` : 'no version comment after the SHA'
+      });
       continue;
     }
 

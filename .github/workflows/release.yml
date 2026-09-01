@@ -78,38 +78,36 @@ jobs:
         if: steps.tag.outputs.skip == ''
         run: node scripts/pack-release.js "${{ steps.tag.outputs.tag }}"
 
-      # Lint the tarballs before attaching: publint checks package.json and publishes,
-      # @arethetypeswrong checks TypeScript declaration files and type export quality.
-      - name: Lint the SDK tarball
+      # Lint both tarballs before anything is attached, so a broken `exports` map or a
+      # `files` list that dropped a directory fails here rather than at an add-on author's
+      # first install. `pnpm dlx` because this job has no node_modules (see above).
+      #
+      # publint only. @arethetypeswrong/cli was tried and reports an internal resolution
+      # error on every JavaScript entrypoint: the SDK ships TypeScript and Svelte source
+      # for a bundler to consume, and attw models Node resolving declaration files, which
+      # cannot follow a `.svelte` import. The type surface is gated by
+      # `sdk/publicSurface.test.ts` (MICA-182, MICA-185) instead.
+      - name: Lint the tarballs
         if: steps.tag.outputs.skip == ''
         run: |
           pnpm dlx publint dist/release/gphone-sdk-*.tgz
-          pnpm dlx @arethetypeswrong/cli dist/release/gphone-sdk-*.tgz
+          pnpm dlx publint dist/release/gphone-shared-*.tgz
 
-      # Build the resource zip alongside the tarballs
-      - name: Build resource zip
-        if: steps.tag.outputs.skip == ''
-        run: |
-          cd dist
-          zip -r gphone-${{ steps.tag.outputs.tag }}.zip server client web fxmanifest.lua
-
-      # Generate SHA256SUMS for all release assets
+      # A checksum file beside the tarballs, and a signed provenance attestation over them
+      # (`gh attestation verify <tgz> --repo <owner>/<repo>` checks it). Both cover the
+      # tarballs only: this job never builds the resource, so there is no resource zip to
+      # attest -- the built resource is what `deploy.yml` ships, not a release asset.
       - name: Generate SHA256SUMS
         if: steps.tag.outputs.skip == ''
         run: |
           cd dist/release
           sha256sum *.tgz > SHA256SUMS
-          cd ../..
-          sha256sum dist/gphone-${{ steps.tag.outputs.tag }}.zip >> dist/release/SHA256SUMS
 
-      # Attest the provenance of the release artifacts
       - name: Attest build provenance
         if: steps.tag.outputs.skip == ''
-        uses: actions/attest-build-provenance@6ff72bcc5d42a3a4c4cbee4db54f749b999d82fe # v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
-          subject-path: |
-            dist/release/gphone-sdk-*.tgz
-            dist/gphone-${{ steps.tag.outputs.tag }}.zip
+          subject-path: dist/release/*.tgz
 
       # Draft, then attach, then publish — and every part of that order is load-bearing.
       #
@@ -134,8 +132,7 @@ jobs:
             --title "${{ steps.tag.outputs.tag }}" \
             --generate-notes \
             dist/release/*.tgz \
-            dist/release/SHA256SUMS \
-            dist/gphone-${{ steps.tag.outputs.tag }}.zip
+            dist/release/SHA256SUMS
 
       # Separate step so a failure here is legible as "the assets are on, publishing failed"
       # rather than being buried in the call that did both.

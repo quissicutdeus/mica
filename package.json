@@ -57,6 +57,7 @@
   },
   "author": "quissicutdeus",
   "license": "AGPL-3.0-or-later",
+  "repository": "https://github.com/quissicutdeus/gphone",
   "lint-staged": {
     "*.{ts,svelte,js,json,md,css}": "prettier --write"
   },

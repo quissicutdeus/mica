@@ -5,7 +5,7 @@ author 'quissicutdeus'
 version '1.0.0'
 license 'AGPL-3.0-or-later'
 description 'An open-source TypeScript phone for FiveM'
-repository 'undefined'
+repository 'https://github.com/quissicutdeus/gphone'
 
 lua54 'yes'
 node_version '22'
