@@ -66,10 +66,14 @@ describe('notes:restore (MICA-75)', () => {
     expect(reply).toEqual({ ok: false });
   });
 
-  it('restores under the caller citizenid, never one the payload names', async () => {
-    await call('restore', { id: 5, citizenid: 'CIT_VICTIM' });
+  it('refuses a payload naming a citizenid, rather than quietly ignoring it', async () => {
+    const reply = await call('restore', { id: 5, citizenid: 'CIT_VICTIM' });
 
-    expect(dbMock.update.mock.calls[0][1]).toEqual([5, 'CIT_A', 30]);
+    // The predicate was always the caller's own citizenid, and still is. What changed is
+    // that a payload asking for somebody else's is refused instead of ignored — the request
+    // does not half-succeed with the hostile key dropped out of it.
+    expect(reply).toMatchObject({ error: expect.stringContaining('citizenid') });
+    expect(dbMock.update).not.toHaveBeenCalled();
   });
 
   it('rejects a missing id before touching the database', async () => {
@@ -109,10 +113,11 @@ describe('notes:getDeleted (MICA-75-wiring)', () => {
     expect(params).toEqual(['CIT_A', 30]);
   });
 
-  it('ignores anything the payload claims and uses the caller’s own citizenid', async () => {
-    await call('getDeleted', { citizenid: 'CIT_VICTIM' });
+  it('refuses a payload claiming a citizenid — the list takes no payload at all', async () => {
+    const reply = await call('getDeleted', { citizenid: 'CIT_VICTIM' });
 
-    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', 30]);
+    expect(reply).toMatchObject({ error: expect.stringContaining('payload') });
+    expect(dbMock.query).not.toHaveBeenCalled();
   });
 
   it('is registered alongside restore', () => {

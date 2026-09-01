@@ -28,3 +28,27 @@ export const registerService = (id: string): string => {
 
 /** Every declared service name, table-backed or not. */
 export const knownServices = (): string[] => [...services];
+
+/**
+ * Every custom action registered this process, as `<service>:<action>`.
+ *
+ * "Custom" means it went through `ServiceEndpoint.registerEvent` — a handler somebody wrote —
+ * rather than being one of the four `registerCrudEvents` derives from a column declaration.
+ * That distinction is the whole point of the list: the generic four are validated by the
+ * write allowlist and `columnRules`, and the custom ones are validated by a contract, so
+ * "which actions need a contract entry?" has to be answered by how an action was registered
+ * and never by what it is called. Several services disable the generic `create` and hand-write
+ * their own, and that one is custom.
+ *
+ * Read by `reachability.test.ts` to check the surface in both directions: every custom action
+ * is declared in a contract, and every declared action is registered. A contract entry nobody
+ * registers is the more interesting half — it is an action the web believes it can call.
+ */
+const customActions = new Set<string>();
+
+export const registerCustomAction = (service: string, action: string): void => {
+  customActions.add(`${service}:${action}`);
+};
+
+/** Every `<service>:<action>` a hand-written handler answers. */
+export const registeredCustomActions = (): string[] => [...customActions];

@@ -7,7 +7,8 @@ import { Contact, SharedContactCard } from '@gphone/shared/types';
 import { guardNetEvent } from '../lib/netGuard';
 import { findNearbyVisiblePlayers } from '../lib/proximity';
 import { appEventChannel } from '../lib/appEvents';
-import { fields, requirePositiveInt } from '../lib/payload';
+import { fields } from '../lib/payload';
+import { contactsContract } from '@gphone/shared/contracts/contacts';
 import { resolve as resolvePlayer } from '../lib/PlayerDirectory';
 import { restoreWindowDays } from '../lib/retention';
 
@@ -18,8 +19,9 @@ import { restoreWindowDays } from '../lib/retention';
  * looks contacts up by number and filters the favourites list. Nothing else needs
  * to be, and every filterable column is one more thing a client can probe.
  */
-export const contacts = defineService<Contact>({
+export const contacts = defineService<Contact, typeof contactsContract>({
   id: 'contacts',
+  contract: contactsContract,
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
   schema: {
@@ -66,8 +68,7 @@ export const contacts = defineService<Contact>({
  * deletion timestamp.
  */
 contacts.app.registerEvent('restore', async (source, cbId, data, citizenid) => {
-  const id = requirePositiveInt(fields(data).id, 'id');
-  const ok = await contacts.repo.restore(id, citizenid, restoreWindowDays());
+  const ok = await contacts.repo.restore(data.id, citizenid, restoreWindowDays());
   return { ok };
 });
 

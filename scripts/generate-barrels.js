@@ -199,6 +199,10 @@ console.log('Generating barrels...');
 generateIndex('client/services', 'import');
 generateIndex('client/game', 'import');
 generateIndex('server/services', 'import');
+// MICA-195. `export` rather than `import`: a service contract is a value all three bundles
+// read, not a side effect. Importing the barrel is still what populates `contractFor`'s
+// registry, because evaluating a file runs its `defineContract` call.
+generateIndex('shared/contracts', 'export');
 // Two barrels, and the split is the point (MICA-16): `kit/` is what an add-on
 // bundles and reaches nothing in the shell; `host/` is what an add-on asks the shell
 // for. `sdk/seam.test.ts` keeps them apart.

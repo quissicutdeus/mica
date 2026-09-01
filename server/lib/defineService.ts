@@ -6,6 +6,7 @@ import { Repository } from './Repository';
 import { registerReportable, type ReportableDefinition } from './moderation';
 import { registerReactable, type ReactableDefinition } from './reactions';
 import { ServiceEndpoint, ServiceOptions } from './ServiceEndpoint';
+import type { ServiceContract } from '@gphone/shared/contract';
 
 /**
  * One declaration per app, replacing the hand-written repository + controller pair.
@@ -382,9 +383,22 @@ export interface ResolvedMembership {
   liveWhileNull: string | null;
 }
 
-export interface ServiceDefinition {
+export interface ServiceDefinition<C extends ServiceContract = ServiceContract> {
   /** Matches the web module's manifest id. */
   id: string;
+  /**
+   * This service's custom actions, declared once in `shared/contracts/<id>.ts`.
+   *
+   * The CRUD actions `ServiceEndpoint` derives from `schema` below are **not** in it and must
+   * not be — the write allowlist and the per-column rules already validate those. A contract
+   * covers the actions a service registers by hand, which are the ones that had no rule at all
+   * until one was declared, including a hand-written `create` that replaced a disabled generic
+   * one.
+   *
+   * Its `id` has to match this one; two names for one service is the drift the whole
+   * declaration exists to remove.
+   */
+  contract?: C;
   /** Defaults to `gphone_<id>`. */
   table?: string;
   /**
@@ -425,7 +439,7 @@ export interface ServiceDefinition {
    */
   childTables?: readonly ChildTableDefinition[];
   /** Passed through to ServiceEndpoint — e.g. `{ disableUpdate: true }`. */
-  options?: ServiceOptions;
+  options?: ServiceOptions<C>;
   /**
    * Escape hatch for apps that need custom read shaping — e.g. coercing a blob
    * column to a string before it crosses NUI. Subclass `SchemaRepository` so the
@@ -854,10 +868,10 @@ export function buildRepository<T>(resolved: ResolvedService): Repository<T> {
   return new SchemaRepository<T>(resolved);
 }
 
-export interface ServerAppHandle<T> {
+export interface ServerAppHandle<T, C extends ServiceContract = ServiceContract> {
   resolved: ResolvedService;
   repo: Repository<T>;
-  app: ServiceEndpoint<T>;
+  app: ServiceEndpoint<T, C>;
 }
 
 /**
@@ -883,8 +897,18 @@ export const declaredServices: ResolvedService[] = [];
  * A `members` app therefore supplies its own actions and calls `repo.isMember(...)` — one
  * derived query rather than the two hand-written copies Conversations and Messages had.
  */
-export function defineService<T>(definition: ServiceDefinition): ServerAppHandle<T> {
+export function defineService<T, C extends ServiceContract = ServiceContract>(
+  definition: ServiceDefinition<C>
+): ServerAppHandle<T, C> {
   const resolved = resolveAppSchema(definition);
+
+  if (definition.contract && definition.contract.id !== resolved.id) {
+    throw new Error(
+      `defineService('${resolved.id}'): its contract declares id '${definition.contract.id}'. ` +
+        'The contract id is the `<service>` segment of every event this endpoint registers, ' +
+        'so two names for one service would be a contract nothing on the wire matches.'
+    );
+  }
   const repo = definition.repositoryFactory
     ? (definition.repositoryFactory(resolved) as Repository<T>)
     : buildRepository<T>(resolved);
@@ -921,7 +945,7 @@ export function defineService<T>(definition: ServiceDefinition): ServerAppHandle
     registerReactable(resolved.table, definition.reactable);
   }
 
-  const accessLockdown: ServiceOptions = {
+  const accessLockdown: ServiceOptions<C> = {
     ...(resolved.access.read === 'members' ? { disableGet: true } : {}),
     ...(resolved.access.write === 'server' ? { disableCreate: true, disableUpdate: true } : {}),
     ...(resolved.access.write === 'members'
@@ -929,8 +953,9 @@ export function defineService<T>(definition: ServiceDefinition): ServerAppHandle
       : {})
   };
 
-  const app = new ServiceEndpoint<T>(resolved.id, repo, {
+  const app = new ServiceEndpoint<T, C>(resolved.id, repo, {
     tableName: resolved.table,
+    ...(definition.contract ? { contract: definition.contract } : {}),
     ...(resolved.access.read === 'public'
       ? { publicRead: true, publicColumns: resolved.publicColumns }
       : {}),

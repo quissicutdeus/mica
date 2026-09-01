@@ -42,7 +42,18 @@ import '../services/Battery';
 import '../services/Phone';
 import '../services/Signal';
 import '../services/Mail';
+/**
+ * And then every other service, for the contract check at the bottom of this file.
+ *
+ * The seven above are named individually because the assertions in the first half are about
+ * them specifically and reading them as a list is the point. This one is the whole surface:
+ * "which actions are reachable" cannot be answered from a subset, and a contract entry nobody
+ * registers is only visible once everything has registered.
+ */
+import '../services';
 import { __resetRateLimits } from '../lib/rateLimit';
+import { registeredCustomActions } from '../lib/services';
+import { actionsOf, allContracts, contractFor } from '@gphone/shared/contract';
 
 /**
  * What a client can reach, and why the route table was never the answer.
@@ -262,5 +273,50 @@ describe('the server owns the battery', () => {
     for (let i = 0; i < 12; i++) battery.__tickBattery();
 
     expect(battery.currentCharge(9)).toBeGreaterThan(50);
+  });
+});
+
+/**
+ * The reachable surface, checked in both directions.
+ *
+ * A contract is only worth anything if the two lists it sits between agree. Each direction
+ * catches a different mistake, and neither catches the other's:
+ *
+ * - **Registered but not declared** is an action with no rule about its payload — the state
+ *   this ticket found ninety-seven times. `ServiceEndpoint.registerEvent` throws at startup
+ *   for a service that has a contract, so this direction is mostly belt-and-braces there; it
+ *   is the check that matters for a service that has not declared one at all.
+ * - **Declared but not registered** is the more interesting half. It is an action the web can
+ *   see in the contract and generate a typed call for, which the server will never answer — a
+ *   15-second timeout with no error, which is the exact failure mode `shared/routes.ts`
+ *   exists to prevent on the other layer.
+ */
+describe('the contract and the registered surface agree', () => {
+  const registered = new Set(registeredCustomActions());
+
+  it('declares nothing the server does not answer', () => {
+    const orphaned: string[] = [];
+    for (const contract of allContracts()) {
+      for (const action of actionsOf(contract)) {
+        if (!registered.has(`${contract.id}:${action}`)) orphaned.push(`${contract.id}:${action}`);
+      }
+    }
+
+    expect(orphaned).toEqual([]);
+  });
+
+  it('answers nothing its own contract does not declare', () => {
+    /**
+     * `registerEvent` already throws at startup for this, so reaching the assertion at all
+     * means every service with a contract loaded cleanly. Pinned anyway: the throw is a
+     * runtime guard inside one method, and this is the statement of the rule.
+     */
+    const undeclared = [...registered].filter((entry) => {
+      const [service, action] = entry.split(':');
+      const contract = contractFor(service ?? '');
+      return contract ? !(action! in contract.actions) : false;
+    });
+
+    expect(undeclared).toEqual([]);
   });
 });

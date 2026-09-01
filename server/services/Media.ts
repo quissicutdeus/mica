@@ -6,7 +6,7 @@ import { defineService, SchemaRepository } from '../lib/defineService';
 import { MediaItem } from '@gphone/shared/types';
 import { findNearbyVisiblePlayers } from '../lib/proximity';
 import { appEventChannel } from '../lib/appEvents';
-import { requirePositiveInt, fields } from '../lib/payload';
+import { mediaContract } from '@gphone/shared/contracts/media';
 import { playerCoords } from '../lib/playerCoords';
 import { Database } from '../lib/Database';
 import { sweepOrphanedRows } from '../lib/orphanSweep';
@@ -302,8 +302,9 @@ const COPIED_COLUMNS = [
   'alt_text'
 ] as const;
 
-export const media = defineService<MediaItem>({
+export const media = defineService<MediaItem, typeof mediaContract>({
   id: 'media',
+  contract: mediaContract,
   table: 'gphone_media',
   reportable: { label: 'Photo', previewColumn: 'data' },
   access: { read: 'owner', write: 'owner' },
@@ -615,8 +616,7 @@ const repo = media.repo;
  * nearby phones and has nothing to do with this row's own `status`.
  */
 app.registerEvent('restore', async (_source, _cbId, data, citizenid) => {
-  const id = requirePositiveInt(fields(data).id, 'media id');
-  const ok = await repo.restore(id, citizenid, restoreWindowDays());
+  const ok = await repo.restore(data.id, citizenid, restoreWindowDays());
   return { ok };
 });
 
@@ -658,40 +658,31 @@ app.registerEvent('getDeleted', async (_source, _cbId, _data, citizenid) => {
  * caller does not own.
  */
 app.registerEvent('item', async (_source, _cbId, data, citizenid) => {
-  const raw = data && typeof data === 'object' ? fields(data).id : data;
-  const id = requirePositiveInt(raw, 'media id');
-
-  const row = await repo.findById(id, citizenid);
+  const row = await repo.findById(data.id, citizenid);
   if (!row || row.status !== 'active') throw new Error('That photo could not be found.');
 
   return row;
 });
 
 /**
- * The largest thumbnail this will accept, as a base64 data URI.
+ * What a thumbnail may be — the 64KB cap and the `data:image/` prefix — is declared in
+ * `shared/contracts/media.ts` and enforced before this handler runs.
  *
- * A thumbnail is a few hundred pixels on its longest edge — ten to twenty kilobytes encoded,
- * a third more again as base64 — so 64KB is several times the honest size and still an order
- * of magnitude under the originals this ticket exists to stop shipping. The cap is what stops
- * store-back becoming a second way to store a full-size photo: without it a client could
- * "thumbnail" a row with its own original and reintroduce the whole problem through the door
- * built to close it.
+ * Both rules were written here as a length check and a regex, and both are the kind of rule
+ * that only exists where somebody remembered to write it. The cap is what stops store-back
+ * becoming a second way to keep a full-size photo: without it a client could "thumbnail" a row
+ * with its own original and reintroduce the whole problem through the door built to close it.
+ * A thumbnail is a few hundred pixels on its longest edge, so 64KB is several times the honest
+ * size and still an order of magnitude under the originals. `mediumtext` holds 16MB and would
+ * accept every one of them, which is why the bound cannot come from the column.
  *
- * Checked here rather than left to the column, because `mediumtext` holds 16MB and would
- * accept every one of them.
+ * `data:image/` only, deliberately narrower than `publicApi.ts`'s `SAFE_URL`. That one also
+ * permits `http(s):`, which is right for `AddMedia` — a resource hotlinking a poster frame it
+ * hosts is a legitimate row. It is not right here: this action exists for a client persisting
+ * bytes it encoded locally, so a remote URL is never the honest answer, and storing one would
+ * point a gallery tile at a third-party host the phone then requests on every render, which is
+ * a beacon rather than a thumbnail.
  */
-const MAX_THUMBNAIL_LENGTH = 64 * 1024;
-
-/**
- * `data:image/` only — deliberately narrower than `publicApi.ts`'s `SAFE_URL`.
- *
- * That one also permits `http(s):`, which is right for `AddMedia`: a resource hotlinking a
- * poster frame it hosts is a legitimate row. It is not right here. This action exists for a
- * client persisting bytes it encoded locally, so a remote URL is never the honest answer —
- * and storing one would point a gallery tile at a third-party host that the phone then
- * requests on every render, which is a beacon rather than a thumbnail.
- */
-const THUMBNAIL_DATA_URI = /^data:image\//i;
 
 /**
  * Store a thumbnail a client generated for a row that had none. MICA-110.
@@ -712,21 +703,10 @@ const THUMBNAIL_DATA_URI = /^data:image\//i;
  * outcome rather than a failure a player should be told about.
  */
 app.registerEvent('thumbnail', async (_source, _cbId, data, citizenid) => {
-  const body = fields(data);
-  const id = requirePositiveInt(body.id, 'media id');
-
-  const thumbnail = body.thumbnail;
-  if (typeof thumbnail !== 'string' || !THUMBNAIL_DATA_URI.test(thumbnail.trim())) {
-    throw new Error('A thumbnail must be an image data URI.');
-  }
-  if (thumbnail.length > MAX_THUMBNAIL_LENGTH) {
-    throw new Error('That thumbnail is too large.');
-  }
-
   const privileged = repo as unknown as {
     storeThumbnail(id: number, citizenid: string, thumbnail: string): Promise<boolean>;
   };
-  return { stored: await privileged.storeThumbnail(id, citizenid, thumbnail) };
+  return { stored: await privileged.storeThumbnail(data.id, citizenid, data.thumbnail) };
 });
 
 /**
@@ -753,9 +733,7 @@ app.registerEvent('thumbnail', async (_source, _cbId, data, citizenid) => {
  * `access.editWindow`'s `status != 'moderated'` predicate closes on the write side.
  */
 app.registerEvent('drop', async (source, _cbId, data, citizenid) => {
-  const mediaId = requirePositiveInt(fields(data).mediaId, 'mediaId');
-
-  const owned = await repo.findById(mediaId, citizenid);
+  const owned = await repo.findById(data.mediaId, citizenid);
   if (!owned || owned.status !== 'active') throw new Error('That photo could not be found.');
 
   const nearby = await findNearbyVisiblePlayers(source, citizenid);
@@ -832,9 +810,7 @@ app.registerEvent('drop', async (source, _cbId, data, citizenid) => {
  * a location row's `data` is never something the client itself should be free to set.
  */
 app.registerEvent('shareLocation', async (source, _cbId, data, citizenid) => {
-  const rawLabel = fields(data).label;
-  const label =
-    typeof rawLabel === 'string' && rawLabel.trim() ? rawLabel.trim().slice(0, 255) : undefined;
+  const label = data.label?.trim() || undefined;
 
   const coords = playerCoords(source);
   if (!coords) throw new Error('Could not determine your location.');

@@ -121,7 +121,7 @@ beforeEach(() => {
 describe('media:drop', () => {
   it('rejects a mediaId that is not a positive integer', async () => {
     const reply = await callDrop({ mediaId: -1 });
-    expect(reply.error).toMatch(/valid mediaId/);
+    expect(reply.error).toMatch(/mediaId/);
     expect(dbMock.single).not.toHaveBeenCalled();
   });
 
@@ -307,13 +307,7 @@ describe('media:shareLocation', () => {
       alt_text: 'Vinewood Blvd'
     });
 
-    // A payload smuggling its own x/y/z must be ignored — only `label` is ever read.
-    const reply = await callShareLocation({
-      label: 'Vinewood Blvd',
-      x: 999,
-      y: 999,
-      z: 999
-    });
+    const reply = await callShareLocation({ label: 'Vinewood Blvd' });
 
     expect(dbMock.insert).toHaveBeenCalledTimes(1);
     const [, params] = dbMock.insert.mock.calls[0];
@@ -328,19 +322,33 @@ describe('media:shareLocation', () => {
     });
   });
 
-  it('truncates an over-long label to the alt_text column length', async () => {
+  it('refuses a payload smuggling its own coordinates, rather than ignoring it', async () => {
+    /**
+     * The handler only ever read `label`, so extra keys were inert — but "inert" and
+     * "refused" are different promises, and only one of them survives somebody adding a
+     * field to the schema later. The contract declares `label` and nothing else, so a
+     * payload naming x/y/z never reaches the handler at all.
+     */
     setPlayerPed();
-    dbMock.insert.mockResolvedValueOnce(56);
-    dbMock.single.mockResolvedValueOnce({ ...OWNED_ROW, id: 56, kind: 'location' });
 
-    const longLabel = 'x'.repeat(400);
-    await callShareLocation({ label: longLabel });
+    const reply = await callShareLocation({ label: 'Vinewood Blvd', x: 999, y: 999, z: 999 });
 
-    const [, params] = dbMock.insert.mock.calls[0];
-    const writtenLabel = (params as unknown[]).find(
-      (v) => typeof v === 'string' && v.startsWith('xxx')
-    );
-    expect((writtenLabel as string).length).toBe(255);
+    expect(reply.error).toMatch(/x/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('refuses an over-long label rather than silently truncating it', async () => {
+    /**
+     * It used to `slice(0, 255)`, which is the same failure MySQL's non-strict mode
+     * produces: the row is written, the write reports success, and the stored value is not
+     * the one that was sent. `alt_text` is a varchar(255) and the contract says so.
+     */
+    setPlayerPed();
+
+    const reply = await callShareLocation({ label: 'x'.repeat(400) });
+
+    expect(reply.error).toMatch(/label/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
   });
 
   it('drops a non-string or empty label rather than writing it as-is', async () => {
@@ -452,7 +460,7 @@ describe('media:item — one row, bytes and all (MICA-110)', () => {
   it('rejects an id that is not a positive integer', async () => {
     const reply = await callItem({ id: 0 });
 
-    expect(reply.error).toMatch(/valid media id/);
+    expect(reply.error).toMatch(/id/);
     expect(dbMock.single).not.toHaveBeenCalled();
   });
 
@@ -535,7 +543,7 @@ describe('media:thumbnail — storing a thumbnail a client generated', () => {
   it('rejects an id that is not a positive integer', async () => {
     const reply = await callThumbnail({ id: -1, thumbnail: TINY_STILL });
 
-    expect(reply.error).toMatch(/valid media id/);
+    expect(reply.error).toMatch(/id/);
     expect(dbMock.update).not.toHaveBeenCalled();
   });
 
@@ -547,7 +555,7 @@ describe('media:thumbnail — storing a thumbnail a client generated', () => {
   ])('refuses %s', async (_label, thumbnail) => {
     const reply = await callThumbnail({ id: 42, thumbnail });
 
-    expect(reply.error).toMatch(/image data URI/);
+    expect(reply.error).toMatch(/thumbnail/);
     expect(dbMock.update).not.toHaveBeenCalled();
   });
 
@@ -558,7 +566,7 @@ describe('media:thumbnail — storing a thumbnail a client generated', () => {
     // on every render, which is a beacon rather than a thumbnail.
     const reply = await callThumbnail({ id: 42, thumbnail: 'https://x.test/tracker.png' });
 
-    expect(reply.error).toMatch(/image data URI/);
+    expect(reply.error).toMatch(/thumbnail/);
     expect(dbMock.update).not.toHaveBeenCalled();
   });
 
@@ -569,7 +577,7 @@ describe('media:thumbnail — storing a thumbnail a client generated', () => {
 
     const reply = await callThumbnail({ id: 42, thumbnail: oversize });
 
-    expect(reply.error).toMatch(/too large/);
+    expect(reply.error).toMatch(/thumbnail/);
     expect(dbMock.update).not.toHaveBeenCalled();
   });
 
@@ -589,14 +597,17 @@ describe('media:thumbnail — storing a thumbnail a client generated', () => {
   });
 
   it('never lets the payload name the column it writes', async () => {
-    dbMock.update.mockResolvedValueOnce(true);
+    // `storeThumbnail` names its own columns, so these were inert before the contract; now
+    // the request carrying them is refused outright, which is the stronger promise.
+    const reply = await callThumbnail({
+      id: 42,
+      thumbnail: TINY_STILL,
+      data: 'smuggled',
+      citizenid: 'CID_B'
+    });
 
-    await callThumbnail({ id: 42, thumbnail: TINY_STILL, data: 'smuggled', citizenid: 'CID_B' });
-
-    const [sql, params] = dbMock.update.mock.calls[0];
-    expect(sql as string).not.toContain('`data`');
-    expect(params as unknown[]).not.toContain('smuggled');
-    expect(params as unknown[]).not.toContain('CID_B');
+    expect(reply.error).toMatch(/data/);
+    expect(dbMock.update).not.toHaveBeenCalled();
   });
 
   it('reports a row that already had one as not stored, rather than as an error', async () => {
@@ -706,12 +717,16 @@ describe('media:restore (MICA-75)', () => {
     expect(reply).toEqual({ ok: false });
   });
 
-  it('restores under the caller citizenid, never one the payload names', async () => {
+  it('refuses a payload naming a citizenid, rather than quietly ignoring it', async () => {
     dbMock.update.mockResolvedValue(true);
 
-    await callRestore({ id: 12, citizenid: 'CID_VICTIM' });
+    const reply = await callRestore({ id: 12, citizenid: 'CID_VICTIM' });
 
-    expect(dbMock.update.mock.calls[0][1]).toEqual([12, 'CID_A', 30]);
+    // The predicate was always the caller's own citizenid. What changed is that a payload
+    // asking for somebody else's is now an error rather than a no-op — a hostile key has no
+    // slot, so the request that carried it does not half-succeed.
+    expect(reply.error).toMatch(/citizenid/);
+    expect(dbMock.update).not.toHaveBeenCalled();
   });
 
   it('rejects a missing id before touching the database', async () => {
@@ -756,12 +771,13 @@ describe('media:getDeleted (MICA-75-wiring)', () => {
     expect(String(sql)).toContain('`thumbnail`');
   });
 
-  it('ignores anything the payload claims and uses the caller’s own citizenid', async () => {
+  it('refuses a payload claiming a citizenid — the list takes no payload at all', async () => {
     dbMock.query.mockResolvedValue([]);
 
-    await callGetDeleted({ citizenid: 'CID_VICTIM' });
+    const reply = await callGetDeleted({ citizenid: 'CID_VICTIM' });
 
-    expect(dbMock.query.mock.calls[0][1]).toEqual(['CID_A', 30]);
+    expect(reply.error).toMatch(/payload/);
+    expect(dbMock.query).not.toHaveBeenCalled();
   });
 
   it('is registered alongside restore', () => {

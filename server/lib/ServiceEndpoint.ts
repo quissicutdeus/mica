@@ -7,14 +7,33 @@ import { AuditLogger } from './AuditLogger';
 import { type CallbackId, requirePositiveInt } from './payload';
 import { requestEventFor, responseEventFor } from '@gphone/shared/rpc';
 import { FrameworkBridge, FrameworkPlayer } from './FrameworkBridge';
-import { registerService } from './services';
+import { registerCustomAction, registerService } from './services';
 import { allow, installRateLimitCleanup } from './rateLimit';
+import {
+  type ActionInput,
+  type ContractAction,
+  type ServiceContract
+} from '@gphone/shared/contract';
+import { parseInput, type Schema } from '@gphone/shared/schema';
 
 // Once per process, not once per service: `on('playerDropped')` would otherwise be registered
 // thirteen times and do the same sweep thirteen times per disconnect.
 installRateLimitCleanup();
 
-export interface ServiceOptions {
+export interface ServiceOptions<C extends ServiceContract = ServiceContract> {
+  /**
+   * This service's custom actions, declared once in `shared/contracts/`.
+   *
+   * What it buys, in the order the boundary applies them: `registerEvent` refuses at
+   * **startup** to register an action the contract does not declare, and at request time it
+   * parses the payload through that action's `input` before the handler sees it. The handler
+   * then receives a value of a known shape instead of `unknown` plus its own coercion.
+   *
+   * Absent for a service with no custom actions at all — the CRUD `registerCrudEvents` derives
+   * is validated by the write allowlist and `columnRules` instead, and is deliberately not
+   * restated here (see `ActionContract`).
+   */
+  contract?: C;
   disableGet?: boolean;
   disableCreate?: boolean;
   disableUpdate?: boolean;
@@ -48,7 +67,7 @@ export interface ServiceOptions {
   listColumns?: readonly string[];
 }
 
-export class ServiceEndpoint<T> {
+export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
   constructor(
     private serviceName: string,
     /**
@@ -56,7 +75,7 @@ export class ServiceEndpoint<T> {
      * export instead. Such a service must disable every generic CRUD action.
      */
     private repo: Repository<T> | null,
-    private options: ServiceOptions = {}
+    private options: ServiceOptions<C> = {}
   ) {
     registerService(serviceName);
     this.registerCrudEvents();
@@ -189,7 +208,7 @@ export class ServiceEndpoint<T> {
   private registerCrudEvents() {
     // Read (All or partial)
     if (!this.options.disableGet) {
-      this.registerEvent(
+      this.registerGeneric(
         'get',
         async (source: number, cbId: CallbackId, data: unknown, citizenid: string) => {
           const filter = this.sanitizeFilter(data);
@@ -253,7 +272,7 @@ export class ServiceEndpoint<T> {
 
     // Create
     if (!this.options.disableCreate) {
-      this.registerEvent(
+      this.registerGeneric(
         'create',
         async (source: number, cbId: CallbackId, data: unknown, citizenid: string) => {
           const fields = this.sanitizeWrite(data);
@@ -270,7 +289,7 @@ export class ServiceEndpoint<T> {
 
     // Update
     if (!this.options.disableUpdate) {
-      this.registerEvent(
+      this.registerGeneric(
         'update',
         async (source: number, cbId: CallbackId, data: unknown, citizenid: string) => {
           const id = this.requireId(data);
@@ -287,7 +306,7 @@ export class ServiceEndpoint<T> {
 
     // Delete
     if (!this.options.disableDelete) {
-      this.registerEvent(
+      this.registerGeneric(
         'delete',
         async (source: number, cbId: CallbackId, data: unknown, citizenid: string) => {
           const id = this.requireId(data);
@@ -311,8 +330,88 @@ export class ServiceEndpoint<T> {
     }
   }
 
-  public registerEvent(
+  /**
+   * Register one of the four CRUD actions this endpoint derives from the column declaration.
+   *
+   * Separate from the public `registerEvent` because the two are validated by different
+   * things, not because they are wired differently. A generic payload is reduced by the
+   * `clientWritable` allowlist and checked against `columnRules`, both derived from the
+   * schema; restating that as an input contract would be a second source of truth for one
+   * table. The distinction is the **registration path**, never the action's name: a service
+   * that disables the generic `create` and hand-writes its own is writing a custom action,
+   * and it goes through `registerEvent` and needs a contract entry like any other.
+   */
+  private registerGeneric(
+    action: 'get' | 'create' | 'update' | 'delete',
+    handler: (
+      source: number,
+      cbId: CallbackId,
+      data: unknown,
+      citizenid: string,
+      player: FrameworkPlayer
+    ) => Promise<any>
+  ) {
+    const contract = this.options.contract;
+    if (contract?.actions[action]) {
+      throw new Error(
+        `ServiceEndpoint('${this.serviceName}'): its contract declares '${action}', but this ` +
+          'service also registers the generic ' +
+          `'${action}' derived from its columns. One action cannot be validated two ways — ` +
+          `disable the generic one, or drop '${action}' from the contract.`
+      );
+    }
+    this.bind(action, undefined, handler);
+  }
+
+  /**
+   * Register a custom action, validated by the contract before the handler sees the payload.
+   *
+   * Two things happen at **startup**, which is the point: an action the contract does not
+   * declare throws here and takes the resource down at boot, rather than becoming a reachable
+   * net event nobody wrote a rule for — the state this ticket found the server in ninety-seven
+   * times over. And `A` is constrained to the contract's own keys, so the same mistake is a
+   * type error before it is ever a runtime one.
+   */
+  public registerEvent<A extends ContractAction<C>>(
+    action: A,
+    handler: (
+      source: number,
+      cbId: CallbackId,
+      data: ActionInput<C, A>,
+      citizenid: string,
+      player: FrameworkPlayer
+    ) => Promise<any>
+  ) {
+    const contract = this.options.contract;
+    const declared = contract?.actions[action];
+
+    if (contract && !declared) {
+      throw new Error(
+        `ServiceEndpoint('${this.serviceName}') registered '${action}', which its contract ` +
+          'does not declare. A registered net event is reachable whether or not anything ' +
+          `calls it, so add it to shared/contracts/${contract.id}.ts with an input schema, ` +
+          'or do not register it.'
+      );
+    }
+
+    registerCustomAction(this.serviceName, action);
+    this.bind(
+      action,
+      declared?.input,
+      handler as (
+        source: number,
+        cbId: CallbackId,
+        data: unknown,
+        citizenid: string,
+        player: FrameworkPlayer
+      ) => Promise<any>
+    );
+  }
+
+  /** The wiring both paths share: the net event, the limiter, authentication, the reply. */
+  private bind(
     action: string,
+    input: Schema | undefined,
     handler: (
       source: number,
       cbId: CallbackId,
@@ -354,7 +453,19 @@ export class ServiceEndpoint<T> {
           return;
         }
 
-        const result = await handler(src, cbId, data, player.citizenid, player);
+        /**
+         * Validation slots in **after** authentication and before the handler
+         * (`docs/security.md`, "Entry points"), and the order is not cosmetic. Rate limiting
+         * comes first so a flood does not pay for a schema walk; the player lookup comes next
+         * because a caller with no character has nothing to be authorized as; only then is it
+         * worth asking whether what they sent is the shape the handler is about to read.
+         *
+         * A `SchemaError` from here lands in the catch below and reaches the player as a
+         * toast, which is why its messages name a field and never a table.
+         */
+        const payload = input ? await parseInput(input, data) : data;
+
+        const result = await handler(src, cbId, payload, player.citizenid, player);
 
         if (result !== undefined) {
           emitNet(clientEventName, src, cbId, result);

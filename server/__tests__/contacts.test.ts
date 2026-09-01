@@ -308,12 +308,16 @@ describe('contacts:restore (MICA-75)', () => {
     expect(reply).toEqual({ ok: false });
   });
 
-  it('restores under the caller citizenid, never one the payload names', async () => {
+  it('refuses a payload naming a citizenid, rather than quietly ignoring it', async () => {
     dbMock.update.mockResolvedValue(true);
 
-    await genericCall('restore', { id: 3, citizenid: 'CID_VICTIM' });
+    const reply = await genericCall('restore', { id: 3, citizenid: 'CID_VICTIM' });
 
-    expect(dbMock.update.mock.calls[0][1]).toEqual([3, 'CID_A', 30]);
+    // The predicate was always the caller's own citizenid, and still is. What changed is
+    // that a payload asking for somebody else's is refused rather than ignored — a hostile
+    // key has no slot, so the request carrying it does not half-succeed.
+    expect(reply).toMatchObject({ error: expect.stringContaining('citizenid') });
+    expect(dbMock.update).not.toHaveBeenCalled();
   });
 
   it('honours an operator-configured restore window', async () => {
@@ -366,10 +370,11 @@ describe('contacts:getDeleted (MICA-75-wiring)', () => {
     expect(params).toEqual(['CID_A', 30]);
   });
 
-  it('ignores anything the payload claims and uses the caller’s own citizenid', async () => {
-    await call({ citizenid: 'CID_VICTIM' });
+  it('refuses a payload claiming a citizenid — the list takes no payload at all', async () => {
+    const reply = await call({ citizenid: 'CID_VICTIM' });
 
-    expect(dbMock.query.mock.calls[0][1]).toEqual(['CID_A', 30]);
+    expect(reply).toMatchObject({ error: expect.stringContaining('payload') });
+    expect(dbMock.query).not.toHaveBeenCalled();
   });
 
   it('is registered alongside restore', () => {

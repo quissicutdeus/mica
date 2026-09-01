@@ -4,8 +4,33 @@
 
 import { defineService } from '../lib/defineService';
 import { Note } from '@gphone/shared/types';
-import { fields, requirePositiveInt } from '../lib/payload';
+import { defineContract, responseType } from '@gphone/shared/contract';
+import { s } from '@gphone/shared/schema';
 import { restoreWindowDays } from '../lib/retention';
+
+/**
+ * Notes' contract, declared here rather than in `shared/contracts/`.
+ *
+ * Notes is `core: false`, and `shared/` is core — `sdk/coreBoundary.test.ts` refuses core any
+ * mention of an app the Store installs, because an add-on is not in this repository and a
+ * core file naming one works for the apps shipped in-tree and silently does not for anybody
+ * else's. So an add-on's contract lives in the add-on's own resource, next to the
+ * `defineService` call it belongs to. This is exactly the shape an external add-on writes,
+ * which is the point of it being here rather than a special case.
+ */
+export const notesContract = defineContract({
+  id: 'notes',
+  actions: {
+    restore: {
+      input: s.object({ id: s.positiveInt() }),
+      output: responseType<{ ok: boolean }>()
+    },
+    getDeleted: {
+      input: s.none(),
+      output: responseType<Note[]>()
+    }
+  }
+});
 
 /**
  * Notes: the whole server half of the app.
@@ -14,8 +39,9 @@ import { restoreWindowDays } from '../lib/retention';
  * `columns` allowlist, the `clientWritable` set, and the generated DDL in
  * the generated `gphone.sql` — so they cannot diverge.
  */
-export const notes = defineService<Note>({
+export const notes = defineService<Note, typeof notesContract>({
   id: 'notes',
+  contract: notesContract,
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'archived', 'deleted', 'moderated'],
   schema: {
@@ -33,8 +59,7 @@ export const notes = defineService<Note>({
  * reason a client would have no use for beyond "did it work".
  */
 notes.app.registerEvent('restore', async (source, cbId, data, citizenid) => {
-  const id = requirePositiveInt(fields(data).id, 'id');
-  const ok = await notes.repo.restore(id, citizenid, restoreWindowDays());
+  const ok = await notes.repo.restore(data.id, citizenid, restoreWindowDays());
   return { ok };
 });
 
