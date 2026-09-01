@@ -8,33 +8,25 @@
 // output.codeSplitting is false"). The brief's fallback for exactly this case: build once
 // per id, selected by `ADDON_ID`, rather than all four in one Rollup/rolldown invocation.
 //
-// Discovery mirrors `vite.addon.config.ts`'s own `addOnIds()` — the same manifest text
-// `permissions.test.ts` reads — so the two never have to be kept in sync by hand; if this
-// ever drifts, that's a bug to fix by extracting one shared function, not by hardcoding a
-// list here. (Tried the shared-module route once already — `tsc -p tsconfig.node.json`
-// rejected importing a plain `.mjs` from the `.ts` config with no declaration file for it;
-// see `vite.addon.config.ts`'s comment on `addOnIds`.)
+// MICA-190: discovery is `scripts/addon-ids.js`, shared with `vite.addon.config.ts` rather
+// than mirrored in both. The note that used to sit here said the dedupe had been tried and
+// abandoned over `TS7016`, and that the fix if they drifted was proper JS module type
+// support — `addon-ids.d.ts` is that.
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, spawnSync } from 'child_process';
+import { addOnIds } from './addon-ids.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webDir = path.resolve(here, '..');
 const appsDir = path.join(webDir, 'src/apps');
 
-function addOnIds() {
-  return fs.readdirSync(appsDir).filter((id) => {
-    const file = path.join(appsDir, id, 'manifest.ts');
-    return fs.existsSync(file) && /core:\s*false/.test(fs.readFileSync(file, 'utf8'));
-  });
-}
-
 const outDir = path.join(webDir, 'public/addons');
 fs.rmSync(outDir, { recursive: true, force: true });
 
 const watch = process.argv.includes('--watch');
-const ids = addOnIds();
+const ids = addOnIds(appsDir);
 
 if (watch) {
   // One `vite build --watch` per id, all running concurrently — a single one blocks

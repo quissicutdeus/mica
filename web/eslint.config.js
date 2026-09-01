@@ -44,7 +44,13 @@ export default tseslint.config(
     // transpiles them itself — so `projectService` can't place them and the
     // parser falls over into false positives. They get the syntax-only block
     // below instead of type-checked rules.
-    ignores: ['e2e/**', 'playwright.config.ts'],
+    //
+    // `scripts/*.d.ts` is here for a near-identical reason (MICA-190): they are
+    // hand-written declarations for the plain-JS build modules beside them, reached by
+    // `tsc` through ordinary resolution rather than by being a project's own input, so
+    // `projectService` has no tsconfig to place them in either. Type-checked rules over a
+    // file of nothing but `declare` lines buy nothing regardless.
+    ignores: ['e2e/**', 'playwright.config.ts', 'scripts/*.d.ts'],
     extends: [tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       globals: { ...globals.browser, ...globals.node },

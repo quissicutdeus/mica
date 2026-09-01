@@ -2,25 +2,12 @@ import { defineConfig, type Plugin } from 'vite';
 import { licenseBanner } from '../scripts/license-banner.js';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import path from 'path';
-import fs from 'fs';
+// MICA-190: one discovery, shared with `scripts/build-addons.mjs`, that strips comments
+// before reading `core`. The old copy here grepped raw text, which a doc comment can fool.
+import { addOnIds } from './scripts/addon-ids.js';
 
 const here = import.meta.dirname;
 const appsDir = path.resolve(here, 'src/apps');
-
-// Duplicated in `scripts/build-addons.mjs` rather than imported from one shared module:
-// tried factoring this into `scripts/addonIds.mjs` and importing it here, but
-// `tsc -p tsconfig.node.json` (run by `pnpm check`) rejected it —
-// `TS7016: Could not find a declaration file for module './scripts/addonIds.mjs'` — since
-// this config has no `allowJs`/`.d.ts` for plain JS modules, and adding either is a bigger
-// change than this dedupe is worth. If the two ever drift, fix it by adding proper JS
-// module type support then, not by hardcoding a list here.
-/** Every app whose manifest says `core: false` — the same text read `permissions.test.ts` does. */
-function addOnIds(): string[] {
-  return fs.readdirSync(appsDir).filter((id) => {
-    const file = path.join(appsDir, id, 'manifest.ts');
-    return fs.existsSync(file) && /core:\s*false/.test(fs.readFileSync(file, 'utf8'));
-  });
-}
 
 const VIRTUAL = '\0addon-entry:';
 
@@ -188,7 +175,7 @@ function noUnsubstitutedDefines(): Plugin {
 // bundles in one pass the way the brief's rollup-era config assumed. `scripts/build-addons.mjs`
 // is the fallback the brief calls for: it runs this config once per id via `ADDON_ID`,
 // looping so nothing here has to hardcode the add-on list.
-const ids = process.env.ADDON_ID ? [process.env.ADDON_ID] : addOnIds();
+const ids = process.env.ADDON_ID ? [process.env.ADDON_ID] : addOnIds(appsDir);
 
 // A bare `vite build -c vite.addon.config.ts` (no `ADDON_ID`) with more than one add-on
 // discovered would otherwise reach `output.codeSplitting: false` with multiple
