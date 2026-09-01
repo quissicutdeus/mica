@@ -178,17 +178,20 @@ describe('filing a report', () => {
     expect(dbMock.insert.mock.calls[0][1]).toEqual(expect.arrayContaining(['other']));
   });
 
-  it('caps the note, which is prose headed for an admin screen', async () => {
+  it('refuses an oversized note rather than capping it', async () => {
+    // It used to `slice(0, 500)`, so an admin read a report whose text stopped mid-sentence
+    // and the reporter was told it had been filed as written. `gphone_reports.note` is a
+    // varchar(500) and the contract says so.
     dbMock.single.mockResolvedValue(targetRow);
-    await call('create', {
+
+    const reply = await call('create', {
       targetTable: 'gphone_messages',
       targetId: 12,
       note: 'x'.repeat(5000)
     });
-    const note = dbMock.insert.mock.calls[0][1].find(
-      (v: unknown) => typeof v === 'string' && v.startsWith('xxx')
-    );
-    expect(note.length).toBe(500);
+
+    expect(reply).toMatchObject({ error: expect.stringContaining('note') });
+    expect(dbMock.insert).not.toHaveBeenCalled();
   });
 
   it('rejects a non-scalar target id', async () => {

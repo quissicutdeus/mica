@@ -73,15 +73,29 @@ beforeEach(() => {
  * gate the 1-on-1 `phone` path already enforced.
  */
 describe('conversations:create — citizenids only via phone resolution', () => {
-  it('does not add a raw citizenid string sent as `participant`', async () => {
-    await call('create', { participant: 'SOME_OTHER_CITIZENID' });
+  it('refuses a raw citizenid string sent as `participant`', async () => {
+    // It was already inert — `nameOf` returned null for anything that was not an object, and
+    // a citizenid never became a participant except by resolving a phone number. The contract
+    // narrows `participant` to the contact card's two name fields, so a bare string is now
+    // refused rather than accepted and discarded.
+    const reply = await call('create', { participant: 'SOME_OTHER_CITIZENID' });
+
+    expect(reply).toMatchObject({ error: expect.stringContaining('participant') });
+
+    const addedCitizenids = dbMock.insert.mock.calls
+      .filter(([sql]) => typeof sql === 'string' && sql.includes('gphone_messages_participants'))
+      .map(([, params]) => (params as unknown[])[1]);
+    expect(addedCitizenids).toEqual([]);
+  });
+
+  it('still takes a contact card for its display name', async () => {
+    await call('create', { participant: { firstname: 'Jax', lastname: 'Reed' } });
 
     const addedCitizenids = dbMock.insert.mock.calls
       .filter(([sql]) => typeof sql === 'string' && sql.includes('gphone_messages_participants'))
       .map(([, params]) => (params as unknown[])[1]);
 
-    expect(addedCitizenids).not.toContain('SOME_OTHER_CITIZENID');
-    // Only the caller themselves was added.
+    // Only the caller themselves was added; the card contributed a name and nothing else.
     expect(addedCitizenids).toEqual(['CIT_A']);
   });
 

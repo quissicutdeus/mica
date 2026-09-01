@@ -4,7 +4,7 @@
 
 import { defineService, SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { fields, optionalString, requirePositiveInt } from '../lib/payload';
+import { reportsContract } from '@gphone/shared/contracts/reports';
 import {
   MAX_NOTE_LENGTH,
   REPORT_CATEGORIES,
@@ -79,7 +79,8 @@ class ReportRepository extends SchemaRepository<Report> {
  * reading the queue is a privileged cross-owner read, which is the exact thing the
  * ownership-scoped generic `get` exists to prevent.
  */
-export const reports = defineService<Report>({
+export const reports = defineService<Report, typeof reportsContract>({
+  contract: reportsContract,
   id: 'reports',
   access: { read: 'owner', write: 'server' },
   schema: {
@@ -125,15 +126,19 @@ const repo = reports.repo as ReportRepository;
 
 /** File a report. Anyone may; everything about it is checked. */
 app.registerEvent('create', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const table = body.targetTable;
+  const table = data.targetTable;
+  // The contract bounds the string; this is the allowlist, and it is a registry apps declare
+  // into rather than a list `shared/` could hold.
   if (!isReportableTable(table)) {
     throw new Error('That kind of content cannot be reported.');
   }
 
-  const targetId = requirePositiveInt(body.targetId, 'target id');
-  const category = isReportCategory(body.category) ? body.category : 'other';
-  const note = optionalString(body.note)?.trim().slice(0, MAX_NOTE_LENGTH) || undefined;
+  const targetId = data.targetId;
+  // An unrecognised category still files under `other`: a report is worth more than the label
+  // on it, and losing one to a spelling would be the wrong trade.
+  const category = isReportCategory(data.category) ? data.category : 'other';
+  // Trimmed, not capped — the contract already refused anything over the column's length.
+  const note = data.note?.trim() || undefined;
 
   const target = await summariseTarget(table, targetId);
   if (!target.exists) {
@@ -245,7 +250,7 @@ app.registerEvent('history', async (source, cbId, data, citizenid) => {
 app.registerEvent('reopen', async (source, cbId, data, citizenid) => {
   if (!isAdmin(source)) throw new Error('Not authorised.');
 
-  const id = requirePositiveInt(fields(data).id, 'report id');
+  const id = data.id;
   const report = await repo.findById(id);
   if (!report) throw new Error('No such report.');
   if (report.resolution === 'pending') throw new Error('That report is already open.');
@@ -284,8 +289,7 @@ app.registerEvent('reopen', async (source, cbId, data, citizenid) => {
 app.registerEvent('resolve', async (source, cbId, data, citizenid) => {
   if (!isAdmin(source)) throw new Error('Not authorised.');
 
-  const id = requirePositiveInt(fields(data).id, 'report id');
-  const action = fields(data).action === 'moderate' ? 'moderate' : 'dismiss';
+  const { id, action } = data;
 
   const report = await repo.findById(id);
   if (!report) throw new Error('No such report.');

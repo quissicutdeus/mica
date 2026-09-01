@@ -8,7 +8,8 @@ import { AuditLogger } from '../lib/AuditLogger';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
-import { fields, flagUnlessFalse, requirePositiveInt } from '../lib/payload';
+import { flagUnlessFalse } from '../lib/payload';
+import { mailContract } from '@gphone/shared/contracts/mail';
 import { buildDeepLink } from '@gphone/shared/deepLink';
 
 /**
@@ -62,7 +63,8 @@ class MailRepository extends SchemaRepository<Mail> {
 
 let mailRepo!: MailRepository;
 
-export const mail = defineService<Mail>({
+export const mail = defineService<Mail, typeof mailContract>({
+  contract: mailContract,
   id: 'mail',
   access: { read: 'owner', write: 'server' },
   statuses: ['active', 'archived', 'deleted', 'moderated'],
@@ -103,13 +105,12 @@ app.registerEvent('getMail', async (source, cbId, data, citizenid) => {
 });
 
 app.registerEvent('markAsRead', async (source, cbId, data, citizenid) => {
-  const id = requirePositiveInt(fields(data).id, 'email id');
-  return await mailRepo.markAsRead(id, citizenid);
+  return await mailRepo.markAsRead(data.id, citizenid);
 });
 
 app.registerEvent('archiveMail', async (source, cbId, data, citizenid) => {
-  const id = requirePositiveInt(fields(data).id, 'email id');
-  const shouldArchive = flagUnlessFalse(fields(data).archive);
+  const id = data.id;
+  const shouldArchive = flagUnlessFalse(data.archive);
 
   const success = await mailRepo.archive(id, citizenid, shouldArchive);
   if (success) {
@@ -119,7 +120,7 @@ app.registerEvent('archiveMail', async (source, cbId, data, citizenid) => {
 });
 
 app.registerEvent('deleteMail', async (source, cbId, data, citizenid) => {
-  const id = requirePositiveInt(fields(data).id, 'email id');
+  const id = data.id;
 
   const success = await mailRepo.delete(id, citizenid);
   if (success) {

@@ -120,15 +120,24 @@ describe('messages:edit — who may rewrite what', () => {
     expect(messageUpdates()).toEqual([]);
   });
 
-  it("checks membership on the row's conversation, not the payload's", async () => {
-    await call('edit', { id: 42, conversation_id: 999, message: 'reaching' });
+  it("checks membership on the row's conversation, and refuses a payload naming one", async () => {
+    await call('edit', { id: 42, message: 'reaching' });
 
     const membershipCalls = dbMock.single.mock.calls.filter(([sql]) =>
       String(sql).includes('gphone_messages_participants')
     );
     expect(membershipCalls).toHaveLength(1);
-    // 7 is the row's own conversation. 999 is the one the caller claimed.
+    // 7 is the row's own conversation, read off the row and never off the payload.
     expect(membershipCalls[0][1]).toEqual([7, 'CIT_A']);
+
+    // A caller naming their own thread while editing a message from one they are not in was
+    // already ignored; `edit`'s contract declares no `conversation_id` at all, so the request
+    // carrying one is refused before any of this runs.
+    dbMock.single.mockClear();
+    const reply = await call('edit', { id: 42, conversation_id: 999, message: 'reaching' });
+
+    expect(reply).toMatchObject({ error: expect.stringContaining('conversation_id') });
+    expect(dbMock.single).not.toHaveBeenCalled();
   });
 
   it('refuses an empty body rather than emptying the message', async () => {
@@ -163,7 +172,7 @@ describe('messages:edit — who may rewrite what', () => {
   it('rejects an id that is not a positive row id', async () => {
     const reply = await call('edit', { id: -1, message: 'hi' });
 
-    expect(reply).toEqual({ error: 'A valid message id is required.' });
+    expect(reply).toMatchObject({ error: expect.stringContaining('id') });
     expect(dbMock.single).not.toHaveBeenCalled();
   });
 });

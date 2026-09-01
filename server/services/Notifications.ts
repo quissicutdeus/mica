@@ -5,7 +5,7 @@
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { NotificationItem } from '@gphone/shared/types';
 import { Database } from '../lib/Database';
-import { fields, requirePositiveInt } from '../lib/payload';
+import { notificationsContract } from '@gphone/shared/contracts/notifications';
 
 export class NotificationsRepository extends SchemaRepository<NotificationItem> {
   /** Unscoped batch create for background persistent pushes to online and offline recipients. */
@@ -134,7 +134,8 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
 
 let notificationsRepo: NotificationsRepository | null = null;
 
-export const notifications = defineService<NotificationItem>({
+export const notifications = defineService<NotificationItem, typeof notificationsContract>({
+  contract: notificationsContract,
   id: 'notifications',
   access: { read: 'owner', write: 'server' },
   statuses: ['active', 'deleted', 'moderated'],
@@ -191,35 +192,22 @@ app.registerEvent('getUnreadCounts', async (_source, _cbId, _data, citizenid) =>
 
 app.registerEvent('markAsRead', async (_source, _cbId, data, citizenid) => {
   if (!notificationsRepo) return true;
-  const rawIds = fields(data).ids;
-  const ids = Array.isArray(rawIds)
-    ? rawIds.map((id) => requirePositiveInt(id, 'notification id'))
-    : [];
-  return await notificationsRepo.markRead(citizenid, ids);
+  return await notificationsRepo.markRead(citizenid, data.ids);
 });
 
 app.registerEvent('clearNotifications', async (_source, _cbId, data, citizenid) => {
   if (!notificationsRepo) return true;
-  const rawIds = fields(data).ids;
-  const ids = Array.isArray(rawIds)
-    ? rawIds.map((id) => requirePositiveInt(id, 'notification id'))
-    : [];
-  return await notificationsRepo.clearNotifications(citizenid, ids);
+  return await notificationsRepo.clearNotifications(citizenid, data.ids);
 });
 
 app.registerEvent('clearAllNotifications', async (_source, _cbId, data, citizenid) => {
   if (!notificationsRepo) return true;
-  const appId = fields(data).appId ? String(fields(data).appId) : undefined;
-  return await notificationsRepo.clearAll(citizenid, appId);
+  return await notificationsRepo.clearAll(citizenid, data.appId);
 });
 
 app.registerEvent('restoreNotifications', async (_source, _cbId, data, citizenid) => {
   if (!notificationsRepo) return true;
-  const rawIds = fields(data).ids;
-  const ids = Array.isArray(rawIds)
-    ? rawIds.map((id) => requirePositiveInt(id, 'notification id'))
-    : [];
-  return await notificationsRepo.restoreNotifications(citizenid, ids);
+  return await notificationsRepo.restoreNotifications(citizenid, data.ids);
 });
 
 // Prune stale notifications on resource start

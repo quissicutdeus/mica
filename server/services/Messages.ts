@@ -8,13 +8,13 @@ import { conversations, type ConversationRepo } from './Conversations';
 // instance, so the attachment-ownership check runs against the same allowlist.
 import { media } from './Media';
 import { defineService } from '../lib/defineService';
-import { conversationIdFrom, fields, requirePositiveInt } from '../lib/payload';
+import { conversationIdFrom } from '../lib/payload';
+import { messagesContract } from '@gphone/shared/contracts/messages';
 import { resolveOwnedAttachments } from '../lib/attachments';
 import { Message } from '@gphone/shared/types';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { AuditLogger } from '../lib/AuditLogger';
 import { Database } from '../lib/Database';
-import { isPlausibleEmoji } from '../lib/reactions';
 import { blockedBy } from './Blocklist';
 
 /**
@@ -34,7 +34,8 @@ import { blockedBy } from './Blocklist';
  * emits a complete schema. It carries neither `status` nor timestamps, which is why
  * it cannot use the primary-table shape.
  */
-export const messages = defineService<Message>({
+export const messages = defineService<Message, typeof messagesContract>({
+  contract: messagesContract,
   id: 'messages',
   reportable: { label: 'Message', previewColumn: 'message' },
   table: 'gphone_messages',
@@ -176,9 +177,8 @@ const requireParticipant = async (conversationId: number, citizenid: string): Pr
  * `Repository.update` excludes `moderated` anyway, and an unsend of an unsent message
  * would report success for a write that did nothing.
  */
-const requireOwnMessage = async (data: unknown, citizenid: string): Promise<Message> => {
-  const id = requirePositiveInt(fields(data).id ?? data, 'message id');
-  const row = await messageRepo.findById(id, citizenid);
+const requireOwnMessage = async (data: { id: number }, citizenid: string): Promise<Message> => {
+  const row = await messageRepo.findById(data.id, citizenid);
   if (!row) throw new Error('That message is not yours to change.');
   if ((row.status ?? 'active') !== 'active') {
     throw new Error('That message is no longer available.');
@@ -222,8 +222,7 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
 app.registerEvent('edit', async (source, cbId, data, citizenid) => {
   const row = await requireOwnMessage(data, citizenid);
 
-  const raw = fields(data).message;
-  const message = typeof raw === 'string' ? raw.trim() : '';
+  const message = data.message.trim();
   if (!message) {
     throw new Error('A message needs some text. Unsend it instead of emptying it.');
   }
@@ -335,9 +334,7 @@ const requireReactableMessage = async (messageId: number, citizenid: string): Pr
 };
 
 app.registerEvent('react', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const messageId = requirePositiveInt(body.message_id, 'message id');
-  if (!isPlausibleEmoji(body.emoji)) throw new Error('That is not a single emoji.');
+  const { message_id: messageId, emoji } = data;
 
   await requireReactableMessage(messageId, citizenid);
 
@@ -345,7 +342,7 @@ app.registerEvent('react', async (source, cbId, data, citizenid) => {
     await Database.insert(
       `INSERT INTO \`gphone_messages_reactions\`
        (\`message_id\`, \`citizenid\`, \`emoji\`) VALUES (?, ?, ?)`,
-      [messageId, citizenid, body.emoji]
+      [messageId, citizenid, emoji]
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
@@ -355,14 +352,12 @@ app.registerEvent('react', async (source, cbId, data, citizenid) => {
 });
 
 app.registerEvent('unreact', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const messageId = requirePositiveInt(body.message_id, 'message id');
-  if (!isPlausibleEmoji(body.emoji)) throw new Error('That is not a single emoji.');
+  const { message_id: messageId, emoji } = data;
 
   await Database.update(
     `DELETE FROM \`gphone_messages_reactions\`
      WHERE \`message_id\` = ? AND \`citizenid\` = ? AND \`emoji\` = ?`,
-    [messageId, citizenid, body.emoji]
+    [messageId, citizenid, emoji]
   );
   return true;
 });
@@ -373,18 +368,9 @@ app.registerEvent('unreact', async (source, cbId, data, citizenid) => {
  * rather than one per row.
  */
 app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
-  const body = fields(data);
-  const raw = Array.isArray(body.target_ids) ? body.target_ids : [];
-  const requested = raw
-    .map((value) => {
-      try {
-        return requirePositiveInt(value, 'message id');
-      } catch {
-        return null;
-      }
-    })
-    .filter((id): id is number => id !== null)
-    .slice(0, 60);
+  // Deduplicated rather than trimmed: the contract bounds the count, and a repeated id would
+  // otherwise add a placeholder and a bind parameter for a row already named.
+  const requested = [...new Set(data.target_ids)];
 
   if (requested.length === 0) return {};
 
@@ -494,13 +480,11 @@ export const deliverToParticipants = async (
 };
 
 app.registerEvent('send', async (source, cbId, data, citizenid) => {
-  // data: { conversation_id, message, attachments? }
-  const conversationId = conversationIdFrom(data);
+  const conversationId = data.conversation_id;
   await requireParticipant(conversationId, citizenid);
 
-  const body = fields(data);
-  const message = typeof body.message === 'string' ? body.message : '';
-  const attachments = await resolveOwnedAttachments(body.attachments, citizenid, mediaRepo);
+  const message = data.message;
+  const attachments = await resolveOwnedAttachments(data.attachments, citizenid, mediaRepo);
   if (!message.trim() && attachments.length === 0) {
     throw new Error('A message body or an attachment is required.');
   }

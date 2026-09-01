@@ -337,7 +337,7 @@ describe('reactions on Messages (MICA-143)', () => {
         emoji: 'this is not a single emoji, it is far too long a string'
       });
 
-      expect(reply).toEqual({ error: 'That is not a single emoji.' });
+      expect(reply).toMatchObject({ error: expect.stringContaining('emoji') });
       expect(dbMock.single).not.toHaveBeenCalled();
       expect(dbMock.insert).not.toHaveBeenCalled();
     });

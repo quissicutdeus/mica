@@ -8,14 +8,8 @@ import { Conversation, Participant } from '@gphone/shared/types';
 import { AuditLogger } from '../lib/AuditLogger';
 import { resolveByPhone, resolveMany } from '../lib/PlayerDirectory';
 import { CITIZENID_MAX_LENGTH } from '@gphone/shared/framework';
-import {
-  conversationIdFrom,
-  fields,
-  flagUnlessFalse,
-  isRecord,
-  optionalString,
-  pageBounds
-} from '../lib/payload';
+import { conversationIdFrom, flagUnlessFalse, pageBounds } from '../lib/payload';
+import { conversationsContract } from '@gphone/shared/contracts/conversations';
 
 /**
  * The pair-key generated column's own width (MICA-161): two citizenids at
@@ -43,7 +37,8 @@ const PAIR_KEY_MAX_LENGTH = CITIZENID_MAX_LENGTH * 2 + 1;
  * emits a complete schema: it carries `role`, a different status enum, and two
  * nullable timestamps, none of which fit the primary-table shape.
  */
-export const conversations = defineService<Conversation>({
+export const conversations = defineService<Conversation, typeof conversationsContract>({
+  contract: conversationsContract,
   id: 'conversations',
   table: 'gphone_messages_conversations',
   access: {
@@ -341,11 +336,16 @@ const splitName = (displayName: string | null | undefined): [string | null, stri
  */
 const MAX_CONVERSATION_MEMBERS = 32;
 
-/** The UI sends either a citizenid or a whole contact object as `participant`. */
-const nameOf = (participant: unknown): string | null => {
-  if (!isRecord(participant)) return null;
-  const first = optionalString(participant.firstname);
-  const last = optionalString(participant.lastname);
+/**
+ * The display name off the contact card the UI sometimes sends as `participant`.
+ *
+ * Narrowed to those two fields by the contract, which is also what stopped a bare citizenid
+ * string being sent here. It was never read as one — this function returned `null` for
+ * anything that was not an object — so nothing that ever worked stops working.
+ */
+const nameOf = (participant?: { firstname?: string; lastname?: string }): string | null => {
+  const first = participant?.firstname?.trim() || undefined;
+  const last = participant?.lastname?.trim() || undefined;
   return first || last ? `${first ?? ''} ${last ?? ''}`.trim() : null;
 };
 
@@ -359,10 +359,9 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   // and a modified client could otherwise force its way into a thread with anyone it can
   // guess an id for. A citizenid only ever becomes a participant by resolving through a
   // phone number, the same as the 1-on-1 path.
-  const body = fields(data);
-  const phone = optionalString(body.phone);
-  const requestedName = optionalString(body.name);
-  const participant = body.participant;
+  const phone = data.phone?.trim() || undefined;
+  const requestedName = data.name?.trim() || undefined;
+  const participant = data.participant;
 
   let targetCitizenId: string | undefined;
 
@@ -398,10 +397,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
    * The requested list is deduplicated *before* any of it is resolved, so a payload
    * naming one number 500 times costs one lookup rather than 500.
    */
-  const requestedPhones = Array.isArray(body.participants)
-    ? body.participants.filter((p): p is string => typeof p === 'string')
-    : [];
-  const uniquePhones = [...new Set(requestedPhones)];
+  const uniquePhones = [...new Set(data.participants ?? [])];
 
   const members = new Set<string>([citizenid]);
   if (targetCitizenId) members.add(targetCitizenId);
@@ -551,7 +547,7 @@ app.registerEvent('read', async (source, cbId, data, citizenid) => {
  */
 app.registerEvent('archive', async (source, cbId, data, citizenid) => {
   const id = conversationIdFrom(data);
-  const archive = flagUnlessFalse(fields(data).archive);
+  const archive = flagUnlessFalse(data.archive);
   return await conversationRepo.setArchived(id, citizenid, archive);
 });
 
