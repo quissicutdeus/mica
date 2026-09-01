@@ -10,6 +10,12 @@ import { requestEventFor } from '@gphone/shared/rpc';
 
 const proxy = new ServiceProxy('media');
 
+// `relay()` only sends. The reply subscription is what `registerCallback` adds, and this
+// file bypasses `registerCallback` on purpose (see below), so it has to subscribe itself —
+// without this line nobody listens on `gphone:client:media:shareLocation`, every share
+// waits out the 15-second timeout and the UI reports a failure for a row that was written.
+proxy.ensureSubscribed('shareLocation');
+
 /**
  * Resolve a human-readable street name on the sender's own client — the only place it can
  * be resolved, since `GetStreetNameAtCoord`/`GetStreetNameFromHashKey` are client-only
