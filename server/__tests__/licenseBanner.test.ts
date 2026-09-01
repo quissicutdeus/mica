@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 // @ts-expect-error -- a plain .js build module with a hand-written .d.ts beside it.
-import { LICENSE_BANNER } from '../../build/license-banner.js';
+import { LICENSE_BANNER } from '../../scripts/license-banner.js';
 
 /**
  * Every bundle this repo emits carries its licence notice (MICA-192).

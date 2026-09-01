@@ -26,6 +26,14 @@
  * `generateBundle` runs after the chunks exist and is answerable to no bundler's option
  * naming, so it works the same under rollup, rolldown or whatever follows.
  *
+ * ## Why `scripts/` and not `build/`
+ *
+ * The demo image copies `shared/`, `sdk/`, `web/` and `scripts/` — not `build/`. Putting
+ * this beside `build-bundle.js`, where it obviously belongs, made `web/vite.addon.config.ts`
+ * import a path the image does not have, and the image build is the one gate no local
+ * command runs (AGENTS.md §9). `pnpm verify` was green on five consecutive pushes while CI
+ * was red on every one of them.
+ *
  * ## One string, three builds
  *
  * `build-bundle.js` (client and server), `web/vite.config.ts` (the phone) and

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { LICENSE_BANNER } from "./license-banner.js";
+import { LICENSE_BANNER } from "../scripts/license-banner.js";
 import { build, context } from "esbuild";
 
 const IS_WATCH_MODE = process.env.IS_WATCH_MODE === '1';

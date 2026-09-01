@@ -1,5 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
-import { licenseBanner } from '../build/license-banner.js';
+import { licenseBanner } from '../scripts/license-banner.js';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import path from 'path';
 import fs from 'fs';

@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { licenseBanner } from '../build/license-banner.js';
+import { licenseBanner } from '../scripts/license-banner.js';
 import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import type { Plugin } from 'vite';

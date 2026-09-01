@@ -5,7 +5,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
-import { LICENSE_BANNER } from '../build/license-banner.js';
+import { LICENSE_BANNER } from './license-banner.js';
 
 /**
  * Every emitted `.js` starts with the licence notice, checked against the files rather than
@@ -69,7 +69,7 @@ if (missing.length > 0) {
     `check-license-banner: ${missing.length} of ${files.length} emitted files do not start ` +
       'with the licence banner:\n' +
       missing.map((file) => `  ${file}`).join('\n') +
-      '\n\nThe banner is applied by `licenseBanner()` in build/license-banner.js, which every ' +
+      '\n\nThe banner is applied by `licenseBanner()` in scripts/license-banner.js, which every ' +
       'build that emits JavaScript has to include — esbuild via `banner`, and each Vite ' +
       'config via the plugin. A new bundle target needs wiring; an existing one that stopped ' +
       'working is usually a hook that now runs before a post-stage one.'
