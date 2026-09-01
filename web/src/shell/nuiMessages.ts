@@ -136,6 +136,7 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     const msg = parseReceiveMessage(data);
     if (!msg) return;
     conversationsStore.addReceivedMessage({
+      id: msg.id,
       conversation_id: msg.conversationId,
       message: msg.message,
       senderName: msg.senderName,

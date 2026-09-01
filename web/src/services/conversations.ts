@@ -364,6 +364,8 @@ function createMessagesStore() {
     },
 
     addReceivedMessage: (incoming: {
+      /** The stored row's id. The live push carries it; a caller without one gets a placeholder. */
+      id?: number;
       conversation_id?: number;
       message?: string;
       senderName?: string;
@@ -427,8 +429,11 @@ function createMessagesStore() {
           ? (currentMsgs.find((m) => m.id === incoming.reply_to_id) ?? null)
           : null;
 
+        // The real row id when the push carries one — a reaction or delete keyed on an
+        // invented id can land on somebody else's message. The placeholder survives only
+        // for a caller that has no row to name.
         const newUiMsg: UIMessage = {
-          id: Math.floor(Math.random() * 1000000),
+          id: incoming.id ?? Math.floor(Math.random() * 1000000),
           conversation_id: convId,
           citizenid: 'other-cit',
           sender: 'other',

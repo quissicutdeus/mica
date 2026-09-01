@@ -44,6 +44,8 @@ export interface ReceiveMailPayload {
 }
 
 export interface ReceiveMessagePayload {
+  /** The stored row's id, so a reaction or delete on a live-pushed message names the real row. */
+  id?: number;
   conversationId?: number;
   message: string;
   senderName?: string;
@@ -225,7 +227,8 @@ export function parseReceiveMessage(data: unknown): ReceiveMessagePayload | null
   // alongside the flattened display fields above — `reply_to_id` only lives there.
   const row = safeObject(obj.row);
   const replyToId = safeNumber(row?.reply_to_id ?? obj.reply_to_id);
-  return { conversationId, message, senderName, phone, avatar, created_at, replyToId };
+  const id = safeNumber(row?.id ?? obj.id);
+  return { id, conversationId, message, senderName, phone, avatar, created_at, replyToId };
 }
 
 function parseContactShareSender(val: unknown): ContactShareSender | null {
