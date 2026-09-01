@@ -97,13 +97,20 @@ const recordMockCall = (event: string, reply: unknown): void => {
 };
 
 export class MockTransportAdapter implements ITransportAdapter {
+  /**
+   * No `MockRegistry.has` guard, deliberately (MICA-195).
+   *
+   * There was one, and it answered `null` for any action the registry did not know. That
+   * made `getMockData`'s throw — which exists so a missing mock reads as "nobody wired this
+   * up" rather than "the server sent nothing" — unreachable from the one caller that
+   * matters: `fetchNui` turned the `null` into its `defaultValue`, and a feature with no
+   * mock passed every spec while doing nothing. The rejection now reaches `fetchNui`, which
+   * warns (or throws, for a write) where `web/e2e/support/test.ts` fails the spec on it.
+   */
   async send<T = unknown>(event: string, data?: unknown): Promise<T> {
-    if (MockRegistry.has(event)) {
-      const reply = (await MockRegistry.handle(event, data)) as T;
-      recordMockCall(event, reply);
-      return reply;
-    }
-    return null as unknown as T;
+    const reply = (await MockRegistry.handle(event, data)) as T;
+    recordMockCall(event, reply);
+    return reply;
   }
 
   on<T = unknown>(event: string, handler: (data: T) => void): () => void {

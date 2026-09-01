@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './support/test';
 
 /**
  * Settings survive a reload, and hydration never eats them.

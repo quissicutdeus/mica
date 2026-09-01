@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../support/test';
 import { seedHomeGrid } from '../support/homeGrid';
 
 test.describe('Calculator App E2E', () => {

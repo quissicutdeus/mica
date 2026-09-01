@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../support/test';
 
 /**
  * Mirrors `THUMBNAIL_SIZE` in `web/src/nui/mocks/data.ts` — the intrinsic width the mock

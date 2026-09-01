@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './support/test';
 
 /**
  * The phone slides up when it is opened (MICA-86).

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './support/test';
 
 /**
  * The guard on the two-project setup in `playwright.config.ts`.

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './support/test';
 import { seedHomeGrid } from './support/homeGrid';
 import { settlePhoneOpen } from './support/phoneOpen';
 

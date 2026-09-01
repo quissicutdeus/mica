@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../support/test';
 
 /**
  * The now-playing card's album-art tint, in a real browser (MICA-111).

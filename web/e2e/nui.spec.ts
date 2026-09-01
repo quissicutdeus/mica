@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './support/test';
 
 test.describe('FiveM NUI Phone Interface', () => {
   test('renders phone container and initializes in browser mode', async ({ page }) => {

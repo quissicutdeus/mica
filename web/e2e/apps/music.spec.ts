@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '../support/test';
 
 /**
  * Music, end to end — against a stand-in for YouTube, never YouTube. MICA-111 phase 1.

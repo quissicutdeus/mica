@@ -76,6 +76,23 @@ describe('Transport Abstraction Module', () => {
     expect(transport).toBeInstanceOf(MockTransportAdapter);
   });
 
+  describe('MockTransportAdapter', () => {
+    it('answers a mocked action through the registry', async () => {
+      const reply = await new MockTransportAdapter().send('getConversations');
+      expect(Array.isArray(reply)).toBe(true);
+    });
+
+    it('rejects an action with no mock rather than answering null', async () => {
+      // MICA-195. A `MockRegistry.has` guard used to answer `null` here, which `fetchNui`
+      // turned into its `defaultValue` — so the registry's deliberate throw on a missing
+      // mock was unreachable, and a feature with no mock passed every spec doing nothing.
+      // The real registry, not a stub: what is under test is that *its* throw gets out.
+      await expect(new MockTransportAdapter().send('noSuchAction')).rejects.toThrow(
+        '[MockRegistry] No handler found for event: noSuchAction'
+      );
+    });
+  });
+
   it('allows custom transport adapter injection via setTransport', async () => {
     const customAdapter: ITransportAdapter = {
       send: vi.fn().mockResolvedValue({ custom: true }),

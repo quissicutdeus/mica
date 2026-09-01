@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './support/test';
 
 /**
  * The home-screen search bar: the collapsed pill under the Dock, and the merged App

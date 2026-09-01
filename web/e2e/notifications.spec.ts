@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Locator } from '@playwright/test';
+import { test, expect, type Page, type Locator } from './support/test';
 import { installAddOn } from './support/addon';
 import { seedHomeGrid } from './support/homeGrid';
 

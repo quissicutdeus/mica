@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../support/test';
 
 test.describe('Camera App E2E', () => {
   test.beforeEach(async ({ page }) => {
