@@ -995,39 +995,28 @@ const QB_OWNER_TABLE: OwnerTable = Object.freeze({ table: 'players', column: 'ci
 const ESX_OWNER_TABLE: OwnerTable = Object.freeze({ table: 'users', column: 'identifier' });
 
 /**
- * SQL that hangs a player's name off whatever table this framework keeps characters in.
+ * **There is deliberately no "join the framework's character table" helper here**, and the
+ * reason is worth keeping (MICA-197).
  *
- * `ownerTable` says *where* to look, which is enough for a sweep that only compares ids.
- * Reading a **name** out of it needs more than that, because the two frameworks do not store
- * one the same way: qb keeps `firstname`/`lastname`/`phone` inside a `charinfo` JSON column,
- * ESX keeps the first two as ordinary columns and has no phone at all. A caller that wants
- * names alongside rows it is already selecting cannot express that from `ownerTable` alone,
- * and hard-coding either shape is what made the Messages list throw on ESX (MICA-197).
+ * The obvious way to put a name beside a row is a `LEFT JOIN` onto `ownerTable()`. It was
+ * written that way first, and a throwaway MariaDB 11.8 loaded with `gphone.esx.sql` plus a
+ * stock es_extended `users` refused it outright: MySQL errno 1267, *Illegal mix of
+ * collations*. `schemaSql.TABLE_COLLATION` pins every gPhone column to `utf8mb4_unicode_ci`
+ * while `users.identifier` takes the server default, which from MariaDB 11.4 is
+ * `utf8mb4_uca1400_ai_ci` — and a **column-to-column** comparison, unlike one against a bound
+ * parameter, has no coercible side to settle on.
  *
- * Fragments rather than a whole query, because the interesting half — which rows, which
- * predicate, which bound parameters — belongs to the caller. This only supplies the join and
- * the three name expressions, all built from the frozen literals above.
+ * That is exactly the hazard `collationCheck.ts` was written for in MICA-157, and its
+ * reasoning explicitly exempts ESX: no `players` table, no foreign key, nothing to check. A
+ * join would have quietly reintroduced the requirement on the one install path nothing
+ * verifies it on.
+ *
+ * `COLLATE` in the join condition makes the statement legal and stops the index on
+ * `users.identifier` being usable, which trades a correctness bug for a full scan of the
+ * framework's character table on every read. So the lookups here compare against **bound
+ * parameters** instead — `findOfflineByCitizenIds` below — which are collation-coercible and
+ * index-friendly, and `PlayerDirectory` is the one place a name comes from.
  */
-export interface OwnerNameProjection {
-  /** `LEFT JOIN …`, aliased so the columns below can name it. */
-  join: string;
-  /** `… AS firstname, … AS lastname, … AS phone`, always all three and always in that order. */
-  columns: string;
-}
-
-/** The alias the join is given, and the only name `columns` refers to it by. */
-const OWNER_ALIAS = 'gp_owner';
-
-/**
- * A qualified column this module is willing to put in a join condition.
- *
- * The left-hand side is the caller's own column (`p.citizenid`), which is a literal a server
- * author wrote — but a guard that lives only at the producer stops guarding the moment a
- * second producer appears, which is the principle `orphanSweep.ts` re-checks `ownerTable`'s
- * answer on. MySQL cannot parameterize an identifier (§2.9), so anything that is not plainly
- * `alias.column` is refused rather than escaped.
- */
-const QUALIFIED_COLUMN = /^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
  * What a framework's own records say about a player, online or not.
@@ -1294,58 +1283,6 @@ export class FrameworkBridge {
       default:
         return null;
     }
-  }
-
-  /**
-   * How to read a name out of this framework's character table, or `null` when there is none
-   * to read from — standalone, and a framework that has not answered yet.
-   *
-   * A `null` here is not an error and a caller must not treat it as one: it means the join
-   * has to be left out and the name columns will be absent, which is exactly what a
-   * standalone server has to offer for an offline player anyway. The online overlay in
-   * `PlayerDirectory` still names everyone who is connected.
-   *
-   * @param lhs the caller's own citizenid column, qualified — `p.citizenid`.
-   */
-  public static ownerNameProjection(lhs: string): OwnerNameProjection | null {
-    if (!QUALIFIED_COLUMN.test(lhs)) {
-      throw new Error(
-        `[FrameworkBridge] ownerNameProjection needs a qualified column such as ` +
-          `'p.citizenid'; refusing '${lhs}'.`
-      );
-    }
-
-    const owner = FrameworkBridge.ownerTable();
-    if (!owner) return null;
-
-    const join =
-      `LEFT JOIN \`${owner.table}\` \`${OWNER_ALIAS}\` ` +
-      `ON \`${OWNER_ALIAS}\`.\`${owner.column}\` = ${lhs}`;
-
-    if (owner === ESX_OWNER_TABLE) {
-      // Two ordinary columns, and no phone: a number is not core ESX, and guessing at one
-      // community resource's table would be right for one server population and silently
-      // wrong for the rest. `NULL AS phone` keeps the projection the same three columns on
-      // every framework, so the caller needs no branch of its own.
-      return {
-        join,
-        columns:
-          `\`${OWNER_ALIAS}\`.\`firstname\` AS firstname, ` +
-          `\`${OWNER_ALIAS}\`.\`lastname\` AS lastname, ` +
-          `NULL AS phone`
-      };
-    }
-
-    const json = (field: string): string =>
-      `JSON_UNQUOTE(JSON_EXTRACT(\`${OWNER_ALIAS}\`.\`charinfo\`, '$.${field}'))`;
-
-    return {
-      join,
-      columns:
-        `${json('firstname')} AS firstname, ` +
-        `${json('lastname')} AS lastname, ` +
-        `${json('phone')} AS phone`
-    };
   }
 
   /**

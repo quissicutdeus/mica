@@ -34,15 +34,10 @@ const { framework, handlers, emitted } = vi.hoisted(() => {
     handlers: captured,
     emitted: [] as { event: string; target: number }[],
     /**
-     * Who is connected, and what the framework's character table looks like — both as
-     * mutable boxes, because a budget has to hold whether everyone is online (no offline
-     * lookup) or nobody is (the join is the only source of a name).
+     * Who is connected, as a mutable box — a budget has to hold whether everyone is online
+     * (the framework answers every name from memory) or nobody is (one batched lookup).
      */
-    framework: {
-      online: new Map<string, number>(),
-      /** What `ownerNameProjection` answers. `null` is standalone: no character table. */
-      projection: null as { join: string; columns: string } | null
-    }
+    framework: { online: new Map<string, number>() }
   };
 });
 
@@ -57,32 +52,45 @@ vi.mock('../lib/Database', async () => {
   return { Database: createCountingDatabase() };
 });
 
-vi.mock('../lib/FrameworkBridge', () => ({
-  FrameworkBridge: {
-    getPlayer: (source: number) => {
+/**
+ * The real bridge with two statics replaced, rather than a fake one.
+ *
+ * `findOfflineByCitizenIds` **must stay real**: it is the third statement this file counts,
+ * and a stub answering an empty map without touching the database would make the budget read
+ * as two no matter what the production code did. That is the mock-hides-a-missing-layer trap
+ * the repo's NUI rules are about, one layer down.
+ *
+ * Only the two that need a framework are overridden — who is connected, and who a source
+ * belongs to — because there is no framework under a test and `getAllPlayers` would answer
+ * with nothing.
+ */
+vi.mock('../lib/FrameworkBridge', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/FrameworkBridge')>();
+
+  class TestBridge extends actual.FrameworkBridge {
+    static override getPlayer(source: number) {
       for (const [citizenid, src] of framework.online) {
-        if (src === source)
-          return { citizenid, source, phone: null, rawPlayer: {}, setMeta: () => {} };
+        if (src === source) {
+          return { citizenid, source, phone: null, rawPlayer: {}, setMeta: () => {} } as never;
+        }
       }
       return source === CALLER_SOURCE
-        ? { citizenid: CALLER, source, phone: null, rawPlayer: {}, setMeta: () => {} }
+        ? ({ citizenid: CALLER, source, phone: null, rawPlayer: {}, setMeta: () => {} } as never)
         : null;
-    },
-    getSourceByCitizenId: (citizenid: string) => framework.online.get(citizenid) ?? null,
-    getSourcesByCitizenId: (citizenids: readonly string[]) => {
+    }
+
+    static override getSourcesByCitizenId(citizenids: readonly string[]) {
       const found = new Map<string, number>();
       for (const citizenid of citizenids) {
         const src = framework.online.get(citizenid);
         if (src !== undefined) found.set(citizenid, src);
       }
       return found;
-    },
-    ownerNameProjection: () => framework.projection,
-    findOfflineByCitizenIds: async () => new Map(),
-    registerUsableItem: () => {}
-  },
-  detectFramework: () => 'qb'
-}));
+    }
+  }
+
+  return { ...actual, FrameworkBridge: TestBridge };
+});
 
 // Imported for its side effect: loading the module is what registers
 // `gphone:server:conversations:get`, which `call` below drives.
@@ -95,19 +103,9 @@ const db = Database as unknown as CountingDatabase;
 const CALLER = 'CIT_ME';
 const CALLER_SOURCE = 5;
 
-/** The qb shape, which is what `ownerNameProjection` hands the hydration on a qb server. */
-const QB_PROJECTION = {
-  join: 'LEFT JOIN `players` `gp_owner` ON `gp_owner`.`citizenid` = p.citizenid',
-  columns:
-    "JSON_UNQUOTE(JSON_EXTRACT(`gp_owner`.`charinfo`, '$.firstname')) AS firstname, " +
-    "JSON_UNQUOTE(JSON_EXTRACT(`gp_owner`.`charinfo`, '$.lastname')) AS lastname, " +
-    "JSON_UNQUOTE(JSON_EXTRACT(`gp_owner`.`charinfo`, '$.phone')) AS phone"
-};
-
 beforeEach(() => {
   db.reset();
   framework.online.clear();
-  framework.projection = QB_PROJECTION;
   emitted.length = 0;
   __resetRateLimits();
   (globalThis as any).source = CALLER_SOURCE;
@@ -159,65 +157,48 @@ const participantsOf = (n: number) =>
     }
   ]);
 
-describe('the conversation list is two queries, whatever the list holds', () => {
+describe('the conversation list is three queries at most, whatever the list holds', () => {
   for (const n of [1, 8, 60]) {
-    it(`costs exactly two statements for ${n} thread(s)`, async () => {
+    it(`costs exactly three statements for ${n} thread(s)`, async () => {
       db.answerQuery(threads(n), participantsOf(n));
 
       await call('get', {});
 
-      expect(db.count()).toBe(2);
+      expect(db.count()).toBe(3);
     });
   }
 
   /**
-   * The pair, named. Counting to two is only meaningful if the two are the page and the
-   * hydration rather than, say, the page twice.
+   * The three, named. Counting to three is only meaningful if they are the page, the
+   * membership and the names rather than, say, the page three times.
+   *
+   * The third is the one that could have been a `LEFT JOIN` onto the framework's character
+   * table and is deliberately not: gPhone pins `utf8mb4_unicode_ci` and es_extended's
+   * `users.identifier` takes the server default, so a column-to-column comparison is MySQL
+   * errno 1267 on a stock ESX install. A bound-parameter `IN` has no such problem.
    */
-  it('spends them on one page of threads and one batched participant read', async () => {
+  it('spends them on the page, the membership and one batched name lookup', async () => {
     db.answerQuery(threads(3), participantsOf(3));
 
     await call('get', {});
 
-    expect(db.statements).toHaveLength(2);
+    expect(db.statements).toHaveLength(3);
     expect(db.statements[0].sql).toContain('FROM gphone_messages_conversations c');
     expect(db.statements[1].sql).toContain('FROM `gphone_messages_participants` p');
     // One placeholder per conversation on the page, and the ids are bound, never inlined.
     expect(db.statements[1].sql).toContain('IN (?, ?, ?)');
     expect(db.statements[1].params).toEqual([1, 2, 3]);
-  });
-
-  /**
-   * The hydration join is the ESX fix. `ownerNameProjection` answers `null` where there is no
-   * character table to read — standalone, and a framework that has not started yet — and the
-   * query has to run anyway rather than throwing or being skipped, because the participant
-   * rows themselves are still needed.
-   */
-  it('still costs two when the framework has no character table to join', async () => {
-    framework.projection = null;
-    db.answerQuery(threads(4), participantsOf(4));
-
-    await call('get', {});
-
-    expect(db.count()).toBe(2);
+    // Never a join onto the framework's own table — see above.
     expect(db.statements[1].sql).not.toContain('LEFT JOIN');
-    expect(db.statements[1].sql).toContain('NULL AS firstname');
+    expect(db.statements[2].sql).toContain('IN (?, ?, ?, ?)');
   });
 
   /**
-   * Nobody connected is the case that used to reach for the directory's offline lookup, which
-   * would have been a third statement re-reading the very rows the join just returned. The
-   * overlay is `resolveOnline` precisely so that it cannot.
+   * Everyone connected is answered from the framework's in-memory characters, so the name
+   * lookup does not happen at all. This is the only case that drops to two, and it drops
+   * because a query became unnecessary rather than because a batch grew.
    */
-  it('adds no lookup for participants who are all offline', async () => {
-    db.answerQuery(threads(10), participantsOf(10));
-
-    await call('get', {});
-
-    expect(db.count()).toBe(2);
-  });
-
-  it('adds no lookup for participants who are all online either', async () => {
+  it('costs two when every participant is already connected', async () => {
     for (let index = 1; index <= 10; index++) framework.online.set(`CIT_${index}`, 100 + index);
     framework.online.set(CALLER, CALLER_SOURCE);
     db.answerQuery(threads(10), participantsOf(10));
@@ -225,6 +206,21 @@ describe('the conversation list is two queries, whatever the list holds', () => 
     await call('get', {});
 
     expect(db.count()).toBe(2);
+  });
+
+  /**
+   * The names are asked for **once**, not once per thread and not once per participant — the
+   * whole page's citizenids go into one statement, deduplicated, so the caller appearing in
+   * all sixty threads is one parameter rather than sixty.
+   */
+  it('asks for every name in one statement, deduplicated', async () => {
+    db.answerQuery(threads(4), participantsOf(4));
+
+    await call('get', {});
+
+    const names = db.statements[2];
+    // Four threads, five distinct people: the caller once, plus one other per thread.
+    expect(names.params).toEqual([CALLER, 'CIT_1', 'CIT_2', 'CIT_3', 'CIT_4']);
   });
 
   /** An empty list asks nothing further — there are no ids to hydrate. */

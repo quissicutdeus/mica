@@ -5,21 +5,6 @@
 import { SchemaRepository } from '../lib/defineService';
 import { Conversation, Participant } from '@gphone/shared/types';
 import { Database } from '../lib/Database';
-import { FrameworkBridge } from '../lib/FrameworkBridge';
-
-/**
- * A participant row with whatever the framework's own character table could say about them.
- *
- * All three name fields are nullable and all three are absent on a server whose framework
- * keeps no character table — `FrameworkBridge.ownerNameProjection` selects literal `NULL`s
- * there so the shape does not change per framework, and `Conversations.get` overlays a
- * connected player's in-memory name on top regardless.
- */
-export interface HydratedParticipant extends Participant {
-  firstname: string | null;
-  lastname: string | null;
-  phone: string | null;
-}
 
 /**
  * Bespoke queries for conversations. The schema and both allowlists come from the
@@ -164,38 +149,38 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
   }
 
   /**
-   * Every live participant of every conversation named, with names, in **one** query.
+   * Every live participant of every conversation named, in **one** query.
    *
    * This replaces a per-conversation query in `Conversations.get` that was 1+N in the size of
    * a player's own thread list — and that hard-coded `LEFT JOIN players`, a table es_extended
-   * does not have, so the whole Messages list threw on ESX (MICA-197). The join now comes
-   * from `FrameworkBridge.ownerNameProjection`, which is the one place that knows where a
-   * given framework keeps characters and how a name is spelled inside it.
+   * does not have, so the whole Messages list threw on ESX (MICA-197).
+   *
+   * **No join onto the framework's character table, deliberately.** Putting the name here
+   * looks obviously right and is not: gPhone pins every column to `utf8mb4_unicode_ci` and
+   * es_extended's `users.identifier` takes the server default, which from MariaDB 11.4 is
+   * `utf8mb4_uca1400_ai_ci` — and a column-to-column comparison across two collations is
+   * MySQL errno 1267 rather than a slow query. `FrameworkBridge`'s own note above
+   * `findOfflineByCitizenIds` has the whole finding. So this returns the membership and
+   * `Conversations.get` asks `PlayerDirectory` for the names, whose lookups compare against
+   * bound parameters and are collation-coercible.
    *
    * `conversation_id` values are bound parameters; the only interpolation is the placeholder
-   * list and the projection's own frozen literals (§2.9). Ids are deduplicated first, so a
-   * caller cannot turn a list of repeats into a wider `IN`.
+   * list (§2.9). Ids are deduplicated first, so a caller cannot turn a list of repeats into a
+   * wider `IN`.
    */
   async findParticipantsForConversations(
     conversationIds: readonly number[]
-  ): Promise<HydratedParticipant[]> {
+  ): Promise<Participant[]> {
     const ids = [...new Set(conversationIds)].filter((id) => Number.isInteger(id));
     if (ids.length === 0) return [];
 
     const placeholders = ids.map(() => '?').join(', ');
-    const names = FrameworkBridge.ownerNameProjection('p.citizenid');
-
-    // No framework table to read a name out of — standalone, or one that has not answered
-    // yet. Selected as literal nulls rather than omitted, so every caller sees one shape.
-    const columns = names ? names.columns : 'NULL AS firstname, NULL AS lastname, NULL AS phone';
-
     const query = `
-            SELECT p.*, ${columns}
+            SELECT p.*
             FROM \`gphone_messages_participants\` p
-            ${names ? names.join : ''}
             WHERE p.\`conversation_id\` IN (${placeholders}) AND p.\`left_at\` IS NULL
         `;
-    return await Database.query<HydratedParticipant[]>(query, ids);
+    return await Database.query<Participant[]>(query, ids);
   }
 
   /**
