@@ -6,6 +6,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { releaseManifest } from './lib/release-manifest.js';
+
 /**
  * Pack `@gphone/sdk` and `@gphone/shared` as tarballs for a GitHub Release.
  *
@@ -83,15 +85,13 @@ mkdirSync(OUT, { recursive: true });
 
 try {
   for (const { path, original } of manifests) {
-    const pkg = JSON.parse(original);
-    pkg.version = version;
-    writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`);
+    writeFileSync(path, releaseManifest(original, version));
   }
 
-  // Order matters only for the log: `pnpm pack` rewrites the SDK's `workspace:*` dependency
-  // on `@gphone/shared` to whatever version that package's manifest carries, which is why
-  // both are set above before either is packed. Get that backwards and the SDK tarball asks
-  // for a version of `shared` that no tarball provides.
+  // `releaseManifest` has already turned the SDK's `workspace:*` dependency on
+  // `@gphone/shared` into this same version, so both tarballs agree and neither needs a
+  // workspace to be understood. That rewrite used to be left to `pnpm pack`, which cannot
+  // do it without an install — see `lib/release-manifest.js` for what that cost.
   for (const { dir } of manifests) {
     execFileSync('pnpm', ['pack', '--pack-destination', join(process.cwd(), OUT)], {
       cwd: dir,

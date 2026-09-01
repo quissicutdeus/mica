@@ -57,6 +57,13 @@ jobs:
       #
       # No `pnpm install` and no `cache: 'pnpm'`: `pnpm pack` reads a manifest and archives
       # files, so nothing here needs node_modules and a cache would be restored for nothing.
+      #
+      # That held until `shared/` became a package. Resolving a `workspace:` dependency is
+      # the one thing pack cannot do from a manifest alone, and this job failed on the first
+      # release after it, with ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL. `pack-release.js`
+      # now rewrites those specs itself before packing, so the sentence above is true again
+      # rather than merely still written down. `server/__tests__/packRelease.test.ts` checks
+      # it on every push, because this workflow only runs on main and found out too late.
       - uses: pnpm/action-setup@v6
         if: steps.tag.outputs.skip == ''
         name: Install pnpm 11
