@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, readdirSync, existsSync, writeFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';

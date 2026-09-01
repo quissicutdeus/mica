@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * Generates a deterministic 16-digit credit card number from a string identifier (e.g. citizenid or player name).
  * Uses FNV-1a hashing combined with a Linear Congruential Generator (LCG) for uniform entropy.

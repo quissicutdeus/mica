@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 quissicutdeus
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 <script lang="ts">
   let { status = 'delivered', class: className = 'w-3.5 h-3.5' } = $props<{
     status: 'delivered' | 'read';

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * Versioned, forward-only schema migrations for changes `SchemaMigrator`'s additive planner
  * cannot safely infer — a rename, a retype, a drop. See AGENTS.md §8, "Schema changes", for

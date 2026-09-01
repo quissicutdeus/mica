@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import './services';
 import { BankingBridge } from './lib/BankingBridge';
 import { registerPublicApi } from './lib/publicApi';

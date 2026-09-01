@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { registerFacet } from '../../../../sdk/host/current';
 import { themeStore, schemeStore, isLightMode, DEFAULT_THEME } from '../../shell/state/theme';
 import { seedFromRgbString, sanitizeSeed } from '../../../../sdk/host/seam/theme';

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * The iframe facet set — the other side of the SDK's host seam, and an add-on's half of it.
  *

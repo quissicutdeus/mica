@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { AddOnConstants } from './messages';
 
 // MICA-16 step 4: the numeric/shape constants the shell hands over at hydrate — defaults

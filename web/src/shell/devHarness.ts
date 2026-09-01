@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { debugData } from '../lib/phone/debug';
 import { placeholderAvatar } from '@gphone/sdk';
 import { appRegistryStore } from './state/registry';

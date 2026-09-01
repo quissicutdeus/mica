@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { PhoneState } from '../lib/PhoneState';
 
 // Calls do not use ServiceProxy: these are fire-and-forget NUI callbacks with no cbId to

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { registerFacet } from '../../../../sdk/host/current';
 import { setAutoLockPolicy } from '../../shell/state/lockScreen';
 import type { AutoLockPolicy } from '../../../../sdk/vocabulary/shell';

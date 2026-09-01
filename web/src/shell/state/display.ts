@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { captureZoomBoost } from '../../../../sdk/host/seam/captureZoom';
 import { derived, get, writable } from 'svelte/store';
 import { usePersisted } from '../../../../sdk/host/usePersisted';

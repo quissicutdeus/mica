@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { fade as svelteFade, fly as svelteFly } from 'svelte/transition';
 import type { FadeParams, FlyParams, TransitionConfig } from 'svelte/transition';
 

@@ -1,3 +1,7 @@
+-- SPDX-FileCopyrightText: 2025 quissicutdeus
+--
+-- SPDX-License-Identifier: AGPL-3.0-or-later
+
 -- Central moderation and accountability ledger.
 --
 -- Every destructive or state-changing action a player takes on their own content is

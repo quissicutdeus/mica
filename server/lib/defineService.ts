@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { Repository } from './Repository';
 import { registerReportable, type ReportableDefinition } from './moderation';
 import { registerReactable, type ReactableDefinition } from './reactions';

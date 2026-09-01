@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // @vitest-environment jsdom
 /**
  * MICA-176: which facet set this file's subject resolves against. A hook no longer

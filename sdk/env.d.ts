@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /* eslint-disable @typescript-eslint/triple-slash-reference --
    these load ambient globals (import.meta.env, etc.); an `import` doesn't have the same effect. */
 /// <reference types="svelte" />

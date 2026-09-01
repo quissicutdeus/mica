@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { fetchCitizenId, fetchBalance } from '../../services/account';
 import { refreshAdmin } from '../../services/admin';
 import { refreshCapabilities } from '../../services/capabilities';

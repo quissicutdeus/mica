@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2025 quissicutdeus
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Every source file carries its own SPDX header. This file covers the rest —
+# lockfiles, tsconfigs, dotfiles, the generated barrels and `fxmanifest.lua`,
+# and anything a comment cannot go in (`package.json`, `.svg`, `.txt`).
+#
+# `precedence = "closest"` means a file's own header always wins; this block is
+# the fallback for files that have none, so it can never contradict one. If a
+# third-party file is ever vendored into the tree, give it its own block above
+# this one — the last matching block wins.
+
+version = 1
+SPDX-PackageName = "gphone"
+SPDX-PackageSupplier = "quissicutdeus"
+SPDX-PackageDownloadLocation = "https://github.com/quissicutdeus/gphone"
+
+[[annotations]]
+path = "**"
+precedence = "closest"
+SPDX-FileCopyrightText = ["2025 quissicutdeus", "2026 quissicutdeus"]
+SPDX-License-Identifier = "AGPL-3.0-or-later"

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { requestEventFor, responseEventFor, parseRequestEvent } from '@gphone/shared/rpc';
 import { ServiceProxy } from '../lib/ServiceProxy';

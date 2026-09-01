@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 quissicutdeus
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 <script lang="ts">
   import { useHighscores, EmptyState } from '@gphone/sdk';
   import type { LeaderboardEntry } from '@gphone/shared/types';

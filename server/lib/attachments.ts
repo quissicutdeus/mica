@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { requirePositiveInt } from './payload';
 import { MAX_ATTACHMENTS } from '@gphone/shared/attachments';
 

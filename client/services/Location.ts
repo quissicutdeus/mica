@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Location: the one NUI action whose client relay is not a plain passthrough, plus the
 // purely local waypoint action. `shared/routes.ts` and `client/services/Relay.ts` explain
 // why `shareLocation` is not handled by the generic loop there.

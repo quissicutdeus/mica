@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * The sound vocabulary `Facets['sound']`, `Facets['systemHardware']` and their write twins
  * are stated in. MICA-172 — see `./accounts.ts`.

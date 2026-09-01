@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // @vitest-environment jsdom
 //
 // `capture.ts` reaches the shared image encoder through `@gphone/sdk` — an app may not

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { getContext } from 'svelte';
 import { PERMISSION_OF } from '../permissions';
 import { HOST_CONTEXT_KEY, type Host } from './protocol';

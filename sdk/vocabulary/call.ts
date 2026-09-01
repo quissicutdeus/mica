@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * The call state `Facets['call']` reports. MICA-172 — see `./accounts.ts`.
  *

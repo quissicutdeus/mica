@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * A narrow, hand-written shape for the one Node built-in `server/` code reaches for
  * (`Lockscreen.ts`, MICA-60) — not the real `@types/node`.

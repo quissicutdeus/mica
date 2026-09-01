@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { MessageRepository } from '../repositories/MessageRepository';
 import { conversations, type ConversationRepo } from './Conversations';
 // Media is a declared app; reuse its derived repository rather than a second

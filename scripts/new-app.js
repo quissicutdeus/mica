@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -57,10 +61,26 @@ if (title.length > 8) {
   );
 }
 
+/**
+ * Hand-written source carries its own SPDX header; `REUSE.toml` is the fallback for config and
+ * generated files. `reuse lint` passes either way, so a scaffold that skipped this would drift
+ * from the rest of the tree with nothing to report it.
+ */
+const spdxHeader = (relative) => {
+  const notice = [
+    `SPDX-FileCopyrightText: ${new Date().getFullYear()} quissicutdeus`,
+    '',
+    'SPDX-License-Identifier: AGPL-3.0-or-later'
+  ];
+  return relative.endsWith('.svelte')
+    ? `<!--\n${notice.join('\n')}\n-->\n\n`
+    : `${notice.map((line) => (line ? `// ${line}` : '//')).join('\n')}\n\n`;
+};
+
 const write = (relative, contents) => {
   const full = path.join(ROOT, relative);
   fs.mkdirSync(path.dirname(full), { recursive: true });
-  fs.writeFileSync(full, contents);
+  fs.writeFileSync(full, spdxHeader(relative) + contents);
   console.log(`  created  ${relative}`);
 };
 

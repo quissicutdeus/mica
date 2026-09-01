@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { defineService } from '../lib/defineService';
 import { ownedAccount, isBlocked } from './Accounts';
 // Media is a declared app; reuse its derived repository rather than a second instance, so

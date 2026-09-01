@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { AppPermission } from '../../manifest';
 
 // MICA-16 step 4: the postMessage wire format between the shell and a sandboxed add-on iframe.

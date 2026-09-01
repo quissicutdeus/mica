@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 quissicutdeus
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 <script lang="ts">
   /**
    * The off switch for everybody else's music. MICA-111 phase 2, shell half.

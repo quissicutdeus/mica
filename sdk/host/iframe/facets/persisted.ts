@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { PersistedOptions } from '../../facets';
 import { registerFacet } from '../../current';
 import { writable, type Writable } from 'svelte/store';

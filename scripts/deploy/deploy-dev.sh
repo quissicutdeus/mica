@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: 2026 quissicutdeus
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Runs on the game server as the gphone deploy account, pinned by that account's
 # authorized_keys as a forced command:
 #

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // The server half of the settings service.
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';

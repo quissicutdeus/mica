@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { fetchNui } from '../nui/fetchNui';
 import type { Account, FollowStats, ReactionSummary } from '@gphone/shared/types';
 import type { AccountSearchQuery, FollowListQuery, FollowPage, ReactionTarget } from '@gphone/sdk';

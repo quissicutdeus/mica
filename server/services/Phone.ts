@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { notifyPlayer } from '../lib/shell';
 import { registerService } from '../lib/services';

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { Contact } from '@gphone/shared/types';
 import type { AppManifest } from '../../../../sdk/manifest';
 import type { UIConversation } from '@gphone/sdk';

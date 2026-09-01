@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { readable } from 'svelte/store';
 import { registerFacet } from '../../../../sdk/host/current';
 import { autoLockPolicy, AUTO_LOCK_POLICY_CHOICES } from '../../shell/state/lockScreen';

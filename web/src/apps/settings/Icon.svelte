@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 quissicutdeus
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 <script lang="ts">
   let { class: className = 'h-8 w-8' }: { class?: string } = $props();
 </script>

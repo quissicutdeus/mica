@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { Repository } from './Repository';
 import { AuditLogger } from './AuditLogger';
 import { type CallbackId, requirePositiveInt } from './payload';

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { is24HourNow } from '../host/seam/clockPreference';
 
 export function formatCurrency(amount: number): string {

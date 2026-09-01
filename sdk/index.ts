@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * MICA-172 removed an `import '../web/src/host/registerFacets';` that used to sit here.
  *

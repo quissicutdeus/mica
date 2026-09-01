@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { ConversationRepository } from '../repositories/ConversationRepository';
 import { defineService } from '../lib/defineService';
 import { Conversation } from '@gphone/shared/types';

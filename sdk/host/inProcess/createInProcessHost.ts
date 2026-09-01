@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { ALL_PERMISSIONS, type AppManifest, type AppPermission } from '../../manifest';
 import { AppPermissionError, type Host } from '../protocol';
 import { facets, hostFor, registerHost } from '../current';

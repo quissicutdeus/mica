@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { readable } from 'svelte/store';
 import { remoteStore } from '../remote';
 import { constants } from '../constants';

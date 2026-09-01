@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { readable, type Readable } from 'svelte/store';
 import { clientTransport } from './transport';
 import { isFnRef, type FnRef } from './messages';

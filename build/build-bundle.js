@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { build, context } from "esbuild";
 
 const IS_WATCH_MODE = process.env.IS_WATCH_MODE === '1';

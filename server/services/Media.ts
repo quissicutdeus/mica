@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { MediaItem } from '@gphone/shared/types';
 import { findNearbyVisiblePlayers } from '../lib/proximity';

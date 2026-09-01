@@ -1,4 +1,10 @@
 <!--
+SPDX-FileCopyrightText: 2026 quissicutdeus
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
+<!--
   Gadsden flag pose, after the reference: an open-mouthed head with a forked tongue,
   raised on a rising neck off a coiled loop — not just "a snake shape" but this specific
   silhouette. The tongue is the one deliberate color accent; the rest of the mark is solid

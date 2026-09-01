@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * Theme, wallpaper and motion — the nouns `Facets['theme']`, `Facets['wallpaper']` and
  * `Facets['display']` are written in. MICA-172 — see `./accounts.ts`.

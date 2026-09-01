@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { charge } from './state/charge';
 import { contacts } from '../services/contacts';
 import { mailStore } from '../services/mail';

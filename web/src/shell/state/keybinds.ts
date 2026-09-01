@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { derived, get } from 'svelte/store';
 import { PHONE_SCOPE_ACTIONS, type KeybindAction } from '@gphone/shared/keybinds';
 import { usePersisted } from '../../../../sdk/host/usePersisted';

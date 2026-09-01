@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { createHash, randomBytes } from 'node:crypto';
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';

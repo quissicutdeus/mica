@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { ToFrame, ToShell, HydratePayload } from './messages';
 
 // MICA-16 step 4: the iframe's one door to the shell — a single postMessage channel to

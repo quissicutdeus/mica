@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * MICA-24: the frame's `connect-src`, built from `AppManifest.networkHosts`.
  *

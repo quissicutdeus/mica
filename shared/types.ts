@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * The client's ringtone choices (`web/src/shell/state/audio.ts`'s `RingtoneId`),
  * mirrored here rather than imported — `shared/` is read by `server/`, which must not

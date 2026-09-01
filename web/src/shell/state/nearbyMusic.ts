@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { derived, get, writable, type Readable, type Writable } from 'svelte/store';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { isPlaylistId, isVideoId } from '@gphone/shared/youtube';

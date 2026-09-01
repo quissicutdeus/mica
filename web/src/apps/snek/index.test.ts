@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import { renderApp } from '@gphone/sdk/testing';

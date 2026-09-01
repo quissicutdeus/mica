@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { defineService } from '../lib/defineService';
 import { Note } from '@gphone/shared/types';
 import { fields, requirePositiveInt } from '../lib/payload';

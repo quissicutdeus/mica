@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { ServiceProxy } from '../lib/ServiceProxy';
 import { ROUTES, serverEventFor } from '@gphone/shared/routes';
 import { GENERIC_SERVICE_ACTION, parseGenericRequest, requestEventFor } from '@gphone/shared/rpc';

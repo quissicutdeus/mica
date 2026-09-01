@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { DEFAULT_MUSIC_RANGE } from '@gphone/shared/musicBroadcast';
 
 /**

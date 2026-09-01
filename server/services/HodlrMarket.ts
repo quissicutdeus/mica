@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { Database } from '../lib/Database';
 import type { PricePoint } from '@gphone/shared/types';
 

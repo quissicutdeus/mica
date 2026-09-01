@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { get, writable } from 'svelte/store';
 // Imported from their own files rather than the `@gphone/sdk` barrel: that barrel
 // re-exports every hook, including `useAppLevels`/`useKeybinds`, which import

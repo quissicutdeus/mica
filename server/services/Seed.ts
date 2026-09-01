@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { Database } from '../lib/Database';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { SEED_CHARACTERS, clearSeed, seedFor } from '../lib/seed';

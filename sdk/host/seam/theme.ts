@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 export { DEFAULT_SEED, sanitizeSeed, seedFromRgbString } from '../../lib/seed';
 export { backgroundForScheme, buildSchemes, cssVarBlock } from '../../lib/m3';
 

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // @vitest-environment jsdom
 // MICA-176: jsdom because this file's subject now transitively imports `services/admin.ts`,
 // which reads `window` at module scope. Not a workaround for `isBrowser()`, and do not

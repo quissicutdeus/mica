@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * `onDisk` stands in for `server/migrations/`, and is deliberately a mutable array the tests
  * share rather than a literal inside the factory: the module reads it on every call, so a

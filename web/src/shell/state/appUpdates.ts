@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { derived, get, writable, type Readable } from 'svelte/store';
 import { compareVersions } from '../../lib/phone/semver';
 import { fetchCatalog, getRemoteCatalogUrl, type CatalogEntry } from '../../../../sdk/catalog';

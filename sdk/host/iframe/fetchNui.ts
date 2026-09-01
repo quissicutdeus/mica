@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { registerNuiTransport } from '../../nui/transport';
 import { GENERIC_SERVICE_ACTION } from '@gphone/shared/rpc';
 import { remoteCall } from './remote';

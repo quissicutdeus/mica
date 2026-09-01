@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { describe, expect, it } from 'vitest';
 import { conflictsWith, findAction, PHONE_SCOPE_ACTIONS, type KeybindAction } from './keybinds';
 

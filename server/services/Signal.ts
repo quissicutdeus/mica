@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // The server half of the signal service.
 import { registerService } from '../lib/services';
 import { FrameworkBridge } from '../lib/FrameworkBridge';

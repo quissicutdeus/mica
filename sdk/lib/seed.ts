@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // MICA-16 step 4: pulled out of `m3.ts` so the iframe theme twin can sanitize/convert a
 // seed without pulling `@material/material-color-utilities` (and the rest of the color
 // engine) into an add-on's bundle. Pure — no import here may reach back into `m3.ts`.

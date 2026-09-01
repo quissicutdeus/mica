@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * MICA-184. The SDK's pure-TypeScript core is checked by TypeScript 7, and this proves
  * the set of files that gets that treatment is exactly the right one.

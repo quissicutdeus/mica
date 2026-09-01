@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * Ordering two version strings, for the one question the Store has to answer: is what the
  * catalog offers *newer* than what the player has installed?

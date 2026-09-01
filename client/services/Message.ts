@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Messages: only the part that is not a plain relay. The CRUD routes are declared in
 // `shared/routes.ts` and registered by the relay.
 

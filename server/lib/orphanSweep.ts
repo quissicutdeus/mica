@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { Database } from './Database';
 import { AUDIT_LOG_TABLE } from './AuditLogger';
 import { declaredServices, type ColumnDef, type ColumnType } from './defineService';

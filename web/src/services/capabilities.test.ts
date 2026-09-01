@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // @vitest-environment jsdom
 // The guard in `capabilities.ts` is `typeof window !== 'undefined' && isBrowser()`, so a
 // node environment answers "not a browser" whatever `isBrowser` is mocked to — which is the

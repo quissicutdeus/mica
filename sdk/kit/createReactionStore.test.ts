@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { describe, it, expect, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { createReactionStore, NO_REACTIONS, type ReactionTransport } from './createReactionStore';

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { get } from 'svelte/store';
 import type { Host } from '../../../../sdk/host/protocol';
 import { AppPermissionError } from '../../../../sdk/host/protocol';

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 export type Direction = 'up' | 'down' | 'left' | 'right';
 export type Difficulty = 'easy' | 'medium' | 'hard';
 

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * What `Facets['bank']` moves money with. MICA-172 — see `./accounts.ts` for why these
  * are declared inside the package rather than borrowed from `services/bank.ts`.

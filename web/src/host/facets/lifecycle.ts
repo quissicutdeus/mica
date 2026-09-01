@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { registerFacet } from '../../../../sdk/host/current';
 import { onDestroy } from 'svelte';
 import { currentApp, goHome, consumeAppProps } from '../../shell/state/navigation';

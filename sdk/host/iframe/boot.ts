@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * MICA-176. **First import, deliberately** — the add-on's half of the SDK host seam, and
  * the mirror of `src/main.ts`'s first line. Every `sdk/host/iframe/facets/*` twin

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // MICA-16 step 4: the iframe's storage cache — reads are synchronous against what the
 // shell handed over at hydrate (and refreshed on every `storage` push after), never a
 // round trip. This is what lets `usePersisted`/`useStorage` stay sync inside an add-on.

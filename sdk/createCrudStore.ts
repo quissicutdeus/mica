@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { writable } from 'svelte/store';
 import { fetchNui } from './nui/transport';
 import { GENERIC_SERVICE_ACTION } from '@gphone/shared/rpc';

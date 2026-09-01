@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // The server half of the music service: who is playing out loud, and who can hear it.
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { FrameworkBridge } from '../lib/FrameworkBridge';

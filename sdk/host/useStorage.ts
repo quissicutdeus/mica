@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { guarded } from './guard';
 /**
  * MICA-176. These three used to be re-exported from `./inProcess/facets/storage`, and

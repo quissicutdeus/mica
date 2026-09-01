@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 quissicutdeus
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 <script lang="ts">
   import { closedPhoneToast } from './state/toast';
   import { frameMargin, phoneBox, viewportSize } from './state/display';

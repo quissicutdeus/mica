@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: 2026 quissicutdeus
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Root-owned deploy wrapper. gphone can only invoke this exact script via sudoers;
 # it cannot edit it. Before trusting compose.yaml to define what runs as root, verify
 # its content matches this pinned hash -- gphone has write access to that file (git

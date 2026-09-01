@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * MICA-172 moved this file out of `sdk/` and into `web/src/`, and `@gphone/sdk/testing` is
  * now a **web-side alias** rather than a package export. It needs `createInProcessHost`, the

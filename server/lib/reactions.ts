@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * Tables a reaction may target, and the same allowlist reasoning as `moderation.ts`'s
  * `REPORTABLE`.

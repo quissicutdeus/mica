@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // The client half of the music service: turning "somebody nearby is playing" into a volume.
 
 import { sendNuiMessage } from '../lib/nui';

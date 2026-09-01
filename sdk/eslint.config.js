@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // @ts-check
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';

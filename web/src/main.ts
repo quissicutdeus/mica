@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * MICA-176. **First import, deliberately.** This is the shell's half of the SDK host
  * seam: it pulls every `host/facets/*` module onto the graph so each
