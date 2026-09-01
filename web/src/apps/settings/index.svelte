@@ -19,6 +19,7 @@
   import LockScreen from './panes/LockScreen.svelte';
   import Network from './panes/Network.svelte';
   import Notifications from './panes/Notifications.svelte';
+  import Privacy from './panes/Privacy.svelte';
   import DeveloperTools from './panes/DeveloperTools.svelte';
   import Shortcuts from './panes/Shortcuts.svelte';
   import Sound from './panes/Sound.svelte';
@@ -47,7 +48,8 @@
     | 'lockscreen'
     | 'shortcuts'
     | 'devtools'
-    | 'about';
+    | 'about'
+    | 'privacy';
   let pane = $state<Pane>('root');
 
   const PANE_TITLES: Record<Pane, string> = {
@@ -60,7 +62,8 @@
     lockscreen: 'Lock Screen & Passcode',
     shortcuts: 'Shortcuts',
     devtools: 'Developer Tools',
-    about: 'About'
+    about: 'About',
+    privacy: 'Privacy'
   };
 
   /**
@@ -82,6 +85,15 @@
     onback: () => onback(),
     levels: [
       // Deepest first: out of an app's details, then out of the pane, then out of Settings.
+      //
+      // Privacy is the one pane reached from inside another, so Back returns to About
+      // rather than to the root list. Without its own level the generic one below would
+      // match -- `pane !== 'root'` is true here too -- and drop the player two screens.
+      {
+        open: () => pane === 'privacy',
+        close: () => (pane = 'about'),
+        title: () => PANE_TITLES.privacy
+      },
       {
         open: () => selectedApp !== null,
         close: () => (selectedAppId = null),
@@ -201,7 +213,9 @@
   {:else if pane === 'devtools'}
     <DeveloperTools onhide={hideDevTools} />
   {:else if pane === 'about'}
-    <About ontapbuild={tapBuildRow} />
+    <About ontapbuild={tapBuildRow} onprivacy={() => (pane = 'privacy')} />
+  {:else if pane === 'privacy'}
+    <Privacy />
   {:else}
     <div class="p-4">
       <div

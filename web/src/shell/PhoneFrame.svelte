@@ -47,8 +47,6 @@
   import { appRegistryStore } from './state/registry';
   import { wallpaperBackground, wallpaperNeedsContrast } from './state/wallpaper';
   import { themeStyleStore } from './state/theme';
-  import { privacyNoticeSeen } from './state/privacyNotice';
-  import PrivacyNotice from './PrivacyNotice.svelte';
   import { isLocked } from './state/lockScreen';
   import LockScreen from './LockScreen.svelte';
 
@@ -294,15 +292,6 @@
 
     <!-- Notification Shade Overlay -->
     <NotificationShade />
-
-    <!-- First-run privacy notice (MICA-70). Above everything else on the frame,
-         deliberately — a disclosure that could be missed behind the status bar or the
-         camera cutout is not a disclosure. Not gated on `$isBatteryDead`: the notice still
-         has to reach the player eventually, and a dead phone is not itself a reason to
-         withhold it. -->
-    {#if !$privacyNoticeSeen}
-      <PrivacyNotice />
-    {/if}
 
     <!-- Take-it-off-the-home-screen drop target. Rendered here rather than in
          `Launcher.svelte` for the same reason the ghost is: a drag can begin on the home

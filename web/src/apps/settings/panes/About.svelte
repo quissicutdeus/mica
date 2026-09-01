@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
+    ChevronRightIcon,
     MICA_BUILD_INFO,
-    PRIVACY_NOTICE_TEXT,
     SettingsSection,
     useAccount,
     useAppRegistry,
@@ -9,7 +9,7 @@
     formatDate
   } from '@gphone/sdk';
 
-  let { ontapbuild } = $props<{ ontapbuild: () => void }>();
+  let { ontapbuild, onprivacy } = $props<{ ontapbuild: () => void; onprivacy: () => void }>();
 
   const { myPhoneNumber } = useAccount();
   const { getFirstBootTime } = useAppRegistry();
@@ -89,17 +89,18 @@
         <span class="text-on-surface font-medium">OS Version</span>
         <span class="text-secondary font-mono">{MICA_BUILD_INFO}</span>
       </button>
+      <!-- A row rather than the paragraph itself. The notice is four sentences, and
+           inlining it here made About a wall of text under a list of one-line facts.
+           Its own screen also gives it room to grow without pushing OS Version — the
+           row above it — off the first thing a player sees. -->
+      <button
+        type="button"
+        onclick={onprivacy}
+        class="hover:bg-surface-container-high active:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+      >
+        <span class="text-on-surface font-medium">Privacy</span>
+        <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
+      </button>
     </div>
   </SettingsSection>
-
-  <!-- MICA-70, item 1: the permanent copy of the notice a new character sees once, on
-       first run (`shell/PrivacyNotice.svelte`). Always reachable here rather than only
-       shown once and forgotten. -->
-  <div class="mt-4">
-    <SettingsSection title="Privacy">
-      <div class="p-4">
-        <p class="text-on-surface-variant text-body-medium">{PRIVACY_NOTICE_TEXT}</p>
-      </div>
-    </SettingsSection>
-  </div>
 </div>

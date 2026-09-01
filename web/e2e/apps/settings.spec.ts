@@ -52,6 +52,28 @@ test.describe('Settings App E2E', () => {
     await expect(page.locator('text=First Boot')).toBeVisible();
   });
 
+  test('Privacy is a row on About that opens its own page, and Back returns to About', async ({
+    page
+  }) => {
+    // The notice used to be a first-run modal, and then a paragraph inlined at the bottom
+    // of About. It is a row now, so what needs proving is the drill-in and the way out:
+    // Privacy is the one pane reached from inside another, and Back has its own level so
+    // it lands on About rather than dropping two screens to the Settings hub.
+    await page.locator('button', { hasText: 'About' }).first().click();
+    await expect(page.locator('h1', { hasText: 'About' })).toBeVisible();
+
+    // Not on About itself -- that is the whole point of the row.
+    await expect(page.locator('text=can be read by its administrators')).toHaveCount(0);
+
+    await page.locator('button', { hasText: 'Privacy' }).first().click();
+    await expect(page.locator('h1', { hasText: 'Privacy' })).toBeVisible();
+    await expect(page.locator('text=can be read by its administrators')).toBeVisible();
+
+    await page.keyboard.press('Backspace');
+    await expect(page.locator('h1', { hasText: 'About' })).toBeVisible();
+    await expect(page.locator('text=OS Version')).toBeVisible();
+  });
+
   test('back from a sub-page returns to the Settings hub, not the home screen', async ({
     page
   }) => {
@@ -206,15 +228,6 @@ test.describe('Settings App E2E', () => {
 
       // Nothing left to clear, so the button says so rather than offering again.
       await expect(page.locator('text=this app has stored nothing yet')).toBeVisible();
-
-      // "Settings" is app id `settings`, the same one `privacyNoticeSeen` is persisted
-      // under (MICA-70) — so clearing this app's storage genuinely wipes that flag too,
-      // and the first-run notice reappears for real, on top of everything, exactly as it
-      // would for a player. Dismiss it before the rest of this test can click anything else.
-      await page
-        .getByRole('dialog', { name: 'Privacy notice' })
-        .getByRole('button', { name: 'Got it' })
-        .click();
 
       // And the setting is back to its shipped default, not merely absent from storage.
       await page.keyboard.press('Backspace');
