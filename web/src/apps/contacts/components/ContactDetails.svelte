@@ -157,23 +157,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   </div>
 
   <!-- Details List / Edit Form -->
-  <div class="bg-surface-container shadow-elevation-3 w-full space-y-4 rounded-xl p-4">
+  <div class="bg-surface-container shadow-elevation-3 w-full space-y-4 rounded-box p-4">
     {#if isEditing}
       <div class="space-y-3">
         <input
-          class="bg-surface-container-high w-full rounded p-2"
+          class="bg-surface-container-high w-full rounded-chip p-2"
           maxlength="50"
           bind:value={contact.firstname}
           placeholder="First Name *"
         />
         <input
-          class="bg-surface-container-high w-full rounded p-2"
+          class="bg-surface-container-high w-full rounded-chip p-2"
           maxlength="50"
           bind:value={contact.lastname}
           placeholder="Last Name"
         />
         <input
-          class="bg-surface-container-high w-full rounded p-2"
+          class="bg-surface-container-high w-full rounded-chip p-2"
           bind:value={contact.phone}
           placeholder="Phone *"
         />
@@ -199,7 +199,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   <!-- Recent Text Messages Card -->
   <div
-    class="border-outline-variant bg-surface-container shadow-elevation-3 w-full overflow-hidden rounded-xl border"
+    class="border-outline-variant bg-surface-container shadow-elevation-3 w-full overflow-hidden rounded-box border"
   >
     <div
       class="border-outline-variant bg-surface-container flex items-center justify-between border-b px-4 py-3"
@@ -259,7 +259,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <span>No recent messages with {contact.firstname}.</span>
         <button
           type="button"
-          class="border-primary bg-primary-container text-on-primary-container hover:bg-primary-container-hover duration-short ease-standard text-body-small mt-1 cursor-pointer rounded-full border px-3 py-1 transition-all"
+          class="border-primary bg-primary-container text-on-primary-container hover:bg-primary-container-hover duration-short ease-standard text-body-small mt-1 cursor-pointer rounded-box border px-3 py-1 transition-all"
           onclick={onmessage}
         >
           Send Text Message

@@ -103,7 +103,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           type="button"
           onclick={() => (category = option.id)}
           aria-pressed={category === option.id}
-          class="text-body-medium flex w-full cursor-pointer items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors {category ===
+          class="text-body-medium flex w-full cursor-pointer items-center justify-between rounded-box border px-4 py-3 text-left transition-colors {category ===
           option.id
             ? 'border-error bg-error-container text-on-error-container'
             : 'border-outline-variant bg-surface-container text-on-surface hover:bg-surface-container-high'} duration-short ease-standard"
@@ -121,7 +121,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       maxlength={MAX_NOTE}
       rows="3"
       placeholder="Anything else the moderator should know (optional)"
-      class="border-outline-variant bg-surface-container text-on-surface placeholder-on-surface-variant focus:border-error text-body-medium mb-4 w-full resize-none rounded-xl border p-3 focus:outline-none"
+      class="border-outline-variant bg-surface-container text-on-surface placeholder-on-surface-variant focus:border-error text-body-medium mb-4 w-full resize-none rounded-box border p-3 focus:outline-none"
     ></textarea>
 
     <div class="flex gap-3">

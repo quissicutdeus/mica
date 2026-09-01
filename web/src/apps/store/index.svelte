@@ -177,7 +177,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               activeTab = 'installed';
               installedFilter = 'addon';
             }}
-            class="bg-primary-container text-on-primary-container text-body-small duration-short ease-standard flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left transition active:scale-95"
+            class="bg-primary-container text-on-primary-container text-body-small duration-short ease-standard flex w-full items-center justify-between gap-2 rounded-box px-3 py-2 text-left transition active:scale-95"
           >
             <span>
               {$updatesStore.length}

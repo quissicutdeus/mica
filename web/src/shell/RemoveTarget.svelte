@@ -71,7 +71,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     bind:this={element}
     data-drop-remove
     data-testid="remove-drop-target"
-    class="duration-short ease-standard absolute top-10 left-1/2 z-65 flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-2 whitespace-nowrap shadow-elevation-3 transition-all select-none"
+    class="duration-short ease-standard absolute top-10 left-1/2 z-65 flex -translate-x-1/2 items-center gap-2 rounded-box px-4 py-2 whitespace-nowrap shadow-elevation-3 transition-all select-none"
     class:bg-error={armed}
     class:text-on-error={armed}
     class:bg-surface-container-highest={!armed}

@@ -108,7 +108,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="w-full max-w-[300px] space-y-1.5 px-4">
       {#each recentNotifications as item (item.id)}
         <div
-          class="bg-surface-container-high text-on-surface shadow-elevation-2 rounded-lg p-2.5 backdrop-blur-md"
+          class="bg-surface-container-high text-on-surface shadow-elevation-2 rounded-box p-2.5 backdrop-blur-md"
         >
           <p class="text-body-small font-bold">{item.title}</p>
           <p class="text-on-surface-variant text-body-small line-clamp-1">{item.body}</p>

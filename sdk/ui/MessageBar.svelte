@@ -71,7 +71,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {@render leading?.()}
 
       <div
-        class="bg-surface-container-high text-on-surface focus-within:border-focus-ring focus-within:ring-focus-ring flex flex-1 items-center rounded-lg border border-transparent px-3.5 py-1.5 focus-within:ring-1"
+        class="bg-surface-container-high text-on-surface focus-within:border-focus-ring focus-within:ring-focus-ring flex flex-1 items-center rounded-box border border-transparent px-3.5 py-1.5 focus-within:ring-1"
       >
         <!-- `h-[22px]` with a `max-h-32` ceiling: one line by default, growing to a few as
              the draft does, and never taller than that. `no-scrollbar` because the overflow

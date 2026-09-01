@@ -56,7 +56,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   {#if expanded}
     <div
-      class="border-outline-variant bg-surface-container-high shadow-elevation-4 absolute bottom-full left-0 z-10 mb-2 max-h-64 w-72 overflow-y-auto rounded-xl border p-3"
+      class="border-outline-variant bg-surface-container-high shadow-elevation-4 absolute bottom-full left-0 z-10 mb-2 max-h-64 w-72 overflow-y-auto rounded-box border p-3"
       transition:fly={{ y: 8, duration: 150 }}
     >
       <div class="mb-2 flex items-center justify-between">
@@ -78,7 +78,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {#each category.emoji as emoji (emoji)}
             <button
               type="button"
-              class="hover:bg-surface-container text-body-large flex h-7 w-7 cursor-pointer items-center justify-center rounded"
+              class="hover:bg-surface-container text-body-large flex h-7 w-7 cursor-pointer items-center justify-center rounded-chip"
               onclick={() => pick(emoji)}
               aria-label="React with {emoji}"
             >

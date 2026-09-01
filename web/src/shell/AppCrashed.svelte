@@ -62,14 +62,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <button
       type="button"
       onclick={onRestart}
-      class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover duration-short ease-standard w-full cursor-pointer rounded-xl px-4 py-2.5 font-medium transition-colors"
+      class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover duration-short ease-standard w-full cursor-pointer rounded-box px-4 py-2.5 font-medium transition-colors"
     >
       Restart App
     </button>
     <button
       type="button"
       onclick={onHome}
-      class="border-outline-variant bg-surface-container text-on-surface hover:bg-surface-container-high duration-short ease-standard w-full cursor-pointer rounded-xl border px-4 py-2.5 font-medium transition-colors"
+      class="border-outline-variant bg-surface-container text-on-surface hover:bg-surface-container-high duration-short ease-standard w-full cursor-pointer rounded-box border px-4 py-2.5 font-medium transition-colors"
     >
       Return to Home Screen
     </button>
@@ -77,7 +77,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   {#if import.meta.env.DEV && detail}
     <div
-      class="border-error bg-error-container text-on-error-container text-body-small mt-6 max-h-32 w-full overflow-auto rounded-lg border p-3 text-left font-mono whitespace-pre-wrap"
+      class="border-error bg-error-container text-on-error-container text-body-small mt-6 max-h-32 w-full overflow-auto rounded-box border p-3 text-left font-mono whitespace-pre-wrap"
     >
       {detail}
     </div>

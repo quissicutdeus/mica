@@ -164,7 +164,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {#if overflowOpen}
             <div
               role="menu"
-              class="animate-in fade-in border-outline-variant bg-surface shadow-elevation-4 duration-short ease-standard absolute top-full right-0 z-40 mt-1 w-40 overflow-hidden rounded-lg border"
+              class="animate-in fade-in border-outline-variant bg-surface shadow-elevation-4 duration-short ease-standard absolute top-full right-0 z-40 mt-1 w-40 overflow-hidden rounded-box border"
             >
               <button
                 type="button"
@@ -199,7 +199,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="mt-2 grid grid-cols-2 gap-1.5">
         {#each blab.attachments as attach (attach.id)}
           {#if attach.media}
-            <div class="max-w-full overflow-hidden rounded-lg">
+            <div class="max-w-full overflow-hidden rounded-box">
               <MediaThumb item={attach.media} fit="contain" alt="Attachment" />
             </div>
           {/if}
@@ -210,7 +210,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- The Blab being repeated, quoted inline. Not interactive: nesting the action bar inside a
          row's action bar is where a button ends up inside a button. -->
     {#if blab.mouthed}
-      <div class="border-outline-variant mt-2 rounded-lg border p-2">
+      <div class="border-outline-variant mt-2 rounded-box border p-2">
         <p class="text-on-surface-variant text-label-small">
           {blab.mouthed.display_name || blab.mouthed.handle}
           <span class="text-on-surface-variant">@{blab.mouthed.handle}</span>

@@ -56,21 +56,21 @@ describe('AppIconTile', () => {
   });
 
   /**
-   * The shape, which is the whole complaint: `--radius-xl` is 28px, so it clamped a 44px
-   * catalog row to a circle while leaving a 56px launcher tile square. Every size now keeps
-   * a radius below half its own box.
+   * The shape, which was the whole complaint: a size-named radius on a differently-sized box
+   * clamped a 44px catalog row to a circle while leaving a 56px launcher tile square. Every
+   * size takes the same role now, so a tile cannot disagree with the row around it.
    */
   it.each([
-    ['sm', 'h-9', 'rounded-md'],
-    ['md', 'h-11', 'rounded-md'],
-    ['lg', 'h-14', 'rounded-lg'],
-    ['xl', 'h-20', 'rounded-xl']
-  ] as const)('draws %s at %s with %s', (size, box, radius) => {
+    ['sm', 'h-9'],
+    ['md', 'h-11'],
+    ['lg', 'h-14'],
+    ['xl', 'h-20']
+  ] as const)('draws %s at %s with the box radius', (size, box) => {
     const { container } = render(AppIconTile, { ...props, icon: null, size });
 
     const tile = container.firstElementChild;
     expect(tile?.className).toContain(box);
-    expect(tile?.className).toContain(radius);
+    expect(tile?.className).toContain('rounded-box');
     expect(tile?.className).toContain('bg-sky-500');
   });
 

@@ -315,12 +315,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <PhotoGrid {isSelectionMode} {selectedIds} onphotoclick={handlePhotoClick} />
 
       {#if isSelectionMode && selectedIds.size > 0}
-        <!-- The padding is on the wrapper, not the bar: the bar has a border and a rounded
+        <!-- The padding is on the wrapper, not the bar: the bar has a border and a rounded-chip
              corner, so growing *it* would put that border under the gesture bar rather than
              above it. §5 — anything anchored to the bottom clears the home indicator. -->
         <div class="pb-home-indicator pointer-events-none absolute right-4 bottom-4 left-4">
           <div
-            class="border-outline-variant bg-surface-container shadow-elevation-5 pointer-events-auto flex items-center justify-between rounded-lg border p-4 backdrop-blur-md"
+            class="border-outline-variant bg-surface-container shadow-elevation-5 pointer-events-auto flex items-center justify-between rounded-box border p-4 backdrop-blur-md"
             transition:fade
           >
             <span class="text-on-surface font-medium">{selectedIds.size} Selected</span>

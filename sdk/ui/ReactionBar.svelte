@@ -55,7 +55,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {@const isMine = mine.includes(emoji)}
     <button
       type="button"
-      class="text-body-small flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 transition-colors {isMine
+      class="text-body-small flex cursor-pointer items-center gap-1 rounded-chip border px-2 py-0.5 transition-colors {isMine
         ? 'bg-primary-container border-primary text-on-primary-container'
         : 'bg-surface-container border-outline-variant text-on-surface-variant hover:border-outline'} duration-short ease-standard"
       onclick={() => ontoggle(emoji)}

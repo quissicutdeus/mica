@@ -40,7 +40,7 @@ test.describe('Phone Navigation & Home Screen', () => {
     await expect(page.locator('h1', { hasText: 'Store' })).toBeVisible();
 
     await page
-      .locator('div.rounded-xl', { hasText: 'Notes' })
+      .locator('[data-testid="app-row"]', { hasText: 'Notes' })
       .locator('button', { hasText: 'Install' })
       .click();
     await page.locator("button[aria-label='Return to home screen']").click();
@@ -52,7 +52,7 @@ test.describe('Phone Navigation & Home Screen', () => {
 
     // 3. Return to Store and open app details page to uninstall
     await page.locator('button', { hasText: 'Store' }).first().click();
-    await page.locator('div.rounded-xl', { hasText: 'Notes' }).click();
+    await page.locator('[data-testid="app-row"]', { hasText: 'Notes' }).click();
     await page.locator('button', { hasText: 'Uninstall' }).first().click();
 
     // Confirm uninstallation in ConfirmDialog modal

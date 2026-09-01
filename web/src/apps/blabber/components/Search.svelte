@@ -97,7 +97,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {#each $trendingTags as t (t.tag)}
             <button
               type="button"
-              class="bg-surface-container text-on-surface text-body-small rounded-full px-3 py-1.5"
+              class="bg-surface-container text-on-surface text-body-small rounded-box px-3 py-1.5"
               onclick={() => ontag?.(t.tag)}
             >
               #{t.tag} · {t.uses}

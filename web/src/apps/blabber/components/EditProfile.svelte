@@ -69,7 +69,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     bind:value={displayName}
     maxlength="50"
     placeholder={account.handle}
-    class="bg-surface-container text-on-surface placeholder-on-surface-variant text-body-medium mb-4 w-full rounded-lg px-3 py-2.5 focus:outline-none"
+    class="bg-surface-container text-on-surface placeholder-on-surface-variant text-body-medium mb-4 w-full rounded-box px-3 py-2.5 focus:outline-none"
   />
 
   <label class="text-on-surface-variant text-body-small mb-1 block" for="blabber-bio">Bio</label>
@@ -79,7 +79,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     maxlength="160"
     rows="3"
     placeholder="Something about you"
-    class="bg-surface-container text-on-surface placeholder-on-surface-variant text-body-medium w-full resize-none rounded-lg p-2.5 focus:outline-none"
+    class="bg-surface-container text-on-surface placeholder-on-surface-variant text-body-medium w-full resize-none rounded-box p-2.5 focus:outline-none"
   ></textarea>
   <span class="text-on-surface-variant text-body-small mt-1 mb-4 text-right"
     >{160 - bio.length}</span

@@ -220,21 +220,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <Screen title={app.title} onback={app.back} actions={headerActions} overlay={fabOverlay}>
   {#if isAdding}
     <div
-      class="animate-in fade-in slide-in-from-right bg-surface-container m-2 flex flex-col space-y-3 rounded-lg p-4"
+      class="animate-in fade-in slide-in-from-right bg-surface-container m-2 flex flex-col space-y-3 rounded-box p-4"
     >
       <p class="text-on-surface-variant text-body-small">
         Saved from your current position. Give it a name — the street below is only a starting
         guess.
       </p>
       <input
-        class="bg-surface-container-high placeholder-on-surface-variant text-on-surface w-full rounded p-2 text-lg font-bold"
+        class="bg-surface-container-high placeholder-on-surface-variant text-on-surface w-full rounded-chip p-2 text-lg font-bold"
         placeholder="Name (e.g. Home, The Garage)"
         maxlength="50"
         bind:value={draft.name}
         disabled={$busy}
       />
       <input
-        class="bg-surface-container-high placeholder-on-surface-variant text-on-surface text-body-medium w-full rounded p-2"
+        class="bg-surface-container-high placeholder-on-surface-variant text-on-surface text-body-medium w-full rounded-chip p-2"
         placeholder="Street label"
         maxlength="255"
         bind:value={draft.street_label}
@@ -256,10 +256,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
   {:else if renamingPlace}
     <div
-      class="animate-in fade-in slide-in-from-right bg-surface-container m-2 flex flex-col space-y-3 rounded-lg p-4"
+      class="animate-in fade-in slide-in-from-right bg-surface-container m-2 flex flex-col space-y-3 rounded-box p-4"
     >
       <input
-        class="bg-surface-container-high placeholder-on-surface-variant text-on-surface w-full rounded p-2 text-lg font-bold"
+        class="bg-surface-container-high placeholder-on-surface-variant text-on-surface w-full rounded-chip p-2 text-lg font-bold"
         placeholder="Name"
         maxlength="50"
         bind:value={renameDraft}
@@ -296,7 +296,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {:else}
           <div class="space-y-2">
             {#each $places as place (place.id)}
-              <div class="bg-surface-container rounded-lg p-3.5">
+              <div class="bg-surface-container rounded-box p-3.5">
                 <div class="flex w-full items-center gap-3">
                   <LocationIcon class="text-primary size-icon-md shrink-0" />
                   <div class="min-w-0 flex-1">
@@ -360,7 +360,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <div class="space-y-2">
             {#each recentLocations as item (item.id)}
               {@const at = parseLocation(item)}
-              <div class="bg-surface-container rounded-lg p-3.5">
+              <div class="bg-surface-container rounded-box p-3.5">
                 <div class="flex w-full items-center gap-3">
                   <LocationIcon class="text-on-surface-variant size-icon-md shrink-0" />
                   <div class="min-w-0 flex-1">

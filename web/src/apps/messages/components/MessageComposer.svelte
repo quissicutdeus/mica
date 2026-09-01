@@ -112,7 +112,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
          that the box already had words in it. -->
     {#if editing}
       <div
-        class="bg-surface-container-high border-primary shadow-elevation-1 text-body-small mb-2 flex items-center justify-between rounded-xl border-l-4 p-2"
+        class="bg-surface-container-high border-primary shadow-elevation-1 text-body-small mb-2 flex items-center justify-between rounded-box border-l-4 p-2"
         transition:fly={{ y: 10, duration: 150 }}
       >
         <div class="flex min-w-0 flex-1 flex-col pr-2">
@@ -138,7 +138,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {#if replyingTo}
       {@const replySender = getSenderInfo(replyingTo)}
       <div
-        class="bg-surface-container-high border-primary shadow-elevation-1 text-body-small mb-2 flex items-center justify-between rounded-xl border-l-4 p-2"
+        class="bg-surface-container-high border-primary shadow-elevation-1 text-body-small mb-2 flex items-center justify-between rounded-box border-l-4 p-2"
         transition:fly={{ y: 10, duration: 150 }}
       >
         <div class="flex min-w-0 flex-1 flex-col pr-2">
@@ -171,7 +171,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="no-scrollbar mb-2 flex gap-2 overflow-x-auto p-1">
         {#each attachments as att (att.photo_id)}
           <div
-            class="border-outline shadow-elevation-2 relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border"
+            class="border-outline shadow-elevation-2 relative h-12 w-12 shrink-0 overflow-hidden rounded-box border"
           >
             <MediaThumb item={att.media} alt="Attachment" />
             <button
@@ -206,11 +206,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#if showAttachMenu}
   <div
-    class="border-outline-variant bg-surface-container shadow-elevation-4 absolute bottom-16 left-4 grid w-48 grid-cols-2 gap-2 rounded-xl border p-2"
+    class="border-outline-variant bg-surface-container shadow-elevation-4 absolute bottom-16 left-4 grid w-48 grid-cols-2 gap-2 rounded-box border p-2"
     transition:fly={{ y: 20, duration: 200 }}
   >
     <button
-      class="hover:bg-surface-container-high duration-short ease-standard flex flex-col items-center justify-center rounded-lg p-3 transition-colors"
+      class="hover:bg-surface-container-high duration-short ease-standard flex flex-col items-center justify-center rounded-box p-3 transition-colors"
       onclick={onopenphotos}
     >
       <div
@@ -221,7 +221,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <span class="text-body-small">Photo</span>
     </button>
     <button
-      class="hover:bg-surface-container-high duration-short ease-standard flex flex-col items-center justify-center rounded-lg p-3 transition-colors"
+      class="hover:bg-surface-container-high duration-short ease-standard flex flex-col items-center justify-center rounded-box p-3 transition-colors"
       onclick={handleShareLocation}
     >
       <div

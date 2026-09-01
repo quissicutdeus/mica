@@ -61,7 +61,7 @@ test.describe('Messages App E2E', () => {
     // Counting undrawn slots is also what makes a placeholder detectable at all. A row with
     // no still renders a `<div>` and no `<img>`, so the image simply disappears rather than
     // going blank — an assertion scoped to images would have nothing left to fail on.
-    const slots = messagesContainer.locator('div.max-w-full.overflow-hidden.rounded-lg');
+    const slots = messagesContainer.locator('[data-testid="attachment-slot"]');
     await expect(slots.first(), 'the thread must actually contain an attachment').toBeVisible();
 
     await expect

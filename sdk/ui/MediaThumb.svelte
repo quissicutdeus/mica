@@ -140,7 +140,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   {#if item.kind === 'gif'}
     <span
-      class="bg-media-overlay text-label-small pointer-events-none absolute top-1 left-1 rounded px-1 text-white"
+      class="bg-media-overlay text-label-small pointer-events-none absolute top-1 left-1 rounded-chip px-1 text-white"
     >
       GIF
     </span>
@@ -148,7 +148,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   {#if item.duration_ms}
     <span
-      class="bg-media-overlay text-label-small pointer-events-none absolute right-1 bottom-1 rounded px-1 text-white"
+      class="bg-media-overlay text-label-small pointer-events-none absolute right-1 bottom-1 rounded-chip px-1 text-white"
     >
       {seconds(item.duration_ms)}
     </span>

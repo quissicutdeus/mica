@@ -77,7 +77,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         value={$displaySize}
         aria-label="Phone size"
         oninput={(e) => setDisplaySize(Number(e.currentTarget.value))}
-        class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-blue-500"
+        class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-box accent-blue-500"
       />
       <div class="text-on-surface-variant text-body-small flex items-center justify-between">
         <span>Smaller</span>
@@ -99,7 +99,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         type="button"
         onclick={() => setDisplaySize(displaySizeDefault)}
         disabled={$displaySize === displaySizeDefault}
-        class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high disabled:hover:bg-surface duration-short ease-standard text-body-small w-full cursor-pointer rounded-lg border py-2 transition-colors disabled:cursor-default disabled:opacity-40"
+        class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high disabled:hover:bg-surface duration-short ease-standard text-body-small w-full cursor-pointer rounded-box border py-2 transition-colors disabled:cursor-default disabled:opacity-40"
       >
         Reset to Default
       </button>

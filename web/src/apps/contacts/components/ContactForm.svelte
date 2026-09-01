@@ -73,19 +73,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   </div>
 
   <input
-    class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface text-body-medium w-full rounded border p-2"
+    class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface text-body-medium w-full rounded-chip border p-2"
     placeholder="First Name *"
     maxlength="50"
     bind:value={draft.firstname}
   />
   <input
-    class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface text-body-medium w-full rounded border p-2"
+    class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface text-body-medium w-full rounded-chip border p-2"
     placeholder="Last Name"
     maxlength="50"
     bind:value={draft.lastname}
   />
   <input
-    class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface text-body-medium w-full rounded border p-2"
+    class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface text-body-medium w-full rounded-chip border p-2"
     placeholder="Phone Number *"
     maxlength="20"
     bind:value={draft.phone}
@@ -94,7 +94,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <input
       type="checkbox"
       bind:checked={draft.favorite}
-      class="bg-surface-container-low border-outline-variant text-primary rounded"
+      class="bg-surface-container-low border-outline-variant text-primary rounded-chip"
     />
     <span>Favorite</span>
   </label>

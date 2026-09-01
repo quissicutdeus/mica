@@ -11,7 +11,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let { transaction }: { transaction: Transaction } = $props();
 </script>
 
-<div class="bg-surface-container flex items-center justify-between rounded-xl p-4">
+<div class="bg-surface-container flex items-center justify-between rounded-box p-4">
   <div class="flex items-center">
     <div class="bg-surface-container-high flex h-10 w-10 items-center justify-center rounded-full">
       <svg

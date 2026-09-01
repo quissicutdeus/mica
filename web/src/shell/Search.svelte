@@ -45,7 +45,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       bind:this={collapsedBarRef}
       type="button"
       onclick={openDrawer}
-      class="bg-surface-container-high text-on-surface-variant text-body-medium shadow-elevation-2 duration-short ease-standard flex h-11 w-full cursor-pointer items-center gap-2 rounded-full px-4 backdrop-blur-md transition-colors hover:brightness-110"
+      class="bg-surface-container-high text-on-surface-variant text-body-medium shadow-elevation-2 duration-short ease-standard flex h-11 w-full cursor-pointer items-center gap-2 rounded-box px-4 backdrop-blur-md transition-colors hover:brightness-110"
       aria-label="Search"
     >
       <SearchIcon class="h-4 w-4" />

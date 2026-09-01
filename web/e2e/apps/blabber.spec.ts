@@ -64,7 +64,7 @@ test.describe('Blabber', () => {
      * Blabber, so the reload leaves it installed and the row starts on Uninstall.
      */
     await page.goto('/');
-    const storeRow = () => page.locator('div.rounded-xl', { hasText: 'Blabber' });
+    const storeRow = () => page.locator('[data-testid="app-row"]', { hasText: 'Blabber' });
     const confirm = page.locator('div.z-50', { hasText: 'Uninstall Blabber?' });
 
     /**

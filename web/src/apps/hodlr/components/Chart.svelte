@@ -30,7 +30,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const trendUp = $derived(history[history.length - 1].price >= history[0].price);
 </script>
 
-<div class="bg-surface-container rounded-xl p-4">
+<div class="bg-surface-container rounded-box p-4">
   <svg viewBox="0 0 {WIDTH} {HEIGHT}" class="h-20 w-full" preserveAspectRatio="none">
     <polyline
       {points}

@@ -258,7 +258,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <div class="space-y-2 pt-2">
                 {#each $callLog as entry (entry.id)}
                   <button
-                    class="bg-surface hover:bg-surface-container duration-short ease-standard flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors"
+                    class="bg-surface hover:bg-surface-container duration-short ease-standard flex w-full items-center gap-3 rounded-box p-3 text-left transition-colors"
                     onclick={() => startCall(entry.number, nameForNumber(entry.number))}
                   >
                     <Avatar

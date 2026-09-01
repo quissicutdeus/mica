@@ -215,7 +215,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         }}
         placeholder="Paste a video or playlist link"
         aria-label="YouTube link"
-        class="bg-surface-container text-on-surface border-outline-variant text-body-medium w-full rounded-lg border p-3"
+        class="bg-surface-container text-on-surface border-outline-variant text-body-medium w-full rounded-box border p-3"
       />
       {#if error}
         <p class="text-body-small text-error">{error}</p>
@@ -244,8 +244,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <div class="mt-3 flex items-center justify-between px-4">
         <span class="text-label-small text-on-surface-variant">Queue · {$musicQueue.length}</span>
-        <button onclick={clearQueue} class="text-label-small text-on-surface-variant rounded-md p-1"
-          >Clear</button
+        <button
+          onclick={clearQueue}
+          class="text-label-small text-on-surface-variant rounded-box p-1">Clear</button
         >
       </div>
 
@@ -257,7 +258,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <button
               onclick={() => playQueueIndex(i)}
               aria-current={i === $musicIndex ? 'true' : undefined}
-              class="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-2 text-left {i ===
+              class="flex min-w-0 flex-1 items-center gap-3 rounded-box p-2 text-left {i ===
               $musicIndex
                 ? 'bg-surface-container-high'
                 : ''}"
@@ -266,13 +267,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <img
                   src={thumbnailUrlFor(entry.videoId)}
                   alt=""
-                  class="bg-surface-container-high h-10 w-16 shrink-0 rounded-md object-cover"
+                  class="bg-surface-container-high h-10 w-16 shrink-0 rounded-box object-cover"
                 />
               {:else}
                 <!-- A playlist row has no video id to draw, and an `<img>` with an empty
                      `src` is not a blank tile — Chromium resolves it against the document
                      and re-requests the page. An empty box is the honest version. -->
-                <span class="bg-surface-container-high h-10 w-16 shrink-0 rounded-md"></span>
+                <span class="bg-surface-container-high h-10 w-16 shrink-0 rounded-box"></span>
               {/if}
               <span class="min-w-0 flex-1">
                 <span class="text-body-medium text-on-surface block truncate"
@@ -351,13 +352,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <img
                     src={thumbnailUrlFor(person.videoId)}
                     alt=""
-                    class="bg-surface-container-high h-10 w-16 shrink-0 rounded-md object-cover"
+                    class="bg-surface-container-high h-10 w-16 shrink-0 rounded-box object-cover"
                     class:opacity-40={isMuted(person)}
                   />
                 {:else}
                   <!-- A playlist has no video id to draw, and an `<img>` with an empty
                        `src` re-requests the page rather than rendering a blank tile. -->
-                  <span class="bg-surface-container-high h-10 w-16 shrink-0 rounded-md"></span>
+                  <span class="bg-surface-container-high h-10 w-16 shrink-0 rounded-box"></span>
                 {/if}
                 <span class="min-w-0 flex-1">
                   <span class="text-body-medium text-on-surface block truncate">{who(person)}</span>
@@ -417,7 +418,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         value={Math.round($musicVolume * 100)}
         aria-label="Music volume"
         oninput={(e) => setMusicVolume(Number(e.currentTarget.value) / 100)}
-        class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-blue-500"
+        class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-box accent-blue-500"
       />
       <!-- Said on the screen rather than left to be discovered, and it is the sentence
            that changed in phase 2. A music app that plays out loud without telling you it

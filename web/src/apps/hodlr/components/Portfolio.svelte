@@ -48,7 +48,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {#if !loaded}
     <Skeleton count={3} height="h-16" />
   {:else}
-    <div class="bg-surface-container rounded-xl p-4">
+    <div class="bg-surface-container rounded-box p-4">
       <p class="text-on-surface-variant text-body-small">gCoin price</p>
       {#if open}
         <p class="text-on-surface text-title-large">${$priceStore.current}</p>
@@ -80,7 +80,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <Chart history={$priceStore.history} />
     {/if}
 
-    <div class="bg-surface-container rounded-xl p-4">
+    <div class="bg-surface-container rounded-box p-4">
       <p class="text-on-surface-variant text-body-small">You hold</p>
       <p class="text-on-surface text-title-medium">{$portfolioStore.quantity} gCoin</p>
       {#if open}

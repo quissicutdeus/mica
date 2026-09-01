@@ -50,19 +50,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <input
     placeholder="Title"
     bind:value={title}
-    class="bg-surface-container text-on-surface rounded-lg px-3 py-2"
+    class="bg-surface-container text-on-surface rounded-box px-3 py-2"
   />
   <input
     placeholder="Price"
     type="number"
     min="0"
     bind:value={price}
-    class="bg-surface-container text-on-surface rounded-lg px-3 py-2"
+    class="bg-surface-container text-on-surface rounded-box px-3 py-2"
   />
   <textarea
     placeholder="Description"
     bind:value={description}
-    class="bg-surface-container text-on-surface rounded-lg px-3 py-2"></textarea>
+    class="bg-surface-container text-on-surface rounded-box px-3 py-2"></textarea>
 
   <button
     type="button"

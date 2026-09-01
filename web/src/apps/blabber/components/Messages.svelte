@@ -202,7 +202,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {@const onBubbleVariant = mine ? 'text-on-primary-container' : 'text-on-surface-variant'}
           <div class="flex px-4 py-1.5" class:justify-end={mine}>
             <div
-              class="max-w-[80%] rounded-lg px-3 py-2"
+              class="max-w-[80%] rounded-box px-3 py-2"
               class:bg-primary-container={mine}
               class:bg-surface-container={!mine}
             >

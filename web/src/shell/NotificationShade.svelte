@@ -494,7 +494,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {#each quickToggles as toggle (toggle.label)}
         <button
           type="button"
-          class="duration-short ease-standard flex flex-1 flex-col items-center gap-1 rounded-lg p-2 transition-colors disabled:cursor-not-allowed disabled:opacity-40 {toggle.enabled
+          class="duration-short ease-standard flex flex-1 flex-col items-center gap-1 rounded-box p-2 transition-colors disabled:cursor-not-allowed disabled:opacity-40 {toggle.enabled
             ? 'bg-primary-container text-on-primary-container'
             : 'bg-surface text-on-surface-variant hover:bg-surface-container'}"
           onclick={toggle.onToggle}
@@ -538,7 +538,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             class="text-on-surface-variant flex h-full flex-col items-center justify-center space-y-3 text-center"
           >
             <div
-              class="bg-surface ring-outline-variant flex h-14 w-14 items-center justify-center rounded-lg ring-1"
+              class="bg-surface ring-outline-variant flex h-14 w-14 items-center justify-center rounded-box ring-1"
             >
               <ArchiveIcon class="text-on-surface-variant h-7 w-7" />
             </div>
@@ -558,7 +558,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <SwipeableRow onCommit={() => restoreSingle(item.id)}>
                   <div
                     transition:fly={{ y: 10, duration: 150 }}
-                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface shadow-elevation-3 duration-short ease-standard relative flex cursor-pointer items-start gap-3 rounded-lg border p-3.5 opacity-90 backdrop-blur-md transition-all hover:opacity-100 active:scale-[0.99]"
+                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface shadow-elevation-3 duration-short ease-standard relative flex cursor-pointer items-start gap-3 rounded-box border p-3.5 opacity-90 backdrop-blur-md transition-all hover:opacity-100 active:scale-[0.99]"
                     onclick={() => handleRowClick(item)}
                     role="button"
                     tabindex={0}
@@ -614,7 +614,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {:else}
                 <!-- Grouped Collapsible Archive Stack -->
                 <div
-                  class="border-outline-variant bg-surface shadow-elevation-4 rounded-lg border p-3.5 opacity-90 backdrop-blur-md hover:opacity-100"
+                  class="border-outline-variant bg-surface shadow-elevation-4 rounded-box border p-3.5 opacity-90 backdrop-blur-md hover:opacity-100"
                 >
                   <!-- Group Header Card -->
                   <SwipeableRow onCommit={() => restoreGroup(group.app)}>
@@ -646,7 +646,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                               {group.app}
                             </span>
                             <span
-                              class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex items-center rounded-full px-2 py-0.5 ring-1"
+                              class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex items-center rounded-chip px-2 py-0.5 ring-1"
                             >
                               {group.items.length} notifications
                             </span>
@@ -695,7 +695,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       {#each groupNotificationsByConversation(group.items) as convo (convo.title)}
                         <SwipeableRow onCommit={() => restoreConversation(convo)}>
                           <div
-                            class="group/item border-outline-variant bg-surface-container-lowest hover:border-outline-variant hover:bg-surface-container duration-short ease-standard flex cursor-pointer items-start gap-2.5 rounded-xl border p-2.5 transition-colors active:scale-[0.99]"
+                            class="group/item border-outline-variant bg-surface-container-lowest hover:border-outline-variant hover:bg-surface-container duration-short ease-standard flex cursor-pointer items-start gap-2.5 rounded-box border p-2.5 transition-colors active:scale-[0.99]"
                             onclick={() => handleConversationClick(convo)}
                             role="button"
                             tabindex={0}
@@ -714,7 +714,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                                   </h4>
                                   {#if convo.items.length > 1}
                                     <span
-                                      class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 ring-1"
+                                      class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex shrink-0 items-center rounded-chip px-1.5 py-0.5 ring-1"
                                     >
                                       {convo.items.length}
                                     </span>
@@ -761,7 +761,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             class="flex h-full w-full flex-col items-center justify-center space-y-3.5 text-center select-none"
           >
             <div
-              class="bg-surface ring-outline-variant shadow-elevation-2 flex h-16 w-16 items-center justify-center rounded-lg ring-1"
+              class="bg-surface ring-outline-variant shadow-elevation-2 flex h-16 w-16 items-center justify-center rounded-box ring-1"
             >
               <CheckIcon class="h-8 w-8 text-emerald-400" />
             </div>
@@ -778,7 +778,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <SwipeableRow onCommit={() => clearSingle(item.id)}>
                   <div
                     transition:fly={{ y: 10, duration: 150 }}
-                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface shadow-elevation-3 duration-short ease-standard relative flex cursor-pointer items-start gap-3 rounded-lg border p-3.5 backdrop-blur-md transition-all active:scale-[0.99]"
+                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface shadow-elevation-3 duration-short ease-standard relative flex cursor-pointer items-start gap-3 rounded-box border p-3.5 backdrop-blur-md transition-all active:scale-[0.99]"
                     onclick={() => handleRowClick(item)}
                     role="button"
                     tabindex={0}
@@ -834,7 +834,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {:else}
                 <!-- Grouped Collapsible App Stack -->
                 <div
-                  class="border-outline-variant bg-surface shadow-elevation-4 rounded-lg border p-3.5 backdrop-blur-md"
+                  class="border-outline-variant bg-surface shadow-elevation-4 rounded-box border p-3.5 backdrop-blur-md"
                 >
                   <!-- Group Header Card -->
                   <SwipeableRow onCommit={() => clearGroup(group.app)}>
@@ -866,7 +866,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                               {group.app}
                             </span>
                             <span
-                              class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex items-center rounded-full px-2 py-0.5 ring-1"
+                              class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex items-center rounded-chip px-2 py-0.5 ring-1"
                             >
                               {group.items.length} notifications
                             </span>
@@ -915,7 +915,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       {#each groupNotificationsByConversation(group.items) as convo (convo.title)}
                         <SwipeableRow onCommit={() => clearConversation(convo)}>
                           <div
-                            class="group/item border-outline-variant bg-surface-container-lowest hover:border-outline-variant hover:bg-surface-container duration-short ease-standard flex cursor-pointer items-start gap-2.5 rounded-xl border p-2.5 transition-colors active:scale-[0.99]"
+                            class="group/item border-outline-variant bg-surface-container-lowest hover:border-outline-variant hover:bg-surface-container duration-short ease-standard flex cursor-pointer items-start gap-2.5 rounded-box border p-2.5 transition-colors active:scale-[0.99]"
                             onclick={() => handleConversationClick(convo)}
                             role="button"
                             tabindex={0}
@@ -934,7 +934,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                                   </h4>
                                   {#if convo.items.length > 1}
                                     <span
-                                      class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 ring-1"
+                                      class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex shrink-0 items-center rounded-chip px-1.5 py-0.5 ring-1"
                                     >
                                       {convo.items.length}
                                     </span>

@@ -74,7 +74,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <button
     type="button"
     onclick={resetBindings}
-    class="text-on-surface-variant hover:text-on-surface duration-short ease-standard text-label-small cursor-pointer rounded px-1.5 py-0.5 normal-case transition-colors"
+    class="text-on-surface-variant hover:text-on-surface duration-short ease-standard text-label-small cursor-pointer rounded-chip px-1.5 py-0.5 normal-case transition-colors"
   >
     Reset to defaults
   </button>
@@ -108,13 +108,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <span class="text-on-surface font-medium">{action.label}</span>
             {#if capturingId === action.id}
               <span
-                class="text-secondary text-body-small animate-pulse rounded border border-indigo-600 bg-indigo-950 px-2 py-0.5 font-mono"
+                class="text-secondary text-body-small animate-pulse rounded-chip border border-indigo-600 bg-indigo-950 px-2 py-0.5 font-mono"
               >
                 Press a key…
               </span>
             {:else}
               <span
-                class="bg-surface text-on-surface text-body-small rounded px-2 py-0.5 font-mono"
+                class="bg-surface text-on-surface text-body-small rounded-chip px-2 py-0.5 font-mono"
               >
                 {describeKey($bindings[action.id])}
               </span>

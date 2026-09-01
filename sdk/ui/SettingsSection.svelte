@@ -37,7 +37,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } = $props();
 </script>
 
-<div class="bg-surface-container overflow-hidden rounded-xl">
+<div class="bg-surface-container overflow-hidden rounded-box">
   <div class="flex items-center justify-between px-4 pt-3 pb-1">
     <h2 class="text-on-surface-variant text-body-small tracking-wider uppercase">{title}</h2>
     {#if headerAction}

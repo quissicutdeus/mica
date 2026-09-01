@@ -80,7 +80,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     type="number"
     min="1"
     bind:value={quantity}
-    class="bg-surface-container text-on-surface rounded-lg px-3 py-2"
+    class="bg-surface-container text-on-surface rounded-box px-3 py-2"
   />
 
   {#if side === 'sell'}

@@ -19,7 +19,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
      blank in game. They have been undefined since Tailwind was removed, which made the
      whole declaration invalid at computed-value time in every engine. MICA-85. -->
 <div
-  class="bg-gradient-to-br from-purple-600 to-blue-600 text-on-surface shadow-elevation-3 mb-8 rounded-lg p-6"
+  class="bg-gradient-to-br from-purple-600 to-blue-600 text-on-surface shadow-elevation-3 mb-8 rounded-box p-6"
 >
   <div class="mb-8 flex items-start justify-between">
     <span class="text-on-surface font-medium">Total Balance</span>

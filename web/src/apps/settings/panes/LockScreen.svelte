@@ -72,7 +72,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <input
           type="password"
           inputmode="numeric"
-          class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface text-body-medium w-full rounded border p-2"
+          class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface text-body-medium w-full rounded-chip border p-2"
           placeholder="New passcode"
           value={digits}
           oninput={(e) => (digits = digitsOnly(e.currentTarget.value))}
@@ -81,7 +81,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <input
           type="password"
           inputmode="numeric"
-          class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface text-body-medium w-full rounded border p-2"
+          class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface text-body-medium w-full rounded-chip border p-2"
           placeholder="Confirm passcode"
           value={confirmDigits}
           oninput={(e) => (confirmDigits = digitsOnly(e.currentTarget.value))}
@@ -133,7 +133,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {/if}
         </div>
         {#if showClearConfirm}
-          <div class="bg-surface-container-high space-y-2 rounded-lg p-3">
+          <div class="bg-surface-container-high space-y-2 rounded-box p-3">
             <p class="text-on-surface text-body-small">
               Remove your passcode? The lock screen will stop appearing until you set a new one.
             </p>
@@ -169,7 +169,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="button"
             onclick={() => setAutoLockPolicy(choice.id)}
             aria-pressed={$autoLockPolicy === choice.id}
-            class="text-body-small cursor-pointer rounded border py-1.5 transition-all {$autoLockPolicy ===
+            class="text-body-small cursor-pointer rounded-chip border py-1.5 transition-all {$autoLockPolicy ===
             choice.id
               ? 'border-primary bg-primary-container text-on-primary-container'
               : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'} duration-short ease-standard"

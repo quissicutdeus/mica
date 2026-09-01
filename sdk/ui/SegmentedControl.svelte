@@ -51,13 +51,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <div
   role="group"
   aria-label={ariaLabel}
-  class="border-outline-variant bg-surface-container-low flex w-full rounded-xl border p-1 backdrop-blur-md"
+  class="border-outline-variant bg-surface-container-low flex w-full rounded-box border p-1 backdrop-blur-md"
 >
   {#each options as opt (opt.id)}
     <button
       type="button"
       aria-pressed={selected === opt.id}
-      class="text-label-large flex-1 cursor-pointer rounded-lg py-1.5 text-center transition-all {selected ===
+      class="text-label-large flex-1 cursor-pointer rounded-chip py-1.5 text-center transition-all {selected ===
       opt.id
         ? 'bg-surface-container-high-selected text-on-surface shadow-elevation-1'
         : 'text-on-surface-variant hover:text-on-surface'} duration-short ease-standard"

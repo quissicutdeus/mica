@@ -87,13 +87,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <div class="mb-4 px-6">
     <div
       data-testid="nearby-music"
-      class="bg-surface flex items-center gap-2 rounded-lg p-2"
+      class="bg-surface flex items-center gap-2 rounded-box p-2"
       role="group"
       aria-label="Nearby music"
     >
       <button
         type="button"
-        class="hover:bg-surface-container duration-short ease-standard flex min-w-0 flex-1 items-center gap-2 rounded-lg p-1 text-left transition-colors"
+        class="hover:bg-surface-container duration-short ease-standard flex min-w-0 flex-1 items-center gap-2 rounded-box p-1 text-left transition-colors"
         onclick={openMusicApp}
         title="Open Music"
       >

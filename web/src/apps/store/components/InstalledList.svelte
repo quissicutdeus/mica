@@ -54,7 +54,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <button
         onclick={() => (filter = 'all')}
         aria-pressed={filter === 'all'}
-        class="duration-short ease-standard rounded px-2 py-0.5 transition {filter === 'all'
+        class="duration-short ease-standard rounded-chip px-2 py-0.5 transition {filter === 'all'
           ? 'bg-primary-container text-on-primary-container'
           : 'bg-surface-container text-on-surface-variant'}"
       >
@@ -63,7 +63,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <button
         onclick={() => (filter = 'system')}
         aria-pressed={filter === 'system'}
-        class="duration-short ease-standard rounded px-2 py-0.5 transition {filter === 'system'
+        class="duration-short ease-standard rounded-chip px-2 py-0.5 transition {filter === 'system'
           ? 'bg-primary-container text-on-primary-container'
           : 'bg-surface-container text-on-surface-variant'}"
       >
@@ -72,7 +72,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <button
         onclick={() => (filter = 'addon')}
         aria-pressed={filter === 'addon'}
-        class="duration-short ease-standard rounded px-2 py-0.5 transition {filter === 'addon'
+        class="duration-short ease-standard rounded-chip px-2 py-0.5 transition {filter === 'addon'
           ? 'bg-primary-container text-on-primary-container'
           : 'bg-surface-container text-on-surface-variant'}"
       >
@@ -82,12 +82,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   </div>
 
   <div
-    class="bg-surface-container border-outline-variant text-body-small flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5"
+    class="bg-surface-container border-outline-variant text-body-small flex items-center justify-between gap-2 rounded-box border px-2.5 py-1.5"
   >
     <span class="text-on-surface-variant text-label-small">Sort Order</span>
     <select
       bind:value={sortOrder}
-      class="bg-surface-container-low border-outline-variant text-on-surface text-label-small cursor-pointer rounded border px-2 py-0.5 focus:outline-none"
+      class="bg-surface-container-low border-outline-variant text-on-surface text-label-small cursor-pointer rounded-chip border px-2 py-0.5 focus:outline-none"
       aria-label="Sort Installed Apps"
     >
       <option value="newest">Newest Installed</option>
@@ -103,7 +103,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {#each apps as app (app.id)}
     {@const update = updateFor(app.id)}
     <div
-      class="bg-surface-container border-outline-variant hover:bg-surface duration-short ease-standard flex w-full min-w-0 items-center justify-between gap-3 rounded-xl border p-3 transition"
+      data-testid="app-row"
+      class="bg-surface-container border-outline-variant hover:bg-surface duration-short ease-standard flex w-full min-w-0 items-center justify-between gap-3 rounded-box border p-3 transition"
     >
       <button
         onclick={() => onselect(app)}
@@ -129,7 +130,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           -->
           {#if update}
             <span
-              class="bg-primary-container text-on-primary-container text-label-small mt-1 block truncate rounded px-1.5 py-0.5"
+              class="bg-primary-container text-on-primary-container text-label-small mt-1 block truncate rounded-chip px-1.5 py-0.5"
             >
               {#if update.kind === 'newer'}
                 Update available · v{update.installedVersion} → v{update.availableVersion}
@@ -145,14 +146,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {#if update}
           <button
             onclick={() => onupdate(app)}
-            class="bg-secondary text-on-secondary text-body-small duration-short ease-standard rounded-lg px-3 py-1.5 transition active:scale-95"
+            class="bg-secondary text-on-secondary text-body-small duration-short ease-standard rounded-box px-3 py-1.5 transition active:scale-95"
           >
             Update
           </button>
         {/if}
         <button
           onclick={() => onopen(app.id)}
-          class="text-body-small duration-short ease-standard rounded-lg bg-emerald-600 px-3 py-1.5 text-white transition hover:bg-emerald-500 active:scale-95"
+          class="text-body-small duration-short ease-standard rounded-box bg-emerald-600 px-3 py-1.5 text-white transition hover:bg-emerald-500 active:scale-95"
         >
           Open
         </button>

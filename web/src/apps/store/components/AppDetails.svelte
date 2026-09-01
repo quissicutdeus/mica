@@ -74,12 +74,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               onclick={() => {
                 if (app) onopen(app.id);
               }}
-              class="shadow-elevation-2 text-body-small duration-short ease-standard w-full rounded-xl bg-emerald-600 py-2.5 text-white transition hover:bg-emerald-500 active:scale-95"
+              class="shadow-elevation-2 text-body-small duration-short ease-standard w-full rounded-box bg-emerald-600 py-2.5 text-white transition hover:bg-emerald-500 active:scale-95"
             >
               Open Application
             </button>
             <div
-              class="bg-secondary text-secondary text-label-small flex items-center justify-center gap-1.5 rounded-lg border border-indigo-500/20 px-3 py-1"
+              class="bg-secondary text-secondary text-label-small flex items-center justify-center gap-1.5 rounded-box border border-indigo-500/20 px-3 py-1"
             >
               <span>🔒</span> Core System App — protected from removal
             </div>
@@ -93,7 +93,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {#if update}
             <div class="mb-2 space-y-2">
               <p
-                class="bg-primary-container text-on-primary-container text-body-small rounded-lg px-3 py-2"
+                class="bg-primary-container text-on-primary-container text-body-small rounded-box px-3 py-2"
               >
                 {#if update.kind === 'newer'}
                   Version {update.availableVersion} is available. You have {update.installedVersion}.
@@ -105,7 +105,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </p>
               <button
                 onclick={() => onupdate(app)}
-                class="bg-secondary text-on-secondary shadow-elevation-2 text-body-small duration-short ease-standard w-full rounded-xl py-2.5 transition active:scale-95"
+                class="bg-secondary text-on-secondary shadow-elevation-2 text-body-small duration-short ease-standard w-full rounded-box py-2.5 transition active:scale-95"
               >
                 Update to v{update.availableVersion}
               </button>
@@ -116,7 +116,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               onclick={() => {
                 if (app) onopen(app.id);
               }}
-              class="shadow-elevation-2 text-body-small duration-short ease-standard flex-1 rounded-xl bg-emerald-600 py-2.5 text-white transition hover:bg-emerald-500 active:scale-95"
+              class="shadow-elevation-2 text-body-small duration-short ease-standard flex-1 rounded-box bg-emerald-600 py-2.5 text-white transition hover:bg-emerald-500 active:scale-95"
             >
               Open
             </button>
@@ -124,7 +124,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               onclick={() => {
                 if (app) onuninstall(app);
               }}
-              class="bg-error text-on-error hover:bg-error shadow-elevation-2 text-body-small duration-short ease-standard flex-1 rounded-xl py-2.5 transition active:scale-95"
+              class="bg-error text-on-error hover:bg-error shadow-elevation-2 text-body-small duration-short ease-standard flex-1 rounded-box py-2.5 transition active:scale-95"
             >
               Uninstall
             </button>
@@ -134,7 +134,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             onclick={() => {
               if (app) oninstall(app);
             }}
-            class="bg-secondary text-on-secondary hover:bg-secondary shadow-elevation-2 text-body-small duration-short ease-standard w-full rounded-xl py-2.5 transition active:scale-95"
+            class="bg-secondary text-on-secondary hover:bg-secondary shadow-elevation-2 text-body-small duration-short ease-standard w-full rounded-box py-2.5 transition active:scale-95"
           >
             Install Application
           </button>
@@ -146,7 +146,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="space-y-1.5">
       <h4 class="text-on-surface-variant text-body-small tracking-wider uppercase">About</h4>
       <p
-        class="border-outline-variant bg-surface-container text-on-surface text-body-small rounded-xl border p-3 leading-relaxed"
+        class="border-outline-variant bg-surface-container text-on-surface text-body-small rounded-box border p-3 leading-relaxed"
       >
         {app.description || 'No description provided for this application.'}
       </p>
@@ -156,20 +156,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="space-y-1.5">
       <h4 class="text-on-surface-variant text-body-small tracking-wider uppercase">Information</h4>
       <div class="text-body-small grid grid-cols-2 gap-2">
-        <div class="border-outline-variant bg-surface-container rounded-xl border p-3">
+        <div class="border-outline-variant bg-surface-container rounded-box border p-3">
           <span class="text-on-surface-variant text-label-small block uppercase">Type</span>
           <span class="text-on-surface font-semibold"
             >{system ? 'System Application' : 'Add-on'}</span
           >
         </div>
-        <div class="border-outline-variant bg-surface-container rounded-xl border p-3">
+        <div class="border-outline-variant bg-surface-container rounded-box border p-3">
           <span class="text-on-surface-variant text-label-small block uppercase"
             >Storage Footprint</span
           >
           <span class="text-on-surface font-semibold">{getAppStorageSize(app)}</span>
         </div>
         {#if app.installedAt}
-          <div class="border-outline-variant bg-surface-container rounded-xl border p-3">
+          <div class="border-outline-variant bg-surface-container rounded-box border p-3">
             <span class="text-on-surface-variant text-label-small block uppercase"
               >Installed Date</span
             >
@@ -177,7 +177,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
         {/if}
         {#if app.updatedAt}
-          <div class="border-outline-variant bg-surface-container rounded-xl border p-3">
+          <div class="border-outline-variant bg-surface-container rounded-box border p-3">
             <span class="text-on-surface-variant text-label-small block uppercase"
               >Last Updated</span
             >
@@ -197,7 +197,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {#each app.permissions ?? [] as perm (perm)}
             {@const formatted = formatPermission(perm)}
             <div
-              class="border-outline-variant bg-surface-container text-on-surface text-body-small flex items-center gap-2 rounded-xl border px-3 py-2"
+              class="border-outline-variant bg-surface-container text-on-surface text-body-small flex items-center gap-2 rounded-box border px-3 py-2"
             >
               <span>{formatted.icon}</span>
               <span>{formatted.label}</span>
@@ -205,7 +205,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {/each}
           {#if app.requiresNetwork}
             <div
-              class="border-outline-variant bg-surface-container text-on-surface text-body-small flex items-center gap-2 rounded-xl border px-3 py-2"
+              class="border-outline-variant bg-surface-container text-on-surface text-body-small flex items-center gap-2 rounded-box border px-3 py-2"
             >
               <span>{'\u{1F310}'}</span>
               <span>Network Access</span>
@@ -214,7 +214,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       {:else}
         <p
-          class="border-outline-variant bg-surface-container text-on-surface-variant text-body-small rounded-xl border p-3 italic"
+          class="border-outline-variant bg-surface-container text-on-surface-variant text-body-small rounded-box border p-3 italic"
         >
           No special permissions requested.
         </p>

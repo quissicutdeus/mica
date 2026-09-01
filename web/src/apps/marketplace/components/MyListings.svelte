@@ -33,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 {:else}
   <ul class="flex flex-col gap-2 px-4 pb-4">
     {#each $mineStore.rows as row (row.id)}
-      <li class="bg-surface-container flex items-center justify-between rounded-xl p-3">
+      <li class="bg-surface-container flex items-center justify-between rounded-box p-3">
         <div class="min-w-0">
           <p class="text-on-surface truncate text-body-large">{row.title}</p>
           <p class="text-on-surface-variant text-body-small">{row.price} · {row.status}</p>

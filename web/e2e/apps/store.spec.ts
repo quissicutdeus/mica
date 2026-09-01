@@ -22,7 +22,7 @@ test.describe('Store E2E', () => {
    * match hits the name and the description and trips strict mode.
    */
   const catalogCard = (page: import('@playwright/test').Page, name: string) =>
-    page.locator('div.rounded-xl', { hasText: name });
+    page.locator('[data-testid="app-row"]', { hasText: name });
 
   test('renders tabs and catalog apps correctly', async ({ page }) => {
     await expect(page.locator('button', { hasText: 'Store Catalog' })).toBeVisible();

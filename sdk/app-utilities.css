@@ -1679,6 +1679,12 @@
 .rounded-frame-outer {
   border-radius: var(--radius-frame-outer);
 }
+.rounded-box {
+  border-radius: var(--radius-box);
+}
+.rounded-chip {
+  border-radius: var(--radius-chip);
+}
 .rounded-full {
   border-radius: var(--radius-full);
 }
@@ -1696,7 +1702,7 @@
   border-bottom-right-radius: var(--radius-md);
 }
 .rounded-sm {
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
 }
 .rounded-t-xl {
   border-top-left-radius: var(--radius-xl);
@@ -1706,7 +1712,7 @@
   border-radius: var(--radius-xl);
 }
 .rounded-xs {
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 .rounded-tl-xs {
   border-top-left-radius: 2px;

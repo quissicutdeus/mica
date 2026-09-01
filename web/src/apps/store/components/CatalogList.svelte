@@ -37,7 +37,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {#each apps as app (app.id)}
       {@const installed = isInstalled(app.id)}
       <div
-        class="bg-surface-container border-outline-variant hover:bg-surface duration-short ease-standard flex w-full min-w-0 items-center justify-between gap-3 rounded-xl border p-3 transition"
+        data-testid="app-row"
+        class="bg-surface-container border-outline-variant hover:bg-surface duration-short ease-standard flex w-full min-w-0 items-center justify-between gap-3 rounded-box border p-3 transition"
       >
         <button
           onclick={() => onselect(app)}
@@ -48,7 +49,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <div class="flex items-center gap-2">
               <span class="text-on-surface text-body-medium truncate">{app.name}</span>
               <span
-                class="bg-surface-container-high text-on-surface text-label-small shrink-0 rounded px-1.5 py-0.5 font-mono"
+                class="bg-surface-container-high text-on-surface text-label-small shrink-0 rounded-chip px-1.5 py-0.5 font-mono"
                 >v{app.version || '1.0'}</span
               >
             </div>
@@ -64,14 +65,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                  Tapping the row itself still opens the details view. -->
           <button
             onclick={() => onuninstall(app)}
-            class="bg-error text-on-error hover:bg-error text-body-small duration-short ease-standard shrink-0 rounded-lg px-3 py-1.5 transition active:scale-95"
+            class="bg-error text-on-error hover:bg-error text-body-small duration-short ease-standard shrink-0 rounded-box px-3 py-1.5 transition active:scale-95"
           >
             Uninstall
           </button>
         {:else}
           <button
             onclick={() => oninstall(app)}
-            class="bg-secondary text-on-secondary hover:bg-secondary text-body-small duration-short ease-standard shrink-0 rounded-lg px-3 py-1.5 transition active:scale-95"
+            class="bg-secondary text-on-secondary hover:bg-secondary text-body-small duration-short ease-standard shrink-0 rounded-box px-3 py-1.5 transition active:scale-95"
           >
             Install
           </button>

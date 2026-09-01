@@ -31,8 +31,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    *   its real glyph everywhere else.
    *
    * So the sizes are a scale rather than six independent guesses. Each pairs a tile with a
-   * radius near the launcher's own ratio (16/56), a glyph at a little over half the tile, and
-   * the elevation that surface was already using.
+   * glyph at a little over half of it, and the elevation that surface was already using. The
+   * corner comes from `--radius-box` like every other rectangle in the phone, so a tile at
+   * any size is the same shape as the row it sits in.
    */
 
   let {
@@ -53,22 +54,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const SIZES = {
     sm: {
-      box: 'h-9 w-9 rounded-md shadow-elevation-1',
+      box: 'h-9 w-9 rounded-box shadow-elevation-1',
       glyph: 'size-icon-md',
       letter: 'text-body-medium'
     },
     md: {
-      box: 'h-11 w-11 rounded-md shadow-elevation-1',
+      box: 'h-11 w-11 rounded-box shadow-elevation-1',
       glyph: 'size-icon-lg',
       letter: 'text-body-large'
     },
     lg: {
-      box: 'h-14 w-14 rounded-lg shadow-elevation-3',
+      box: 'h-14 w-14 rounded-box shadow-elevation-3',
       glyph: 'h-8 w-8',
       letter: 'text-title-medium'
     },
     xl: {
-      box: 'h-20 w-20 rounded-xl shadow-elevation-3',
+      box: 'h-20 w-20 rounded-box shadow-elevation-3',
       glyph: 'h-11 w-11',
       letter: 'text-title-medium'
     }

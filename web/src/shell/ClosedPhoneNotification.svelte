@@ -42,7 +42,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   >
     <div
       transition:fly={{ y: -40, duration: 300 }}
-      class="bg-surface-container-high border-outline-variant text-on-surface shadow-elevation-4 m-2 flex w-full items-start gap-3 rounded-lg border p-3.5 backdrop-blur-md"
+      class="bg-surface-container-high border-outline-variant text-on-surface shadow-elevation-4 m-2 flex w-full items-start gap-3 rounded-box border p-3.5 backdrop-blur-md"
     >
       {#if t.avatar || t.sender || t.type === 'message' || t.type === 'contact'}
         <div class="shrink-0">

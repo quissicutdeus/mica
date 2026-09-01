@@ -60,7 +60,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     aria-modal="true"
     aria-label={title}
     tabindex="-1"
-    class="bg-surface-container shadow-elevation-5 w-full rounded-xl p-6 outline-none"
+    class="bg-surface-container shadow-elevation-5 w-full rounded-box p-6 outline-none"
   >
     <h3 class="text-on-surface mb-2 text-xl font-bold">{title}</h3>
     <p class="text-on-surface-variant mb-6">{message}</p>

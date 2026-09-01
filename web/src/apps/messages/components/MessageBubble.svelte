@@ -182,7 +182,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   >
     <button
       type="button"
-      class="shadow-elevation-1 min-w-0 flex-1 cursor-pointer rounded-lg px-4 py-2.5 text-left transition-all focus:outline-none {msg.sender ===
+      class="shadow-elevation-1 min-w-0 flex-1 cursor-pointer rounded-box px-4 py-2.5 text-left transition-all focus:outline-none {msg.sender ===
       'me'
         ? 'bg-primary-container text-on-primary-container rounded-tr-xs'
         : 'bg-surface-container text-on-surface rounded-tl-xs'} duration-short ease-standard"
@@ -193,7 +193,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div
           role="button"
           tabindex="0"
-          class="border-primary bg-surface-container-high hover:bg-surface-container-highest duration-short ease-standard text-body-small mb-2 flex w-full flex-col overflow-hidden rounded-lg border-l-4 p-2 text-left transition-colors select-none"
+          class="border-primary bg-surface-container-high hover:bg-surface-container-highest duration-short ease-standard text-body-small mb-2 flex w-full flex-col overflow-hidden rounded-box border-l-4 p-2 text-left transition-colors select-none"
           onclick={(e) => {
             e.stopPropagation();
             onscrollto?.(msg.replyToMsg!.id);
@@ -231,7 +231,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <div
                   role="button"
                   tabindex="0"
-                  class="border-outline-variant hover:bg-surface-container-high duration-short ease-standard flex w-full flex-col overflow-hidden rounded-lg border transition-colors"
+                  class="border-outline-variant hover:bg-surface-container-high duration-short ease-standard flex w-full flex-col overflow-hidden rounded-box border transition-colors"
                   onclick={(e) => {
                     e.stopPropagation();
                     handleAddWaypoint(media);
@@ -249,7 +249,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <span class="text-primary text-body-small px-2 py-1.5">Add Waypoint</span>
                 </div>
               {:else}
-                <div class="max-w-full overflow-hidden rounded-lg">
+                <div data-testid="attachment-slot" class="max-w-full overflow-hidden rounded-box">
                   <MediaThumb item={media} fit="contain" alt="Attachment" />
                 </div>
               {/if}

@@ -162,7 +162,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <SwipeableToast onArchive={() => toast.archive(t.id)} onHide={() => toast.dismiss(t.id)}>
       <div
         transition:fly={{ y: -20, duration: 250 }}
-        class="shadow-elevation-3 pointer-events-auto flex cursor-pointer flex-col space-y-2.5 rounded-lg border p-3.5 backdrop-blur-md transition-all hover:scale-[1.01] active:scale-[0.99] {getBgColor(
+        class="shadow-elevation-3 pointer-events-auto flex cursor-pointer flex-col space-y-2.5 rounded-box border p-3.5 backdrop-blur-md transition-all hover:scale-[1.01] active:scale-[0.99] {getBgColor(
           t.type
         )} duration-short ease-standard"
         onclick={async () => {
@@ -256,7 +256,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           >
             <input
               type="text"
-              class="border-outline-variant bg-surface-container-lowest text-on-surface placeholder-on-surface-variant focus:ring-focus-ring text-body-small flex-1 rounded-xl border px-3 py-1.5 focus:ring-1 focus:outline-none"
+              class="border-outline-variant bg-surface-container-lowest text-on-surface placeholder-on-surface-variant focus:ring-focus-ring text-body-small flex-1 rounded-box border px-3 py-1.5 focus:ring-1 focus:outline-none"
               placeholder={t.replyPlaceholder || 'Type a reply...'}
               bind:value={replyInputs[t.id]}
               onfocus={() => toast.pauseDismiss(t.id)}
@@ -270,7 +270,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             />
             <button
               type="button"
-              class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-elevation-2 duration-short ease-standard shrink-0 cursor-pointer rounded-xl p-1.5 transition-colors disabled:bg-disabled-container disabled:text-disabled-content"
+              class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-elevation-2 duration-short ease-standard shrink-0 cursor-pointer rounded-box p-1.5 transition-colors disabled:bg-disabled-container disabled:text-disabled-content"
               disabled={!replyInputs[t.id]?.trim()}
               onclick={(e) => handleSendReply(t, e)}
               aria-label="Send reply"
@@ -290,7 +290,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             {#each t.actions as act (act.label)}
               <button
                 type="button"
-                class="shadow-elevation-2 text-body-small cursor-pointer rounded-xl px-3.5 py-1.5 transition-all {getActionBtnClass(
+                class="shadow-elevation-2 text-body-small cursor-pointer rounded-box px-3.5 py-1.5 transition-all {getActionBtnClass(
                   act.variant
                 )} duration-short ease-standard"
                 onclick={(e) => handleActionClick(t, act, e)}

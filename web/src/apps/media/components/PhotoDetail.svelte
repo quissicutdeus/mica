@@ -116,14 +116,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- `aria-live` rather than a spinner: there is already a picture on screen, so the
          thing worth announcing is that a sharper one is on its way. -->
     <p
-      class="text-label-small pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-full bg-media-overlay px-3 py-1 text-white"
+      class="text-label-small pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-chip bg-media-overlay px-3 py-1 text-white"
       aria-live="polite"
     >
       Loading full size…
     </p>
   {:else if failed}
     <p
-      class="text-label-small pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-full bg-media-overlay px-3 py-1 text-white"
+      class="text-label-small pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-chip bg-media-overlay px-3 py-1 text-white"
       role="status"
     >
       Showing a preview — the full-size photo could not be loaded.

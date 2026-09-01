@@ -103,7 +103,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       aria-modal="true"
       aria-label={folder.name || 'Folder'}
       tabindex="-1"
-      class="bg-surface-container shadow-elevation-5 w-full rounded-xl p-5 outline-none"
+      class="bg-surface-container shadow-elevation-5 w-full rounded-box p-5 outline-none"
     >
       <!-- No `outline-none` here, unlike the container above (MICA-109). This is the
            only control in the popup and the only thing Tab can reach inside the trap

@@ -245,7 +245,7 @@ test.describe('Settings App E2E', () => {
       await page.keyboard.press('Backspace');
       await page.locator('button', { hasText: 'Store' }).first().click();
       await page
-        .locator('div.rounded-xl', { hasText: 'Blabber' })
+        .locator('[data-testid="app-row"]', { hasText: 'Blabber' })
         .getByRole('button', { name: 'Install', exact: true })
         .click();
       await page.locator("button[aria-label='Return to home screen']").click();

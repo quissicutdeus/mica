@@ -61,7 +61,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <!-- `top-20` clears the header rather than guessing at it: the header is one row of padding plus a
      40px icon button, so 5rem lands just below with a hairline of gap. -->
 <div
-  class="animate-in fade-in border-outline-variant bg-surface shadow-elevation-4 duration-short ease-standard absolute top-20 right-2 z-40 w-56 overflow-hidden rounded-lg border"
+  class="animate-in fade-in border-outline-variant bg-surface shadow-elevation-4 duration-short ease-standard absolute top-20 right-2 z-40 w-56 overflow-hidden rounded-box border"
 >
   <p class="text-on-surface-variant text-label-small px-3 pt-3 pb-1 tracking-wide uppercase">
     Posting as · {accounts.length} of {limit}

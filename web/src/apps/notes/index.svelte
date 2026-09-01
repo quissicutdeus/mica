@@ -277,10 +277,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {:else if !selectedNote}
     {#if isAdding}
       <div
-        class="animate-in fade-in slide-in-from-right bg-surface-container m-2 flex flex-1 flex-col space-y-3 rounded-lg p-4"
+        class="animate-in fade-in slide-in-from-right bg-surface-container m-2 flex flex-1 flex-col space-y-3 rounded-box p-4"
       >
         <input
-          class="bg-surface-container-high placeholder-on-surface-variant w-full rounded p-2 text-lg font-bold"
+          class="bg-surface-container-high placeholder-on-surface-variant w-full rounded-chip p-2 text-lg font-bold"
           placeholder="Title"
           bind:value={newNote.title}
           use:focus
@@ -288,34 +288,34 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         />
         <div class="relative min-h-0 flex-1">
           <textarea
-            class="no-scrollbar bg-surface-container-high placeholder-on-surface-variant h-full w-full resize-none rounded p-2 pb-12"
+            class="no-scrollbar bg-surface-container-high placeholder-on-surface-variant h-full w-full resize-none rounded-chip p-2 pb-12"
             placeholder="Content (Markdown supported)"
             bind:this={textAreaRef}
             bind:value={newNote.content}
             disabled={$busy}></textarea>
           <!-- Markdown Toolbar -->
           <div
-            class="border-outline bg-surface-container shadow-elevation-3 absolute right-2 bottom-2 left-2 flex justify-evenly gap-1 rounded-lg border p-1"
+            class="border-outline bg-surface-container shadow-elevation-3 absolute right-2 bottom-2 left-2 flex justify-evenly gap-1 rounded-box border p-1"
           >
             <button
-              class="text-on-surface hover:bg-surface-container-high rounded p-2 font-bold"
+              class="text-on-surface hover:bg-surface-container-high rounded-chip p-2 font-bold"
               onclick={() => insertMarkdown('**', '**', 'bold')}
               title="Bold">B</button
             >
             <button
-              class="text-on-surface hover:bg-surface-container-high rounded p-2 font-serif italic"
+              class="text-on-surface hover:bg-surface-container-high rounded-chip p-2 font-serif italic"
               onclick={() => insertMarkdown('*', '*', 'italic')}
               title="Italic">I</button
             >
             <button
-              class="text-on-surface hover:bg-surface-container-high rounded p-2"
+              class="text-on-surface hover:bg-surface-container-high rounded-chip p-2"
               onclick={() => insertMarkdown('- ', '', 'item')}
               title="Insert List Item"
             >
               <ListBulletIcon />
             </button>
             <button
-              class="text-on-surface hover:bg-surface-container-high rounded p-2"
+              class="text-on-surface hover:bg-surface-container-high rounded-chip p-2"
               onclick={() => insertMarkdown('- [ ] ', '', 'task')}
               title="Insert Task Item"
             >
@@ -323,13 +323,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </button>
             <div class="relative">
               <button
-                class="text-on-surface hover:bg-surface-container-high rounded p-2 font-bold"
+                class="text-on-surface hover:bg-surface-container-high rounded-chip p-2 font-bold"
                 onclick={() => (showHeadingDropdown = !showHeadingDropdown)}
                 title="Insert Heading">H</button
               >
               {#if showHeadingDropdown}
                 <div
-                  class="border-outline-variant bg-surface-container shadow-elevation-4 absolute right-0 bottom-full mb-2 flex min-w-[3rem] flex-col overflow-hidden rounded-lg border"
+                  class="border-outline-variant bg-surface-container shadow-elevation-4 absolute right-0 bottom-full mb-2 flex min-w-[3rem] flex-col overflow-hidden rounded-box border"
                   transition:fade={{ duration: 100 }}
                 >
                   {#each [1, 2, 3, 4, 5, 6] as level (level)}
@@ -377,7 +377,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         {#each filteredNotes as note (note.id)}
           <ListItem
-            class="bg-surface-container mb-2 rounded-lg p-4"
+            class="bg-surface-container mb-2 rounded-box p-4"
             onclick={() => (selectedNote = note)}
           >
             <div class="flex w-full flex-col">
@@ -410,41 +410,41 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {#if isEditing && draftNote}
         <div class="flex h-full flex-col gap-4 p-4">
           <input
-            class="border-outline-variant bg-surface-container placeholder-on-surface-variant w-full rounded border p-2 text-xl font-bold focus:border-yellow-500 focus:outline-none"
+            class="border-outline-variant bg-surface-container placeholder-on-surface-variant w-full rounded-chip border p-2 text-xl font-bold focus:border-yellow-500 focus:outline-none"
             bind:value={draftNote.title}
             placeholder="Title"
             disabled={$busy}
           />
           <div class="relative min-h-0 flex-1">
             <textarea
-              class="no-scrollbar border-outline-variant bg-surface-container placeholder-on-surface-variant text-body-medium h-full w-full resize-none rounded border p-2 pb-12 font-mono focus:border-yellow-500 focus:outline-none"
+              class="no-scrollbar border-outline-variant bg-surface-container placeholder-on-surface-variant text-body-medium h-full w-full resize-none rounded-chip border p-2 pb-12 font-mono focus:border-yellow-500 focus:outline-none"
               bind:this={textAreaRef}
               bind:value={draftNote.content}
               placeholder="Markdown content..."
               disabled={$busy}></textarea>
             <!-- Markdown Toolbar -->
             <div
-              class="border-outline bg-surface-container-high shadow-elevation-3 absolute right-2 bottom-2 left-2 flex justify-evenly gap-1 rounded-lg border p-1 backdrop-blur"
+              class="border-outline bg-surface-container-high shadow-elevation-3 absolute right-2 bottom-2 left-2 flex justify-evenly gap-1 rounded-box border p-1 backdrop-blur"
             >
               <button
-                class="text-on-surface hover:bg-surface-container-highest rounded p-2 font-bold"
+                class="text-on-surface hover:bg-surface-container-highest rounded-chip p-2 font-bold"
                 onclick={() => insertMarkdown('**', '**', 'bold')}
                 title="Bold">B</button
               >
               <button
-                class="text-on-surface hover:bg-surface-container-highest rounded p-2 font-serif italic"
+                class="text-on-surface hover:bg-surface-container-highest rounded-chip p-2 font-serif italic"
                 onclick={() => insertMarkdown('*', '*', 'italic')}
                 title="Italic">I</button
               >
               <button
-                class="text-on-surface hover:bg-surface-container-highest rounded p-2"
+                class="text-on-surface hover:bg-surface-container-highest rounded-chip p-2"
                 onclick={() => insertMarkdown('- ', '', 'item')}
                 title="Insert List Item"
               >
                 <ListBulletIcon />
               </button>
               <button
-                class="text-on-surface hover:bg-surface-container-highest rounded p-2"
+                class="text-on-surface hover:bg-surface-container-highest rounded-chip p-2"
                 onclick={() => insertMarkdown('- [ ] ', '', 'task')}
                 title="Insert Task Item"
               >
@@ -452,13 +452,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </button>
               <div class="relative">
                 <button
-                  class="text-on-surface hover:bg-surface-container-highest rounded p-2 font-bold"
+                  class="text-on-surface hover:bg-surface-container-highest rounded-chip p-2 font-bold"
                   onclick={() => (showHeadingDropdown = !showHeadingDropdown)}
                   title="Insert Heading">H</button
                 >
                 {#if showHeadingDropdown}
                   <div
-                    class="border-outline-variant bg-surface-container shadow-elevation-4 absolute right-0 bottom-full mb-2 flex min-w-[3rem] flex-col overflow-hidden rounded-lg border"
+                    class="border-outline-variant bg-surface-container shadow-elevation-4 absolute right-0 bottom-full mb-2 flex min-w-[3rem] flex-col overflow-hidden rounded-box border"
                     transition:fade={{ duration: 100 }}
                   >
                     {#each [1, 2, 3, 4, 5, 6] as level (level)}

@@ -38,7 +38,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     This is how people find you. Lowercase letters, numbers and underscores, 3–32 characters.
   </p>
 
-  <div class="bg-surface-container flex w-full items-center gap-1 rounded-lg px-3">
+  <div class="bg-surface-container flex w-full items-center gap-1 rounded-box px-3">
     <span class="text-on-surface-variant text-body-medium">@</span>
     <input
       bind:value={handle}

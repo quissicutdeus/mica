@@ -142,14 +142,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
       Appearance
     </h2>
-    <div class="bg-surface-container flex flex-col items-center gap-3 rounded-xl p-4">
+    <div class="bg-surface-container flex flex-col items-center gap-3 rounded-box p-4">
       <!-- Everything on this page shows up here: the scheme, the seed, the wallpaper, the
            clock format, and the rendered size beneath. Utility classes rather than inline
            values, deliberately — the preview renders the *active* theme, so a class is
            both simpler and guaranteed to match what the phone will actually do. Only the
            wallpaper is inline, because it is generated rather than a token. -->
       <div
-        class="border-outline shadow-elevation-3 relative flex w-[132px] flex-col overflow-hidden rounded-lg border-2"
+        class="border-outline shadow-elevation-3 relative flex w-[132px] flex-col overflow-hidden rounded-box border-2"
         style={`aspect-ratio: 400 / 850; background: ${background};`}
       >
         <div class="text-on-surface text-label-small flex items-center justify-between px-2 pt-1.5">
@@ -163,7 +163,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="grid flex-1 grid-cols-3 content-start gap-x-2 gap-y-1.5 px-2 pt-3">
           {#each DEMO_TILES as tile (tile)}
             <div class="flex flex-col items-center gap-0.5">
-              <div class="size-icon-lg rounded-sm {tile}"></div>
+              <div class="size-icon-lg rounded-chip {tile}"></div>
               <span
                 class="text-on-surface h-0.5 w-4 rounded-full bg-current opacity-70"
                 class:text-on-wallpaper={wallpaper.type === 'image'}
@@ -172,7 +172,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {/each}
         </div>
 
-        <div class="bg-surface-container-high mx-2 mb-2 rounded-md px-1.5 py-1">
+        <div class="bg-surface-container-high mx-2 mb-2 rounded-box px-1.5 py-1">
           <div class="bg-on-surface h-0.5 w-2/3 rounded-full opacity-80"></div>
           <div class="bg-on-surface-variant mt-1 h-0.5 w-1/2 rounded-full opacity-60"></div>
         </div>
@@ -196,7 +196,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
       Color
     </h2>
-    <div class="bg-surface-container mb-3 flex flex-col items-center gap-3 rounded-xl p-4">
+    <div class="bg-surface-container mb-3 flex flex-col items-center gap-3 rounded-box p-4">
       <div class="flex items-center gap-1.5">
         {#each SWATCHES as swatch (swatch.role)}
           <div class="flex flex-col items-center gap-1">
@@ -220,7 +220,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </button>
       </div>
     </div>
-    <div class="bg-surface-container rounded-xl p-4">
+    <div class="bg-surface-container rounded-box p-4">
       <ColorWheelPicker color={seed} onchange={applyCustomColor} />
       <p class="text-on-surface-variant text-label-small mt-3 text-center">
         The wallpaper and every color in the phone are generated from this one.
@@ -238,14 +238,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <button
           type="button"
           onclick={() => setPresetWallpaper(preset)}
-          class={`flex cursor-pointer flex-col overflow-hidden rounded-xl border p-2 text-left transition-all ${
+          class={`flex cursor-pointer flex-col overflow-hidden rounded-box border p-2 text-left transition-all ${
             wallpaper.type === 'color' && seed === preset.seed
               ? 'border-primary ring-primary ring-2'
               : 'border-outline-variant bg-surface-container hover:border-outline'
           }`}
         >
           <div
-            class="h-12 w-full rounded-lg"
+            class="h-12 w-full rounded-box"
             style={`background: ${backgroundForSeed(preset.seed, mode)};`}
           ></div>
           <span class="text-on-surface text-body-small mt-2">{preset.label}</span>
@@ -259,7 +259,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
       From a Photo
     </h2>
-    <div class="bg-surface-container rounded-xl p-4 text-center">
+    <div class="bg-surface-container rounded-box p-4 text-center">
       {#if wallpaperPhotos.length === 0}
         <EmptyState
           title="No photos in Gallery"
@@ -271,7 +271,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <button
               type="button"
               onclick={() => applyPhoto(photo.id)}
-              class="border-outline-variant hover:border-primary relative aspect-square cursor-pointer overflow-hidden rounded-lg border"
+              class="border-outline-variant hover:border-primary relative aspect-square cursor-pointer overflow-hidden rounded-box border"
             >
               <!-- `MediaThumb` rather than a bare `<img src={photo.data}>`: the tile is a
                    thumbnail now, and this is the one place that knows how to draw a media

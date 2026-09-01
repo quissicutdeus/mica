@@ -398,7 +398,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class:opacity-0={$isTakingPhoto}
       >
         {#each [['shutter', 'Shoot'], ['back', 'Close'], ['freelook', 'Cursor']] as [id, label] (id)}
-          <span class="rounded bg-black/50 px-1.5 py-0.5 backdrop-blur-sm">
+          <span class="rounded-chip bg-black/50 px-1.5 py-0.5 backdrop-blur-sm">
             <span class="text-on-surface font-mono">{keyLabel($bindings[id])}</span>
             {label}
           </span>
@@ -487,7 +487,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             disabled={mode === 'VIDEO'}
             title={mode === 'VIDEO' ? 'Coming soon' : undefined}
             onclick={() => (cameraMode = mode as 'PHOTO' | 'VIDEO' | 'LANDSCAPE')}
-            class="text-body-small duration-medium ease-standard rounded-full px-3.5 py-1 tracking-wider uppercase transition-all {cameraMode ===
+            class="text-body-small duration-medium ease-standard rounded-chip px-3.5 py-1 tracking-wider uppercase transition-all {cameraMode ===
             mode
               ? 'shadow-elevation-1 scale-105 border border-yellow-400/40 bg-black/60 text-yellow-300'
               : mode === 'VIDEO'
@@ -514,7 +514,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               openApp('media');
             }
           }}
-          class="group shadow-elevation-3 duration-medium ease-standard flex h-12 w-12 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-white/30 bg-black/40 transition-all {isThumbnailBouncing
+          class="group shadow-elevation-3 duration-medium ease-standard flex h-12 w-12 cursor-pointer items-center justify-center overflow-hidden rounded-box border border-white/30 bg-black/40 transition-all {isThumbnailBouncing
             ? 'shadow-elevation-4 scale-110 border-yellow-400 ring-2 shadow-yellow-400/30 ring-yellow-400/60'
             : 'hover:scale-105'}"
           aria-label="Open Media Gallery"
@@ -543,7 +543,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <div
             class="duration-medium ease-standard h-full w-full rounded-full transition-all {cameraMode ===
             'VIDEO'
-              ? 'bg-error scale-75 rounded-md'
+              ? 'bg-error scale-75 rounded-box'
               : 'bg-white'}"
           ></div>
         </button>
@@ -571,10 +571,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
        A child of the outer container so it can cross into the controls strip. -->
   {#if flyingPhoto}
     <div
-      class="shadow-elevation-5 pointer-events-none absolute z-30 origin-center rounded-lg bg-white p-1.5"
+      class="shadow-elevation-5 pointer-events-none absolute z-30 origin-center rounded-box bg-white p-1.5"
       style="transition: transform {FLY_MS}ms var(--ease-standard), opacity {FLY_MS}ms var(--ease-standard); {flyingPhoto.box} {flyingPhoto.style}"
     >
-      <img src={flyingPhoto.src} alt="" class="h-full w-full rounded-xl object-cover" />
+      <img src={flyingPhoto.src} alt="" class="h-full w-full rounded-box object-cover" />
     </div>
   {/if}
 </div>

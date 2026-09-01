@@ -96,7 +96,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <!-- Group Rename & Participants Section -->
     {#if currentConv.is_group}
-      <div class="border-outline-variant bg-surface space-y-2 rounded-xl border p-3">
+      <div class="border-outline-variant bg-surface space-y-2 rounded-box border p-3">
         <label for="group-name-input" class="text-on-surface text-body-small">Group Name</label>
         <div class="flex gap-2">
           <input
@@ -104,7 +104,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="text"
             maxlength="50"
             bind:value={editNameValue}
-            class="border-outline-variant bg-surface-container text-on-surface focus:border-focus-ring text-body-small flex-1 rounded-lg border px-3 py-1.5 focus:outline-none"
+            class="border-outline-variant bg-surface-container text-on-surface focus:border-focus-ring text-body-small flex-1 rounded-box border px-3 py-1.5 focus:outline-none"
             placeholder="Enter group name"
           />
           <Button class="text-body-small shrink-0 px-3 py-1.5" onclick={handleSaveGroupName}
@@ -119,7 +119,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           Group Members ({currentConv.participants?.length || 0})
         </h4>
         <div
-          class="divide-outline-variant border-outline-variant bg-surface-container shadow-elevation-3 divide-y overflow-hidden rounded-xl border"
+          class="divide-outline-variant border-outline-variant bg-surface-container shadow-elevation-3 divide-y overflow-hidden rounded-box border"
         >
           {#each currentConv.participants || [] as member (member.citizenid)}
             {@const pContact =

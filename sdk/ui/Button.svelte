@@ -30,7 +30,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let baseClass = $derived(
     variant === 'icon'
       ? 'p-2 rounded-full transition-colors disabled:text-disabled-content disabled:hover:bg-transparent disabled:hover:text-disabled-content disabled:cursor-not-allowed flex items-center justify-center'
-      : 'p-3 rounded-lg font-medium transition-colors disabled:bg-disabled-container disabled:text-disabled-content disabled:hover:bg-disabled-container disabled:hover:text-disabled-content disabled:cursor-not-allowed flex items-center justify-center'
+      : 'p-3 rounded-box font-medium transition-colors disabled:bg-disabled-container disabled:text-disabled-content disabled:hover:bg-disabled-container disabled:hover:text-disabled-content disabled:cursor-not-allowed flex items-center justify-center'
   );
 
   /**

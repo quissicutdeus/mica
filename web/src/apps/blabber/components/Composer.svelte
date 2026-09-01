@@ -120,14 +120,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {placeholder}
     maxlength={LIMIT}
     rows="3"
-    class="bg-surface-container text-on-surface placeholder-on-surface-variant text-body-medium w-full resize-none rounded-lg p-2.5 focus:outline-none"
+    class="bg-surface-container text-on-surface placeholder-on-surface-variant text-body-medium w-full resize-none rounded-box p-2.5 focus:outline-none"
   ></textarea>
 
   {#if attachments.length > 0}
     <div class="no-scrollbar mt-2 flex gap-2 overflow-x-auto p-1">
       {#each attachments as att (att.photo_id)}
         <div
-          class="border-outline shadow-elevation-2 relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border"
+          class="border-outline shadow-elevation-2 relative h-14 w-14 shrink-0 overflow-hidden rounded-box border"
         >
           <MediaThumb item={att.media} alt="Attachment" />
           <button

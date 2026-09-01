@@ -153,7 +153,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   >
     <span>Developer Tools</span>
     <span
-      class="text-label-small rounded border border-emerald-800 bg-emerald-950 px-1.5 py-0.5 font-mono text-emerald-300"
+      class="text-label-small rounded-chip border border-emerald-800 bg-emerald-950 px-1.5 py-0.5 font-mono text-emerald-300"
     >
       Unlocked
     </span>
@@ -161,7 +161,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <!-- The master switch. On by definition while this pane is reachable; turning it off
        re-locks the group, which is why it is not bound to anything two-way — there is no
        state in which this renders "off". -->
-  <div class="bg-surface-container mb-4 overflow-hidden rounded-xl">
+  <div class="bg-surface-container mb-4 overflow-hidden rounded-box">
     <ToggleSwitch
       label="Developer Tools"
       description="Turn off to hide — 10 taps on OS Version restores"
@@ -170,7 +170,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     />
   </div>
 
-  <div class="bg-surface-container text-body-small space-y-4 overflow-hidden rounded-xl p-4">
+  <div class="bg-surface-container text-body-small space-y-4 overflow-hidden rounded-box p-4">
     <!-- Battery Level -->
     <div class="flex flex-col gap-2">
       <div class="text-on-surface flex items-center justify-between">
@@ -183,34 +183,34 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         max="100"
         value={Math.round($charge)}
         oninput={(e) => applyBatteryLevel(Number(e.currentTarget.value))}
-        class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-emerald-500"
+        class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-box accent-emerald-500"
       />
       <div class="grid grid-cols-4 gap-1.5 pt-0.5">
         <button
           type="button"
           onclick={() => applyBatteryLevel(0)}
-          class="text-error text-label-small cursor-pointer rounded border border-red-800 bg-red-950 px-2 py-1.5 text-center hover:bg-red-900"
+          class="text-error text-label-small cursor-pointer rounded-chip border border-red-800 bg-red-950 px-2 py-1.5 text-center hover:bg-red-900"
         >
           0% (Dead)
         </button>
         <button
           type="button"
           onclick={() => applyBatteryLevel(15)}
-          class="text-label-small cursor-pointer rounded border border-yellow-800 bg-yellow-950 px-2 py-1.5 text-center text-yellow-300 hover:bg-yellow-900"
+          class="text-label-small cursor-pointer rounded-chip border border-yellow-800 bg-yellow-950 px-2 py-1.5 text-center text-yellow-300 hover:bg-yellow-900"
         >
           15% (Low)
         </button>
         <button
           type="button"
           onclick={() => applyBatteryLevel(50)}
-          class="border-outline bg-surface-container-high text-on-surface hover:bg-surface-container-highest text-label-small cursor-pointer rounded border px-2 py-1.5 text-center"
+          class="border-outline bg-surface-container-high text-on-surface hover:bg-surface-container-highest text-label-small cursor-pointer rounded-chip border px-2 py-1.5 text-center"
         >
           50%
         </button>
         <button
           type="button"
           onclick={() => applyBatteryLevel(100)}
-          class="text-label-small cursor-pointer rounded border border-emerald-800 bg-emerald-950 px-2 py-1.5 text-center text-emerald-300 hover:bg-emerald-900"
+          class="text-label-small cursor-pointer rounded-chip border border-emerald-800 bg-emerald-950 px-2 py-1.5 text-center text-emerald-300 hover:bg-emerald-900"
         >
           100%
         </button>
@@ -228,7 +228,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <button
             type="button"
             onclick={() => setSignal(level)}
-            class="text-label-small cursor-pointer rounded border py-1.5 transition-all {$signalLevel ===
+            class="text-label-small cursor-pointer rounded-chip border py-1.5 transition-all {$signalLevel ===
             level
               ? 'border-emerald-500 bg-emerald-600 text-white'
               : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'} duration-short ease-standard"
@@ -247,7 +247,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <button
             type="button"
             onclick={toggleMute}
-            class="text-label-small cursor-pointer rounded border px-2 py-0.5 font-mono {$soundMuted
+            class="text-label-small cursor-pointer rounded-chip border px-2 py-0.5 font-mono {$soundMuted
               ? 'text-error border-red-800 bg-red-950'
               : 'border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high'}"
           >
@@ -263,7 +263,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         step="0.05"
         value={$soundVolume}
         oninput={(e) => setVolume(Number(e.currentTarget.value))}
-        class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-emerald-500"
+        class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-box accent-emerald-500"
       />
     </div>
 
@@ -280,19 +280,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           type="text"
           bind:value={callName}
           placeholder="Caller Name"
-          class="border-outline-variant bg-surface text-on-surface placeholder-on-surface-variant w-1/2 rounded border px-2.5 py-1.5 focus:border-emerald-500 focus:outline-none"
+          class="border-outline-variant bg-surface text-on-surface placeholder-on-surface-variant w-1/2 rounded-chip border px-2.5 py-1.5 focus:border-emerald-500 focus:outline-none"
         />
         <input
           type="text"
           bind:value={callNumber}
           placeholder="Phone Number"
-          class="border-outline-variant bg-surface text-on-surface placeholder-on-surface-variant w-1/2 rounded border px-2.5 py-1.5 focus:border-emerald-500 focus:outline-none"
+          class="border-outline-variant bg-surface text-on-surface placeholder-on-surface-variant w-1/2 rounded-chip border px-2.5 py-1.5 focus:border-emerald-500 focus:outline-none"
         />
       </div>
       <button
         type="button"
         onclick={triggerCall}
-        class="duration-short ease-standard text-body-small w-full cursor-pointer rounded-lg bg-emerald-600 py-2 text-white transition-all hover:bg-emerald-500"
+        class="duration-short ease-standard text-body-small w-full cursor-pointer rounded-box bg-emerald-600 py-2 text-white transition-all hover:bg-emerald-500"
       >
         Simulate Incoming Call
       </button>
@@ -305,21 +305,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <button
           type="button"
           onclick={triggerNotification}
-          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high text-label-small cursor-pointer rounded border px-2 py-1.5 text-center"
+          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high text-label-small cursor-pointer rounded-chip border px-2 py-1.5 text-center"
         >
           Toast
         </button>
         <button
           type="button"
           onclick={triggerMessage}
-          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high text-label-small cursor-pointer rounded border px-2 py-1.5 text-center"
+          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high text-label-small cursor-pointer rounded-chip border px-2 py-1.5 text-center"
         >
           SMS
         </button>
         <button
           type="button"
           onclick={triggerMail}
-          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high text-label-small cursor-pointer rounded border px-2 py-1.5 text-center"
+          class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high text-label-small cursor-pointer rounded-chip border px-2 py-1.5 text-center"
         >
           Email
         </button>

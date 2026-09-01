@@ -236,7 +236,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
            would be a rectangle in a pill. `focus-within` moves it out to the shape the
            player actually sees, the same way `ToastHost`'s reply field does it. -->
       <div
-        class="bg-surface-container-highest text-on-surface focus-within:ring-focus-ring flex h-11 shrink-0 items-center gap-2 rounded-full px-4 focus-within:ring-1"
+        class="bg-surface-container-highest text-on-surface focus-within:ring-focus-ring flex h-11 shrink-0 items-center gap-2 rounded-box px-4 focus-within:ring-1"
       >
         <SearchIcon class="text-on-surface-variant h-4 w-4" />
         <input
@@ -291,7 +291,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <button
             type="button"
             onclick={() => launch(result)}
-            class="hover:bg-surface-container-highest duration-short ease-standard flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors"
+            class="hover:bg-surface-container-highest duration-short ease-standard flex w-full cursor-pointer items-center gap-3 rounded-box px-2 py-2 text-left transition-colors"
           >
             <!-- An app shows its own tile colour and glyph; a contact or a conversation has
                  no icon of its own, so it gets a neutral monogram rather than borrowing some

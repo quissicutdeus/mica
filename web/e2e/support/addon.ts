@@ -52,7 +52,7 @@ export const dismissToasts = async (page: Page): Promise<void> => {
 export const installAddOn = async (page: Page, name: string): Promise<void> => {
   await page.locator('button', { hasText: 'Store' }).first().click();
   await page
-    .locator('div.rounded-xl', { hasText: name })
+    .locator('[data-testid="app-row"]', { hasText: name })
     .getByRole('button', { name: 'Install', exact: true })
     .click();
   await page.locator("button[aria-label='Return to home screen']").click();

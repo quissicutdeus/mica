@@ -87,7 +87,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {:else}
         <div class="space-y-4">
           {#each $pendingReports as report (report.id)}
-            <div class="bg-surface-container text-body-medium overflow-hidden rounded-xl">
+            <div class="bg-surface-container text-body-medium overflow-hidden rounded-box">
               <div class="flex items-start justify-between gap-3 p-4">
                 <div class="min-w-0">
                   <p class="text-error font-medium">
@@ -98,7 +98,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   </p>
                 </div>
                 <span
-                  class="bg-surface text-on-surface-variant text-label-small shrink-0 rounded px-2 py-0.5 font-mono"
+                  class="bg-surface text-on-surface-variant text-label-small shrink-0 rounded-chip px-2 py-0.5 font-mono"
                 >
                   #{report.id}
                 </span>
@@ -111,7 +111,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <img
                     src={report.target_preview}
                     alt=""
-                    class="max-h-40 rounded-lg object-contain"
+                    class="max-h-40 rounded-box object-contain"
                   />
                 {:else}
                   <p class="text-on-surface break-words whitespace-pre-wrap">
@@ -154,7 +154,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {:else}
       <div class="space-y-3">
         {#each $resolvedReports as report (report.id)}
-          <div class="bg-surface-container text-body-medium overflow-hidden rounded-xl">
+          <div class="bg-surface-container text-body-medium overflow-hidden rounded-box">
             <div class="flex items-start justify-between gap-3 p-4">
               <div class="min-w-0">
                 <p class="text-on-surface font-medium">
@@ -176,7 +176,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   run(() => reopenReport(report.id), {
                     success: 'Reopened — content restored if it was removed'
                   })}
-                class="border-outline text-on-surface hover:bg-surface-container-high duration-short ease-standard text-body-small shrink-0 cursor-pointer rounded-lg border px-3 py-1.5 transition-colors disabled:opacity-50"
+                class="border-outline text-on-surface hover:bg-surface-container-high duration-short ease-standard text-body-small shrink-0 cursor-pointer rounded-box border px-3 py-1.5 transition-colors disabled:opacity-50"
               >
                 Undo
               </button>

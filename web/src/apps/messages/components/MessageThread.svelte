@@ -68,7 +68,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="my-2 flex justify-center">
       <button
         type="button"
-        class="border-primary bg-surface-container text-primary hover:bg-surface-container shadow-elevation-1 duration-short ease-standard text-body-small flex cursor-pointer items-center gap-2 rounded-full border px-3.5 py-1.5 transition-colors"
+        class="border-primary bg-surface-container text-primary hover:bg-surface-container shadow-elevation-1 duration-short ease-standard text-body-small flex cursor-pointer items-center gap-2 rounded-box border px-3.5 py-1.5 transition-colors"
         onclick={onloadmore}
       >
         {#if loadingMore}
@@ -91,7 +91,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div id="unread-divider" class="my-4 flex items-center gap-3 py-1">
         <div class="bg-primary h-px flex-1"></div>
         <span
-          class="border-primary text-primary shadow-elevation-2 text-label-small rounded-full border bg-blue-950/90 px-3 py-1 tracking-wider uppercase"
+          class="border-primary text-primary shadow-elevation-2 text-label-small rounded-box border bg-blue-950/90 px-3 py-1 tracking-wider uppercase"
         >
           Unread Messages ({unreadCount})
         </span>

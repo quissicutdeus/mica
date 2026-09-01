@@ -342,14 +342,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         'ring-2',
         'ring-primary',
         'bg-surface-container-highest',
-        'rounded-lg'
+        'rounded-box'
       );
       setTimeout(() => {
         targetEl.classList.remove(
           'ring-2',
           'ring-primary',
           'bg-surface-container-highest',
-          'rounded-lg'
+          'rounded-box'
         );
       }, 1500);
     }
@@ -558,11 +558,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         />
 
         <div
-          class="divide-outline-variant bg-surface-container max-h-56 divide-y overflow-y-auto rounded-xl p-1"
+          class="divide-outline-variant bg-surface-container max-h-56 divide-y overflow-y-auto rounded-box p-1"
         >
           {#each filteredContacts as contact (contact.id)}
             <ListItem
-              class="hover:bg-surface-container rounded-lg py-2"
+              class="hover:bg-surface-container rounded-box py-2"
               onclick={() => handleSelectContactRaw(contact)}
             >
               <div class="mr-3 shrink-0">

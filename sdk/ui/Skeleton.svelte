@@ -27,7 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let {
     count = 1,
     height = 'h-4',
-    rounded = 'rounded-lg',
+    rounded = 'rounded-box',
     class: className = ''
   }: {
     count?: number;

@@ -307,7 +307,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
      dark surface rather than the phone's, and untinted it is exactly the card this
      replaced. -->
 <div
-  class="bg-surface-container-low rounded-lg {compact ? 'p-2' : 'p-3'}"
+  class="bg-surface-container-low rounded-box {compact ? 'p-2' : 'p-3'}"
   style={tintStyle}
   data-testid="now-playing-card"
 >
@@ -324,11 +324,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <img
         src={art}
         alt=""
-        class="bg-surface-container-high h-10 w-16 shrink-0 rounded-md object-cover"
+        class="bg-surface-container-high h-10 w-16 shrink-0 rounded-box object-cover"
       />
     {:else}
       <span
-        class="bg-surface-container-high text-on-surface-variant flex h-10 w-16 shrink-0 items-center justify-center rounded-md"
+        class="bg-surface-container-high text-on-surface-variant flex h-10 w-16 shrink-0 items-center justify-center rounded-box"
       >
         <MusicNoteIcon class="size-icon-sm" />
       </span>
@@ -386,7 +386,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {#if onopen}
     <button
       type="button"
-      class="hover:bg-surface-container duration-short ease-standard flex w-full min-w-0 items-center gap-3 rounded-lg text-left transition-colors"
+      class="hover:bg-surface-container duration-short ease-standard flex w-full min-w-0 items-center gap-3 rounded-box text-left transition-colors"
       onclick={onopen}
       title="Open Music"
     >
@@ -420,7 +420,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           seekMusic(Number(e.currentTarget.value));
           scrub = null;
         }}
-        class="bg-surface-container-high accent-primary h-1 w-full cursor-pointer appearance-none rounded-lg"
+        class="bg-surface-container-high accent-primary h-1 w-full cursor-pointer appearance-none rounded-box"
       />
       <div class="text-label-small text-on-surface-variant mt-1 flex justify-between">
         <span>{formatDuration(scrubAt)}</span>

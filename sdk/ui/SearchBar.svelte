@@ -34,7 +34,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </script>
 
 <input
-  class="placeholder-on-surface-variant text-body-medium w-full rounded-lg px-4 py-2 focus:ring-1 focus:outline-none {className} {focusRingClass}"
+  class="placeholder-on-surface-variant text-body-medium w-full rounded-box px-4 py-2 focus:ring-1 focus:outline-none {className} {focusRingClass}"
   {placeholder}
   bind:value
   use:focus

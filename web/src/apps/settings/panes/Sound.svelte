@@ -73,7 +73,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="button"
             onclick={() => setRingMode(choice.id)}
             aria-pressed={$ringMode === choice.id}
-            class="text-body-small cursor-pointer rounded border py-1.5 transition-all {$ringMode ===
+            class="text-body-small cursor-pointer rounded-chip border py-1.5 transition-all {$ringMode ===
             choice.id
               ? 'border-primary bg-primary-container text-on-primary-container'
               : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'} duration-short ease-standard"
@@ -98,7 +98,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="button"
             onclick={() => chooseRingtone(choice.id)}
             aria-pressed={$ringtone === choice.id}
-            class="text-body-small w-full cursor-pointer rounded border px-3 py-1.5 text-left transition-all {$ringtone ===
+            class="text-body-small w-full cursor-pointer rounded-chip border px-3 py-1.5 text-left transition-all {$ringtone ===
             choice.id
               ? 'border-primary bg-primary-container text-on-primary-container'
               : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'} duration-short ease-standard"
@@ -128,7 +128,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         value={Math.round($soundVolume * 100)}
         aria-label="System volume"
         oninput={(e) => setVolume(Number(e.currentTarget.value) / 100)}
-        class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-blue-500"
+        class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-box accent-blue-500"
       />
     </div>
     <div class="border-outline-variant border-t">
@@ -158,7 +158,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         value={Math.round($musicVolume * 100)}
         aria-label="Music volume"
         oninput={(e) => setMusicVolume(Number(e.currentTarget.value) / 100)}
-        class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-lg accent-blue-500"
+        class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-box accent-blue-500"
       />
     </div>
     <div class="border-outline-variant border-t">
@@ -184,7 +184,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="button"
             onclick={() => setVolumeStep(choice)}
             aria-pressed={$volumeStep === choice}
-            class="text-body-small cursor-pointer rounded border py-1.5 transition-all {$volumeStep ===
+            class="text-body-small cursor-pointer rounded-chip border py-1.5 transition-all {$volumeStep ===
             choice
               ? 'border-primary bg-primary-container text-on-primary-container'
               : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'} duration-short ease-standard"

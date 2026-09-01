@@ -127,7 +127,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {@const selected = isSelected(photo.id)}
         <button
           type="button"
-          class="group bg-surface-container relative aspect-square overflow-hidden rounded-xl border transition-all {selected
+          class="group bg-surface-container relative aspect-square overflow-hidden rounded-box border transition-all {selected
             ? 'ring-primary border-primary ring-2'
             : 'border-outline-variant hover:border-outline'} duration-short ease-standard"
           onclick={() => onmultichange?.(photo.id, photo)}
@@ -145,7 +145,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <button
           type="button"
           disabled={picking !== null}
-          class="group border-outline-variant bg-surface-container hover:border-primary duration-short ease-standard relative aspect-square overflow-hidden rounded-xl border transition-all {picking ===
+          class="group border-outline-variant bg-surface-container hover:border-primary duration-short ease-standard relative aspect-square overflow-hidden rounded-box border transition-all {picking ===
           photo.id
             ? 'opacity-50'
             : ''}"

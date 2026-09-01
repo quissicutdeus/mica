@@ -84,7 +84,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   class="bg-scrim absolute inset-0 z-50 flex items-center justify-center p-6 backdrop-blur-sm"
   transition:fade
 >
-  <div class="bg-surface-container shadow-elevation-5 w-full rounded-xl p-6">
+  <div class="bg-surface-container shadow-elevation-5 w-full rounded-box p-6">
     <div class="mb-4 flex items-center justify-between">
       <h3 class="text-on-surface text-xl font-bold">Send Money</h3>
       <button
@@ -107,7 +107,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         placeholder="Recipient's phone number"
         bind:value={phone}
         disabled={busy}
-        class="bg-surface text-on-surface placeholder-on-surface-variant rounded-lg px-3 py-2"
+        class="bg-surface text-on-surface placeholder-on-surface-variant rounded-box px-3 py-2"
       />
       <input
         type="number"
@@ -116,7 +116,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         placeholder="Amount"
         bind:value={amount}
         disabled={busy}
-        class="bg-surface text-on-surface placeholder-on-surface-variant rounded-lg px-3 py-2"
+        class="bg-surface text-on-surface placeholder-on-surface-variant rounded-box px-3 py-2"
       />
       <input
         type="text"
@@ -124,7 +124,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         maxlength="140"
         bind:value={note}
         disabled={busy}
-        class="bg-surface text-on-surface placeholder-on-surface-variant rounded-lg px-3 py-2"
+        class="bg-surface text-on-surface placeholder-on-surface-variant rounded-box px-3 py-2"
       />
     </div>
 

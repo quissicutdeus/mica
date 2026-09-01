@@ -168,11 +168,23 @@
    * M3 shape scale, so `rounded-*` utilities are real M3 values rather than an
    * un-opinionated default scale.
    *
-   * Usage map: buttons/chips/pills/avatars -> full. List rows, small icon buttons ->
-   * sm-md. Cards, list-item containers -> md-lg. Dialogs, bottom sheets, PhotoPicker ->
-   * xl. FAB -> lg. Anything flush against the phone's own screen edge -> frame-inner (on
-   * that edge only), which tracks PhoneFrame's own screen radius rather than duplicating
-   * it as a magic number at each call site.
+   * **Do not reach for a size below; reach for a role.** The sizes are the scale the roles
+   * are cut from, and a call site that names one is a call site that has decided how round
+   * something should be on its own. That is how the Store ended up with 28px on a 44px row
+   * — a perfect circle — beside 16px on a 56px launcher tile, from the same intent.
+   *
+   * - `--radius-box`: every rectangular thing. Cards, list rows, info panels, buttons,
+   *   inputs, the segmented control, dialogs, sheets.
+   * - `--radius-chip`: small labelled things that sit inside a box — reaction pills,
+   *   version tags, permission chips, mode selectors.
+   * - `--radius-full`: only what is genuinely round. Avatars, count badges, toggle knobs,
+   *   the home indicator. Not buttons: a pill button is a shape decision, and this phone
+   *   has made the other one.
+   * - `--radius-frame-inner` / `-outer`: the bezel and anything flush against the screen
+   *   edge, which track `PhoneFrame`'s own curve rather than repeating it as a number.
+   *
+   * One family, so the whole phone changes roundness from here rather than from four
+   * hundred call sites. `sdk/shape.test.ts` is what keeps the sizes from creeping back.
    */
   --radius-none: 0;
   --radius-xs: 4px;
@@ -181,6 +193,12 @@
   --radius-lg: 16px;
   --radius-xl: 28px;
   --radius-full: 9999px;
+
+  /* The roles. Both are `--radius-md` today; they are two names because they are two
+     decisions, and a later change to chips should not have to pick them out of the boxes. */
+  --radius-box: var(--radius-md);
+  --radius-chip: var(--radius-sm);
+
   /* The bezel's own outer curve — `PhoneFrame`'s outer element only. */
   --radius-frame-outer: 3rem;
   /* Anything flush against the screen's *inner* edge (the screen div itself, and any

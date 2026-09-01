@@ -87,7 +87,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
      No card background — a dock slot is a home-grid icon that happens to be pinned, not
      a visually distinct control, so it should look identical to one instead of sitting
-     inside its own surface/shadow/rounded pill. `pt-4` (not `pt-2`) is deliberate too:
+     inside its own surface/shadow/rounded-chip pill. `pt-4` (not `pt-2`) is deliberate too:
      the swipe-up-to-open-the-drawer gesture is attached to this whole element, and at
      `py-2` its hit area barely cleared the icons themselves — a drag starting just above
      the icon glyph had nothing to grab. The extra padding is graspable margin, not a
@@ -139,7 +139,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           }}
         />
       {:else}
-        <div class="border-outline-variant h-14 w-14 rounded-sm border border-dashed"></div>
+        <div class="border-outline-variant h-14 w-14 rounded-box border border-dashed"></div>
       {/if}
     </div>
   {/each}

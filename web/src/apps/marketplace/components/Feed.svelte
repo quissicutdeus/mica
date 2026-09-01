@@ -52,7 +52,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     placeholder="Search listings"
     value={query}
     oninput={onSearchInput}
-    class="bg-surface-container text-on-surface placeholder:text-on-surface-variant text-body-medium flex-1 rounded-full px-4 py-2"
+    class="bg-surface-container text-on-surface placeholder:text-on-surface-variant text-body-medium flex-1 rounded-box px-4 py-2"
   />
   <button
     type="button"
@@ -81,12 +81,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <button
         type="button"
         onclick={() => onselect(listing.id)}
-        class="bg-surface-container hover:bg-surface-container-high duration-short ease-standard flex items-center gap-3 rounded-xl p-3 text-left transition-colors"
+        class="bg-surface-container hover:bg-surface-container-high duration-short ease-standard flex items-center gap-3 rounded-box p-3 text-left transition-colors"
       >
         {#if listing.attachments?.[0]}
-          <MediaThumb item={listing.attachments[0].media} class="h-14 w-14 shrink-0 rounded-lg" />
+          <MediaThumb item={listing.attachments[0].media} class="h-14 w-14 shrink-0 rounded-box" />
         {:else}
-          <div class="bg-surface-container-high h-14 w-14 shrink-0 rounded-lg"></div>
+          <div class="bg-surface-container-high h-14 w-14 shrink-0 rounded-box"></div>
         {/if}
         <div class="min-w-0 flex-1">
           <p class="text-on-surface truncate text-body-large">{listing.title}</p>

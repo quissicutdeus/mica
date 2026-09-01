@@ -45,7 +45,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {#if listing.attachments && listing.attachments.length > 0}
       <div class="flex gap-2 overflow-x-auto">
         {#each listing.attachments as att (att.id)}
-          <MediaThumb item={att.media} class="h-40 w-40 shrink-0 rounded-xl" />
+          <MediaThumb item={att.media} class="h-40 w-40 shrink-0 rounded-box" />
         {/each}
       </div>
     {/if}

@@ -225,7 +225,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {:else}
     <div class="p-4">
       <div
-        class="divide-outline-variant bg-surface-container text-body-medium divide-y overflow-hidden rounded-xl"
+        class="divide-outline-variant bg-surface-container text-body-medium divide-y overflow-hidden rounded-box"
       >
         <button
           type="button"
