@@ -32,7 +32,15 @@ vi.mock('../lib/FrameworkBridge', () => ({
   }
 }));
 
-import { accounts, ownedAccount } from '../services/Accounts';
+import {
+  accounts,
+  ownedAccount,
+  accountHasBlocked,
+  accountsByHandle,
+  accountsByIds,
+  accountsOwnedBy,
+  activeAccount
+} from '../services/Accounts';
 import { registerReactable } from '../lib/reactions';
 
 // Registered by `BlabberDms.ts`'s own `defineService` call in the real app, which this file
@@ -954,5 +962,124 @@ describe('the follow graph declaration', () => {
       columns: ['follower_account_id', 'followee_account_id'],
       unique: true
     });
+  });
+});
+
+/**
+ * MICA-197. `gphone_accounts` is this service's table and `Blabber.ts` and `BlabberDms.ts`
+ * were querying it by hand — five hand-written spellings of the same
+ * `app = ? AND status = 'active'` predicate, across three files. That is what AGENTS.md §10
+ * forbids across resources, applied one level in: "active" is the clause deciding whether a
+ * deleted account can still be messaged, and a predicate copied five times is five places for
+ * it to stop agreeing.
+ */
+describe('the account resolver', () => {
+  it('never selects avatar or bio — a resolver answers who, not what they look like', async () => {
+    await accountsOwnedBy('CIT_A', 'blabber');
+
+    const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain('`id`, `citizenid`, `app`, `handle`, `display_name`, `status`');
+    expect(sql).not.toContain('avatar');
+    expect(sql).not.toContain('bio');
+  });
+
+  it('scopes accountsOwnedBy to one player, one app, and active rows', async () => {
+    await accountsOwnedBy('CIT_A', 'blabber');
+
+    const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain("`citizenid` = ? AND `app` = ? AND `status` = 'active'");
+    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', 'blabber']);
+  });
+
+  it('asks nothing at all without a citizenid or an app', async () => {
+    expect(await accountsOwnedBy('', 'blabber')).toEqual([]);
+    expect(await accountsOwnedBy('CIT_A', '')).toEqual([]);
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Handles are stored lowercase, so a mention written `@Ada` has to find `ada` rather than
+   * silently matching nothing — the failure being a notification that never arrives.
+   */
+  it('lowercases and deduplicates handles before they reach SQL', async () => {
+    await accountsByHandle(['Ada', 'ada', 'GRACE', ''], 'blabber');
+
+    expect(dbMock.query.mock.calls[0][1]).toEqual(['blabber', 'ada', 'grace']);
+    expect(String(dbMock.query.mock.calls[0][0])).toContain('IN (?, ?)');
+  });
+
+  /** Every value bound, and the list capped, so a payload cannot widen the statement (§2.9). */
+  it('caps a handle batch rather than building an unbounded IN list', async () => {
+    const many = Array.from({ length: 250 }, (_, index) => `handle_${index}`);
+    await accountsByHandle(many, 'blabber');
+
+    // One app parameter plus the capped handles.
+    expect((dbMock.query.mock.calls[0][1] as unknown[]).length).toBe(101);
+  });
+
+  it('caps an id batch the same way, and deduplicates it', async () => {
+    await accountsByIds([4, 4, 5]);
+    expect(dbMock.query.mock.calls[0][1]).toEqual([4, 5]);
+
+    dbMock.query.mockClear();
+    await accountsByIds(Array.from({ length: 250 }, (_, index) => index + 1));
+    expect((dbMock.query.mock.calls[0][1] as unknown[]).length).toBe(100);
+  });
+
+  /**
+   * Deliberately unfiltered by status: the one caller is the DM inbox, and hiding a deleted
+   * correspondent's handle leaves a thread attributed to nobody rather than protecting
+   * anything — the messages are the caller's own and already readable.
+   */
+  it('reads accountsByIds without a status filter, unlike every other resolver', async () => {
+    await accountsByIds([4, 5]);
+
+    const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
+    // `status` is still selected — it is an identity column. What is absent is the predicate.
+    expect(sql).not.toContain("`status` = 'active'");
+    expect(sql).toContain('WHERE `id` IN (?, ?)');
+  });
+
+  it('confines activeAccount to the app namespace and to active rows', async () => {
+    dbMock.single.mockResolvedValueOnce({ id: 9, citizenid: 'CIT_B', handle: 'ada' });
+
+    const found = await activeAccount(9, 'blabber');
+
+    const sql = String(dbMock.single.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain("`id` = ? AND `app` = ? AND `status` = 'active'");
+    expect(dbMock.single.mock.calls[0][1]).toEqual([9, 'blabber']);
+    expect(found).toMatchObject({ id: 9 });
+  });
+
+  it('refuses a non-positive or missing account id without asking the database', async () => {
+    expect(await activeAccount(0, 'blabber')).toBeNull();
+    expect(await activeAccount(-1, 'blabber')).toBeNull();
+    expect(await activeAccount(9, '')).toBeNull();
+    expect(dbMock.single).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Two block graphs shared one name. `Blocklist.ts` still exports `isBlocked`, over
+ * `gphone_blocklist`, keyed on a citizenid and a phone number; this one is over
+ * `gphone_account_blocks` and keyed on two account ids. A file importing the bare name gave a
+ * reader no way to tell which without checking the import line, and the two signatures are
+ * only two argument types apart.
+ */
+describe('accountHasBlocked', () => {
+  it('reads the account block graph, keyed on the two account ids', async () => {
+    dbMock.single.mockResolvedValueOnce({ id: 1 });
+
+    await expect(accountHasBlocked(4, 9)).resolves.toBe(true);
+
+    const sql = String(dbMock.single.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain('FROM `gphone_account_blocks`');
+    expect(sql).toContain('`blocker_account_id` = ? AND `blocked_account_id` = ?');
+    expect(dbMock.single.mock.calls[0][1]).toEqual([4, 9]);
+  });
+
+  it('is false when there is no row', async () => {
+    dbMock.single.mockResolvedValueOnce(null);
+    await expect(accountHasBlocked(4, 9)).resolves.toBe(false);
   });
 });

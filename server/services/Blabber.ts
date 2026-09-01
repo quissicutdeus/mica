@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { defineService } from '../lib/defineService';
-import { ownedAccount, isBlocked } from './Accounts';
+import { ownedAccount, accountHasBlocked, accountsByHandle, accountsOwnedBy } from './Accounts';
 // Media is a declared app; reuse its derived repository rather than a second instance, so
 // the attachment-ownership check runs against the same allowlist Messages already uses.
 import { media } from './Media';
@@ -305,12 +305,9 @@ const notifyMentions = async (
   const handles = mentionedHandles(body).filter((handle) => handle !== fromHandle);
   if (handles.length === 0) return;
 
-  const placeholders = handles.map(() => '?').join(', ');
-  const rows = await Database.query<{ id: number; citizenid: string }[]>(
-    `SELECT \`id\`, \`citizenid\` FROM \`gphone_accounts\`
-     WHERE \`app\` = ? AND \`status\` = 'active' AND \`handle\` IN (${placeholders})`,
-    [APP, ...handles.slice(0, 20)]
-  );
+  // Through the Accounts resolver rather than a hand-written read of its table: the
+  // `app = ? AND status = 'active'` predicate has one definition now (MICA-197).
+  const rows = await accountsByHandle(handles.slice(0, 20), APP);
 
   /**
    * Dropped when the mentioned account has blocked the poster — the same reasoning as the DM
@@ -318,7 +315,9 @@ const notifyMentions = async (
    * screen has no other way to prevent.
    */
   const notBlocked = await Promise.all(
-    rows.map(async (row) => ((await isBlocked(row.id, fromAccountId)) ? null : row.citizenid))
+    rows.map(async (row) =>
+      (await accountHasBlocked(row.id, fromAccountId)) ? null : row.citizenid
+    )
   );
   const citizenids = [...new Set(notBlocked.filter((id): id is string => id !== null))];
   if (citizenids.length === 0) return;
@@ -567,11 +566,7 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
 
   if (ids.length === 0) return {};
 
-  const mine = await Database.query<{ id: number }[]>(
-    "SELECT `id` FROM `gphone_accounts` WHERE `citizenid` = ? AND `app` = ? AND `status` = 'active'",
-    [citizenid, APP]
-  );
-  const myAccountIds = mine.map((row) => row.id);
+  const myAccountIds = (await accountsOwnedBy(citizenid, APP)).map((row) => row.id);
 
   const placeholders = ids.map(() => '?').join(', ');
 
@@ -885,7 +880,7 @@ app.registerEvent('profile', async (source, cbId, data, citizenid) => {
     body.viewer_account_id === undefined || body.viewer_account_id === null
       ? null
       : await ownedAccount(body.viewer_account_id, citizenid, APP);
-  const viewerBlocksAuthor = viewer ? await isBlocked(viewer.id, accountId) : false;
+  const viewerBlocksAuthor = viewer ? await accountHasBlocked(viewer.id, accountId) : false;
 
   /**
    * Every identifier here is a literal in this file and every value is bound — the account id,

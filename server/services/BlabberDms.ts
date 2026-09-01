@@ -5,7 +5,13 @@
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
-import { ownedAccount, isBlocked } from './Accounts';
+import {
+  ownedAccount,
+  accountHasBlocked,
+  accountsByIds,
+  accountsOwnedBy,
+  activeAccount
+} from './Accounts';
 import { BlabberDm } from '@gphone/shared/types';
 import { fields, optionalString, requirePositiveInt } from '../lib/payload';
 import { buildDeepLink } from '@gphone/shared/deepLink';
@@ -75,14 +81,16 @@ const app = blabberDms.app;
 const repo = blabberDms.repo;
 const channel = appEventChannel(APP);
 
-/** Every Blabber account this player holds. The set a DM may be sent from, or read as. */
-const myAccounts = async (citizenid: string): Promise<number[]> => {
-  const rows = await Database.query<{ id: number }[]>(
-    "SELECT `id` FROM `gphone_accounts` WHERE `citizenid` = ? AND `app` = ? AND `status` = 'active'",
-    [citizenid, APP]
-  );
-  return rows.map((row) => row.id);
-};
+/**
+ * Every Blabber account this player holds. The set a DM may be sent from, or read as.
+ *
+ * Through the Accounts resolver rather than a hand-written read of its table: three services
+ * were spelling the same `app = ? AND status = 'active'` predicate for themselves, and
+ * "active" is the clause that decides whether a deleted account can still be messaged
+ * (MICA-197).
+ */
+const myAccounts = async (citizenid: string): Promise<number[]> =>
+  (await accountsOwnedBy(citizenid, APP)).map((row) => row.id);
 
 /**
  * One thread: every message between two accounts, newest first.
@@ -164,11 +172,9 @@ app.registerEvent('threads', async (source, cbId, data, citizenid) => {
   );
 
   const peerIds = heads.map((row) => Number(row.peer));
-  const peers = await Database.query<{ id: number; handle: string; display_name: string | null }[]>(
-    `SELECT \`id\`, \`handle\`, \`display_name\` FROM \`gphone_accounts\`
-     WHERE \`id\` IN (${peerIds.map(() => '?').join(', ')})`,
-    peerIds
-  );
+  // Not filtered to `active`: a thread with a since-deleted correspondent still has to render
+  // their handle, or the row reads as messages from nobody. See `accountsByIds`.
+  const peers = await accountsByIds(peerIds);
 
   const unread = await Database.query<{ from_account: number; total: number }[]>(
     `SELECT \`from_account\`, COUNT(*) AS total FROM \`gphone_blabber_dms\`
@@ -209,11 +215,7 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
    * `peer_account_id` is client-chosen and an unchecked one writes a row pointing at nothing —
    * or at an account in another app's namespace.
    */
-  const peer = await Database.single<{ id: number; citizenid: string; handle: string }>(
-    `SELECT \`id\`, \`citizenid\`, \`handle\` FROM \`gphone_accounts\`
-     WHERE \`id\` = ? AND \`app\` = ? AND \`status\` = 'active' LIMIT 1`,
-    [peerId, APP]
-  );
+  const peer = await activeAccount(peerId, APP);
   if (!peer) throw new Error('No such account.');
 
   /**
@@ -222,7 +224,7 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
    * don't" reading of a private thread the way there is for a public timeline. Existing
    * history stays readable; a block doesn't retroactively hide it, only refuses a new send.
    */
-  if ((await isBlocked(mine.id, peer.id)) || (await isBlocked(peer.id, mine.id))) {
+  if ((await accountHasBlocked(mine.id, peer.id)) || (await accountHasBlocked(peer.id, mine.id))) {
     throw new Error("You can't message this account.");
   }
 

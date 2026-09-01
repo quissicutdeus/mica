@@ -452,7 +452,7 @@ app.registerEvent('follow', async (source, cbId, data, citizenid) => {
 
     // Suppressed when the followee has blocked the follower — a block is meant to end contact,
     // and a "they followed you" toast is exactly the kind of contact it exists to prevent.
-    if (!(await isBlocked(followee.id, follower.id))) {
+    if (!(await accountHasBlocked(followee.id, follower.id))) {
       const channel = appEventChannel(appId);
       channel.push(
         followee.citizenid,
@@ -733,7 +733,7 @@ app.registerEvent('follows', async (source, cbId, data, citizenid) => {
       : Promise.resolve(null),
     // Same "absent viewer answers false" rule as `followedByMe` — reading a profile is not a
     // privileged act, and only the Block button needs an identity.
-    viewer ? isBlocked(viewer.id, accountId) : Promise.resolve(false)
+    viewer ? accountHasBlocked(viewer.id, accountId) : Promise.resolve(false)
   ]);
 
   return {
@@ -909,8 +909,18 @@ export async function ownedAccount(
  * Exported for the same reason `ownedAccount` is: every enforcement point that needs to check
  * a block — feed filtering, notification suppression, DM refusal — lives in a different
  * service file, and the block graph is this service's table.
+ *
+ * **Named for the identity it asks about, because there is a second block graph.**
+ * `Blocklist.ts` exports an `isBlocked` too, over `gphone_blocklist`, and it takes a
+ * `(citizenid, phone number)` — a different table, a different question, and the same word.
+ * Both were imported under that bare name in different files (`Phone.ts` reached for one and
+ * `Blabber.ts` for the other), so a reader had to check the import line to know which graph a
+ * call site was consulting, and an editor moving code between the two files would have
+ * compiled against the wrong one without a type error: `number` and `string` are only two
+ * arguments apart. `accountHasBlocked` says which identity it is about in its own name
+ * (MICA-197).
  */
-export async function isBlocked(
+export async function accountHasBlocked(
   blockerAccountId: number,
   blockedAccountId: number
 ): Promise<boolean> {
@@ -920,4 +930,135 @@ export async function isBlocked(
     [blockerAccountId, blockedAccountId]
   );
   return row !== null;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────────
+ * Reading accounts, for the apps built on them (MICA-197)
+ *
+ * `gphone_accounts` is this service's table and three other services were querying it by
+ * hand: `Blabber.ts` twice, `BlabberDms.ts` three times, each with its own spelling of the
+ * same `app = ? AND status = 'active'` predicate. That is the shape AGENTS.md §10 forbids
+ * across *resources* — never read another resource's tables — applied one level in: a
+ * predicate copied five times is five places for it to stop agreeing, and "active" is the
+ * one that decides whether a deleted account can still be messaged.
+ *
+ * `ownedAccount` above is the authorization question and stays separate. These are the
+ * lookups that follow it.
+ * ────────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * What a resolver hands back.
+ *
+ * Deliberately not `SELECT *`: `avatar` and `bio` are profile *content*, sometimes a base64
+ * image, and every caller here is asking who an account is rather than what it looks like.
+ * The DM inbox resolves up to fifty peers at once and drew avatars it never rendered.
+ */
+const ACCOUNT_IDENTITY = '`id`, `citizenid`, `app`, `handle`, `display_name`, `status`';
+
+/**
+ * An account as a resolver returns it.
+ *
+ * `Account.citizenid` is optional because a **public** projection withholds it — that is the
+ * de-anonymisation rule this table exists under, and `publicColumns` enforces it. These
+ * resolvers are the server-side path and select it explicitly, so it is always there, and
+ * saying so is what lets a caller use it without a non-null assertion that would be a lie if
+ * the projection ever changed.
+ */
+export type AccountIdentity = Account & { citizenid: string };
+
+/**
+ * The most accounts one resolver call may name.
+ *
+ * The ids and handles reaching these come from a client payload or from a row count the
+ * client can influence, and an unbounded `IN` list is both an injection-shaped risk and a way
+ * to ask for one enormous query (§2.9). Callers already cap their own lists; this caps them
+ * again, on `orphanSweep.ts`'s principle that a guard living only at the producer stops
+ * guarding the moment a second producer appears.
+ */
+const MAX_ACCOUNT_BATCH = 100;
+
+/** Every active account this player holds in one app. The set they may act as. */
+export async function accountsOwnedBy(
+  citizenid: string,
+  appId: string
+): Promise<AccountIdentity[]> {
+  if (!citizenid || !appId) return [];
+
+  return await Database.query<AccountIdentity[]>(
+    `SELECT ${ACCOUNT_IDENTITY} FROM \`gphone_accounts\`
+     WHERE \`citizenid\` = ? AND \`app\` = ? AND \`status\` = 'active'
+     ORDER BY \`id\` ASC`,
+    [citizenid, appId]
+  );
+}
+
+/**
+ * The accounts behind a list of handles, within one app.
+ *
+ * Handles are deduplicated and lowercased first: they are stored lowercase (`create` does the
+ * same), so a mention written `@Ada` has to find `ada` rather than silently matching nothing.
+ */
+export async function accountsByHandle(
+  handles: readonly string[],
+  appId: string
+): Promise<AccountIdentity[]> {
+  if (!appId) return [];
+
+  const wanted = [...new Set(handles.filter(Boolean).map((handle) => handle.toLowerCase()))].slice(
+    0,
+    MAX_ACCOUNT_BATCH
+  );
+  if (wanted.length === 0) return [];
+
+  const placeholders = wanted.map(() => '?').join(', ');
+  return await Database.query<AccountIdentity[]>(
+    `SELECT ${ACCOUNT_IDENTITY} FROM \`gphone_accounts\`
+     WHERE \`app\` = ? AND \`status\` = 'active' AND \`handle\` IN (${placeholders})`,
+    [appId, ...wanted]
+  );
+}
+
+/**
+ * The accounts behind a list of ids, whatever app and status they are in.
+ *
+ * **Not filtered to `active`, deliberately.** The one caller is the DM inbox, which renders a
+ * handle beside a thread that already exists; hiding a deleted correspondent's handle would
+ * leave a row of messages attributed to nobody rather than protecting anything, since the
+ * messages themselves are the caller's own and already readable. A caller that needs the
+ * account to still be usable wants `activeAccount` below, which is the authorization-shaped
+ * one.
+ */
+export async function accountsByIds(ids: readonly number[]): Promise<AccountIdentity[]> {
+  const wanted = [...new Set(ids)].filter(Number.isInteger).slice(0, MAX_ACCOUNT_BATCH);
+  if (wanted.length === 0) return [];
+
+  const placeholders = wanted.map(() => '?').join(', ');
+  return await Database.query<AccountIdentity[]>(
+    `SELECT ${ACCOUNT_IDENTITY} FROM \`gphone_accounts\`
+     WHERE \`id\` IN (${placeholders})`,
+    wanted
+  );
+}
+
+/**
+ * One account, if it exists, is active, and belongs to this app.
+ *
+ * The check a client-chosen `account_id` needs before it becomes the other end of anything:
+ * an unchecked one writes a row pointing at nothing, or at an account in another app's
+ * namespace — which is the only thing keeping two apps' identity graphs apart.
+ *
+ * This is *not* an ownership check. `ownedAccount` is, and a caller acting **as** an account
+ * wants that one.
+ */
+export async function activeAccount(
+  accountId: number,
+  appId: string
+): Promise<AccountIdentity | null> {
+  if (!Number.isInteger(accountId) || accountId <= 0 || !appId) return null;
+
+  return await Database.single<AccountIdentity>(
+    `SELECT ${ACCOUNT_IDENTITY} FROM \`gphone_accounts\`
+     WHERE \`id\` = ? AND \`app\` = ? AND \`status\` = 'active' LIMIT 1`,
+    [accountId, appId]
+  );
 }
