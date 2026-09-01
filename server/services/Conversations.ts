@@ -9,7 +9,7 @@ import {
 import { defineService } from '../lib/defineService';
 import { Conversation } from '@gphone/shared/types';
 import { AuditLogger } from '../lib/AuditLogger';
-import { resolveByPhone, resolveMany } from '../lib/PlayerDirectory';
+import { resolveByPhone, resolveOnline } from '../lib/PlayerDirectory';
 import { CITIZENID_MAX_LENGTH } from '@gphone/shared/framework';
 import {
   conversationIdFrom,
@@ -238,10 +238,10 @@ if (!CONVERSATION_PAGING) {
  * exactly this since MICA-152 and nothing here used it.
  *
  * Two queries now, and both bounded: one page of threads, then one `IN (…)` for the
- * participants of that page. A **third** would be one lookup per name, which is what
- * `PlayerDirectory.resolveMany` exists to avoid — but no query is needed at all here,
- * because the batched hydration already carries whatever the framework's character table
- * knows and `resolveMany` is used only to overlay the players who are currently connected.
+ * participants of that page. **`resolveOnline` and not `resolveMany`**, deliberately — the
+ * batched hydration above already carries whatever the framework's character table says, so
+ * the offline half of `resolveMany` would be a second read of the same rows for the same
+ * names, and a third query on the path whose whole point is that it is two.
  *
  * **Why overlay at all.** The framework's in-memory character is authoritative for a loaded
  * player and a rename may not have been written back to the table yet — the same ordering
@@ -268,7 +268,7 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
     else byConversation.set(row.conversation_id, [row]);
   }
 
-  const online = await resolveMany(rows.map((row) => row.citizenid));
+  const online = resolveOnline(rows.map((row) => row.citizenid));
 
   for (const conv of list) {
     const participants = byConversation.get(conv.id) ?? [];

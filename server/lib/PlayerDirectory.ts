@@ -157,26 +157,50 @@ export async function resolve(citizenid: string): Promise<DirectoryEntry | null>
 export async function resolveMany(
   citizenids: readonly string[]
 ): Promise<Map<string, DirectoryEntry>> {
+  const wanted = [...new Set(citizenids.filter(Boolean))];
+  if (wanted.length === 0) return new Map();
+
+  const found = resolveOnline(wanted);
+
+  const offline = wanted.filter((citizenid) => !found.has(citizenid));
+  if (offline.length === 0) return found;
+
+  for (const [citizenid, identity] of await FrameworkBridge.findOfflineByCitizenIds(offline)) {
+    found.set(citizenid, entryFromIdentity(identity));
+  }
+
+  return found;
+}
+
+/**
+ * Only the ones who are connected — and **no query at all**, ever.
+ *
+ * Split out of `resolveMany` because one caller genuinely wants half of it.
+ * `Conversations.get` already reads the framework's character table in its own hydration
+ * join, so the offline half of `resolveMany` would be a second read of the same rows for the
+ * same names: a third query on a path whose whole point is that it is two. What it still
+ * needs from the directory is the *overlay* — a loaded player's in-memory character is
+ * authoritative and a rename may not have been written back yet, and on a standalone server
+ * it is the only name there is.
+ *
+ * Synchronous, because everything it consults is in memory. That is the property worth
+ * keeping: anything that can be answered without asking the database should be visibly
+ * unable to.
+ */
+export function resolveOnline(citizenids: readonly string[]): Map<string, DirectoryEntry> {
   const found = new Map<string, DirectoryEntry>();
 
   const wanted = [...new Set(citizenids.filter(Boolean))];
   if (wanted.length === 0) return found;
 
   const sources = FrameworkBridge.getSourcesByCitizenId(wanted);
-  const offline: string[] = [];
 
   for (const citizenid of wanted) {
     const source = sources.get(citizenid);
-    const online = source === undefined ? null : FrameworkBridge.getPlayer(source);
+    if (source === undefined) continue;
 
+    const online = FrameworkBridge.getPlayer(source);
     if (online && online.citizenid === citizenid) found.set(citizenid, entryFromOnline(online));
-    else offline.push(citizenid);
-  }
-
-  if (offline.length === 0) return found;
-
-  for (const [citizenid, identity] of await FrameworkBridge.findOfflineByCitizenIds(offline)) {
-    found.set(citizenid, entryFromIdentity(identity));
   }
 
   return found;
