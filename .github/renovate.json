@@ -1,0 +1,18 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "schedule": ["before 3am on Monday"],
+  "minimumReleaseAge": "3 days",
+  "groupName": "dependencies",
+  "groupSlug": "all-dependencies",
+  "pnpm": {
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "description": "Require exact pins for FiveM frameworks",
+      "matchPackageNames": ["/^@citizenfx\\//"],
+      "rangeStrategy": "pin"
+    }
+  ]
+}

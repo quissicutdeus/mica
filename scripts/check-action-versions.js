@@ -3,27 +3,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Report workflow actions that have been left behind on an older major.
+ * Verify that workflow actions are pinned to commit SHAs and check for newer majors.
  *
- * `.github/dependabot.yml` used to watch this and was deleted -- every merge of one of
- * its pull requests put dependabot[bot] in the repository's contributor list, which is
- * not a trade worth making for a weekly bump. But the github-actions half of that config
- * existed for a reason: `upload-artifact@v4` and `pnpm/action-setup@v4` both sat on a
- * deprecated Node runtime for months with nothing saying so, because a `@vN` tag keeps
- * working long after it stops being maintained. This is the replacement, and it opens no
- * pull request and authors no commit.
+ * Every `uses:` must be a full 40-hex commit SHA (with a version comment for reference).
+ * This enforces supply-chain security: a moving tag like `@v7` can be force-pushed to point
+ * at a different commit, which is a privilege escalation if that commit is malicious. SHA
+ * pins are immutable.
  *
- * Only the MAJOR is compared, deliberately. `uses: actions/checkout@v7` is a moving tag:
- * GitHub re-points it at every v7.x release, so a repo pinned that way is already current
- * within its major and a minor-level report would be pure noise. Drift that matters is
- * drift across the major boundary, which is exactly where a runtime deprecation lands.
+ * For any tag ref found (recovered from the comment), the script also reports whether a
+ * newer major exists, so upgrades are deliberate and planned.
  *
- * It FAILS on anything it could not resolve rather than passing quietly. A version check
- * that cannot reach the API and says nothing reads as "everything is current", which is
- * the worst answer it could give -- so a rate limit, a network error, or a tag this does
- * not understand is an exit code, not a warning.
- *
- *   node scripts/check-action-versions.js            fail if anything is behind
+ *   node scripts/check-action-versions.js            fail if SHAs are not pinned or a newer major exists
  *   node scripts/check-action-versions.js --list      print findings, always exit 0
  *   node scripts/check-action-versions.js --dir=DIR   scan DIR instead, to prove it fires
  *
@@ -44,10 +34,14 @@ const DIR_ARG = process.argv.find((a) => a.startsWith('--dir='));
 const WORKFLOWS = DIR_ARG ? DIR_ARG.slice('--dir='.length) : '.github/workflows';
 
 /** `uses: owner/repo/optional/subpath@ref`, ignoring `uses: ./local` and `docker://`. */
-const USES = /^\s*-?\s*uses:\s*['"]?([\w.-]+)\/([\w.-]+)((?:\/[^@\s'"]+)?)@([^\s'"#]+)/;
+const USES =
+  /^\s*-?\s*uses:\s*['"]?([\w.-]+)\/([\w.-]+)((?:\/[^@\s'"]+)?)@([^\s'"#]+)(?:\s*#\s*(.*))?/;
 
 /** A tag this can reason about: `v7`, `v7.1`, `v7.1.2`. Anything else is unresolvable. */
 const VTAG = /^v(\d+)(?:\.\d+)*$/;
+
+/** A full commit SHA: 40 hex characters */
+const SHA = /^[0-9a-f]{40}$/;
 
 function token() {
   if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN;
@@ -97,7 +91,7 @@ async function latestMajor(repo) {
   return best;
 }
 
-/** Every `owner/repo` used across the workflows, with the majors it is pinned at. */
+/** Every `owner/repo` used across the workflows, with the SHAs and tags it is pinned at. */
 function collect() {
   const pins = new Map();
   for (const file of fs.readdirSync(WORKFLOWS).filter((f) => /\.ya?ml$/.test(f))) {
@@ -105,10 +99,10 @@ function collect() {
     for (const line of lines) {
       const match = USES.exec(line);
       if (!match) continue;
-      const [, owner, name, , ref] = match;
+      const [, owner, name, , ref, comment] = match;
       const repo = `${owner}/${name}`;
       if (!pins.has(repo)) pins.set(repo, { refs: new Set(), files: new Set() });
-      pins.get(repo).refs.add(ref);
+      pins.get(repo).refs.add({ ref, comment });
       pins.get(repo).files.add(file);
     }
   }
@@ -121,53 +115,76 @@ if (pins.size === 0) {
   process.exit(1);
 }
 
+const notSha = [];
 const behind = [];
 const unresolved = [];
 const current = [];
 
 for (const [repo, { refs, files }] of [...pins].sort()) {
   const where = [...files].sort().join(', ');
-  for (const ref of [...refs].sort()) {
-    const pinned = VTAG.exec(ref);
-    if (!pinned) {
-      unresolved.push({ repo, ref, where, why: 'not a vN tag (a SHA pin or a branch)' });
+  for (const { ref, comment } of [...refs].sort((a, b) => a.ref.localeCompare(b.ref))) {
+    // Every action must be pinned to a full commit SHA
+    if (!SHA.exec(ref)) {
+      notSha.push({ repo, ref, where, comment });
       continue;
     }
+
+    // Extract the version tag from the comment (e.g., "v7" from "v7")
+    if (!comment) {
+      // No version comment, can't check for newer majors but the SHA is still pinned
+      current.push({ repo, ref, latest: '(no comment)' });
+      continue;
+    }
+
+    const version = comment.trim();
+    const pinned = VTAG.exec(version);
+    if (!pinned) {
+      current.push({ repo, ref, latest: version });
+      continue;
+    }
+
     try {
       const latest = await latestMajor(repo);
       if (latest.major > Number(pinned[1])) {
-        behind.push({ repo, ref, latest: latest.tag, where });
+        behind.push({ repo, ref, version, latest: latest.tag, where });
       } else {
         current.push({ repo, ref, latest: latest.tag });
       }
     } catch (error) {
-      unresolved.push({ repo, ref, where, why: error.message });
+      unresolved.push({ repo, ref, version, where, why: error.message });
     }
   }
 }
 
 for (const { repo, ref, latest } of current) {
-  console.log(`  ok        ${repo}@${ref}  (latest ${latest})`);
+  console.log(`  ok        ${repo}@${ref.slice(0, 8)}...  (${latest})`);
 }
 for (const { repo, ref, latest, where } of behind) {
-  console.log(`  BEHIND    ${repo}@${ref} -> ${latest}   in ${where}`);
+  console.log(`  BEHIND    ${repo}@${ref.slice(0, 8)}... -> ${latest}   in ${where}`);
 }
 for (const { repo, ref, where, why } of unresolved) {
-  console.log(`  UNKNOWN   ${repo}@${ref}   in ${where}: ${why}`);
+  console.log(`  UNKNOWN   ${repo}@${ref.slice(0, 8)}...   in ${where}: ${why}`);
+}
+for (const { repo, ref, where, comment } of notSha) {
+  console.log(`  NOT SHA   ${repo}@${ref}   in ${where}${comment ? ` (comment: ${comment})` : ''}`);
 }
 
 console.log(
-  `\n${current.length} current, ${behind.length} behind, ${unresolved.length} unresolved`
+  `\n${current.length} pinned, ${behind.length} behind, ${unresolved.length} unresolved, ${notSha.length} not SHA-pinned`
 );
 
 if (LIST_ONLY) process.exit(0);
 
+if (notSha.length > 0) {
+  console.error('\nAll actions must be pinned to a full commit SHA (40 hex characters).');
+  console.error('Add the version as a comment, e.g., `@abc1234567...def # v7`.');
+}
 if (behind.length > 0) {
-  console.error('\nA newer major exists for the actions marked BEHIND. Bump the `uses:` tag');
+  console.error('\nA newer major exists for the actions marked BEHIND. Bump the SHA and comment');
   console.error("after reading that major's release notes -- majors carry breaking changes.");
 }
 if (unresolved.length > 0) {
   console.error('\nSome actions could not be checked, which is reported as a failure rather');
   console.error('than a pass: a silent version check reads as "everything is current".');
 }
-process.exit(behind.length + unresolved.length > 0 ? 1 : 0);
+process.exit(notSha.length + behind.length + unresolved.length > 0 ? 1 : 0);

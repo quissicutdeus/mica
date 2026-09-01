@@ -4,10 +4,11 @@ game 'gta5'
 author 'quissicutdeus'
 version '1.0.0'
 license 'AGPL-3.0-or-later'
-description 'A modern Phone for FiveM built in TypeScript'
-repository 'https://github.com/quissicutdeus/gphone'
+description 'An open-source TypeScript phone for FiveM'
+repository 'undefined'
 
 lua54 'yes'
+node_version '22'
 
 server_script 'dist/server/**/*.js'
 client_script 'dist/client/**/*.js'
@@ -23,4 +24,3 @@ files {
   -- serves only what is declared here, so every add-on 404'd — blabber, hodlr, notes, snek.
   'dist/web/addons/**/*',
 }
-

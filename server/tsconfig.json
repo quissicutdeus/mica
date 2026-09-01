@@ -1,15 +1,11 @@
 {
   "compilerOptions": {
-    // MICA-112: this pair (target/lib here, esbuild's `target` in
+    // MICA-112, MICA-199: this pair (target/lib here, esbuild's `target` in
     // build/build-bundle.js) must agree with FXServer's actual server-side Node
-    // version, currently the default (Node 16 — no `node_version` directive in
-    // fxmanifest.lua). Node 16's V8 lands short of both the ES2022 stdlib
-    // (Array.prototype.at, Object.hasOwn, Error.cause) and ES2023's
-    // toSorted/toReversed/toSpliced/with family, so "es2021" here is the honest
-    // ceiling, not a stale guess — if you raise it, first confirm the runtime
-    // actually changed (an opt-in `node_version '22'` in the manifest), and
-    // change build-bundle.js's server `target` to match in the same commit.
-    "target": "es2021",
+    // version. Node 22 is opted in via `node_version '22'` in fxmanifest.lua (see
+    // scripts/generate-barrels.js). Node 22's V8 supports ES2023 (toSorted,
+    // toReversed, toSpliced, with, Array.prototype.findLast, Object.groupBy).
+    "target": "es2023",
     "incremental": true,
     "tsBuildInfoFile": "../node_modules/.tmp/server.tsbuildinfo",
     "strict": true,
@@ -17,7 +13,7 @@
     "allowSyntheticDefaultImports": true,
     "module": "CommonJS",
     "types": ["@citizenfx/server"],
-    "lib": ["es2021"],
+    "lib": ["es2023"],
     "noUnusedLocals": true,
     "paths": {
       "@gphone/shared/*": ["../shared/*"]

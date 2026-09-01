@@ -94,6 +94,54 @@ ${lines}
 };
 
 /**
+ * Generate the fxmanifest.lua resource manifest.
+ *
+ * FXServer reads this to declare what files the resource needs, what commands it exports,
+ * and which runtime configuration it requires. The `node_version '22'` directive opts into
+ * Node 22 server-side instead of the default Node 16.
+ *
+ * This is generated rather than committed so that `node_version` stays in sync with the
+ * TypeScript and esbuild targets in server/tsconfig.json and build/build-bundle.js.
+ * If you raise the Node version there, update this generator to match.
+ */
+const generateFxManifest = () => {
+  const pkgPath = path.resolve(__dirname, '..', 'package.json');
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+
+  const manifest = `fx_version 'cerulean'
+game 'gta5'
+
+author '${pkg.author}'
+version '${pkg.version}'
+license '${pkg.license}'
+description '${pkg.description}'
+repository '${pkg.repository}'
+
+lua54 'yes'
+node_version '22'
+
+server_script 'dist/server/**/*.js'
+client_script 'dist/client/**/*.js'
+
+ui_page 'dist/web/index.html'
+
+files {
+  'dist/web/index.html',
+  'dist/web/assets/**/*',
+  'dist/web/*.svg',
+  -- Add-ons are fetched at runtime by \`shell/state/registry.ts\` (\`./addons/<id>.js\`) and
+  -- are not part of the hashed \`assets/\` graph, so \`assets/**/*\` never covered them. FiveM
+  -- serves only what is declared here, so every add-on 404'd — blabber, hodlr, notes, snek.
+  'dist/web/addons/**/*',
+}
+`;
+
+  const filePath = path.resolve(__dirname, '..', 'fxmanifest.lua');
+  fs.writeFileSync(filePath, manifest);
+  console.log("Generated fxmanifest.lua with node_version '22'.");
+};
+
+/**
  * Collect every migration file into one ordered array.
  *
  * Not an import/export barrel like the others: a migration needs to be a member of an
@@ -145,4 +193,5 @@ generateIndex('sdk/host', 'export', ['protocol', 'current', 'guard']);
 generateIndex('sdk/kit', 'export');
 generateIconIndex();
 generateMigrationsIndex();
+generateFxManifest();
 console.log('Done.');

@@ -10,13 +10,15 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
     name: Tag and release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # Full history, not the default shallow clone: the CalVer below
           # counts every commit on HEAD's date across the whole log, and
@@ -58,7 +60,7 @@ jobs:
       # now rewrites those specs itself before packing, so the sentence above is true again
       # rather than merely still written down. `server/__tests__/packRelease.test.ts` checks
       # it on every push, because this workflow only runs on main and found out too late.
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         if: steps.tag.outputs.skip == ''
         name: Install pnpm 11
         with:
@@ -66,7 +68,7 @@ jobs:
 
       - name: Install Node.js 26
         if: steps.tag.outputs.skip == ''
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 26
 
@@ -75,6 +77,39 @@ jobs:
       - name: Pack the SDK and shared
         if: steps.tag.outputs.skip == ''
         run: node scripts/pack-release.js "${{ steps.tag.outputs.tag }}"
+
+      # Lint the tarballs before attaching: publint checks package.json and publishes,
+      # @arethetypeswrong checks TypeScript declaration files and type export quality.
+      - name: Lint the SDK tarball
+        if: steps.tag.outputs.skip == ''
+        run: |
+          pnpm dlx publint dist/release/gphone-sdk-*.tgz
+          pnpm dlx @arethetypeswrong/cli dist/release/gphone-sdk-*.tgz
+
+      # Build the resource zip alongside the tarballs
+      - name: Build resource zip
+        if: steps.tag.outputs.skip == ''
+        run: |
+          cd dist
+          zip -r gphone-${{ steps.tag.outputs.tag }}.zip server client web fxmanifest.lua
+
+      # Generate SHA256SUMS for all release assets
+      - name: Generate SHA256SUMS
+        if: steps.tag.outputs.skip == ''
+        run: |
+          cd dist/release
+          sha256sum *.tgz > SHA256SUMS
+          cd ../..
+          sha256sum dist/gphone-${{ steps.tag.outputs.tag }}.zip >> dist/release/SHA256SUMS
+
+      # Attest the provenance of the release artifacts
+      - name: Attest build provenance
+        if: steps.tag.outputs.skip == ''
+        uses: actions/attest-build-provenance@6ff72bcc5d42a3a4c4cbee4db54f749b999d82fe # v4
+        with:
+          subject-path: |
+            dist/release/gphone-sdk-*.tgz
+            dist/gphone-${{ steps.tag.outputs.tag }}.zip
 
       # Draft, then attach, then publish — and every part of that order is load-bearing.
       #
@@ -89,7 +124,7 @@ jobs:
       # repository setting turned off, because immutability is fixed when the release is
       # made rather than read at upload time. They were deleted rather than left as two
       # releases promising an SDK they do not carry.
-      - name: Draft the release with both tarballs attached
+      - name: Draft the release with all assets attached
         if: steps.tag.outputs.skip == ''
         env:
           GH_TOKEN: ${{ github.token }}
@@ -98,7 +133,9 @@ jobs:
             --draft \
             --title "${{ steps.tag.outputs.tag }}" \
             --generate-notes \
-            dist/release/*.tgz
+            dist/release/*.tgz \
+            dist/release/SHA256SUMS \
+            dist/gphone-${{ steps.tag.outputs.tag }}.zip
 
       # Separate step so a failure here is legible as "the assets are on, publishing failed"
       # rather than being buried in the call that did both.

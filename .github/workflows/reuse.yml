@@ -1,0 +1,26 @@
+name: License check
+
+# REUSE compliance verification: every source file carries an SPDX header in its own
+# comment syntax; `REUSE.toml` covers what cannot hold one (lockfiles, JSON, generated
+# barrels, assets). This check is not part of `pnpm verify` (a Python tool, a potential
+# install requirement) but runs in CI as a gate.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  reuse:
+    name: Verify SPDX compliance
+    runs-on: ubuntu-latest
+    # Same carve-out as other jobs: skip the standing dev->main sync PR.
+    if: github.event_name != 'pull_request' || github.head_ref != 'dev'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Check REUSE compliance
+        uses: fsfe/reuse-action@3c8e5ba988eff1aed0c9cc9e34235e8b932e1302 # v6

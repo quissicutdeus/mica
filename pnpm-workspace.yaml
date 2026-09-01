@@ -3,6 +3,12 @@ packages:
   - 'sdk'
   - 'web'
 
+# pnpm 10.16+ honours this: releases (new versions, not packages already in node_modules)
+# must be at least this many minutes old before they are downloaded. Prevents a Renovate
+# pull request from landing on a brand-new release that has not stabilized (see MICA-125,
+# why the tarballs go on releases). The calendar: 4320 minutes = 3 days.
+minimumReleaseAge: 4320
+
 allowBuilds:
   esbuild: false
 
