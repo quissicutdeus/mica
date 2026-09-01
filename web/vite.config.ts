@@ -60,7 +60,7 @@ const FONT_SUBSETS = ['latin', 'latin-ext'];
  *   72 files / 895KB  ->  16 files / 289KB   (subsets)
  *                     ->   8 files / 149KB   (dropping .woff)
  *
- * The `.woff` fallback goes because `build.target` here is `chrome92` and woff2 has been
+ * The `.woff` fallback goes because `build.target` here is `chrome103` and woff2 has been
  * supported since Chrome 36 — in FiveM the runtime is CEF, which is Chromium, and in the
  * browser demo it is whatever the visitor has. Neither can reach the fallback, so it is
  * ~140KB that exists only to be ignored.

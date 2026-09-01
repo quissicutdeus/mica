@@ -4,9 +4,6 @@
   "version": "1.0.0",
   "license": "AGPL-3.0-or-later",
   "type": "module",
-  "browserslist": [
-    "chrome 103"
-  ],
   "scripts": {
     "dev": "concurrently -c \"green,yellow\" -n \"shell,addons\" \"vite\" \"node scripts/build-addons.mjs --watch\"",
     "build": "node scripts/build-addons.mjs && vite build",

@@ -11,9 +11,6 @@
   ],
   "license": "AGPL-3.0-or-later",
   "type": "module",
-  "browserslist": [
-    "chrome 103"
-  ],
   "//": "MICA-172. Consumed as source: the phone and every add-on bundle build this package through their own Vite pipeline, so there is no build step and no `main`. `@gphone/sdk/testing` is deliberately absent, because it resolves to `web/src/testing.ts` — a phone helper, not published contract (see `publicSurface.test.ts`). It stays an alias on the web side.",
   "//exports": "MICA-125: `.` is `addon.ts`, the add-on barrel, not `index.ts`. The bare specifier is inherently target-dependent — in this repo the shell build and the add-on build alias it to different files — so the map can only be right for one audience, and the audience that reads the map is the one outside this repo, which is add-on authors. `index.ts` is the shell's barrel and is published under no subpath at all: the shell always has a Vite config to alias in, and an outside consumer resolving it would get six names it cannot call and no `bootAddOn`. Nothing in this repo resolves through this map — every in-tree consumer aliases past it — which is what made the switch safe to make. `publicSurface.test.ts` holds the map and the frozen surfaces against each other in both directions.",
   "exports": {

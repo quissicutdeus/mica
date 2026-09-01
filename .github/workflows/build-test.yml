@@ -187,6 +187,24 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      # MICA-198: the `cef-floor` project in web/playwright.config.ts runs every spec a
+      # second time against a real Chromium 103, the version FiveM's release CEF ships, so
+      # a CSS or Web API that the modern browser above forgives is caught here rather than
+      # in game. r1002910 is the 103 branch point on chromium-browser-snapshots. The config
+      # refuses to run under CI without this variable set, on purpose: a run that quietly
+      # dropped the project would read as a pass at the one floor this suite exists to
+      # hold. The zip is about 150MB and the snapshot bucket serves it in seconds, so it is
+      # fetched rather than cached; `unzip` is not in the Playwright image.
+      - name: Fetch Chromium 103 for the cef-floor project
+        run: |
+          command -v unzip >/dev/null || (apt-get update -qq && apt-get install -y -qq unzip)
+          mkdir -p /tmp/chromium-103
+          curl -sSfL -o /tmp/chromium-103/chrome-linux.zip \
+            "https://commondatastorage.googleapis.com/chromium-browser-snapshots/Linux_x64/1002910/chrome-linux.zip"
+          unzip -q /tmp/chromium-103/chrome-linux.zip -d /tmp/chromium-103
+          /tmp/chromium-103/chrome-linux/chrome --version
+          echo "CEF_FLOOR_CHROMIUM=/tmp/chromium-103/chrome-linux/chrome" >> "$GITHUB_ENV"
+
       # `--reporter=blob` rather than the config's own reporters. A shard sees only its
       # own third of the results, so an HTML report per shard is two partial reports and
       # no whole one; blob is the intermediate the merge job below turns back into a
