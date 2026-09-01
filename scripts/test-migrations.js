@@ -50,6 +50,16 @@ const ROOT_PASSWORD = 'gphone-throwaway';
 const READY_TIMEOUT = 90_000;
 
 /**
+ * Accept an already-running database from the environment, avoiding Docker startup.
+ * All four are required together; if any is set, all must be provided.
+ */
+const DB_HOST = process.env.MICA_DB_HOST;
+const DB_PORT = process.env.MICA_DB_PORT;
+const DB_USER = process.env.MICA_DB_USER;
+const DB_PASSWORD = process.env.MICA_DB_PASSWORD;
+const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
+
+/**
  * The number of duplicate rows the fixtures build. Large enough that a bug which processes
  * only the first duplicate is visible in a count, small enough not to slow the run.
  */
@@ -1119,13 +1129,31 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
 };
 
 const main = async () => {
-  assertDockerUsable();
-
   let container;
   let connection;
   try {
-    container = startContainer();
-    connection = await connectWhenReady(container.port);
+    if (EXTERNAL_DB) {
+      // Validate all four environment variables are set
+      if (!DB_HOST || !DB_PORT || !DB_USER || !DB_PASSWORD) {
+        throw new Error(
+          'all four of MICA_DB_HOST, MICA_DB_PORT, MICA_DB_USER, MICA_DB_PASSWORD ' +
+            'must be provided together. Nothing was tested.'
+        );
+      }
+      step('connecting to provided database');
+      connection = await mysql.createConnection({
+        host: DB_HOST,
+        port: Number(DB_PORT),
+        user: DB_USER,
+        password: DB_PASSWORD,
+        multipleStatements: true
+      });
+      console.log(`    connected to ${DB_HOST}:${DB_PORT}`);
+    } else {
+      assertDockerUsable();
+      container = startContainer();
+      connection = await connectWhenReady(container.port);
+    }
     installOxmysql(connection);
     const server = await loadServerModule();
 
@@ -1167,7 +1195,11 @@ const main = async () => {
       );
     }
 
-    console.log(`\nAll ${checksRun} checks passed against ${IMAGE}.`);
+    if (EXTERNAL_DB) {
+      console.log(`\nAll ${checksRun} checks passed.`);
+    } else {
+      console.log(`\nAll ${checksRun} checks passed against ${IMAGE}.`);
+    }
   } finally {
     if (connection) await connection.end().catch(() => {});
     if (container) stopContainer(container.id);

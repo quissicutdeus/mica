@@ -422,3 +422,63 @@ jobs:
       - name: Stop it
         if: always()
         run: docker compose down
+
+  # Schema testing: import and exercise repositories against both frameworks.
+  #
+  # `test-migrations.js` and `test-schema.js` prove that SQL runs against real MariaDB
+  # and that the generated schema can be imported into both qb and ESX configurations.
+  # They accept a database from the environment, so this job provides one via service
+  # container.
+  schema:
+    name: Schema tests
+    runs-on: ubuntu-latest
+    # Same carve-out as `verify` above and `container` below. Every job needs its own
+    # copy: the condition is per-job, so a new job without it silently reintroduces the
+    # doubled run on every push to dev.
+    if: github.event_name != 'pull_request' || github.head_ref != 'dev'
+    strategy:
+      matrix:
+        node-version: [26]
+        pnpm-version: [11]
+    # MariaDB 11 service container, pinned by digest for reproducibility.
+    # The digest can be found with: docker pull mariadb:11 && docker inspect mariadb:11 --format='{{index .RepoDigests 0}}'
+    services:
+      mariadb:
+        image: mariadb@sha256:2439dcd7d14010ecd1ff7a4e1c5abe8e208c34fe35290744deeeaac3569043c3
+        env:
+          MARIADB_ROOT_PASSWORD: gphone-test
+        options: >-
+          --health-cmd="mariadb-admin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+        ports:
+          - 3306:3306
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        name: Install pnpm ${{ matrix.pnpm-version }}
+        with:
+          version: ${{ matrix.pnpm-version }}
+      - name: Install Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Test migrations
+        env:
+          MICA_DB_HOST: localhost
+          MICA_DB_PORT: 3306
+          MICA_DB_USER: root
+          MICA_DB_PASSWORD: gphone-test
+        run: node scripts/test-migrations.js
+      - name: Test schemas
+        env:
+          MICA_DB_HOST: localhost
+          MICA_DB_PORT: 3306
+          MICA_DB_USER: root
+          MICA_DB_PASSWORD: gphone-test
+        run: node scripts/test-schema.js

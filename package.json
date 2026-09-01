@@ -32,6 +32,7 @@
     "test:unit:server:changed": "vitest run --changed",
     "test:watch:server": "vitest",
     "test:migrations": "node scripts/test-migrations.js",
+    "test:schema": "node scripts/test-schema.js",
     "test:e2e:install": "pnpm --filter web test:e2e:install",
     "test:e2e": "pnpm --filter web test:e2e",
     "test:e2e:headed": "pnpm --filter web test:e2e:headed",
