@@ -445,12 +445,13 @@ defacement.
 ### App permissions, and where they are actually enforced
 
 `permissions` on a manifest is enforced. A `core: false` add-on runs in a
-sandboxed `<iframe sandbox="allow-scripts" srcdoc>` with an opaque origin and no
-route to the shell but `postMessage`, and the **shell** re-checks every
-permission against `HOOK_OF_FACET` in `sdk/permissions.ts` before answering a
-call — the frame's own check is a courtesy, not the boundary. A `core: true` app
-still runs in-process. §2.9 stays the boundary for privileged server actions
-either way.
+sandboxed `<iframe sandbox="allow-scripts" srcdoc>` under a `default-src 'none'`
+CSP, with an opaque origin and no route to the shell but `postMessage` — and the
+**shell** refuses a message not from the `null` origin, tears down a frame that
+loads a second document, answers only the members its default-deny table lists,
+and re-checks every permission against `HOOK_OF_FACET` before answering. A
+`core: true` app still runs in-process. §2.9 stays the boundary for privileged
+server actions either way.
 
 **Declaring more than the scan finds is fine. Declaring less is a lie to the
 person reading it.** The per-permission detail, the outbound `networkHosts`

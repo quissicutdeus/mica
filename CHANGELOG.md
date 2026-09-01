@@ -403,6 +403,15 @@ they are replicated.
 
 ### Fixed
 
+**On ESX the Messages app opened empty: the conversation list joined a `players`
+table es_extended does not have, and the query threw.** Names now come from the
+framework's own character table, by parameter rather than by join (MICA-197).
+The same pass takes the list from one query per thread to three for the whole
+page, delivers a group message with one player lookup and one block check
+instead of one of each per recipient, and stops rendering a missing contact name
+as the text `null`. The list is paged at 200 threads per read; nobody reaches
+that today and no owner action is needed.
+
 - Add-on bundles carried a fabricated version. `vite.addon.config.ts` had no
   `define` block, so `__MICA_VERSION__` was never substituted and every
   add-on's `MICA_VERSION` fell through to a hard-coded `1.0.0` — on every
@@ -487,6 +496,21 @@ proves GitHub's release job built it from this repository and nothing else did.
 The tarballs' contents are unchanged, and both are now checked with `publint`
 before they are attached, so a broken `exports` map fails the release rather
 than your install.
+
+**The sandbox an add-on runs in is stricter, and four things that used to work
+no longer do (MICA-196).** Its Content-Security-Policy now starts from
+`default-src 'none'`: a Web Worker does not start (`child-src 'none'`); an
+image, media file or font over plain `http:` does not load, while `https:`,
+`data:` and `blob:` still do; a frame that reloads or navigates its own document
+is torn down rather than greeted again; and a facet member reached by raw
+`postMessage` instead of through `@gphone/sdk` is refused. Each frame is also
+capped at 600 requests per ten seconds, 200 live subscriptions and 128 facet
+instances, and the caps refuse rather than tear down. Two optional manifest
+fields are new: `services` names the server services the add-on owns (the old
+rule that `<id>_anything` was yours remains as a fallback for a manifest without
+it), and `sdkContract` names the contract version it was built against, which
+the Store checks at install. Rebuild against this SDK, add both fields, and
+declare in `networkHosts` any host you fetch from.
 
 **The contract this release publishes is `v1`.** That is `SDK_CONTRACT_VERSION`,
 exported from `@gphone/sdk`, and it is the number to branch on. It moves when

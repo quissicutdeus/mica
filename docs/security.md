@@ -9,7 +9,7 @@ checklist tells you what was done, and what matters here is what is _assumed_,
 because an assumption nobody wrote down is the one that gets broken by a
 well-meaning change.
 
-**Last verified against `0922a9b` (2026-08-29).** Entry-point counts, the
+**Last verified against `9a8e4909` (2026-09-01).** Entry-point counts, the
 accepted-risks register, and the add-on-trust claims below are only as fresh as
 that commit — a service or app added since has not been weighed against them.
 
@@ -381,12 +381,23 @@ by this list until someone re-weighs it.
   app id or fall back to the in-process-only `system` host. A `core: false`
   add-on is different since `MICA-16` Step 4: it runs in a sandboxed
   `<iframe sandbox="allow-scripts" srcdoc>` with an opaque origin, no
-  `allow-same-origin`, and no route to the shell but `postMessage`. The
-  **shell** re-checks every permission against `HOOK_OF_FACET` before answering
-  a call — the frame's own check is a courtesy, not the boundary.
-  `sdk/permissions.ts` maps every host hook to a permission;
-  `permissions.test.ts` fails the build where a manifest understates its
-  imports.
+  `allow-same-origin`, and no route to the shell but `postMessage`. Since
+  MICA-196 that one route is held by four checks rather than one. The frame's
+  Content-Security-Policy starts from `default-src 'none'` (`srcdoc.ts`); every
+  inbound message must carry the `null` origin an `srcdoc` document has, so a
+  guest that navigates itself to a real origin is refused, and a frame that
+  loads a second document is torn down. The member table in
+  `IframeHostServer.ts` is default-deny, with a totality test beside
+  `permissions.test.ts`. A service is reachable only if the manifest's
+  `services` names it, never by an id prefix. And one frame is capped at 600
+  requests per ten seconds, 200 live subscriptions and 128 facet instances,
+  refused rather than torn down. The **shell** re-checks every permission
+  against `HOOK_OF_FACET` before answering a call — the frame's own check is a
+  courtesy, not the boundary. `sdk/permissions.ts` maps every host hook to a
+  permission; `permissions.test.ts` fails the build where a manifest understates
+  its imports. What the shell does **not** hold is the consent itself: the
+  permission set a player accepted at install, and the re-prompt when an update
+  widens it, live in the Store, which is an app (MICA-201).
 - **An add-on's code is trusted at build time, not at run time.** The Store
   installs a bundle that runs in that sandboxed frame, not in the shell's own
   context; the shell hash-verifies the bundle text it was handed before booting
@@ -416,12 +427,20 @@ by this list until someone re-weighs it.
   `fetch()` blocked entirely, which is the default every add-on gets unless it
   declares otherwise. Declaring a host without also declaring
   `requiresNetwork: true` is refused by `defineApp`, so an app cannot get real
-  network egress by accident or through a field nobody meant to combine.
-  Deliberately narrow: only `connect-src` is restricted —
-  `script-src`/`style-src`/etc. are left alone, since tightening those risks
-  breaking Svelte's own runtime-injected `<style>` tags or the inlined module
-  script itself, and there is no browser or game client in this environment to
-  verify against if it did.
+  network egress by accident or through a field nobody meant to combine. Since
+  MICA-196 the policy starts from `default-src 'none'` and names each escape
+  hatch: `connect-src` is `networkHosts` or `'none'`; `img-src`, `media-src` and
+  `font-src` are `https: data: blob:`; `frame-src`, `child-src`, `form-action`
+  and `base-uri` are `'none'`; `script-src` and `style-src` keep exactly the
+  reach they had, because Svelte's runtime-injected `<style>` and the inlined
+  module script need it. **One channel is left open on purpose and is an
+  accepted risk: `img-src https:` still lets `new Image().src` beacon a payload
+  to any https host.** Scoping it to `networkHosts` would break every add-on
+  that renders a photo or avatar from an https URL the phone handed it at
+  runtime (`sdk/ui/MediaThumb.svelte` accepts one), and that is a
+  published-contract change to make deliberately rather than inside a hardening
+  pass — MICA-202 holds it. `child-src 'none'` also stops Web Workers, and no
+  subresource directive admits a plaintext scheme.
 - **Message and DM bodies are readable by whoever operates the server, and that
   is inherent to what a FiveM resource is, not a defect in gPhone (MICA-70).**
   A message lands in the operator's own MySQL database as plaintext

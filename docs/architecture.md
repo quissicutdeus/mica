@@ -16,7 +16,7 @@ read that before this.
 | `client/game/`                 | FiveM client | GTA world: camera, freelook, phone prop and animations                       |
 | `client/lib/`                  | FiveM client | `ServiceProxy` (NUI↔server relay), `FrameworkBridge`, `nui`                  |
 | `server/services/`             | FiveM server | One file per service, named for the service, auto-indexed                    |
-| `server/lib/`                  | FiveM server | `ServiceEndpoint`, `defineService`, `Repository`, `Database`                 |
+| `server/lib/`                  | FiveM server | `ServiceEndpoint`, `defineService`, `Repository`, `Database`, `framework/`   |
 | `server/repositories/`         | FiveM server | `SchemaRepository` subclasses — the joins the generic path cannot express    |
 | `server/migrations/`           | FiveM server | Forward-only versioned migrations; `index.ts` is generated                   |
 | `gphone.sql`                   | generated    | The whole schema from `pnpm generate:sql`; imported by hand                  |
