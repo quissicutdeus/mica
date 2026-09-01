@@ -267,6 +267,11 @@ export interface Facets {
     isAdmin: Writable<boolean>;
     refreshAdmin: () => Promise<void>;
   };
+  /** MICA-192: the AGPL §13 source address this server reports, and a way to re-ask. */
+  sourceUrl: () => {
+    sourceUrl: Writable<string>;
+    refreshSourceUrl: () => Promise<void>;
+  };
   appAction: (appId?: string) => {
     busy: Writable<boolean>;
     run: (work: () => unknown, options?: AppActionOptions) => Promise<boolean>;

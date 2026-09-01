@@ -65,6 +65,11 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   // literally any screen with a tab bar or a toggle, for a capability with no more
   // sensitivity than a UI sound effect.
   useSound: null,
+  // MICA-192: the AGPL §13 source address, which is one public string identical for every
+  // caller — the same address printed in the README and on the release page. Gating a
+  // licence notice behind a declared permission would mean an add-on could be refused the
+  // ability to tell somebody what licence it is under, which is the opposite of the point.
+  useSourceUrl: null,
   // data
   useAccount: 'account',
   useAdmin: 'admin',
@@ -125,6 +130,7 @@ export const HOOK_OF_FACET = {
   account: 'useAccount',
   accounts: 'useAccounts',
   admin: 'useAdmin',
+  sourceUrl: 'useSourceUrl',
   bank: 'useBank',
   call: 'useCall',
   camera: 'useCamera',
@@ -230,7 +236,12 @@ export const SAFE_IMPLICIT_FACETS: ReadonlySet<string> = new Set([
   'timer',
   'service',
   'sound',
-  'lifecycle'
+  'lifecycle',
+  // MICA-192. One public string, identical for every caller, that the README and every
+  // release page already publish. It carries no player data, takes no app id and has no
+  // member an add-on could steer — reachable implicitly is the correct answer, not an
+  // oversight, and refusing it would mean an add-on cannot state the licence it is under.
+  'sourceUrl'
 ]);
 
 /**

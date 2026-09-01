@@ -13,7 +13,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     LICENSE_WARRANTY,
     SettingsSection,
     sourceUrlForBuild,
-    usePhoneNotification
+    usePhoneNotification,
+    useSourceUrl
   } from '@gphone/sdk';
 
   /**
@@ -42,7 +43,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const { toast } = usePhoneNotification();
 
-  const sourceUrl = sourceUrlForBuild();
+  /**
+   * The base comes from the server, the branch from this build.
+   *
+   * An operator running a fork sets `gphone_source_url` and their players get their source;
+   * everyone else gets upstream, which is true for them. The branch is still the running
+   * build's own, so the address names the code in front of the player rather than whatever
+   * the repository's default branch happens to be.
+   */
+  const { sourceUrl: sourceUrlStore, refreshSourceUrl } = useSourceUrl();
+  refreshSourceUrl();
+
+  const sourceUrl = $derived(sourceUrlForBuild($sourceUrlStore));
 
   /**
    * Copy rather than open, and that is a CEF constraint rather than a preference.

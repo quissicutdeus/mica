@@ -2116,6 +2116,12 @@ const mockRegistry: Record<string, MockHandler> = {
   checkCapabilities: () => ({ money: true }),
 
   /**
+   * The AGPL §13 source address (`services/sourceUrl.ts`). Upstream here, because the mock
+   * stands in for a server running an unmodified copy — which is what a browser session is.
+   */
+  getSourceUrl: () => ({ url: 'https://github.com/quissicutdeus/gPhone' }),
+
+  /**
    * Broadcasting to people nearby (MICA-111 phase 2), which in a browser means nobody.
    *
    * Deliberately inert rather than fed back into `shell/state/nearbyMusic.ts` — echoing

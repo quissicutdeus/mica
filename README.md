@@ -439,6 +439,7 @@ set gphone_admin_aces "gphone.admin,command"
 set gphone_rate_limit 60
 set gphone_lockscreen_scrypt_cost 16384
 set gphone_lockscreen_max_attempts 5
+set gphone_source_url "https://github.com/quissicutdeus/gPhone"
 set gphone_bank_transfer_max 50000
 set gphone_hodlr_trade_max 50000
 set gphone_hodlr_spread_pct 2
@@ -466,6 +467,7 @@ setr gphone_addon_catalog ""
 | `gphone_rate_limit`              | integer              | `60`                   | Requests per player, per action, per minute                |
 | `gphone_lockscreen_scrypt_cost`  | power of two         | `16384`                | Lock screen passcode hashing cost — lower on weak hardware |
 | `gphone_lockscreen_max_attempts` | integer              | `5`                    | Wrong passcodes before a one-minute lockout                |
+| `gphone_source_url`              | https:// URL         | this repository        | Where Settings > About > License says your source lives    |
 | `gphone_bank_transfer_max`       | integer              | `50000`                | Ceiling on one player-to-player send                       |
 | `gphone_hodlr_trade_max`         | integer              | `50000`                | Ceiling on what one Hodlr buy or sell is worth             |
 | `gphone_hodlr_spread_pct`        | number, percent      | `2`                    | Gap between Hodlr's buy and sell quotes, around mid        |
@@ -1047,9 +1049,11 @@ its source lives at, with a button that copies it — a player cannot open a lin
 from inside the phone, because anchor navigation reloads the CEF instance and
 drops everything they were doing.
 
-The address currently points at this repository, on the branch the running build
-came from. **If you run a fork, that is the wrong answer and pointing it at
-yours is not yet configurable** — MICA-192 tracks the convar that will.
+By default it points at this repository, which is the true answer for a server
+running an unmodified copy. **If you run a fork, set `gphone_source_url` to your
+own repository** — §13's obligation is yours rather than this project's, and a
+phone telling your players the source is here points them at code you are not
+running.
 
 ### If you are writing an add-on
 

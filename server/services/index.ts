@@ -30,3 +30,4 @@ import './Schema';
 import './Seed';
 import './Settings';
 import './Signal';
+import './Source';

@@ -801,7 +801,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'LICENSE_SOURCE_OFFER',
     'LICENSE_SPDX',
     'LICENSE_WARRANTY',
-    'sourceUrlForBuild'
+    'sourceUrlForBuild',
+    'useSourceUrl'
   ],
   '@gphone/sdk (add-on bundle)': [
     'ALL_PERMISSIONS',
@@ -1002,7 +1003,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'LICENSE_SOURCE_OFFER',
     'LICENSE_SPDX',
     'LICENSE_WARRANTY',
-    'sourceUrlForBuild'
+    'sourceUrlForBuild',
+    'useSourceUrl'
   ],
   '@gphone/sdk/app': ['defineApp', 'lazyBadge'],
   '@gphone/sdk/core': ['NowPlayingCard', 'useCaptureZoomBoost', 'useNuiBridge']

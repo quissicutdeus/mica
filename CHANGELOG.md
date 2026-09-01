@@ -479,6 +479,15 @@ deliberately the empty string. Nothing in the phone consults either one at
 install or boot time; this is a number to read and act on, not a compatibility
 gate the shell enforces.
 
+**`useSourceUrl` is new**, and needs no permission — it answers one public
+string, the address this server says its source lives at, for the AGPL §13
+notice in Settings > About > License. An add-on may show the same notice; it is
+covered by the same licence with no linking exception, so `LICENSE_COPYRIGHT`,
+`LICENSE_FREEDOMS`, `LICENSE_WARRANTY`, `LICENSE_NAME`, `LICENSE_SPDX`,
+`LICENSE_SOURCE_OFFER`, `MICA_SOURCE_URL` and `sourceUrlForBuild` are exported
+beside it, along with `MICA_BRANCH` (the empty string inside an add-on bundle,
+like `MICA_VERSION`). Nothing was removed to make room for any of it.
+
 **No name on that surface was removed or renamed under `v1`**, so an add-on
 compiled against it still resolves every import it makes. Two changes recorded
 under _Action required_ above do break published add-ons all the same, because

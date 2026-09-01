@@ -29,6 +29,7 @@ import './facets/persisted';
 import './facets/account';
 import './facets/accounts';
 import './facets/admin';
+import './facets/sourceUrl';
 import './facets/appAction';
 import './facets/appEvents';
 import './facets/appLevels';

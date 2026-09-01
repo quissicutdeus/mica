@@ -47,6 +47,13 @@ export const ROUTES: readonly Route[] = [
   // phone rather than about any app on it.
   route('checkCapabilities', 'shell', 'capabilities'),
 
+  // MICA-192: where this server says its source lives, for the AGPL §13 offer in
+  // Settings > About > License. On `shell` for the same reason as the line above — a
+  // question about the phone rather than about any app on it — and answered from a convar
+  // so an operator running a fork can point it at their own source, which is what §13
+  // actually asks of them.
+  route('getSourceUrl', 'shell', 'sourceUrl'),
+
   // Bank — read-only history backed by the banking resource's export rather than a table,
   // plus one write: a player-to-player transfer resolved by phone number server-side.
   route('getTransactions', 'bank', 'getTransactions'),
