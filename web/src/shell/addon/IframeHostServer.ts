@@ -118,8 +118,28 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   /** The window whose `hello` was last answered — how a reload is recognised. */
   let hydrated: unknown;
 
-  const serviceAllowed = (id: unknown) =>
-    typeof id === 'string' && (id === host.appId || id.startsWith(`${host.appId}_`));
+  /**
+   * Whose server service this add-on may name.
+   *
+   * The declaration when there is one (MICA-196): `manifest.services` is checked at
+   * definition time to sit inside the app's own namespace, and the registry refuses an
+   * install whose claim collides with an installed app's, so an exact-match test here is
+   * both narrower than the prefix rule and backed by something.
+   *
+   * The prefix rule survives as the answer for a manifest that declares nothing, which is
+   * every add-on published before the field existed. It is kept **only** for that: it
+   * cannot tell an app that owns `blabber_dms` from one whose id merely prefixes it, over a
+   * flat namespace that already holds exactly that pair. Reading an absent `services` as an
+   * empty list instead would be the correct rule and would also break every published
+   * add-on at once, which is not a trade this surface gets to make. Declaring `services` is
+   * how an app opts out of the ambiguous answer.
+   */
+  const serviceAllowed = (id: unknown) => {
+    if (typeof id !== 'string') return false;
+    const declared = manifest.services;
+    if (declared) return declared.includes(id);
+    return id === host.appId || id.startsWith(`${host.appId}_`);
+  };
 
   /**
    * Facets whose **first factory argument is an app id** — the app the resulting object

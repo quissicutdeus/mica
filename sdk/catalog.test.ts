@@ -105,6 +105,19 @@ describe('isCatalogEntry', () => {
     expect(isCatalogEntry({ ...validEntry, networkHosts: [123] })).toBe(false);
   });
 
+  /**
+   * Shape only, deliberately. Whether these ids are ones this app may own is `defineApp`'s
+   * question (its own namespace) and the registry's (a collision with something already
+   * installed), and neither answer is available from a row on its own — dropping a row here
+   * for a claim the registry would refuse anyway would only hide the reason from the player.
+   */
+  it('accepts services as an optional array of strings (MICA-196)', () => {
+    expect(isCatalogEntry({ ...validEntry, services: ['tester', 'tester_extra'] })).toBe(true);
+    expect(isCatalogEntry({ ...validEntry, services: [] })).toBe(true);
+    expect(isCatalogEntry({ ...validEntry, services: 'tester' })).toBe(false);
+    expect(isCatalogEntry({ ...validEntry, services: [123] })).toBe(false);
+  });
+
   it('rejects an entry with no permissions array', () => {
     const { permissions: _permissions, ...withoutPermissions } = validEntry;
     expect(isCatalogEntry(withoutPermissions)).toBe(false);

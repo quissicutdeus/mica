@@ -384,6 +384,34 @@ export interface AppManifest {
    * `srcdoc.ts` does no correction of its own.
    */
   networkHosts?: readonly string[];
+  /**
+   * MICA-196: the server services this app owns, named rather than inferred.
+   *
+   * `useService(id)` is the generic door to a server service and the id is the caller's to
+   * choose, so something has to decide whose service an add-on may name. Until this field
+   * that decision was a string prefix — `id === appId || id.startsWith(appId + '_')` — over
+   * a **flat** namespace that already holds `blabber_dms` and `phone_call_log`. Two apps
+   * therefore reach the same service whenever one's id is the other's prefix: Blabber
+   * reaches `blabber_dms` by the prefix rule, and an add-on that simply takes the id
+   * `blabber_dms` reaches it by owning it. Neither is a bug in either app; the rule cannot
+   * tell them apart, because it derives ownership from spelling instead of reading it.
+   *
+   * So an app states what it owns, and the registry refuses an install whose claim collides
+   * with an installed app's — that check is what makes the declaration worth anything, and
+   * it is why this is not merely documentation.
+   *
+   * Every entry must be the app's own id or sit under `<id>_`. That is the same namespace
+   * the prefix rule enforced, kept deliberately: this field exists to make a claim
+   * *checkable*, not to let an app claim more than it could before. A declaration outside
+   * it is refused here, at definition time, where the author can see it.
+   *
+   * **Absent is not "owns nothing".** Every add-on published before this field existed says
+   * nothing, and for those the old prefix rule still answers — see `IframeHostServer`'s
+   * `serviceAllowed`. Refusing them, or reading absence as an empty list, would break every
+   * one of them, which is exactly the failure `@gphone/sdk` is built to avoid. Declaring it
+   * is how an app opts into the stricter, checked answer.
+   */
+  services?: readonly string[];
   /** ISO date string when app was installed */
   installedAt?: string;
   /** ISO date string when app was last updated */
@@ -601,6 +629,42 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
           `is not a bare https origin (scheme, host, optional port — no path). CSP's ` +
           `connect-src takes an origin, and 'srcdoc.ts' does not correct malformed entries.`
       );
+    }
+  }
+
+  /**
+   * MICA-196. Refused at definition time rather than at the first call, for the reason
+   * every other check in this function is: a service id an app may not name resolves to
+   * nothing an add-on can do anything with, and the failure would otherwise surface as a
+   * refused `useService` call somewhere far from the manifest that caused it.
+   *
+   * The namespace is the one the prefix rule already enforced. Declaring `services` buys a
+   * *checkable* claim, not a wider one — an app that could not reach `contacts` before this
+   * field existed must not be able to reach it by asking for it.
+   */
+  const services = manifest.services;
+  if (services !== undefined) {
+    if (!Array.isArray(services)) {
+      throw new Error(
+        `gPhone App Manifest error: '${id}' has a 'services' that is not an array. It names ` +
+          `the server services the app owns — services: ['${id}', '${id}_extra'].`
+      );
+    }
+    for (const service of services) {
+      if (typeof service !== 'string' || !ID_PATTERN.test(service)) {
+        throw new Error(
+          `gPhone App Manifest error: '${id}' declares service '${String(service)}', which is ` +
+            `not a lower_snake_case id. A service id is an event segment, so it is spelled ` +
+            `the same way an app id is.`
+        );
+      }
+      if (service !== id && !service.startsWith(`${id}_`)) {
+        throw new Error(
+          `gPhone App Manifest error: '${id}' declares service '${service}', which is outside ` +
+            `its own namespace. An app owns '${id}' and anything under '${id}_'; declaring ` +
+            `'services' states which of those it uses, and cannot claim another app's.`
+        );
+      }
     }
   }
 

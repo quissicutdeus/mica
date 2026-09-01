@@ -313,6 +313,94 @@ describe('defineApp: networkHosts', () => {
   });
 });
 
+/**
+ * MICA-196. `useService(id)` takes an id the caller chooses, and until this field the
+ * only thing deciding whose service an add-on may name was a string prefix over a flat
+ * namespace — which cannot separate the app that owns `blabber_dms` from the one whose id
+ * prefixes it. The declaration is what makes ownership readable; these checks are what stop
+ * it from also making ownership *wider*.
+ */
+describe('defineApp: services', () => {
+  it('keeps a declared service on the way out', () => {
+    const manifest = defineApp({
+      id: 'blabber',
+      color: 'bg-sky-600',
+      icon: null,
+      core: false,
+      services: ['blabber', 'blabber_dms']
+    });
+
+    expect(manifest.services).toEqual(['blabber', 'blabber_dms']);
+  });
+
+  it('refuses a service outside the app’s own namespace', () => {
+    // The point of the field is a claim somebody can check, not a wider claim. An app that
+    // could not reach `contacts` before this existed must not reach it by asking.
+    expect(() =>
+      defineApp({
+        id: 'sneaky',
+        color: 'bg-blue-600',
+        icon: null,
+        core: false,
+        services: ['contacts']
+      })
+    ).toThrow(/declares service 'contacts', which is outside its own namespace/);
+  });
+
+  it('refuses a near-miss that only looks like the namespace', () => {
+    // `blabberx` is not under `blabber_`, and a `startsWith(id)` test would have accepted
+    // it. The separator is the namespace.
+    expect(() =>
+      defineApp({
+        id: 'blabber',
+        color: 'bg-blue-600',
+        icon: null,
+        core: false,
+        services: ['blabberx']
+      })
+    ).toThrow(/outside its own namespace/);
+  });
+
+  it('refuses a service id that is not lower_snake_case', () => {
+    expect(() =>
+      defineApp({
+        id: 'shouty',
+        color: 'bg-blue-600',
+        icon: null,
+        core: false,
+        services: ['Shouty'] as never
+      })
+    ).toThrow(/not a lower_snake_case id/);
+  });
+
+  it('refuses a services field that is not an array', () => {
+    expect(() =>
+      defineApp({
+        id: 'wrong_shape',
+        color: 'bg-blue-600',
+        icon: null,
+        core: false,
+        services: 'wrong_shape' as never
+      })
+    ).toThrow(/has a 'services' that is not an array/);
+  });
+
+  it('leaves it absent when nothing is declared, rather than defaulting to a list', () => {
+    // Absent and `[]` are different claims. Every add-on published before this field says
+    // nothing, and the prefix rule still answers for those — reading absence as "owns no
+    // service" would stop each of them calling its own server.
+    const manifest = defineApp({
+      id: 'legacy_addon',
+      color: 'bg-blue-600',
+      icon: null,
+      core: false
+    });
+
+    expect(manifest.services).toBeUndefined();
+    expect('services' in manifest).toBe(false);
+  });
+});
+
 describe('defineApp: requires', () => {
   it('keeps a declared capability on the way out', () => {
     const manifest = defineApp({

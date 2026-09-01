@@ -691,6 +691,62 @@ describe('IframeHostServer', () => {
     expect((posted[0] as any).ok).toBe(true);
     expect(posted[1]).toMatchObject({ ok: false, error: { name: 'Error' } });
   });
+
+  /**
+   * MICA-196. The prefix rule above is what an add-on that declares nothing still gets,
+   * and it cannot tell an app that owns `probe_dms` from one whose id merely prefixes it.
+   * A manifest that states `services` gets an exact-match answer instead — narrower, and
+   * backed by the registry refusing an install that collides with an installed app's claim.
+   */
+  it('reads a declared `services` list instead of the prefix rule', async () => {
+    registerFacet(
+      'service' as any,
+      ((id: string) => ({ id, call: () => Promise.resolve('ok') })) as any
+    );
+    const declaring = defineApp({
+      id: 'probe',
+      name: 'Probe',
+      icon: 'x',
+      tile: { bg: 'bg-gray-900' },
+      core: false,
+      permissions: ['contacts'],
+      services: ['probe']
+    } as any);
+    const posted: ToFrame[] = [];
+    const current = { postMessage: (m: ToFrame) => posted.push(m) };
+    const s = createIframeHostServer({
+      host: createInProcessHost('probe', []),
+      manifest: declaring,
+      props: {},
+      guest: () => current,
+      onError: vi.fn(),
+      onKey: vi.fn(),
+      onTyping: vi.fn()
+    });
+    const call = (id: number, service: string) =>
+      s.handle({
+        data: {
+          kind: 'call',
+          id,
+          facet: 'service',
+          factoryArgs: [service],
+          member: 'call',
+          args: []
+        },
+        source: current,
+        origin: 'null'
+      } as unknown as MessageEvent);
+
+    call(1, 'probe');
+    // Inside the namespace, so the prefix rule would have allowed it — and this manifest
+    // did not claim it, which is the whole difference.
+    call(2, 'probe_dms');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect((posted[0] as any).ok).toBe(true);
+    expect(posted[1]).toMatchObject({ ok: false, error: { name: 'Error' } });
+  });
   /**
    * MICA-27: the `lifecycle` facet replaced `isImplicitNavPlumbing`, a hand-maintained
    * facet/member allow-list keyed on literal strings — MICA-31 was exactly that list

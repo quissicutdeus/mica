@@ -190,6 +190,92 @@ describe('App Registry Store', () => {
     }
   });
 
+  /**
+   * MICA-196. Service ids are one flat namespace and ownership used to be a string
+   * prefix, so an add-on that simply takes the id `blabber_dms` reaches the service Blabber
+   * owns — with both manifests entirely honest about their own ids. `defineApp` keeps a
+   * declaration inside the declaring app's namespace and so cannot see this; only the
+   * registry can, because only it knows what is already installed.
+   */
+  describe('a service another installed app already owns', () => {
+    const addOn = (id: string, services?: readonly string[]): AppManifest => ({
+      id,
+      name: id,
+      color: 'bg-teal-500',
+      tile: { bg: 'bg-teal-500' },
+      icon: null,
+      core: false,
+      ...(services ? { services } : {})
+    });
+
+    /**
+     * Both manifests here are entirely honest about their own ids. `chatter` reaches
+     * `chatter_dms` by the prefix rule; an add-on whose id *is* `chatter_dms` reaches it by
+     * owning it. That is the collision, and it needs no bad actor to arrive.
+     */
+    it("refuses an add-on whose own id sits inside an installed app's namespace", () => {
+      appRegistryStore.registerAddOn(addOn('chatter'), 'export {}');
+      try {
+        expect(() => appRegistryStore.registerAddOn(addOn('chatter_dms'), 'export {}')).toThrow(
+          /claims the service 'chatter_dms', which 'chatter' already owns/
+        );
+        expect(appRegistryStore.isInstalled('chatter_dms')).toBe(false);
+      } finally {
+        appRegistryStore.unregisterApp('chatter');
+      }
+    });
+
+    it('refuses a declared claim that an installed app owns by prefix', () => {
+      appRegistryStore.registerAddOn(addOn('chatter'), 'export {}');
+      try {
+        expect(() =>
+          appRegistryStore.registerAddOn(addOn('chatter_dms', ['chatter_dms']), 'export {}')
+        ).toThrow(/already owns/);
+      } finally {
+        appRegistryStore.unregisterApp('chatter');
+      }
+    });
+
+    /**
+     * Install order must not decide the answer, so the check asks in both directions: the
+     * incoming app's claims against each installed app's namespace, and each installed
+     * app's claims against the incoming app's.
+     */
+    it('refuses the same pair in the other order', () => {
+      appRegistryStore.registerAddOn(addOn('chatter_dms'), 'export {}');
+      try {
+        expect(() => appRegistryStore.registerAddOn(addOn('chatter'), 'export {}')).toThrow(
+          /already owns/
+        );
+      } finally {
+        appRegistryStore.unregisterApp('chatter_dms');
+      }
+    });
+
+    it('lets an add-on that collides with nobody install as before', () => {
+      try {
+        appRegistryStore.registerAddOn(addOn('lonely_addon', ['lonely_addon']), 'export {}');
+        expect(appRegistryStore.isKnownApp('lonely_addon')).toBe(true);
+      } finally {
+        appRegistryStore.unregisterApp('lonely_addon');
+      }
+    });
+
+    it('does not refuse an add-on for colliding with itself on re-registration', () => {
+      // Boot re-registers every previously installed bundled add-on, and rehydration
+      // re-runs `installVerified` for every saved remote one. Both hand the registry a
+      // manifest whose id is already in the installed list.
+      try {
+        appRegistryStore.registerAddOn(addOn('repeat_addon', ['repeat_addon']), 'export {}');
+        expect(() =>
+          appRegistryStore.registerAddOn(addOn('repeat_addon', ['repeat_addon']), 'export {}')
+        ).not.toThrow();
+      } finally {
+        appRegistryStore.unregisterApp('repeat_addon');
+      }
+    });
+  });
+
   it('refuses registerAddOn with no source for an id that is not a bundled add-on', () => {
     expect(() =>
       appRegistryStore.registerAddOn({

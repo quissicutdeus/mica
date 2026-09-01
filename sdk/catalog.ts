@@ -43,6 +43,17 @@ export interface CatalogEntry {
   requiresNetwork?: boolean;
   /** MICA-24: the exact origins the installed add-on's frame may `fetch()`. See `AppManifest.networkHosts`. */
   networkHosts?: readonly string[];
+  /**
+   * MICA-196: the server services this app owns. See `AppManifest.services`.
+   *
+   * Here for the same reason `requires` is: `installVerified` builds the installed
+   * manifest from this entry and nothing else, never by running the fetched bundle to ask
+   * what it claims to be, so a field absent here is one the installed app can never
+   * declare. Absent means "did not say", and the old prefix rule answers for it — which is
+   * what every catalog written before this field existed says, and the right thing for it
+   * to mean.
+   */
+  services?: readonly string[];
 }
 
 /**
@@ -100,7 +111,12 @@ export function isCatalogEntry(value: unknown): value is CatalogEntry {
         v.requires.every((c) => (ALL_CAPABILITIES as readonly string[]).includes(c as string)))) &&
     (v.requiresNetwork === undefined || typeof v.requiresNetwork === 'boolean') &&
     (v.networkHosts === undefined ||
-      (Array.isArray(v.networkHosts) && v.networkHosts.every((h) => typeof h === 'string')))
+      (Array.isArray(v.networkHosts) && v.networkHosts.every((h) => typeof h === 'string'))) &&
+    // Shape only. Whether these are ids this app may actually own is `defineApp`'s
+    // question (the namespace) and the registry's (a collision with an installed app),
+    // both of which need the id and the installed set that this predicate does not have.
+    (v.services === undefined ||
+      (Array.isArray(v.services) && v.services.every((s) => typeof s === 'string')))
   );
 }
 

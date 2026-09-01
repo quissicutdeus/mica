@@ -482,6 +482,56 @@ const installedAddOnIds = usePersisted<string[]>('store', 'installedAddOns', [],
  * describes a programming mistake nobody but a developer should ever read, and this one is
  * an ordinary fact about a standalone server.
  */
+/**
+ * Every service id a manifest certainly claims.
+ *
+ * `services` when it is declared. Otherwise the app's own id — not the whole `<id>_*`
+ * namespace, which cannot be enumerated — and `claimsService` below is what closes that
+ * gap from the other side, by asking each *installed* app whether the id falls in its
+ * namespace rather than trying to list one.
+ */
+const servicesOf = (app: AppManifest): readonly string[] => app.services ?? [app.id];
+
+/** Whether `app` owns `serviceId`, by declaration if it made one and by prefix if not. */
+const claimsService = (app: AppManifest, serviceId: string): boolean =>
+  app.services
+    ? app.services.includes(serviceId)
+    : serviceId === app.id || serviceId.startsWith(`${app.id}_`);
+
+/**
+ * MICA-196: refuse an add-on that lays claim to a service an installed app already owns.
+ *
+ * The service namespace is flat and ownership was a string prefix, so two apps reach the
+ * same service whenever one id prefixes another — Blabber reaches `blabber_dms` by the
+ * prefix rule, and an add-on that simply takes the id `blabber_dms` reaches it by owning
+ * it. `defineApp` keeps a declaration inside the declaring app's own namespace, which stops
+ * an add-on *naming* somebody else's service, and does nothing about that collision,
+ * because both apps are honest about their own ids. This is the half that can see both.
+ *
+ * Symmetric on purpose: it asks whether the incoming app's claims fall inside an installed
+ * app's namespace **and** the reverse, so install order does not decide the answer.
+ *
+ * Only on the add-on path (`registerAddOn`), and deliberately not on `registerApp`. A core
+ * app ships with the phone: its ids are fixed at build time and a collision between two of
+ * them is a build-time mistake with a build-time fix, not something a player can install
+ * into. What this guards is a **downloaded** bundle arriving next to apps it never knew
+ * about, which is the case where nobody has looked at the pair.
+ */
+function assertServicesUnclaimed(manifest: AppManifest, installedApps: AppManifest[]): void {
+  for (const other of installedApps) {
+    if (other.id === manifest.id) continue;
+    const clash =
+      servicesOf(manifest).find((service) => claimsService(other, service)) ??
+      servicesOf(other).find((service) => claimsService(manifest, service));
+    if (clash === undefined) continue;
+    throw new Error(
+      `gPhone App Registry error: '${manifest.id}' claims the service '${clash}', which ` +
+        `'${other.id}' already owns. Service ids are one flat namespace, so two apps ` +
+        `cannot share one.`
+    );
+  }
+}
+
 function assertCapabilitiesAvailable(manifest: AppManifest): void {
   const requires = manifest.requires ?? [];
   if (requires.length === 0 || !get(capabilitiesKnown)) return;
@@ -615,6 +665,7 @@ function createAppRegistry() {
     registerAddOn: (manifest: AppManifest, source?: string) => {
       const validatedManifest = defineApp(manifest);
       assertCapabilitiesAvailable(validatedManifest);
+      assertServicesUnclaimed(validatedManifest, get(installed));
       if (source !== undefined) {
         addOnSources.set(validatedManifest.id, source);
       } else if (!addOnIds.has(validatedManifest.id)) {
@@ -795,6 +846,11 @@ function createAppRegistry() {
       // ungated on a server that cannot run it. `isCatalogEntry` has already refused any
       // row naming a capability `ALL_CAPABILITIES` does not know.
       ...(entry.requires ? { requires: entry.requires } : {}),
+      // Conditional for the reason `requires` is: absent and `[]` are different claims
+      // here. `[]` says "owns no service", which stops the app calling its own; absent
+      // says "did not state one", which is what a catalog written before MICA-196 means
+      // and what the prefix rule still answers for.
+      ...(entry.services ? { services: entry.services } : {}),
       requiresNetwork: entry.requiresNetwork ?? false,
       networkHosts: entry.networkHosts ?? [],
       isRemote: true,
