@@ -66,6 +66,11 @@ RUN --mount=type=cache,id=gphone-pnpm-store,target=/pnpm/store,sharing=locked \
 COPY shared/ ./shared/
 COPY sdk/ ./sdk/
 COPY web/ ./web/
+# `scripts/generate-catalog.js` runs after the build below. It reads the add-on
+# manifests out of `web/src/apps` and the SDK's own `isCatalogEntry`, both already
+# here, and resolves esbuild from `web` -- root devDependencies are not installed
+# in this image and it must not need them.
+COPY scripts/ ./scripts/
 
 # Declared here, not at the top, so they cannot invalidate the install layers.
 # getGitInfo() in web/vite.config.ts takes the env path only when BOTH are
@@ -83,9 +88,47 @@ ARG MICA_CALVER=
 # problem to solve with a container flag. Change the subset list at that source
 # and both builds follow.
 
-# build.outDir is '../dist/web' relative to web/, so this writes /app/dist/web.
-RUN GITHUB_REF_NAME="$GIT_BRANCH" GITHUB_SHA="$GIT_SHA" MICA_CALVER="$MICA_CALVER" \
-    pnpm --filter web build
+# The demo hosts its own add-on catalog, and the origin is derived here rather
+# than passed in.
+#
+# MICA-126 built the whole remote-install path -- fetch, host allowlist,
+# SHA-256 verification, sandboxed iframe -- and left it reachable only by
+# hand-writing a catalog. This image already serves the add-on bundles at
+# /addons/<id>.js, so the one missing piece was a catalog beside them and two
+# values telling the shell where to look. Both are empty in a stock build, which
+# is MICA-126's deliberate default and is unchanged everywhere but here.
+#
+# Derived from GIT_BRANCH, which compose already passes, rather than added as
+# build args of its own: `scripts/deploy/gphone-deploy-*-compose.sh` pin a
+# sha256 of compose.yaml and refuse to deploy when it changes, and those wrappers
+# are root-owned on the box and deliberately do not self-update. A new build arg
+# would therefore stop both deploys until someone edited EXPECTED_SHA as root.
+# This keeps compose.yaml byte-identical.
+RUN case "$GIT_BRANCH" in \
+      main) ADDON_ORIGIN="https://gphone.site" ;; \
+      dev)  ADDON_ORIGIN="https://dev.gphone.site" ;; \
+      *)    ADDON_ORIGIN="" ;; \
+    esac; \
+    export ADDON_ORIGIN; \
+    if [ -n "$ADDON_ORIGIN" ]; then \
+      VITE_MICA_ADDON_CATALOG="$ADDON_ORIGIN/addons/catalog.json"; \
+      VITE_MICA_ADDON_HOSTS="${ADDON_ORIGIN#https://}"; \
+      export VITE_MICA_ADDON_CATALOG VITE_MICA_ADDON_HOSTS; \
+    fi; \
+    GITHUB_REF_NAME="$GIT_BRANCH" GITHUB_SHA="$GIT_SHA" MICA_CALVER="$MICA_CALVER" \
+      pnpm --filter web build; \
+    if [ -n "$ADDON_ORIGIN" ]; then \
+      MICA_CALVER="$MICA_CALVER" \
+        node scripts/generate-catalog.js "$ADDON_ORIGIN" dist/web/addons; \
+    fi
+
+# The catalog is generated against `dist/web/addons`, after the build rather than
+# before it: `web/scripts/build-addons.mjs` empties `web/public/addons` on every
+# run, so a catalog written there first is deleted, and one copied in from the
+# host would carry that host's hashes. The bundles embed their own module paths
+# (rolldown writes them into `//#region` comments even minified), so a bundle
+# built on the box and one built here are not byte-identical -- and a catalog
+# whose sha256 came from the wrong one fails every install with a hash mismatch.
 
 # Sidecars for the server's precompressed negotiation. Deliberately not the
 # .woff2 or the images -- they are already compressed, and a .br of them comes

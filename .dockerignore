@@ -10,6 +10,7 @@
 !pnpm-workspace.yaml
 !shared
 !sdk
+!scripts
 !web
 !docker
 
