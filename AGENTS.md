@@ -38,7 +38,7 @@ Run from the **repo root** unless noted.
 | Fast loop: format + typecheck + changed unit only | `pnpm check:fast`                                     | Yes                      |
 | Fail fast if no dev server is warm                | `pnpm dev:check`                                      | Yes                      |
 | Lint the Go server and the Dockerfile             | `pnpm lint:container`                                 | Yes                      |
-| Check workflow actions for a newer major          | `pnpm lint:actions`                                   | Yes                      |
+| Actions SHA-pinned and no major behind            | `pnpm lint:actions`                                   | Yes                      |
 | Run the demo image locally                        | `pnpm demo` / `demo:up` / `demo:down`                 | Yes                      |
 | Smoke-test a running demo image                   | `pnpm demo:smoke`                                     | Yes                      |
 | Scaffold an app                                   | `pnpm new:app <id> [--service]`                       | Yes                      |
@@ -308,7 +308,8 @@ they get the native compiler now and `web/` waits.
   the split and is the only thing that reports it; it runs first.
 - **`client/` and `server/` are checked more strictly than `web/`.** TS 7 makes
   `strict` and the 6.0 deprecations hard defaults. Code that passes in `web/`
-  may fail in `client/`.
+  may fail in `client/`. `server/` runs on Node 22 and targets ES2023; `client/`
+  stays ES2021, because FiveM's client V8 is not Node (MICA-199).
 - **`@shared/types` is a tsconfig path alias, not a workspace package.** It
   appears in no `dependencies` block and `pnpm add @shared/types` will fail. TS
   7 removed `baseUrl`, so path mappings in `client/` and `server/` must be
@@ -388,10 +389,12 @@ Every line of `web/` code must run in a plain browser with mock data **and** in
 FiveM's CEF, and the two are not equivalent.
 
 **FiveM's release CEF is Chromium 103.** Your dev browser is current, so
-anything newer renders correctly in `pnpm dev`, passes Playwright, and is broken
-in-game. **Nothing in the automated suite catches this class of bug.** A CEF
-upgrade (M140/M144) is in progress upstream but not in the release client; until
-it ships, assume 103.
+anything newer renders correctly in `pnpm dev` and is broken in-game. Two gates
+hold the floor: `pnpm lint:css` fails CSS that 103 lacks, and Playwright's
+`cef-floor` project reruns every spec in a real Chromium 103 when
+`CEF_FLOOR_CHROMIUM` is set, which CI always does. **A Web API used from script
+is still unchecked** unless a spec exercises it. A CEF upgrade (M140/M144) is in
+progress upstream but not in the release client; until it ships, assume 103.
 
 Banned outright, because no fallback exists: **`:has()`** (Chrome 105),
 **container queries** (105), **`dvh`/`svh`** (108), **`color-mix()`** (111) —
@@ -685,6 +688,7 @@ do not introduce a licence that is not AGPL-3.0-or-later.**
 
 `reuse lint` is the check, and is deliberately not a `pnpm verify` gate — it is
 a Python tool, and making it one would make it an install requirement
-everywhere. `LICENSES/` holds the text the spec reads and the root `LICENSE` is
-what GitHub reads; both must exist. Every emitted bundle carries a one-line
-notice, gated by `scripts/check-license-banner.js` at the end of the build.
+everywhere. It runs as its own CI job (`reuse.yml`) instead. `LICENSES/` holds
+the text the spec reads and the root `LICENSE` is what GitHub reads; both must
+exist. Every emitted bundle carries a one-line notice, gated by
+`scripts/check-license-banner.js` at the end of the build.

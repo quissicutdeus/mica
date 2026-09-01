@@ -123,14 +123,15 @@ Two things that look like noise and are not:
 A test fails if you break these, so you will find out at `pnpm verify` rather
 than in game:
 
-| Rule                                                   | Enforced by                           |
-| ------------------------------------------------------ | ------------------------------------- |
-| Import from `@gphone/sdk` and nothing else             | `sdk/boundary.test.ts`                |
-| Accept `AppProps`; every app is checked against it     | `sdk/appContract.test.ts`             |
-| Ship `preload` if you ship a `badgeStore`              | `sdk/appContract.test.ts`             |
-| No new opacity modifiers, no `:has()`, no `@container` | `sdk/cef.test.ts`                     |
-| Every `fetchNui` action has a route                    | `server/__tests__/routes.test.ts`     |
-| Net events read `gphone:<side>:<app>:<action>`         | `server/__tests__/eventNames.test.ts` |
+| Rule                                                     | Enforced by                           |
+| -------------------------------------------------------- | ------------------------------------- |
+| Import from `@gphone/sdk` and nothing else               | `sdk/boundary.test.ts`                |
+| Accept `AppProps`; every app is checked against it       | `sdk/appContract.test.ts`             |
+| Ship `preload` if you ship a `badgeStore`                | `sdk/appContract.test.ts`             |
+| No new opacity modifiers                                 | `sdk/cef.test.ts`                     |
+| No `:has()`, `@container`, or other CSS Chrome 103 lacks | `pnpm lint:css` (stylelint + doiuse)  |
+| Every `fetchNui` action has a route                      | `server/__tests__/routes.test.ts`     |
+| Net events read `gphone:<side>:<app>:<action>`           | `server/__tests__/eventNames.test.ts` |
 
 The first two exist because an add-on installed through the Store resolves
 `@gphone/sdk` and nothing else — every relative import out of an app is
@@ -362,9 +363,9 @@ enforcing boundary is still the sandbox and the shell's own permission re-check
 **What it does _not_ carry, and cannot.** `utilityClasses.test.ts` scans
 `web/src` only, so an out-of-tree app gets no check that a class it writes
 exists in `app-utilities.css` — a token with no rule behind it renders as
-nothing, with no error. Neither does anything out there run `cef.test.ts`. The
-template's README states the Chromium 103 rules; enforcing them is on the
-author.
+nothing, with no error. Neither does anything out there run `cef.test.ts` or
+`lint:css`. The template's README states the Chromium 103 rules; enforcing them
+is on the author.
 
 **`postcss.config.js` is the one file people will delete.** This repo's add-on
 build inherits `web/postcss.config.js` by accident of Vite's config discovery.

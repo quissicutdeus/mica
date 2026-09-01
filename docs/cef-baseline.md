@@ -19,11 +19,17 @@ against **`Chrome/103.0.5060.141`**, made while debugging why real
 firmest evidence in the repo that 103 is the real number rather than a
 remembered one.
 
-Nothing in the automated suite can confirm any of this. `pnpm test:e2e` drives a
-modern Chromium; `sdk/cef.test.ts` and `lib/m3.test.ts` scan source text for
-syntax, which is a proxy. Real verification is `nui_devTools` in the F8 console,
-or `http://localhost:13172/` while the game runs, inspecting the **computed**
-value rather than the declaration.
+Two gates stand in for a browser this old (MICA-198). `pnpm lint:css` runs
+doiuse against the root `browserslist` (`chrome 103`) over every stylesheet and
+every Svelte `<style>` block, so a feature 103 lacks fails `pnpm lint`. And the
+`cef-floor` project in `web/playwright.config.ts` reruns the whole e2e suite in
+Chromium r1002910 (103.0.5060.0, the branch point) whenever `CEF_FLOOR_CHROMIUM`
+names the binary, which CI does on every run and refuses to run without.
+`sdk/cef.test.ts` and `lib/m3.test.ts` still scan source text for what neither
+gate can express — the opacity-modifier ratchet and inline-style colours. A Web
+API used from script is caught only if a spec exercises it. Real verification is
+still `nui_devTools` in the F8 console, or `http://localhost:13172/` while the
+game runs, inspecting the **computed** value rather than the declaration.
 
 ## The inventory
 
@@ -42,12 +48,12 @@ before trusting one.
 | 4   | `color-mix()` forbidden in authored CSS                                | AGENTS.md §6, `app.css`, `app-utilities.css`                                                                             | Chrome 111                                                                              | Lift the ban; but read the `@supports` trap below                                                                          |
 | 5   | M3 state layers composited numerically in JS instead of `color-mix()`  | `sdk/lib/m3.ts` (`composite`), consumed by `sdk/ui/NowPlayingCard.svelte`'s runtime cover tint (MICA-111) among others | Chrome 111                                                                              | Optional. Keeping it is defensible — one code path, no cascade recovery                                                    |
 | 6   | Opacity modifier forbidden on a themed role token (`bg-surface/50`)    | `sdk/cef.test.ts`, `app.css`                                                                                             | Chrome 111                                                                              | Keep. The utility layer generates no such class, so lifting it is generation work, not a deletion                          |
-| 7   | `:has()` banned outright                                               | `sdk/cef.test.ts` (`HAS_VARIANT`)                                                                                        | Chrome 105                                                                              | Delete the guard                                                                                                           |
-| 8   | Container queries banned outright                                      | `sdk/cef.test.ts` (`CONTAINER_QUERY`)                                                                                    | Chrome 106 full (105 partial)                                                           | Delete the guard                                                                                                           |
+| 7   | `:has()` banned outright                                               | `stylelint.config.js` (doiuse `css-has`)                                                                                 | Chrome 105                                                                              | Delete the guard                                                                                                           |
+| 8   | Container queries banned outright                                      | `stylelint.config.js` (doiuse `css-container-queries`)                                                                   | Chrome 106 full (105 partial)                                                           | Delete the guard                                                                                                           |
 | 9   | `dvh`/`svh` avoided; viewport measured in px and applied inline        | `shell/state/display.ts`, `shell/Shell.svelte` (the `<main>` inline `width`/`height`)                                    | Chrome 108                                                                              | **Keep, re-test only.** The measured value is also what the mobile-browser URL-bar case needs and what `fitScale` consumes |
 | 10  | `linear()` easing avoided; `--ease-emphasized` is one cubic-bezier     | `sdk/app.css` (`--ease-emphasized`)                                                                                      | Chrome 113                                                                              | Optional: restore M3's true two-segment emphasized curve                                                                   |
 | 11  | Relative colour syntax (`rgb(from …)`) rejected in inline styles       | `sdk/cef.test.ts` (`POST_103_COLOR`)                                                                                     | Chrome 131                                                                              | Keep well past M144                                                                                                        |
-| 12  | Vite `build.target: 'chrome92'`                                        | `web/vite.config.ts`                                                                                                     | n/a — a deliberate floor                                                                | Raise deliberately. It also justifies dropping the `.woff` font fallback in `trimFonts`                                    |
+| 12  | Vite `build.target` and `cssTarget: 'chrome103'`                       | `web/vite.config.ts`                                                                                                     | n/a — a deliberate floor                                                                | Raise deliberately. It also justifies dropping the `.woff` font fallback in `trimFonts`                                    |
 
 ### Not version-gated: do not delete these on an upgrade
 

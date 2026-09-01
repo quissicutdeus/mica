@@ -47,6 +47,17 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**The resource now declares `node_version '22'` in `fxmanifest.lua`, so its
+server half runs on FXServer's Node 22 runtime rather than the default Node 16 —
+check that your artifact is recent enough to carry Node 22 before updating.**
+The directive is part of the resource manifest reference and any current
+recommended artifact honours it. An artifact old enough not to know it ignores
+the line, starts the server scripts on Node 16 anyway, and the bundle, which now
+targets ES2023, fails on its first use of a newer builtin rather than at startup
+— so an old artifact shows up as a mid-session error, not a refusal to start.
+Nothing else changes for an owner: no schema, no convar, no command. The client
+half is untouched; it runs in the game client's own V8, not in Node.
+
 **`gphone_phone_numbers` is a new table — run `gphoneschema apply` from your
 server console after updating, or import the regenerated `gphone.sql` /
 `gphone.esx.sql` on a fresh install.** It carries `id`, `citizenid`, `number`,
@@ -467,6 +478,15 @@ Everything above is written for a server owner. This part is not. It is for
 somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
+
+Every release now attaches a `SHA256SUMS` file beside the two tarballs, and each
+tarball carries a signed build-provenance attestation. `sha256sum -c SHA256SUMS`
+checks a download;
+`gh attestation verify gphone-sdk-<version>.tgz --repo quissicutdeus/gPhone`
+proves GitHub's release job built it from this repository and nothing else did.
+The tarballs' contents are unchanged, and both are now checked with `publint`
+before they are attached, so a broken `exports` map fails the release rather
+than your install.
 
 **The contract this release publishes is `v1`.** That is `SDK_CONTRACT_VERSION`,
 exported from `@gphone/sdk`, and it is the number to branch on. It moves when
