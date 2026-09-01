@@ -128,8 +128,23 @@ const sourceLoads: Record<string, Promise<string | undefined>> = {};
  * has no component at all (see `getAddOnSource`). Runtime registration wins over the
  * glob's own loader so a dev fixture (or a reinstall) may shadow it; the glob is fallback.
  */
+/**
+ * Read a map keyed by app id without reaching its prototype.
+ *
+ * Every one of these is a plain object, so `map[appId]` answers for `constructor`,
+ * `toString` and `__proto__` as readily as for `notes` — and an app id is not something
+ * this module chooses. It arrives from a deep link, an add-on's `postMessage`, or a saved
+ * home-grid row. `loadComponent('constructor')` used to return `Object`'s constructor and
+ * `isKnownApp('toString')` used to answer true; CodeQL's `js/unvalidated-dynamic-method-call`
+ * pointed at the call, and the read underneath it was the actual problem.
+ */
+const own = <T>(map: Record<string, T>, appId: string): T | undefined =>
+  // `hasOwnProperty.call` rather than `Object.hasOwn`, which `web/`'s `lib` does not declare
+  // — and changing a TypeScript target for one call is not a trade worth making.
+  Object.prototype.hasOwnProperty.call(map, appId) ? map[appId] : undefined;
+
 const resolveComponent = (appId: string): AppComponent | undefined =>
-  componentRegistry[appId] ?? loadedComponents[appId];
+  own(componentRegistry, appId) ?? own(loadedComponents, appId);
 
 /**
  * Whether an app exists at all, as opposed to whether its code has arrived yet.
@@ -144,10 +159,10 @@ const resolveComponent = (appId: string): AppComponent | undefined =>
  */
 const isKnownApp = (appId: string): boolean =>
   Boolean(
-    componentRegistry[appId] ||
-    bundledComponents[appId] ||
-    loadedComponents[appId] ||
-    addOnSources[appId] !== undefined ||
+    own(componentRegistry, appId) ||
+    own(bundledComponents, appId) ||
+    own(loadedComponents, appId) ||
+    own(addOnSources, appId) !== undefined ||
     addOnIds.has(appId)
   );
 
@@ -210,8 +225,18 @@ const loadComponent = async (appId: string): Promise<AppComponent | undefined> =
   const already = resolveComponent(appId);
   if (already) return already;
 
-  const loader = bundledComponents[appId];
-  if (!loader) return undefined;
+  /**
+   * `Object.hasOwn` before the lookup, and the lookup's result checked before it is called.
+   *
+   * `bundledComponents` is a plain object built from `import.meta.glob`, so a plain index
+   * reaches its prototype: `loadComponent('constructor')` returns a function, and calling
+   * it is a call to whatever was found rather than to a chunk loader. An app id arriving
+   * from a deep link or an add-on's `postMessage` is not something this function chooses,
+   * which is what CodeQL's `js/unvalidated-dynamic-method-call` is pointing at. Own
+   * properties only, and it still has to look like a loader before it is invoked.
+   */
+  const loader = own(bundledComponents, appId);
+  if (typeof loader !== 'function') return undefined;
 
   loading[appId] ??= loader()
     .then((module) => {
@@ -220,8 +245,12 @@ const loadComponent = async (appId: string): Promise<AppComponent | undefined> =
       return component;
     })
     .catch((error) => {
+      // `appId` passed as an argument rather than interpolated: `console.error`'s first
+      // parameter is a format string, so an id containing `%s` would consume the message
+      // after it and print something that never happened.
       console.error(
-        `gPhone App Registry: failed to load '${appId}'`,
+        'gPhone App Registry: failed to load %s',
+        appId,
         messageOf(error, 'unknown error')
       );
       offerReloadForStaleBuild();
@@ -244,7 +273,8 @@ const loadComponent = async (appId: string): Promise<AppComponent | undefined> =
  * rather than retried on every render, mirroring `loadComponent`.
  */
 const getAddOnSource = (appId: string): Promise<string | undefined> => {
-  if (addOnSources[appId] !== undefined) return Promise.resolve(addOnSources[appId]);
+  const cached = own(addOnSources, appId);
+  if (cached !== undefined) return Promise.resolve(cached);
   if (!addOnIds.has(appId)) return Promise.resolve(undefined);
 
   sourceLoads[appId] ??= fetch(`./addons/${appId}.js`)

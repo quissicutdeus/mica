@@ -93,6 +93,23 @@ describe('a chunk that will not load offers a reload', () => {
     expect(get(toast)).toHaveLength(0);
   });
 
+  /**
+   * `bundledComponents` is a plain object, so an index reaches its prototype: before the
+   * `Object.hasOwn` guard, `loadComponent('constructor')` found a function and called it.
+   * An app id can arrive from a deep link or an add-on's `postMessage`, so it is not
+   * something this function gets to choose.
+   */
+  it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+    'refuses the inherited key %s rather than calling what it finds',
+    async (key) => {
+      const { appRegistryStore, toast } = await freshRegistry();
+
+      await expect(appRegistryStore.loadComponent(key)).resolves.toBeUndefined();
+      // An id nothing declares is a refusal, not a failed load, so it raises no prompt.
+      expect(get(toast)).toHaveLength(0);
+    }
+  );
+
   it('prompts once however many apps fail, since it is one deploy to recover from', async () => {
     const { appRegistryStore, toast } = await freshRegistry();
 

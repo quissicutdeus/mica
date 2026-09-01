@@ -70,8 +70,24 @@ const glyphColor = (id, fg, utilities) => {
  * everywhere else. Percent-encoded rather than base64 — smaller, and it leaves the catalog
  * readable by a human deciding whether to trust it.
  */
+/**
+ * Svelte's server renderer leaves hydration markers (`<!--[-->`, `<!---->`) in the body, and
+ * one pass over them is not enough in general: removing a comment can splice its neighbours
+ * into a new one, so the pass is repeated until the string stops changing. Adjacent markers
+ * are the only case this build actually produces, but "one pass is enough for the input I
+ * have in mind" is exactly what `js/incomplete-multi-character-sanitization` is about.
+ */
+const withoutComments = (input) => {
+  let out = input;
+  for (let previous = ''; previous !== out;) {
+    previous = out;
+    out = out.replaceAll(/<!--[\s\S]*?-->/g, '');
+  }
+  return out;
+};
+
 const asDataUri = (id, body, color) => {
-  const markup = body.replaceAll(/<!--[\s\S]*?-->/g, '').trim();
+  const markup = withoutComments(body).trim();
   const open = markup.indexOf('<svg');
   const close = markup.lastIndexOf('</svg>');
   if (open === -1 || close === -1) {
