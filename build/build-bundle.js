@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { LICENSE_BANNER } from "./license-banner.js";
 import { build, context } from "esbuild";
 
 const IS_WATCH_MODE = process.env.IS_WATCH_MODE === '1';
@@ -35,6 +36,15 @@ const buildBundle = async () => {
       charset: "utf8",
       minifyWhitespace: true,
       absWorkingDir: process.cwd(),
+      // MICA-192. Built output is the distribution case the licence cares most about, and
+      // it shipped with no notice at all: a server owner handed `dist/` had nothing in it
+      // saying what the code is or where the source lives. `/*!` rather than `/*` because a
+      // minifier keeps the first and drops the second — `minifyWhitespace` here does not
+      // strip comments, but the marker is what makes that a property of the banner rather
+      // than of this build's current settings.
+      banner: {
+        js: LICENSE_BANNER,
+      },
     };
 
     for (const targetOpts of TARGET_ENTRIES) {

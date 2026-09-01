@@ -1023,8 +1023,28 @@ corresponds to (`MICA-16`) — the key, never the site URL.
 
 ## License
 
-This project is open-source and licensed under the
-[GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
+Copyright (C) 2026 quissicutdeus
+
+gPhone is free software: you can redistribute it and/or modify it under the
+terms of the GNU Affero General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See [LICENSE](LICENSE).
+
+gPhone is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+
+### If you run a modified copy on your server
+
+**AGPL section 13 requires you to offer your players the source of your modified
+version.** Players interacting with gPhone over your server are remote users in
+the licence's sense, which is the whole point of the Affero clause — running a
+fork without publishing it is the case §13 exists to cover, and it applies
+whether or not you distribute the resource to anyone else.
+
+Making that offer is on you today: gPhone does not yet surface a Source link in
+Settings > About, and until it does there is nothing in the phone pointing a
+player at your source. MICA-192 tracks adding one.
 
 ### If you are writing an add-on
 

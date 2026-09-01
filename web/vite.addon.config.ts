@@ -1,4 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
+import { licenseBanner } from '../build/license-banner.js';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import path from 'path';
 import fs from 'fs';
@@ -206,6 +207,10 @@ export default defineConfig({
     refuseCoreEntry(),
     svelte(),
     inlineCss(),
+    // An add-on bundle inlines the SDK, so it carries gPhone's own code and the notice goes
+    // with it — see the README's "If you are writing an add-on": there is no linking
+    // exception, which makes this the bundle where the banner matters most.
+    licenseBanner(),
     // Last, deliberately — it reads the finished chunk text. See its comment.
     noUnsubstitutedDefines()
   ],
