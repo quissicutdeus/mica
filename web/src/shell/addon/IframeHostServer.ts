@@ -8,6 +8,7 @@ import { AppPermissionError } from '../../../../sdk/host/protocol';
 import { facets } from '../../../../sdk/host/current';
 import { permissionOfFacet, DENIED_FACETS, membersOfFacet } from '../../../../sdk/permissions';
 import type { AppManifest } from '../../../../sdk/manifest';
+import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import type {
   ToFrame,
   ToShell,
@@ -46,16 +47,21 @@ export interface IframeHostServerOptions {
   guest: () => GuestWindow | null | undefined;
   onError(message: string, stack: string | null): void;
   /**
-   * The frame stopped being the document this server was built for, and nothing it says
-   * can be trusted again (MICA-196).
+   * This frame must not go on running, and `message` is what to tell the player
+   * (MICA-196).
    *
    * Separate from `onError`, which reports a crash *inside* a guest that is still the
-   * guest. This one fires when the guest is a different document than the one hydrated —
-   * a self-navigation to a remote origin, or a second `load` — and the caller's job is to
-   * take the frame off screen rather than to render a stack trace. Optional so a test that
-   * only cares about the message path does not have to supply it.
+   * guest and still the add-on. This fires when the thing in the frame is not the add-on
+   * any more — it navigated itself to a remote origin — or when it never could have been
+   * the add-on this phone can run, because its bundle was built against a different SDK
+   * contract. Either way the caller's job is to take the frame off screen rather than to
+   * render a stack trace.
+   *
+   * `message` is player-facing prose, not the diagnostic: the technical detail goes to the
+   * console, where a developer will look, and this goes on a crash screen, where a player
+   * will. Optional so a test that only cares about the message path need not supply it.
    */
-  onEscape?(reason: string): void;
+  onEscape?(message: string): void;
   onKey(key: Extract<ToShell, { kind: 'key' }>): void;
   onTyping(typing: boolean): void;
 }
@@ -461,6 +467,30 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   }
 
   function hydrate() {
+    /**
+     * MICA-196: the last place a mismatched bundle can be stopped before it runs.
+     *
+     * `registerAddOn` refuses one at install, which is where a player sees a useful
+     * message, and this is the same check where the *code* is about to start: a bundled
+     * add-on registered by a path that never went through an install, a dev registration,
+     * or an install from a build before the gate existed. Refusing here costs one string
+     * comparison per `hello` and closes the gap between "was allowed in" and "is running".
+     *
+     * Before `post`, deliberately. The hydrate payload carries the player's theme, this
+     * app's stored keys and the display constants; a bundle this phone has already decided
+     * it cannot run should not receive any of it on the way out.
+     */
+    const built = manifest.sdkContract;
+    if (built !== undefined && built !== SDK_CONTRACT_VERSION) {
+      escaped(
+        `its bundle was built against SDK contract '${built}' and this phone provides ` +
+          `'${SDK_CONTRACT_VERSION}'`,
+        `${manifest.name} was built for a different version of gPhone (SDK contract ` +
+          `${built}; this phone provides ${SDK_CONTRACT_VERSION}).`
+      );
+      return;
+    }
+
     const payload: HydratePayload = {
       appId: host.appId,
       // `host.permissions` is a Svelte reactive array (a `$state` proxy) on an
@@ -488,11 +518,11 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
    * add-on any more. The server stays dead until `AddOnFrame` builds a new one against a
    * new element, which is what Restart does.
    */
-  function escaped(reason: string): void {
+  function escaped(detail: string, message: string): void {
     if (disposed) return;
-    console.error(`[gPhone] add-on '${manifest.id}': ${reason}. The frame has been shut down.`);
+    console.error(`[gPhone] add-on '${manifest.id}': ${detail}. The frame has been shut down.`);
     shutDown();
-    opts.onEscape?.(reason);
+    opts.onEscape?.(message);
   }
 
   return {
@@ -522,7 +552,8 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
         if (event.source === guest()) {
           escaped(
             `a message arrived from origin '${event.origin}' in a frame whose document must ` +
-              `be opaque, so the add-on navigated itself away`
+              `be opaque, so the add-on navigated itself away`,
+            'This add-on tried to navigate away from its own code and has been stopped.'
           );
         }
         return;

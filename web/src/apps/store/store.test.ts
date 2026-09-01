@@ -31,6 +31,24 @@ vi.mock('../../nui/fetchNui', () => ({
 
 import Store from './index.svelte';
 
+/**
+ * jsdom ships no Web Animations API, and Svelte's transitions call `element.animate` — so
+ * the first test here to actually open a `ConfirmDialog` (MICA-196's permission prompt)
+ * threw during the dialog's own transition, *after* its assertions, as an uncaught
+ * exception that failed the run without failing a test.
+ *
+ * The same stub, in the same shape, as `AppDrawer.test.ts`, `ToastHost.test.ts`,
+ * `Dock.test.ts` and `PhoneFrame.test.ts` — every suite in this tree that renders something
+ * with a transition carries one.
+ */
+if (!Element.prototype.animate) {
+  Element.prototype.animate = vi.fn().mockReturnValue({
+    cancel: () => {},
+    finish: () => {},
+    effect: { getComputedTiming: () => ({ duration: 0 }) }
+  });
+}
+
 const { registryStore: appRegistryStore } = useAppRegistry();
 const { refreshUpdates } = useAppRegistryWrite();
 
@@ -335,6 +353,90 @@ describe('add-on updates (MICA-74)', () => {
     (await findByText('Update')).click();
 
     await vi.waitFor(() => expect(installFromCatalog).toHaveBeenCalledWith(catalogEntry));
+  });
+
+  /**
+   * MICA-196. A catalog entry is remote data that moves underneath an installed app, and
+   * the Update button sits on a row showing a version number. An add-on installed reading
+   * nothing could republish asking for contacts and messages, and the old path installed
+   * that in one tap — the disclosure the player agreed to at install was simply replaced.
+   */
+  describe('an update that wants more than the installed version was granted', () => {
+    const grabbier = () =>
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve([{ ...catalogEntry, permissions: ['contacts'] }])
+      } as Response);
+
+    /** Through the banner, to the Installed tab, to the row's Update button. */
+    const reachUpdateButton = async () => {
+      const screen = renderApp(Store, { id: 'store' });
+      await screen.findByText('1 add-on has an update available');
+      screen.getByText('Installed (' + get(appRegistryStore).length + ')').click();
+      (await screen.findByText('Update')).click();
+      return screen;
+    };
+
+    it('asks first, naming what is new, and installs nothing yet', async () => {
+      grabbier();
+      const installFromCatalog = vi
+        .spyOn(appRegistryStore, 'installFromCatalog')
+        .mockResolvedValue({ manifest: installedManifest });
+
+      const { findByText } = await reachUpdateButton();
+
+      expect(await findByText('Weather wants more access')).toBeTruthy();
+      // The player's label for the permission, not the vocabulary name — this dialog is
+      // the disclosure, so it has to read the way `AppDetails` does.
+      expect(await findByText(/adds: Contacts/)).toBeTruthy();
+      expect(installFromCatalog).not.toHaveBeenCalled();
+    });
+
+    it('installs once the player accepts', async () => {
+      grabbier();
+      const installFromCatalog = vi
+        .spyOn(appRegistryStore, 'installFromCatalog')
+        .mockResolvedValue({ manifest: installedManifest });
+
+      const { findByText } = await reachUpdateButton();
+      (await findByText('Update anyway')).click();
+
+      await vi.waitFor(() => expect(installFromCatalog).toHaveBeenCalled());
+    });
+
+    /**
+     * Refusing is refusing the permissions, not merely the dialog: an add-on's declared
+     * permissions live on its installed manifest, and the shell re-checks every call
+     * against that manifest, so a version that was never installed cannot exercise them.
+     */
+    it('leaves the installed version alone when the player declines', async () => {
+      grabbier();
+      const installFromCatalog = vi
+        .spyOn(appRegistryStore, 'installFromCatalog')
+        .mockResolvedValue({ manifest: installedManifest });
+
+      const { findByText } = await reachUpdateButton();
+      (await findByText('Keep this version')).click();
+
+      // Nothing is fetched, nothing is verified, nothing replaces the installed manifest —
+      // which is where the permissions the shell enforces actually live.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(installFromCatalog).not.toHaveBeenCalled();
+    });
+
+    it('does not ask when the update adds nothing — a trained yes is not consent', async () => {
+      // The suite's default catalog entry declares the same (empty) permission set the
+      // installed manifest holds, which is the ordinary case.
+      const installFromCatalog = vi
+        .spyOn(appRegistryStore, 'installFromCatalog')
+        .mockResolvedValue({ manifest: installedManifest });
+
+      const { queryByText } = await reachUpdateButton();
+
+      await vi.waitFor(() => expect(installFromCatalog).toHaveBeenCalled());
+      expect(queryByText('Weather wants more access')).toBeNull();
+    });
   });
 
   it('says nothing when the catalog matches what is installed', async () => {

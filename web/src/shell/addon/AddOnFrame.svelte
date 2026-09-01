@@ -165,20 +165,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           crashed = { message, stack };
         },
         /**
-         * The frame is no longer running the add-on (MICA-196) — it posted from a real
-         * origin, which an opaque `srcdoc` document cannot do. The server has already shut
-         * itself down; this is what takes the page off screen, so a remote document cannot
-         * go on being displayed inside the phone's own chrome with the add-on's name on it.
+         * The frame must not go on running (MICA-196): it posted from a real origin,
+         * which an opaque `srcdoc` document cannot do, or its bundle was built against an
+         * SDK contract this phone does not publish. The server has already shut itself
+         * down; this is what takes the page off screen, so a document the shell has stopped
+         * answering cannot go on being displayed inside the phone's chrome with the
+         * add-on's name on it.
          *
          * Deliberately the same surface a crash gets. To a player the two are the same
          * event — this app stopped working — and inventing a second one would mean a second
          * thing to recognise for no gain. `AppCrashed`'s Restart is the recovery.
          */
-        onEscape: () => {
-          crashed = {
-            message: 'This add-on tried to navigate away from its own code and has been stopped.',
-            stack: null
-          };
+        onEscape: (message) => {
+          crashed = { message, stack: null };
         },
         /**
          * A backgrounded add-on is `display:none` and `inert`, but its iframe keeps

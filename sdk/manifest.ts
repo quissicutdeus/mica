@@ -412,6 +412,31 @@ export interface AppManifest {
    * is how an app opts into the stricter, checked answer.
    */
   services?: readonly string[];
+  /**
+   * MICA-196: the `SDK_CONTRACT_VERSION` this bundle was compiled against.
+   *
+   * `sdk/version.ts` published that number for an add-on to read and act on, and said
+   * plainly what it did not do: "nothing consults it at install or boot time. There is no
+   * runtime compatibility gate anywhere in the phone (MICA-173), and adding one is new
+   * manifest surface that needs deciding on its own." This is that surface, decided.
+   *
+   * Without it, an add-on built against a future contract installs cleanly and fails
+   * wherever it first touches something that moved — a missing export, a renamed prop —
+   * as an `ErrorBoundary` crash a player reads as "this add-on is broken". The version was
+   * knowable at the bundle's build; nothing was carrying it across.
+   *
+   * Checked for **equality**, not order. `SDK_CONTRACT_VERSION` is typed `string` and
+   * deliberately carries no ordering — its own doc explains why a literal type there would
+   * turn a comparison into a type error — so "newer" and "older" are not questions this can
+   * ask. What it can say is whether the phone is running the contract the bundle was built
+   * for, and a bundle built for a different one is refused at install and again at hydrate.
+   *
+   * **Absent means "did not say", and is never refused.** Every add-on published before
+   * this field existed omits it, and a bundle built by a third-party bundler that never
+   * heard of `__MICA_VERSION__` omits it too. Declaring it is how an add-on asks to be
+   * refused early and legibly rather than late and confusingly.
+   */
+  sdkContract?: string;
   /** ISO date string when app was installed */
   installedAt?: string;
   /** ISO date string when app was last updated */

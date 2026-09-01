@@ -196,3 +196,23 @@ const LABELS: Record<AppPermission, { label: string; icon: string }> = {
 export function formatPermission(perm: AppPermission): { label: string; icon: string } {
   return LABELS[perm] ?? { label: perm, icon: '\u{2699}\u{FE0F}' };
 }
+
+/**
+ * What an update would add to what the installed app already holds (MICA-196).
+ *
+ * The accepted set needs no bookkeeping of its own. `installVerified` builds the installed
+ * manifest's `permissions` from the catalog entry, and `AppDetails` shows exactly that list
+ * beside the Install button — so the installed manifest **is** the record of what the player
+ * agreed to, and rehydration re-runs the *saved* entry, which keeps it that way.
+ *
+ * Here rather than inside `index.svelte` so it can be tested as what it is: a set
+ * difference that decides whether a player is asked. Returned in the entry's own order, so
+ * the dialog reads the way the catalog wrote it.
+ */
+export function addedPermissions(
+  installed: AppManifest,
+  entry: Pick<CatalogEntry, 'permissions'>
+): AppPermission[] {
+  const held = new Set(installed.permissions ?? []);
+  return (entry.permissions ?? []).filter((perm) => !held.has(perm));
+}

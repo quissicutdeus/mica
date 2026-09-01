@@ -20,6 +20,7 @@ import {
   matchesHash
 } from '../../../../sdk/remoteAppSecurity';
 import { isCatalogEntry, type CatalogEntry } from '../../../../sdk/catalog';
+import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import { toast } from './toast';
 
 export type { AppManifest } from '../../../../sdk/manifest';
@@ -532,6 +533,37 @@ function assertServicesUnclaimed(manifest: AppManifest, installedApps: AppManife
   }
 }
 
+/**
+ * MICA-196: refuse a bundle built for a contract this phone does not publish.
+ *
+ * `SDK_CONTRACT_VERSION` existed as a number an add-on author could read, and `version.ts`
+ * said outright that nothing consulted it at install or boot and that adding a gate was
+ * new manifest surface needing its own decision. Without one, a bundle built against a
+ * future contract installs cleanly and dies later, wherever it first touches something
+ * that moved — as an `ErrorBoundary` crash that reads to a player as "this add-on is
+ * broken" rather than "this add-on is for a newer phone".
+ *
+ * Equality, not order: `SDK_CONTRACT_VERSION` is deliberately an unordered `string` (its
+ * own doc says why), so "newer" is not a question this can ask. Absent is never refused —
+ * every add-on published before the field existed omits it, and so does any third-party
+ * bundler that never heard of it.
+ *
+ * No `gPhone App Registry error:` prefix and the app named as the player sees it, for the
+ * same reason `assertCapabilitiesAvailable` below drops them: `useAppAction`'s `run` in
+ * the Store surfaces this as a toast, and this is an ordinary fact about a version, not a
+ * programming mistake only a developer should read.
+ */
+function assertContractSupported(manifest: AppManifest): void {
+  const built = manifest.sdkContract;
+  if (built === undefined || built === SDK_CONTRACT_VERSION) return;
+
+  throw new Error(
+    `${manifest.name} was built for gPhone SDK contract ${built}, and this phone provides ` +
+      `${SDK_CONTRACT_VERSION}. Installing it would leave it broken in ways nothing here ` +
+      `can predict.`
+  );
+}
+
 function assertCapabilitiesAvailable(manifest: AppManifest): void {
   const requires = manifest.requires ?? [];
   if (requires.length === 0 || !get(capabilitiesKnown)) return;
@@ -664,6 +696,7 @@ function createAppRegistry() {
      */
     registerAddOn: (manifest: AppManifest, source?: string) => {
       const validatedManifest = defineApp(manifest);
+      assertContractSupported(validatedManifest);
       assertCapabilitiesAvailable(validatedManifest);
       assertServicesUnclaimed(validatedManifest, get(installed));
       if (source !== undefined) {
@@ -851,6 +884,9 @@ function createAppRegistry() {
       // says "did not state one", which is what a catalog written before MICA-196 means
       // and what the prefix rule still answers for.
       ...(entry.services ? { services: entry.services } : {}),
+      // Same conditional, same reason: absent is "did not say", which every catalog
+      // written before MICA-196 says and which `assertContractSupported` never refuses.
+      ...(entry.sdkContract ? { sdkContract: entry.sdkContract } : {}),
       requiresNetwork: entry.requiresNetwork ?? false,
       networkHosts: entry.networkHosts ?? [],
       isRemote: true,

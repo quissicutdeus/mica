@@ -17,6 +17,7 @@ import { registerFacet, resetHostsForTest } from '../../../../sdk/host/current';
 import { ADDON_LIMITS, createIframeHostServer } from './IframeHostServer';
 import { defineApp } from '../../../../sdk/manifest';
 import { DENIED_FACETS } from '../../../../sdk/permissions';
+import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import { is24Hour as shellIs24Hour } from '../state/time';
 import type { ToFrame } from '../../../../sdk/host/iframe/messages';
 import '../../../../sdk/host/useContacts';
@@ -1165,6 +1166,80 @@ describe('IframeHostServer', () => {
       });
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(posted[0]).toMatchObject({ ok: true });
+    });
+  });
+
+  /**
+   * MICA-196. `registerAddOn` refuses a mismatched bundle at install, which is where a
+   * player gets a message they can act on. This is the same question asked where the *code*
+   * is about to start, for a bundle that reached a frame by a path that never went through
+   * an install — a dev registration, or an install from a build before the gate existed.
+   */
+  describe('a bundle built against a different SDK contract', () => {
+    const withContract = (sdkContract: string) =>
+      defineApp({
+        id: 'probe',
+        name: 'Probe',
+        icon: 'x',
+        tile: { bg: 'bg-gray-900' },
+        core: false,
+        permissions: ['contacts'],
+        sdkContract
+      } as any);
+
+    const frameFor = (m: ReturnType<typeof defineApp>) => {
+      const onEscape = vi.fn();
+      const posted: ToFrame[] = [];
+      const current = { postMessage: (msg: ToFrame) => posted.push(msg) };
+      const s = createIframeHostServer({
+        host: createInProcessHost('probe', ['contacts'] as any),
+        manifest: m,
+        props: {},
+        guest: () => current,
+        onError: vi.fn(),
+        onEscape,
+        onKey: vi.fn(),
+        onTyping: vi.fn()
+      });
+      const hello = () =>
+        s.handle({
+          data: { kind: 'hello', appId: 'probe' },
+          source: current,
+          origin: 'null'
+        } as unknown as MessageEvent);
+      return { posted, hello, onEscape };
+    };
+
+    it('never hydrates, so the theme, the storage snapshot and the constants stay inside', () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { posted, hello, onEscape } = frameFor(withContract('99'));
+
+      hello();
+
+      expect(posted).toHaveLength(0);
+      expect(onEscape).toHaveBeenCalledWith(expect.stringContaining('SDK contract 99'));
+      error.mockRestore();
+    });
+
+    it('hydrates a bundle built against this phone’s own contract', () => {
+      const { posted, hello, onEscape } = frameFor(withContract(SDK_CONTRACT_VERSION));
+
+      hello();
+
+      expect(posted[0]).toMatchObject({ kind: 'hydrate' });
+      expect(onEscape).not.toHaveBeenCalled();
+    });
+
+    it('hydrates a manifest that says nothing, which is every add-on published so far', () => {
+      // The shared `manifest` at the top of this file declares no `sdkContract`, which is
+      // the state a bundle built before the field existed is permanently in.
+      expect(manifest.sdkContract).toBeUndefined();
+      const { posted, hello, onEscape } = frameFor(manifest);
+
+      hello();
+
+      expect(posted[0]).toMatchObject({ kind: 'hydrate' });
+      expect(onEscape).not.toHaveBeenCalled();
     });
   });
 

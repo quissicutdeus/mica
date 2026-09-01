@@ -18,9 +18,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     type AppUpdate,
     fetchCatalog,
     getRemoteCatalogUrl,
-    onAppForeground
+    onAppForeground,
+    type AppPermission
   } from '@gphone/sdk';
-  import { mergedCatalogApps } from './appInfo';
+  import { addedPermissions, formatPermission, mergedCatalogApps } from './appInfo';
   import AppDetails from './components/AppDetails.svelte';
   import CatalogList from './components/CatalogList.svelte';
   import InstalledList from './components/InstalledList.svelte';
@@ -55,6 +56,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let installedSortOrder = $state<'newest' | 'oldest' | 'updated' | 'name'>('newest');
   let selectedApp = $state<AppManifest | null>(null);
   let appToUninstall = $state<AppManifest | null>(null);
+  /**
+   * An update whose catalog entry asks for more than the installed app was granted
+   * (MICA-196). Held until the player says yes, because tapping Update on a row that
+   * shows a version number is not consent to a list they have not been shown.
+   */
+  let updateToAccept = $state<{ update: AppUpdate; added: AppPermission[] } | null>(null);
 
   const isInstalled = (appId: string): boolean => $registryStore.some((a) => a.id === appId);
 
@@ -117,19 +124,46 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   /**
    * Install the catalog's copy of an app that has fallen behind.
    *
-   * No confirmation dialog and no second install path: `updateApp` goes through
-   * `installFromCatalog`, so the bundle is re-fetched and re-verified against the entry's
-   * `sha256` exactly as it was on the first install. The permissions the player accepted are
-   * on screen while they tap this — the details view is one tap away from either surface
-   * that offers the button, and `AppDetails` lists them.
+   * One install path, still: `updateApp` goes through `installFromCatalog`, so the bundle
+   * is re-fetched and re-verified against the entry's `sha256` exactly as it was the first
+   * time. What is new is that the *permissions* are compared against what the player
+   * accepted, because a catalog entry is remote data that moves underneath an installed
+   * app — an add-on installed reading nothing can republish asking for `contacts` and
+   * `messages`, and the old path installed that in one tap. The comment this replaces said
+   * the accepted permissions "are on screen while they tap this"; they are on screen in
+   * `AppDetails`, which lists the *installed* app's, not the ones the new version wants.
+   *
+   * An update that adds nothing still installs with no dialog. Prompting on every update
+   * would train the answer, which is how a prompt stops being consent.
+   *
+   * Refusing is refusing the permissions, not merely the dialog: an add-on's declared
+   * permissions live on its installed manifest, and the shell re-checks every call against
+   * that manifest (`HOOK_OF_FACET`), so a version that was never installed can never
+   * exercise what it asked for.
    */
   function handleUpdate(app: AppManifest) {
     const pending = updateFor(app.id);
     if (!pending) return;
-    void run(() => updateApp(app.id), {
+    const added = addedPermissions(app, pending.entry);
+    if (added.length > 0) {
+      updateToAccept = { update: pending, added };
+      return;
+    }
+    applyUpdate(pending.name, pending);
+  }
+
+  function applyUpdate(name: string, pending: AppUpdate) {
+    void run(() => updateApp(pending.appId), {
       title: 'Store',
-      success: `${app.name} updated to v${pending.availableVersion}`
+      success: `${name} updated to v${pending.availableVersion}`
     });
+  }
+
+  function confirmPermissionUpdate() {
+    const pending = updateToAccept;
+    updateToAccept = null;
+    if (!pending) return;
+    applyUpdate(pending.update.name, pending.update);
   }
 
   const requestUninstall = (app: AppManifest) => (appToUninstall = app);
@@ -218,6 +252,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {/if}
       </div>
     </Screen>
+  {/if}
+
+  <!-- MICA-196: an update asking for more than the installed version was granted -->
+  {#if updateToAccept}
+    {@const added = updateToAccept.added.map((p) => formatPermission(p).label).join(', ')}
+    <ConfirmDialog
+      title="{updateToAccept.update.name} wants more access"
+      message="Version {updateToAccept.update.availableVersion} adds: {added}."
+      confirmText="Update anyway"
+      cancelText="Keep this version"
+      onconfirm={confirmPermissionUpdate}
+      oncancel={() => (updateToAccept = null)}
+    />
   {/if}
 
   <!-- Confirm Uninstall Modal -->

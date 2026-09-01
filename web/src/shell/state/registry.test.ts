@@ -25,6 +25,7 @@ vi.mock('../../services/settings', () => serviceMock);
 import { appRegistryStore, getFirstBootTime, type AppManifest } from './registry';
 import { hydrateSettings, useStorage } from '../../../../sdk/host/useStorage';
 import { setTrustedRemoteAppHosts, sha256Hex } from '../../../../sdk/remoteAppSecurity';
+import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import { capabilities, capabilitiesKnown } from '../../services/capabilities';
 import type { CatalogEntry } from '../../../../sdk/catalog';
 
@@ -272,6 +273,54 @@ describe('App Registry Store', () => {
         ).not.toThrow();
       } finally {
         appRegistryStore.unregisterApp('repeat_addon');
+      }
+    });
+  });
+
+  /**
+   * MICA-196. `sdk/version.ts` published `SDK_CONTRACT_VERSION` for an add-on author to
+   * read and said outright that nothing consulted it at install or boot. Until this gate, a
+   * bundle built against a contract this phone does not provide installed cleanly and died
+   * wherever it first touched something that had moved — an `ErrorBoundary` crash a player
+   * reads as "this add-on is broken" rather than "this add-on is for a newer phone".
+   */
+  describe('the SDK contract an add-on was built against', () => {
+    const contractAddOn = (sdkContract?: string): AppManifest => ({
+      id: 'contract_probe',
+      name: 'Contract Probe',
+      color: 'bg-teal-500',
+      tile: { bg: 'bg-teal-500' },
+      icon: null,
+      core: false,
+      ...(sdkContract ? { sdkContract } : {})
+    });
+
+    it('installs a bundle built against this phone’s contract', () => {
+      try {
+        appRegistryStore.registerAddOn(contractAddOn(SDK_CONTRACT_VERSION), 'export {}');
+        expect(appRegistryStore.isKnownApp('contract_probe')).toBe(true);
+      } finally {
+        appRegistryStore.unregisterApp('contract_probe');
+      }
+    });
+
+    it('refuses one built against a different contract, and says so in prose', () => {
+      // No `gPhone App Registry error:` prefix and the app named as the player sees it:
+      // the Store toasts this through `useAppAction`'s `run`, and it is an ordinary fact
+      // about a version rather than a programming mistake only a developer should read.
+      expect(() => appRegistryStore.registerAddOn(contractAddOn('99'), 'export {}')).toThrow(
+        `Contract Probe was built for gPhone SDK contract 99, and this phone provides ` +
+          `${SDK_CONTRACT_VERSION}.`
+      );
+      expect(appRegistryStore.isInstalled('contract_probe')).toBe(false);
+    });
+
+    it('never refuses one that does not say, which is every add-on published so far', () => {
+      try {
+        appRegistryStore.registerAddOn(contractAddOn(), 'export {}');
+        expect(appRegistryStore.isKnownApp('contract_probe')).toBe(true);
+      } finally {
+        appRegistryStore.unregisterApp('contract_probe');
       }
     });
   });

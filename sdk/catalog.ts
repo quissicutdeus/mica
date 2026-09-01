@@ -54,6 +54,15 @@ export interface CatalogEntry {
    * to mean.
    */
   services?: readonly string[];
+  /**
+   * MICA-196: the SDK contract version the bundle was compiled against. See
+   * `AppManifest.sdkContract`.
+   *
+   * Here rather than read out of the fetched bundle for the reason every other field is:
+   * `installVerified` never runs the code to ask it what it is. Absent means "did not say"
+   * and installs exactly as it did before.
+   */
+  sdkContract?: string;
 }
 
 /**
@@ -116,7 +125,11 @@ export function isCatalogEntry(value: unknown): value is CatalogEntry {
     // question (the namespace) and the registry's (a collision with an installed app),
     // both of which need the id and the installed set that this predicate does not have.
     (v.services === undefined ||
-      (Array.isArray(v.services) && v.services.every((s) => typeof s === 'string')))
+      (Array.isArray(v.services) && v.services.every((s) => typeof s === 'string'))) &&
+    // Shape only, again. Whether it *matches* this phone's contract is the registry's
+    // question at install and the host server's at hydrate; dropping the row here would
+    // hide an otherwise installable app behind a silent catalog warning.
+    (v.sdkContract === undefined || typeof v.sdkContract === 'string')
   );
 }
 

@@ -118,6 +118,15 @@ describe('isCatalogEntry', () => {
     expect(isCatalogEntry({ ...validEntry, services: [123] })).toBe(false);
   });
 
+  it('accepts sdkContract as an optional string, whatever it says (MICA-196)', () => {
+    // Shape only, again: a row naming a contract this phone does not provide is a row the
+    // registry refuses at install with a message a player can read. Dropping it here would
+    // hide it behind a console warning instead.
+    expect(isCatalogEntry({ ...validEntry, sdkContract: '1' })).toBe(true);
+    expect(isCatalogEntry({ ...validEntry, sdkContract: '99' })).toBe(true);
+    expect(isCatalogEntry({ ...validEntry, sdkContract: 1 })).toBe(false);
+  });
+
   it('rejects an entry with no permissions array', () => {
     const { permissions: _permissions, ...withoutPermissions } = validEntry;
     expect(isCatalogEntry(withoutPermissions)).toBe(false);
