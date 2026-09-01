@@ -355,6 +355,13 @@ jobs:
             demo.cache-to=type=gha,mode=max
             demo.args.GIT_BRANCH=${{ github.ref_name }}
             demo.args.GIT_SHA=${{ github.sha }}
+            # A stamp, so the add-on catalog is actually generated here (MICA-191).
+            # The Dockerfile skips the catalog when this is empty -- correct for `pnpm
+            # demo`, and useless in the one job that exists to test the image: the step
+            # would never run in CI and would first execute on a deploy. Not a CalVer,
+            # deliberately, because this image is a test artifact and its version should
+            # not read like a release someone could install.
+            demo.args.MICA_CALVER=0.0.0-ci.${{ github.run_number }}
 
       # `docker build` succeeding proves the image assembles, not that it serves.
       - name: Start it

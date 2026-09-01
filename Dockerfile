@@ -104,6 +104,13 @@ ARG MICA_CALVER=
 # are root-owned on the box and deliberately do not self-update. A new build arg
 # would therefore stop both deploys until someone edited EXPECTED_SHA as root.
 # This keeps compose.yaml byte-identical.
+#
+# An unstamped build gets no catalog rather than a failed build. A catalog entry
+# needs a version and the phone's own apps do not state one, so the build stamp
+# is the only honest answer -- and `pnpm demo`, or any `docker compose up --build`
+# with nothing exported, supplies none. Failing there would have broken the
+# ordinary local demo to serve the deployed one, so it says what it skipped and
+# why instead.
 RUN case "$GIT_BRANCH" in \
       main) ADDON_ORIGIN="https://gphone.site" ;; \
       dev)  ADDON_ORIGIN="https://dev.gphone.site" ;; \
@@ -117,9 +124,13 @@ RUN case "$GIT_BRANCH" in \
     fi; \
     GITHUB_REF_NAME="$GIT_BRANCH" GITHUB_SHA="$GIT_SHA" MICA_CALVER="$MICA_CALVER" \
       pnpm --filter web build; \
-    if [ -n "$ADDON_ORIGIN" ]; then \
+    if [ -n "$ADDON_ORIGIN" ] && [ -n "$MICA_CALVER" ]; then \
       MICA_CALVER="$MICA_CALVER" \
         node scripts/generate-catalog.js "$ADDON_ORIGIN" dist/web/addons; \
+    elif [ -n "$ADDON_ORIGIN" ]; then \
+      echo "catalog: skipped -- MICA_CALVER is empty, so there is no version to publish."; \
+      echo "catalog: the Store will list only bundled apps in this image. A stamped build"; \
+      echo "catalog: (compose passes MICA_CALVER through when it is set) produces one."; \
     fi
 
 # The catalog is generated against `dist/web/addons`, after the build rather than
