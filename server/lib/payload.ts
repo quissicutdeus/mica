@@ -3,12 +3,29 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Parsers for values arriving from NUI.
+ * What is left of the hand-written NUI parsers.
  *
- * Every id in a `gphone:server:*` payload is attacker-controlled (AGENTS.md §9),
- * so it is parsed and range-checked before it reaches SQL or an authorization
- * check. Shared here so services cannot drift into subtly different rules.
+ * This file was where a service went to read a payload: `fields` to make one indexable,
+ * `optionalString` and `requirePositiveInt` to pull a value out of it, one call per field per
+ * handler. `shared/schema.ts` does that from a declaration now, so what remains is the part a
+ * schema genuinely cannot express.
+ *
+ * - `requirePositiveInt` still parses an id a **handler** produced rather than one a payload
+ *   carried — a value read off a row, or one an ownership check is about to discard. Its
+ *   reasoning about `Number([7])` moved into the DSL's own tests, where the ninety-seven
+ *   handlers that used to repeat it now inherit it.
+ * - `conversationIdFrom` answers "which of two spellings arrived", which is a rule about a
+ *   payload as a whole rather than about a field.
+ * - `flagUnlessFalse` is a default, not a check: absent means true.
+ * - `pageBounds` **clamps** rather than refuses, which is the one place this file deliberately
+ *   disagrees with the schema's instinct — see its own note.
+ * - `fields` survives for the two raw `onNet` handlers that never pass through
+ *   `ServiceEndpoint` and so have no contract in front of them.
+ *
+ * Every id in a `gphone:server:*` payload is still attacker-controlled (AGENTS.md §2.9); what
+ * changed is where that is written down.
  */
+import { PlayerFacingError } from './errors';
 
 /**
  * The correlation id `fetchNui` sent with the request, echoed back on the reply.
@@ -25,11 +42,11 @@ export type CallbackId = string | number;
  */
 export function requirePositiveInt(raw: unknown, what: string): number {
   if (typeof raw !== 'number' && typeof raw !== 'string') {
-    throw new Error(`A valid ${what} is required.`);
+    throw new PlayerFacingError(`A valid ${what} is required.`);
   }
   const value = Number(raw);
   if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(`A valid ${what} is required.`);
+    throw new PlayerFacingError(`A valid ${what} is required.`);
   }
   return value;
 }
@@ -46,24 +63,17 @@ export function conversationIdFrom(data: unknown): number {
 /**
  * A NUI payload as something with readable fields.
  *
- * Handlers receive `unknown`, which is the honest type for a value the client chose.
- * This is the one place that turns it into something indexable, and it yields `unknown`
- * per field so reading one still forces a decision about what it is. A payload that is
- * not an object reads as empty rather than throwing — every field parser below already
- * rejects `undefined`, and a missing field and a malformed envelope deserve the same
- * message.
+ * For a raw `onNet` handler, which receives `unknown` and has no contract in front of it —
+ * `contacts:share` is the one that still reads a whole object this way. A payload that is not
+ * an object reads as empty rather than throwing, because a missing field and a malformed
+ * envelope deserve the same answer.
  */
-export function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 export function fields(data: unknown): Record<string, unknown> {
   return isRecord(data) ? data : {};
-}
-
-/** A non-empty string, or undefined. Never the empty string, which reads as absent. */
-export function optionalString(raw: unknown): string | undefined {
-  return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
 }
 
 /** `true` unless the client explicitly said `false` — the shape these flags default to. */
