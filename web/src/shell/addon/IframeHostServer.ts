@@ -45,6 +45,17 @@ export interface IframeHostServerOptions {
    */
   guest: () => GuestWindow | null | undefined;
   onError(message: string, stack: string | null): void;
+  /**
+   * The frame stopped being the document this server was built for, and nothing it says
+   * can be trusted again (MICA-196).
+   *
+   * Separate from `onError`, which reports a crash *inside* a guest that is still the
+   * guest. This one fires when the guest is a different document than the one hydrated —
+   * a self-navigation to a remote origin, or a second `load` — and the caller's job is to
+   * take the frame off screen rather than to render a stack trace. Optional so a test that
+   * only cares about the message path does not have to supply it.
+   */
+  onEscape?(reason: string): void;
   onKey(key: Extract<ToShell, { kind: 'key' }>): void;
   onTyping(typing: boolean): void;
 }
@@ -381,6 +392,12 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     }
   }
 
+  /** Stop answering, permanently. The public `dispose()` and `escaped()` both land here. */
+  function shutDown() {
+    disposed = true;
+    forgetGuest();
+  }
+
   /** Drop everything held on behalf of one guest document. */
   function forgetGuest() {
     stopTheme?.();
@@ -410,9 +427,54 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     if (!stopTheme) stopTheme = themeStyleStore.subscribe((css) => post({ kind: 'theme', css }));
   }
 
+  /**
+   * The guest is no longer the document this server hydrated. Stop answering it, for good.
+   *
+   * `dispose()` rather than `forgetGuest()`: forgetting drops what was held on behalf of a
+   * guest and leaves the channel open for the next `hello`, which is right for a reload and
+   * exactly wrong here — the whole problem is that the thing on the other end is not the
+   * add-on any more. The server stays dead until `AddOnFrame` builds a new one against a
+   * new element, which is what Restart does.
+   */
+  function escaped(reason: string): void {
+    if (disposed) return;
+    console.error(`[gPhone] add-on '${manifest.id}': ${reason}. The frame has been shut down.`);
+    shutDown();
+    opts.onEscape?.(reason);
+  }
+
   return {
     handle(this: void, event: MessageEvent) {
       if (disposed) return;
+      /**
+       * MICA-196: the guest posts from an opaque origin, and says so as the literal
+       * string `'null'`.
+       *
+       * `sandbox="allow-scripts"` with no `allow-same-origin` gives the srcdoc document an
+       * opaque origin, and an opaque origin serialises to `"null"` in `event.origin`. A
+       * document that navigated itself somewhere real does not: it posts its real origin.
+       *
+       * That distinction is the only one available here, because `event.source` cannot make
+       * it. A `WindowProxy` survives navigation — same object, new document — so a guest
+       * that sets `location.href = 'https://evil'` still satisfies `event.source ===
+       * guest()`, and every check below it would go on answering a remote page as though it
+       * were the add-on. The origin is what changes underneath.
+       *
+       * Anything else on the page also lands here: `window.addEventListener('message', ...)`
+       * is not scoped to the frame, so the dev harness's own `postMessage` (`appEvent`,
+       * `setVisible`) arrives with the shell's real origin. Those are ordinary and silent —
+       * they fail the `source` check too. It is only a message that is *both* from a real
+       * origin *and* from the window in this frame that means the frame left.
+       */
+      if (event.origin !== 'null') {
+        if (event.source === guest()) {
+          escaped(
+            `a message arrived from origin '${event.origin}' in a frame whose document must ` +
+              `be opaque, so the add-on navigated itself away`
+          );
+        }
+        return;
+      }
       if (event.source !== guest()) {
         /**
          * Loud, because this is the shape of failure with no symptom.
@@ -493,8 +555,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       }
     },
     dispose() {
-      disposed = true;
-      forgetGuest();
+      shutDown();
     },
     /**
      * MICA-25: a new deep link into an add-on that is already open. `AddOnFrame.svelte`

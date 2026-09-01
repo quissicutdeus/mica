@@ -55,8 +55,16 @@ function server(permissions = manifest.permissions!) {
     onKey: vi.fn(),
     onTyping: vi.fn()
   });
-  const from = (data: unknown, src: unknown = current) =>
-    s.handle({ data, source: src } as MessageEvent);
+  /**
+   * `origin` defaults to `'null'` because that is what a real guest sends: a
+   * `sandbox="allow-scripts"` srcdoc document has an opaque origin, which serialises to the
+   * literal string `"null"`. MICA-196 made the server check it, so a synthetic event that
+   * leaves it `undefined` is refused — and refused *loudly*, since the only way to reach a
+   * real origin from the window in the frame is a self-navigation. Pass one explicitly to
+   * play the navigated guest.
+   */
+  const from = (data: unknown, src: unknown = current, origin = 'null') =>
+    s.handle({ data, source: src, origin } as MessageEvent);
   /** What a reload gives you: a different window in the same frame. */
   const reload = () => {
     current = makeWindow();
@@ -878,6 +886,94 @@ describe('IframeHostServer', () => {
     });
   });
 
+  /**
+   * MICA-196. `event.source` cannot tell a navigated guest from the original one — a
+   * `WindowProxy` survives navigation, same object, new document — so a frame that sets
+   * `location.href = 'https://evil'` goes on satisfying every check the reload work
+   * (MICA-90) put in place. The origin is the thing that changes: an opaque srcdoc
+   * document posts the literal `'null'`, a real page posts its real origin.
+   */
+  describe('a guest that navigated away', () => {
+    /** A server whose escape hatch is observable, and a hydrated guest to steal. */
+    const escaping = () => {
+      const onEscape = vi.fn();
+      const posted: ToFrame[] = [];
+      const current = { postMessage: (m: ToFrame) => posted.push(m) };
+      const s = createIframeHostServer({
+        host: createInProcessHost('probe', manifest.permissions!),
+        manifest,
+        props: {},
+        guest: () => current,
+        onError: vi.fn(),
+        onEscape,
+        onKey: vi.fn(),
+        onTyping: vi.fn()
+      });
+      const from = (data: unknown, origin = 'null') =>
+        s.handle({ data, source: current, origin } as unknown as MessageEvent);
+      from({ kind: 'hello', appId: 'probe' });
+      posted.length = 0;
+      return { s, posted, from, onEscape };
+    };
+
+    it('is shut down the first time it posts from a real origin', () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { posted, from, onEscape } = escaping();
+
+      from({ kind: 'hello', appId: 'probe' }, 'https://evil.example');
+
+      expect(posted).toHaveLength(0);
+      expect(onEscape).toHaveBeenCalledTimes(1);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('navigated itself away'));
+      error.mockRestore();
+    });
+
+    it('stays shut down: nothing it sends afterwards is answered', () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { posted, from } = escaping();
+
+      from({ kind: 'hello', appId: 'probe' }, 'https://evil.example');
+      // Back to an opaque origin — which a navigated document cannot actually produce, but
+      // the server must not be recoverable by a guest simply claiming it is opaque again.
+      from({ kind: 'hello', appId: 'probe' });
+      from({
+        kind: 'call',
+        id: 1,
+        facet: 'contacts',
+        factoryArgs: [],
+        member: 'addContact',
+        args: ['ab']
+      });
+
+      expect(posted).toHaveLength(0);
+      error.mockRestore();
+    });
+
+    /**
+     * The shell's own `window.postMessage` traffic — the dev harness's `appEvent`, the
+     * NUI router's messages — arrives on this listener too, with the shell's real origin
+     * and `window` as its source. Ordinary, and silent: a real-origin message is only an
+     * escape when it also comes from the window in this frame.
+     */
+    it('does not mistake the shell posting to itself for an escape', () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { posted, from, onEscape, s } = escaping();
+
+      s.handle({
+        data: { action: 'appEvent', data: {} },
+        source: {},
+        origin: 'https://cfx-nui-gphone'
+      } as unknown as MessageEvent);
+
+      expect(onEscape).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+      // And the server is still live for the guest it was built for.
+      from({ kind: 'hello', appId: 'probe' });
+      expect(posted.filter((m) => m.kind === 'hydrate')).toHaveLength(1);
+      error.mockRestore();
+    });
+  });
+
   it('forwards error, key and typing to the callbacks', () => {
     const onError = vi.fn(),
       onKey = vi.fn(),
@@ -892,7 +988,8 @@ describe('IframeHostServer', () => {
       onKey,
       onTyping
     });
-    const from = (data: unknown) => s.handle({ data, source } as unknown as MessageEvent);
+    const from = (data: unknown) =>
+      s.handle({ data, source, origin: 'null' } as unknown as MessageEvent);
     from({ kind: 'error', message: 'boom', stack: null });
     from({ kind: 'typing', typing: true });
     expect(onError).toHaveBeenCalledWith('boom', null);

@@ -115,7 +115,8 @@ describe('AddOnFrame', () => {
       window,
       new MessageEvent('message', {
         data: { kind: 'error', message: 'boom', stack: null },
-        source: source as unknown as Window
+        source: source as unknown as Window,
+        origin: 'null'
       })
     );
 
@@ -171,7 +172,11 @@ describe('AddOnFrame', () => {
 
     await fireEvent(
       window,
-      new MessageEvent('message', { data: key, source: source as unknown as Window })
+      new MessageEvent('message', {
+        data: key,
+        source: source as unknown as Window,
+        origin: 'null'
+      })
     );
     expect(onKey).not.toHaveBeenCalled();
 
@@ -195,7 +200,11 @@ describe('AddOnFrame', () => {
 
     await fireEvent(
       window,
-      new MessageEvent('message', { data: key, source: source as unknown as Window })
+      new MessageEvent('message', {
+        data: key,
+        source: source as unknown as Window,
+        origin: 'null'
+      })
     );
     expect(onKey).toHaveBeenCalledTimes(1);
     expect(onKey).toHaveBeenCalledWith(expect.objectContaining({ key: 'Backspace' }));
@@ -221,7 +230,11 @@ describe('AddOnFrame', () => {
 
     await fireEvent(
       window,
-      new MessageEvent('message', { data: typingMessage, source: source as unknown as Window })
+      new MessageEvent('message', {
+        data: typingMessage,
+        source: source as unknown as Window,
+        origin: 'null'
+      })
     );
     expect(onTyping).not.toHaveBeenCalled();
 
@@ -239,7 +252,11 @@ describe('AddOnFrame', () => {
 
     await fireEvent(
       window,
-      new MessageEvent('message', { data: typingMessage, source: source as unknown as Window })
+      new MessageEvent('message', {
+        data: typingMessage,
+        source: source as unknown as Window,
+        origin: 'null'
+      })
     );
     expect(onTyping).toHaveBeenCalledTimes(1);
     expect(onTyping).toHaveBeenCalledWith(true);
@@ -266,7 +283,8 @@ describe('AddOnFrame', () => {
       window,
       new MessageEvent('message', {
         data: { kind: 'typing', typing: true },
-        source: source as unknown as Window
+        source: source as unknown as Window,
+        origin: 'null'
       })
     );
     expect(onTyping).toHaveBeenCalledWith(true);
@@ -374,7 +392,8 @@ describe('AddOnFrame', () => {
       window,
       new MessageEvent('message', {
         data: { kind: 'hello', appId: 'probe' },
-        source: reloaded as unknown as Window
+        source: reloaded as unknown as Window,
+        origin: 'null'
       })
     );
 
@@ -417,5 +436,53 @@ describe('AddOnFrame', () => {
     });
 
     expect(constructions.count).toBe(1);
+  });
+
+  /**
+   * MICA-196. `srcdoc` is written once and nothing in the shell ever reloads the frame,
+   * so a second `load` on the same element can only have come from the guest's own script:
+   * `location.href = ...`, or a `reload()`. CSP cannot refuse either — `navigate-to` is the
+   * directive that would and Chromium has never shipped it — so counting documents is what
+   * stops a remote page from being displayed inside the phone with the add-on's name on it.
+   */
+  it('stops the add-on when its frame loads a second document, and Restart brings it back', async () => {
+    const { container, getByText } = render(AddOnFrame, {
+      props: {
+        appId: 'probe',
+        manifest,
+        host: createInProcessHost('probe', []),
+        props: {},
+        active: true,
+        onKey: vi.fn(),
+        onTyping: vi.fn()
+      }
+    });
+
+    const iframe = await waitForFrame(container);
+
+    /**
+     * Two, not one, and deliberately not an assertion that the frame survives the first.
+     *
+     * jsdom creates the nested browsing context and fires its own `load` for the initial
+     * `about:blank` — it never navigates to `srcdoc` at all, since it does not execute one
+     * — and that load lands whenever the microtask queue gets to it. A browser given an
+     * `<iframe srcdoc>` navigates straight to the srcdoc resource instead, so the counts
+     * here and in a real browser are not the same number and a test built on the first one
+     * would be asserting jsdom's behaviour rather than the phone's.
+     *
+     * What this pins is the rule itself: a document beyond the frame's first tears it down.
+     * `addon-sandbox.spec.ts` is what drives the real sequence, in a real browser, against
+     * an add-on that actually navigates.
+     */
+    await fireEvent.load(iframe);
+    await fireEvent.load(iframe);
+
+    await waitFor(() => expect(getByText('App Stopped Working')).toBeTruthy());
+    expect(container.querySelector('iframe[data-app="probe"]')).toBeNull();
+
+    // The count belongs to the element: `{#key generation}` rebuilds the `<iframe>` and the
+    // effect that builds the server resets it, or Restart would trip the rule immediately.
+    await fireEvent.click(getByText('Restart App'));
+    await waitForFrame(container);
   });
 });

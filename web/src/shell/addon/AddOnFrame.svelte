@@ -54,6 +54,48 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   // before the frame has finished loading (see that effect's own comment).
   let server = $state<ReturnType<typeof createIframeHostServer>>();
 
+  /**
+   * How many documents this `<iframe>` element has finished loading (MICA-196).
+   *
+   * Deliberately a plain `let`, not `$state`: the effect below reads it to reset it, and a
+   * rune here would make that read a dependency and rebuild the server on every load.
+   *
+   * One is the `srcdoc` document. A second means the guest navigated itself — `srcdoc` is
+   * set once and nothing in the shell ever changes it or calls `reload()`, so the only
+   * thing that can produce another load is the frame's own script. CSP cannot stop that:
+   * `navigate-to` is the directive that would, and Chromium has never shipped it (see
+   * `srcdoc.ts`). Counting loads can, and it catches the case the origin check in
+   * `IframeHostServer` cannot — a guest that navigates and then says nothing, sitting on a
+   * remote page inside the phone's own chrome.
+   *
+   * The cost is that a self-`reload()` is no longer recoverable. `IframeHostServer`'s
+   * "a second `hello` is a reloaded frame" path stays — it is what handles a *new element*
+   * with the same server, and it is defence in depth here rather than dead code — but an
+   * add-on that reloads its own document now stops instead of re-hydrating. Nothing ships
+   * that does it, and a document that reloads itself is indistinguishable from one that
+   * navigated somewhere and came back.
+   */
+  let loadsSeen = 0;
+
+  /**
+   * Restart, from the crash screen: a new `generation` re-keys the `<iframe>`, so the
+   * element is destroyed and rebuilt, `loadsSeen` resets with the effect below, and the
+   * whole server is built fresh. That is the recovery path for an escape, and the only one.
+   */
+  function handleLoad() {
+    loadsSeen += 1;
+    if (loadsSeen < 2) return;
+    console.error(
+      `[gPhone] add-on '${appId}' loaded a second document into its frame; it has navigated ` +
+        `away from its own bundle. The frame has been shut down.`
+    );
+    server?.dispose();
+    crashed = {
+      message: 'This add-on tried to navigate away from its own code and has been stopped.',
+      stack: null
+    };
+  }
+
   onMount(() => {
     void appRegistryStore.getAddOnSource(appId).then((s) => (source = s));
   });
@@ -96,6 +138,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     const src = source;
     if (!el || !src) return;
 
+    // A new element is a new document count. `{#key generation}` rebuilds the `<iframe>`,
+    // so this is what makes Restart a real restart rather than an instant second escape.
+    loadsSeen = 0;
+
     const built = untrack(() =>
       createIframeHostServer({
         host,
@@ -117,6 +163,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         onError: (message, stack) => {
           console.error(`[gPhone] add-on '${appId}' crashed:`, message);
           crashed = { message, stack };
+        },
+        /**
+         * The frame is no longer running the add-on (MICA-196) — it posted from a real
+         * origin, which an opaque `srcdoc` document cannot do. The server has already shut
+         * itself down; this is what takes the page off screen, so a remote document cannot
+         * go on being displayed inside the phone's own chrome with the add-on's name on it.
+         *
+         * Deliberately the same surface a crash gets. To a player the two are the same
+         * event — this app stopped working — and inventing a second one would mean a second
+         * thing to recognise for no gain. `AppCrashed`'s Restart is the recovery.
+         */
+        onEscape: () => {
+          crashed = {
+            message: 'This add-on tried to navigate away from its own code and has been stopped.',
+            stack: null
+          };
         },
         /**
          * A backgrounded add-on is `display:none` and `inert`, but its iframe keeps
@@ -178,6 +240,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       data-app={appId}
       sandbox="allow-scripts"
       srcdoc={srcdocFor(source, manifest.networkHosts)}
+      onload={handleLoad}
       class="h-full w-full border-0 bg-transparent"
     ></iframe>
   {/key}

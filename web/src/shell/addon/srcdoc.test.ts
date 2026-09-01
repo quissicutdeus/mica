@@ -34,32 +34,92 @@ describe('srcdocFor', () => {
     expect(scriptCloses).toHaveLength(2);
   });
 
-  /** MICA-24: the frame's `connect-src`, derived from `AppManifest.networkHosts`. */
-  describe('connect-src', () => {
+  /**
+   * MICA-24 set `connect-src` and nothing else; MICA-196 put a `default-src 'none'`
+   * floor under it, because `connect-src` is not the only way out of the frame. The
+   * directive-by-directive reasoning is in `srcdoc.ts` — these assert the policy text.
+   */
+  describe('the content security policy', () => {
+    /** The `content="..."` of the one CSP meta, as the browser would parse it. */
+    const policy = (html: string): string[] => {
+      const meta = /<meta http-equiv="Content-Security-Policy" content="([^"]*)">/.exec(html);
+      if (!meta) throw new Error('no CSP meta in the document');
+      return meta[1].split('; ');
+    };
+
     it('blocks outbound fetch entirely when no hosts are given', () => {
-      const html = srcdocFor('x');
-      expect(html).toContain(
-        '<meta http-equiv="Content-Security-Policy" content="connect-src \'none\'">'
-      );
+      expect(policy(srcdocFor('x'))).toContain("connect-src 'none'");
     });
 
     it('blocks outbound fetch entirely for an explicitly empty list, same as none', () => {
-      const html = srcdocFor('x', []);
-      expect(html).toContain(
-        '<meta http-equiv="Content-Security-Policy" content="connect-src \'none\'">'
-      );
+      expect(policy(srcdocFor('x', []))).toContain("connect-src 'none'");
     });
 
     it('allows exactly the declared origins, space-separated', () => {
       const html = srcdocFor('x', ['https://api.example.com', 'https://cdn.example.com:8443']);
-      expect(html).toContain(
-        '<meta http-equiv="Content-Security-Policy" content="connect-src https://api.example.com https://cdn.example.com:8443">'
+      expect(policy(html)).toContain(
+        'connect-src https://api.example.com https://cdn.example.com:8443'
       );
     });
 
     it('places the CSP meta before any script tag, so it governs the whole document', () => {
       const html = srcdocFor('x', ['https://api.example.com']);
       expect(html.indexOf('Content-Security-Policy')).toBeLessThan(html.indexOf('<script'));
+    });
+
+    /**
+     * The floor, and the reason a declared `connect-src` is worth anything: without it an
+     * unset `img-src`/`frame-src`/`form-action` is three unpoliced doors beside the one
+     * door MICA-24 locked.
+     */
+    it('refuses everything not named, and shuts every non-connect exit', () => {
+      const directives = policy(srcdocFor('x', ['https://api.example.com']));
+      expect(directives).toContain("default-src 'none'");
+      // A nested `<iframe src="https://evil">` inherits the sandbox but not the CSP —
+      // CSP inherits only for local schemes — so the child would run unpoliced.
+      expect(directives).toContain("frame-src 'none'");
+      // `child-src` is `worker-src`'s fallback as well as `frame-src`'s.
+      expect(directives).toContain("child-src 'none'");
+      // A form POST is a navigation, which `connect-src` does not govern.
+      expect(directives).toContain("form-action 'none'");
+      expect(directives).toContain("base-uri 'none'");
+    });
+
+    /**
+     * `script-src`/`style-src` behave exactly as they did when they were unset. Under a
+     * `default-src 'none'` floor that has to be written out, and getting it wrong breaks
+     * every add-on at once — the inlined module script would simply never run.
+     */
+    it('leaves script and style exactly as permissive as an unset directive was', () => {
+      const directives = policy(srcdocFor('x'));
+      const script = directives.find((d) => d.startsWith('script-src '));
+      const style = directives.find((d) => d.startsWith('style-src '));
+      expect(script).toBeDefined();
+      expect(style).toBeDefined();
+      // The inlined module and the fallback error listener are both inline scripts.
+      expect(script).toContain("'unsafe-inline'");
+      expect(script).toContain("'unsafe-eval'");
+      // Svelte injects `<style>` at runtime.
+      expect(style).toContain("'unsafe-inline'");
+    });
+
+    /**
+     * Subresource loads are not scoped to `networkHosts`, deliberately: an add-on renders
+     * player photos whose URLs are whatever the phone hands it at runtime. `srcdoc.ts`'s
+     * closing note says what that leaves open.
+     */
+    it('lets images, media and fonts load over https, data: and blob: whatever is declared', () => {
+      for (const html of [srcdocFor('x'), srcdocFor('x', ['https://api.example.com'])]) {
+        const directives = policy(html);
+        expect(directives).toContain('img-src https: data: blob:');
+        expect(directives).toContain('media-src https: data: blob:');
+        expect(directives).toContain('font-src https: data: blob:');
+      }
+    });
+
+    it('emits exactly one CSP meta, so no directive is silently duplicated', () => {
+      const html = srcdocFor('x', ['https://api.example.com']);
+      expect(html.match(/http-equiv="Content-Security-Policy"/g)).toHaveLength(1);
     });
   });
 });
