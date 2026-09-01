@@ -15,7 +15,7 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { AuditLogger } from '../lib/AuditLogger';
 import { Database } from '../lib/Database';
 import { isPlausibleEmoji } from '../lib/reactions';
-import { isBlocked } from './Blocklist';
+import { blockedBy } from './Blocklist';
 
 /**
  * Messages: membership on both axes.
@@ -442,22 +442,44 @@ export const deliverToParticipants = async (
 ): Promise<void> => {
   const participants = await conversationRepo.findParticipants(conversationId);
 
-  for (const participant of participants) {
-    if (participant.citizenid === senderCitizenId) continue;
-    if (participant.status && participant.status !== 'active') continue;
+  /**
+   * Everyone this send could reach, decided before anything is asked about any of them.
+   *
+   * This loop used to do both lookups *inside* it: `getSourceByCitizenId`, which walked the
+   * framework's whole player table per call, and `isBlocked`, which was a query per call. A
+   * 32-person thread therefore cost 32 full server walks and 32 round trips for one message
+   * (MICA-197). Both questions are set-shaped and both are now asked once.
+   */
+  const recipients = participants
+    .filter((participant) => participant.citizenid !== senderCitizenId)
+    .filter((participant) => !participant.status || participant.status === 'active')
+    .map((participant) => participant.citizenid);
 
-    const target = FrameworkBridge.getSourceByCitizenId(participant.citizenid);
-    // Offline. The row is written, so they get it from the normal fetch next time.
-    if (!target) continue;
+  if (recipients.length === 0) return;
 
-    // Blocked (MICA-64): the row is still written — this only withholds the live push,
-    // the same way an offline recipient's push is withheld above — so a client-side-only
-    // block cannot be the whole story (§2.9, a modified client can already emit
-    // `gphone:server:messages:send` directly). This is deliberately narrower than hiding
-    // the message from the thread entirely, which is a larger, more decision-heavy
-    // feature (does a block retroactively hide history already read? does the thread
-    // itself disappear?) that this pass does not take a position on.
-    if (sender.phone && (await isBlocked(participant.citizenid, sender.phone))) continue;
+  // One registry lookup rather than one framework walk per recipient. Anyone missing from it
+  // is offline; the row is written, so they get it from the normal fetch next time.
+  const sources = FrameworkBridge.getSourcesByCitizenId(recipients);
+  if (sources.size === 0) return;
+
+  /**
+   * Blocked (MICA-64): the row is still written — this only withholds the live push, the
+   * same way an offline recipient's push is withheld — so a client-side-only block cannot be
+   * the whole story (§2.9, a modified client can already emit `gphone:server:messages:send`
+   * directly). This is deliberately narrower than hiding the message from the thread
+   * entirely, which is a larger, more decision-heavy feature (does a block retroactively hide
+   * history already read? does the thread itself disappear?) that this pass does not take a
+   * position on.
+   *
+   * Asked only about the people actually about to be pushed to, and only when the sender has
+   * a number to be blocked by — an unblockable send costs no query at all.
+   */
+  const blocked = sender.phone
+    ? await blockedBy([...sources.keys()], sender.phone)
+    : new Set<string>();
+
+  for (const [citizenid, target] of sources) {
+    if (blocked.has(citizenid)) continue;
 
     // The shape the shell's `receiveMessage` route already expects: it appends to the
     // thread and raises a toast with an inline reply.

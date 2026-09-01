@@ -2,19 +2,22 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { ConversationRepository } from '../repositories/ConversationRepository';
+import {
+  ConversationRepository,
+  type HydratedParticipant
+} from '../repositories/ConversationRepository';
 import { defineService } from '../lib/defineService';
 import { Conversation } from '@gphone/shared/types';
-import { Database } from '../lib/Database';
 import { AuditLogger } from '../lib/AuditLogger';
-import { resolveByPhone } from '../lib/PlayerDirectory';
+import { resolveByPhone, resolveMany } from '../lib/PlayerDirectory';
 import { CITIZENID_MAX_LENGTH } from '@gphone/shared/framework';
 import {
   conversationIdFrom,
   fields,
   flagUnlessFalse,
   isRecord,
-  optionalString
+  optionalString,
+  pageBounds
 } from '../lib/payload';
 
 /**
@@ -120,6 +123,23 @@ export const conversations = defineService<Conversation>({
         'ELSE NULL END'
     }
   },
+  /**
+   * The list is keyset-paged, and this is where the numbers live rather than beside the
+   * handler — `pageBounds` takes a resolved `paging` for exactly that reason, so a change
+   * here cannot silently miss a custom action.
+   *
+   * Declared on an **owner** read, which does not require it the way a public one does. It
+   * is required by the shape of the data instead: a thread list has no ceiling, and before
+   * MICA-197 `findForCitizen` had no `LIMIT` at all, so opening Messages cost more every
+   * day a player used it. The generic `get` is disabled below, so nothing but the custom
+   * handler ever consults this.
+   *
+   * The default page is deliberately far above any real list rather than a screenful: the
+   * client has no "load more" for conversations yet, so a small page would be the silent
+   * truncation §2.9 warns about, where this is a bound nobody reaches. The cursor is
+   * accepted today so that adding one is a `web/` change alone.
+   */
+  paging: { pageSize: 200, maxPageSize: 200 },
   indexes: [
     { name: 'citizenid_status_updated', columns: ['citizenid', 'status', 'updated_at'] },
     { name: 'updated_at', columns: ['updated_at'] },
@@ -200,44 +220,113 @@ export type ConversationRepo = ConversationRepository;
 const app = conversations.app;
 const conversationRepo = conversations.repo as ConversationRepository;
 
-// Get all conversations for the user
+/** Read once, so the handler and the declaration cannot disagree about the page size. */
+const CONVERSATION_PAGING = conversations.resolved.paging;
+if (!CONVERSATION_PAGING) {
+  throw new Error("defineService('conversations'): the thread list must declare paging.");
+}
+
+/**
+ * The list, and everyone in it, in **two** queries — regardless of how many threads a player
+ * has (MICA-197).
+ *
+ * It was 1+N. `findForCitizen` returned every thread the player had ever been in, unbounded,
+ * and then this loop issued one more query per thread to hydrate its participants. That
+ * second query hard-coded `LEFT JOIN players`, which is a qb table — es_extended keeps
+ * characters in `users(identifier)` — so on ESX the whole Messages list did not merely go
+ * slowly, it threw, and the app was empty. `FrameworkBridge.ownerTable()` had existed for
+ * exactly this since MICA-152 and nothing here used it.
+ *
+ * Two queries now, and both bounded: one page of threads, then one `IN (…)` for the
+ * participants of that page. A **third** would be one lookup per name, which is what
+ * `PlayerDirectory.resolveMany` exists to avoid — but no query is needed at all here,
+ * because the batched hydration already carries whatever the framework's character table
+ * knows and `resolveMany` is used only to overlay the players who are currently connected.
+ *
+ * **Why overlay at all.** The framework's in-memory character is authoritative for a loaded
+ * player and a rename may not have been written back to the table yet — the same ordering
+ * `resolveByPhone` states, applied to a list. It is also the only source of a name on a
+ * standalone server, where there is no character table to join to.
+ *
+ * `participant_count` used to be a correlated subquery on every returned row, counting
+ * exactly the rows the hydration query now returns. It is derived rather than asked for.
+ */
 app.registerEvent('get', async (source, cbId, data, citizenid) => {
+  const page = pageBounds(data, CONVERSATION_PAGING);
+
   // Named `list`, not `conversations`: the module-level export of that name is the
   // app handle, and shadowing it here would be a trap for the next reader.
-  const list = await conversationRepo.findForCitizen(citizenid);
-  // Hydrate names for 1:1 logic
-  for (const conv of list) {
-    const participants = await hydrateParticipants(conv.id);
-    // Map simplified participants with names
-    conv.participants = participants.map((p) => ({
-      ...p,
-      contact: {
-        firstname: p.firstname,
-        lastname: p.lastname,
-        phone: p.phone,
-        citizenid: p.citizenid,
-        id: 0,
-        favorite: false,
-        created_at: new Date(),
-        updated_at: new Date()
-      } // Mocking contact structure for UI convenience
-    }));
+  const list = await conversationRepo.findForCitizen(citizenid, page);
+  if (list.length === 0) return list;
+
+  const rows = await conversationRepo.findParticipantsForConversations(list.map((c) => c.id));
+
+  const byConversation = new Map<number, HydratedParticipant[]>();
+  for (const row of rows) {
+    const held = byConversation.get(row.conversation_id);
+    if (held) held.push(row);
+    else byConversation.set(row.conversation_id, [row]);
   }
+
+  const online = await resolveMany(rows.map((row) => row.citizenid));
+
+  for (const conv of list) {
+    const participants = byConversation.get(conv.id) ?? [];
+
+    (conv as Conversation & { participant_count: number }).participant_count = participants.length;
+
+    conv.participants = participants.map((p) => {
+      const live = online.get(p.citizenid);
+      // `??`, not `||`: a framework that answers with an empty string is answering, and
+      // overwriting that with the table's copy would reintroduce the staleness the overlay
+      // exists to avoid. A genuinely absent name is null on both sides either way.
+      const [first, last] = splitName(live?.displayName);
+
+      /**
+       * `?? ''` on all three, and that is a fix rather than a coercion for the type's sake.
+       *
+       * `Contact.firstname` and `.phone` are declared non-null and this path has been handing
+       * the UI raw `NULL`s since it was written — the `LEFT JOIN` misses for any citizenid the
+       * framework has no row for, and ESX has no phone column at all. `conversations.ts`
+       * interpolates the name unguarded (`${firstname} ${lastname || ''}`), so a missing one
+       * rendered as the literal text "null". Empty is falsy in every place the old value was,
+       * so nothing that already handled it changes.
+       */
+      return {
+        ...p,
+        contact: {
+          firstname: first ?? p.firstname ?? '',
+          lastname: last ?? p.lastname ?? '',
+          phone: live?.phone ?? p.phone ?? '',
+          citizenid: p.citizenid,
+          id: 0,
+          favorite: false,
+          created_at: new Date(),
+          updated_at: new Date()
+        } // Mocking contact structure for UI convenience
+      };
+    });
+  }
+
   return list;
 });
 
-// Helper to hydrate participants with names
-const hydrateParticipants = async (conversationId: number) => {
-  const query = `
-        SELECT p.*, 
-        JSON_UNQUOTE(JSON_EXTRACT(pl.charinfo, '$.firstname')) as firstname,
-        JSON_UNQUOTE(JSON_EXTRACT(pl.charinfo, '$.lastname')) as lastname,
-        JSON_UNQUOTE(JSON_EXTRACT(pl.charinfo, '$.phone')) as phone
-        FROM gphone_messages_participants p
-        LEFT JOIN players pl ON p.citizenid = pl.citizenid
-        WHERE p.conversation_id = ? AND p.left_at IS NULL
-    `;
-  return await Database.query<any[]>(query, [conversationId]);
+/**
+ * A directory display name back into the two fields the UI renders.
+ *
+ * `DirectoryEntry` carries one joined `Firstname Lastname`, because that is what every other
+ * caller wants; the participant contact shape predates it and wants the halves. Split on the
+ * first space, the same way `esxCharinfo` and `standaloneCharinfo` build one from a single
+ * name — so a round trip through the directory cannot invent a surname that was not there.
+ *
+ * Both halves null when there is no name, so the caller's `??` falls through to whatever the
+ * framework's own table said rather than overwriting it with a blank.
+ */
+const splitName = (displayName: string | null | undefined): [string | null, string | null] => {
+  const name = displayName?.trim();
+  if (!name) return [null, null];
+  const space = name.indexOf(' ');
+  return space === -1 ? [name, null] : [name.slice(0, space), name.slice(space + 1).trim()];
 };
 
 /**

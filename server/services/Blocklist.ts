@@ -62,3 +62,42 @@ export const isBlocked = async (citizenid: string, number: string): Promise<bool
   );
   return Boolean(row);
 };
+
+/**
+ * Which of these people have blocked this number — one query, however many of them there are.
+ *
+ * `Messages.deliverToParticipants` asked `isBlocked` once per recipient, so a group send was
+ * one round trip per person on top of everything else it was doing per person (MICA-197).
+ * The question is the same one `isBlocked` answers and the predicate is the same; only the
+ * `citizenid` side is widened from `=` to `IN`.
+ *
+ * Returns the set that *has* blocked, rather than a per-citizenid map, because every caller
+ * asks "may I push to this one" and a set answers that with a membership test. An empty set
+ * is the ordinary case and costs no query at all.
+ *
+ * The citizenids are bound parameters and the list is deduplicated first, so a repeated entry
+ * cannot widen the statement (§2.9). The number goes through `phoneNumberFrom` exactly as
+ * `isBlocked`'s does.
+ */
+export const blockedBy = async (
+  citizenids: readonly string[],
+  number: string
+): Promise<Set<string>> => {
+  const blocked = new Set<string>();
+
+  const target = phoneNumberFrom(number);
+  if (!target) return blocked;
+
+  const wanted = [...new Set(citizenids.filter(Boolean))];
+  if (wanted.length === 0) return blocked;
+
+  const placeholders = wanted.map(() => '?').join(', ');
+  const rows = await Database.query<{ citizenid: string }[]>(
+    `SELECT \`citizenid\` FROM \`gphone_blocklist\`
+     WHERE \`citizenid\` IN (${placeholders}) AND \`number\` = ? AND \`status\` = 'active'`,
+    [...wanted, target]
+  );
+
+  for (const row of rows) if (row?.citizenid) blocked.add(row.citizenid);
+  return blocked;
+};

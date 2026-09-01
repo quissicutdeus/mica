@@ -5,7 +5,7 @@
 import { defineService, SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { fields } from '../lib/payload';
-import { resolve as resolveDirectory } from '../lib/PlayerDirectory';
+import { resolveMany } from '../lib/PlayerDirectory';
 import type { Highscore, LeaderboardEntry } from '@gphone/shared/types';
 
 /**
@@ -99,7 +99,18 @@ app.registerEvent('submit', async (source, cbId, data, citizenid) => {
   return { ok: true };
 });
 
-/** Top 10 for a game, with names resolved server-side — never trust a client-supplied name. */
+/**
+ * Top 10 for a game, with names resolved server-side — never trust a client-supplied name.
+ *
+ * The names come back in **one** lookup. This used to `Promise.all` a `resolve` per row, and
+ * `resolve` is a `LIMIT 1` query for anybody not currently connected — so a leaderboard of ten
+ * offline players was eleven round trips to render ten rows (MICA-197). `resolveMany` asks
+ * the same question of the same table once, and answers the connected players from the
+ * framework without asking at all.
+ *
+ * A citizenid the framework has no record of keeps its `null` name rather than being dropped:
+ * the score is real and belongs on the board whether or not the character still exists.
+ */
 app.registerEvent('top', async (source, cbId, data) => {
   const body = fields(data);
   if (!isKnownApp(body.app)) {
@@ -107,15 +118,12 @@ app.registerEvent('top', async (source, cbId, data) => {
   }
 
   const rows = await repo.top(body.app, 10);
-  const entries: LeaderboardEntry[] = await Promise.all(
-    rows.map(async (row) => {
-      const directory = await resolveDirectory(row.citizenid);
-      return {
-        citizenid: row.citizenid,
-        score: row.score,
-        displayName: directory?.displayName ?? null
-      };
-    })
-  );
+  const directory = await resolveMany(rows.map((row) => row.citizenid));
+
+  const entries: LeaderboardEntry[] = rows.map((row) => ({
+    citizenid: row.citizenid,
+    score: row.score,
+    displayName: directory.get(row.citizenid)?.displayName ?? null
+  }));
   return entries;
 });

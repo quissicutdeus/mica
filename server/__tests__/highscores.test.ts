@@ -28,12 +28,22 @@ vi.mock('../lib/FrameworkBridge', () => ({
   }
 }));
 
+/**
+ * `resolveMany`, not `resolve`: the leaderboard resolves its ten names in one lookup rather
+ * than one per row (MICA-197), so the mock has to be the batched shape or the assertion
+ * below would pass against a `resolve` nothing calls any more.
+ */
+const directory = vi.hoisted(() => ({ calls: [] as string[][] }));
 vi.mock('../lib/PlayerDirectory', () => ({
-  resolve: vi.fn(async (citizenid: string) => ({
-    citizenid,
-    displayName: `Player ${citizenid}`,
-    phone: null
-  }))
+  resolveMany: vi.fn(async (citizenids: readonly string[]) => {
+    directory.calls.push([...citizenids]);
+    return new Map(
+      citizenids.map((citizenid) => [
+        citizenid,
+        { citizenid, displayName: `Player ${citizenid}`, phone: null }
+      ])
+    );
+  })
 }));
 
 import '../services/Highscores';
@@ -120,5 +130,37 @@ describe('highscores:top', () => {
       { citizenid: 'A', score: 99, displayName: 'Player A' },
       { citizenid: 'B', score: 42, displayName: 'Player B' }
     ]);
+  });
+
+  /**
+   * MICA-197. Every name used to be its own `resolve`, and `resolve` is a `LIMIT 1` query
+   * for anybody not currently connected — so ten offline players on the board cost ten round
+   * trips to render. One lookup for the whole board now, whatever is on it.
+   */
+  it('resolves every name in one lookup, not one per row', async () => {
+    directory.calls.length = 0;
+    dbMock.query.mockResolvedValueOnce([
+      { citizenid: 'A', score: 99 },
+      { citizenid: 'B', score: 42 },
+      { citizenid: 'C', score: 7 }
+    ]);
+
+    await call('top', { app: 'snek' });
+
+    expect(directory.calls).toEqual([['A', 'B', 'C']]);
+  });
+
+  /**
+   * A score outlives the character that set it. A citizenid the framework has no record of
+   * keeps its row with no name rather than falling off the board.
+   */
+  it('keeps a row whose citizenid resolves to nobody', async () => {
+    dbMock.query.mockResolvedValueOnce([{ citizenid: 'GONE', score: 5 }]);
+    const { resolveMany } = await import('../lib/PlayerDirectory');
+    (resolveMany as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(new Map());
+
+    const reply = await call('top', { app: 'snek' });
+
+    expect(reply).toEqual([{ citizenid: 'GONE', score: 5, displayName: null }]);
   });
 });

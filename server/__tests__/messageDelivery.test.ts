@@ -29,9 +29,12 @@ const { participants, emitted, sources, dbMock, handlers, player } = vi.hoisted(
     participants: { rows: [] as any[] },
     emitted: [] as { event: string; target: number; payload: any }[],
     sources: new Map<string, number>(),
-    // `scalar` backs `Blocklist.ts`'s `isBlocked` (MICA-64), called from
-    // `deliverToParticipants` for every participant — `null` (nobody blocked) keeps every
-    // existing test in this file exactly as unblocked as it always was.
+    /**
+     * `query` backs `Blocklist.ts`'s `blockedBy` (MICA-64, batched in MICA-197) — one
+     * `IN (…)` for the whole thread rather than the `scalar` `isBlocked` this used to call
+     * once per participant. An empty result is "nobody blocked", which keeps every existing
+     * test in this file exactly as unblocked as it always was.
+     */
     dbMock: {
       query: vi.fn(async () => []),
       insert: vi.fn(),
@@ -53,6 +56,19 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 vi.mock('../lib/FrameworkBridge', () => ({
   FrameworkBridge: {
     getSourceByCitizenId: (citizenid: string) => sources.get(citizenid) ?? null,
+    /**
+     * The batched twin `deliverToParticipants` asks now (MICA-197). Backed by the same
+     * `sources` map, so a test still says who is online by setting one entry — what changed
+     * is that the whole thread is asked about at once instead of one participant at a time.
+     */
+    getSourcesByCitizenId: (citizenids: readonly string[]) => {
+      const found = new Map<string, number>();
+      for (const citizenid of citizenids) {
+        const src = sources.get(citizenid);
+        if (src !== undefined) found.set(citizenid, src);
+      }
+      return found;
+    },
     getPlayer: (source: number) =>
       player.current && player.current.source === source
         ? { citizenid: player.current.citizenid, source, setMeta: () => {} }
@@ -127,20 +143,43 @@ describe('deliverToParticipants', () => {
       { citizenid: 'OTHER', status: 'active' }
     ];
     sources.set('OTHER', 3);
-    dbMock.scalar.mockResolvedValueOnce(1); // OTHER has blocked 5550100
+    // The batched read answers with the citizenids that *have* blocked this number.
+    dbMock.query.mockResolvedValueOnce([{ citizenid: 'OTHER' }] as never);
 
     await deliverToParticipants(7, 'SENDER', { name: 'A B', phone: '5550100' }, message);
 
     expect(emitted).toEqual([]);
   });
 
-  it('asks the blocklist with the sender phone and the recipient citizenid', async () => {
-    participants.rows = [{ citizenid: 'OTHER', status: 'active' }];
+  it('asks the blocklist once, with the sender phone and every recipient citizenid', async () => {
+    participants.rows = [
+      { citizenid: 'OTHER', status: 'active' },
+      { citizenid: 'THIRD', status: 'active' }
+    ];
+    sources.set('OTHER', 3);
+    sources.set('THIRD', 4);
+
+    await deliverToParticipants(7, 'SENDER', { name: 'A B', phone: '5550100' }, message);
+
+    // One query for the whole thread, not one per participant (MICA-197).
+    expect(dbMock.query).toHaveBeenCalledTimes(1);
+    expect(dbMock.query).toHaveBeenCalledWith(expect.any(String), ['OTHER', 'THIRD', '5550100']);
+  });
+
+  /**
+   * An offline participant is never asked about either. The push is withheld from them
+   * regardless, so a blocklist round trip on their behalf would be work with no consequence.
+   */
+  it('asks the blocklist only about the people it is about to push to', async () => {
+    participants.rows = [
+      { citizenid: 'OTHER', status: 'active' },
+      { citizenid: 'AWAY', status: 'active' }
+    ];
     sources.set('OTHER', 3);
 
     await deliverToParticipants(7, 'SENDER', { name: 'A B', phone: '5550100' }, message);
 
-    expect(dbMock.scalar).toHaveBeenCalledWith(expect.any(String), ['OTHER', '5550100']);
+    expect(dbMock.query).toHaveBeenCalledWith(expect.any(String), ['OTHER', '5550100']);
   });
 
   it('still delivers when the sender has no known phone number, rather than blocking blindly', async () => {
@@ -150,7 +189,23 @@ describe('deliverToParticipants', () => {
     await deliverToParticipants(7, 'SENDER', { name: 'A B', phone: null }, message);
 
     expect(emitted).toHaveLength(1);
-    expect(dbMock.scalar).not.toHaveBeenCalled();
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Nobody online means nothing to ask and nothing to send — the blocklist is not consulted
+   * at all, which is what keeps an all-offline thread from costing a query per message.
+   */
+  it('asks nothing when every other participant is offline', async () => {
+    participants.rows = [
+      { citizenid: 'OTHER', status: 'active' },
+      { citizenid: 'AWAY', status: 'active' }
+    ];
+
+    await deliverToParticipants(7, 'SENDER', { name: 'A B', phone: '5550100' }, message);
+
+    expect(emitted).toEqual([]);
+    expect(dbMock.query).not.toHaveBeenCalled();
   });
 
   it('does not echo back to the sender', async () => {

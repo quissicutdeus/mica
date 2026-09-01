@@ -8,7 +8,7 @@ import {
   CITIZENID_MAX_LENGTH
 } from '@gphone/shared/framework';
 import { Database } from './Database';
-import { numberFor, readCitizenIdByNumber, readNumber } from './phoneNumbers';
+import { numberFor, readCitizenIdByNumber, readNumber, PHONE_NUMBERS_TABLE } from './phoneNumbers';
 
 export interface FrameworkPlayer {
   citizenid: string;
@@ -995,6 +995,41 @@ const QB_OWNER_TABLE: OwnerTable = Object.freeze({ table: 'players', column: 'ci
 const ESX_OWNER_TABLE: OwnerTable = Object.freeze({ table: 'users', column: 'identifier' });
 
 /**
+ * SQL that hangs a player's name off whatever table this framework keeps characters in.
+ *
+ * `ownerTable` says *where* to look, which is enough for a sweep that only compares ids.
+ * Reading a **name** out of it needs more than that, because the two frameworks do not store
+ * one the same way: qb keeps `firstname`/`lastname`/`phone` inside a `charinfo` JSON column,
+ * ESX keeps the first two as ordinary columns and has no phone at all. A caller that wants
+ * names alongside rows it is already selecting cannot express that from `ownerTable` alone,
+ * and hard-coding either shape is what made the Messages list throw on ESX (MICA-197).
+ *
+ * Fragments rather than a whole query, because the interesting half — which rows, which
+ * predicate, which bound parameters — belongs to the caller. This only supplies the join and
+ * the three name expressions, all built from the frozen literals above.
+ */
+export interface OwnerNameProjection {
+  /** `LEFT JOIN …`, aliased so the columns below can name it. */
+  join: string;
+  /** `… AS firstname, … AS lastname, … AS phone`, always all three and always in that order. */
+  columns: string;
+}
+
+/** The alias the join is given, and the only name `columns` refers to it by. */
+const OWNER_ALIAS = 'gp_owner';
+
+/**
+ * A qualified column this module is willing to put in a join condition.
+ *
+ * The left-hand side is the caller's own column (`p.citizenid`), which is a literal a server
+ * author wrote — but a guard that lives only at the producer stops guarding the moment a
+ * second producer appears, which is the principle `orphanSweep.ts` re-checks `ownerTable`'s
+ * answer on. MySQL cannot parameterize an identifier (§2.9), so anything that is not plainly
+ * `alias.column` is refused rather than escaped.
+ */
+const QUALIFIED_COLUMN = /^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
  * What a framework's own records say about a player, online or not.
  *
  * Names are separate rather than pre-joined because the two frameworks store them
@@ -1166,6 +1201,59 @@ export const __resetOfflineLookupWarnings = (): void => {
   offlineLookupFailures.clear();
 };
 
+/* ──────────────────────────────────────────────────────────────────────────────
+ * Who is online, without asking the framework every time (MICA-197)
+ * ────────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Loaded characters, both ways round.
+ *
+ * `getSourceByCitizenId` used to walk `getAllPlayers()` on every call, and
+ * `getAllPlayers()` is not a cheap read: on qb it marshals every connected player's whole
+ * table across the Lua boundary, and on ESX it does the same through `GetExtendedPlayers`.
+ * `Messages.deliverToParticipants` called it once per participant, so a group send was one
+ * full walk per recipient — for a 32-person thread, 32 snapshots of the entire server to
+ * answer 32 questions one snapshot already contains.
+ *
+ * Two maps rather than one, because both directions are needed and neither can be derived
+ * from the other in constant time: the citizenid map answers the lookup, and the source map
+ * is what lets `rememberSource` evict a **recycled server id** before it can be believed.
+ *
+ * FiveM reassigns server ids, which is the hazard `rateLimit.forgetSource` and
+ * `shell.refusalsLogged` already clear on `playerDropped` for — and the stake here is higher
+ * than theirs. A stale entry there hands somebody else's rate budget to a new player; a stale
+ * entry *here* would `emitNet` one player's message to whoever inherited their id. So this
+ * is defended three times over rather than once: `playerDropped` removes the entry
+ * (`lib/shell.ts` wires it), `rememberSource` evicts by source before recording, so a
+ * recycled id cannot keep its previous owner even if that event were ever missed, and a
+ * reseed rebuilds the whole thing from the framework.
+ */
+const sourceByCitizen = new Map<string, number>();
+const citizenBySource = new Map<number, string>();
+
+/**
+ * **The registry never answers a miss.** It is a fast path over the walk, not a replacement
+ * for it: a citizenid it has no entry for causes exactly one `getAllPlayers()` snapshot, and
+ * whatever is still absent after that really is offline.
+ *
+ * That is the whole of the freshness argument, and it is deliberately the boring one. A
+ * registry that reported "offline" on its own would need to be complete, and it structurally
+ * cannot be: `onPlayerLoaded` is the only thing that fills it, and no character loads again
+ * after a **resource restart with players already connected**. A phone that silently stopped
+ * delivering to everyone who was online at the restart is a far worse bug than a walk.
+ *
+ * So the guarantee is bounded rather than absolute, and it is the one the callers needed:
+ * **one walk per call instead of one per citizenid.** `deliverToParticipants` asked about a
+ * 32-person thread one participant at a time and paid 32 snapshots of the whole server; it
+ * now pays one when anybody in it is offline and none when everybody is loaded.
+ */
+
+/** Test seam, like `__setResourceLookup`. */
+export const __resetSourceRegistry = (): void => {
+  sourceByCitizen.clear();
+  citizenBySource.clear();
+};
+
 export class FrameworkBridge {
   /**
    * Where this server keeps the characters gPhone's rows belong to — or `null`.
@@ -1206,6 +1294,58 @@ export class FrameworkBridge {
       default:
         return null;
     }
+  }
+
+  /**
+   * How to read a name out of this framework's character table, or `null` when there is none
+   * to read from — standalone, and a framework that has not answered yet.
+   *
+   * A `null` here is not an error and a caller must not treat it as one: it means the join
+   * has to be left out and the name columns will be absent, which is exactly what a
+   * standalone server has to offer for an offline player anyway. The online overlay in
+   * `PlayerDirectory` still names everyone who is connected.
+   *
+   * @param lhs the caller's own citizenid column, qualified — `p.citizenid`.
+   */
+  public static ownerNameProjection(lhs: string): OwnerNameProjection | null {
+    if (!QUALIFIED_COLUMN.test(lhs)) {
+      throw new Error(
+        `[FrameworkBridge] ownerNameProjection needs a qualified column such as ` +
+          `'p.citizenid'; refusing '${lhs}'.`
+      );
+    }
+
+    const owner = FrameworkBridge.ownerTable();
+    if (!owner) return null;
+
+    const join =
+      `LEFT JOIN \`${owner.table}\` \`${OWNER_ALIAS}\` ` +
+      `ON \`${OWNER_ALIAS}\`.\`${owner.column}\` = ${lhs}`;
+
+    if (owner === ESX_OWNER_TABLE) {
+      // Two ordinary columns, and no phone: a number is not core ESX, and guessing at one
+      // community resource's table would be right for one server population and silently
+      // wrong for the rest. `NULL AS phone` keeps the projection the same three columns on
+      // every framework, so the caller needs no branch of its own.
+      return {
+        join,
+        columns:
+          `\`${OWNER_ALIAS}\`.\`firstname\` AS firstname, ` +
+          `\`${OWNER_ALIAS}\`.\`lastname\` AS lastname, ` +
+          `NULL AS phone`
+      };
+    }
+
+    const json = (field: string): string =>
+      `JSON_UNQUOTE(JSON_EXTRACT(\`${OWNER_ALIAS}\`.\`charinfo\`, '$.${field}'))`;
+
+    return {
+      join,
+      columns:
+        `${json('firstname')} AS firstname, ` +
+        `${json('lastname')} AS lastname, ` +
+        `${json('phone')} AS phone`
+    };
   }
 
   /**
@@ -1276,6 +1416,94 @@ export class FrameworkBridge {
       if (!row?.citizenid) return null;
       return identityFromCharinfo(row.citizenid, row.charinfo);
     });
+  }
+
+  /**
+   * The same, for many citizenids, in **one** query (MICA-197).
+   *
+   * `findOfflineByCitizenId` is a `LIMIT 1` read, so anything rendering a list of people —
+   * a conversation's participants, a leaderboard's ten rows — paid one round trip per name.
+   * Same three framework branches, same frozen table and column literals, one `IN (…)`.
+   *
+   * Returned as a map rather than an array so a caller can ask about somebody the framework
+   * has no record of and get the same "not found" a single lookup gives, rather than having
+   * to match rows back up by position.
+   */
+  public static async findOfflineByCitizenIds(
+    citizenids: readonly string[]
+  ): Promise<Map<string, FrameworkIdentity>> {
+    const found = new Map<string, FrameworkIdentity>();
+
+    const wanted = [...new Set(citizenids.filter(Boolean))];
+    if (wanted.length === 0) return found;
+
+    // Every one of these is a bound parameter; only the table and column names are
+    // interpolated, and those come from the frozen literals above (§2.9).
+    const placeholders = wanted.map(() => '?').join(', ');
+
+    if (usesStandalone()) {
+      // gPhone's own table is the record here — see `findOfflineByCitizenId`'s note. The
+      // name stays null for the reason it gives: `GetPlayerName` answers only for a
+      // connected client, and inventing one from the last seen would be a cache pretending
+      // to be a record.
+      await offlineLookup('the standalone phone-number lookup by citizenid', async () => {
+        const rows = await Database.query<{ citizenid: string; number: string }[]>(
+          `SELECT \`citizenid\`, \`number\` FROM \`${PHONE_NUMBERS_TABLE}\`
+           WHERE \`citizenid\` IN (${placeholders})`,
+          [...wanted]
+        );
+        for (const row of rows) {
+          if (!row?.citizenid) continue;
+          found.set(row.citizenid, {
+            citizenid: row.citizenid,
+            firstname: null,
+            lastname: null,
+            phone: row.number ?? null
+          });
+        }
+        return null;
+      });
+      return found;
+    }
+
+    if (usesEsx()) {
+      await offlineLookup('the es_extended `users` lookup by identifier', async () => {
+        const rows = await Database.query<
+          { identifier: string; firstname: unknown; lastname: unknown }[]
+        >(
+          `SELECT ${ESX_OWNER_TABLE.column}, firstname, lastname FROM ${ESX_OWNER_TABLE.table}
+           WHERE ${ESX_OWNER_TABLE.column} IN (${placeholders})`,
+          [...wanted]
+        );
+        for (const row of rows) {
+          if (!row?.identifier) continue;
+          found.set(row.identifier, {
+            citizenid: row.identifier,
+            firstname: trimmedOrNull(row.firstname),
+            lastname: trimmedOrNull(row.lastname),
+            // Not in core ESX. See `findOfflineByCitizenId`.
+            phone: null
+          });
+        }
+        return null;
+      });
+      return found;
+    }
+
+    await offlineLookup('the `players` lookup by citizenid', async () => {
+      const rows = await Database.query<{ citizenid: string; charinfo: unknown }[]>(
+        `SELECT ${QB_OWNER_TABLE.column}, charinfo FROM ${QB_OWNER_TABLE.table}
+         WHERE ${QB_OWNER_TABLE.column} IN (${placeholders})`,
+        [...wanted]
+      );
+      for (const row of rows) {
+        if (!row?.citizenid) continue;
+        found.set(row.citizenid, identityFromCharinfo(row.citizenid, row.charinfo));
+      }
+      return null;
+    });
+
+    return found;
   }
 
   /**
@@ -1477,6 +1705,68 @@ export class FrameworkBridge {
   }
 
   /**
+   * Record that a character has loaded on this server id.
+   *
+   * Wired from `lib/shell.ts`'s `onPlayerLoaded` registry rather than from a listener of its
+   * own, so this module keeps having no framework event of its own to get wrong, and so the
+   * source it is handed has already been established by the resolution MICA-136 installed.
+   *
+   * **Evicts the id first.** If `playerDropped` were ever missed for whoever previously held
+   * this server id, their entry would still be here, and FiveM reassigns ids — so the next
+   * message addressed to them would go to this player instead. Evicting by source closes that
+   * window to the interval between a connection and its character load, during which the
+   * previous holder's phone is not being served either.
+   */
+  public static rememberSource(src: number): void {
+    if (!Number.isInteger(src) || src <= 0) return;
+
+    const player = FrameworkBridge.getPlayer(src);
+    // `getPlayer` has already said why, through `unidentified`. A player the framework will
+    // not name must not be recorded under a name: that is the whole of MICA-133's rule.
+    if (!player?.citizenid) return;
+
+    FrameworkBridge.forgetSource(src);
+
+    // The same character reconnecting on a different id: drop the id they used to be on, so
+    // `citizenBySource` never outlives the mapping `sourceByCitizen` agrees with.
+    const previous = sourceByCitizen.get(player.citizenid);
+    if (previous !== undefined) citizenBySource.delete(previous);
+
+    sourceByCitizen.set(player.citizenid, src);
+    citizenBySource.set(src, player.citizenid);
+  }
+
+  /** Forget a server id. Wired from `lib/shell.ts`'s `playerDropped` handler. */
+  public static forgetSource(src: number): void {
+    const citizenid = citizenBySource.get(src);
+    if (citizenid === undefined) return;
+    citizenBySource.delete(src);
+    // Guarded, because the character may already have been recorded on a newer id.
+    if (sourceByCitizen.get(citizenid) === src) sourceByCitizen.delete(citizenid);
+  }
+
+  /**
+   * Rebuild the registry from the framework. The one walk, and the only one anything here does.
+   *
+   * Wholesale rather than additive: a rebuild is also what corrects an entry `playerDropped`
+   * never arrived for, and merging would keep exactly the stale rows this exists to drop.
+   */
+  private static reseedSources(): void {
+    const players = FrameworkBridge.getAllPlayers();
+
+    sourceByCitizen.clear();
+    citizenBySource.clear();
+
+    for (const key in players) {
+      const src = parseInt(key, 10);
+      const citizenid = players[key]?.PlayerData?.citizenid;
+      if (!citizenid || !Number.isFinite(src)) continue;
+      sourceByCitizen.set(citizenid, src);
+      citizenBySource.set(src, citizenid);
+    }
+  }
+
+  /**
    * The server id of an online character, or null when they are not connected.
    *
    * Needed to push anything to a specific character — delivering a message, for one.
@@ -1487,11 +1777,14 @@ export class FrameworkBridge {
   }
 
   /**
-   * Server ids for many citizenids, from one snapshot.
+   * Server ids for many citizenids, from the registry above and — only if it cannot answer
+   * all of them — one walk.
    *
-   * `getSourceByCitizenId` walks `getAllPlayers()` per call, so notifying forty followers was
-   * forty full walks. One pass here, and the single lookup is reimplemented on top so there is
-   * still only one place that knows the framework's shape.
+   * This used to take a `getAllPlayers()` snapshot per call, and `getSourceByCitizenId` was a
+   * one-element call into it, so `Messages.deliverToParticipants` walked the whole server once
+   * per recipient. The bound is now **one walk per call**: everyone the registry knows is
+   * answered outright, and a single reseed settles the rest. See the note above the registry
+   * for why a miss is never simply believed.
    */
   public static getSourcesByCitizenId(citizenids: readonly string[]): Map<string, number> {
     const found = new Map<string, number>();
@@ -1500,11 +1793,22 @@ export class FrameworkBridge {
     const wanted = new Set(citizenids.filter(Boolean));
     if (wanted.size === 0) return found;
 
+    /** Fills `found` from the registry and reports whether anything was left unanswered. */
+    const collect = (): boolean => {
+      found.clear();
+      let missing = false;
+      for (const citizenid of wanted) {
+        const src = sourceByCitizen.get(citizenid);
+        if (src === undefined) missing = true;
+        else found.set(citizenid, src);
+      }
+      return missing;
+    };
+
     try {
-      const players = FrameworkBridge.getAllPlayers();
-      for (const src in players) {
-        const citizenid = players[src]?.PlayerData?.citizenid;
-        if (citizenid && wanted.has(citizenid)) found.set(citizenid, parseInt(src, 10));
+      if (collect()) {
+        FrameworkBridge.reseedSources();
+        collect();
       }
     } catch (error) {
       console.error('[FrameworkBridge] Error resolving sources:', error);

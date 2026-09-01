@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { FrameworkBridge } from './FrameworkBridge';
+import { FrameworkBridge, type FrameworkIdentity, type FrameworkPlayer } from './FrameworkBridge';
 
 /**
  * Who a citizenid belongs to, online or not.
@@ -94,6 +94,27 @@ export async function resolveByPhone(phone: string): Promise<DirectoryEntry | nu
 }
 
 /**
+ * The two mappings, named once each.
+ *
+ * `resolve` and `resolveMany` differ in how many people they ask about and therefore in which
+ * lookup they use — one `LIMIT 1` read against the framework's character table, or one
+ * `IN (…)` over the same one. What they must **not** differ in is what an answer means, which
+ * is the "two resolvers free to disagree" this file's own preamble was written about. So the
+ * shape of an entry is decided here and nowhere else, and a change lands on both at once.
+ */
+const entryFromOnline = (online: FrameworkPlayer): DirectoryEntry => ({
+  citizenid: online.citizenid,
+  displayName: nameFromCharinfo(online.rawPlayer?.PlayerData?.charinfo),
+  phone: online.phone ?? null
+});
+
+const entryFromIdentity = (identity: FrameworkIdentity): DirectoryEntry => ({
+  citizenid: identity.citizenid,
+  displayName: joinName(identity.firstname, identity.lastname),
+  phone: identity.phone
+});
+
+/**
  * The player behind a citizenid, online or off.
  *
  * What a feed needs: a post's author is a citizenid, and rendering it requires a name whether
@@ -105,21 +126,58 @@ export async function resolve(citizenid: string): Promise<DirectoryEntry | null>
   const source = FrameworkBridge.getSourceByCitizenId(citizenid);
   if (source !== null) {
     const online = FrameworkBridge.getPlayer(source);
-    if (online) {
-      return {
-        citizenid: online.citizenid,
-        displayName: nameFromCharinfo(online.rawPlayer?.PlayerData?.charinfo),
-        phone: online.phone ?? null
-      };
-    }
+    if (online) return entryFromOnline(online);
   }
 
   const offline = await FrameworkBridge.findOfflineByCitizenId(citizenid);
-  if (!offline) return null;
+  return offline ? entryFromIdentity(offline) : null;
+}
 
-  return {
-    citizenid: offline.citizenid,
-    displayName: joinName(offline.firstname, offline.lastname),
-    phone: offline.phone
-  };
+/**
+ * The same, for a list — in **one** query rather than one per name (MICA-197).
+ *
+ * The note at the top of this file says a cache would be a bug traded for nothing while there
+ * was no hot path. There are two now, and neither wanted a cache: a leaderboard resolves ten
+ * citizenids at once and a conversation list resolves every participant of every thread, and
+ * both were paying a `LIMIT 1` round trip per person. Batching costs no freshness at all —
+ * every answer is still read fresh, just together — which is why this is the shape that was
+ * missing rather than the TTL that was declined.
+ *
+ * Online players are answered from the framework's own in-memory character and cost no query
+ * at all. Everyone else goes into a single `findOfflineByCitizenIds`.
+ *
+ * **A source is only believed if the player on it agrees.** `getSourcesByCitizenId` answers
+ * from a registry now, and a registry can be stale — so the citizenid the framework reports
+ * for that source is checked against the one asked about, and a disagreement is treated as
+ * "not connected" rather than as a name. Getting this wrong renders one player under
+ * another's name, which is worse than rendering no name. `resolve` above needs no such check:
+ * it asks the framework for the one source it was given and uses whatever came back, so there
+ * is no second identity in play to be confused with.
+ */
+export async function resolveMany(
+  citizenids: readonly string[]
+): Promise<Map<string, DirectoryEntry>> {
+  const found = new Map<string, DirectoryEntry>();
+
+  const wanted = [...new Set(citizenids.filter(Boolean))];
+  if (wanted.length === 0) return found;
+
+  const sources = FrameworkBridge.getSourcesByCitizenId(wanted);
+  const offline: string[] = [];
+
+  for (const citizenid of wanted) {
+    const source = sources.get(citizenid);
+    const online = source === undefined ? null : FrameworkBridge.getPlayer(source);
+
+    if (online && online.citizenid === citizenid) found.set(citizenid, entryFromOnline(online));
+    else offline.push(citizenid);
+  }
+
+  if (offline.length === 0) return found;
+
+  for (const [citizenid, identity] of await FrameworkBridge.findOfflineByCitizenIds(offline)) {
+    found.set(citizenid, entryFromIdentity(identity));
+  }
+
+  return found;
 }

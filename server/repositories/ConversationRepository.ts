@@ -5,6 +5,21 @@
 import { SchemaRepository } from '../lib/defineService';
 import { Conversation, Participant } from '@gphone/shared/types';
 import { Database } from '../lib/Database';
+import { FrameworkBridge } from '../lib/FrameworkBridge';
+
+/**
+ * A participant row with whatever the framework's own character table could say about them.
+ *
+ * All three name fields are nullable and all three are absent on a server whose framework
+ * keeps no character table — `FrameworkBridge.ownerNameProjection` selects literal `NULL`s
+ * there so the shape does not change per framework, and `Conversations.get` overlays a
+ * connected player's in-memory name on top regardless.
+ */
+export interface HydratedParticipant extends Participant {
+  firstname: string | null;
+  lastname: string | null;
+  phone: string | null;
+}
 
 /**
  * Bespoke queries for conversations. The schema and both allowlists come from the
@@ -148,12 +163,73 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     return await Database.update(query, [conversationId, citizenid]);
   }
 
-  async findForCitizen(citizenid: string): Promise<Conversation[]> {
+  /**
+   * Every live participant of every conversation named, with names, in **one** query.
+   *
+   * This replaces a per-conversation query in `Conversations.get` that was 1+N in the size of
+   * a player's own thread list — and that hard-coded `LEFT JOIN players`, a table es_extended
+   * does not have, so the whole Messages list threw on ESX (MICA-197). The join now comes
+   * from `FrameworkBridge.ownerNameProjection`, which is the one place that knows where a
+   * given framework keeps characters and how a name is spelled inside it.
+   *
+   * `conversation_id` values are bound parameters; the only interpolation is the placeholder
+   * list and the projection's own frozen literals (§2.9). Ids are deduplicated first, so a
+   * caller cannot turn a list of repeats into a wider `IN`.
+   */
+  async findParticipantsForConversations(
+    conversationIds: readonly number[]
+  ): Promise<HydratedParticipant[]> {
+    const ids = [...new Set(conversationIds)].filter((id) => Number.isInteger(id));
+    if (ids.length === 0) return [];
+
+    const placeholders = ids.map(() => '?').join(', ');
+    const names = FrameworkBridge.ownerNameProjection('p.citizenid');
+
+    // No framework table to read a name out of — standalone, or one that has not answered
+    // yet. Selected as literal nulls rather than omitted, so every caller sees one shape.
+    const columns = names ? names.columns : 'NULL AS firstname, NULL AS lastname, NULL AS phone';
+
+    const query = `
+            SELECT p.*, ${columns}
+            FROM \`gphone_messages_participants\` p
+            ${names ? names.join : ''}
+            WHERE p.\`conversation_id\` IN (${placeholders}) AND p.\`left_at\` IS NULL
+        `;
+    return await Database.query<HydratedParticipant[]>(query, ids);
+  }
+
+  /**
+   * A page of the caller's own threads, newest id first.
+   *
+   * **Bounded, where it never used to be.** There was no `LIMIT` at all, and every row
+   * carried two correlated subqueries — so the cost of opening Messages grew with the number
+   * of threads a player had ever been in, forever. Keyset on `c.id DESC` rather than an
+   * offset, matching every other paged read in this repo: a conversation created while
+   * somebody is paging shifts an offset and would make them see a row twice or not at all.
+   *
+   * **`participant_count` is gone from the SQL and is not lost.** It was the second
+   * correlated subquery, counting exactly the rows `findParticipantsForConversations` now
+   * returns for the same page; `Conversations.get` derives it from those instead. Nothing in
+   * `web/` reads it, but the shape is kept so nothing outside this repo has to care.
+   *
+   * `unread_count` stays a subquery — it needs `me.last_read`, which only this join has in
+   * scope — but it is now evaluated for one page rather than for a whole history.
+   */
+  async findForCitizen(
+    citizenid: string,
+    page: { limit: number; cursor: number | null } = { limit: 200, cursor: null }
+  ): Promise<Conversation[]> {
+    const params: unknown[] = [citizenid];
+
+    // `c.id < ?`, not `<=`: the cursor is the last row the caller already holds.
+    const cursorClause = page.cursor === null ? '' : 'AND c.`id` < ?';
+    if (page.cursor !== null) params.push(page.cursor);
+    params.push(page.limit);
+
     // Joined rather than EXISTS-filtered so the caller's own participant row
     // (`me`) is in scope — `me.last_read` is what makes unread_count computable.
     const query = `
             SELECT c.*,
-            (SELECT COUNT(*) FROM gphone_messages_participants WHERE conversation_id = c.id AND left_at IS NULL) as participant_count,
             (SELECT COUNT(*) FROM gphone_messages unread
                 WHERE unread.conversation_id = c.id
                 AND unread.status != 'deleted'
@@ -174,9 +250,11 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
                 ORDER BY created_at DESC LIMIT 1
             )
             WHERE c.status = 'active'
-            ORDER BY c.updated_at DESC
+            ${cursorClause}
+            ORDER BY c.id DESC
+            LIMIT ?
         `;
-    const results = await Database.query<any[]>(query, [citizenid]);
+    const results = await Database.query<any[]>(query, params);
 
     // Map flat results to Conversation objects with nested last_message
     return results.map((row) => ({

@@ -62,7 +62,15 @@ const { dbMock, bridgeMock, handlers, networked, framework } = vi.hoisted(() => 
     bridgeMock: {
       getPlayer: vi.fn(),
       getCitizenId: vi.fn(),
-      registerUsableItem: vi.fn()
+      registerUsableItem: vi.fn(),
+      /**
+       * The source registry `lib/shell.ts` keeps filled (MICA-197). Both halves are here
+       * because both are wired from this file: `rememberSource` as a player-loaded subscriber
+       * and `forgetSource` from the `playerDropped` handler, and the assertions below drive
+       * both paths.
+       */
+      rememberSource: vi.fn(),
+      forgetSource: vi.fn()
     },
     /**
      * Which framework the bridge is answering for, as a mutable box.

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { detectFramework } from './FrameworkBridge';
+import { detectFramework, FrameworkBridge } from './FrameworkBridge';
 import { guardNetEvent } from './netGuard';
 import { registerService } from './services';
 import { ownedTables, purgeOwnedRows, sweepOrphanedRows } from './orphanSweep';
@@ -101,6 +101,22 @@ const refusalsLogged = new Set<number>();
 
 on('playerDropped', () => {
   refusalsLogged.delete(source);
+  /**
+   * And forget which server id this character was on (MICA-197).
+   *
+   * Registered here rather than in `FrameworkBridge` so that module keeps having no framework
+   * event of its own — the property its own note claims, one direction over. It rides this
+   * handler rather than adding a second `playerDropped` listener for the same reason
+   * `onPlayerLoaded` is a registry: one listener per event, and everything that cares
+   * subscribes to it.
+   *
+   * FiveM reassigns server ids, so this is not tidiness. A stale entry would address the next
+   * player given this id as the one who left, and `Messages.deliverToParticipants` would
+   * hand them somebody else's message. The bridge evicts by source on the way in as well, so
+   * a missed drop is survivable rather than silent — but this is the event that is supposed
+   * to do it.
+   */
+  FrameworkBridge.forgetSource(source);
 });
 
 /**
@@ -391,6 +407,23 @@ const dispatchPlayerLoaded = (src: number): void => {
  * case for the owner of the registry is how the owner's path stops being tested.
  */
 onPlayerLoaded('shell', pushRehydrate);
+
+/**
+ * Record which server id this character loaded on (MICA-197).
+ *
+ * A subscriber rather than a listener inside `FrameworkBridge`, so the bridge is handed a
+ * source that has already been established by whichever entry point resolved it — the network
+ * one through `loadedPlayerSource`, where the connection is the authority, and the three local
+ * ones from their payloads. A registry filled from a payload nobody had vetted is precisely
+ * MICA-136, and this is the one map in the resource where being wrong means delivering a
+ * private message to the wrong player.
+ *
+ * Registered after `'shell'` and before nothing in particular: no subscriber reads another's
+ * result, and the bridge reconciles a cold registry against the framework on its own anyway —
+ * which is what covers the case this hook structurally cannot, a resource restart with players
+ * already connected and no character left to load.
+ */
+onPlayerLoaded('framework-sources', FrameworkBridge.rememberSource);
 
 /**
  * Told that a character is gone, remove its rows from every table that owned any.

@@ -255,7 +255,71 @@ describe('shipped repositories — inherited guarantees', () => {
     expect(sql).toContain('unread.created_at > me.last_read');
     expect(sql).toContain('unread.citizenid <> me.citizenid');
     expect(sql).toContain("unread.status != 'deleted'");
-    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A']);
+    // The trailing bound parameter is the page size (MICA-197): this read had no `LIMIT`
+    // at all, so opening Messages cost more every day a player used it.
+    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', 200]);
+  });
+
+  /**
+   * MICA-197. `findForCitizen` returned every thread a player had ever been in, and each
+   * returned row carried correlated subqueries — so the cost of the list grew without bound.
+   * Keyset on `c.id DESC` rather than an offset, matching every other paged read here: a
+   * thread created while somebody is paging shifts an offset and makes them see a row twice
+   * or not at all.
+   */
+  it('findForCitizen is keyset-paged on id, and the cursor is a bound parameter', async () => {
+    dbMock.query.mockResolvedValue([]);
+    dbMock.query.mockClear();
+
+    await (conversations.repo as any).findForCitizen('CIT_A', { limit: 25, cursor: 900 });
+
+    const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain('AND c.`id` < ?');
+    expect(sql).toContain('ORDER BY c.id DESC');
+    expect(sql).toContain('LIMIT ?');
+    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', 900, 25]);
+  });
+
+  it('findForCitizen omits the cursor clause entirely on the first page', async () => {
+    dbMock.query.mockResolvedValue([]);
+    dbMock.query.mockClear();
+
+    await (conversations.repo as any).findForCitizen('CIT_A', { limit: 25, cursor: null });
+
+    const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).not.toContain('c.`id` < ?');
+    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', 25]);
+  });
+
+  /**
+   * The participants of a whole page of threads, in one statement. This was one query per
+   * conversation, and it hard-coded `LEFT JOIN players` — a qb table es_extended does not
+   * have, so the Messages list threw outright on ESX. The join now comes from
+   * `FrameworkBridge.ownerNameProjection`.
+   */
+  it('findParticipantsForConversations asks once for every conversation id', async () => {
+    dbMock.query.mockResolvedValue([]);
+    dbMock.query.mockClear();
+
+    await (conversations.repo as any).findParticipantsForConversations([4, 5, 6]);
+
+    expect(dbMock.query).toHaveBeenCalledTimes(1);
+    const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain('p.`conversation_id` IN (?, ?, ?)');
+    expect(sql).toContain('p.`left_at` IS NULL');
+    expect(dbMock.query.mock.calls[0][1]).toEqual([4, 5, 6]);
+  });
+
+  it('findParticipantsForConversations deduplicates ids and asks nothing for none', async () => {
+    dbMock.query.mockResolvedValue([]);
+    dbMock.query.mockClear();
+
+    await (conversations.repo as any).findParticipantsForConversations([4, 4, 4]);
+    expect(dbMock.query.mock.calls[0][1]).toEqual([4]);
+
+    dbMock.query.mockClear();
+    await (conversations.repo as any).findParticipantsForConversations([]);
+    expect(dbMock.query).not.toHaveBeenCalled();
   });
 
   it('admin conversation deletion is a named privileged write, scoped to the row id', async () => {
