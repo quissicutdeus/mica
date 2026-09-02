@@ -4,6 +4,7 @@
 
 import { hostRuntime } from '@gphone/sdk';
 import { MockRegistry } from './mocks/registry';
+import { GENERIC_SERVICE_ACTION } from '@gphone/shared/rpc';
 
 export interface ITransportAdapter {
   send<T = unknown>(event: string, data?: unknown): Promise<T>;
@@ -90,6 +91,22 @@ const replyKeys = (reply: unknown): string[] => {
  * it out of a production bundle, and in CEF `getTransport()` picks `NuiTransportAdapter`,
  * so this class never runs in game at all.
  */
+/**
+ * What a call is logged as (MICA-213).
+ *
+ * A typed `call(contract, action, …)` crosses as the one generic `svc` action carrying
+ * `{ service, action, data }`, so logging the transport's own event name would file every
+ * contracted call in the phone under one indistinguishable entry — and a spec asking about
+ * one of them ("was the opened photo read carrying both stills?") would have nothing to
+ * filter on. Logged under the scoped `'<service>:<action>'` the mock registry already
+ * dispatches by, so a spec names the action rather than the transport.
+ */
+const recordedName = (event: string, data?: unknown): string => {
+  if (event !== GENERIC_SERVICE_ACTION || !data || typeof data !== 'object') return event;
+  const { service, action } = data as { service?: unknown; action?: unknown };
+  return typeof service === 'string' && typeof action === 'string' ? `${service}:${action}` : event;
+};
+
 const recordMockCall = (event: string, reply: unknown): void => {
   if (!import.meta.env.DEV || typeof window === 'undefined') return;
   const call: MockCall = { event, keys: replyKeys(reply) };
@@ -109,7 +126,7 @@ export class MockTransportAdapter implements ITransportAdapter {
    */
   async send<T = unknown>(event: string, data?: unknown): Promise<T> {
     const reply = (await MockRegistry.handle(event, data)) as T;
-    recordMockCall(event, reply);
+    recordMockCall(recordedName(event, data), reply);
     return reply;
   }
 

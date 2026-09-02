@@ -133,7 +133,7 @@ test.describe('Media', () => {
     page
   }) => {
     // `?bluetoothNearby=2` — the mock registry's own knob for a non-empty proximity
-    // range, same param `shareMediaNearby`'s single-photo mock reads.
+    // range, same param `media:drop`'s single-photo mock reads.
     await page.goto('/?bluetoothNearby=2');
     await openApp(page, 'Media');
     await page.getByRole('button', { name: 'Select' }).click();

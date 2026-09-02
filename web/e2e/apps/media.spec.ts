@@ -168,7 +168,7 @@ test.describe('Media gallery payloads (MICA-110)', () => {
     // `some`, not the first or last call: the grid's own lazy hydration also reads single
     // rows, and those are the thumbnail-less ones, so a positional pick would read the
     // wrong reply. Only the opened photo is fetched carrying both.
-    const reads = await mockCalls(page, 'getMediaItem');
+    const reads = await mockCalls(page, 'media:item');
     expect(
       reads.some((read) => read.keys.includes('data') && read.keys.includes('thumbnail')),
       'the opened photo must arrive with both, so choosing the bytes is a real choice'
