@@ -520,6 +520,16 @@ dropped; a length cap refuses rather than truncates; a malformed id anywhere in
 a batch refuses the whole request. Generic CRUD is unchanged and needs no
 declaration. Notes, Blabber and Hodlr in this repo show the shape.
 
+**Your add-on's build now derives its permissions from its imports and fails
+when the manifest declares less (MICA-205).** The plugin in
+`tools/addon-template/vite.config.ts` reads every module that entered the
+bundle, maps each `@gphone/sdk` import through the permission table, and stops
+the build naming the import and the missing permission. Declaring more stays
+fine. Nothing changes at run time: the shell already refused an undeclared call,
+and still does; this moves the refusal to where you can read it. Rebuild against
+the current template to pick it up; a bundle built without the plugin still
+installs.
+
 **The contract this release publishes is `v1`.** That is `SDK_CONTRACT_VERSION`,
 exported from `@gphone/sdk`, and it is the number to branch on. It moves when
 the SDK's published surface moves and at no other time — the exported names of

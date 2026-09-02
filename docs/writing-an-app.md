@@ -63,10 +63,21 @@ anything else. Omit `fg` on a dark tile; state it on a light one, or the glyph
 inherits a near-white default and comes out illegible. A guard in
 `web/src/lib/utilityClasses.test.ts` measures the contrast.
 
-Declare what you use — an undeclared hook now crashes your app with
+Declare what you use — an undeclared hook crashes your app with
 `AppPermissionError`; `renderApp(App, { permissions: [] })` is how to see it in
-a test. `pnpm test:unit:web` tells you exactly which names are missing; the full
-list is `AppPermission` in `sdk/manifest.ts`.
+a test. The full list is `AppPermission` in `sdk/manifest.ts`.
+
+**For a `core: false` add-on, the build derives the list and refuses a manifest
+that understates it** (MICA-205). A Vite plugin reads every module that
+entered the bundle, maps each name imported from `@gphone/sdk` through
+`PERMISSION_OF`, and fails the build naming the import and the permission the
+manifest lacks. Declaring more than the scan finds is fine. The scanner is
+`sdk/lib/permissionScan.ts`; `web/vite.addon.config.ts` runs it for the add-ons
+in this repo and `tools/addon-template/vite.config.ts` runs the same one outside
+it, so an author without the repo is held to the same rule. The old runtime
+check is unchanged: the shell still re-checks every call against what the
+manifest declares, so the build is where an honest list is enforced, not the
+only place it is checked.
 
 `core` is required and `defineApp` throws without it. `false` is what you want
 almost always: an add-on, kept out of the launcher, offered by the Store,
