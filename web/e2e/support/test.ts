@@ -34,16 +34,17 @@ export { expect };
  *   and a store that does not catch it lands here; so does an add-on that lets a failed
  *   `useService` call escape, through the host's `add-on '<id>' crashed:` log.
  *
- * Every other uncaught page error is recorded on the test as a `pageerror` annotation, so
- * it stays in the report, and does not fail it. The first integrated run of this fixture
- * failed 100 specs on two errors that were already there and have nothing to do with a
- * mock, and a fixture that fails the whole suite on them is the fixture people would opt
- * out of — which is worse than one that reports them and stays narrow. One of the two was
- * this suite's own: every add-on spec threw `Failed to read the 'localStorage' property
- * from 'Window'`, and the thrower was `seedHomeGrid`'s init script running inside the
- * sandboxed frame, not the phone (MICA-206). The other, the registry's uninstall path
- * in `settings.spec.ts` throwing `Cannot read properties of null (reading 'id')`, is
- * MICA-207.
+ * **Every other uncaught page error fails the test too**, since MICA-206 and MICA-207.
+ * It did not at first: the first integrated run of this fixture failed 100 specs on two
+ * errors that were already there and had nothing to do with a mock, and a fixture that
+ * fails the whole suite on them is the fixture people would opt out of — so for a while
+ * they were recorded as `pageerror` annotations instead. One was this suite's own:
+ * every add-on spec threw `Failed to read the 'localStorage' property from 'Window'`,
+ * and the thrower was `seedHomeGrid`'s init script running inside the sandboxed frame,
+ * not the phone. The other was the Settings pane reading `app.id` off a prop the parent
+ * had already nulled. Both fixed, the suite reports zero page errors, and an error that
+ * escapes to the page is now what it always should have been: a failed test with the
+ * message in it. In game the same throw is swallowed silently.
  *
  * `allowNuiFailures` is the opt-out, for a spec that provokes one on purpose and asserts on
  * it. It is a `test.use` option so the exemption sits in the spec, in the open, scoped to a
@@ -69,15 +70,14 @@ const readsAsNuiFailure = (text: string): boolean =>
 export const test = base.extend<NuiFixtureOptions>({
   allowNuiFailures: [false, { option: true }],
 
-  page: async ({ page, allowNuiFailures }, use, testInfo) => {
+  page: async ({ page, allowNuiFailures }, use) => {
     const failures: string[] = [];
     page.on('console', (message: ConsoleMessage) => {
       const text = message.text();
       if (readsAsNuiFailure(text)) failures.push(`console.${message.type()}: ${text}`);
     });
     page.on('pageerror', (error: Error) => {
-      if (readsAsNuiFailure(error.message)) failures.push(`pageerror: ${error.message}`);
-      else testInfo.annotations.push({ type: 'pageerror', description: error.message });
+      failures.push(`pageerror: ${error.message}`);
     });
 
     await use(page);
@@ -91,12 +91,13 @@ export const test = base.extend<NuiFixtureOptions>({
     if (allowNuiFailures || failures.length === 0) return;
     const plural = failures.length === 1 ? 'failure' : 'failures';
     throw new Error(
-      `${failures.length} NUI ${plural} reached the console during this test, and the ` +
-        'suite does not let one pass silently:\n\n' +
+      `${failures.length} NUI ${plural} or uncaught page ${plural} reached the console ` +
+        'during this test, and the suite does not let one pass silently:\n\n' +
         failures.map((failure) => `  - ${failure}`).join('\n') +
-        '\n\nA missing browser mock is the usual cause — the action needs an entry in ' +
-        'web/src/nui/mocks/registry.ts (AGENTS.md §8). A spec that provokes this on ' +
-        'purpose says so with test.use({ allowNuiFailures: true }).'
+        '\n\nA missing browser mock is the usual cause of a NUI failure — the action needs ' +
+        'an entry in web/src/nui/mocks/registry.ts (AGENTS.md §8). An uncaught page error ' +
+        'is a bug in the phone or in this suite; in game it is thrown and swallowed. A spec ' +
+        'that provokes either on purpose says so with test.use({ allowNuiFailures: true }).'
     );
   }
 });
