@@ -75,8 +75,38 @@ const DEFAULT_CONVERSATIONS = [
   }
 ];
 
+/**
+ * The names this mock answers by, and how a typed `call` arrives at them (MICA-213).
+ *
+ * `conversations` and `messages` are contracted, so the store no longer names a route: it
+ * sends the one generic `svc` action carrying `{ service, action, data }`. Resolving that
+ * envelope back to the old route name here keeps every case below in the shape it was
+ * written in, rather than restating each one against the envelope. Hoisted alongside
+ * `server`, because `vi.mock`'s factory is lifted above both.
+ */
+const unwrap = vi.hoisted(() => {
+  const ROUTE_OF: Record<string, string> = {
+    'conversations:get': 'getConversations',
+    'conversations:create': 'startConversation',
+    'conversations:read': 'readConversation',
+    'conversations:archive': 'archiveConversation',
+    'conversations:delete': 'deleteConversation',
+    'messages:get': 'getMessages',
+    'messages:send': 'sendMessage',
+    'messages:edit': 'editMessage',
+    'messages:delete': 'deleteMessage'
+  };
+  /** `(method, payload)` as the case bodies below want to read it. */
+  return (method: string, payload?: any): { method: string; data?: any } => {
+    if (method !== 'svc') return { method, data: payload };
+    const { service, action, data } = payload ?? {};
+    return { method: ROUTE_OF[`${service}:${action}`] ?? `${service}:${action}`, data };
+  };
+});
+
 vi.mock('../nui/fetchNui', () => ({
-  fetchNui: vi.fn((method: string, data?: any) => {
+  fetchNui: vi.fn((rawMethod: string, rawData?: any) => {
+    const { method, data } = unwrap(rawMethod, rawData);
     if (method === 'getCitizenId') return Promise.resolve('my-id');
     if (method === 'getConversations') {
       server.pageRequests.push(data);
@@ -246,8 +276,13 @@ describe('messages store', () => {
     const lastSent = () => {
       const calls = vi
         .mocked(fetchNui)
-        .mock.calls.filter(([method]) => method === 'archiveConversation');
-      return calls[calls.length - 1]?.[1];
+        .mock.calls.filter(
+          ([method, payload]) =>
+            method === 'svc' &&
+            (payload as any)?.service === 'conversations' &&
+            (payload as any)?.action === 'archive'
+        );
+      return (calls[calls.length - 1]?.[1] as any)?.data;
     };
 
     await conversationsStore.archiveConversation(1, true);

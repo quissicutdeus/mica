@@ -36,9 +36,20 @@ beforeEach(() => {
   sent = [];
   shadeNotifications.set([]);
   unreadCounts.set({});
-  vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation((action: string, data?: unknown) => {
-    sent.push({ action, data });
-    if (action === 'getUnreadCounts') return Promise.resolve({} as never);
+  /**
+   * Recorded as `<service>:<action>` (MICA-213): every one of these now rides the generic
+   * `svc` action, so the event name is the same string for all of them and what the store
+   * actually asked for lives in the envelope.
+   */
+  vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation((method: string, payload?: unknown) => {
+    const { service, action, data } = (payload ?? {}) as {
+      service?: string;
+      action?: string;
+      data?: unknown;
+    };
+    const name = method === 'svc' ? `${service}:${action}` : method;
+    sent.push({ action: name, data });
+    if (name === 'notifications:getUnreadCounts') return Promise.resolve({} as never);
     return Promise.resolve(true as never);
   });
 });
@@ -64,9 +75,9 @@ describe('markNotificationsOpened (MICA-96)', () => {
     await markNotificationsOpened([7]);
 
     expect(sent.map((s) => s.action)).toEqual([
-      'markNotificationRead',
-      'clearNotifications',
-      'getUnreadCounts'
+      'notifications:markAsRead',
+      'notifications:clearNotifications',
+      'notifications:getUnreadCounts'
     ]);
     expect(sent[0].data).toEqual({ ids: [7] });
     expect(sent[1].data).toEqual({ ids: [7] });
@@ -80,7 +91,7 @@ describe('markNotificationsOpened (MICA-96)', () => {
     await markNotificationsOpened([1, 2]);
 
     expect(get(shadeNotifications).map((n) => n.id)).toEqual([3]);
-    expect(sent.filter((s) => s.action === 'clearNotifications')).toHaveLength(1);
+    expect(sent.filter((s) => s.action === 'notifications:clearNotifications')).toHaveLength(1);
   });
 
   it('clears a notification that has already been read', async () => {
@@ -114,6 +125,9 @@ describe('markNotificationsOpened (MICA-96)', () => {
 
     expect(get(shadeNotifications).map((n) => n.id)).toEqual([9]);
     expect(get(shadeNotifications)[0].read_at).toBeTruthy();
-    expect(sent.map((s) => s.action)).toEqual(['markNotificationRead', 'getUnreadCounts']);
+    expect(sent.map((s) => s.action)).toEqual([
+      'notifications:markAsRead',
+      'notifications:getUnreadCounts'
+    ]);
   });
 });

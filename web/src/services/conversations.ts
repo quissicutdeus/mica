@@ -4,7 +4,10 @@
 
 import { writable, derived, get } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
-import type { Contact, Conversation, Message, ReactionSummary } from '@gphone/shared/types';
+import { call, callOr } from '../nui/call';
+import { conversationsContract } from '@gphone/shared/contracts/conversations';
+import { messagesContract } from '@gphone/shared/contracts/messages';
+import type { Contact, Conversation } from '@gphone/shared/types';
 import type { UIConversation, UIMessage } from '@gphone/sdk';
 import { byNewest } from '../../../sdk/createCrudStore';
 import { createPagedStore, type PageReader } from '../../../sdk/createPagedStore';
@@ -90,12 +93,12 @@ const resolveDisplayInfo = (conv: Conversation, myId: string, currentContacts: C
 /**
  * One page of the inbox, mapped for display.
  *
- * A reader rather than `createPagedStore('getConversations')` for two reasons. The rows
- * need the caller's citizenid and address book folded in before anything can render them,
- * which is a mapping step the factory has no hook for; and the reader keeps the call on
- * `web/src/nui/fetchNui` — the factory's own transport is `sdk/nui/transport`, a different
- * module — so the route stays the one `server/__tests__/routes.test.ts` already scans for
- * as a `fetchNui` literal.
+ * A reader rather than handing `createPagedStore` an action name, because the rows need the
+ * caller's citizenid and address book folded in before anything can render them, and that is
+ * a mapping step the factory has no hook for. Since MICA-213 the reader makes the typed
+ * `call(conversationsContract, 'get', ...)`, so there is no action name for either the
+ * factory or `server/__tests__/routes.test.ts` to read as a route — the contract is what the
+ * suite holds the call site to instead.
  *
  * **The cursor is derived, because the server still answers a bare array.** MICA-197 made
  * `conversations:get` *accept* `{ limit, cursor }` (`pageBounds`, keyset on `c.id DESC`, the
@@ -116,7 +119,13 @@ const readConversationPage: PageReader<UIConversation> = async (payload) => {
   if (!myId) myId = await fetchCitizenId();
   const currentContacts = get(contacts);
 
-  const data = await fetchNui<Conversation[]>('getConversations', payload);
+  // `PageReader` hands its payload as an untyped bag; `createPagedStore` builds it as
+  // `{ ...filter, cursor, limit }`, which is exactly what the contract declares.
+  const data = await call(
+    conversationsContract,
+    'get',
+    payload as { cursor?: number | null; limit?: number }
+  );
   const raw = Array.isArray(data) ? data : [];
 
   const rows: UIConversation[] = raw.map((c) => {
@@ -287,11 +296,7 @@ function createMessagesStore() {
       let myId = get(citizenid);
       if (!myId) myId = await fetchCitizenId();
 
-      const data = await fetchNui<Message[]>(
-        'getMessages',
-        { conversation_id: conversationId },
-        { defaultValue: [] }
-      );
+      const data = await callOr(messagesContract, 'get', { conversation_id: conversationId }, []);
       const rawList = data || [];
       const mapped: UIMessage[] = rawList.map((m) => {
         const replyToRaw = m.reply_to_id ? rawList.find((r) => r.id === m.reply_to_id) : null;
@@ -345,7 +350,7 @@ function createMessagesStore() {
       };
 
       try {
-        const sent = await fetchNui<Message>('sendMessage', payload);
+        const sent = await call(messagesContract, 'send', payload);
         if (!sent) return null;
 
         let replyToMsg: UIMessage | null = null;
@@ -390,10 +395,12 @@ function createMessagesStore() {
      * marker.
      */
     editMessage: async (conversationId: number, messageId: number, message: string) => {
-      const saved = await fetchNui<{ message: string; edited?: boolean }>('editMessage', {
+      // Cast because `messages.edit` declares `output: responseType<{ ok: boolean }>()` while
+      // the handler answers the saved row — see this file's note in the MICA-213 report.
+      const saved = (await call(messagesContract, 'edit', {
         id: messageId,
         message
-      });
+      })) as unknown as { message: string; edited?: boolean } | null;
       if (!saved) return null;
 
       messagesByConversation.update((msgs) => {
@@ -423,7 +430,7 @@ function createMessagesStore() {
      * takes a moment to go.
      */
     deleteMessage: async (conversationId: number, messageId: number) => {
-      const removed = await fetchNui<boolean>('deleteMessage', { id: messageId });
+      const removed = await call(messagesContract, 'delete', { id: messageId });
       if (!removed) return false;
 
       messagesByConversation.update((msgs) => {
@@ -441,7 +448,7 @@ function createMessagesStore() {
       const currentContacts = get(contacts);
 
       try {
-        const newConv = await fetchNui<Conversation>('startConversation', {
+        const newConv = await call(conversationsContract, 'create', {
           is_group: isGroup,
           phone
         });
@@ -474,7 +481,7 @@ function createMessagesStore() {
     markAsRead: async (conversationId: number) => {
       patchConversation(conversationId, { unreadCount: 0 });
       try {
-        await fetchNui('readConversation', { conversation_id: conversationId });
+        await call(conversationsContract, 'read', { conversation_id: conversationId });
       } catch (e) {
         console.error('Failed to mark conversation read', e);
       }
@@ -484,7 +491,7 @@ function createMessagesStore() {
       const nextStatus = archive ? 'archived' : 'active';
       patchConversation(conversationId, { status: nextStatus });
       try {
-        await fetchNui('archiveConversation', {
+        await call(conversationsContract, 'archive', {
           conversation_id: conversationId,
           status: nextStatus
         });
@@ -498,7 +505,7 @@ function createMessagesStore() {
       // The thread cannot be reopened, so holding its messages is pure cost.
       dropThreads([conversationId]);
       try {
-        await fetchNui('deleteConversation', { conversation_id: conversationId });
+        await call(conversationsContract, 'delete', { conversation_id: conversationId });
       } catch (e) {
         console.error('Failed to delete conversation', e);
       }
@@ -559,7 +566,7 @@ function createMessagesStore() {
       }
 
       if (isCurrentlyActive) {
-        fetchNui('readConversation', { conversation_id: convId }).catch(() => {});
+        call(conversationsContract, 'read', { conversation_id: convId }).catch(() => {});
       }
 
       messagesByConversation.update((msgs) => {
@@ -616,9 +623,9 @@ export const unreadMessagesCount = derived(
  * `gphone_messages_reactions` is its own child table under the `messages` service, keyed on
  * citizenid rather than an account — see `Messages.ts`'s docblock above
  * `requireReactableMessage` for why this is not `gphone_account_reactions`. Messages is core,
- * so this reaches the server through named routes (`reactToMessage`/`unreactToMessage`/
- * `getMessageReactions`) exactly like the rest of this file, rather than through a facet the
- * way Blabber's `dmReactions` must for a `core: false` add-on.
+ * so this reaches the server through the typed `call` against `messagesContract`
+ * (`react`/`unreact`/`reactionsFor`) exactly like the rest of this file, rather than through a
+ * facet the way Blabber's `dmReactions` must for a `core: false` add-on.
  *
  * A group thread's count is not treated any differently from a DM's here or in `ReactionBar` —
  * both render a bare count plus whether the caller is one of the reactors, and that is
@@ -630,14 +637,9 @@ export const unreadMessagesCount = derived(
  * deliberate scope of this pass rather than an oversight.
  */
 export const messageReactions = createReactionStore({
-  load: (ids) =>
-    fetchNui<Record<number, ReactionSummary>>(
-      'getMessageReactions',
-      { target_ids: ids },
-      { defaultValue: {} }
-    ),
-  react: (messageId, emoji) => fetchNui('reactToMessage', { message_id: messageId, emoji }),
-  unreact: (messageId, emoji) => fetchNui('unreactToMessage', { message_id: messageId, emoji })
+  load: (ids) => callOr(messagesContract, 'reactionsFor', { target_ids: ids }, {}),
+  react: (messageId, emoji) => call(messagesContract, 'react', { message_id: messageId, emoji }),
+  unreact: (messageId, emoji) => call(messagesContract, 'unreact', { message_id: messageId, emoji })
 });
 
 export const toggleMessageReaction = (messageId: number, emoji: string): Promise<void> =>

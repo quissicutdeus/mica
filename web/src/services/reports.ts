@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { derived, writable } from 'svelte/store';
-import { fetchNui } from '../nui/fetchNui';
+import { call, callOr } from '../nui/call';
+import { reportsContract } from '@gphone/shared/contracts/reports';
 import type { Report } from '@gphone/shared/types';
 import type { SubmitReportInput } from '@gphone/sdk';
 
@@ -26,26 +27,24 @@ const asReports = (value: unknown): Report[] => (Array.isArray(value) ? (value a
 
 export const loadPendingReports = async (): Promise<void> => {
   // A non-admin is refused server-side; an empty queue is the right thing to show.
-  const rows = await fetchNui<Report[]>('getReportQueue', {}).catch(() => []);
+  const rows = await callOr(reportsContract, 'queue', undefined, []);
   pendingReports.set(asReports(rows));
 };
 
 export const loadReportHistory = async (): Promise<void> => {
-  const rows = await fetchNui<Report[]>('getReportHistory', {}).catch(() => []);
+  const rows = await callOr(reportsContract, 'history', undefined, []);
   resolvedReports.set(asReports(rows));
 };
 
 /** Resolve, then re-read both lists so the badge and history agree with the server. */
 export const resolveReport = async (id: number, action: 'moderate' | 'dismiss'): Promise<void> => {
-  const res = await fetchNui<{ error?: string }>('resolveReport', { id, action });
-  if (res?.error) throw new Error(res.error);
+  await call(reportsContract, 'resolve', { id, action });
   await Promise.all([loadPendingReports(), loadReportHistory()]);
 };
 
 /** Undo a decision. Restores hidden content as well as reopening the report. */
 export const reopenReport = async (id: number): Promise<void> => {
-  const res = await fetchNui<{ error?: string }>('reopenReport', { id });
-  if (res?.error) throw new Error(res.error);
+  await call(reportsContract, 'reopen', { id });
   await Promise.all([loadPendingReports(), loadReportHistory()]);
 };
 
@@ -54,6 +53,5 @@ export const reopenReport = async (id: number): Promise<void> => {
  * Throws with the server's message so the caller can toast it.
  */
 export const submitReport = async (input: SubmitReportInput): Promise<void> => {
-  const res = await fetchNui<{ ok?: boolean; error?: string }>('createReport', input);
-  if (res?.error) throw new Error(res.error);
+  await call(reportsContract, 'create', input);
 };

@@ -4,7 +4,8 @@
 
 import { writable, derived } from 'svelte/store';
 import type { NotificationItem } from '@gphone/shared/types';
-import { fetchNui } from '../nui/fetchNui';
+import { callOr } from '../nui/call';
+import { notificationsContract } from '@gphone/shared/contracts/notifications';
 import { subscribeAppEvent } from '../shell/state/appEvents';
 
 export const shadeNotifications = writable<NotificationItem[]>([]);
@@ -24,31 +25,23 @@ export const totalUnreadNotifications = derived(unreadCounts, ($counts) =>
 );
 
 export async function loadShadeNotifications(): Promise<void> {
-  const items = await fetchNui<NotificationItem[]>(
-    'getShadeNotifications',
-    {},
-    { defaultValue: [] }
-  );
+  const items = await callOr(notificationsContract, 'getShadeNotifications', undefined, []);
   shadeNotifications.set(items);
   notificationsLoaded.set(true);
 }
 
 export async function loadNotificationHistory(): Promise<NotificationItem[]> {
-  return await fetchNui<NotificationItem[]>('getNotificationHistory', {}, { defaultValue: [] });
+  return await callOr(notificationsContract, 'getNotificationHistory', undefined, []);
 }
 
 export async function loadUnreadCounts(): Promise<void> {
-  const counts = await fetchNui<Record<string, number>>(
-    'getUnreadCounts',
-    {},
-    { defaultValue: {} }
-  );
+  const counts = await callOr(notificationsContract, 'getUnreadCounts', undefined, {});
   unreadCounts.set(counts);
 }
 
 export async function markNotificationsRead(ids: number[]): Promise<void> {
   if (ids.length === 0) return;
-  await fetchNui('markNotificationRead', { ids }, { defaultValue: true });
+  await callOr(notificationsContract, 'markAsRead', { ids }, true);
   const now = new Date().toISOString();
   shadeNotifications.update((items) =>
     items.map((item) => (ids.includes(item.id) ? { ...item, read_at: item.read_at || now } : item))
@@ -76,21 +69,21 @@ export async function markNotificationsRead(ids: number[]): Promise<void> {
  */
 export async function markNotificationsOpened(ids: number[]): Promise<void> {
   if (ids.length === 0) return;
-  await fetchNui('markNotificationRead', { ids }, { defaultValue: true });
-  await fetchNui('clearNotifications', { ids }, { defaultValue: true });
+  await callOr(notificationsContract, 'markAsRead', { ids }, true);
+  await callOr(notificationsContract, 'clearNotifications', { ids }, true);
   shadeNotifications.update((items) => items.filter((item) => !ids.includes(item.id)));
   await loadUnreadCounts();
 }
 
 export async function clearNotifications(ids: number[]): Promise<void> {
   if (ids.length === 0) return;
-  await fetchNui('clearNotifications', { ids }, { defaultValue: true });
+  await callOr(notificationsContract, 'clearNotifications', { ids }, true);
   shadeNotifications.update((items) => items.filter((item) => !ids.includes(item.id)));
   await loadUnreadCounts();
 }
 
 export async function clearAllNotifications(appId?: string): Promise<void> {
-  await fetchNui('clearAllNotifications', { appId }, { defaultValue: true });
+  await callOr(notificationsContract, 'clearAllNotifications', { appId }, true);
   if (appId) {
     shadeNotifications.update((items) => items.filter((item) => item.app !== appId));
   } else {
@@ -101,7 +94,7 @@ export async function clearAllNotifications(appId?: string): Promise<void> {
 
 export async function restoreNotifications(ids: number[]): Promise<void> {
   if (ids.length === 0) return;
-  await fetchNui('restoreNotifications', { ids }, { defaultValue: true });
+  await callOr(notificationsContract, 'restoreNotifications', { ids }, true);
   await loadShadeNotifications();
   await loadUnreadCounts();
 }

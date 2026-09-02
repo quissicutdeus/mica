@@ -78,7 +78,7 @@ describe('Transport Abstraction Module', () => {
 
   describe('MockTransportAdapter', () => {
     it('answers a mocked action through the registry', async () => {
-      const reply = await new MockTransportAdapter().send('getConversations');
+      const reply = await new MockTransportAdapter().send('conversations:get');
       expect(Array.isArray(reply)).toBe(true);
     });
 

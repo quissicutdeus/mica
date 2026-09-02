@@ -1446,11 +1446,11 @@ const mockRegistry: Record<string, MockHandler> = {
   },
 
   // Messages
-  getConversations: () => mockConversations,
-  getMessages: ({ conversation_id }: { conversation_id: number }) => {
+  'conversations:get': () => mockConversations,
+  'messages:get': ({ conversation_id }: { conversation_id: number }) => {
     return mockMessages[conversation_id] || [];
   },
-  sendMessage: async (payload: {
+  'messages:send': async (payload: {
     conversation_id: number;
     message: string;
     attachments?: { photo_id: number; attachment?: string }[];
@@ -1503,7 +1503,7 @@ const mockRegistry: Record<string, MockHandler> = {
    * ownership rule is mirrored too — `citizenid !== 'my-id'` is refused here exactly as the
    * server refuses a message the caller did not send.
    */
-  editMessage: async (data?: { id?: number; message?: string }) => {
+  'messages:edit': async (data?: { id?: number; message?: string }) => {
     await delay(150);
     const text = (data?.message ?? '').trim();
     if (!text) throw new Error('A message needs some text. Unsend it instead of emptying it.');
@@ -1520,7 +1520,7 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     throw new Error('That message is not yours to change.');
   },
-  deleteMessage: async (data?: { id?: number }) => {
+  'messages:delete': async (data?: { id?: number }) => {
     await delay(150);
     for (const [convId, list] of Object.entries(mockMessages)) {
       const index = list.findIndex((m) => m.id === data?.id);
@@ -1545,7 +1545,7 @@ const mockRegistry: Record<string, MockHandler> = {
    * identity is `'my-id'`, matching `editMessage`/`deleteMessage`'s own ownership checks
    * above.
    */
-  reactToMessage: ({ message_id, emoji }: { message_id: number; emoji: string }) => {
+  'messages:react': ({ message_id, emoji }: { message_id: number; emoji: string }) => {
     if (
       !mockMessageReactions.some(
         (r) => r.messageId === message_id && r.citizenid === 'my-id' && r.emoji === emoji
@@ -1555,14 +1555,14 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     return true;
   },
-  unreactToMessage: ({ message_id, emoji }: { message_id: number; emoji: string }) => {
+  'messages:unreact': ({ message_id, emoji }: { message_id: number; emoji: string }) => {
     const at = mockMessageReactions.findIndex(
       (r) => r.messageId === message_id && r.citizenid === 'my-id' && r.emoji === emoji
     );
     if (at >= 0) mockMessageReactions.splice(at, 1);
     return true;
   },
-  getMessageReactions: ({ target_ids }: { target_ids: number[] }) => {
+  'messages:reactionsFor': ({ target_ids }: { target_ids: number[] }) => {
     const out: Record<number, { counts: Record<string, number>; mine: string[] }> = {};
     for (const id of target_ids) out[id] = { counts: {}, mine: [] };
     for (const row of mockMessageReactions) {
@@ -1578,7 +1578,7 @@ const mockRegistry: Record<string, MockHandler> = {
    * payload back would let the browser and every Playwright run keep the semantics the
    * game no longer has — the shape of drift AGENTS.md §8 warns a mock can hide.
    */
-  startConversation: async ({ participants }: { phone?: string; participants?: string[] }) => {
+  'conversations:create': async ({ participants }: { phone?: string; participants?: string[] }) => {
     await delay(300);
     // The caller plus the target, plus anyone else named — more than two is a group.
     const members = 2 + new Set(participants ?? []).size;
@@ -1592,7 +1592,7 @@ const mockRegistry: Record<string, MockHandler> = {
       participants: []
     } as Conversation;
   },
-  readConversation: async (data?: number | { conversation_id?: number }) => {
+  'conversations:read': async (data?: number | { conversation_id?: number }) => {
     await delay(200);
     const id = typeof data === 'number' ? data : data?.conversation_id;
     const conv = mockConversations.find((c) => c.id === id);
@@ -1605,7 +1605,7 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     return true;
   },
-  archiveConversation: async (data?: { conversation_id?: number; status?: string }) => {
+  'conversations:archive': async (data?: { conversation_id?: number; status?: string }) => {
     await delay(200);
     // Reads `status`, which is what `store/messages.ts` actually sends. It used to read
     // `archived`, a key nothing ever set, so archiving was a silent no-op in the browser
@@ -1616,7 +1616,7 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     return true;
   },
-  deleteConversation: async (data?: number | { conversation_id?: number }) => {
+  'conversations:delete': async (data?: number | { conversation_id?: number }) => {
     await delay(200);
     const id = typeof data === 'number' ? data : data?.conversation_id;
     const idx = mockConversations.findIndex((c) => c.id === id);
@@ -1919,15 +1919,15 @@ const mockRegistry: Record<string, MockHandler> = {
   // Reports & moderation. Stateful, like the photo and mail mocks: resolving has to
   // actually empty the queue, or the browser cannot show what happens next and the undo
   // flow has nothing to undo.
-  createReport: async () => ({ ok: true, id: 1 }),
-  getReportQueue: async () => mockReports.filter((r) => r.resolution === 'pending'),
-  getReportHistory: async () => mockReports.filter((r) => r.resolution !== 'pending'),
-  resolveReport: async (data?: { id?: number; action?: string }) => {
+  'reports:create': async () => ({ ok: true, id: 1 }),
+  'reports:queue': async () => mockReports.filter((r) => r.resolution === 'pending'),
+  'reports:history': async () => mockReports.filter((r) => r.resolution !== 'pending'),
+  'reports:resolve': async (data?: { id?: number; action?: string }) => {
     const report = mockReports.find((r) => r.id === data?.id);
     if (report) report.resolution = data?.action === 'moderate' ? 'actioned' : 'dismissed';
     return { ok: true, resolution: report?.resolution };
   },
-  reopenReport: async (data?: { id?: number }) => {
+  'reports:reopen': async (data?: { id?: number }) => {
     const report = mockReports.find((r) => r.id === data?.id);
     if (report) report.resolution = 'pending';
     return { ok: true, resolution: 'pending' };
@@ -2007,9 +2007,10 @@ const mockRegistry: Record<string, MockHandler> = {
   },
 
   // Persistent Notifications
-  getShadeNotifications: async () => mockNotifications.filter((n) => !n.cleared_at),
-  getNotificationHistory: async () => mockNotifications.filter((n) => n.cleared_at !== null),
-  getUnreadCounts: async () => {
+  'notifications:getShadeNotifications': async () => mockNotifications.filter((n) => !n.cleared_at),
+  'notifications:getNotificationHistory': async () =>
+    mockNotifications.filter((n) => n.cleared_at !== null),
+  'notifications:getUnreadCounts': async () => {
     const counts: Record<string, number> = {};
     for (const n of mockNotifications) {
       if (!n.cleared_at && !n.read_at) {
@@ -2018,7 +2019,7 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     return counts;
   },
-  markNotificationRead: async (data?: { ids?: number[] }) => {
+  'notifications:markAsRead': async (data?: { ids?: number[] }) => {
     const ids = data?.ids || [];
     const now = new Date().toISOString();
     mockNotifications.forEach((n) => {
@@ -2026,7 +2027,7 @@ const mockRegistry: Record<string, MockHandler> = {
     });
     return true;
   },
-  clearNotifications: async (data?: { ids?: number[] }) => {
+  'notifications:clearNotifications': async (data?: { ids?: number[] }) => {
     const ids = data?.ids || [];
     const now = new Date().toISOString();
     mockNotifications.forEach((n) => {
@@ -2034,14 +2035,14 @@ const mockRegistry: Record<string, MockHandler> = {
     });
     return true;
   },
-  clearAllNotifications: async (data?: { appId?: string }) => {
+  'notifications:clearAllNotifications': async (data?: { appId?: string }) => {
     const now = new Date().toISOString();
     mockNotifications.forEach((n) => {
       if (!data?.appId || n.app === data.appId) n.cleared_at = now;
     });
     return true;
   },
-  restoreNotifications: async (data?: { ids?: number[] }) => {
+  'notifications:restoreNotifications': async (data?: { ids?: number[] }) => {
     const ids = data?.ids || [];
     mockNotifications.forEach((n) => {
       if (ids.includes(n.id)) {

@@ -29,7 +29,7 @@ describe('mock notification fixtures', () => {
   // browser transport goes through, so this checks what `pnpm dev` actually serves rather
   // than a fixture array the registry might filter before answering with.
   const shade = async () =>
-    (await MockRegistry.handle('getShadeNotifications')) as NotificationItem[];
+    (await MockRegistry.handle('notifications:getShadeNotifications')) as NotificationItem[];
 
   it('serves fixtures to check', async () => {
     expect((await shade()).length).toBeGreaterThan(0);

@@ -108,17 +108,13 @@ export const ROUTES: readonly Route[] = [
   route('getDeletedContacts', 'contacts', 'getDeleted'),
   route('restoreContact', 'contacts', 'restore'),
 
-  // Conversations
-  route('getConversations', 'conversations', 'get'),
-  route('startConversation', 'conversations', 'create'),
-  // The handler decides between an admin soft-delete and a participant leaving, based
-  // on who is asking, so there is one route rather than two. A separate
-  // `leaveConversation` route existed and `web/` never called it.
-  route('deleteConversation', 'conversations', 'delete'),
-  route('readConversation', 'conversations', 'read'),
-  route('archiveConversation', 'conversations', 'archive'),
+  // Conversations. `get`, `create`, `read`, `archive` and `delete` are contracted, so
+  // `web/` reaches them with the typed `call` over the generic service action and they
+  // need no row here (MICA-213).
+  //
   // Rename rides the generic update: `clientWritable` on the conversations repo is
-  // ['name'], and `update` is ownership-scoped, so only the creator can rename.
+  // ['name'], and `update` is ownership-scoped, so only the creator can rename. It is not
+  // in the contract, so it keeps its row.
   route('renameConversation', 'conversations', 'update'),
 
   // Mail
@@ -127,25 +123,10 @@ export const ROUTES: readonly Route[] = [
   route('archiveMail', 'mail', 'archiveMail'),
   route('deleteMail', 'mail', 'deleteMail'),
 
-  // Messages. All four are custom actions: `access.write: 'members'` registers no generic
-  // CRUD at all, because a membership check needs the parent conversation id and that is
-  // not part of the generic payload contract.
-  route('getMessages', 'messages', 'get'),
-  route('sendMessage', 'messages', 'send'),
-  // Fix or take back one message you sent. `editMessage` rewrites the body and the thread
-  // marks the result as edited; `deleteMessage` is an **unsend** — a soft delete that
-  // removes the message from every participant's thread, not a hide-for-me.
-  route('editMessage', 'messages', 'edit'),
-  route('deleteMessage', 'messages', 'delete'),
-  // Reactions (MICA-143), on the shared client-side primitive (`createReactionStore`/
-  // `ReactionBar`, MICA-98) but a `messages`-owned table rather than the shared
-  // `gphone_account_reactions` — see `Messages.ts`'s docblock above `requireReactableMessage`
-  // for why. Named distinctly from `accounts`' `reactToTarget`/`unreactToTarget`/
-  // `getReactionsFor` even though the shape is identical, since `action` is the NUI name and
-  // must be globally unique across every service's routes.
-  route('reactToMessage', 'messages', 'react'),
-  route('unreactToMessage', 'messages', 'unreact'),
-  route('getMessageReactions', 'messages', 'reactionsFor'),
+  // Messages. Every action is custom — `access.write: 'members'` registers no generic CRUD
+  // at all, because a membership check needs the parent conversation id and that is not
+  // part of the generic payload contract — and all seven are contracted, so `web/` reaches
+  // them through the typed `call` and none needs a row here (MICA-213).
 
   // Notes
   // Notes is `core: false` and reaches its service through the generic route instead, so
@@ -154,11 +135,7 @@ export const ROUTES: readonly Route[] = [
 
   // Reports. `queue` and `resolve` are admin-only, enforced server-side rather than by
   // hiding the Administration app — hiding the app hides the button, not the capability.
-  route('createReport', 'reports', 'create'),
-  route('getReportQueue', 'reports', 'queue'),
-  route('resolveReport', 'reports', 'resolve'),
-  route('getReportHistory', 'reports', 'history'),
-  route('reopenReport', 'reports', 'reopen'),
+  // All five are contracted and reached with the typed `call` (MICA-213).
 
   // Highscores — shared leaderboard table, one row per (citizenid, app). Core, not
   // owned by any one game, so a future game reuses it instead of shipping its own table.
@@ -196,14 +173,8 @@ export const ROUTES: readonly Route[] = [
   route('checkPasscode', 'lockscreen', 'check'),
   route('clearPasscode', 'lockscreen', 'clear'),
 
-  // Notifications — persistent OS notification service
-  route('getShadeNotifications', 'notifications', 'getShadeNotifications'),
-  route('getNotificationHistory', 'notifications', 'getNotificationHistory'),
-  route('getUnreadCounts', 'notifications', 'getUnreadCounts'),
-  route('markNotificationRead', 'notifications', 'markAsRead'),
-  route('clearNotifications', 'notifications', 'clearNotifications'),
-  route('clearAllNotifications', 'notifications', 'clearAllNotifications'),
-  route('restoreNotifications', 'notifications', 'restoreNotifications'),
+  // Notifications — persistent OS notification service. All seven are contracted and
+  // reached with the typed `call` (MICA-213).
 
   // Places (MICA-65) — saved places only. Recently-shared locations reuse `media`'s own
   // routes above rather than a second read; sharing the player's current position and
