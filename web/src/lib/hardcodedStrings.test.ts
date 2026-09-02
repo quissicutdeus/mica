@@ -33,10 +33,13 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+let scannedFiles = 0;
+
 const counts = (): Map<string, { count: number; sample: string[] }> => {
   const result = new Map<string, { count: number; sample: string[] }>();
   for (const root of SCANNED) {
     for (const file of walk(path.join(ROOT, root))) {
+      scannedFiles += 1;
       const found = findHardcodedStrings(fs.readFileSync(file, 'utf8'));
       if (found.length === 0) continue;
       result.set(path.relative(ROOT, file), {
@@ -70,7 +73,9 @@ describe('hardcoded user-facing strings (MICA-61)', () => {
   const live = counts();
 
   it('scans a plausible amount of source', () => {
-    expect(live.size).toBeGreaterThan(20);
+    // Files scanned, not files with findings: the whole point is for the second number to
+    // reach zero, and a guard on it would fail the day the extraction finished.
+    expect(scannedFiles).toBeGreaterThan(150);
   });
 
   it('no file has more hardcoded strings than its frozen count', () => {
