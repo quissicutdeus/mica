@@ -1,0 +1,16 @@
+{
+  "title": "Snek",
+  "leaderboard": "Bestenliste",
+  "gameOver": "Spiel vorbei",
+  "easy": "Leicht",
+  "medium": "Mittel",
+  "hard": "Schwer",
+  "best": "Bester:",
+  "score": "Punkte:",
+  "newHighScore": "Neuer Rekord!",
+  "playAgain": "Nochmal spielen",
+  "back": "Zurück",
+  "noScores": "Noch keine Punkte",
+  "noScoresHint": "Sei die erste Person, die spielt.",
+  "unknown": "Unbekannt"
+}

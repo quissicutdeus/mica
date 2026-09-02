@@ -5,6 +5,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { useLocale } from '@gphone/sdk';
+
+  const { t } = useLocale();
+
   let {
     score,
     highScore,
@@ -21,13 +25,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </script>
 
 <div class="flex flex-col items-center gap-4 p-6">
-  <h2 class="text-lg font-semibold">Game Over</h2>
-  <p>Score: {score}</p>
+  <h2 class="text-lg font-semibold">{$t('snek.gameOver')}</h2>
+  <p>{$t('snek.score')} {score}</p>
   {#if isNewBest}
-    <p>New high score!</p>
+    <p>{$t('snek.newHighScore')}</p>
   {/if}
   <div class="flex gap-2">
-    <button type="button" onclick={onrestart}>Play Again</button>
-    <button type="button" onclick={onviewleaderboard}>Leaderboard</button>
+    <button type="button" onclick={onrestart}>{$t('snek.playAgain')}</button>
+    <button type="button" onclick={onviewleaderboard}>{$t('snek.leaderboard')}</button>
   </div>
 </div>
