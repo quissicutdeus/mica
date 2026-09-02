@@ -176,7 +176,11 @@ function failUnreachable(src: number, targetPhone: string): void {
 
   // Issued before the `failed` push, which is what sends the caller's phone back to idle
   // and makes it refetch the log, so the row is already on its way by then.
-  notifyPlayer(src, { type: 'error', message: 'Number unavailable' });
+  notifyPlayer(src, {
+    type: 'error',
+    message: 'Number unavailable',
+    key: 'server.phone.numberUnavailable'
+  });
   emitNet('gphone:client:phone:failed', src);
 }
 
@@ -232,13 +236,13 @@ onNet('gphone:server:phone:start', async (rawTarget: unknown) => {
   }
 
   if (targetSrc === src) {
-    notifyPlayer(src, { type: 'error', message: 'Busy' });
+    notifyPlayer(src, { type: 'error', message: 'Busy', key: 'server.phone.busy' });
     emitNet('gphone:client:phone:failed', src);
     return;
   }
 
   if (playerCalls[targetSrc] || playerCalls[src]) {
-    notifyPlayer(src, { type: 'error', message: 'Line busy' });
+    notifyPlayer(src, { type: 'error', message: 'Line busy', key: 'server.phone.lineBusy' });
     emitNet('gphone:client:phone:failed', src);
     return;
   }

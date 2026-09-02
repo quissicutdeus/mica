@@ -81,16 +81,13 @@ const KEYLESS_BASELINE: Record<string, number> = {
   'server/lib/payload.ts': 2,
   'server/services/Accounts.ts': 18,
   'server/services/Bank.ts': 1,
-  'server/services/Battery.ts': 2,
+  'server/services/Battery.ts': 1,
   'server/services/Conversations.ts': 2,
   'server/services/Highscores.ts': 2,
   'server/services/Lockscreen.ts': 1,
-  'server/services/Media.ts': 9,
   'server/services/Messages.ts': 9,
-  'server/services/Music.ts': 1,
-  'server/services/Phone.ts': 4,
-  'server/services/Places.ts': 2,
-  'server/services/Schema.ts': 1,
+  'server/services/Phone.ts': 1,
+
   'server/services/Seed.ts': 1,
   'server/services/Settings.ts': 3
 };

@@ -134,7 +134,8 @@ describe('what a broadcast may name', () => {
     await call(START, 1, { videoId: 'javascript:alert(1)' });
 
     expect(replyTo('gphone:client:music:broadcastStart')).toEqual({
-      error: 'That is not a YouTube link.'
+      error: 'That is not a YouTube link.',
+      key: 'server.music.notYouTube'
     });
     expect(activeBroadcasts()).toEqual([]);
   });
@@ -155,7 +156,8 @@ describe('what a broadcast may name', () => {
 
     await call(START, 1, { videoId: 'tooshort' });
     expect(replyTo('gphone:client:music:broadcastStart')).toEqual({
-      error: 'That is not a YouTube link.'
+      error: 'That is not a YouTube link.',
+      key: 'server.music.notYouTube'
     });
   });
 });
@@ -505,7 +507,8 @@ describe('the boundary', () => {
     for (let i = 0; i < 61; i += 1) await call(START, 1, { videoId: VIDEO });
 
     expect(replyTo('gphone:client:music:broadcastStart')).toEqual({
-      error: 'Too many music broadcastStart requests. Slow down and try again.'
+      error: 'Too many music broadcastStart requests. Slow down and try again.',
+      key: 'server.rateLimited'
     });
   });
 
@@ -521,7 +524,8 @@ describe('the boundary', () => {
     // No `place()`, so `FrameworkBridge.getPlayer` answers null.
     await call(START, 99, { videoId: VIDEO });
     expect(replyTo('gphone:client:music:broadcastStart')).toEqual({
-      error: 'Player not authenticated'
+      error: 'Player not authenticated',
+      key: 'server.notAuthenticated'
     });
     expect(activeBroadcasts()).toEqual([]);
   });

@@ -89,7 +89,9 @@ const MAX_MEDIA_DATA_LENGTH = 4 * 1024 * 1024;
  */
 const assertStorableData = (value: unknown): void => {
   if (typeof value === 'string' && value.length > MAX_MEDIA_DATA_LENGTH) {
-    throw new PlayerFacingError('That photo is too large to store.');
+    throw new PlayerFacingError('That photo is too large to store.', {
+      key: 'server.media.tooLarge'
+    });
   }
 };
 
@@ -450,7 +452,7 @@ export const media = defineService<MediaItem, typeof mediaContract>({
 
         // Zero rows inserted, so no insert id: the predicate refused. This is the only way
         // the quota says no now — there is no separate check that could disagree with it.
-        if (!id) throw new PlayerFacingError(QUOTA_FULL_MESSAGE);
+        if (!id) throw new PlayerFacingError(QUOTA_FULL_MESSAGE, { key: 'server.media.quotaFull' });
         return id;
       }
 
@@ -661,7 +663,9 @@ app.registerEvent('getDeleted', async (_source, _cbId, _data, citizenid) => {
 app.registerEvent('item', async (_source, _cbId, data, citizenid) => {
   const row = await repo.findById(data.id, citizenid);
   if (!row || row.status !== 'active')
-    throw new PlayerFacingError('That photo could not be found.');
+    throw new PlayerFacingError('That photo could not be found.', {
+      key: 'server.media.notFound'
+    });
 
   return row;
 });
@@ -737,7 +741,9 @@ app.registerEvent('thumbnail', async (_source, _cbId, data, citizenid) => {
 app.registerEvent('drop', async (source, _cbId, data, citizenid) => {
   const owned = await repo.findById(data.mediaId, citizenid);
   if (!owned || owned.status !== 'active')
-    throw new PlayerFacingError('That photo could not be found.');
+    throw new PlayerFacingError('That photo could not be found.', {
+      key: 'server.media.notFound'
+    });
 
   const nearby = await findNearbyVisiblePlayers(source, citizenid);
   // One person, not one phone: two sources resolving to the same character is one copy and
@@ -816,7 +822,10 @@ app.registerEvent('shareLocation', async (source, _cbId, data, citizenid) => {
   const label = data.label?.trim() || undefined;
 
   const coords = playerCoords(source);
-  if (!coords) throw new PlayerFacingError('Could not determine your location.');
+  if (!coords)
+    throw new PlayerFacingError('Could not determine your location.', {
+      key: 'server.media.noLocation'
+    });
   const [x, y, z] = coords;
 
   const privileged = repo as unknown as {
@@ -1115,7 +1124,8 @@ export const runMediaPruneCommand = async (source: number): Promise<void> => {
   if (!isAdmin(source)) {
     notifyPlayer(source, {
       type: 'error',
-      message: 'You do not have permission to use that.'
+      message: 'You do not have permission to use that.',
+      key: 'server.media.noPermission'
     });
     return;
   }
@@ -1123,7 +1133,8 @@ export const runMediaPruneCommand = async (source: number): Promise<void> => {
   if (source !== 0) {
     notifyPlayer(source, {
       type: 'error',
-      message: 'gphonemedia prune only runs from the server console.'
+      message: 'gphonemedia prune only runs from the server console.',
+      key: 'server.media.consoleOnly'
     });
     return;
   }
@@ -1155,7 +1166,8 @@ export const runMediaStatsCommand = async (source: number): Promise<void> => {
   if (!isAdmin(source)) {
     notifyPlayer(source, {
       type: 'error',
-      message: 'You do not have permission to use that.'
+      message: 'You do not have permission to use that.',
+      key: 'server.media.noPermission'
     });
     return;
   }
@@ -1179,7 +1191,9 @@ export const runMediaStatsCommand = async (source: number): Promise<void> => {
   if (source !== 0) {
     notifyPlayer(source, {
       type: 'success',
-      message: `gphone_media: ${stats.rowCount} rows, ${formatBytes(stats.totalBytes)} — see server console for the breakdown.`
+      message: `gphone_media: ${stats.rowCount} rows, ${formatBytes(stats.totalBytes)} — see server console for the breakdown.`,
+      key: 'server.media.stats',
+      params: { rows: stats.rowCount, size: formatBytes(stats.totalBytes) }
     });
   }
 };

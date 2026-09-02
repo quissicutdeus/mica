@@ -253,7 +253,8 @@ describe('the gphoneschema command dispatch', () => {
 
     expect(notifyPlayerMock).toHaveBeenCalledWith(7, {
       type: 'error',
-      message: 'You do not have permission to use that.'
+      message: 'You do not have permission to use that.',
+      key: 'server.schema.noPermission'
     });
     expect(applySpy).not.toHaveBeenCalled();
     expect(runPendingMigrationsMock).not.toHaveBeenCalled();

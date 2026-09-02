@@ -27,5 +27,20 @@
   "reports.notReportable": "That kind of content cannot be reported.",
   "reports.noSuchReport": "No such report.",
   "reports.ownContent": "You cannot report your own content.",
-  "reports.targetGone": "That content no longer exists."
+  "reports.targetGone": "That content no longer exists.",
+  "battery.noPermission": "You do not have permission to do that.",
+  "media.consoleOnly": "gphonemedia prune only runs from the server console.",
+  "media.noLocation": "Could not determine your location.",
+  "media.noPermission": "You do not have permission to use that.",
+  "media.notFound": "That photo could not be found.",
+  "media.quotaFull": "Your photo library is full. Delete something to make room.",
+  "media.stats": "gphone_media: {rows} rows, {size} — see server console for the breakdown.",
+  "media.tooLarge": "That photo is too large to store.",
+  "music.notYouTube": "That is not a YouTube link.",
+  "phone.busy": "Busy",
+  "phone.lineBusy": "Line busy",
+  "phone.numberUnavailable": "Number unavailable",
+  "places.nameRequired": "A name is required.",
+  "places.noLocation": "Could not determine your location.",
+  "schema.noPermission": "You do not have permission to use that."
 }

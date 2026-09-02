@@ -27,5 +27,20 @@
   "reports.notReportable": "Diese Art von Inhalt kann nicht gemeldet werden.",
   "reports.noSuchReport": "Diese Meldung gibt es nicht.",
   "reports.ownContent": "Du kannst deine eigenen Inhalte nicht melden.",
-  "reports.targetGone": "Dieser Inhalt existiert nicht mehr."
+  "reports.targetGone": "Dieser Inhalt existiert nicht mehr.",
+  "battery.noPermission": "Du hast keine Berechtigung, das zu tun.",
+  "media.consoleOnly": "gphonemedia prune läuft nur in der Serverkonsole.",
+  "media.noLocation": "Dein Standort konnte nicht ermittelt werden.",
+  "media.noPermission": "Du hast keine Berechtigung, das zu benutzen.",
+  "media.notFound": "Dieses Foto konnte nicht gefunden werden.",
+  "media.quotaFull": "Deine Fotobibliothek ist voll. Lösche etwas, um Platz zu schaffen.",
+  "media.stats": "gphone_media: {rows} Zeilen, {size} — die Aufschlüsselung steht in der Serverkonsole.",
+  "media.tooLarge": "Dieses Foto ist zu groß zum Speichern.",
+  "music.notYouTube": "Das ist kein YouTube-Link.",
+  "phone.busy": "Besetzt",
+  "phone.lineBusy": "Leitung besetzt",
+  "phone.numberUnavailable": "Nummer nicht verfügbar",
+  "places.nameRequired": "Ein Name ist erforderlich.",
+  "places.noLocation": "Dein Standort konnte nicht ermittelt werden.",
+  "schema.noPermission": "Du hast keine Berechtigung, das zu benutzen."
 }

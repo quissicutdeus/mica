@@ -100,7 +100,8 @@ RegisterCommand(
     if (!isAdmin(source)) {
       notifyPlayer(source, {
         type: 'error',
-        message: 'You do not have permission to use that.'
+        message: 'You do not have permission to use that.',
+        key: 'server.schema.noPermission'
       });
       return;
     }

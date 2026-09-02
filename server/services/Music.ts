@@ -254,7 +254,10 @@ const positionAnchor = (b: Broadcast, now: number): number => now - positionOf(b
 app.registerEvent('broadcastStart', async (source, _cbId, data, citizenid) => {
   const body = data;
   const parsed = sourceFrom(body);
-  if (!parsed) throw new PlayerFacingError('That is not a YouTube link.');
+  if (!parsed)
+    throw new PlayerFacingError('That is not a YouTube link.', {
+      key: 'server.music.notYouTube'
+    });
 
   const now = Date.now();
   const startedAt = now - positionFrom(body.positionMs);

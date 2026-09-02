@@ -259,7 +259,8 @@ onNet('gphone:server:admin:setBattery', (rawCharge: unknown) => {
   if (!isAdmin(src)) {
     notifyPlayer(src, {
       type: 'error',
-      message: 'You do not have permission to do that.'
+      message: 'You do not have permission to do that.',
+      key: 'server.battery.noPermission'
     });
     return;
   }
