@@ -530,6 +530,12 @@ and still does; this moves the refusal to where you can read it. Rebuild against
 the current template to pick it up; a bundle built without the plugin still
 installs.
 
+**`hostRuntime()` is new beside `isBrowser()` (MICA-177).** It answers
+`'browser'`, `'cef'` or `'headless'`, and `isBrowser()` now answers `false`
+where there is no `window` instead of throwing. Nothing changes for an add-on
+running in a phone; a unit test of one that imports the SDK under Node no longer
+dies on the predicate.
+
 **The contract this release publishes is `v1`.** That is `SDK_CONTRACT_VERSION`,
 exported from `@gphone/sdk`, and it is the number to branch on. It moves when
 the SDK's published surface moves and at no other time — the exported names of

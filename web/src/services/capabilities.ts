@@ -9,20 +9,13 @@ import { ALL_CAPABILITIES, type AppCapability } from '../../../sdk/manifest';
 import type { CapabilitySet } from '../lib/phone/appVisibility';
 
 /**
- * `isBrowser()`, but safe to evaluate where there is no `window` at all.
- *
- * `lib/isBrowser.ts` dereferences `window` unguarded, which is correct for every place it
- * runs — CEF and a browser both have one. This module is different only because
- * `shell/state/registry.ts` imports it, and `registry.ts` is loaded by eight suites that
- * run in Vitest's **node** environment rather than jsdom (`manifest.test.ts`,
- * `permissions.test.ts`, `navigation.test.ts` and friends). A bare `isBrowser()` in module
- * scope took all eight down on `window is not defined` before a single assertion ran.
- *
- * No `window` means a test module graph, not a phone, so it answers "not a browser" — and
- * `capabilitiesKnown` stays false there, which is what keeps `registry.ts`'s install gate
- * from refusing anything on the strength of a starting assumption.
+ * `isBrowser()` answers `false` with no `window` at all since MICA-177, which is what
+ * this module needs: `shell/state/registry.ts` imports it, and eight node-environment
+ * suites load `registry.ts`, so a module-scope read here has to survive a test module
+ * graph. It used to carry its own `typeof window` guard for that; the predicate now
+ * answers the same thing for the same reason, in one place.
  */
-const inPlainBrowser = (): boolean => typeof window !== 'undefined' && isBrowser();
+const inPlainBrowser = (): boolean => isBrowser();
 
 /**
  * What the server behind this phone can actually do, as the server itself reports it.

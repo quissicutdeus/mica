@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { isBrowser } from '@gphone/sdk';
+import { hostRuntime } from '@gphone/sdk';
 import { MockRegistry } from './mocks/registry';
 
 export interface ITransportAdapter {
@@ -351,13 +351,27 @@ export function createWebSocketTransport(
 
 let activeTransport: ITransportAdapter | null = null;
 
+/**
+ * The transport for this runtime, chosen once.
+ *
+ * A headless runtime gets none, out loud (MICA-177). `isBrowser()` answers `false`
+ * there, and before it did the CEF branch below would have been taken under a node test
+ * and died inside `NuiTransportAdapter` on `window` — a real failure reported from the
+ * wrong place. A node test that reaches this without `setTransport()` is a
+ * test-configuration mistake, and the error says so rather than letting the mock stand in
+ * for the game silently.
+ */
 export function getTransport(): ITransportAdapter {
   if (!activeTransport) {
-    if (isBrowser()) {
-      activeTransport = new MockTransportAdapter();
-    } else {
-      activeTransport = new NuiTransportAdapter();
+    const runtime = hostRuntime();
+    if (runtime === 'headless') {
+      throw new Error(
+        'No NUI transport in a headless runtime: a test that reaches the transport ' +
+          'must install one with setTransport() first (MICA-177).'
+      );
     }
+    activeTransport =
+      runtime === 'browser' ? new MockTransportAdapter() : new NuiTransportAdapter();
   }
   return activeTransport;
 }

@@ -19,7 +19,7 @@
  * half. Adding a re-export here whose module lives in `lib/phone/` is the thing it
  * catches — move the module, or do not export it.
  */
-export { isBrowser } from './lib/isBrowser';
+export { hostRuntime, isBrowser, type HostRuntime } from './lib/isBrowser';
 export { filterByQuery } from './lib/filterByQuery';
 export {
   formatCurrency,

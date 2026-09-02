@@ -3,10 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // @vitest-environment jsdom
-// MICA-176: jsdom because this file's subject now transitively imports `services/admin.ts`,
-// which reads `window` at module scope. Not a workaround for `isBrowser()`, and do not
-// "simplify" this line away by giving that predicate a `typeof` guard — MICA-177 is the
-// bug and carries the reasoning, including why both cheap guards are worse than the crash.
+// MICA-176: jsdom because this file's subject transitively imports shell state that
+// assumes a DOM. `isBrowser()` no longer throws headless (MICA-177), so this line is not
+// about the predicate; it is a statement about what the subject needs.
 /**
  * MICA-176: which facet set this file's subject resolves against. A hook no longer
  * carries its facet — `src/main.ts` picks the in-process set for the shell and `bootAddOn`
