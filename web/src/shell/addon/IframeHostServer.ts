@@ -315,7 +315,10 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   ): void {
     if (needed === null) return;
     const granted = grantFor(host.appId);
-    for (const permission of Array.isArray(needed) ? needed : [needed as AppPermission]) {
+    // `typeof`, not `Array.isArray`: on a `readonly` array type the latter narrows the other
+    // branch to `any[]`, and every element check below would go unchecked.
+    const required: readonly AppPermission[] = typeof needed === 'string' ? [needed] : needed;
+    for (const permission of required) {
       if (!granted.includes(permission)) {
         throw new AppPermissionError(host.appId, permission, hookName);
       }

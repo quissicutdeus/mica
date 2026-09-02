@@ -10,6 +10,7 @@
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
 import '../../host/registerFacets';
+import type { AppPermission } from '@gphone/sdk';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get, writable } from 'svelte/store';
 import { createInProcessHost } from '../../../../sdk/host/inProcess/createInProcessHost';
@@ -52,7 +53,7 @@ const manifest = defineApp({
  * (or none) to play the add-on whose manifest asks for more than its player agreed to.
  */
 function server(permissions = manifest.permissions!, granted = permissions) {
-  recordConsent('probe', granted as any);
+  recordConsent('probe', granted);
   const posted: ToFrame[] = [];
   const makeWindow = () => ({ postMessage: (m: ToFrame) => posted.push(m) });
   let current = makeWindow();
@@ -230,7 +231,7 @@ describe('IframeHostServer', () => {
    * only route a sandboxed add-on has and the frame's own `require` runs inside it.
    */
   it('refuses a declared permission the player never granted', async () => {
-    const { posted, from } = server(['contacts'] as any, [] as any);
+    const { posted, from } = server(['contacts'] as AppPermission[], []);
     from({
       kind: 'call',
       id: 1,
@@ -250,7 +251,10 @@ describe('IframeHostServer', () => {
   it('refuses a permission an update added but the grant does not carry yet', async () => {
     // The update case exactly: installed and granted `storage`, republished asking for
     // `contacts` too. The wider manifest answers nothing extra until the grant widens.
-    const { posted, from } = server(['storage', 'contacts'] as any, ['storage'] as any);
+    const { posted, from } = server(
+      ['storage', 'contacts'] as AppPermission[],
+      ['storage'] as AppPermission[]
+    );
     from({
       kind: 'call',
       id: 1,
@@ -268,7 +272,10 @@ describe('IframeHostServer', () => {
     });
   });
   it('hydrates the frame with the granted subset, so both checks agree', () => {
-    const { posted, from } = server(['storage', 'contacts'] as any, ['storage'] as any);
+    const { posted, from } = server(
+      ['storage', 'contacts'] as AppPermission[],
+      ['storage'] as AppPermission[]
+    );
     from({ kind: 'hello', appId: 'probe' });
     const hydrate = posted[0] as Extract<ToFrame, { kind: 'hydrate' }>;
     expect(hydrate.payload.permissions).toEqual(['storage']);
@@ -367,7 +374,7 @@ describe('IframeHostServer', () => {
     });
 
     it("replaces a call's factoryArgs[0] with the server's own appId", async () => {
-      const { posted, from } = server(['storage'] as any);
+      const { posted, from } = server(['storage'] as AppPermission[]);
       from({
         kind: 'call',
         id: 1,
@@ -385,7 +392,7 @@ describe('IframeHostServer', () => {
     });
 
     it('pins a subscribe the same way', () => {
-      const { from } = server(['app-events'] as any);
+      const { from } = server(['app-events'] as AppPermission[]);
       from({
         kind: 'subscribe',
         id: 2,
@@ -397,7 +404,7 @@ describe('IframeHostServer', () => {
     });
 
     it('pins appAction, and turns notifications(undefined) — every app — into this one', async () => {
-      const { from } = server(['notifications'] as any);
+      const { from } = server(['notifications'] as AppPermission[]);
       from({
         kind: 'call',
         id: 3,
@@ -444,7 +451,7 @@ describe('IframeHostServer', () => {
     });
 
     it('refuses a mutating member even with the app-registry permission', async () => {
-      const { posted, from } = server(['app-registry'] as any);
+      const { posted, from } = server(['app-registry'] as AppPermission[]);
       from({
         kind: 'call',
         id: 1,
@@ -464,7 +471,7 @@ describe('IframeHostServer', () => {
     });
 
     it('still allows the two read members', async () => {
-      const { posted, from } = server(['app-registry'] as any);
+      const { posted, from } = server(['app-registry'] as AppPermission[]);
       from({
         kind: 'subscribe',
         id: 2,
@@ -508,7 +515,7 @@ describe('IframeHostServer', () => {
       const setBinding = vi.fn();
       const resetBindings = vi.fn();
       registerFacet('keybindsWrite' as any, (() => ({ setBinding, resetBindings })) as any);
-      const { posted, from } = server(['keybinds-write'] as any);
+      const { posted, from } = server(['keybinds-write'] as AppPermission[]);
       from({
         kind: 'call',
         id: 1,
@@ -537,7 +544,7 @@ describe('IframeHostServer', () => {
     it('hard-blocks appRegistryWrite entirely, even with app-registry-write granted', async () => {
       const unregisterApp = vi.fn();
       registerFacet('appRegistryWrite' as any, (() => ({ unregisterApp })) as any);
-      const { posted, from } = server(['app-registry-write'] as any);
+      const { posted, from } = server(['app-registry-write'] as AppPermission[]);
       from({
         kind: 'call',
         id: 1,
@@ -559,7 +566,7 @@ describe('IframeHostServer', () => {
     it('hard-blocks notificationSettingsWrite entirely, even with notification-settings-write granted', async () => {
       const setDndEnabled = vi.fn();
       registerFacet('notificationSettingsWrite' as any, (() => ({ setDndEnabled })) as any);
-      const { posted, from } = server(['notification-settings-write'] as any);
+      const { posted, from } = server(['notification-settings-write'] as AppPermission[]);
       from({
         kind: 'call',
         id: 1,
@@ -617,7 +624,7 @@ describe('IframeHostServer', () => {
       });
 
       it.each(blocked)("blocks '%s' as core only", async (member) => {
-        const { posted, from } = server(['system-hardware-write'] as any);
+        const { posted, from } = server(['system-hardware-write'] as AppPermission[]);
         from({
           kind: 'call',
           id: 1,
@@ -636,7 +643,7 @@ describe('IframeHostServer', () => {
       });
 
       it.each(grantable)("still allows '%s' with the permission granted", async (member) => {
-        const { posted, from } = server(['system-hardware-write'] as any);
+        const { posted, from } = server(['system-hardware-write'] as AppPermission[]);
         from({
           kind: 'call',
           id: 1,
@@ -1253,7 +1260,7 @@ describe('IframeHostServer', () => {
       const posted: ToFrame[] = [];
       const current = { postMessage: (msg: ToFrame) => posted.push(msg) };
       const s = createIframeHostServer({
-        host: createInProcessHost('probe', ['contacts'] as any),
+        host: createInProcessHost('probe', ['contacts'] as AppPermission[]),
         manifest: m,
         props: {},
         guest: () => current,
