@@ -9,17 +9,17 @@ import { fileURLToPath } from 'node:url';
 import { findHardcodedStrings } from './phone/hardcodedStrings';
 
 /**
- * The localization ratchet (MICA-61).
+ * No user-facing string is hardcoded English (MICA-61).
  *
- * Every user-facing string used to be an English literal in a `.svelte` file. The
- * mechanism now exists — `registerMessages` and `$t` — and the extraction is spread over
- * MICA-214 and MICA-215, so this file freezes the count of literals per file and lets
- * each number go **down only**. A file at zero is done; a file not listed must stay at zero,
- * which is what stops a new app, or a new string in a finished one, from decaying back to
- * English. When every entry is gone, the table goes with it and the rule is simply "none".
+ * This began as a ratchet: a frozen count of literals per `.svelte` file — 771 across 97
+ * files on 2026-09-01 — that could only fall while MICA-214 and MICA-215 extracted
+ * them. Every entry is gone now, so the table is gone with it and the rule is simply the
+ * one it was converging on: a `.svelte` file under these roots reads its strings through
+ * `$t` and a registered catalog, and a new one starts that way.
  *
  * `findHardcodedStrings` is a scanner and says what it covers; a literal it cannot see is
- * not gated here, so a green run is a floor, not proof of translation.
+ * not gated here, so a green run is a floor, not proof of translation. What the server
+ * composes and sends is MICA-216's.
  */
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const SCANNED = ['web/src/apps', 'web/src/shell', 'sdk/ui'];
@@ -51,9 +51,6 @@ const counts = (): Map<string, { count: number; sample: string[] }> => {
   return result;
 };
 
-/** Frozen on 2026-09-01 when the mechanism landed. Lower a number; never raise one. */
-const BASELINE: Record<string, number> = {};
-
 describe('hardcoded user-facing strings (MICA-61)', () => {
   const live = counts();
 
@@ -63,28 +60,13 @@ describe('hardcoded user-facing strings (MICA-61)', () => {
     expect(scannedFiles).toBeGreaterThan(150);
   });
 
-  it('no file has more hardcoded strings than its frozen count', () => {
-    const over: string[] = [];
-    for (const [file, { count, sample }] of live) {
-      const allowed = BASELINE[file] ?? 0;
-      if (count > allowed) {
-        over.push(`${file}: ${count} (allowed ${allowed})\n    ${sample.join('\n    ')}`);
-      }
-    }
+  it('no file has a hardcoded user-facing string', () => {
+    const offenders = [...live].map(
+      ([file, { count, sample }]) => `${file}: ${count}\n    ${sample.join('\n    ')}`
+    );
     expect(
-      over,
+      offenders,
       'a user-facing string is hardcoded English — read it through $t and a registered catalog (MICA-61)'
     ).toEqual([]);
-  });
-
-  it('the frozen counts are honest: a file that got better lowers its entry', () => {
-    const stale: string[] = [];
-    for (const [file, allowed] of Object.entries(BASELINE)) {
-      const count = live.get(file)?.count ?? 0;
-      if (count < allowed) stale.push(`${file}: now ${count}, baseline says ${allowed}`);
-    }
-    expect(stale, 'lower the baseline to the new count so the ratchet cannot slip back').toEqual(
-      []
-    );
   });
 });
