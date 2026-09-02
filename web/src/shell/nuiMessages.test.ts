@@ -198,6 +198,19 @@ describe('installApp', () => {
     expect(installFromCatalog).toHaveBeenCalledWith(catalogEntry);
   });
 
+  it('records the declared permissions as the grant, since the operator is the one consenting (MICA-201)', async () => {
+    const { grantedPermissions, resetGrantsForTest } = await import('./state/addOnGrants');
+    resetGrantsForTest();
+    vi.spyOn(appRegistryStore, 'installFromCatalog').mockResolvedValue({
+      manifest: { id: 'remote_weather', name: 'Weather', permissions: ['storage'] }
+    } as never);
+
+    route(message('installApp', { ...catalogEntry, permissions: ['storage'] }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(grantedPermissions('remote_weather')).toEqual(['storage']);
+  });
+
   it('rejects the old { url } shape — it has no catalog entry to build a manifest from', () => {
     const installFromCatalog = vi.spyOn(appRegistryStore, 'installFromCatalog');
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

@@ -7,6 +7,7 @@ import { contacts } from '../services/contacts';
 import { mailStore } from '../services/mail';
 import { conversationsStore } from '../services/conversations';
 import { appRegistryStore } from './state/registry';
+import { recordConsent } from './state/addOnGrants';
 import { isCatalogEntry, type CatalogEntry } from '../../../sdk/catalog';
 import { setSignal } from './state/signal';
 import { time } from './state/time';
@@ -93,6 +94,12 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     appRegistryStore
       .installFromCatalog(payload)
       .then(({ manifest }) => {
+        // MICA-201: a server-pushed install has no player to answer an install sheet,
+        // and the shell now refuses any permission nobody granted. The operator pushing
+        // the app is the party consenting here — they chose it for the phone — so the
+        // manifest's declared set is recorded as the grant, exactly what the Store would
+        // have recorded had the player tapped Install on the same sheet.
+        recordConsent(manifest.id, manifest.permissions ?? []);
         toast.show({
           type: 'success',
           app: 'store',
