@@ -5,9 +5,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Screen, useAppLevels, type AppProps } from '@gphone/sdk';
+  import { Screen, registerMessages, useAppLevels, useLocale, type AppProps } from '@gphone/sdk';
   import Portfolio from './components/Portfolio.svelte';
   import Trade from './components/Trade.svelte';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
+
+  // MICA-215: Hodlr is a `core: false` add-on and ships its own bundle, so its catalog
+  // travels with it — registered here, read as `hodlr.*` everywhere below.
+  registerMessages('hodlr', { en, de });
+  const { t } = useLocale();
 
   let { onback }: AppProps = $props();
 
@@ -17,7 +24,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const app = useAppLevels({
     appId: 'hodlr',
-    title: 'Hodlr',
+    title: () => $t('hodlr.title'),
     onback: () => onback(),
     levels: [
       {

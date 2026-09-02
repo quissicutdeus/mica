@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { writable } from 'svelte/store';
-import { useService } from '@gphone/sdk';
+import { get, writable } from 'svelte/store';
+import { t, useService } from '@gphone/sdk';
 import type { PricePoint } from '@gphone/shared/types';
 
 /**
@@ -74,22 +74,24 @@ export type TradeOutcome =
  * server-side reason should read as a failure, not as debug output.
  */
 export const tradeFailureMessage = (reason: string, holding: number): string => {
+  // Not a component, so the translator is read out of its store rather than with `$t`.
+  const translate = get(t);
   switch (reason) {
     case 'insufficient_holdings':
-      return `You only have ${holding} gCoin to sell.`;
+      return translate('hodlr.failInsufficientHoldings', { holding });
     case 'insufficient_funds':
-      return 'Your bank balance will not cover that.';
+      return translate('hodlr.failInsufficientFunds');
     case 'exceeds_limit':
-      return 'That is over the per-trade limit. Try a smaller amount.';
+      return translate('hodlr.failExceedsLimit');
     case 'market_unavailable':
-      return 'The market is still opening. Try again in a moment.';
+      return translate('hodlr.failMarketUnavailable');
     case 'debit_failed':
     case 'credit_failed':
-      return 'The bank refused the transfer. Nothing changed.';
+      return translate('hodlr.failBankRefused');
     case 'request_failed':
-      return 'The market did not answer. Try again.';
+      return translate('hodlr.failNoAnswer');
     default:
-      return 'That trade did not go through.';
+      return translate('hodlr.failGeneric');
   }
 };
 

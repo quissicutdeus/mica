@@ -6,13 +6,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { EmptyState, Skeleton, onAppForeground } from '@gphone/sdk';
+  import { EmptyState, Skeleton, onAppForeground, useLocale } from '@gphone/sdk';
   import { useHodlr, buyPriceOf, sellPriceOf } from '../store';
   import Chart from './Chart.svelte';
 
   let { onbuy, onsell }: { onbuy: () => void; onsell: () => void } = $props();
 
   const { priceStore, portfolioStore, loadPrice, loadPortfolio } = useHodlr();
+  const { t } = useLocale();
 
   let loaded = $state(false);
 
@@ -49,7 +50,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <Skeleton count={3} height="h-16" />
   {:else}
     <div class="bg-surface-container rounded-box p-4">
-      <p class="text-on-surface-variant text-body-small">gCoin price</p>
+      <p class="text-on-surface-variant text-body-small">{$t('hodlr.price')}</p>
       {#if open}
         <p class="text-on-surface text-title-large">${$priceStore.current}</p>
         <!-- Buy and sell, side by side rather than folded into one number — a spread
@@ -58,34 +59,39 @@ SPDX-License-Identifier: AGPL-3.0-or-later
              player learns which one they actually pay or receive. -->
         <div class="mt-2 flex gap-4">
           <div>
-            <p class="text-on-surface-variant text-body-small">Buy</p>
+            <p class="text-on-surface-variant text-body-small">{$t('hodlr.buy')}</p>
             <p class="text-on-surface text-body-medium">${buyPrice}</p>
           </div>
           <div>
-            <p class="text-on-surface-variant text-body-small">Sell</p>
+            <p class="text-on-surface-variant text-body-small">{$t('hodlr.sell')}</p>
             <p class="text-on-surface text-body-medium">${sellPrice}</p>
           </div>
         </div>
       {:else}
-        <p class="text-on-surface-variant text-title-large">Closed</p>
+        <p class="text-on-surface-variant text-title-large">{$t('hodlr.closed')}</p>
         <p class="text-on-surface-variant text-body-small">
-          The market is still opening. Trading resumes in a moment.
+          {$t('hodlr.closedHint')}
         </p>
       {/if}
     </div>
 
     {#if $priceStore.history.length < 2}
-      <EmptyState title="No history yet" description="Check back after the market ticks." />
+      <EmptyState
+        title={$t('hodlr.noHistoryTitle')}
+        description={$t('hodlr.noHistoryDescription')}
+      />
     {:else}
       <Chart history={$priceStore.history} />
     {/if}
 
     <div class="bg-surface-container rounded-box p-4">
-      <p class="text-on-surface-variant text-body-small">You hold</p>
-      <p class="text-on-surface text-title-medium">{$portfolioStore.quantity} gCoin</p>
+      <p class="text-on-surface-variant text-body-small">{$t('hodlr.youHold')}</p>
+      <p class="text-on-surface text-title-medium">
+        {$t('hodlr.holdingAmount', { quantity: $portfolioStore.quantity })}
+      </p>
       {#if open}
         <p class="text-on-surface-variant text-body-medium">
-          worth ${$portfolioStore.currentValue}
+          {$t('hodlr.worth', { value: $portfolioStore.currentValue })}
         </p>
       {/if}
     </div>
@@ -97,7 +103,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         onclick={onbuy}
         class="bg-primary text-on-primary text-label-large disabled:bg-disabled-container disabled:text-disabled-content disabled:hover:bg-disabled-container disabled:hover:text-disabled-content disabled:cursor-not-allowed flex-1 rounded-full py-3"
       >
-        Buy
+        {$t('hodlr.buy')}
       </button>
       <button
         type="button"
@@ -105,7 +111,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         onclick={onsell}
         class="bg-surface-container-high text-on-surface text-label-large disabled:bg-disabled-container disabled:text-disabled-content disabled:hover:bg-disabled-container disabled:hover:text-disabled-content disabled:cursor-not-allowed flex-1 rounded-full py-3"
       >
-        Sell
+        {$t('hodlr.sell')}
       </button>
     </div>
   {/if}

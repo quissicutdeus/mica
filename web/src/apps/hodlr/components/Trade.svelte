@@ -5,13 +5,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Button, useAppAction } from '@gphone/sdk';
+  import { Button, useAppAction, useLocale } from '@gphone/sdk';
   import { useHodlr, buyPriceOf, sellPriceOf } from '../store';
 
   let { side, onback }: { side: 'buy' | 'sell'; onback: () => void } = $props();
 
   const { priceStore, portfolioStore, buy, sell, tradeFailureMessage } = useHodlr();
   const { busy, run } = useAppAction('hodlr');
+  const { t } = useLocale();
 
   let quantity = $state<number | ''>('');
 
@@ -42,7 +43,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     if (!open) return tradeFailureMessage('market_unavailable', maxSell);
     if (quantity === '') return '';
     const entered = Number(quantity);
-    if (!Number.isInteger(entered) || entered <= 0) return 'Enter a whole number of gCoin.';
+    if (!Number.isInteger(entered) || entered <= 0) return $t('hodlr.wholeNumber');
     if (side === 'sell' && entered > maxSell)
       return tradeFailureMessage('insufficient_holdings', maxSell);
     return '';
@@ -60,7 +61,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         // own refusal visible when the guard above was bypassed or raced a price tick.
         if (!outcome.ok) throw new Error(tradeFailureMessage(outcome.reason, maxSell));
       },
-      { title: 'Hodlr' }
+      { title: $t('hodlr.title') }
     );
     if (traded) onback();
   };
@@ -69,14 +70,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <div class="flex flex-col gap-3 p-4">
   <p class="text-on-surface-variant text-body-medium">
     {#if open}
-      {side === 'buy' ? 'Buy' : 'Sell'} gCoin at ${price} each
+      {side === 'buy' ? $t('hodlr.quoteBuy', { price }) : $t('hodlr.quoteSell', { price })}
     {:else}
-      {side === 'buy' ? 'Buy' : 'Sell'} gCoin — no price yet
+      {side === 'buy' ? $t('hodlr.quoteBuyClosed') : $t('hodlr.quoteSellClosed')}
     {/if}
   </p>
 
   <input
-    placeholder="Quantity"
+    placeholder={$t('hodlr.quantityPlaceholder')}
     type="number"
     min="1"
     bind:value={quantity}
@@ -84,11 +85,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   />
 
   {#if side === 'sell'}
-    <p class="text-on-surface-variant text-body-small">You hold {maxSell} gCoin.</p>
+    <p class="text-on-surface-variant text-body-small">
+      {$t('hodlr.youHoldAmount', { quantity: maxSell })}
+    </p>
   {/if}
 
   <p class="text-on-surface text-body-large">
-    {side === 'buy' ? 'Cost' : 'Proceeds'}: ${total}
+    {side === 'buy' ? $t('hodlr.cost', { total }) : $t('hodlr.proceeds', { total })}
   </p>
 
   {#if validation}
@@ -96,7 +99,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {/if}
 
   <div class="flex justify-end gap-2">
-    <Button variant="secondary" onclick={onback}>Cancel</Button>
-    <Button disabled={!canSubmit} onclick={submit}>Confirm</Button>
+    <Button variant="secondary" onclick={onback}>{$t('hodlr.cancel')}</Button>
+    <Button disabled={!canSubmit} onclick={submit}>{$t('hodlr.confirm')}</Button>
   </div>
 </div>

@@ -8,11 +8,27 @@ import { get } from 'svelte/store';
 const service = vi.hoisted(() => ({ call: vi.fn() }));
 
 /**
- * The whole SDK, not `importOriginal` — the store's only use of it is `useService`, and
- * loading the real barrel would drag the component kit (and a DOM with it) into a suite
- * that needs neither. This file stays on the `node` default (`vite.config.ts`).
+ * The whole SDK, not `importOriginal` — the store uses two things from it, `useService`
+ * and the translator, and loading the real barrel would drag the component kit (and a DOM
+ * with it) into a suite that needs neither. This file stays on the `node` default
+ * (`vite.config.ts`).
+ *
+ * The translator is the real one (MICA-215), reached by module path rather than through
+ * the barrel: `sdk/i18n.ts` is a leaf with no component in it, and a stub here would make
+ * every assertion below a check that the stub echoes its argument. `boundary.test.ts`
+ * skips `.test.ts`, which is what makes the relative path legal in this one place.
  */
-vi.mock('@gphone/sdk', () => ({ useService: () => ({ call: service.call }) }));
+vi.mock('@gphone/sdk', async () => {
+  const { t, registerMessages } = await import('../../../../sdk/i18n');
+  return { useService: () => ({ call: service.call }), t, registerMessages };
+});
+
+import { registerMessages } from '@gphone/sdk';
+import en from './locales/en.json';
+import de from './locales/de.json';
+
+// `index.svelte` does this for the running add-on; the store is loaded here without it.
+registerMessages('hodlr', { en, de });
 
 import {
   buy,

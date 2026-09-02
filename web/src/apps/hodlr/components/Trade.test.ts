@@ -46,6 +46,15 @@ vi.mock('../store', async (importOriginal) => {
 });
 
 import Trade from './Trade.svelte';
+
+import { registerMessages } from '@gphone/sdk';
+import en from '../locales/en.json';
+import de from '../locales/de.json';
+
+// MICA-215: `index.svelte` registers the `hodlr` namespace for the running add-on. This
+// test renders Trade on its own, so it stands in for the entry point — otherwise every
+// `$t` here, and `tradeFailureMessage` with it, resolves to its own key.
+registerMessages('hodlr', { en, de });
 import { priceStore, portfolioStore } from '../store';
 
 /**
