@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { GENERIC_SERVICE_ACTION } from '@gphone/shared/rpc';
 import { get } from 'svelte/store';
 import { media } from './media';
 import * as fetchNuiModule from '../nui/fetchNui';
@@ -39,9 +40,29 @@ const row = (id: number, extra: Record<string, unknown> = {}) => ({
 const respond = (answers: Record<string, unknown>) =>
   vi
     .spyOn(fetchNuiModule, 'fetchNui')
-    .mockImplementation(async (action: string) =>
-      action in answers ? answers[action] : undefined
-    );
+    .mockImplementation(async (action: string, payload?: unknown) => {
+      const key = requestedAction(action, payload);
+      return key in answers ? answers[key] : undefined;
+    });
+
+/**
+ * What a call asked for, whichever door it went through (MICA-213).
+ *
+ * A generic CRUD read is still `fetchNui('getMedia', …)`, while a contracted action is the
+ * typed `call`, which crosses as the one generic `svc` action carrying
+ * `{ service, action, data }`. Keying on the envelope rather than on the transport's own
+ * action name is what keeps every answer below named after the thing it is answering — and
+ * stops the three contracted reads collapsing into one indistinguishable `svc`.
+ */
+const requestedAction = (action: string, payload?: unknown): string => {
+  if (action !== GENERIC_SERVICE_ACTION || !payload || typeof payload !== 'object') return action;
+  const envelope = payload as { service?: string; action?: string };
+  return envelope.service && envelope.action ? `${envelope.service}:${envelope.action}` : action;
+};
+
+/** The calls that asked for one action, envelope or not. */
+const callsFor = (spy: ReturnType<typeof respond>, action: string) =>
+  spy.mock.calls.filter(([name, payload]) => requestedAction(name, payload) === action);
 
 describe('media store', () => {
   beforeEach(() => {
@@ -84,11 +105,15 @@ describe('media store', () => {
 
   describe('opening one photo', () => {
     it('fetches the bytes by id', async () => {
-      const spy = respond({ getMediaItem: row(4, { data: 'data:image/png;base64,FULL' }) });
+      const spy = respond({ 'media:item': row(4, { data: 'data:image/png;base64,FULL' }) });
 
       const full = await media.full(4);
 
-      expect(spy).toHaveBeenCalledWith('getMediaItem', { id: 4 });
+      expect(spy).toHaveBeenCalledWith(GENERIC_SERVICE_ACTION, {
+        service: 'media',
+        action: 'item',
+        data: { id: 4 }
+      });
       expect(full.data).toBe('data:image/png;base64,FULL');
     });
 
@@ -96,7 +121,7 @@ describe('media store', () => {
       respond({ getMedia: { rows: [row(4, { thumbnail: 'thumb' })], nextCursor: null } });
       await media.load();
 
-      respond({ getMediaItem: row(4, { data: 'data:image/png;base64,FULL' }) });
+      respond({ 'media:item': row(4, { data: 'data:image/png;base64,FULL' }) });
       await media.full(4);
 
       // Fifty opens would otherwise rebuild exactly the memory footprint this removes.
@@ -109,19 +134,23 @@ describe('media store', () => {
       respond({ getMedia: { rows: [row(30)], nextCursor: null } });
       await media.load();
 
-      const spy = respond({ getMediaItem: row(30, { data: 'data:image/png;base64,OLD' }) });
+      const spy = respond({ 'media:item': row(30, { data: 'data:image/png;base64,OLD' }) });
       spy.mockClear();
 
       media.hydrate(row(30));
 
       await vi.waitFor(() => expect(get(media)[0].data).toBe('data:image/png;base64,OLD'));
-      expect(spy).toHaveBeenCalledWith('getMediaItem', { id: 30 });
+      expect(spy).toHaveBeenCalledWith(GENERIC_SERVICE_ACTION, {
+        service: 'media',
+        action: 'item',
+        data: { id: 30 }
+      });
     });
 
     it('asks again after a reload, because the reload stripped the bytes off again', async () => {
       respond({
         getMedia: { rows: [row(34)], nextCursor: null },
-        getMediaItem: row(34, { data: 'data:image/png;base64,OLD' })
+        'media:item': row(34, { data: 'data:image/png;base64,OLD' })
       });
 
       await media.load();
@@ -138,16 +167,14 @@ describe('media store', () => {
     });
 
     it('asks for a given row once, however often the grid redraws it', async () => {
-      const spy = respond({ getMediaItem: row(31, { data: 'data:image/png;base64,OLD' }) });
+      const spy = respond({ 'media:item': row(31, { data: 'data:image/png;base64,OLD' }) });
       spy.mockClear();
 
       media.hydrate(row(31));
       media.hydrate(row(31));
       media.hydrate(row(31));
 
-      await vi.waitFor(() =>
-        expect(spy.mock.calls.filter(([action]) => action === 'getMediaItem')).toHaveLength(1)
-      );
+      await vi.waitFor(() => expect(callsFor(spy, 'media:item')).toHaveLength(1));
     });
 
     it('hands a thumbnail back so the row never costs full size again', async () => {
@@ -155,17 +182,18 @@ describe('media store', () => {
       await media.load();
 
       const spy = respond({
-        getMediaItem: row(35, { data: 'data:image/png;base64,OLD' }),
-        setMediaThumbnail: { stored: true }
+        'media:item': row(35, { data: 'data:image/png;base64,OLD' }),
+        'media:thumbnail': { stored: true }
       });
       vi.spyOn(thumbnailModule, 'makeThumbnail').mockResolvedValue('data:image/webp;base64,SMALL');
 
       media.hydrate(row(35));
 
       await vi.waitFor(() =>
-        expect(spy).toHaveBeenCalledWith('setMediaThumbnail', {
-          id: 35,
-          thumbnail: 'data:image/webp;base64,SMALL'
+        expect(spy).toHaveBeenCalledWith(GENERIC_SERVICE_ACTION, {
+          service: 'media',
+          action: 'thumbnail',
+          data: { id: 35, thumbnail: 'data:image/webp;base64,SMALL' }
         })
       );
 
@@ -181,9 +209,9 @@ describe('media store', () => {
       await media.load();
 
       respond({
-        getMediaItem: row(37, { data: 'data:image/png;base64,OLD' }),
+        'media:item': row(37, { data: 'data:image/png;base64,OLD' }),
         // Somebody got there first, the row is not ours, or it is not active. Not an error.
-        setMediaThumbnail: { stored: false }
+        'media:thumbnail': { stored: false }
       });
       vi.spyOn(thumbnailModule, 'makeThumbnail').mockResolvedValue('data:image/webp;base64,SMALL');
 
@@ -198,7 +226,7 @@ describe('media store', () => {
       respond({ getMedia: { rows: [row(36)], nextCursor: null } });
       await media.load();
 
-      respond({ getMediaItem: row(36, { data: 'data:image/png;base64,OLD' }) });
+      respond({ 'media:item': row(36, { data: 'data:image/png;base64,OLD' }) });
       vi.spyOn(thumbnailModule, 'makeThumbnail').mockResolvedValue(null);
 
       media.hydrate(row(36));
@@ -249,13 +277,13 @@ describe('media store', () => {
      */
     const hydrateCalls = async (item: Record<string, unknown>) => {
       const candidate = { ...row(200 + counter++), ...item };
-      const spy = respond({ getMediaItem: candidate });
+      const spy = respond({ 'media:item': candidate });
       spy.mockClear();
 
       media.hydrate(candidate);
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      return spy.mock.calls.filter(([action]) => action === 'getMediaItem');
+      return callsFor(spy, 'media:item');
     };
 
     it.each(['photo', 'gif', 'sticker'])(

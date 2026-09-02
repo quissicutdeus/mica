@@ -1833,21 +1833,22 @@ const mockRegistry: Record<string, MockHandler> = {
    * is, so a replay answers `{ stored: false }` and the browser sees the same "somebody got
    * there first" outcome the game does rather than a success the game would never report.
    */
-  setMediaThumbnail: async ({ id, thumbnail }: { id: number; thumbnail: string }) => {
+  'media:thumbnail': async ({ id, thumbnail }: { id: number; thumbnail: string }) => {
     const row = mockMedia.find((p) => p.id === id && p.status === 'active');
     if (!row || row.thumbnail) return { stored: false };
     row.thumbnail = thumbnail;
     return { stored: true };
   },
   /** One row, bytes and all — what opening a photo, or hydrating a bare tile, asks for. */
-  getMediaItem: async ({ id }: { id: number }) => {
+  'media:item': async ({ id }: { id: number }) => {
     const row = mockMedia.find((p) => p.id === id && p.status !== 'deleted');
     if (!row) throw new Error('That photo could not be found.');
     return row;
   },
-  // Bluetooth proximity drop. A named route (`shareMediaNearby`), not `defineMockCrud` —
-  // no CRUD verb fits copying a row to N nearby recipients.
-  shareMediaNearby: async () => {
+  // Bluetooth proximity drop. Scoped, because `web/` reaches it through the typed
+  // `call(mediaContract, 'drop')` over the generic service action (MICA-213), and not
+  // `defineMockCrud` — no CRUD verb fits copying a row to N nearby recipients.
+  'media:drop': async () => {
     const count = bluetoothNearbyCount;
     if (count > 0 && typeof window !== 'undefined') {
       delay(150).then(() => {
@@ -1888,9 +1889,10 @@ const mockRegistry: Record<string, MockHandler> = {
     remove: 'deleteSavedPlace'
   }),
 
-  // Recently Deleted (MICA-75-wiring). Named routes, since Media is `core: true`.
-  getDeletedMedia: () => mockMedia.filter((m) => m.status === 'deleted'),
-  restoreMedia: (data: { id?: number }) => {
+  // Recently Deleted (MICA-75-wiring). Scoped keys: both are contracted actions the web
+  // reaches through the typed `call` rather than a named route (MICA-213).
+  'media:getDeleted': () => mockMedia.filter((m) => m.status === 'deleted'),
+  'media:restore': (data: { id?: number }) => {
     const item = mockMedia.find((m) => m.id === data?.id && m.status === 'deleted');
     if (!item) return { ok: false };
     item.status = 'active';
@@ -1951,7 +1953,7 @@ const mockRegistry: Record<string, MockHandler> = {
    * hydration must return nothing and leave the shipped defaults standing — seeding it
    * would hide the case where hydration wrongly blanks a store.
    */
-  getSettings: async () =>
+  'settings:getAll': async () =>
     [...mockSettings.entries()].map(([composite, setting_value], index) => {
       const [app, ...rest] = composite.split(':');
       return {
@@ -1966,19 +1968,19 @@ const mockRegistry: Record<string, MockHandler> = {
       };
     }),
 
-  saveSetting: async (data?: { app?: string; key?: string; value?: string }) => {
+  'settings:set': async (data?: { app?: string; key?: string; value?: string }) => {
     if (!data?.app || !data?.key) return false;
     mockSettings.set(`${data.app}:${data.key}`, String(data.value ?? ''));
     return true;
   },
 
-  removeSetting: async (data?: { app?: string; key?: string }) => {
+  'settings:remove': async (data?: { app?: string; key?: string }) => {
     if (!data?.app || !data?.key) return false;
     mockSettings.delete(`${data.app}:${data.key}`);
     return true;
   },
 
-  clearAppSettings: async (data?: { app?: string }) => {
+  'settings:clearApp': async (data?: { app?: string }) => {
     if (!data?.app) return false;
     const prefix = `${data.app}:`;
     for (const composite of mockSettings.keys()) {
@@ -2115,9 +2117,9 @@ const mockRegistry: Record<string, MockHandler> = {
    * `window.pushNearbyMusic` in `shell/devHarness.ts` is how you hear somebody else in a
    * browser.
    */
-  startMusicBroadcast: () => ({ ok: true }),
-  updateMusicBroadcast: () => ({ ok: true }),
-  stopMusicBroadcast: () => ({ ok: true })
+  'music:broadcastStart': () => ({ ok: true }),
+  'music:broadcastUpdate': () => ({ ok: true }),
+  'music:broadcastStop': () => ({ ok: true })
 };
 
 /**

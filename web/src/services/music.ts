@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { get } from 'svelte/store';
-import { fetchNui } from '../nui/fetchNui';
+import { call } from '../nui/call';
+import { musicContract } from '@gphone/shared/contracts/music';
 import { musicPosition, musicSeek, musicSource, musicStatus } from '../shell/state/music';
 import type { MusicSource } from '@gphone/sdk';
 
@@ -100,26 +101,34 @@ const schedule = (): void => {
 /**
  * Three named calls rather than one `send(action, …)` helper, and the reason is a test.
  *
- * `server/__tests__/routes.test.ts` scans `web/src` for `fetchNui('<literal>'` to prove
- * every declared route has a caller and every call has a route — the check that catches a
- * NUI round trip missing one of its three layers, which fails *silently in game* while
- * every suite passes (AGENTS.md §8). An action name assembled from a variable is invisible
- * to that scanner, so this feature would have read as three dead routes and no live calls.
+ * `server/__tests__/routes.test.ts` scans `web/src` for a call site's literal action name to
+ * prove every action has a caller and every caller reaches something registered — the check
+ * that catches a NUI round trip missing one of its layers, which fails *silently in game*
+ * while every suite passes (AGENTS.md §8). An action name assembled from a variable is
+ * invisible to that scanner, so this feature would have read as three dead actions and no
+ * live calls. Typed now (MICA-213), so the contract types the payload as well as naming
+ * it, and the scanner reads the same three literals it always did.
  *
- * All three are deliberately unawaited and `quiet`: a failed announce means the people
- * around you cannot hear your music, which is not something to log on every pause or tell
- * the person about — see the note at the top of this file.
+ * All three are deliberately unawaited: a failed announce means the people around you cannot
+ * hear your music, which is not something to log on every pause or tell the person about —
+ * see the note at the top of this file. Unawaited is the whole of it; the `{ quiet: true }`
+ * these once passed did nothing, because `fetchNui` reads that option only for a call that
+ * was given a default to fall back to and none of these were.
  */
-const announceStart = (data: Record<string, unknown>): void => {
-  void fetchNui('startMusicBroadcast', data, { quiet: true });
+const announceStart = (data: {
+  videoId?: string;
+  playlistId?: string;
+  positionMs?: number;
+}): void => {
+  void call(musicContract, 'broadcastStart', data);
 };
 
-const announceUpdate = (data: Record<string, unknown>): void => {
-  void fetchNui('updateMusicBroadcast', data, { quiet: true });
+const announceUpdate = (data: { paused?: boolean; positionMs?: number }): void => {
+  void call(musicContract, 'broadcastUpdate', data);
 };
 
 const announceStop = (): void => {
-  void fetchNui('stopMusicBroadcast', {}, { quiet: true });
+  void call(musicContract, 'broadcastStop', undefined);
 };
 
 function sync(): void {
@@ -146,9 +155,14 @@ function sync(): void {
     // The seek token is caught up rather than reset: a seek issued against the track being
     // replaced is not a seek in the new one.
     announcedSeek = seekToken;
+    // `?? undefined` rather than passing the store's `null` through: `MusicSource` says
+    // "this is not a playlist" with `null`, and the contract's optional string does not
+    // accept one (`shared/contracts/music.ts`). Nothing changes on the wire — `undefined`
+    // is dropped by `JSON.stringify` and the handler reads an absent field exactly as it
+    // read a null one — but the payload now matches what the server declared it accepts.
     announceStart({
-      videoId: source.videoId,
-      playlistId: source.playlistId,
+      videoId: source.videoId ?? undefined,
+      playlistId: source.playlistId ?? undefined,
       positionMs: positionMs()
     });
     // Loading something already paused cannot happen through the transport today, but a

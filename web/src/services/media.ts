@@ -5,7 +5,7 @@
 import { get } from 'svelte/store';
 import { createPagedStore } from '../../../sdk/createPagedStore';
 import { fetchNui } from '../nui/fetchNui';
-import { call } from '../nui/call';
+import { call, callOr } from '../nui/call';
 import { mediaContract } from '@gphone/shared/contracts/media';
 import { makeThumbnail } from '@gphone/sdk';
 import type { MediaItem, MediaPreview } from '@gphone/shared/types';
@@ -112,8 +112,7 @@ export const media = {
    * payloads held for the session — and the caller already has somewhere to put the one
    * row it is looking at. `hydrate` is the exception, and says why.
    */
-  full: async (mediaId: number): Promise<MediaItem> =>
-    fetchNui<MediaItem>('getMediaItem', { id: mediaId }),
+  full: async (mediaId: number): Promise<MediaItem> => call(mediaContract, 'item', { id: mediaId }),
 
   /**
    * Fetch the bytes for a row that could show a picture and currently has none.
@@ -160,7 +159,7 @@ export const media = {
     hydrated.add(item.id);
     queue = queue.then(async () => {
       try {
-        const row = await fetchNui<MediaItem>('getMediaItem', { id: item.id });
+        const row = await call(mediaContract, 'item', { id: item.id });
         if (!row?.data) return;
         store.replace(row);
         await backfill(row);
@@ -258,10 +257,7 @@ export const media = {
    * would have given it anyway.
    */
   setThumbnail: async (mediaId: number, thumbnail: string): Promise<boolean> => {
-    const reply = await fetchNui<{ stored?: boolean }>('setMediaThumbnail', {
-      id: mediaId,
-      thumbnail
-    });
+    const reply = await call(mediaContract, 'thumbnail', { id: mediaId, thumbnail });
     const stored = reply?.stored === true;
     if (stored) {
       const row = get(store).find((item) => item.id === mediaId);
@@ -282,7 +278,7 @@ export const media = {
    * is nothing here to patch locally.
    */
   dropNearby: async (mediaId: number): Promise<{ count: number }> =>
-    fetchNui('shareMediaNearby', { mediaId }),
+    call(mediaContract, 'drop', { mediaId }),
 
   /**
    * Share the caller's current in-game position. The reply is a freshly-created media row,
@@ -304,18 +300,14 @@ export const media = {
    * fresh read each time is the right cost.
    */
   getDeleted: (): Promise<DeletedMediaItem[]> =>
-    fetchNui<DeletedMediaItem[]>('getDeletedMedia', {}, { defaultValue: [] }),
+    callOr(mediaContract, 'getDeleted', undefined, []) as Promise<DeletedMediaItem[]>,
 
   /**
    * Undo a delete. Refreshes the main list on success so the restored row reappears in
    * it without waiting for the next foreground reload.
    */
   restore: async (mediaId: number): Promise<boolean> => {
-    const { ok } = await fetchNui<{ ok: boolean }>(
-      'restoreMedia',
-      { id: mediaId },
-      { defaultValue: { ok: false } }
-    );
+    const { ok } = await callOr(mediaContract, 'restore', { id: mediaId }, { ok: false });
     if (ok) await store.load();
     return ok;
   }

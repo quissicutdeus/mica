@@ -15,6 +15,7 @@
  */
 import '../host/registerFacets';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { GENERIC_SERVICE_ACTION } from '@gphone/shared/rpc';
 
 vi.mock('../nui/fetchNui', () => ({ fetchNui: vi.fn(async () => ({ ok: true })) }));
 
@@ -53,11 +54,22 @@ const fetchNui = vi.mocked(rawFetchNui);
 const VIDEO = 'dQw4w9WgXcQ';
 const OTHER = 'M7lc1UVf-VE';
 
-/** Announces only, in order, with the payloads. */
+/**
+ * Announces only, in order, with the payloads.
+ *
+ * Every announce is the typed `call` (MICA-213), so what crosses the transport is the one
+ * generic `svc` action carrying `{ service, action, data }` rather than three action names
+ * of its own. Unwrapped here, so each assertion below still names the action it means —
+ * `assertEnvelope` is what holds the outer shape, once, rather than every case restating it.
+ */
 const sent = () =>
-  fetchNui.mock.calls.map(
-    (call) => [call[0], call[1]] as [string, Record<string, unknown> | undefined]
-  );
+  fetchNui.mock.calls.map((call) => {
+    const envelope = (call[1] ?? {}) as { action?: string; data?: Record<string, unknown> };
+    return [envelope.action ?? String(call[0]), envelope.data] as [
+      string,
+      Record<string, unknown> | undefined
+    ];
+  });
 
 const actions = () => sent().map(([action]) => action);
 
@@ -84,6 +96,17 @@ beforeEach(async () => {
 });
 
 describe('announcing what this phone is playing', () => {
+  it('rides the generic service action, naming the music contract', async () => {
+    playSource(`https://youtu.be/${VIDEO}`);
+    await flush();
+
+    expect(fetchNui).toHaveBeenLastCalledWith(GENERIC_SERVICE_ACTION, {
+      service: 'music',
+      action: 'broadcastStart',
+      data: { videoId: VIDEO, playlistId: undefined, positionMs: 0 }
+    });
+  });
+
   it('says nothing at all while nothing is playing', async () => {
     await flush();
     expect(actions()).toEqual([]);
@@ -93,8 +116,8 @@ describe('announcing what this phone is playing', () => {
     playSource(`https://youtu.be/${VIDEO}`);
     await flush();
 
-    expect(actions()).toEqual(['startMusicBroadcast']);
-    expect(sent()[0][1]).toMatchObject({ videoId: VIDEO, playlistId: null, positionMs: 0 });
+    expect(actions()).toEqual(['broadcastStart']);
+    expect(sent()[0][1]).toMatchObject({ videoId: VIDEO, playlistId: undefined, positionMs: 0 });
 
     // `loading` becoming `playing` is the same track still playing, and a position report
     // is not news to anybody — both would otherwise be a net event and a fan-out to
@@ -116,7 +139,7 @@ describe('announcing what this phone is playing', () => {
     await flush();
     // A queue advancing is a track change and the server treats a second start as a
     // replacement, so there is deliberately no stop-then-start pair here.
-    expect(actions()).toEqual(['startMusicBroadcast']);
+    expect(actions()).toEqual(['broadcastStart']);
     expect(sent()[0][1]).toMatchObject({ videoId: OTHER });
   });
 
@@ -129,12 +152,12 @@ describe('announcing what this phone is playing', () => {
 
     pauseMusic();
     await flush();
-    expect(sent()).toEqual([['updateMusicBroadcast', { paused: true, positionMs: 30_000 }]]);
+    expect(sent()).toEqual([['broadcastUpdate', { paused: true, positionMs: 30_000 }]]);
 
     fetchNui.mockClear();
     resumeMusic();
     await flush();
-    expect(sent()).toEqual([['updateMusicBroadcast', { paused: false, positionMs: 30_000 }]]);
+    expect(sent()).toEqual([['broadcastUpdate', { paused: false, positionMs: 30_000 }]]);
   });
 
   it('does not repeat a pause it has already announced', async () => {
@@ -164,7 +187,7 @@ describe('announcing what this phone is playing', () => {
 
     seekMusic(90);
     await flush();
-    expect(sent()).toEqual([['updateMusicBroadcast', { positionMs: 90_000 }]]);
+    expect(sent()).toEqual([['broadcastUpdate', { positionMs: 90_000 }]]);
   });
 
   it('does not carry a seek across into the track that replaced it', async () => {
@@ -179,7 +202,7 @@ describe('announcing what this phone is playing', () => {
     await flush();
     // A seek issued against the track being replaced is not a seek in the new one, and the
     // new one starts at the top.
-    expect(actions()).toEqual(['startMusicBroadcast']);
+    expect(actions()).toEqual(['broadcastStart']);
   });
 
   it('stops when the music stops', async () => {
@@ -189,7 +212,7 @@ describe('announcing what this phone is playing', () => {
 
     stopMusic();
     await flush();
-    expect(actions()).toEqual(['stopMusicBroadcast']);
+    expect(actions()).toEqual(['broadcastStop']);
 
     // Idempotent from here: nothing is playing and nothing more needs saying.
     fetchNui.mockClear();
@@ -210,7 +233,7 @@ describe('announcing what this phone is playing', () => {
 
     reportPlayerError(150);
     await flush();
-    expect(actions()).toEqual(['stopMusicBroadcast']);
+    expect(actions()).toEqual(['broadcastStop']);
   });
 
   it('never sends a volume or a mute, in either direction', async () => {

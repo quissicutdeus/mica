@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fetchNui } from '../nui/fetchNui';
+import { callOr } from '../nui/call';
+import { settingsContract } from '@gphone/shared/contracts/settings';
 import type { PhoneSetting } from '@gphone/shared/types';
 
 /**
@@ -28,7 +29,7 @@ import type { PhoneSetting } from '@gphone/shared/types';
  * case for the boot-time one.
  */
 export const fetchSettings = (): Promise<PhoneSetting[]> =>
-  fetchNui<PhoneSetting[]>('getSettings', undefined, { defaultValue: [], quiet: true });
+  callOr(settingsContract, 'getAll', undefined, [] as PhoneSetting[], { quiet: true });
 
 /**
  * Write one key. `value` is the JSON string `useStorage` already produced.
@@ -43,10 +44,10 @@ export const fetchSettings = (): Promise<PhoneSetting[]> =>
  * answer there too, not a failure worth a console warning.
  */
 export const saveSetting = (app: string, key: string, value: string): Promise<boolean> =>
-  fetchNui<boolean>('saveSetting', { app, key, value }, { defaultValue: false, quiet: true });
+  callOr(settingsContract, 'set', { app, key, value }, false, { quiet: true });
 
 export const removeSetting = (app: string, key: string): Promise<boolean> =>
-  fetchNui<boolean>('removeSetting', { app, key }, { defaultValue: false });
+  callOr(settingsContract, 'remove', { app, key }, false);
 
 export const clearAppSettings = (app: string): Promise<boolean> =>
-  fetchNui<boolean>('clearAppSettings', { app }, { defaultValue: false });
+  callOr(settingsContract, 'clearApp', { app }, false);

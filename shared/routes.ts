@@ -168,40 +168,20 @@ export const ROUTES: readonly Route[] = [
   // Media — no `updateMedia`: a stored row has no mutable fields, and the server does
   // not register the endpoint.
   route('getMedia', 'media', 'get'),
-  // One row, `data` and all. The list read is projected down to `thumbnail` plus metadata
-  // (MICA-110), so the bytes are asked for by id when a photo is opened — and by anything
-  // that needs the original rather than a tile, such as picking an avatar or a wallpaper.
-  route('getMediaItem', 'media', 'item'),
-  // Store-back for a row that arrived without a thumbnail — `AddMedia`'s `thumbnail` is
-  // optional, so other resources keep creating them. The client encodes one from the bytes
-  // it just fetched and hands it back, so the next open does not repeat the work. Named,
-  // ownership-scoped and write-once on the server; `thumbnail` stays `clientWritable: false`
-  // and this is not the generic write path.
-  route('setMediaThumbnail', 'media', 'thumbnail'),
   route('createMedia', 'media', 'create'),
   route('deleteMedia', 'media', 'delete'),
-  // Recently Deleted (MICA-75-wiring) — `status` is never client-filterable
-  // (`Repository.ts`), so both of these are named actions rather than the generic `get`.
-  // The list read is projected the same way `getMedia` already is (MICA-110): no `data`.
-  route('getDeletedMedia', 'media', 'getDeleted'),
-  route('restoreMedia', 'media', 'restore'),
-  // Bluetooth proximity: copy a media row the caller owns to everyone nearby and visible.
-  route('shareMediaNearby', 'media', 'drop'),
-  // Location sharing. Not a dumb passthrough — its client relay in `client/services/
-  // Location.ts` resolves a street-name label locally (a client-only native) before
-  // forwarding, so it is excluded from `Relay.ts`'s generic per-route registration.
-  // Declared here anyway, for `routes.test.ts`'s completeness checks.
+  // The rest of `media` is contracted, so it needs no row here (MICA-213): `item`,
+  // `thumbnail`, `getDeleted`, `restore`, `drop` and `shareLocation` are reached by the
+  // typed `call(mediaContract, …)` over the generic service action, which the relay
+  // subscribes per request. Only the three generic CRUD actions above, whose shape comes
+  // from the column declaration rather than from a contract, are still named here.
 
   // Music — proximity broadcast (MICA-111 phase 2). The service holds ephemeral
-  // now-playing state and nothing else: no table, no generic CRUD, and every action here is
+  // now-playing state and nothing else: no table, no generic CRUD, and every action is
   // about the caller's own phone. What other people hear comes back the other way, on the
-  // shell-scoped push in `shared/musicBroadcast.ts`, rather than as a reply to any of these.
-  route('startMusicBroadcast', 'music', 'broadcastStart'),
-  // Pause, resume and seek. Separate from the start above because a track change is a
-  // replacement and these are not; folding them together would make "paused" a field a
-  // caller had to restate every time it named a track.
-  route('updateMusicBroadcast', 'music', 'broadcastUpdate'),
-  route('stopMusicBroadcast', 'music', 'broadcastStop'),
+  // shell-scoped push in `shared/musicBroadcast.ts`, rather than as a reply to any of them.
+  // All three are contracted (`shared/contracts/music.ts`) and reached by the typed call,
+  // so `music` has no rows here at all.
 
   // Lock screen passcode (MICA-60) — display state, not a security boundary (the
   // ticket's own item 4): nothing behind the lock is authority-bearing, so a modified
@@ -239,15 +219,14 @@ export const ROUTES: readonly Route[] = [
   route('getSavedPlaces', 'places', 'get'),
   route('createSavedPlace', 'places', 'create'),
   route('updateSavedPlace', 'places', 'update'),
-  route('deleteSavedPlace', 'places', 'delete'),
+  route('deleteSavedPlace', 'places', 'delete')
 
   // Settings — every stored preference, owned by a citizenid rather than a browser
   // profile. Not an app: `settings` is a service the shell reads on behalf of every
-  // `useStorage` namespace, the Settings app included.
-  route('getSettings', 'settings', 'getAll'),
-  route('saveSetting', 'settings', 'set'),
-  route('removeSetting', 'settings', 'remove'),
-  route('clearAppSettings', 'settings', 'clearApp')
+  // `useStorage` namespace, the Settings app included. All four of its actions are
+  // contracted (`shared/contracts/settings.ts`) and reached by the typed call
+  // (MICA-213), so the service keeps no rows here; `web/src/services/settings.ts` is
+  // the caller and `sdk/host/settingsSync.ts` is what drives it.
 ] as const;
 
 /** The `gphone:server:<app>:<action>` event a route forwards to. */
