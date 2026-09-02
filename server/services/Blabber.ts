@@ -439,7 +439,9 @@ const visibleTarget = async (raw: unknown, what: string): Promise<Blab> => {
   const id = requirePositiveInt(raw, what);
   const target = await repo.findById(id);
   if (!target || target.status !== 'active') {
-    throw new PlayerFacingError('That Blab is no longer available.');
+    throw new PlayerFacingError('That Blab is no longer available.', {
+      key: 'server.blabber.blabGone'
+    });
   }
   return target;
 };
@@ -455,7 +457,10 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
    * guessing an id.
    */
   const account = await ownedAccount(data.account_id, citizenid, APP);
-  if (!account) throw new PlayerFacingError('That account is not yours to post from.');
+  if (!account)
+    throw new PlayerFacingError('That account is not yours to post from.', {
+      key: 'server.blabber.notYoursToPost'
+    });
 
   const replyParent =
     data.reply_to === undefined || data.reply_to === null
@@ -483,10 +488,14 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
    * and would render as an empty row nobody can explain.
    */
   if (!text && mouthOf === null && attachments.length === 0) {
-    throw new PlayerFacingError('A Blab needs something in it.');
+    throw new PlayerFacingError('A Blab needs something in it.', {
+      key: 'server.blabber.emptyBlab'
+    });
   }
   if (mouthOf !== null && replyTo !== null) {
-    throw new PlayerFacingError('A Blab can reply or mouth, not both.');
+    throw new PlayerFacingError('A Blab can reply or mouth, not both.', {
+      key: 'server.blabber.replyOrMouth'
+    });
   }
 
   try {
@@ -575,7 +584,9 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     if (mouthOf !== null && /duplicate/i.test(message)) {
       // `{ cause }` is the constructor's ES2022 form; this repo's lib target is ES2021, so
       // the property is set directly instead — same effect, portable to the older lib.
-      const already = new PlayerFacingError('You have already mouthed that.');
+      const already = new PlayerFacingError('You have already mouthed that.', {
+        key: 'server.blabber.alreadyMouthed'
+      });
       (already as PlayerFacingError & { cause?: unknown }).cause = error;
       throw already;
     }
@@ -592,7 +603,8 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
  */
 app.registerEvent('ear', async (source, cbId, data, citizenid) => {
   const account = await ownedAccount(data.account_id, citizenid, APP);
-  if (!account) throw new PlayerFacingError('That account is not yours.');
+  if (!account)
+    throw new PlayerFacingError('That account is not yours.', { key: 'server.blabber.notYours' });
 
   const target = await visibleTarget(data.blab_id, 'blab id');
 
@@ -610,7 +622,8 @@ app.registerEvent('ear', async (source, cbId, data, citizenid) => {
 
 app.registerEvent('unear', async (source, cbId, data, citizenid) => {
   const account = await ownedAccount(data.account_id, citizenid, APP);
-  if (!account) throw new PlayerFacingError('That account is not yours.');
+  if (!account)
+    throw new PlayerFacingError('That account is not yours.', { key: 'server.blabber.notYours' });
 
   const blabId = data.blab_id;
   // Scoped to the caller's own account, so a row id is not authorization to remove somebody
@@ -896,7 +909,8 @@ app.registerEvent('search_tags', async (source, cbId, data) => {
  */
 app.registerEvent('by_tag', async (source, cbId, data) => {
   const tag = data.tag.trim();
-  if (!tag) throw new PlayerFacingError('A tag is required.');
+  if (!tag)
+    throw new PlayerFacingError('A tag is required.', { key: 'server.blabber.tagRequired' });
 
   const { limit, cursor } = pageBounds(data, paging);
   const projection = blabber.resolved.publicColumns.map((column) => `b.\`${column}\``).join(', ');
@@ -1022,7 +1036,8 @@ app.registerEvent('profile', async (source, cbId, data, citizenid) => {
  */
 app.registerEvent('following', async (source, cbId, data, citizenid) => {
   const viewer = await ownedAccount(data.account_id, citizenid, APP);
-  if (!viewer) throw new PlayerFacingError('That account is not yours.');
+  if (!viewer)
+    throw new PlayerFacingError('That account is not yours.', { key: 'server.blabber.notYours' });
 
   const { limit, cursor } = pageOf(data);
 

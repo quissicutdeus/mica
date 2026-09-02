@@ -109,8 +109,14 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   const title = data.title.trim();
   const description = data.description.trim();
   const price = data.price;
-  if (!title) throw new PlayerFacingError('A listing needs a title.');
-  if (!description) throw new PlayerFacingError('A listing needs a description.');
+  if (!title)
+    throw new PlayerFacingError('A listing needs a title.', {
+      key: 'server.marketplace.titleRequired'
+    });
+  if (!description)
+    throw new PlayerFacingError('A listing needs a description.', {
+      key: 'server.marketplace.descriptionRequired'
+    });
 
   // No `.slice()` any more: the cap is applied inside the resolver, before it does the work
   // the cap is supposed to bound (MICA-154).
@@ -156,7 +162,10 @@ app.registerEvent('view', async (source, cbId, data, citizenid) => {
     `SELECT ${projection} FROM \`gphone_marketplace\` WHERE \`id\` = ? AND \`status\` = 'active'`,
     [id]
   );
-  if (!row) throw new PlayerFacingError('That listing is no longer available.');
+  if (!row)
+    throw new PlayerFacingError('That listing is no longer available.', {
+      key: 'server.marketplace.listingGone'
+    });
 
   const owner = await Database.single<{ citizenid: string }>(
     'SELECT `citizenid` FROM `gphone_marketplace` WHERE `id` = ?',
@@ -268,10 +277,14 @@ const requireOwnedActiveListing = async (id: number, citizenid: string): Promise
     [id]
   );
   if (!row || row.citizenid !== citizenid) {
-    throw new PlayerFacingError('That listing is not yours to change.');
+    throw new PlayerFacingError('That listing is not yours to change.', {
+      key: 'server.marketplace.notYours'
+    });
   }
   if (row.status !== 'active') {
-    throw new PlayerFacingError('Only an active listing can change status.');
+    throw new PlayerFacingError('Only an active listing can change status.', {
+      key: 'server.marketplace.notActive'
+    });
   }
 };
 
@@ -300,7 +313,9 @@ app.registerEvent('markSold', async (source, cbId, data, citizenid) => {
   const id = data.id;
   await requireOwnedActiveListing(id, citizenid);
   if (!(await transitionActiveListing(id, citizenid, 'sold'))) {
-    throw new PlayerFacingError('Only an active listing can change status.');
+    throw new PlayerFacingError('Only an active listing can change status.', {
+      key: 'server.marketplace.notActive'
+    });
   }
   return true;
 });
@@ -309,7 +324,9 @@ app.registerEvent('remove', async (source, cbId, data, citizenid) => {
   const id = data.id;
   await requireOwnedActiveListing(id, citizenid);
   if (!(await transitionActiveListing(id, citizenid, 'removed'))) {
-    throw new PlayerFacingError('Only an active listing can change status.');
+    throw new PlayerFacingError('Only an active listing can change status.', {
+      key: 'server.marketplace.notActive'
+    });
   }
   return true;
 });

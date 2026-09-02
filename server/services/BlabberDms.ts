@@ -102,7 +102,10 @@ const myAccounts = async (citizenid: string): Promise<number[]> =>
  */
 app.registerEvent('get', async (source, cbId, data, citizenid) => {
   const mine = await ownedAccount(data.account_id, citizenid, APP);
-  if (!mine) throw new PlayerFacingError('That account is not yours.');
+  if (!mine)
+    throw new PlayerFacingError('That account is not yours.', {
+      key: 'server.blabberDms.notYours'
+    });
 
   const peer = data.peer_account_id;
   // Clamped rather than refused: a high limit is a legitimate request with a wrong number in
@@ -198,13 +201,22 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
   // Trimmed, not capped — the contract already refused anything over the column's length, so
   // trimming can only ever shorten a body that already fits. Whitespace-only is still empty.
   const text = data.body.trim();
-  if (!text) throw new PlayerFacingError('A message needs something in it.');
+  if (!text)
+    throw new PlayerFacingError('A message needs something in it.', {
+      key: 'server.blabberDms.emptyMessage'
+    });
 
   const mine = await ownedAccount(data.account_id, citizenid, APP);
-  if (!mine) throw new PlayerFacingError('That account is not yours to send from.');
+  if (!mine)
+    throw new PlayerFacingError('That account is not yours to send from.', {
+      key: 'server.blabberDms.notYoursToSend'
+    });
 
   const peerId = data.peer_account_id;
-  if (peerId === mine.id) throw new PlayerFacingError('You cannot message yourself.');
+  if (peerId === mine.id)
+    throw new PlayerFacingError('You cannot message yourself.', {
+      key: 'server.blabberDms.selfMessage'
+    });
 
   /**
    * The recipient has to exist and be a Blabber account. Checked rather than trusted, because
@@ -212,7 +224,8 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
    * or at an account in another app's namespace.
    */
   const peer = await activeAccount(peerId, APP);
-  if (!peer) throw new PlayerFacingError('No such account.');
+  if (!peer)
+    throw new PlayerFacingError('No such account.', { key: 'server.blabberDms.noSuchAccount' });
 
   /**
    * Bidirectional, unlike the feed/profile filters above: a DM has exactly two participants,
@@ -221,7 +234,9 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
    * history stays readable; a block doesn't retroactively hide it, only refuses a new send.
    */
   if ((await accountHasBlocked(mine.id, peer.id)) || (await accountHasBlocked(peer.id, mine.id))) {
-    throw new PlayerFacingError("You can't message this account.");
+    throw new PlayerFacingError("You can't message this account.", {
+      key: 'server.blabberDms.blocked'
+    });
   }
 
   const id = await repo.create({
@@ -275,7 +290,10 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
  */
 app.registerEvent('read', async (source, cbId, data, citizenid) => {
   const mine = await ownedAccount(data.account_id, citizenid, APP);
-  if (!mine) throw new PlayerFacingError('That account is not yours.');
+  if (!mine)
+    throw new PlayerFacingError('That account is not yours.', {
+      key: 'server.blabberDms.notYours'
+    });
 
   const peer = data.peer_account_id;
   return await Database.update(
