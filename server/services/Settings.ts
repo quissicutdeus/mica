@@ -156,7 +156,10 @@ const namespaceOf = (data: { app: string; key: string }): { app: string; key: st
 
   // The contract already refused anything longer than the column, so what is left to catch is
   // a value that was nothing but whitespace — length-legal and still not a namespace.
-  if (!appId || !key) throw new PlayerFacingError('That setting could not be saved.');
+  if (!appId || !key)
+    throw new PlayerFacingError('That setting could not be saved.', {
+      key: 'server.settings.notSaved'
+    });
 
   return { app: appId, key };
 };
@@ -185,7 +188,9 @@ app.registerEvent('set', async (_source, _cbId, data, citizenid) => {
   const value = typeof raw === 'string' ? raw : JSON.stringify(raw ?? null);
 
   if (value.length > MAX_VALUE_LENGTH) {
-    throw new PlayerFacingError('That setting is too large to save.');
+    throw new PlayerFacingError('That setting is too large to save.', {
+      key: 'server.settings.tooLarge'
+    });
   }
 
   await settingsRepo.put(citizenid, appId, key, value);
@@ -202,7 +207,10 @@ app.registerEvent('remove', async (_source, _cbId, data, citizenid) => {
 app.registerEvent('clearApp', async (_source, _cbId, data, citizenid) => {
   if (!settingsRepo) return false;
   const appId = data.app.trim();
-  if (!appId) throw new PlayerFacingError('That app could not be cleared.');
+  if (!appId)
+    throw new PlayerFacingError('That app could not be cleared.', {
+      key: 'server.settings.appNotCleared'
+    });
   await settingsRepo.clearApp(citizenid, appId);
   return true;
 });

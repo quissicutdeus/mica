@@ -117,7 +117,11 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
 
       if (!isScalar) {
         throw new PlayerFacingError(
-          `Field '${column}' on ${this.serviceName} must be a scalar value.`
+          `Field '${column}' on ${this.serviceName} must be a scalar value.`,
+          {
+            key: 'server.endpoint.fieldNotScalar',
+            params: { field: column, service: this.serviceName }
+          }
         );
       }
       picked[column] = value;
@@ -179,7 +183,10 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
     try {
       return requirePositiveInt(raw, 'cursor');
     } catch {
-      throw new PlayerFacingError(`A cursor for ${this.serviceName} must be a positive row id.`);
+      throw new PlayerFacingError(`A cursor for ${this.serviceName} must be a positive row id.`, {
+        key: 'server.endpoint.badCursor',
+        params: { service: this.serviceName }
+      });
     }
   }
 
@@ -190,7 +197,8 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
       return requirePositiveInt(raw, 'numeric id');
     } catch {
       throw new PlayerFacingError(
-        `A valid numeric id is required for this ${this.serviceName} operation.`
+        `A valid numeric id is required for this ${this.serviceName} operation.`,
+        { key: 'server.endpoint.badId', params: { service: this.serviceName } }
       );
     }
   }
@@ -283,7 +291,8 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
           const fields = this.sanitizeWrite(data);
           if (Object.keys(fields).length === 0) {
             throw new PlayerFacingError(
-              `No writable fields supplied for ${this.serviceName} create.`
+              `No writable fields supplied for ${this.serviceName} create.`,
+              { key: 'server.endpoint.noWritableCreate', params: { service: this.serviceName } }
             );
           }
 
@@ -303,7 +312,8 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
           const fields = this.sanitizeWrite(data);
           if (Object.keys(fields).length === 0) {
             throw new PlayerFacingError(
-              `No writable fields supplied for ${this.serviceName} update.`
+              `No writable fields supplied for ${this.serviceName} update.`,
+              { key: 'server.endpoint.noWritableUpdate', params: { service: this.serviceName } }
             );
           }
 

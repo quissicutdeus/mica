@@ -75,21 +75,12 @@ const sites = (): Site[] => {
 
 /** Keyless sites per file, frozen on 2026-09-02. Lower a number; never raise one. */
 const KEYLESS_BASELINE: Record<string, number> = {
-  'server/lib/Repository.ts': 4,
-  'server/lib/ServiceEndpoint.ts': 5,
-  'server/lib/attachments.ts': 1,
-  'server/lib/payload.ts': 2,
-  'server/services/Accounts.ts': 18,
-  'server/services/Bank.ts': 1,
   'server/services/Battery.ts': 1,
   'server/services/Conversations.ts': 2,
-  'server/services/Highscores.ts': 2,
-  'server/services/Lockscreen.ts': 1,
   'server/services/Messages.ts': 9,
   'server/services/Phone.ts': 1,
 
-  'server/services/Seed.ts': 1,
-  'server/services/Settings.ts': 3
+  'server/services/Seed.ts': 1
 };
 
 describe('server messages carry a key the client can resolve (MICA-216)', () => {

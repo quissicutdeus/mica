@@ -304,7 +304,10 @@ app.registerEvent('check', async (source, cbId, data, citizenid) => {
     // Told plainly rather than answered `false`. A lockout the player cannot see is a lock
     // screen that looks broken, and the number leaks nothing: they already know they have
     // been guessing.
-    throw new PlayerFacingError(`Too many attempts. Try again in ${Math.ceil(waitMs / 1000)}s.`);
+    throw new PlayerFacingError(`Too many attempts. Try again in ${Math.ceil(waitMs / 1000)}s.`, {
+      key: 'server.lockscreen.tooManyAttempts',
+      params: { seconds: Math.ceil(waitMs / 1000) }
+    });
   }
 
   const row = await repo.findByCitizenId(citizenid);

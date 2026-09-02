@@ -42,11 +42,17 @@ export type CallbackId = string | number;
  */
 export function requirePositiveInt(raw: unknown, what: string): number {
   if (typeof raw !== 'number' && typeof raw !== 'string') {
-    throw new PlayerFacingError(`A valid ${what} is required.`);
+    throw new PlayerFacingError(`A valid ${what} is required.`, {
+      key: 'server.payload.required',
+      params: { what }
+    });
   }
   const value = Number(raw);
   if (!Number.isInteger(value) || value <= 0) {
-    throw new PlayerFacingError(`A valid ${what} is required.`);
+    throw new PlayerFacingError(`A valid ${what} is required.`, {
+      key: 'server.payload.required',
+      params: { what }
+    });
   }
   return value;
 }

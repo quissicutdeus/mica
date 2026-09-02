@@ -85,7 +85,7 @@ app.registerEvent('submit', async (source, cbId, data, citizenid) => {
   // The contract bounds `app`'s shape; this is what says which games exist. The list names an
   // app the Store installs, so it cannot live in `shared/` — see the contract's own note.
   if (!isKnownApp(data.app)) {
-    throw new PlayerFacingError('Unknown game.');
+    throw new PlayerFacingError('Unknown game.', { key: 'server.highscores.unknownGame' });
   }
 
   await repo.upsertBest(citizenid, data.app, data.score);
@@ -106,7 +106,7 @@ app.registerEvent('submit', async (source, cbId, data, citizenid) => {
  */
 app.registerEvent('top', async (source, cbId, data) => {
   if (!isKnownApp(data.app)) {
-    throw new PlayerFacingError('Unknown game.');
+    throw new PlayerFacingError('Unknown game.', { key: 'server.highscores.unknownGame' });
   }
 
   const rows = await repo.top(data.app, 10);

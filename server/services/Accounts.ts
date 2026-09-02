@@ -350,7 +350,8 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
 
   if (!HANDLE_PATTERN.test(handle)) {
     throw new PlayerFacingError(
-      'A handle is 3–32 characters, using lowercase letters, numbers and _.'
+      'A handle is 3–32 characters, using lowercase letters, numbers and _.',
+      { key: 'server.accounts.handleFormat' }
     );
   }
 
@@ -368,7 +369,8 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   );
   if ((held ?? 0) >= limit) {
     throw new PlayerFacingError(
-      `You already hold ${limit} accounts here. Delete one to make room.`
+      `You already hold ${limit} accounts here. Delete one to make room.`,
+      { key: 'server.accounts.accountCap', params: { limit } }
     );
   }
 
@@ -382,7 +384,11 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     'SELECT `id` FROM `gphone_accounts` WHERE `app` = ? AND `handle` = ? LIMIT 1',
     [appId, handle]
   );
-  if (taken) throw new PlayerFacingError(`@${handle} is taken.`);
+  if (taken)
+    throw new PlayerFacingError(`@${handle} is taken.`, {
+      key: 'server.accounts.handleTaken',
+      params: { handle }
+    });
 
   try {
     const id = await repo.createWithinCap(
@@ -393,7 +399,8 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     // concurrent create took the last slot between the count above and this statement.
     if (!id) {
       throw new PlayerFacingError(
-        `You already hold ${limit} accounts here. Delete one to make room.`
+        `You already hold ${limit} accounts here. Delete one to make room.`,
+        { key: 'server.accounts.accountCap', params: { limit } }
       );
     }
     return { id, citizenid, app: appId, handle, display_name: displayName, status: 'active' };
@@ -404,7 +411,10 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     if (/duplicate/i.test(message)) {
       // `{ cause }` is the constructor's ES2022 form; this repo's lib target is ES2021, so
       // the property is set directly instead — same effect, portable to the older lib.
-      const takenError = new PlayerFacingError(`@${handle} is taken.`);
+      const takenError = new PlayerFacingError(`@${handle} is taken.`, {
+        key: 'server.accounts.handleTaken',
+        params: { handle }
+      });
       (takenError as PlayerFacingError & { cause?: unknown }).cause = error;
       throw takenError;
     }
@@ -427,7 +437,10 @@ app.registerEvent('follow', async (source, cbId, data, citizenid) => {
   const appId = data.app;
 
   const follower = await ownedAccount(data.follower_account_id, citizenid, appId);
-  if (!follower) throw new PlayerFacingError('That account is not yours.');
+  if (!follower)
+    throw new PlayerFacingError('That account is not yours.', {
+      key: 'server.accounts.notYours'
+    });
 
   const followeeId = data.followee_account_id;
 
@@ -436,7 +449,10 @@ app.registerEvent('follow', async (source, cbId, data, citizenid) => {
    * Following feed, which already has them nowhere else to be, and inflate both counts by one
    * for everybody.
    */
-  if (followeeId === follower.id) throw new PlayerFacingError('You cannot follow yourself.');
+  if (followeeId === follower.id)
+    throw new PlayerFacingError('You cannot follow yourself.', {
+      key: 'server.accounts.cannotFollowSelf'
+    });
 
   /**
    * The target must exist, be active, and be **in the same app**. Not decoration: a row linking
@@ -448,7 +464,10 @@ app.registerEvent('follow', async (source, cbId, data, citizenid) => {
      WHERE \`id\` = ? AND \`app\` = ? AND \`status\` = 'active' LIMIT 1`,
     [followeeId, appId]
   );
-  if (!followee) throw new PlayerFacingError('That account is no longer available.');
+  if (!followee)
+    throw new PlayerFacingError('That account is no longer available.', {
+      key: 'server.accounts.targetUnavailable'
+    });
 
   try {
     await Database.insert(
@@ -491,7 +510,10 @@ app.registerEvent('follow', async (source, cbId, data, citizenid) => {
 
 app.registerEvent('unfollow', async (source, cbId, data, citizenid) => {
   const follower = await ownedAccount(data.follower_account_id, citizenid, data.app);
-  if (!follower) throw new PlayerFacingError('That account is not yours.');
+  if (!follower)
+    throw new PlayerFacingError('That account is not yours.', {
+      key: 'server.accounts.notYours'
+    });
 
   const followeeId = data.followee_account_id;
 
@@ -515,16 +537,25 @@ app.registerEvent('block', async (source, cbId, data, citizenid) => {
   const appId = data.app;
 
   const blocker = await ownedAccount(data.blocker_account_id, citizenid, appId);
-  if (!blocker) throw new PlayerFacingError('That account is not yours.');
+  if (!blocker)
+    throw new PlayerFacingError('That account is not yours.', {
+      key: 'server.accounts.notYours'
+    });
 
   const blockedId = data.blocked_account_id;
-  if (blockedId === blocker.id) throw new PlayerFacingError('You cannot block yourself.');
+  if (blockedId === blocker.id)
+    throw new PlayerFacingError('You cannot block yourself.', {
+      key: 'server.accounts.cannotBlockSelf'
+    });
 
   const blocked = await Database.single<{ id: number }>(
     "SELECT `id` FROM `gphone_accounts` WHERE `id` = ? AND `app` = ? AND `status` = 'active' LIMIT 1",
     [blockedId, appId]
   );
-  if (!blocked) throw new PlayerFacingError('That account is no longer available.');
+  if (!blocked)
+    throw new PlayerFacingError('That account is no longer available.', {
+      key: 'server.accounts.targetUnavailable'
+    });
 
   try {
     await Database.insert(
@@ -549,7 +580,10 @@ app.registerEvent('block', async (source, cbId, data, citizenid) => {
 
 app.registerEvent('unblock', async (source, cbId, data, citizenid) => {
   const blocker = await ownedAccount(data.blocker_account_id, citizenid, data.app);
-  if (!blocker) throw new PlayerFacingError('That account is not yours.');
+  if (!blocker)
+    throw new PlayerFacingError('That account is not yours.', {
+      key: 'server.accounts.notYours'
+    });
 
   const blockedId = data.blocked_account_id;
 
@@ -575,12 +609,18 @@ app.registerEvent('unblock', async (source, cbId, data, citizenid) => {
  */
 app.registerEvent('react', async (source, cbId, data, citizenid) => {
   const account = await ownedAccount(data.account_id, citizenid, data.app);
-  if (!account) throw new PlayerFacingError('That account is not yours.');
+  if (!account)
+    throw new PlayerFacingError('That account is not yours.', {
+      key: 'server.accounts.notYours'
+    });
 
   // Bound as a value by the contract; this is the namespace allowlist, which is a registry
   // apps declare into rather than a list a schema could hold.
   const targetTable = data.target_table;
-  if (!isReactableTable(targetTable)) throw new PlayerFacingError('That cannot be reacted to.');
+  if (!isReactableTable(targetTable))
+    throw new PlayerFacingError('That cannot be reacted to.', {
+      key: 'server.accounts.notReactable'
+    });
   const targetId = data.target_id;
 
   try {
@@ -598,10 +638,16 @@ app.registerEvent('react', async (source, cbId, data, citizenid) => {
 
 app.registerEvent('unreact', async (source, cbId, data, citizenid) => {
   const account = await ownedAccount(data.account_id, citizenid, data.app);
-  if (!account) throw new PlayerFacingError('That account is not yours.');
+  if (!account)
+    throw new PlayerFacingError('That account is not yours.', {
+      key: 'server.accounts.notYours'
+    });
 
   const targetTable = data.target_table;
-  if (!isReactableTable(targetTable)) throw new PlayerFacingError('That cannot be reacted to.');
+  if (!isReactableTable(targetTable))
+    throw new PlayerFacingError('That cannot be reacted to.', {
+      key: 'server.accounts.notReactable'
+    });
   const targetId = data.target_id;
 
   // Scoped to the caller's own account, so a row id is not authorization to remove somebody
@@ -623,7 +669,10 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
   const appId = data.app;
 
   const targetTable = data.target_table;
-  if (!isReactableTable(targetTable)) throw new PlayerFacingError('That cannot be reacted to.');
+  if (!isReactableTable(targetTable))
+    throw new PlayerFacingError('That cannot be reacted to.', {
+      key: 'server.accounts.notReactable'
+    });
 
   // Deduplicated rather than trimmed: the contract bounds the count, and a repeated id would
   // otherwise add a placeholder and a bind parameter for a row already named.

@@ -72,7 +72,9 @@ app.registerEvent(
     // blank-but-present number into a refusal before it reaches somebody else's lookup.
     const phone = phoneNumberFrom(data.phone);
     if (!phone) {
-      throw new PlayerFacingError('A valid recipient phone number is required.');
+      throw new PlayerFacingError('A valid recipient phone number is required.', {
+        key: 'server.bank.recipientRequired'
+      });
     }
     const { amount } = data;
     // Trimmed here rather than capped here: the contract's `max` is what a note may be, and a

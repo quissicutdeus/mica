@@ -316,7 +316,9 @@ describe('passcode attempt limiting (MICA-164)', () => {
     // cannot see is a lock screen that looks broken. It arrives as `{ error }` rather than a
     // rejection because that is how `ServiceEndpoint` delivers a message to a player.
     expect(await call('check', { passcode: '482091' })).toEqual({
-      error: expect.stringMatching(/Too many attempts\. Try again in \d+s\./)
+      error: expect.stringMatching(/Too many attempts\. Try again in \d+s\./),
+      key: 'server.lockscreen.tooManyAttempts',
+      params: { seconds: expect.any(Number) }
     });
   });
 
@@ -324,7 +326,11 @@ describe('passcode attempt limiting (MICA-164)', () => {
     let clock = 1_000_000;
     __setLockscreenClock(() => clock);
     for (let i = 0; i < 5; i++) await wrong();
-    expect(await wrong()).toEqual({ error: expect.stringContaining('Too many attempts') });
+    expect(await wrong()).toEqual({
+      error: expect.stringContaining('Too many attempts'),
+      key: 'server.lockscreen.tooManyAttempts',
+      params: { seconds: expect.any(Number) }
+    });
 
     clock += 60_001;
     expect(await call('check', { passcode: '482091' })).toEqual({ ok: true });
@@ -345,7 +351,11 @@ describe('passcode attempt limiting (MICA-164)', () => {
    */
   it('does not lock out a different player because this one was guessing', async () => {
     for (let i = 0; i < 5; i++) await wrong();
-    expect(await wrong()).toEqual({ error: expect.stringContaining('Too many attempts') });
+    expect(await wrong()).toEqual({
+      error: expect.stringContaining('Too many attempts'),
+      key: 'server.lockscreen.tooManyAttempts',
+      params: { seconds: expect.any(Number) }
+    });
 
     expect(await call('check', { passcode: '000000' }, 'CIT_B')).toEqual({ ok: false });
   });

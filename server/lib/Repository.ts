@@ -118,15 +118,24 @@ export abstract class Repository<T> {
      * it, every throw in this file left the server through the same line as these four.
      */
     if (rule.values && !rule.values.includes(String(value))) {
-      throw new PlayerFacingError(`'${column}' must be one of: ${rule.values.join(', ')}.`);
+      throw new PlayerFacingError(`'${column}' must be one of: ${rule.values.join(', ')}.`, {
+        key: 'server.repository.mustBeOneOf',
+        params: { column, values: rule.values.join(', ') }
+      });
     }
 
     if (rule.maxLength !== null && typeof value === 'string' && value.length > rule.maxLength) {
-      throw new PlayerFacingError(`'${column}' is limited to ${rule.maxLength} characters.`);
+      throw new PlayerFacingError(`'${column}' is limited to ${rule.maxLength} characters.`, {
+        key: 'server.repository.maxLength',
+        params: { column, max: rule.maxLength }
+      });
     }
 
     if (rule.type === 'int' && typeof value === 'number' && !Number.isInteger(value)) {
-      throw new PlayerFacingError(`'${column}' must be a whole number.`);
+      throw new PlayerFacingError(`'${column}' must be a whole number.`, {
+        key: 'server.repository.mustBeInteger',
+        params: { column }
+      });
     }
 
     /**
@@ -144,7 +153,10 @@ export abstract class Repository<T> {
       rule.max !== null &&
       (value < rule.min || value > rule.max)
     ) {
-      throw new PlayerFacingError(`'${column}' must be between ${rule.min} and ${rule.max}.`);
+      throw new PlayerFacingError(`'${column}' must be between ${rule.min} and ${rule.max}.`, {
+        key: 'server.repository.outOfRange',
+        params: { column, min: rule.min, max: rule.max }
+      });
     }
   }
 
