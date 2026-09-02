@@ -54,7 +54,7 @@ const BASELINE: Record<string, number> = {
   'web/src/apps/contacts/components/ContactForm.svelte': 9,
   'web/src/apps/contacts/components/ContactList.svelte': 2,
   'web/src/apps/contacts/index.svelte': 16,
-  'web/src/apps/mail/index.svelte': 4,
+
   'web/src/apps/messages/components/ConversationDetailsModal.svelte': 8,
   'web/src/apps/messages/components/ConversationList.svelte': 3,
   'web/src/apps/messages/components/MessageBubble.svelte': 15,

@@ -19,8 +19,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     EmptyMailIcon,
     TrashIcon,
     formatRelativeTime,
+    registerMessages,
+    useLocale,
     type AppProps
   } from '@gphone/sdk';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
+
+  // MICA-215: this app's strings, registered by the app itself — the same shape an
+  // add-on outside this repository uses. `$t('mail.…')` reads them under the phone's
+  // locale.
+  registerMessages('mail', { en, de });
+  const { t } = useLocale();
 
   const { mailStore } = useMail();
   const mailLoaded = mailStore.loaded;
@@ -31,9 +41,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const app = useAppLevels({
     appId: 'mail',
-    title: () => (activeTab === 'inbox' ? 'Mail' : 'Archived Mail'),
+    title: () => (activeTab === 'inbox' ? $t('mail.title') : $t('mail.archivedTitle')),
     onback: () => onback(),
-    levels: [{ open: () => !!selectedMail, close: closeDetail, title: 'Message' }]
+    levels: [{ open: () => !!selectedMail, close: closeDetail, title: () => $t('mail.message') }]
   });
 
   // Every visit, not only the first. Mail that arrived while the app sat in the
@@ -90,8 +100,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <button
         class="text-error hover:bg-error duration-short ease-standard rounded-full p-2 transition-colors"
         onclick={() => handleDelete(selectedMail!.id)}
-        aria-label="Delete message"
-        title="Delete message"
+        aria-label={$t('mail.deleteMessage')}
+        title={$t('mail.deleteMessage')}
       >
         <TrashIcon class="size-icon-md" />
       </button>
@@ -102,8 +112,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             : 'text-on-surface hover:bg-surface-container-high hover:text-on-surface'
         }`}
         onclick={() => handleArchive(selectedMail!)}
-        aria-label={isArchived ? 'Move to Inbox' : 'Archive message'}
-        title={isArchived ? 'Move to Inbox' : 'Archive message'}
+        aria-label={isArchived ? $t('mail.moveToInbox') : $t('mail.archiveMessage')}
+        title={isArchived ? $t('mail.moveToInbox') : $t('mail.archiveMessage')}
       >
         <ArchiveIcon class="size-icon-md" />
       </button>
@@ -116,8 +126,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           : 'hover:bg-surface text-on-surface hover:text-on-surface'
       }`}
       onclick={() => (activeTab = activeTab === 'inbox' ? 'archive' : 'inbox')}
-      aria-label={activeTab === 'inbox' ? 'View Archive' : 'View Inbox'}
-      title={activeTab === 'inbox' ? 'View Archive' : 'View Inbox'}
+      aria-label={activeTab === 'inbox' ? $t('mail.viewArchive') : $t('mail.viewInbox')}
+      title={activeTab === 'inbox' ? $t('mail.viewArchive') : $t('mail.viewInbox')}
     >
       <ArchiveIcon class="size-icon-md" />
     </button>
@@ -142,7 +152,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               is cheaper than the question being asked once per player.
             -->
             <p class="text-on-surface-variant text-body-small mt-1">
-              No-reply address &middot; answer in Messages
+              {$t('mail.noReply')}
             </p>
           </div>
           <span class="text-on-surface-variant text-body-small"
@@ -165,10 +175,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <Skeleton count={4} height="h-16" />
       {:else if displayedEmails.length === 0}
         <EmptyState
-          title={activeTab === 'inbox' ? 'No inbox messages' : 'No archived messages'}
+          title={activeTab === 'inbox' ? $t('mail.emptyInbox') : $t('mail.emptyArchive')}
           description={activeTab === 'inbox'
-            ? 'Mail arrives from jobs, businesses and dispatches. This inbox only receives — conversations live in Messages.'
-            : 'Archived messages will be stored here.'}
+            ? $t('mail.emptyInboxHint')
+            : $t('mail.emptyArchiveHint')}
         >
           {#snippet icon()}
             <EmptyMailIcon class="h-12 w-12" />
