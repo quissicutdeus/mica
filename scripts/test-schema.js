@@ -295,7 +295,8 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
 
   step(`${schemaFile} — ConversationRepository.findForCitizen`);
   const repo = new modules.ConversationRepository(database);
-  const conversations = await repo.findForCitizen(ownerA);
+  // MICA-211: the list is paged by recency; the first page is a null cursor.
+  const { rows: conversations } = await repo.findForCitizen(ownerA, { limit: 25, cursor: null });
   check(`returns at least one conversation for ${ownerA}`, conversations.length > 0, true);
   check(
     `includes the created conversation`,
