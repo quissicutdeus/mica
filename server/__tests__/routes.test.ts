@@ -126,7 +126,7 @@ const collectCrudStoreEvents = (): { action: string; file: string }[] => {
   for (const file of walk(join(ROOT, 'web', 'src'), ['.ts'])) {
     if (file.endsWith('.test.ts')) continue;
     const text = readFileSync(file, 'utf8');
-    for (const call of text.matchAll(/createCrudStore\s*(?:<[\s\S]*?>)?\s*\(/g)) {
+    for (const call of text.matchAll(/createCrudStore\s*(?:<[^()]*?>)?\s*\(/g)) {
       // The config object is the last argument; a window is enough and keeps this a
       // scanner rather than a parser.
       const window = text.slice(call.index!, call.index! + 600);
@@ -146,8 +146,14 @@ const collectCrudStoreEvents = (): { action: string; file: string }[] => {
      * because the point of this scan is to follow the *known* ways an action name reaches
      * `fetchNui`. A pattern loose enough to catch every string would also catch strings that
      * are not actions, and a false pass here is worse than a false failure.
+     *
+     * The generic may not contain a paren, for the reason the `fetchNui` scanner gives
+     * above. `[\s\S]*?` let `createPagedStore<UIConversation>(readConversationPage, {` run
+     * on for twenty lines until it found `byNewest<UIConversation>('lastMessageAt')`, and
+     * reported a sort key as an action nothing answers (MICA-204). Newlines stay allowed,
+     * unlike there: `contacts.ts` breaks its `createCrudStore` generic across four lines.
      */
-    for (const m of text.matchAll(/createPagedStore\s*(?:<[\s\S]*?>)?\s*\(\s*['"](\w+)['"]/g)) {
+    for (const m of text.matchAll(/createPagedStore\s*(?:<[^()]*?>)?\s*\(\s*['"](\w+)['"]/g)) {
       // A store with `service:` set reaches the server through the generic route, so its
       // first argument is a *server* action name rather than a row in this table.
       // Counting it here reports `get` and `following` as NUI routes nobody declared.
