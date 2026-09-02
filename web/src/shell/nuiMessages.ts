@@ -14,6 +14,8 @@ import { hydrateSettings } from '../../../sdk/host/useStorage';
 import { bootstrapStores, resetBootstrapState } from './state/bootstrap';
 import { toast } from './state/toast';
 import { messageOf } from '@gphone/sdk';
+import { get } from 'svelte/store';
+import { t } from './messages';
 import { APP_EVENT_NUI_ACTION, parseAppEventEnvelope } from '@gphone/shared/appEvents';
 import {
   MUSIC_BROADCASTS_NUI_ACTION,
@@ -292,11 +294,19 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
       // rather than on any app's behalf, which is how moderation and the admin commands
       // reach somebody. Exempt from Do Not Disturb and from every mute: a warning a player
       // can silence is one they would never know had been sent (MICA-63).
+      // MICA-216: the server sends English plus a catalog key; the key wins where the
+      // shell's `server` catalog knows it, so the toast reads in the player's language.
+      const translate = get(t);
+      const resolve = (key: string | undefined, fallback: string | undefined) => {
+        if (!key) return fallback;
+        const said = translate(key, parsed.params);
+        return said === key ? fallback : said;
+      };
       toast.show({
         source: 'system',
         type: parsed.type,
-        title: parsed.title,
-        message: parsed.message
+        title: resolve(parsed.titleKey, parsed.title),
+        message: resolve(parsed.key, parsed.message) ?? parsed.message
       });
     },
     openApp: (data) => {

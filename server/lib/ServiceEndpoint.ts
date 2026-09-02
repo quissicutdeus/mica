@@ -15,7 +15,7 @@ import {
   type ServiceContract
 } from '@gphone/shared/contract';
 import { parseInput, SchemaError, type Schema } from '@gphone/shared/schema';
-import { GENERIC_ERROR_MESSAGE, PlayerFacingError } from './errors';
+import { GENERIC_ERROR_KEY, GENERIC_ERROR_MESSAGE, PlayerFacingError } from './errors';
 
 // Once per process, not once per service: `on('playerDropped')` would otherwise be registered
 // thirteen times and do the same sweep thirteen times per disconnect.
@@ -458,7 +458,8 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
          */
         if (!allow(src, this.serviceName, action)) {
           emitNet(clientEventName, src, cbId, {
-            error: `Too many ${this.serviceName} ${action} requests. Slow down and try again.`
+            error: `Too many ${this.serviceName} ${action} requests. Slow down and try again.`,
+            key: 'server.rateLimited'
           });
           return;
         }
@@ -466,7 +467,10 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
         const player = FrameworkBridge.getPlayer(src);
 
         if (!player) {
-          emitNet(clientEventName, src, cbId, { error: 'Player not authenticated' });
+          emitNet(clientEventName, src, cbId, {
+            error: 'Player not authenticated',
+            key: 'server.notAuthenticated'
+          });
           return;
         }
 
@@ -502,8 +506,14 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
         const disclosable = error instanceof PlayerFacingError || error instanceof SchemaError;
         if (!disclosable) console.error(`Error in ${eventName}:`, error);
 
+        // The key rides beside the text (MICA-216): a client whose catalog knows it says
+        // it in the player's language, one that does not shows the English. A `SchemaError`
+        // carries no key — its messages name the field and are not catalogued.
+        const keyed = error instanceof PlayerFacingError ? error : undefined;
         emitNet(clientEventName, src, cbId, {
-          error: disclosable ? error.message : GENERIC_ERROR_MESSAGE
+          error: disclosable ? error.message : GENERIC_ERROR_MESSAGE,
+          key: keyed ? keyed.key : disclosable ? undefined : GENERIC_ERROR_KEY,
+          params: keyed?.params
         });
       }
     });

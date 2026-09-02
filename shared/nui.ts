@@ -16,9 +16,13 @@ export interface SetTimePayload {
 }
 
 export interface NotifyPayload {
-  type: 'info' | 'success' | 'warning' | 'error';
+  type: 'success' | 'error' | 'info' | 'warning';
   title?: string;
   message: string;
+  /** MICA-216: catalog keys the client resolves in the player's language, if it knows them. */
+  key?: string;
+  titleKey?: string;
+  params?: Record<string, string | number>;
 }
 
 export interface OpenAppPayload {
@@ -160,7 +164,26 @@ export function parseNotify(data: unknown): NotifyPayload | null {
   const type =
     rawType === 'success' || rawType === 'warning' || rawType === 'error' ? rawType : 'info';
   const title = safeString(obj.title, 100);
-  return { type, title, message };
+  const key = safeString(obj.key, 100);
+  const titleKey = safeString(obj.titleKey, 100);
+  // Params interpolate into a catalog string: short scalars only, and not many of them.
+  const params: Record<string, string | number> = {};
+  const rawParams = safeObject(obj.params);
+  if (rawParams) {
+    for (const [name, value] of Object.entries(rawParams).slice(0, 10)) {
+      if (!/^\w{1,32}$/.test(name)) continue;
+      if (typeof value === 'number' && Number.isFinite(value)) params[name] = value;
+      else if (typeof value === 'string') params[name] = value.slice(0, 200);
+    }
+  }
+  return {
+    type,
+    title,
+    message,
+    ...(key ? { key } : {}),
+    ...(titleKey ? { titleKey } : {}),
+    ...(Object.keys(params).length ? { params } : {})
+  };
 }
 
 export function parseOpenApp(data: unknown): OpenAppPayload | null {

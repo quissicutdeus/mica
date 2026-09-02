@@ -1,0 +1,5 @@
+{
+  "generic": "Something went wrong. Try again in a moment.",
+  "rateLimited": "Too many requests. Slow down and try again.",
+  "notAuthenticated": "Player not authenticated"
+}

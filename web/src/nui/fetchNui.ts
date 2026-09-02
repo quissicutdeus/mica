@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { get } from 'svelte/store';
+import { t, type TranslateParams } from '../../../sdk/i18n';
 import { registerNuiTransport } from '../../../sdk/nui/transport';
 import { getTransport } from './transport';
 
@@ -13,10 +15,23 @@ import { getTransport } from './transport';
  * unanswered for 15 seconds (`client/lib/ServiceProxy.ts`). All three are failures wearing
  * the shape of data.
  */
+/**
+ * The message an error reply carries, in the player's language where possible (MICA-216).
+ *
+ * The server sends `{ error, key?, params? }`: `error` is English, `key` names an entry in
+ * the shell's `server` catalog. The key wins when the catalog knows it, so a refusal reads
+ * in the phone's language; an unknown key — an add-on's own server half, say — falls back
+ * to the English it sent, which is exactly what it showed before.
+ */
 const errorFrom = (reply: unknown): string | null => {
   if (!reply || typeof reply !== 'object') return null;
-  const { error } = reply as { error?: unknown };
-  return typeof error === 'string' && error ? error : null;
+  const { error, key, params } = reply as { error?: unknown; key?: unknown; params?: unknown };
+  if (typeof error !== 'string' || !error) return null;
+  if (typeof key === 'string' && key) {
+    const translated = get(t)(key, (params ?? undefined) as TranslateParams | undefined);
+    if (translated !== key) return translated;
+  }
+  return error;
 };
 
 /**

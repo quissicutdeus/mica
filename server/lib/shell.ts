@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import type { MessageParams } from './errors';
 import { detectFramework, FrameworkBridge } from './FrameworkBridge';
 import { guardNetEvent } from './netGuard';
 import { registerService } from './services';
@@ -26,6 +27,15 @@ export interface ShellNotification {
   type?: 'success' | 'error' | 'info' | 'warning';
   title?: string;
   message: string;
+  /**
+   * MICA-216: keys into the shell's `server` catalog for `title` and `message`, so the
+   * client shows them in the player's language. The English stays as the fallback and as
+   * what a log shows; `server/__tests__/serverMessages.test.ts` holds each key to the
+   * catalog.
+   */
+  key?: string;
+  titleKey?: string;
+  params?: MessageParams;
 }
 
 /**

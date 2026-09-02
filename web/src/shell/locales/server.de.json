@@ -1,0 +1,5 @@
+{
+  "generic": "Etwas ist schiefgelaufen. Versuche es gleich noch einmal.",
+  "rateLimited": "Zu viele Anfragen. Warte kurz und versuche es erneut.",
+  "notAuthenticated": "Spieler nicht angemeldet"
+}

@@ -103,3 +103,31 @@ describe('with a defaultValue — reads', () => {
     expect(console.warn).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * MICA-216: an error reply may carry a message key beside its English text. The key wins
+ * when the shell's `server` catalog knows it, so the toast reads in the phone's language;
+ * an unknown key — an add-on's own server half — falls back to the English that was sent.
+ */
+describe('a keyed error reply', () => {
+  it('resolves the key through the catalog, with params', async () => {
+    const { registerMessages, locale } = await import('../../../sdk/i18n');
+    registerMessages('server', {
+      en: { 'probe.refused': 'No, {name}.' },
+      de: { 'probe.refused': 'Nein, {name}.' }
+    });
+    locale.set('de');
+    transport.send.mockResolvedValueOnce({
+      error: 'No, Trevor.',
+      key: 'server.probe.refused',
+      params: { name: 'Trevor' }
+    });
+    await expect(fetchNui('x')).rejects.toThrow('Nein, Trevor.');
+    locale.set('en');
+  });
+
+  it('falls back to the English text for a key the catalog does not know', async () => {
+    transport.send.mockResolvedValueOnce({ error: 'Plain English', key: 'server.nowhere' });
+    await expect(fetchNui('x')).rejects.toThrow('Plain English');
+  });
+});
