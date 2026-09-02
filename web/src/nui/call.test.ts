@@ -35,7 +35,17 @@ describe('call', () => {
     expect(fetchNui).toHaveBeenLastCalledWith(
       GENERIC_SERVICE_ACTION,
       { service: 'media', action: 'shareLocation', data: {} },
-      { defaultValue: 'fallback' }
+      { defaultValue: 'fallback', quiet: undefined }
+    );
+  });
+
+  it('callOr passes quiet through for a read that may run before a character loads', async () => {
+    fetchNui.mockResolvedValueOnce([]);
+    await callOr(mediaContract, 'shareLocation', {}, [], { quiet: true });
+    expect(fetchNui).toHaveBeenLastCalledWith(
+      GENERIC_SERVICE_ACTION,
+      { service: 'media', action: 'shareLocation', data: {} },
+      { defaultValue: [], quiet: true }
     );
   });
 });

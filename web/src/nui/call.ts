@@ -45,17 +45,19 @@ export function call<C extends ServiceContract, A extends ContractAction<C>>(
 /**
  * The read form: a failure or an error reply answers `defaultValue` instead of throwing,
  * with the same console line `fetchNui` prints for a defaulted read, so the e2e fixture
- * still sees it.
+ * still sees it. `quiet` is `fetchNui`'s own: no console line either, for the few calls
+ * that legitimately fire before a character is loaded (`services/settings.ts` says why).
  */
 export function callOr<C extends ServiceContract, A extends ContractAction<C>, D>(
   contract: C,
   action: A,
   input: ActionInput<C, A>,
-  defaultValue: D
+  defaultValue: D,
+  options?: { quiet?: boolean }
 ): Promise<ActionOutput<C, A> | D> {
   return fetchNui<ActionOutput<C, A> | D>(
     GENERIC_SERVICE_ACTION,
     { service: contract.id, action, data: input },
-    { defaultValue }
+    { defaultValue, quiet: options?.quiet }
   );
 }
