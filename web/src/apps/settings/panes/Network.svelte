@@ -8,34 +8,36 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import {
     SettingsSection,
     ToggleSwitch,
+    useLocale,
     useSystemHardware,
     useSystemHardwareWrite
   } from '@gphone/sdk';
 
+  const { t } = useLocale();
   const { cellServiceEnabled, bluetoothEnabled } = useSystemHardware();
   const { toggleCellService, toggleBluetooth } = useSystemHardwareWrite();
 </script>
 
 <div class="space-y-6 p-4">
   <SettingsSection
-    title="Cellular Service"
-    footer="Turning off cellular service gates connections to external services and sets signal level to 0 bars. Local apps (Notes, Camera, Photos, Calculator) operate offline."
+    title={$t('settings.network.cellularTitle')}
+    footer={$t('settings.network.cellularFooter')}
   >
     <ToggleSwitch
-      label="Cellular Service"
-      description="Gate network access and external services"
+      label={$t('settings.network.cellularLabel')}
+      description={$t('settings.network.cellularDescription')}
       checked={$cellServiceEnabled}
       onchange={() => toggleCellService()}
     />
   </SettingsSection>
 
   <SettingsSection
-    title="Bluetooth & Proximity"
-    footer="When Bluetooth is ON, nearby devices can discover your phone for proximity features. Turning Bluetooth OFF renders your device invisible to proximity scans and blocks unsolicited contact sharing."
+    title={$t('settings.network.bluetoothTitle')}
+    footer={$t('settings.network.bluetoothFooter')}
   >
     <ToggleSwitch
-      label="Bluetooth Visibility"
-      description="Short-range peer-to-peer discovery"
+      label={$t('settings.network.bluetoothLabel')}
+      description={$t('settings.network.bluetoothDescription')}
       checked={$bluetoothEnabled}
       onchange={() => toggleBluetooth()}
     />

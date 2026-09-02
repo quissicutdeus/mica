@@ -10,6 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ChevronRightIcon,
     SettingsSection,
     useAppRegistry,
+    useLocale,
     AppIconTile,
     type AppManifest
   } from '@gphone/sdk';
@@ -28,6 +29,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    */
   let { onselect }: { onselect: (id: string) => void } = $props();
 
+  const { t } = useLocale();
   const { registryStore } = useAppRegistry();
 
   const system = $derived($registryStore.filter((app) => app.core));
@@ -42,9 +44,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    */
   const sizeOf = (app: AppManifest): string => {
     const bytes = appStorageBytes(app.id);
-    if (bytes === 0) return 'No stored data';
-    if (bytes < 1024) return `${bytes} B stored`;
-    return `${(bytes / 1024).toFixed(1)} KB stored`;
+    if (bytes === 0) return $t('settings.apps.noStoredData');
+    if (bytes < 1024) return $t('settings.apps.bytesStored', { bytes });
+    return $t('settings.apps.kilobytesStored', { kilobytes: (bytes / 1024).toFixed(1) });
   };
 </script>
 
@@ -74,6 +76,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 {/snippet}
 
 <div class="space-y-6 p-4">
-  {@render group('System', system, 'Ships with the phone and cannot be uninstalled.')}
-  {@render group('Add-ons', addOns, 'Installed from the Store, and removable from here or there.')}
+  {@render group($t('settings.apps.system'), system, $t('settings.apps.systemNote'))}
+  {@render group($t('settings.apps.addOns'), addOns, $t('settings.apps.addOnsNote'))}
 </div>

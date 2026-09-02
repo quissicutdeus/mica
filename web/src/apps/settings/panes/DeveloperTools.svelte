@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import {
     useCall,
+    useLocale,
     useMail,
     useMessages,
     useNavigation,
@@ -22,6 +23,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   let { onhide } = $props<{ onhide: () => void }>();
 
+  const { t, plural } = useLocale();
   const { charge, signalLevel, soundVolume, soundMuted } = useSystemHardware();
   const { setCharge, setSignal, setVolume, toggleMute } = useSystemHardwareWrite();
   const { toast } = usePhoneNotification();
@@ -46,7 +48,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     setCharge(level);
     if (isBrowser()) return;
     await run(() => fetchNui('setBatteryLevel', { level }), {
-      error: 'Could not set the battery level'
+      error: $t('settings.devtools.batteryError')
     });
   };
 
@@ -87,7 +89,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       return;
     }
     void run(() => fetchNui('simulateIncomingCall', { number: callNumber }), {
-      error: 'Could not simulate an incoming call'
+      error: $t('settings.devtools.callError')
     });
   };
 
@@ -95,8 +97,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     toast.show({
       type: 'info',
       app: 'settings',
-      title: 'Simulated Toast',
-      message: 'This is a test push notification from Developer Tools.'
+      title: $t('settings.devtools.simulatedToastTitle'),
+      message: $t('settings.devtools.simulatedToastMessage')
     });
   };
 
@@ -104,7 +106,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     const testMsg = {
       conversation_id: 1,
       senderName: 'Ursula (Crazy Ex)',
-      message: 'Hey! This is a test SMS from Developer Tools.',
+      message: $t('settings.devtools.testSmsMessage'),
       phone: '555-0199',
       avatar: placeholderAvatar('Ursula')
     };
@@ -129,8 +131,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       id: Date.now(),
       citizenid: 'DEV12345',
       sender: 'boss@ls-gov.org',
-      subject: 'Quarterly Review Notice',
-      content: 'Please review your upcoming schedule and metrics.',
+      subject: $t('settings.devtools.testMailSubject'),
+      content: $t('settings.devtools.testMailContent'),
       read: false,
       status: 'active' as const,
       created_at: nowStr,
@@ -151,11 +153,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <h2
     class="text-body-medium mb-2 flex items-center justify-between px-2 tracking-wider text-emerald-400 uppercase"
   >
-    <span>Developer Tools</span>
+    <span>{$t('settings.devtools.title')}</span>
     <span
       class="text-label-small rounded-chip border border-emerald-800 bg-emerald-950 px-1.5 py-0.5 font-mono text-emerald-300"
     >
-      Unlocked
+      {$t('settings.devtools.unlockedBadge')}
     </span>
   </h2>
   <!-- The master switch. On by definition while this pane is reachable; turning it off
@@ -163,8 +165,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
        state in which this renders "off". -->
   <div class="bg-surface-container mb-4 overflow-hidden rounded-box">
     <ToggleSwitch
-      label="Developer Tools"
-      description="Turn off to hide — 10 taps on OS Version restores"
+      label={$t('settings.devtools.title')}
+      description={$t('settings.devtools.toggleDescription')}
       checked={true}
       onchange={onhide}
     />
@@ -174,7 +176,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Battery Level -->
     <div class="flex flex-col gap-2">
       <div class="text-on-surface flex items-center justify-between">
-        <span class="font-semibold">Battery Charge</span>
+        <span class="font-semibold">{$t('settings.devtools.batteryCharge')}</span>
         <span class="font-mono text-emerald-400">{Math.round($charge)}%</span>
       </div>
       <input
@@ -191,14 +193,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           onclick={() => applyBatteryLevel(0)}
           class="text-error text-label-small cursor-pointer rounded-chip border border-red-800 bg-red-950 px-2 py-1.5 text-center hover:bg-red-900"
         >
-          0% (Dead)
+          {$t('settings.devtools.batteryDead')}
         </button>
         <button
           type="button"
           onclick={() => applyBatteryLevel(15)}
           class="text-label-small cursor-pointer rounded-chip border border-yellow-800 bg-yellow-950 px-2 py-1.5 text-center text-yellow-300 hover:bg-yellow-900"
         >
-          15% (Low)
+          {$t('settings.devtools.batteryLow')}
         </button>
         <button
           type="button"
@@ -220,8 +222,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Signal Level -->
     <div class="border-outline-variant flex flex-col gap-2 border-t pt-3">
       <div class="text-on-surface flex items-center justify-between">
-        <span class="font-semibold">Signal Strength</span>
-        <span class="font-mono text-emerald-400">{$signalLevel} Bars</span>
+        <span class="font-semibold">{$t('settings.devtools.signalStrength')}</span>
+        <span class="font-mono text-emerald-400"
+          >{$t('settings.devtools.signalBars', { count: $signalLevel })}</span
+        >
       </div>
       <div class="grid grid-cols-5 gap-1.5">
         {#each [0, 1, 2, 3, 4] as level (level)}
@@ -233,7 +237,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               ? 'border-emerald-500 bg-emerald-600 text-white'
               : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'} duration-short ease-standard"
           >
-            {level} Bar{level === 1 ? '' : 's'}
+            {plural('settings.devtools.bars', level)}
           </button>
         {/each}
       </div>
@@ -242,7 +246,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- System Volume & Sound -->
     <div class="border-outline-variant flex flex-col gap-2 border-t pt-3">
       <div class="text-on-surface flex items-center justify-between">
-        <span class="font-semibold">System Volume</span>
+        <span class="font-semibold">{$t('settings.devtools.systemVolume')}</span>
         <div class="flex items-center gap-2">
           <button
             type="button"
@@ -251,7 +255,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               ? 'text-error border-red-800 bg-red-950'
               : 'border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high'}"
           >
-            {$soundMuted ? 'MUTED' : 'UNMUTED'}
+            {$soundMuted ? $t('settings.devtools.muted') : $t('settings.devtools.unmuted')}
           </button>
           <span class="font-mono text-emerald-400">{Math.round($soundVolume * 100)}%</span>
         </div>
@@ -269,23 +273,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <!-- Incoming Call Simulation -->
     <div class="border-outline-variant flex flex-col gap-2 border-t pt-3">
-      <span class="text-on-surface font-semibold">Incoming Call Test</span>
+      <span class="text-on-surface font-semibold">{$t('settings.devtools.callTest')}</span>
       <span class="text-on-surface-variant text-label-small">
         {isBrowser()
-          ? 'Fakes the toast — nothing real to ask here.'
-          : 'Rings you for real. Caller Name only shows if the number matches a saved contact.'}
+          ? $t('settings.devtools.callTestBrowser')
+          : $t('settings.devtools.callTestGame')}
       </span>
       <div class="flex gap-2">
         <input
           type="text"
           bind:value={callName}
-          placeholder="Caller Name"
+          placeholder={$t('settings.devtools.callerName')}
           class="border-outline-variant bg-surface text-on-surface placeholder-on-surface-variant w-1/2 rounded-chip border px-2.5 py-1.5 focus:border-emerald-500 focus:outline-none"
         />
         <input
           type="text"
           bind:value={callNumber}
-          placeholder="Phone Number"
+          placeholder={$t('settings.devtools.phoneNumber')}
           class="border-outline-variant bg-surface text-on-surface placeholder-on-surface-variant w-1/2 rounded-chip border px-2.5 py-1.5 focus:border-emerald-500 focus:outline-none"
         />
       </div>
@@ -294,34 +298,34 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         onclick={triggerCall}
         class="duration-short ease-standard text-body-small w-full cursor-pointer rounded-box bg-emerald-600 py-2 text-white transition-all hover:bg-emerald-500"
       >
-        Simulate Incoming Call
+        {$t('settings.devtools.simulateCall')}
       </button>
     </div>
 
     <!-- Notification & Message Triggers -->
     <div class="border-outline-variant flex flex-col gap-2 border-t pt-3">
-      <span class="text-on-surface font-semibold">Push Notifications & SMS</span>
+      <span class="text-on-surface font-semibold">{$t('settings.devtools.pushSection')}</span>
       <div class="grid grid-cols-3 gap-1.5">
         <button
           type="button"
           onclick={triggerNotification}
           class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high text-label-small cursor-pointer rounded-chip border px-2 py-1.5 text-center"
         >
-          Toast
+          {$t('settings.devtools.toastButton')}
         </button>
         <button
           type="button"
           onclick={triggerMessage}
           class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high text-label-small cursor-pointer rounded-chip border px-2 py-1.5 text-center"
         >
-          SMS
+          {$t('settings.devtools.smsButton')}
         </button>
         <button
           type="button"
           onclick={triggerMail}
           class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high text-label-small cursor-pointer rounded-chip border px-2 py-1.5 text-center"
         >
-          Email
+          {$t('settings.devtools.emailButton')}
         </button>
       </div>
     </div>

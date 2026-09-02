@@ -16,8 +16,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * does not exist yet (`PENDING (Cody)` on `shared/routes.ts`'s four `lockscreen` routes) —
    * `web/src/nui/mocks/registry.ts` answers it in the browser today.
    */
-  import { SettingsSection, useAppAction, useLockScreen, useLockScreenWrite } from '@gphone/sdk';
+  import {
+    SettingsSection,
+    useAppAction,
+    useLocale,
+    useLockScreen,
+    useLockScreenWrite
+  } from '@gphone/sdk';
 
+  const { t } = useLocale();
   const { hasPasscode, autoLockPolicy, autoLockPolicyChoices } = useLockScreen();
   const { setAutoLockPolicy, setPasscode, clearPasscode } = useLockScreenWrite();
   const { busy, run } = useAppAction('settings');
@@ -47,7 +54,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const savePasscode = async () => {
     if (!canSave) return;
     const ok = await run(() => setPasscode(digits), {
-      success: $hasPasscode ? 'Passcode changed' : 'Passcode set'
+      success: $hasPasscode ? $t('settings.lockscreen.changed') : $t('settings.lockscreen.saved')
     });
     if (!ok) return;
     editing = false;
@@ -56,24 +63,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   };
 
   const removePasscode = async () => {
-    await run(() => clearPasscode(), { success: 'Passcode removed' });
+    await run(() => clearPasscode(), { success: $t('settings.lockscreen.removed') });
     showClearConfirm = false;
   };
 </script>
 
 <div class="space-y-6 p-4">
-  <SettingsSection title="Passcode">
+  <SettingsSection title={$t('settings.lockscreen.passcode')}>
     <div class="space-y-3 p-4">
       {#if editing}
         <p class="text-on-surface-variant text-body-small">
-          {MIN_DIGITS}–{MAX_DIGITS} digits. Entered twice, so a typo does not lock you out of your own
-          phone.
+          {$t('settings.lockscreen.passcodeHint', { min: MIN_DIGITS, max: MAX_DIGITS })}
         </p>
         <input
           type="password"
           inputmode="numeric"
           class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface text-body-medium w-full rounded-chip border p-2"
-          placeholder="New passcode"
+          placeholder={$t('settings.lockscreen.newPasscode')}
           value={digits}
           oninput={(e) => (digits = digitsOnly(e.currentTarget.value))}
           disabled={$busy}
@@ -82,13 +88,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           type="password"
           inputmode="numeric"
           class="bg-surface-container-low placeholder-on-surface-variant border-outline-variant text-on-surface text-body-medium w-full rounded-chip border p-2"
-          placeholder="Confirm passcode"
+          placeholder={$t('settings.lockscreen.confirmPasscode')}
           value={confirmDigits}
           oninput={(e) => (confirmDigits = digitsOnly(e.currentTarget.value))}
           disabled={$busy}
         />
         {#if confirmDigits.length > 0 && digits !== confirmDigits.slice(0, digits.length)}
-          <p class="text-error text-body-small">Does not match yet.</p>
+          <p class="text-error text-body-small">{$t('settings.lockscreen.noMatch')}</p>
         {/if}
         <div class="flex gap-2">
           <button
@@ -97,7 +103,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             onclick={() => (editing = false)}
             disabled={$busy}
           >
-            Cancel
+            {$t('settings.lockscreen.cancel')}
           </button>
           <button
             type="button"
@@ -105,13 +111,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             onclick={savePasscode}
             disabled={$busy || !canSave}
           >
-            {$busy ? 'Saving...' : 'Save'}
+            {$busy ? $t('settings.lockscreen.saving') : $t('settings.lockscreen.save')}
           </button>
         </div>
       {:else}
         <div class="flex items-center justify-between">
           <span class="text-on-surface text-body-medium">
-            {$hasPasscode ? 'Passcode is set' : 'No passcode set'}
+            {$hasPasscode ? $t('settings.lockscreen.isSet') : $t('settings.lockscreen.notSet')}
           </span>
         </div>
         <div class="flex gap-2">
@@ -120,7 +126,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             class="border-outline-variant text-on-surface hover:bg-surface-container-high duration-short ease-standard flex-1 rounded-full border py-2 text-center font-medium transition-colors"
             onclick={startEditing}
           >
-            {$hasPasscode ? 'Change Passcode' : 'Set Passcode'}
+            {$hasPasscode ? $t('settings.lockscreen.change') : $t('settings.lockscreen.set')}
           </button>
           {#if $hasPasscode}
             <button
@@ -128,14 +134,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               class="border-error text-error hover:bg-error-container duration-short ease-standard flex-1 rounded-full border py-2 text-center font-medium transition-colors"
               onclick={() => (showClearConfirm = true)}
             >
-              Remove
+              {$t('settings.lockscreen.remove')}
             </button>
           {/if}
         </div>
         {#if showClearConfirm}
           <div class="bg-surface-container-high space-y-2 rounded-box p-3">
             <p class="text-on-surface text-body-small">
-              Remove your passcode? The lock screen will stop appearing until you set a new one.
+              {$t('settings.lockscreen.removeConfirm')}
             </p>
             <div class="flex gap-2">
               <button
@@ -144,7 +150,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 onclick={() => (showClearConfirm = false)}
                 disabled={$busy}
               >
-                Cancel
+                {$t('settings.lockscreen.cancel')}
               </button>
               <button
                 type="button"
@@ -152,7 +158,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 onclick={removePasscode}
                 disabled={$busy}
               >
-                Remove
+                {$t('settings.lockscreen.remove')}
               </button>
             </div>
           </div>
@@ -161,7 +167,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
   </SettingsSection>
 
-  <SettingsSection title="Auto-Lock">
+  <SettingsSection title={$t('settings.lockscreen.autoLock')}>
     <div class="p-4">
       <div class="grid grid-cols-3 gap-1.5">
         {#each $autoLockPolicyChoices as choice (choice.id)}

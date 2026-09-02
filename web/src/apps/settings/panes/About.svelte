@@ -11,6 +11,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     SettingsSection,
     useAccount,
     useAppRegistry,
+    useLocale,
     usePhoneNotification,
     formatDate
   } from '@gphone/sdk';
@@ -21,6 +22,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onlicense: () => void;
   }>();
 
+  const { t } = useLocale();
   const { myPhoneNumber } = useAccount();
   const { getFirstBootTime } = useAppRegistry();
   const { toast } = usePhoneNotification();
@@ -60,33 +62,37 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     toast.show(
       copied
-        ? { type: 'success', app: 'settings', message: `Copied ${number} to clipboard` }
-        : { type: 'error', app: 'settings', message: 'Could not copy your number' }
+        ? {
+            type: 'success',
+            app: 'settings',
+            message: $t('settings.about.copied', { number })
+          }
+        : { type: 'error', app: 'settings', message: $t('settings.about.copyFailed') }
     );
   };
 </script>
 
 <div class="p-4">
-  <SettingsSection title="About">
+  <SettingsSection title={$t('settings.about.title')}>
     <div class="divide-outline-variant text-body-medium divide-y">
       <button
         type="button"
         onclick={copyPhoneNumber}
         class="hover:bg-surface-container-high active:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
-        aria-label="Copy phone number to clipboard"
+        aria-label={$t('settings.about.copyNumber')}
       >
-        <span class="text-on-surface font-medium">Phone Number</span>
+        <span class="text-on-surface font-medium">{$t('settings.about.phoneNumber')}</span>
         <span class="text-on-surface font-mono">{$myPhoneNumber}</span>
       </button>
       <div class="flex items-center justify-between p-4">
-        <span class="text-on-surface font-medium">First Boot</span>
+        <span class="text-on-surface font-medium">{$t('settings.about.firstBoot')}</span>
         <span class="text-on-surface text-body-small font-mono"
           >{formatDate(getFirstBootTime())}</span
         >
       </div>
       <div class="flex items-center justify-between p-4">
-        <span class="text-on-surface font-medium">Software</span>
-        <span class="text-on-surface font-semibold">gPhone</span>
+        <span class="text-on-surface font-medium">{$t('settings.about.software')}</span>
+        <span class="text-on-surface font-semibold">{$t('settings.about.softwareName')}</span>
       </div>
       <!-- OS Version carries the build info: `v1.0.0 (branch@commit)`. Was a separate
          "Build / Commit" row saying almost the same thing. Ten taps here reveal
@@ -96,7 +102,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         onclick={ontapbuild}
         class="hover:bg-surface-container-high active:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
       >
-        <span class="text-on-surface font-medium">OS Version</span>
+        <span class="text-on-surface font-medium">{$t('settings.about.osVersion')}</span>
         <span class="text-secondary font-mono">{MICA_BUILD_INFO}</span>
       </button>
       <!-- A row rather than the paragraph itself. The notice is four sentences, and
@@ -108,7 +114,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         onclick={onprivacy}
         class="hover:bg-surface-container-high active:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
       >
-        <span class="text-on-surface font-medium">Privacy</span>
+        <span class="text-on-surface font-medium">{$t('settings.privacy.title')}</span>
         <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
       </button>
       <!-- MICA-192. A row for the same reason Privacy is one: the notice is five
@@ -120,7 +126,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         onclick={onlicense}
         class="hover:bg-surface-container-high active:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
       >
-        <span class="text-on-surface font-medium">License</span>
+        <span class="text-on-surface font-medium">{$t('settings.license.title')}</span>
         <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
       </button>
     </div>

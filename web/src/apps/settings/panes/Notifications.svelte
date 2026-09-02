@@ -9,6 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     SettingsSection,
     ToggleSwitch,
     useAppRegistry,
+    useLocale,
     useNotifications,
     useNotificationSettings,
     useNotificationSettingsWrite,
@@ -31,6 +32,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * nothing arrives at all. The reasoning, and where the policy is actually enforced, is in
    * `shell/state/notificationPolicy.ts`.
    */
+  const { t } = useLocale();
   const {
     toastsEnabled,
     notificationSoundEnabled,
@@ -111,21 +113,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="text-on-surface text-body-medium mb-3 font-medium">{name}</div>
     <div class="space-y-3 pl-2">
       <div class="flex items-center justify-between">
-        <span class="text-on-surface-variant text-body-small">Banners</span>
+        <span class="text-on-surface-variant text-body-small"
+          >{$t('settings.notifications.banners')}</span
+        >
         <ToggleSwitch
           checked={policy.banner}
           onchange={(val: boolean) => setAppNotificationPolicy(id, { banner: val })}
         />
       </div>
       <div class="flex items-center justify-between">
-        <span class="text-on-surface-variant text-body-small">Sound</span>
+        <span class="text-on-surface-variant text-body-small"
+          >{$t('settings.notifications.sound')}</span
+        >
         <ToggleSwitch
           checked={policy.sound}
           onchange={(val: boolean) => setAppNotificationPolicy(id, { sound: val })}
         />
       </div>
       <div class="flex items-center justify-between">
-        <span class="text-on-surface-variant text-body-small">Badge</span>
+        <span class="text-on-surface-variant text-body-small"
+          >{$t('settings.notifications.badge')}</span
+        >
         <ToggleSwitch
           checked={policy.badge}
           onchange={(val: boolean) => setAppNotificationPolicy(id, { badge: val })}
@@ -137,29 +145,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <div class="space-y-6 p-4">
   <SettingsSection
-    title="Do Not Disturb"
-    footer="Notifications still arrive and wait in the shade — they just don't interrupt. Calls
-      still ring on screen so you can answer them, and a favourite or a second call within a few
-      minutes rings out loud."
+    title={$t('settings.notifications.dnd')}
+    footer={$t('settings.notifications.dndFooter')}
   >
     <div class="flex items-center justify-between p-4">
       <div class="flex flex-col pr-4">
-        <span class="text-on-surface font-medium">Do Not Disturb</span>
+        <span class="text-on-surface font-medium">{$t('settings.notifications.dnd')}</span>
         <span class="text-on-surface-variant text-body-small"
-          >Silence banners and sounds without going offline</span
+          >{$t('settings.notifications.dndDescription')}</span
         >
       </div>
       <ToggleSwitch checked={$dndEnabled} onchange={(val: boolean) => setDndEnabled(val)} />
     </div>
   </SettingsSection>
 
-  <SettingsSection title="Banner Toasts & Alerts">
+  <SettingsSection title={$t('settings.notifications.bannerSection')}>
     <div class="divide-outline-variant text-body-medium divide-y">
       <div class="flex items-center justify-between p-4">
         <div class="flex flex-col pr-4">
-          <span class="text-on-surface font-medium">Show Banner Overlay</span>
+          <span class="text-on-surface font-medium">{$t('settings.notifications.showBanner')}</span>
           <span class="text-on-surface-variant text-body-small"
-            >Display popup banners when notifications arrive</span
+            >{$t('settings.notifications.showBannerDescription')}</span
           >
         </div>
         <ToggleSwitch checked={$toastsEnabled} onchange={(val: boolean) => setToastsEnabled(val)} />
@@ -167,9 +173,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <div class="flex items-center justify-between p-4">
         <div class="flex flex-col pr-4">
-          <span class="text-on-surface font-medium">Notification Sounds</span>
+          <span class="text-on-surface font-medium">{$t('settings.notifications.sounds')}</span>
           <span class="text-on-surface-variant text-body-small"
-            >Play alert sound on incoming notification</span
+            >{$t('settings.notifications.soundsDescription')}</span
           >
         </div>
         <ToggleSwitch
@@ -180,12 +186,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
   </SettingsSection>
 
-  <SettingsSection title="App Badges">
+  <SettingsSection title={$t('settings.notifications.badgesSection')}>
     <div class="flex items-center justify-between p-4">
       <div class="flex flex-col pr-4">
-        <span class="text-on-surface font-medium">App Icon Badges</span>
+        <span class="text-on-surface font-medium">{$t('settings.notifications.iconBadges')}</span>
         <span class="text-on-surface-variant text-body-small"
-          >Show unread count badges on launcher icons</span
+          >{$t('settings.notifications.iconBadgesDescription')}</span
         >
       </div>
       <ToggleSwitch checked={$badgesEnabled} onchange={(val: boolean) => setBadgesEnabled(val)} />
@@ -193,9 +199,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   </SettingsSection>
 
   <SettingsSection
-    title="Per App"
-    footer="Each switch is combined with the master switches above — an app can be quieter than
-      the phone, never louder."
+    title={$t('settings.notifications.perApp')}
+    footer={$t('settings.notifications.perAppFooter')}
   >
     <div class="divide-outline-variant divide-y">
       {#each notifyingApps as app (app.id)}
@@ -206,9 +211,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   {#if externalGroups.length > 0}
     <SettingsSection
-      title="Other Resources"
-      footer="Notifications sent by other resources on this server, grouped by the resource that
-        sent them."
+      title={$t('settings.notifications.otherResources')}
+      footer={$t('settings.notifications.otherResourcesFooter')}
     >
       <div class="divide-outline-variant divide-y">
         {#each externalGroups as id (id)}

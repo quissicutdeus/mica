@@ -15,6 +15,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ToggleSwitch,
     useAppAction,
     useAppRegistryWrite,
+    useLocale,
     useNotificationSettings,
     useNotificationSettingsWrite,
     AppIconTile,
@@ -42,6 +43,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onremoved: () => void;
   } = $props();
 
+  const { t } = useLocale();
   const { unregisterApp } = useAppRegistryWrite();
   const { run, busy } = useAppAction('settings');
 
@@ -78,7 +80,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     return appStorageBytes(app.id);
   });
   const storageLabel = $derived(
-    bytes === 0 ? 'Nothing stored' : bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`
+    bytes === 0
+      ? $t('settings.appInfo.nothingStored')
+      : bytes < 1024
+        ? `${bytes} B`
+        : `${(bytes / 1024).toFixed(1)} KB`
   );
 
   const clear = async (): Promise<void> => {
@@ -86,7 +92,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     if (
       await run(() => clearAppStorage(app.id), {
         title: app.name,
-        success: 'Storage cleared'
+        success: $t('settings.appInfo.storageCleared')
       })
     ) {
       storageVersion += 1;
@@ -102,7 +108,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     const { id, name } = app;
     // `run` reports the failure for us — `unregisterApp` throws for a core app, and this button
     // is not rendered for one, so a throw here means something the player should be told about.
-    if (await run(() => unregisterApp(id), { title: name, success: 'Uninstalled' })) {
+    if (
+      await run(() => unregisterApp(id), {
+        title: name,
+        success: $t('settings.appInfo.uninstalled')
+      })
+    ) {
       // Forget the mutes along with the app, so a reinstall starts allowed rather than
       // inheriting a silence the player set months ago and has no reason to remember.
       clearAppNotificationPolicy(id);
@@ -117,7 +128,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="min-w-0">
       <p class="text-on-surface text-body-large truncate">{app.name}</p>
       <p class="text-on-surface-variant text-body-small truncate">
-        {app.core ? 'System app' : 'Store add-on'}{app.isRemote ? ' · remote' : ''}
+        {app.core
+          ? $t('settings.appInfo.systemApp')
+          : $t('settings.appInfo.storeAddOn')}{app.isRemote
+          ? $t('settings.appInfo.remoteSuffix')
+          : ''}
       </p>
       {#if app.description}
         <p class="text-on-surface text-body-small mt-1">{app.description}</p>
@@ -125,30 +140,30 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
   </div>
 
-  <SettingsSection title="Details">
+  <SettingsSection title={$t('settings.appInfo.details')}>
     <div class="divide-outline-variant text-body-medium divide-y">
       <div class="flex items-center justify-between p-4">
-        <span class="text-on-surface-variant">Identifier</span>
+        <span class="text-on-surface-variant">{$t('settings.appInfo.identifier')}</span>
         <span class="text-on-surface text-body-small font-mono">{app.id}</span>
       </div>
       <div class="flex items-center justify-between p-4">
-        <span class="text-on-surface-variant">Author</span>
-        <span class="text-on-surface">{app.author || 'gPhone'}</span>
+        <span class="text-on-surface-variant">{$t('settings.appInfo.author')}</span>
+        <span class="text-on-surface">{app.author || $t('settings.appInfo.defaultAuthor')}</span>
       </div>
       {#if app.version}
         <div class="flex items-center justify-between p-4">
-          <span class="text-on-surface-variant">Version</span>
+          <span class="text-on-surface-variant">{$t('settings.appInfo.version')}</span>
           <span class="text-on-surface">{app.version}</span>
         </div>
       {/if}
       {#if app.installedAt}
         <div class="flex items-center justify-between p-4">
-          <span class="text-on-surface-variant">Installed</span>
+          <span class="text-on-surface-variant">{$t('settings.appInfo.installed')}</span>
           <span class="text-on-surface">{formatDate(app.installedAt)}</span>
         </div>
       {/if}
       <div class="flex items-center justify-between p-4">
-        <span class="text-on-surface-variant">Storage used</span>
+        <span class="text-on-surface-variant">{$t('settings.appInfo.storageUsed')}</span>
         <span class="text-on-surface">{storageLabel}</span>
       </div>
     </div>
@@ -156,27 +171,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   {#if canNotify}
     <SettingsSection
-      title="Notifications"
-      footer="Combined with the master switches in Settings > Notifications — this app can be
-        quieter than the phone, never louder."
+      title={$t('settings.notifications.title')}
+      footer={$t('settings.appInfo.notificationsFooter')}
     >
       <div class="divide-outline-variant text-body-medium divide-y">
         <div class="flex items-center justify-between p-4">
-          <span class="text-on-surface-variant">Banners</span>
+          <span class="text-on-surface-variant">{$t('settings.notifications.banners')}</span>
           <ToggleSwitch
             checked={policy.banner}
             onchange={(val: boolean) => setAppNotificationPolicy(app.id, { banner: val })}
           />
         </div>
         <div class="flex items-center justify-between p-4">
-          <span class="text-on-surface-variant">Sound</span>
+          <span class="text-on-surface-variant">{$t('settings.notifications.sound')}</span>
           <ToggleSwitch
             checked={policy.sound}
             onchange={(val: boolean) => setAppNotificationPolicy(app.id, { sound: val })}
           />
         </div>
         <div class="flex items-center justify-between p-4">
-          <span class="text-on-surface-variant">Badge</span>
+          <span class="text-on-surface-variant">{$t('settings.notifications.badge')}</span>
           <ToggleSwitch
             checked={policy.badge}
             onchange={(val: boolean) => setAppNotificationPolicy(app.id, { badge: val })}
@@ -188,7 +202,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   <div>
     <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
-      Manage
+      {$t('settings.appInfo.manage')}
     </h2>
     <div class="space-y-2">
       <Button
@@ -197,17 +211,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         disabled={$busy || bytes === 0}
         onclick={() => (confirming = 'clear')}
       >
-        Clear storage
+        {$t('settings.appInfo.clearStorage')}
       </Button>
       <p class="text-on-surface-variant text-body-small px-2">
-        {bytes === 0
-          ? 'Nothing to clear — this app has stored nothing yet.'
-          : 'Returns the app to a freshly installed state. The app stays installed.'}
+        {bytes === 0 ? $t('settings.appInfo.nothingToClear') : $t('settings.appInfo.clearHint')}
       </p>
 
       {#if app.core}
         <p class="text-on-surface-variant text-body-small px-2 pt-2">
-          System apps ship with the phone and cannot be uninstalled.
+          {$t('settings.appInfo.coreNote')}
         </p>
       {:else}
         <Button
@@ -216,10 +228,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           disabled={$busy}
           onclick={() => (confirming = 'uninstall')}
         >
-          Uninstall
+          {$t('settings.appInfo.uninstall')}
         </Button>
         <p class="text-on-surface-variant text-body-small px-2">
-          Removes the app and everything it stored. It can be installed again from the Store.
+          {$t('settings.appInfo.uninstallHint')}
         </p>
       {/if}
     </div>
@@ -228,17 +240,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#if confirming === 'clear'}
   <ConfirmDialog
-    title="Clear {app.name} data?"
-    message="Everything {app.name} has stored on this phone is deleted and the app returns to a freshly installed state. The app itself stays installed."
-    confirmText="Clear"
+    title={$t('settings.appInfo.clearTitle', { name: app.name })}
+    message={$t('settings.appInfo.clearMessage', { name: app.name })}
+    confirmText={$t('settings.appInfo.clearConfirm')}
     onconfirm={clear}
     oncancel={() => (confirming = null)}
   />
 {:else if confirming === 'uninstall'}
   <ConfirmDialog
-    title="Uninstall {app.name}?"
-    message="{app.name} is removed from the phone along with everything it stored. You can install it again from the Store."
-    confirmText="Uninstall"
+    title={$t('settings.appInfo.uninstallTitle', { name: app.name })}
+    message={$t('settings.appInfo.uninstallMessage', { name: app.name })}
+    confirmText={$t('settings.appInfo.uninstall')}
     onconfirm={uninstall}
     oncancel={() => (confirming = null)}
   />

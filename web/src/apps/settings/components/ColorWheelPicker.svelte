@@ -6,6 +6,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { useLocale } from '@gphone/sdk';
+
+  const { t } = useLocale();
 
   interface Props {
     color: string; // e.g. "rgba(59, 130, 246, 1)" or "#3b82f6"
@@ -272,7 +275,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <div class="text-on-surface text-body-small w-full space-y-3 px-2">
     <div class="flex flex-col gap-1">
       <div class="flex justify-between">
-        <span class="font-medium">Lightness</span>
+        <span class="font-medium">{$t('settings.colorPicker.lightness')}</span>
         <span class="text-on-surface-variant font-mono">{lightness}%</span>
       </div>
       <input
@@ -287,7 +290,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <div class="flex flex-col gap-1">
       <div class="flex justify-between">
-        <span class="font-medium">Opacity / Alpha</span>
+        <span class="font-medium">{$t('settings.colorPicker.opacity')}</span>
         <span class="text-on-surface-variant font-mono">{alpha}%</span>
       </div>
       <input

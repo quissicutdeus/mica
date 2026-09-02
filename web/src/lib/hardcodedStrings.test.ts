@@ -52,22 +52,7 @@ const counts = (): Map<string, { count: number; sample: string[] }> => {
 };
 
 /** Frozen on 2026-09-01 when the mechanism landed. Lower a number; never raise one. */
-const BASELINE: Record<string, number> = {
-  'web/src/apps/settings/components/ColorWheelPicker.svelte': 2,
-  'web/src/apps/settings/components/ThemeAndWallpaper.svelte': 18,
-  'web/src/apps/settings/index.svelte': 25,
-  'web/src/apps/settings/panes/About.svelte': 11,
-  'web/src/apps/settings/panes/AppInfo.svelte': 24,
-  'web/src/apps/settings/panes/DeveloperTools.svelte': 24,
-  'web/src/apps/settings/panes/Display.svelte': 25,
-  'web/src/apps/settings/panes/License.svelte': 5,
-  'web/src/apps/settings/panes/LockScreen.svelte': 12,
-  'web/src/apps/settings/panes/Network.svelte': 8,
-  'web/src/apps/settings/panes/Notifications.svelte': 18,
-  'web/src/apps/settings/panes/Privacy.svelte': 1,
-  'web/src/apps/settings/panes/Shortcuts.svelte': 4,
-  'web/src/apps/settings/panes/Sound.svelte': 16
-};
+const BASELINE: Record<string, number> = {};
 
 describe('hardcoded user-facing strings (MICA-61)', () => {
   const live = counts();

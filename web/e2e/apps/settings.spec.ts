@@ -38,8 +38,9 @@ test.describe('Settings App E2E', () => {
    * The phone changes language from Settings and stays changed (MICA-61). `Deutsch` and
    * `English` are what `Intl.DisplayNames` calls each language in itself, which is why the
    * rows read that way; `Automatisch` is the Settings catalog's own German, so seeing it is
-   * proof the switch reached `$t`. The row on the hub and the pane title are still English
-   * here because Settings' own extraction is MICA-214 — this asserts the mechanism.
+   * proof the switch reached `$t`. Since MICA-214 the hub row and the pane title are
+   * translated too, so after the switch the row reads `Sprache` rather than `Language` —
+   * which is the stronger assertion, and the reason this walks back through the German hub.
    */
   test('Language switches the phone and survives a reload', async ({ page }) => {
     await page.getByRole('button', { name: /^Language\b/ }).click();
@@ -54,7 +55,7 @@ test.describe('Settings App E2E', () => {
 
     await page.reload();
     await page.locator('button', { hasText: 'Settings' }).first().click();
-    await page.getByRole('button', { name: /^Language\b/ }).click();
+    await page.getByRole('button', { name: /^Sprache\b/ }).click();
     await expect(page.getByRole('button', { name: /^Automatisch\b/ })).toBeVisible();
 
     await page.getByRole('button', { name: 'English' }).click();

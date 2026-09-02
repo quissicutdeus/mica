@@ -16,9 +16,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     EmptyState,
     MediaThumb,
     SegmentedControl,
+    useLocale,
     usePhoneNotification
   } from '@gphone/sdk';
   import ColorWheelPicker from './ColorWheelPicker.svelte';
+
+  const { t } = useLocale();
 
   const {
     wallpaperStore,
@@ -61,10 +64,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * chrome on top differs — which is exactly the comparison being made. Only a generated
    * background changes with the mode.
    */
-  const MODE_OPTIONS = [
-    { id: 'light', label: 'Light' },
-    { id: 'dark', label: 'Dark' }
-  ];
+  const MODE_OPTIONS = $derived([
+    { id: 'light', label: $t('settings.theme.light') },
+    { id: 'dark', label: $t('settings.theme.dark') }
+  ]);
 
   /** Six tiles, in roles rather than invented colors, so the preview shows the palette. */
   const DEMO_TILES = [
@@ -122,25 +125,25 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       toast.show({
         type: 'error',
         app: 'settings',
-        message: 'That photo could not be loaded. Try another.'
+        message: $t('settings.theme.photoFailed')
       });
     }
   };
 
-  const SWATCHES = [
-    { role: 'primary', label: 'Primary' },
-    { role: 'secondary', label: 'Secondary' },
-    { role: 'tertiary', label: 'Tertiary' },
-    { role: 'surface-container-high', label: 'Surface' },
-    { role: 'error', label: 'Error' }
-  ];
+  const SWATCHES = $derived([
+    { role: 'primary', label: $t('settings.theme.swatchPrimary') },
+    { role: 'secondary', label: $t('settings.theme.swatchSecondary') },
+    { role: 'tertiary', label: $t('settings.theme.swatchTertiary') },
+    { role: 'surface-container-high', label: $t('settings.theme.swatchSurface') },
+    { role: 'error', label: $t('settings.theme.swatchError') }
+  ]);
 </script>
 
 <div class="space-y-6">
   <!-- Appearance -->
   <div>
     <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
-      Appearance
+      {$t('settings.theme.appearance')}
     </h2>
     <div class="bg-surface-container flex flex-col items-center gap-3 rounded-box p-4">
       <!-- Everything on this page shows up here: the scheme, the seed, the wallpaper, the
@@ -186,7 +189,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         options={MODE_OPTIONS}
         selected={mode}
         onchange={(id) => setThemeMode(id as 'light' | 'dark')}
-        aria-label="Theme mode"
+        aria-label={$t('settings.theme.modeLabel')}
       />
     </div>
   </div>
@@ -194,7 +197,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <!-- Color -->
   <div>
     <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
-      Color
+      {$t('settings.theme.color')}
     </h2>
     <div class="bg-surface-container mb-3 flex flex-col items-center gap-3 rounded-box p-4">
       <div class="flex items-center gap-1.5">
@@ -216,14 +219,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           onclick={() => resetWallpaper()}
           class="text-primary text-body-small cursor-pointer hover:underline"
         >
-          Reset
+          {$t('settings.theme.reset')}
         </button>
       </div>
     </div>
     <div class="bg-surface-container rounded-box p-4">
       <ColorWheelPicker color={seed} onchange={applyCustomColor} />
       <p class="text-on-surface-variant text-label-small mt-3 text-center">
-        The wallpaper and every color in the phone are generated from this one.
+        {$t('settings.theme.colorHint')}
       </p>
     </div>
   </div>
@@ -231,7 +234,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <!-- Presets: named colors, nothing more. The swatch is the wallpaper they produce. -->
   <div>
     <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
-      Presets
+      {$t('settings.theme.presets')}
     </h2>
     <div class="grid grid-cols-3 gap-3">
       {#each presets as preset (preset.id)}
@@ -257,13 +260,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <!-- Photos -->
   <div>
     <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
-      From a Photo
+      {$t('settings.theme.fromPhoto')}
     </h2>
     <div class="bg-surface-container rounded-box p-4 text-center">
       {#if wallpaperPhotos.length === 0}
         <EmptyState
-          title="No photos in Gallery"
-          description="Photos taken with the Camera app can be used as a wallpaper, and the phone takes its colors from them."
+          title={$t('settings.theme.noPhotos')}
+          description={$t('settings.theme.noPhotosDescription')}
         />
       {:else}
         <div class="grid grid-cols-3 gap-2">
@@ -276,7 +279,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <!-- `MediaThumb` rather than a bare `<img src={photo.data}>`: the tile is a
                    thumbnail now, and this is the one place that knows how to draw a media
                    row — including refusing a source whose scheme could execute. -->
-              <MediaThumb item={photo} alt="Use as wallpaper" />
+              <MediaThumb item={photo} alt={$t('settings.theme.useAsWallpaper')} />
             </button>
           {/each}
         </div>

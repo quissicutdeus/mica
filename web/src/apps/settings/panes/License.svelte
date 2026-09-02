@@ -13,6 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     LICENSE_WARRANTY,
     SettingsSection,
     sourceUrlForBuild,
+    useLocale,
     usePhoneNotification,
     useSourceUrl
   } from '@gphone/sdk';
@@ -41,6 +42,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * copy in this file would be the one that drifted.
    */
 
+  const { t } = useLocale();
   const { toast } = usePhoneNotification();
 
   /**
@@ -84,14 +86,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     toast.show(
       copied
-        ? { type: 'success', app: 'settings', message: 'Copied the source address' }
-        : { type: 'error', app: 'settings', message: 'Could not copy the source address' }
+        ? { type: 'success', app: 'settings', message: $t('settings.license.copied') }
+        : { type: 'error', app: 'settings', message: $t('settings.license.copyFailed') }
     );
   };
 </script>
 
 <div class="space-y-4 p-4">
-  <SettingsSection title="License">
+  <SettingsSection title={$t('settings.license.title')}>
     <div class="space-y-3 p-4">
       <p class="text-on-surface text-body-medium font-medium">{LICENSE_COPYRIGHT}</p>
       <p class="text-on-surface-variant text-body-medium">{LICENSE_FREEDOMS}</p>
@@ -100,7 +102,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
   </SettingsSection>
 
-  <SettingsSection title="Source">
+  <SettingsSection title={$t('settings.license.source')}>
     <div class="space-y-3 p-4">
       <p class="text-on-surface-variant text-body-medium">{LICENSE_SOURCE_OFFER}</p>
       <p class="text-secondary text-body-small font-mono break-all">{sourceUrl}</p>
@@ -109,7 +111,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         onclick={copySource}
         class="bg-secondary text-on-secondary text-body-small duration-short ease-standard rounded-box w-full cursor-pointer px-3 py-2 transition active:scale-95"
       >
-        Copy source address
+        {$t('settings.license.copyButton')}
       </button>
     </div>
   </SettingsSection>

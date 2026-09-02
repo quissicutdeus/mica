@@ -30,11 +30,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import {
     SettingsSection,
     ToggleSwitch,
+    useLocale,
     useSystemHardware,
     useSystemHardwareWrite,
     useMusic
   } from '@gphone/sdk';
 
+  const { t } = useLocale();
   const {
     soundVolume,
     soundMuted,
@@ -65,7 +67,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <div class="space-y-6 p-4">
   <!-- The ringer switch. Silent suppresses the ring, the chime and the message pop, and
        nothing else: the call banner still arrives with the only Accept button there is. -->
-  <SettingsSection title="Ringer">
+  <SettingsSection title={$t('settings.sound.ringer')}>
     <div class="p-4">
       <div class="grid grid-cols-3 gap-1.5">
         {#each $ringModeChoices as choice (choice.id)}
@@ -90,7 +92,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   <!-- Every tone is synthesized in `shell/state/audio.ts`, so the list costs the resource
        nothing to download and choosing one is instant. -->
-  <SettingsSection title="Ringtone">
+  <SettingsSection title={$t('settings.sound.ringtone')}>
     <div class="p-4">
       <div class="flex flex-col gap-1.5">
         {#each $ringtoneChoices as choice (choice.id)}
@@ -108,17 +110,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {/each}
       </div>
       <p class="text-on-surface-variant text-body-small mt-3">
-        Tap a tone to choose it and hear it. A preview plays on silent — you asked for it.
+        {$t('settings.sound.ringtoneHint')}
       </p>
     </div>
   </SettingsSection>
 
-  <SettingsSection title="Volume">
+  <SettingsSection title={$t('settings.sound.volume')}>
     <div class="flex flex-col gap-3 p-4">
       <div class="text-body-medium flex items-center justify-between">
-        <span class="text-on-surface font-medium">System Volume</span>
+        <span class="text-on-surface font-medium">{$t('settings.sound.systemVolume')}</span>
         <span class="text-on-surface font-mono">
-          {$soundMuted ? 'Muted' : `${Math.round($soundVolume * 100)}%`}
+          {$soundMuted ? $t('settings.sound.muted') : `${Math.round($soundVolume * 100)}%`}
         </span>
       </div>
       <input
@@ -126,15 +128,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         min="0"
         max="100"
         value={Math.round($soundVolume * 100)}
-        aria-label="System volume"
+        aria-label={$t('settings.sound.systemVolumeLabel')}
         oninput={(e) => setVolume(Number(e.currentTarget.value) / 100)}
         class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-box accent-blue-500"
       />
     </div>
     <div class="border-outline-variant border-t">
       <ToggleSwitch
-        label="Mute"
-        description="Silence all phone sounds"
+        label={$t('settings.sound.mute')}
+        description={$t('settings.sound.muteDescription')}
         checked={$soundMuted}
         onchange={toggleMute}
       />
@@ -143,12 +145,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   <!-- Music's own channel. Reaches this phone's track and every nearby broadcast, because
        both are fed from `musicOutputVolume` and nothing else. -->
-  <SettingsSection title="Music">
+  <SettingsSection title={$t('settings.sound.music')}>
     <div class="flex flex-col gap-3 p-4">
       <div class="text-body-medium flex items-center justify-between">
-        <span class="text-on-surface font-medium">Music Volume</span>
+        <span class="text-on-surface font-medium">{$t('settings.sound.musicVolume')}</span>
         <span class="text-on-surface font-mono">
-          {$musicMuted ? 'Muted' : `${Math.round($musicVolume * 100)}%`}
+          {$musicMuted ? $t('settings.sound.muted') : `${Math.round($musicVolume * 100)}%`}
         </span>
       </div>
       <input
@@ -156,15 +158,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         min="0"
         max="100"
         value={Math.round($musicVolume * 100)}
-        aria-label="Music volume"
+        aria-label={$t('settings.sound.musicVolumeLabel')}
         oninput={(e) => setMusicVolume(Number(e.currentTarget.value) / 100)}
         class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-box accent-blue-500"
       />
     </div>
     <div class="border-outline-variant border-t">
       <ToggleSwitch
-        label="Mute Music"
-        description="Silence music without stopping it, yours and anyone nearby"
+        label={$t('settings.sound.muteMusic')}
+        description={$t('settings.sound.muteMusicDescription')}
         checked={$musicMuted}
         onchange={toggleMusicMute}
       />
@@ -172,10 +174,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   </SettingsSection>
 
   <!-- How far the physical buttons on the side of the phone move the volume per press. -->
-  <SettingsSection title="Volume Buttons">
+  <SettingsSection title={$t('settings.sound.volumeButtons')}>
     <div class="px-4 pb-4">
       <div class="text-body-medium mb-3 flex items-center justify-between">
-        <span class="text-on-surface font-medium">Step Size</span>
+        <span class="text-on-surface font-medium">{$t('settings.sound.stepSize')}</span>
         <span class="text-on-surface font-mono">{$volumeStep}%</span>
       </div>
       <div class="grid grid-cols-5 gap-1.5">
@@ -194,7 +196,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {/each}
       </div>
       <p class="text-on-surface-variant text-body-small mt-3">
-        How much each press of the volume buttons on the side of the phone changes the volume.
+        {$t('settings.sound.stepHint')}
       </p>
     </div>
   </SettingsSection>

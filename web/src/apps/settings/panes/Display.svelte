@@ -12,9 +12,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useClock,
     useClockWrite,
     useDisplay,
-    useDisplayWrite
+    useDisplayWrite,
+    useLocale
   } from '@gphone/sdk';
   import ThemeAndWallpaper from '../components/ThemeAndWallpaper.svelte';
+
+  const { t } = useLocale();
 
   // Appearance lives on this page rather than behind a row on it. It was briefly its own
   // pane, which put the thing a player most often changes two taps deep for no gain — the
@@ -46,27 +49,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * `shell/state/motion.ts`), so a player who needs the animations gone needs to be able
    * to say so outright rather than hoping CEF passed the setting through.
    */
-  const MOTION_OPTIONS = [
-    { id: 'system', label: 'System' },
-    { id: 'full', label: 'Full' },
-    { id: 'reduced', label: 'Reduced' }
-  ];
+  const MOTION_OPTIONS = $derived([
+    { id: 'system', label: $t('settings.display.motionSystem') },
+    { id: 'full', label: $t('settings.display.motionFull') },
+    { id: 'reduced', label: $t('settings.display.motionReduced') }
+  ]);
 
   const rendered = $derived(
-    `${Math.round($phoneBox.width)} × ${Math.round($phoneBox.height)} pixels`
+    $t('settings.display.rendered', {
+      width: Math.round($phoneBox.width),
+      height: Math.round($phoneBox.height)
+    })
   );
 </script>
 
 <div class="space-y-6 p-4">
   <ThemeAndWallpaper />
 
-  <SettingsSection
-    title="Size"
-    footer="The phone always keeps its shape; this changes how large it is drawn on screen."
-  >
+  <SettingsSection title={$t('settings.display.size')} footer={$t('settings.display.sizeFooter')}>
     <div class="flex flex-col gap-3 p-4">
       <div class="text-body-medium flex items-center justify-between">
-        <span class="text-on-surface font-medium">Phone Size</span>
+        <span class="text-on-surface font-medium">{$t('settings.display.phoneSize')}</span>
         <span class="text-on-surface font-mono">{$displaySize}%</span>
       </div>
       <input
@@ -75,14 +78,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         max="100"
         step="1"
         value={$displaySize}
-        aria-label="Phone size"
+        aria-label={$t('settings.display.phoneSizeLabel')}
         oninput={(e) => setDisplaySize(Number(e.currentTarget.value))}
         class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-box accent-blue-500"
       />
       <div class="text-on-surface-variant text-body-small flex items-center justify-between">
-        <span>Smaller</span>
+        <span>{$t('settings.display.smaller')}</span>
         <span class="font-mono">{rendered}</span>
-        <span>Larger</span>
+        <span>{$t('settings.display.larger')}</span>
       </div>
       <!-- Why the largest setting is smaller here than it would be on a bigger window.
            The slider itself is never dead now — it spans whatever this window can draw,
@@ -90,7 +93,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
            to decide, and saying so beats leaving it a mystery. -->
       {#if $isSizeLimited}
         <p class="text-on-surface-variant text-body-small">
-          This window sets how large the phone can go. Make it taller for more range.
+          {$t('settings.display.sizeLimited')}
         </p>
       {/if}
     </div>
@@ -101,22 +104,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         disabled={$displaySize === displaySizeDefault}
         class="border-outline-variant bg-surface text-on-surface hover:bg-surface-container-high disabled:hover:bg-surface duration-short ease-standard text-body-small w-full cursor-pointer rounded-box border py-2 transition-colors disabled:cursor-default disabled:opacity-40"
       >
-        Reset to Default
+        {$t('settings.display.resetDefault')}
       </button>
     </div>
   </SettingsSection>
 
-  <SettingsSection
-    title="Home Screen Grid"
-    footer="Shrinking the grid moves anything it no longer fits to the next open space, rather than hiding it."
-  >
+  <SettingsSection title={$t('settings.display.grid')} footer={$t('settings.display.gridFooter')}>
     <div class="flex flex-col gap-3 px-4 pb-4">
       <div class="text-body-medium flex items-center justify-between">
-        <span class="text-on-surface font-medium">Columns</span>
+        <span class="text-on-surface font-medium">{$t('settings.display.columns')}</span>
         <div class="flex items-center gap-3">
           <button
             type="button"
-            aria-label="Fewer columns"
+            aria-label={$t('settings.display.fewerColumns')}
             disabled={$homeGridColumns <= homeGridColumnsMin}
             onclick={() => setHomeGridSize($homeGridColumns - 1, $homeGridRows)}
             class="bg-surface text-on-surface hover:bg-surface-container-high text-body-medium h-7 w-7 cursor-pointer rounded-full disabled:cursor-default disabled:opacity-40"
@@ -125,7 +125,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <span class="text-on-surface w-4 text-center font-mono">{$homeGridColumns}</span>
           <button
             type="button"
-            aria-label="More columns"
+            aria-label={$t('settings.display.moreColumns')}
             disabled={$homeGridColumns >= homeGridColumnsMax}
             onclick={() => setHomeGridSize($homeGridColumns + 1, $homeGridRows)}
             class="bg-surface text-on-surface hover:bg-surface-container-high text-body-medium h-7 w-7 cursor-pointer rounded-full disabled:cursor-default disabled:opacity-40"
@@ -134,11 +134,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       </div>
       <div class="text-body-medium flex items-center justify-between">
-        <span class="text-on-surface font-medium">Rows</span>
+        <span class="text-on-surface font-medium">{$t('settings.display.rows')}</span>
         <div class="flex items-center gap-3">
           <button
             type="button"
-            aria-label="Fewer rows"
+            aria-label={$t('settings.display.fewerRows')}
             disabled={$homeGridRows <= homeGridRowsMin}
             onclick={() => setHomeGridSize($homeGridColumns, $homeGridRows - 1)}
             class="bg-surface text-on-surface hover:bg-surface-container-high text-body-medium h-7 w-7 cursor-pointer rounded-full disabled:cursor-default disabled:opacity-40"
@@ -147,7 +147,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <span class="text-on-surface w-4 text-center font-mono">{$homeGridRows}</span>
           <button
             type="button"
-            aria-label="More rows"
+            aria-label={$t('settings.display.moreRows')}
             disabled={$homeGridRows >= homeGridRowsMax}
             onclick={() => setHomeGridSize($homeGridColumns, $homeGridRows + 1)}
             class="bg-surface text-on-surface hover:bg-surface-container-high text-body-medium h-7 w-7 cursor-pointer rounded-full disabled:cursor-default disabled:opacity-40"
@@ -159,30 +159,34 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   </SettingsSection>
 
   <SettingsSection
-    title="Motion"
-    footer="Reduced motion turns off the phone's animations. Swipes and drags still work — only the animation goes."
+    title={$t('settings.display.motion')}
+    footer={$t('settings.display.motionFooter')}
   >
     <div class="flex flex-col gap-3 p-4">
       <SegmentedControl
         options={MOTION_OPTIONS}
         selected={$motionPreference}
-        aria-label="Motion"
+        aria-label={$t('settings.display.motionLabel')}
         onchange={(id: string) => setMotionPreference(id as 'system' | 'full' | 'reduced')}
       />
       <!-- What "System" resolved to, since the query is invisible from inside the phone and
            a player who picks it deserves to know which way it went. -->
       {#if $motionPreference === 'system'}
         <p class="text-on-surface-variant text-body-small">
-          Following this device: animations are {$reducedMotion ? 'off' : 'on'}.
+          {$t('settings.display.motionFollowing', {
+            state: $reducedMotion
+              ? $t('settings.display.motionOff')
+              : $t('settings.display.motionOn')
+          })}
         </p>
       {/if}
     </div>
   </SettingsSection>
 
-  <SettingsSection title="Clock">
+  <SettingsSection title={$t('settings.display.clock')}>
     <ToggleSwitch
-      label="24-Hour Time"
-      description="Use 24-hour format"
+      label={$t('settings.display.time24')}
+      description={$t('settings.display.time24Description')}
       checked={$is24Hour}
       onchange={(v: boolean) => setIs24Hour(v)}
     />

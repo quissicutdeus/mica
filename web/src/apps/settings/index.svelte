@@ -15,6 +15,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     Screen,
     ChevronRightIcon,
     useDevTools,
+    useLocale,
     useTimer,
     type AppProps
   } from '@gphone/sdk';
@@ -35,9 +36,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import en from './locales/en.json';
   import de from './locales/de.json';
 
-  // MICA-61: Settings' own strings. The Language pane is the first extracted; the rest
-  // of this app follows in MICA-214.
+  // MICA-61: Settings' own strings, every pane of them (MICA-214). Registered here,
+  // once, so every pane below reads them through `$t('settings.…')`.
   registerMessages('settings', { en, de });
+  const { t } = useLocale();
 
   let { onback }: AppProps = $props();
 
@@ -69,21 +71,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     | 'license';
   let pane = $state<Pane>('root');
 
-  const PANE_TITLES: Record<Pane, string> = {
-    root: 'Settings',
-    network: 'Network',
-    notifications: 'Notifications',
-    apps: 'Apps',
-    display: 'Display',
-    sound: 'Sound',
-    language: 'Language',
-    lockscreen: 'Lock Screen & Passcode',
-    shortcuts: 'Shortcuts',
-    devtools: 'Developer Tools',
-    about: 'About',
-    privacy: 'Privacy',
-    license: 'License'
+  /**
+   * A pane's title is a catalog key rather than a literal (MICA-214), read through `$t`
+   * at the moment it is asked for — `useAppLevels` calls these lazily, so a title picked up
+   * eagerly would be frozen in whichever language was active when Settings first mounted.
+   */
+  const PANE_TITLE_KEYS: Record<Pane, string> = {
+    root: 'settings.title',
+    network: 'settings.network.title',
+    notifications: 'settings.notifications.title',
+    apps: 'settings.apps.title',
+    display: 'settings.display.title',
+    sound: 'settings.sound.title',
+    language: 'settings.language.title',
+    lockscreen: 'settings.lockscreen.title',
+    shortcuts: 'settings.shortcuts.title',
+    devtools: 'settings.devtools.title',
+    about: 'settings.about.title',
+    privacy: 'settings.privacy.title',
+    license: 'settings.license.title'
   };
+  const paneTitle = (which: Pane): string => $t(PANE_TITLE_KEYS[which]);
 
   /**
    * Which app's details are open, inside the Apps pane.
@@ -100,7 +108,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   // of saying so — Escape would otherwise jump straight home from inside a pane.
   const app = useAppLevels({
     appId: 'settings',
-    title: 'Settings',
+    title: () => $t('settings.title'),
     onback: () => onback(),
     levels: [
       // Deepest first: out of an app's details, then out of the pane, then out of Settings.
@@ -111,18 +119,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {
         open: () => pane === 'privacy',
         close: () => (pane = 'about'),
-        title: () => PANE_TITLES.privacy
+        title: () => paneTitle('privacy')
       },
       // License is reached from About too, and needs its own level for the same reason.
       {
         open: () => pane === 'license',
         close: () => (pane = 'about'),
-        title: () => PANE_TITLES.license
+        title: () => paneTitle('license')
       },
       {
         open: () => selectedApp !== null,
         close: () => (selectedAppId = null),
-        title: () => selectedApp?.name ?? 'App'
+        title: () => selectedApp?.name ?? $t('settings.apps.detailFallback')
       },
       {
         open: () => pane !== 'root',
@@ -130,7 +138,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           pane = 'root';
           selectedAppId = null;
         },
-        title: () => PANE_TITLES[pane]
+        title: () => paneTitle(pane)
       }
     ]
   });
@@ -167,7 +175,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       toast.show({
         type: 'error',
         app: 'settings',
-        message: 'Developer Tools require the gphone.admin permission'
+        message: $t('settings.devtools.adminRequired')
       });
       return;
     }
@@ -178,19 +186,24 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     cancelTapReset = after(2000, () => (devToolsTaps = 0));
 
     const remaining = TAPS_TO_UNLOCK - devToolsTaps;
-    const title = 'Developer Tools';
+    const title = $t('settings.devtools.title');
 
     if (remaining <= 0) {
       devToolsUnlocked.set(true);
       devToolsTaps = 0;
       cancelTapReset?.();
-      toast.show({ type: 'success', app: 'settings', title, message: 'Developer Tools unlocked' });
+      toast.show({
+        type: 'success',
+        app: 'settings',
+        title,
+        message: $t('settings.devtools.unlockedToast')
+      });
     } else if (remaining <= 3) {
       toast.show({
         type: 'info',
         app: 'settings',
         title,
-        message: `${remaining} more to unlock Developer Tools`
+        message: $t('settings.devtools.moreToUnlock', { remaining })
       });
     }
   };
@@ -205,7 +218,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     toast.show({
       type: 'info',
       app: 'settings',
-      message: 'Developer Tools hidden — tap OS Version 10x to restore'
+      message: $t('settings.devtools.hiddenToast')
     });
   };
 
@@ -260,9 +273,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
-            <span class="text-on-surface font-medium">Network</span>
+            <span class="text-on-surface font-medium">{$t('settings.network.title')}</span>
             <span class="text-on-surface-variant text-body-small"
-              >Cellular service and Bluetooth proximity</span
+              >{$t('settings.network.subtitle')}</span
             >
           </div>
           <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
@@ -273,9 +286,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
-            <span class="text-on-surface font-medium">Notifications</span>
+            <span class="text-on-surface font-medium">{$t('settings.notifications.title')}</span>
             <span class="text-on-surface-variant text-body-small"
-              >Banners, alerts, sounds, and icon badges</span
+              >{$t('settings.notifications.subtitle')}</span
             >
           </div>
           <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
@@ -286,9 +299,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
-            <span class="text-on-surface font-medium">Apps</span>
+            <span class="text-on-surface font-medium">{$t('settings.apps.title')}</span>
             <span class="text-on-surface-variant text-body-small"
-              >Storage and uninstall, per app</span
+              >{$t('settings.apps.subtitle')}</span
             >
           </div>
           <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
@@ -299,9 +312,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
-            <span class="text-on-surface font-medium">Display</span>
+            <span class="text-on-surface font-medium">{$t('settings.display.title')}</span>
             <span class="text-on-surface-variant text-body-small"
-              >Theme, wallpaper, phone size and clock</span
+              >{$t('settings.display.subtitle')}</span
             >
           </div>
           <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
@@ -312,9 +325,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
-            <span class="text-on-surface font-medium">Sound</span>
+            <span class="text-on-surface font-medium">{$t('settings.sound.title')}</span>
             <span class="text-on-surface-variant text-body-small"
-              >Volume, mute, and button step size</span
+              >{$t('settings.sound.subtitle')}</span
             >
           </div>
           <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
@@ -325,9 +338,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
-            <span class="text-on-surface font-medium">Language</span>
+            <span class="text-on-surface font-medium">{$t('settings.language.title')}</span>
             <span class="text-on-surface-variant text-body-small"
-              >The language the phone speaks</span
+              >{$t('settings.language.subtitle')}</span
             >
           </div>
           <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
@@ -338,9 +351,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
-            <span class="text-on-surface font-medium">Lock Screen & Passcode</span>
+            <span class="text-on-surface font-medium">{$t('settings.lockscreen.title')}</span>
             <span class="text-on-surface-variant text-body-small"
-              >Passcode and when the phone asks for it</span
+              >{$t('settings.lockscreen.subtitle')}</span
             >
           </div>
           <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
@@ -351,9 +364,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
-            <span class="text-on-surface font-medium">Shortcuts</span>
+            <span class="text-on-surface font-medium">{$t('settings.shortcuts.title')}</span>
             <span class="text-on-surface-variant text-body-small"
-              >Keyboard shortcuts inside the phone</span
+              >{$t('settings.shortcuts.subtitle')}</span
             >
           </div>
           <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
@@ -364,9 +377,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
         >
           <div class="flex flex-col">
-            <span class="text-on-surface font-medium">About</span>
+            <span class="text-on-surface font-medium">{$t('settings.about.title')}</span>
             <span class="text-on-surface-variant text-body-small"
-              >Number, build, and first boot</span
+              >{$t('settings.about.subtitle')}</span
             >
           </div>
           <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
@@ -378,9 +391,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
           >
             <div class="flex flex-col">
-              <span class="text-on-surface font-medium">Developer Tools</span>
+              <span class="text-on-surface font-medium">{$t('settings.devtools.title')}</span>
               <span class="text-on-surface-variant text-body-small"
-                >Battery, signal, and event simulation</span
+                >{$t('settings.devtools.subtitle')}</span
               >
             </div>
             <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />

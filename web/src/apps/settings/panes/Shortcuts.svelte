@@ -9,9 +9,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     SettingsSection,
     useKeybinds,
     useKeybindsWrite,
+    useLocale,
     usePhoneNotification
   } from '@gphone/sdk';
 
+  const { t } = useLocale();
   const { bindings, groups, findConflict } = useKeybinds();
   const { setBinding, resetBindings } = useKeybindsWrite();
   const { toast } = usePhoneNotification();
@@ -21,7 +23,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   /** `' '` renders as nothing at all, and a bare letter reads better capitalised. */
   const describeKey = (key: string) => {
-    if (key === ' ') return 'Space';
+    if (key === ' ') return $t('settings.shortcuts.space');
     return key.length === 1 ? key.toUpperCase() : key;
   };
 
@@ -53,7 +55,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       toast.show({
         type: 'error',
         app: 'settings',
-        message: `${describeKey(key)} is already ${conflict.label}`
+        message: $t('settings.shortcuts.conflict', {
+          key: describeKey(key),
+          label: conflict.label
+        })
       });
       capturingId = null;
       return;
@@ -76,7 +81,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onclick={resetBindings}
     class="text-on-surface-variant hover:text-on-surface duration-short ease-standard text-label-small cursor-pointer rounded-chip px-1.5 py-0.5 normal-case transition-colors"
   >
-    Reset to defaults
+    {$t('settings.shortcuts.reset')}
   </button>
 {/snippet}
 
@@ -85,9 +90,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
        rebound in the game's own Key Bindings menu — while the phone is open the game
        receives no control input, and a mapping could never fire. -->
   <SettingsSection
-    title="Shortcuts"
+    title={$t('settings.shortcuts.title')}
     headerAction={resetAction}
-    footer="Open Phone is bound in FiveM's own Key Bindings menu."
+    footer={$t('settings.shortcuts.footer')}
   >
     {#each $groups as group (group.ownerId)}
       {#if group.ownerId !== 'core'}
@@ -110,7 +115,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <span
                 class="text-secondary text-body-small animate-pulse rounded-chip border border-indigo-600 bg-indigo-950 px-2 py-0.5 font-mono"
               >
-                Press a key…
+                {$t('settings.shortcuts.pressKey')}
               </span>
             {:else}
               <span

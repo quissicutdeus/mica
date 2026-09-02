@@ -5,7 +5,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { PRIVACY_NOTICE_TEXT, SettingsSection } from '@gphone/sdk';
+  import { PRIVACY_NOTICE_TEXT, SettingsSection, useLocale } from '@gphone/sdk';
+
+  const { t } = useLocale();
 
   /**
    * What this phone does with what a player types into it.
@@ -23,7 +25,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </script>
 
 <div class="p-4">
-  <SettingsSection title="Privacy">
+  <SettingsSection title={$t('settings.privacy.title')}>
     <div class="p-4">
       <p class="text-on-surface-variant text-body-medium">{PRIVACY_NOTICE_TEXT}</p>
     </div>
