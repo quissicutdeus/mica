@@ -11,7 +11,7 @@
  */
 import '../../host/registerFacets';
 import { describe, it, expect } from 'vitest';
-import { ALL_PERMISSIONS, type AppManifest, type AppPermission } from '../../../../sdk/manifest';
+import { ALL_PERMISSIONS, type AppPermission } from '../../../../sdk/manifest';
 import { addedPermissions, formatPermission } from './appInfo';
 
 /**
@@ -29,17 +29,15 @@ describe('formatPermission', () => {
 });
 
 /**
- * MICA-196: what decides whether a player is asked before an update installs.
+ * MICA-196/-201: what decides whether a player is asked before an update installs.
  *
- * The installed manifest is the record of what they accepted — `installVerified` builds its
- * `permissions` from the catalog entry, and `AppDetails` shows exactly that list beside the
- * Install button — so this is a set difference and nothing more. Wrong in the generous
- * direction it prompts on every update, which trains the answer; wrong the other way it
- * installs a wider disclosure in one tap.
+ * The held set is the shell's **grant** now, not the installed manifest — what the player
+ * answered rather than what the bundle asked for — so this is a set difference and nothing
+ * more. Wrong in the generous direction it prompts on every update, which trains the
+ * answer; wrong the other way it installs a wider disclosure in one tap.
  */
 describe('addedPermissions', () => {
-  const installed = (permissions?: AppPermission[]): AppManifest =>
-    ({ id: 'probe', name: 'Probe', ...(permissions ? { permissions } : {}) }) as AppManifest;
+  const installed = (permissions?: AppPermission[]): AppPermission[] | undefined => permissions;
 
   it('names only what the entry adds, in the order the catalog wrote it', () => {
     expect(
@@ -54,7 +52,7 @@ describe('addedPermissions', () => {
     expect(addedPermissions(installed(['storage']), { permissions: ['storage'] })).toEqual([]);
   });
 
-  it('treats an installed app with no permissions as holding none, not as holding everything', () => {
+  it('treats an add-on with no grant as holding none, not as holding everything', () => {
     // An add-on installed reading nothing is the one a republished, grabbier version does
     // the most damage to, so the absent case must not read as "already agreed".
     expect(addedPermissions(installed(), { permissions: ['contacts'] })).toEqual(['contacts']);

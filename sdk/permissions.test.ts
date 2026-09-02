@@ -422,6 +422,21 @@ describe('every reachable facet declares its members (MICA-196)', () => {
       expect(membersOfFacet('notificationSettings')).not.toContain(member);
     }
   });
+
+  /**
+   * MICA-201. The consent record is what the shell checks *instead of* trusting the
+   * installed manifest, so an add-on able to name either member could grant itself the
+   * permissions it was refused, or read what every other add-on was granted. Both live on
+   * `appRegistryWrite` precisely because its row is empty; asserted by name so a future
+   * edit that gives that row members has to face this test rather than silently expose
+   * two more.
+   */
+  it("keeps the consent record out of an add-on's reach", () => {
+    for (const member of ['recordConsent', 'grantedPermissions']) {
+      expect(membersOfFacet('appRegistryWrite') ?? []).not.toContain(member);
+      expect(membersOfFacet('appRegistry') ?? []).not.toContain(member);
+    }
+  });
 });
 
 describe("useService stays in the app's own namespace", () => {

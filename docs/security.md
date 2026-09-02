@@ -418,9 +418,28 @@ by this list until someone re-weighs it.
   against `HOOK_OF_FACET` before answering a call — the frame's own check is a
   courtesy, not the boundary. `sdk/permissions.ts` maps every host hook to a
   permission; `permissions.test.ts` fails the build where a manifest understates
-  its imports. What the shell does **not** hold is the consent itself: the
-  permission set a player accepted at install, and the re-prompt when an update
-  widens it, live in the Store, which is an app (MICA-201).
+  its imports. **Consent is the shell's own record, not the manifest**
+  (MICA-201). It used to be neither: MICA-196 compared an update's
+  permissions against the _installed manifest_, so the manifest was its own
+  authorization and anything able to write one — a modified Store, or any core
+  path that installs a catalog entry — widened what an add-on could reach with
+  nobody asked. The set the player accepted now lives in
+  `web/src/shell/state/addOnGrants.ts`, keyed by add-on id and persisted per
+  character alongside the install list itself; it is written **only** through
+  `appRegistryWrite`'s `recordConsent`, a member no add-on can name
+  (`FACET_MEMBERS.appRegistryWrite` is empty, so a raw `postMessage` gets "core
+  only"), and it is read by `IframeHostServer` before every call. A manifest
+  permission with no matching grant is refused with the same
+  `AppPermissionError` an undeclared one gets, so an update that adds a
+  permission does nothing at all until the player answers the Store's prompt —
+  and the Store now compares against that grant rather than against a manifest
+  it could have written. Uninstalling revokes the grant. Two limits worth
+  stating: an add-on installed before this landed adopts its installed
+  manifest's permissions once, at the next boot, since there is nobody to ask at
+  rehydration time; and this is storage the shell owns, not storage it can prove
+  untampered — a player with the console open can edit it exactly as they can
+  edit the install list beside it. What it stops is a _code_ path standing in
+  for a player's answer.
 - **An add-on's code is trusted at build time, not at run time.** The Store
   installs a bundle that runs in that sandboxed frame, not in the shell's own
   context; the shell hash-verifies the bundle text it was handed before booting

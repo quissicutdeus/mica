@@ -198,21 +198,25 @@ export function formatPermission(perm: AppPermission): { label: string; icon: st
 }
 
 /**
- * What an update would add to what the installed app already holds (MICA-196).
+ * What an update would add to what the player has actually granted (MICA-196, -201).
  *
- * The accepted set needs no bookkeeping of its own. `installVerified` builds the installed
- * manifest's `permissions` from the catalog entry, and `AppDetails` shows exactly that list
- * beside the Install button — so the installed manifest **is** the record of what the player
- * agreed to, and rehydration re-runs the *saved* entry, which keeps it that way.
+ * It compared against the *installed manifest*, on the reasoning that `installVerified`
+ * builds that manifest from the catalog entry and `AppDetails` lists it beside the Install
+ * button, so the manifest was the record of what was agreed to. MICA-201 replaced that
+ * record with one the shell owns: the manifest is what the bundle asks for, the grant is
+ * what the player answered, and only the second is a thing the Store could not have
+ * written on the player's behalf. Comparing against the manifest also meant the prompt
+ * could be skipped by whatever wrote the manifest, which is the same hole seen from the
+ * Store's end.
  *
  * Here rather than inside `index.svelte` so it can be tested as what it is: a set
  * difference that decides whether a player is asked. Returned in the entry's own order, so
  * the dialog reads the way the catalog wrote it.
  */
 export function addedPermissions(
-  installed: AppManifest,
+  granted: readonly AppPermission[] | undefined,
   entry: Pick<CatalogEntry, 'permissions'>
 ): AppPermission[] {
-  const held = new Set(installed.permissions ?? []);
+  const held = new Set(granted ?? []);
   return (entry.permissions ?? []).filter((perm) => !held.has(perm));
 }

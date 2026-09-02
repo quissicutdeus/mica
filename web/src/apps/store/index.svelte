@@ -43,8 +43,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let catalogAppsList = $state<AppManifest[]>([]);
 
   const { registryStore, updatesStore } = useAppRegistry();
-  const { unregisterApp, registerAddOn, installFromCatalog, refreshUpdates, updateApp } =
-    useAppRegistryWrite();
+  const {
+    unregisterApp,
+    registerAddOn,
+    installFromCatalog,
+    refreshUpdates,
+    updateApp,
+    recordConsent,
+    grantedPermissions
+  } = useAppRegistryWrite();
 
   const { openApp: openPhoneApp } = useNavigation();
   const { run } = useAppAction('store');
@@ -115,6 +122,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           const entry = entries.find((e) => e.id === target.id);
           if (!entry) throw new Error($t('store.notInCatalog', { name: target.name }));
           await installFromCatalog(entry);
+          // MICA-201: the player tapped Install on a screen listing exactly this set, so
+          // this is their answer and the shell now holds it. Without it the install lands
+          // and the add-on reaches nothing — the host refuses any permission with no grant.
+          recordConsent(entry.id, entry.permissions ?? []);
         },
         {
           title: $t('store.title'),
@@ -127,10 +138,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     // No component to load: a bundled add-on registers as source text, fetched lazily by
     // `getAddOnSource` the first time it is opened, not eagerly here — the shell never
     // `import()`s an add-on's code in-process (MICA-16 step 4).
-    void run(() => registerAddOn(app), {
-      title: $t('store.title'),
-      success: $t('store.installedToast', { name: app.name })
-    });
+    void run(
+      () => {
+        registerAddOn(app);
+        recordConsent(app.id, app.permissions ?? []);
+      },
+      {
+        title: $t('store.title'),
+        success: $t('store.installedToast', { name: app.name })
+      }
+    );
   }
 
   /**
@@ -148,15 +165,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * An update that adds nothing still installs with no dialog. Prompting on every update
    * would train the answer, which is how a prompt stops being consent.
    *
-   * Refusing is refusing the permissions, not merely the dialog: an add-on's declared
-   * permissions live on its installed manifest, and the shell re-checks every call against
-   * that manifest (`HOOK_OF_FACET`), so a version that was never installed can never
-   * exercise what it asked for.
+   * Refusing is refusing the permissions, not merely the dialog: since MICA-201 the
+   * shell keeps its own record of what the player granted each add-on and re-checks every
+   * call against it as well as against the manifest, so a permission nobody accepted here
+   * is refused at the host even if a bundle declaring it is somehow installed.
    */
   function handleUpdate(app: AppManifest) {
     const pending = updateFor(app.id);
     if (!pending) return;
-    const added = addedPermissions(app, pending.entry);
+    // Against the **grant**, not the installed manifest (MICA-201). The manifest is what
+    // the bundle asked for; the grant is what the player answered, and it is the only one
+    // of the two that this app could not have written itself.
+    const added = addedPermissions(grantedPermissions(app.id), pending.entry);
     if (added.length > 0) {
       updateToAccept = { update: pending, added };
       return;
@@ -165,10 +185,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   }
 
   function applyUpdate(name: string, pending: AppUpdate) {
-    void run(() => updateApp(pending.appId), {
-      title: $t('store.title'),
-      success: $t('store.updatedToast', { name, version: pending.availableVersion })
-    });
+    void run(
+      async () => {
+        const manifest = await updateApp(pending.appId);
+        // The answer, recorded after the update actually lands: the new bundle's set
+        // replaces the old grant, so an update that *drops* a permission narrows it too.
+        recordConsent(pending.appId, pending.entry.permissions ?? []);
+        return manifest;
+      },
+      {
+        title: $t('store.title'),
+        success: $t('store.updatedToast', { name, version: pending.availableVersion })
+      }
+    );
   }
 
   function confirmPermissionUpdate() {

@@ -5,7 +5,8 @@
 import { registerFacet } from '../../../../sdk/host/current';
 import { appRegistryStore } from '../../shell/state/registry';
 import { refreshAppUpdates, updateApp } from '../../shell/state/appUpdates';
-import type { AppComponent, AppManifest } from '../../../../sdk/manifest';
+import type { AppComponent, AppManifest, AppPermission } from '../../../../sdk/manifest';
+import { grantedPermissions, recordConsent } from '../../shell/state/addOnGrants';
 import type { CatalogEntry } from '../../../../sdk/catalog';
 
 /**
@@ -26,7 +27,16 @@ export function appRegistryWrite() {
       appRegistryStore.registerApp(manifest, component),
     registerAddOn: (manifest: AppManifest, source?: string) =>
       appRegistryStore.registerAddOn(manifest, source),
-    unregisterApp: (appId: string) => appRegistryStore.unregisterApp(appId)
+    unregisterApp: (appId: string) => appRegistryStore.unregisterApp(appId),
+    /**
+     * The shell's consent record for an add-on (MICA-201), written after the player
+     * answers and read by `IframeHostServer` before it answers any call. Here rather than
+     * on the read facet because `FACET_MEMBERS.appRegistryWrite` is empty: no add-on can
+     * name either member, whatever its manifest declares.
+     */
+    recordConsent: (appId: string, permissions: readonly AppPermission[]) =>
+      recordConsent(appId, permissions),
+    grantedPermissions: (appId: string) => grantedPermissions(appId)
   };
 }
 

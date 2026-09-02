@@ -19,6 +19,7 @@ import { defineApp } from '../../../../sdk/manifest';
 import { DENIED_FACETS } from '../../../../sdk/permissions';
 import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import { is24Hour as shellIs24Hour } from '../state/time';
+import { recordConsent, resetGrantsForTest } from '../state/addOnGrants';
 import type { ToFrame } from '../../../../sdk/host/iframe/messages';
 import '../../../../sdk/host/useContacts';
 import '../../../../sdk/host/useDisplay';
@@ -43,7 +44,15 @@ const manifest = defineApp({
  * `contentWindow` is — and `guest` is a getter, so a test can swap in a reloaded frame's
  * new window by reassigning `current` (see the reload block).
  */
-function server(permissions = manifest.permissions!) {
+/**
+ * MICA-201: `granted` defaults to `permissions` because every test here that is not
+ * about consent wants an add-on the player has actually accepted — the shell refuses a
+ * declared permission with no grant behind it, so an unseeded server would refuse nearly
+ * every call in this file for a reason none of those tests are about. Pass a narrower set
+ * (or none) to play the add-on whose manifest asks for more than its player agreed to.
+ */
+function server(permissions = manifest.permissions!, granted = permissions) {
+  recordConsent('probe', granted as any);
   const posted: ToFrame[] = [];
   const makeWindow = () => ({ postMessage: (m: ToFrame) => posted.push(m) });
   let current = makeWindow();
@@ -79,6 +88,7 @@ let store = writable(1);
 
 beforeEach(() => {
   resetHostsForTest();
+  resetGrantsForTest();
   // A stand-in facet: a store member and a function member that takes a callback and returns a release.
   store = writable(1);
   /**
@@ -211,6 +221,57 @@ describe('IframeHostServer', () => {
       ok: false,
       error: { name: 'AppPermissionError', permission: 'contacts', hookName: 'useContacts' }
     });
+  });
+  /**
+   * MICA-201. Consent is the shell's record, not the manifest's — an add-on whose
+   * manifest declares `contacts` reaches nothing until the player's own answer says so,
+   * which is what stops a widened manifest (a modified Store, a core path that writes one)
+   * from being its own authorization. Driven through `postMessage`, because that is the
+   * only route a sandboxed add-on has and the frame's own `require` runs inside it.
+   */
+  it('refuses a declared permission the player never granted', async () => {
+    const { posted, from } = server(['contacts'] as any, [] as any);
+    from({
+      kind: 'call',
+      id: 1,
+      facet: 'contacts',
+      factoryArgs: [],
+      member: 'addContact',
+      args: ['ab']
+    });
+    await Promise.resolve();
+    expect(posted[posted.length - 1]).toMatchObject({
+      kind: 'reply',
+      id: 1,
+      ok: false,
+      error: { name: 'AppPermissionError', permission: 'contacts', hookName: 'useContacts' }
+    });
+  });
+  it('refuses a permission an update added but the grant does not carry yet', async () => {
+    // The update case exactly: installed and granted `storage`, republished asking for
+    // `contacts` too. The wider manifest answers nothing extra until the grant widens.
+    const { posted, from } = server(['storage', 'contacts'] as any, ['storage'] as any);
+    from({
+      kind: 'call',
+      id: 1,
+      facet: 'contacts',
+      factoryArgs: [],
+      member: 'addContact',
+      args: ['ab']
+    });
+    await Promise.resolve();
+    expect(posted[posted.length - 1]).toMatchObject({
+      kind: 'reply',
+      id: 1,
+      ok: false,
+      error: { name: 'AppPermissionError', permission: 'contacts' }
+    });
+  });
+  it('hydrates the frame with the granted subset, so both checks agree', () => {
+    const { posted, from } = server(['storage', 'contacts'] as any, ['storage'] as any);
+    from({ kind: 'hello', appId: 'probe' });
+    const hydrate = posted[0] as Extract<ToFrame, { kind: 'hydrate' }>;
+    expect(hydrate.payload.permissions).toEqual(['storage']);
   });
   it('refuses a member that is not a function, and an unknown facet', async () => {
     const { posted, from } = server();

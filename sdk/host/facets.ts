@@ -95,7 +95,7 @@ import type {
 import type { MusicError } from '../lib/musicErrors';
 import type { CatalogEntry } from '../catalog';
 import type { ReactionStore } from '../kit/createReactionStore';
-import type { AppComponent, AppManifest } from '../manifest';
+import type { AppComponent, AppManifest, AppPermission } from '../manifest';
 import type { KeybindAction } from '@gphone/shared/keybinds';
 import type {
   Account,
@@ -337,6 +337,17 @@ export interface Facets {
   appRegistryWrite: () => {
     /** Re-check the configured catalog. Safe with none configured: the list empties. */
     refreshUpdates: () => Promise<AppUpdate[]>;
+    /**
+     * Record the permission set a player just accepted for an add-on (MICA-201).
+     *
+     * The shell's own consent record, written here and nowhere else. The Store calls it
+     * after the player answers — an install, or an update whose list grew — and the host
+     * refuses any permission a manifest declares without a matching grant, so an
+     * installed manifest is no longer its own authorization.
+     */
+    recordConsent: (appId: string, permissions: readonly AppPermission[]) => void;
+    /** What the player granted an add-on, or `undefined` if they were never asked. */
+    grantedPermissions: (appId: string) => readonly AppPermission[] | undefined;
     /** Install the catalog's copy of a pending update, through the ordinary verified install path. */
     updateApp: (appId: string) => Promise<AppManifest>;
     installFromCatalog: (entry: CatalogEntry) => Promise<{

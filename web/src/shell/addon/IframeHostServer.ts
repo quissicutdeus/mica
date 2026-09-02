@@ -7,7 +7,7 @@ import type { Host } from '../../../../sdk/host/protocol';
 import { AppPermissionError } from '../../../../sdk/host/protocol';
 import { facets } from '../../../../sdk/host/current';
 import { permissionOfFacet, DENIED_FACETS, membersOfFacet } from '../../../../sdk/permissions';
-import type { AppManifest } from '../../../../sdk/manifest';
+import type { AppManifest, AppPermission } from '../../../../sdk/manifest';
 import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import type {
   ToFrame,
@@ -16,6 +16,7 @@ import type {
   AddOnConstants
 } from '../../../../sdk/host/iframe/messages';
 import { isCallbackRef } from '../../../../sdk/host/iframe/messages';
+import { grantedPermissions } from '../state/addOnGrants';
 import { themeStyleStore } from '../state/theme';
 import { is24Hour } from '../state/time';
 import { messageOf } from '@gphone/sdk';
@@ -292,6 +293,35 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     }
   }
 
+  /**
+   * The player's own answer, checked after the manifest's declaration (MICA-201).
+   *
+   * `host.require` asks what the installed manifest **declares**. That was the whole test
+   * until now, which made the installed manifest its own authorization: anything able to
+   * write one — a modified Store, or core code taking a catalog entry at its word — widened
+   * what an add-on may reach with nobody asked. The grant is the shell's separate record of
+   * what a player actually accepted (`shell/state/addOnGrants.ts`), written only through
+   * `appRegistryWrite.recordConsent`, which no add-on can name.
+   *
+   * So a declared permission with no matching grant is refused here in exactly the way an
+   * undeclared one is refused above — the same `AppPermissionError`, so the frame's own
+   * error handling, the reply encoding and the add-on's `catch` all see one failure mode
+   * rather than two. An update that adds a permission therefore does nothing at all until
+   * the player answers the Store's prompt and the grant widens.
+   */
+  function requireGranted(
+    needed: AppPermission | readonly AppPermission[] | null,
+    hookName: string
+  ): void {
+    if (needed === null) return;
+    const granted = grantedPermissions(host.appId) ?? [];
+    for (const permission of Array.isArray(needed) ? needed : [needed as AppPermission]) {
+      if (!granted.includes(permission)) {
+        throw new AppPermissionError(host.appId, permission, hookName);
+      }
+    }
+  }
+
   /** `factoryArgs` with any app id in it replaced by the calling app's own. */
   function pinAppId(facet: string, factoryArgs: readonly unknown[]): readonly unknown[] {
     if (APP_SCOPED_FACETS.has(facet)) return [host.appId, ...factoryArgs.slice(1)];
@@ -315,6 +345,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     const perm = permissionOfFacet(facet);
     if (!perm) throw new Error(`[gPhone] unknown facet '${facet}'`);
     host.require(perm.needed, perm.hook);
+    requireGranted(perm.needed, perm.hook);
     if (facet === 'service' && !serviceAllowed(factoryArgs[0])) {
       throw new Error(
         `[gPhone] '${host.appId}' may only use its own service, not '${String(factoryArgs[0])}'`
@@ -491,12 +522,20 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       return;
     }
 
+    const granted = grantedPermissions(host.appId) ?? [];
     const payload: HydratePayload = {
       appId: host.appId,
       // `host.permissions` is a Svelte reactive array (a `$state` proxy) on an
       // in-process host; a Proxy cannot survive `postMessage`'s structured clone, so a
       // plain copy crosses the wall instead.
-      permissions: [...host.permissions],
+      // Declared **and** granted (MICA-201). The frame's own `require` is a courtesy
+      // check inside the sandbox, and handing it the manifest's full list would have it
+      // cheerfully make calls the shell then refuses; the intersection is what the phone
+      // will actually answer, so the two checks agree. `host.permissions` is a Svelte
+      // reactive array (a `$state` proxy) on an in-process host, and a Proxy cannot survive
+      // `postMessage`'s structured clone, so this crosses the wall as a plain array either
+      // way.
+      permissions: host.permissions.filter((p) => granted.includes(p)),
       props: opts.props,
       theme: get(themeStyleStore),
       storage: storageSnapshot(host.appId),

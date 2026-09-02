@@ -28,7 +28,11 @@ export function appRegistryWrite(): Twin {
     installFromCatalog: refused,
     registerApp: refused,
     registerAddOn: refused,
-    unregisterApp: refused
+    unregisterApp: refused,
+    // MICA-201: the consent record is the shell's, and reading or writing it from inside
+    // a sandboxed add-on is exactly the thing it exists to stop.
+    recordConsent: refused,
+    grantedPermissions: refused
   };
 }
 

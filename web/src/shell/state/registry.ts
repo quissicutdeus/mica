@@ -13,6 +13,7 @@ import { clearAppStorage } from '../../../../sdk/host/useStorage';
 import { isBrowser, messageOf } from '@gphone/sdk';
 import { capabilities, capabilitiesKnown } from '../../services/capabilities';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
+import { adoptExistingGrant, revokeConsent } from './addOnGrants';
 import { placeOnHomeGridIfAbsent } from './homeGrid';
 import {
   getTrustedRemoteAppHosts,
@@ -747,6 +748,9 @@ function createAppRegistry() {
       addOnSources.delete(appId);
       sourceLoads.delete(appId);
       clearAppStorage(appId);
+      // MICA-201: uninstalling is withdrawing consent. Kept rather than dropped, a
+      // reinstall of a widened bundle would silently inherit the old answer.
+      revokeConsent(appId);
       update((apps) => apps.filter((a) => a.id !== appId));
     },
     getComponent: (appId: string): AppComponent | undefined => resolveComponent(appId),
@@ -814,7 +818,7 @@ function createAppRegistry() {
         savedRemoteApps.map((saved) =>
           // A pinned hash re-verifies on every boot, not only at install time — a bundle
           // swapped out after install must be refused, not silently re-run.
-          installVerified(saved.entry).catch((err) => {
+          installVerified(saved.entry, true).catch((err) => {
             console.warn(
               `gPhone Registry failed to re-hydrate remote app from '${saved.url}':`,
               err
@@ -831,7 +835,10 @@ function createAppRegistry() {
    * nothing here ever `import()`s the fetched bytes to ask the module what it claims to
    * be, which is the whole point of the catalog carrying a manifest in the first place.
    */
-  async function installVerified(entry: CatalogEntry): Promise<{ manifest: AppManifest }> {
+  async function installVerified(
+    entry: CatalogEntry,
+    adoptGrant = false
+  ): Promise<{ manifest: AppManifest }> {
     // `isTrustedRemoteUrl` exempts `data:` URLs — safe for its other callers, which only
     // ever build one internally from bytes already hash-verified, never from anything an
     // operator's catalog (or a saved/rehydrated row derived from one) supplied. A catalog
@@ -894,6 +901,13 @@ function createAppRegistry() {
       core: false
     });
 
+    // MICA-201, the remote half of the migration, and **only** on the rehydrate path.
+    // A fresh install must not seed its own grant: that is precisely the hole this ticket
+    // closes, where writing a manifest was enough to widen what an add-on may reach. The
+    // Store records the player's answer after `installFromCatalog` resolves; boot has no
+    // player to ask, so an install that predates the record adopts the entry saved at
+    // install time, once.
+    if (adoptGrant) adoptExistingGrant(validatedManifest.id, validatedManifest.permissions ?? []);
     store.registerAddOn(validatedManifest, code);
     saveRemoteApp({ url: entry.bundleUrl, entry });
 
@@ -921,6 +935,11 @@ function createAppRegistry() {
         if (get(installed).some((a) => a.id === id)) continue;
         const manifest = addOns.find((a) => a.id === id);
         if (!manifest) continue; // no longer part of this build
+        // MICA-201: the one-time migration for an install that predates the shell's
+        // consent record. A no-op once a grant exists — see `adoptExistingGrant` — so it
+        // can never re-widen one, and it runs *before* the registration so the frame this
+        // boot hydrates with the grant already in place.
+        adoptExistingGrant(id, manifest.permissions ?? []);
         store.registerAddOn(manifest);
       }
     });
