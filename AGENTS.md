@@ -489,19 +489,19 @@ one `@handle` tokenizer the UI renders from and the server notifies from.
 
 ### A NUI round trip touches three files, and fails silently if one is missing
 
-The single most common source of half-built features. A call from `web/` reaches
-the database only if every layer exists: **`fetchNui`** in `web/src/services/`,
-a **`route()` entry** in `shared/routes.ts` (core apps only — an add-on goes
-through the generic `useService(id).call(...)`), a **contract** in
-`shared/contracts/` for a custom action (no declared input fails the resource at
-start, MICA-195), and a **`registerEvent`** handler or generic CRUD action in
-`server/services/`. Miss the route and the callback is never registered:
-`fetchNui` returns its `defaultValue`, so **the feature does nothing in game**
-while passing the unit suites.
+The single most common source of half-built features. A custom action reaches
+the database only if every layer exists: a **contract** in `shared/contracts/`
+(no declared input fails the resource at start, MICA-195), the typed
+**`call(contract, action, input)`** from `web/src/nui/call.ts` at the call site
+(MICA-213; it rides the generic service action, no route), and a
+**`registerEvent`** handler in `server/services/`. Generic CRUD is the
+exception: a `createCrudStore` reaches it through a **`route()`** in
+`shared/routes.ts`. A native-only step is a `registerClientHook`.
 
-**The mock is a layer too.** `web/src/nui/mocks/registry.ts` answers by action
-name; a missing one fails only the e2e spec that reaches it.
-`server/__tests__/routes.test.ts` cross-references all of them, both ways.
+**The mock is a layer too.** `web/src/nui/mocks/registry.ts` answers a typed
+call under `'<service>:<action>'` and a route by its action name; a missing one
+fails only the e2e spec that reaches it. `server/__tests__/routes.test.ts`
+cross-references all of them, both ways.
 
 **Response events are derived, never written by hand** — `shared/rpc.ts` owns
 them, and a hand-written reply name times out after 15s with no error.

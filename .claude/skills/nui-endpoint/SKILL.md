@@ -20,15 +20,24 @@ action name alone. A mock makes a missing client or server layer invisible.
 
 ## UI → server: four places, not three
 
-| #   | File                            | What                                                                                           |
-| --- | ------------------------------- | ---------------------------------------------------------------------------------------------- |
-| 1   | `web/src/services/`             | `fetchNui('someAction', payload)`                                                              |
-| 2   | `shared/routes.ts`              | a `route(action, service, serverAction)` entry                                                 |
-| 3   | `server/services/<Service>.ts`  | `registerEvent('<action>', ...)`, or a generic CRUD action `ServiceEndpoint` already registers |
-| 4   | `web/src/nui/mocks/registry.ts` | the browser/Playwright mock                                                                    |
+| #   | File                            | What                                                                     |
+| --- | ------------------------------- | ------------------------------------------------------------------------ |
+| 1   | `shared/contracts/<service>.ts` | the action's `input` (and `output`) in the service's `defineContract`    |
+| 2   | `web/src/services/`             | `call(<service>Contract, 'action', input)` from `web/src/nui/call.ts`    |
+| 3   | `server/services/<Service>.ts`  | `registerEvent('<action>', ...)` — the handler receives the parsed input |
+| 4   | `web/src/nui/mocks/registry.ts` | the browser/Playwright mock, under the scoped key `'<service>:<action>'` |
 
-Miss #2 and the NUI callback is never registered — `fetchNui` swallows the
-failure and returns its `defaultValue`.
+The typed call rides the generic service action (`svc`), the same door an
+add-on's `useService(id).call(...)` goes through, so a contracted action needs
+**no row in `shared/routes.ts`** and no client relay code. A `route()` entry is
+only for a generic CRUD action a `createCrudStore` reaches by its NUI name, and
+its mock is keyed by that name. An action that needs a client-side step before
+it leaves the client (a native only the game can run) is marked `clientPrepared`
+in the contract and registers that step with `registerClientHook` in
+`client/lib/clientHooks.ts`; the relay refuses to forward one that has no hook.
+
+Miss the contract and the resource refuses to start; miss the mock and the e2e
+spec that reaches it fails; miss the handler and the call times out in game.
 
 `server/__tests__/routes.test.ts` cross-references all four. If it is red, a
 layer is missing; do not silence it.
