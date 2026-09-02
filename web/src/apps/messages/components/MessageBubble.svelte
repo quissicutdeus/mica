@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { MediaThumb, useLocation, useAppAction } from '@gphone/sdk';
+  import { MediaThumb, useLocation, useAppAction, useLocale } from '@gphone/sdk';
   import {
     useNavigation,
     useContacts,
@@ -28,6 +28,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { contactsStore: contacts } = useContacts();
   const { setWaypoint } = useLocation();
   const { run } = useAppAction('messages');
+  const { t } = useLocale();
 
   interface Props {
     msg: UIMessage;
@@ -84,14 +85,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const getSenderInfo = (targetMsg: UIMessage = msg) => {
     if (targetMsg.sender === 'me') {
-      return { name: 'You', avatar: undefined, contact: undefined };
+      return { name: $t('messages.you'), avatar: undefined, contact: undefined };
     }
-    if (!currentConv) return { name: 'Member', avatar: undefined, contact: undefined };
+    if (!currentConv) return { name: $t('messages.member'), avatar: undefined, contact: undefined };
     const p = currentConv.participants?.find((part) => part.citizenid === targetMsg.citizenid);
     const contact = p?.contact || $contacts.find((c) => c.citizenid === targetMsg.citizenid);
     const name = contact
       ? `${contact.firstname} ${contact.lastname || ''}`.trim()
-      : p?.citizenid || 'Member';
+      : p?.citizenid || $t('messages.member');
     const avatar = contact?.avatar;
     return { name, avatar, contact };
   };
@@ -123,16 +124,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         }
         await setWaypoint(x, y);
       },
-      { success: 'Waypoint set', error: 'Could not set waypoint' }
+      { success: $t('messages.waypointSet'), error: $t('messages.waypointFailed') }
     );
   };
 </script>
 
 {#if confirmingUnsend}
   <ConfirmDialog
-    title="Unsend message?"
-    message="This removes the message from the conversation for everyone in it, not just for you. It cannot be undone."
-    confirmText="Unsend"
+    title={$t('messages.unsendTitle')}
+    message={$t('messages.unsendWarning')}
+    confirmText={$t('messages.unsend')}
     isLoading={unsending}
     onconfirm={handleUnsend}
     oncancel={() => (confirmingUnsend = false)}
@@ -204,7 +205,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               onscrollto?.(msg.replyToMsg!.id);
             }
           }}
-          title="Jump to original message"
+          title={$t('messages.jumpToOriginal')}
         >
           <div class="text-primary flex items-center gap-1.5 font-semibold">
             <Avatar
@@ -217,7 +218,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <span class="text-label-small truncate">{replySender.name}</span>
           </div>
           <p class="text-label-small mt-0.5 truncate opacity-80">
-            {msg.replyToMsg.message || (msg.replyToMsg.attachments?.length ? '[Attachment]' : '')}
+            {msg.replyToMsg.message ||
+              (msg.replyToMsg.attachments?.length ? $t('messages.attachmentTag') : '')}
           </p>
         </div>
       {/if}
@@ -246,11 +248,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <div class="h-24 w-full">
                     <MediaThumb item={media} fit="contain" />
                   </div>
-                  <span class="text-primary text-body-small px-2 py-1.5">Add Waypoint</span>
+                  <span class="text-primary text-body-small px-2 py-1.5"
+                    >{$t('messages.addWaypoint')}</span
+                  >
                 </div>
               {:else}
                 <div data-testid="attachment-slot" class="max-w-full overflow-hidden rounded-box">
-                  <MediaThumb item={media} fit="contain" alt="Attachment" />
+                  <MediaThumb item={media} fit="contain" alt={$t('messages.attachment')} />
                 </div>
               {/if}
             {/if}
@@ -271,8 +275,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             e.stopPropagation();
             onreply?.(msg);
           }}
-          title="Reply to message"
-          aria-label="Reply to message"
+          title={$t('messages.replyToMessage')}
+          aria-label={$t('messages.replyToMessage')}
         >
           <ReplyIcon class="size-icon-sm" />
         </button>
@@ -286,8 +290,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               showActions = false;
               onedit?.(msg);
             }}
-            title="Edit message"
-            aria-label="Edit message"
+            title={$t('messages.editMessage')}
+            aria-label={$t('messages.editMessage')}
           >
             <EditIcon class="size-icon-sm" />
           </button>
@@ -300,8 +304,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               e.stopPropagation();
               confirmingUnsend = true;
             }}
-            title="Unsend message"
-            aria-label="Unsend message"
+            title={$t('messages.unsendMessage')}
+            aria-label={$t('messages.unsendMessage')}
           >
             <TrashIcon class="size-icon-sm" />
           </button>
@@ -322,7 +326,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
          `updated_at > created_at`, so it survives a reload rather than living only in the
          sender's session. -->
     {#if msg.edited}
-      <span class="text-on-surface-variant text-label-small italic">Edited</span>
+      <span class="text-on-surface-variant text-label-small italic"
+        >{$t('messages.editedLabel')}</span
+      >
     {/if}
     {#if msg.sender === 'me' && currentConv}
       {#if isLastReadMyMessage}

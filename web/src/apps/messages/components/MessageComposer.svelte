@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { MAX_ATTACHMENTS } from '@gphone/shared/attachments';
-  import { MediaThumb, useLocation, useAppAction, useContacts, fly } from '@gphone/sdk';
+  import { MediaThumb, useLocation, useAppAction, useContacts, useLocale, fly } from '@gphone/sdk';
   import type { MediaPreview } from '@gphone/shared/types';
   import {
     CloseIcon,
@@ -68,17 +68,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { shareLocation } = useLocation();
   const { run } = useAppAction('messages');
   const { contactsStore: contacts } = useContacts();
+  const { t } = useLocale();
 
   const getSenderInfo = (targetMsg: UIMessage) => {
     if (targetMsg.sender === 'me') {
-      return { name: 'You', avatar: undefined };
+      return { name: $t('messages.you'), avatar: undefined };
     }
-    if (!currentConv) return { name: 'Member', avatar: undefined };
+    if (!currentConv) return { name: $t('messages.member'), avatar: undefined };
     const p = currentConv.participants?.find((part) => part.citizenid === targetMsg.citizenid);
     const contact = p?.contact || $contacts.find((c) => c.citizenid === targetMsg.citizenid);
     const name = contact
       ? `${contact.firstname} ${contact.lastname || ''}`.trim()
-      : p?.citizenid || 'Member';
+      : p?.citizenid || $t('messages.member');
     const avatar = contact?.avatar;
     return { name, avatar };
   };
@@ -89,7 +90,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         const { id, media } = await shareLocation();
         attachments = [...attachments, { photo_id: id, media }];
       },
-      { error: 'Could not share your location' }
+      { error: $t('messages.shareLocationFailed') }
     );
     showAttachMenu = false;
   };
@@ -102,7 +103,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <MessageBar
   bind:value={text}
   {busy}
-  placeholder={editing ? 'Edit message' : 'Message'}
+  placeholder={editing ? $t('messages.editMessage') : $t('messages.messagePlaceholder')}
   canSend={!busy && (editing ? !!text.trim() : !!text.trim() || attachments.length > 0)}
   {onsend}
 >
@@ -118,18 +119,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="flex min-w-0 flex-1 flex-col pr-2">
           <div class="text-primary flex items-center gap-1.5 font-semibold">
             <EditIcon class="h-3.5 w-3.5 shrink-0" />
-            <span class="text-label-small truncate">Editing message</span>
+            <span class="text-label-small truncate">{$t('messages.editingMessage')}</span>
           </div>
           <p class="text-on-surface-variant text-label-small mt-0.5 truncate">
-            Everyone in the chat will see it was edited.
+            {$t('messages.editingHint')}
           </p>
         </div>
         <button
           type="button"
           class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard shrink-0 cursor-pointer rounded-full p-1 transition-colors"
           onclick={oncanceledit}
-          aria-label="Cancel edit"
-          title="Cancel edit"
+          aria-label={$t('messages.cancelEdit')}
+          title={$t('messages.cancelEdit')}
         >
           <CloseIcon class="size-icon-sm" />
         </button>
@@ -150,18 +151,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               size="w-3.5 h-3.5"
               textClass="text-label-small"
             />
-            <span class="text-label-small truncate">Replying to {replySender.name}</span>
+            <span class="text-label-small truncate"
+              >{$t('messages.replyingTo', { name: replySender.name })}</span
+            >
           </div>
           <p class="text-on-surface-variant text-label-small mt-0.5 truncate">
-            {replyingTo.message || (replyingTo.attachments?.length ? '[Attachment]' : '')}
+            {replyingTo.message ||
+              (replyingTo.attachments?.length ? $t('messages.attachmentTag') : '')}
           </p>
         </div>
         <button
           type="button"
           class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard shrink-0 cursor-pointer rounded-full p-1 transition-colors"
           onclick={oncancelreply}
-          aria-label="Cancel reply"
-          title="Cancel reply"
+          aria-label={$t('messages.cancelReply')}
+          title={$t('messages.cancelReply')}
         >
           <CloseIcon class="size-icon-sm" />
         </button>
@@ -173,11 +177,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <div
             class="border-outline shadow-elevation-2 relative h-12 w-12 shrink-0 overflow-hidden rounded-box border"
           >
-            <MediaThumb item={att.media} alt="Attachment" />
+            <MediaThumb item={att.media} alt={$t('messages.attachment')} />
             <button
               class="text-on-surface absolute top-0 right-0 cursor-pointer rounded-bl-lg bg-black/60 p-0.5 hover:bg-black"
               onclick={() => (attachments = attachments.filter((a) => a.photo_id !== att.photo_id))}
-              aria-label="Remove attachment"
+              aria-label={$t('messages.removeAttachment')}
             >
               <CloseIcon class="h-3 w-3" />
             </button>
@@ -196,7 +200,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         type="button"
         class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary duration-short ease-standard flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors"
         onclick={() => (showAttachMenu = !showAttachMenu)}
-        aria-label="Attachments"
+        aria-label={$t('messages.attachments')}
       >
         <PaperclipIcon class="size-icon-md" />
       </button>
@@ -218,7 +222,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       >
         <PhotoIcon class="size-icon-md" />
       </div>
-      <span class="text-body-small">Photo</span>
+      <span class="text-body-small">{$t('messages.photo')}</span>
     </button>
     <button
       class="hover:bg-surface-container-high duration-short ease-standard flex flex-col items-center justify-center rounded-box p-3 transition-colors"
@@ -229,14 +233,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       >
         <LocationIcon class="size-icon-md" />
       </div>
-      <span class="text-body-small">Location</span>
+      <span class="text-body-small">{$t('messages.location')}</span>
     </button>
   </div>
 {/if}
 
 {#if showPicker}
   <PhotoPickerModal
-    title="Select Photos"
+    title={$t('messages.selectPhotos')}
     multiSelect={true}
     selectedIds={attachments.map((a) => a.photo_id)}
     onmultichange={(photoId: number, media: MediaPreview) => {

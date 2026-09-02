@@ -14,8 +14,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     SearchBar,
     Skeleton,
     formatRelativeTime,
+    useLocale,
     type UIConversation
   } from '@gphone/sdk';
+
+  const { t } = useLocale();
 
   /** The inbox: every conversation, or the archive, with its search. */
   let {
@@ -57,7 +60,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <div
     class="animate-in slide-in-from-top border-outline-variant bg-surface duration-medium ease-emphasized sticky top-0 z-20 border-b p-3 backdrop-blur-md"
   >
-    <SearchBar bind:value={query} placeholder="Search chats, names, or messages..." focus={true} />
+    <SearchBar bind:value={query} placeholder={$t('messages.searchChats')} focus={true} />
   </div>
 {/if}
 
@@ -113,7 +116,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               ? 'text-on-surface '
               : 'text-on-surface-variant'}"
           >
-            {conv.lastMessage || 'No messages'}
+            {conv.lastMessage || $t('messages.noMessages')}
           </p>
           <ChevronRightIcon
             class="text-outline duration-short ease-standard size-icon-sm ml-2 opacity-0 transition-opacity group-hover:opacity-100"
@@ -131,10 +134,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="py-16 text-center">
       <EmptyState
         title={query.trim()
-          ? 'No matching messages found'
+          ? $t('messages.noMatchingMessages')
           : viewingArchive
-            ? 'No archived conversations'
-            : 'No active conversations'}
+            ? $t('messages.noArchived')
+            : $t('messages.noActive')}
       />
     </div>
   {/if}
@@ -179,9 +182,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             ></span>
             <span class="bg-primary relative inline-flex h-2 w-2 rounded-full"></span>
           </span>
-          <span>Loading older conversations...</span>
+          <span>{$t('messages.loadingOlderConversations')}</span>
         {:else}
-          <span>Load older conversations</span>
+          <span>{$t('messages.loadOlderConversations')}</span>
         {/if}
       </button>
     </div>

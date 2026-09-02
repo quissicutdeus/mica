@@ -12,8 +12,15 @@
 import '../../../host/registerFacets';
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
-import type { UIConversation } from '@gphone/sdk';
+import { registerMessages, type UIConversation } from '@gphone/sdk';
 import ConversationList from './ConversationList.svelte';
+import en from '../locales/en.json';
+import de from '../locales/de.json';
+
+// MICA-215: the app registers its own catalog in `index.svelte`, and this file renders
+// one component without it — so the strings below would come back as bare keys. Registering
+// the same catalog here is what makes the assertions read the English a player sees.
+registerMessages('messages', { en, de });
 
 /**
  * The "load older conversations" control, which nothing else can reach (MICA-204).

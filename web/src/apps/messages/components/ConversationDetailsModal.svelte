@@ -16,12 +16,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     StarIcon,
     TrashIcon,
     Avatar,
-    Button
+    Button,
+    useLocale
   } from '@gphone/sdk';
 
   const { openApp } = useNavigation();
   const { contactsStore: contacts } = useContacts();
   const { conversationsStore } = useMessages();
+  const { t } = useLocale();
 
   interface Props {
     currentConv: UIConversation;
@@ -51,12 +53,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 >
   <!-- Modal Header -->
   <div class="border-outline-variant pt-safe-top flex items-center justify-between border-b p-4">
-    <h3 class="text-on-surface text-body-large">Conversation Details</h3>
+    <h3 class="text-on-surface text-body-large">{$t('messages.conversationDetails')}</h3>
     <button
       type="button"
       class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard cursor-pointer rounded-full p-1 transition-colors"
       onclick={onclose}
-      aria-label="Close details"
+      aria-label={$t('messages.closeDetails')}
     >
       <CloseIcon class="size-icon-md" />
     </button>
@@ -89,7 +91,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {/if}
         </div>
         <p class="text-on-surface-variant text-body-small">
-          {currentConv.is_group ? 'Group Conversation' : currentConv.target}
+          {currentConv.is_group ? $t('messages.groupConversation') : currentConv.target}
         </p>
       </div>
     </div>
@@ -97,7 +99,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Group Rename & Participants Section -->
     {#if currentConv.is_group}
       <div class="border-outline-variant bg-surface space-y-2 rounded-box border p-3">
-        <label for="group-name-input" class="text-on-surface text-body-small">Group Name</label>
+        <label for="group-name-input" class="text-on-surface text-body-small"
+          >{$t('messages.groupName')}</label
+        >
         <div class="flex gap-2">
           <input
             id="group-name-input"
@@ -105,10 +109,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             maxlength="50"
             bind:value={editNameValue}
             class="border-outline-variant bg-surface-container text-on-surface focus:border-focus-ring text-body-small flex-1 rounded-box border px-3 py-1.5 focus:outline-none"
-            placeholder="Enter group name"
+            placeholder={$t('messages.enterGroupName')}
           />
           <Button class="text-body-small shrink-0 px-3 py-1.5" onclick={handleSaveGroupName}
-            >Save</Button
+            >{$t('messages.save')}</Button
           >
         </div>
       </div>
@@ -116,7 +120,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <!-- Group Participants Section -->
       <div class="space-y-2">
         <h4 class="text-on-surface-variant text-body-small px-1 tracking-wider uppercase">
-          Group Members ({currentConv.participants?.length || 0})
+          {$t('messages.groupMembers', { count: currentConv.participants?.length || 0 })}
         </h4>
         <div
           class="divide-outline-variant border-outline-variant bg-surface-container shadow-elevation-3 divide-y overflow-hidden rounded-box border"
@@ -166,7 +170,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {/each}
           {#if !currentConv.participants || currentConv.participants.length === 0}
             <div class="text-on-surface-variant text-body-small p-3 text-center">
-              No member details available.
+              {$t('messages.noMemberDetails')}
             </div>
           {/if}
         </div>
@@ -187,7 +191,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         }}
       >
         <ArchiveIcon class="size-icon-sm" />
-        {currentConv?.status === 'archived' ? 'Unarchive Conversation' : 'Archive Conversation'}
+        {currentConv?.status === 'archived'
+          ? $t('messages.unarchiveConversation')
+          : $t('messages.archiveConversation')}
       </Button>
 
       <Button
@@ -201,7 +207,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         }}
       >
         <TrashIcon class="size-icon-sm" />
-        Delete Conversation
+        {$t('messages.deleteConversation')}
       </Button>
     </div>
   </div>

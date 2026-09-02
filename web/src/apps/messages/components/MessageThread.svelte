@@ -5,7 +5,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { EmptyState, type UIConversation, type UIMessage } from '@gphone/sdk';
+  import { EmptyState, useLocale, type UIConversation, type UIMessage } from '@gphone/sdk';
+
+  const { t } = useLocale();
   import type { ReactionSummary } from '@gphone/shared/types';
   import MessageBubble from './MessageBubble.svelte';
 
@@ -78,9 +80,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             ></span>
             <span class="bg-primary relative inline-flex h-2 w-2 rounded-full"></span>
           </span>
-          <span>Loading older messages...</span>
+          <span>{$t('messages.loadingOlderMessages')}</span>
         {:else}
-          <span>Load older messages ({hiddenCount} hidden)</span>
+          <span>{$t('messages.loadOlderMessages', { count: hiddenCount })}</span>
         {/if}
       </button>
     </div>
@@ -93,7 +95,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <span
           class="border-primary text-primary shadow-elevation-2 text-label-small rounded-box border bg-blue-950/90 px-3 py-1 tracking-wider uppercase"
         >
-          Unread Messages ({unreadCount})
+          {$t('messages.unreadMessages', { count: unreadCount })}
         </span>
         <div class="bg-primary h-px flex-1"></div>
       </div>
@@ -116,7 +118,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {#if messages.length === 0}
     <div class="mt-10">
       <EmptyState
-        title={searching ? 'No matching messages found in this chat' : 'No messages yet'}
+        title={searching ? $t('messages.noMatchingInChat') : $t('messages.noMessagesYet')}
       />
     </div>
   {/if}

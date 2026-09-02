@@ -31,9 +31,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     TrashIcon,
     filterByQuery,
     useScrollDetect,
+    registerMessages,
+    useLocale,
     type AppProps
   } from '@gphone/sdk';
   import type { Contact, MediaPreview } from '@gphone/shared/types';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
+
+  // MICA-215: this app's strings, registered by the app itself — the same shape an
+  // add-on outside this repository uses. `$t('messages.…')` reads them under the phone's
+  // locale, here and in the four components below.
+  registerMessages('messages', { en, de });
+  const { t } = useLocale();
 
   const { conversationsStore, messageReactions, loadMessageReactions, toggleMessageReaction } =
     useMessages();
@@ -223,18 +233,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     if (!selectedConversationId) return;
     if (editingMsg?.id === msg.id) cancelEdit();
     await run(() => conversationsStore.deleteMessage(selectedConversationId!, msg.id), {
-      success: 'Message unsent',
-      error: 'Could not unsend that message'
+      success: $t('messages.unsent'),
+      error: $t('messages.unsendFailed')
     });
   };
 
   const app = useAppLevels({
     appId: 'messages',
     title: () => {
-      if (isComposing) return 'New Message';
+      if (isComposing) return $t('messages.newMessage');
       if (currentConv) return currentConv.targetName || currentConv.target;
-      if (selectedConversationId) return 'Chat';
-      return viewingArchive ? 'Archived Messages' : 'Messages';
+      if (selectedConversationId) return $t('messages.chat');
+      return viewingArchive ? $t('messages.archivedTitle') : $t('messages.title');
     },
     onback: () => onback(),
     levels: [
@@ -373,7 +383,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       const target = editingMsg;
       const saved = await run(
         () => conversationsStore.editMessage(selectedConversationId!, target.id, text),
-        { success: 'Message edited', error: 'Could not edit that message' }
+        { success: $t('messages.edited'), error: $t('messages.editFailed') }
       );
       if (!saved) return;
       editingMsg = null;
@@ -472,8 +482,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           ? 'bg-surface-container-low text-primary'
           : 'text-on-surface'} duration-short ease-standard"
         onclick={() => (viewingArchive = !viewingArchive)}
-        title={viewingArchive ? 'View Inbox' : 'View Archive'}
-        aria-label="Toggle Archive"
+        title={viewingArchive ? $t('messages.viewInbox') : $t('messages.viewArchive')}
+        aria-label={$t('messages.toggleArchive')}
       >
         <ArchiveIcon class="size-icon-md" />
       </button>
@@ -485,8 +495,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           showSearch = !showSearch;
           if (!showSearch) searchQuery = '';
         }}
-        title="Search Messages"
-        aria-label="Search Messages"
+        title={$t('messages.searchMessages')}
+        aria-label={$t('messages.searchMessages')}
       >
         <SearchIcon class="size-icon-md" />
       </button>
@@ -501,8 +511,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             selectedConversationId = null;
           }
         }}
-        title="Delete Conversation"
-        aria-label="Delete Conversation"
+        title={$t('messages.deleteConversation')}
+        aria-label={$t('messages.deleteConversation')}
       >
         <TrashIcon class="size-icon-md" />
       </button>
@@ -515,8 +525,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             selectedConversationId = null;
           }
         }}
-        title={currentConv.status === 'archived' ? 'Unarchive' : 'Archive'}
-        aria-label="Archive Conversation"
+        title={currentConv.status === 'archived'
+          ? $t('messages.unarchive')
+          : $t('messages.archive')}
+        aria-label={$t('messages.archiveConversation')}
       >
         <ArchiveIcon class="size-icon-md" />
       </button>
@@ -528,8 +540,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           showInChatSearch = !showInChatSearch;
           if (!showInChatSearch) inChatSearchQuery = '';
         }}
-        title="Search Messages"
-        aria-label="Search Messages"
+        title={$t('messages.searchMessages')}
+        aria-label={$t('messages.searchMessages')}
       >
         <SearchIcon class="size-icon-md" />
       </button>
@@ -539,7 +551,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#snippet fabOverlay()}
   {#if !selectedConversationId && !isComposing}
-    <FloatingActionButton label="Start Chat" collapsed={isScrolled} onclick={startNewMessage}>
+    <FloatingActionButton
+      label={$t('messages.startChat')}
+      collapsed={isScrolled}
+      onclick={startNewMessage}
+    >
       {#snippet icon()}
         <MessageIcon class="text-on-surface size-icon-sm shrink-0" />
       {/snippet}
@@ -561,12 +577,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class="animate-in slide-in-from-top border-outline-variant bg-surface shadow-elevation-5 duration-medium ease-emphasized sticky top-0 z-20 space-y-3 border-b p-4 backdrop-blur-md"
       >
         <div class="border-outline-variant flex items-center justify-between border-b pb-1">
-          <h3 class="text-on-surface text-body-large">New Conversation</h3>
+          <h3 class="text-on-surface text-body-large">{$t('messages.newConversation')}</h3>
           <button
             type="button"
             class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard rounded-full p-1 transition-colors"
             onclick={() => (isComposing = false)}
-            aria-label="Close form"
+            aria-label={$t('messages.closeForm')}
           >
             <CloseIcon class="size-icon-md" />
           </button>
@@ -574,7 +590,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <SearchBar
           bind:value={recipientQuery}
-          placeholder="To: Name or Phone Number"
+          placeholder={$t('messages.recipientPlaceholder')}
           focus={true}
         />
 
@@ -602,7 +618,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {/each}
           {#if filteredContacts.length === 0}
             <div class="text-on-surface-variant text-body-small py-6 text-center">
-              No matching contacts found.
+              {$t('messages.noMatchingContacts')}
             </div>
           {/if}
         </div>
@@ -612,7 +628,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="text-body-small w-full"
           onclick={() => (isComposing = false)}
         >
-          Cancel
+          {$t('messages.cancel')}
         </Button>
       </div>
     {/if}
@@ -626,7 +642,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="border-outline-variant bg-surface border-b p-2 backdrop-blur-md">
           <SearchBar
             bind:value={inChatSearchQuery}
-            placeholder="Search in conversation..."
+            placeholder={$t('messages.searchInConversation')}
             focus={true}
           />
         </div>
