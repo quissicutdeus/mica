@@ -5,12 +5,14 @@ The half of the deploy that runs on the game server.
 it opens an SSH session with a key that `authorized_keys` pins to a forced
 command, and the server decides what runs.
 
-| File                            | Installed to                      | Runs as                      |
-| ------------------------------- | --------------------------------- | ---------------------------- |
-| `deploy-dev.sh`                 | `/home/gphone/bin/deploy-dev.sh`  | `gphone`, via forced command |
-| `deploy-main.sh`                | `/home/gphone/bin/deploy-main.sh` | `gphone`, via forced command |
-| `gphone-deploy-dev-compose.sh`  | `/usr/local/sbin/`                | `root`, via `sudoers`        |
-| `gphone-deploy-main-compose.sh` | `/usr/local/sbin/`                | `root`, via `sudoers`        |
+| File                            | Installed to                        | Runs as                      |
+| ------------------------------- | ----------------------------------- | ---------------------------- |
+| `deploy-dev.sh`                 | `/home/gphone/bin/deploy-dev.sh`    | `gphone`, via forced command |
+| `deploy-main.sh`                | `/home/gphone/bin/deploy-main.sh`   | `gphone`, via forced command |
+| `gphone-deploy-dev-compose.sh`  | `/usr/local/sbin/`                  | `root`, via `sudoers`        |
+| `gphone-deploy-main-compose.sh` | `/usr/local/sbin/`                  | `root`, via `sudoers`        |
+| `smoke-release.sh`              | `/home/gphone/bin/smoke-release.sh` | `gphone`, via forced command |
+| `gphone-smoke-release.sh`       | `/usr/local/sbin/`                  | `root`, via `sudoers`        |
 
 ## The unprivileged half self-installs; the privileged half does not
 
@@ -48,6 +50,109 @@ concurrently for about two and a half minutes against the same checkout, both
 reporting success. `.github/workflows/deploy.yml` now fixes the cause it knew
 about and adds a `concurrency` group, but a run started by hand still bypasses
 both; the lock is the only guard that sees every caller.
+
+## The release smoke test
+
+The other thing this box does for CI (MICA-220): before `release.yml` attaches
+`gphone-<version>.zip` to a release, it pipes the zip over SSH to a third forced
+command here, and the zip is released only if it starts.
+
+`smoke-release.sh` runs as `gphone` with the zip on stdin. It caps the size,
+unpacks it into a directory of its own under `~gphone/smoke/`, checks it
+unpacked to `gphone/fxmanifest.lua`, and hands that directory to the root
+wrapper. `gphone-smoke-release.sh` then starts a throwaway MariaDB, imports the
+zip's own `gphone.esx.sql` into it, and starts a throwaway FXServer from the
+stack's own image with the zip's `gphone` mounted read-only beside the main
+checkout's `oxmysql`, in `gphone_standalone` mode. The console has to print
+`gphone started!` within three minutes, and then, for twenty seconds more,
+nothing from gphone or oxmysql that reads as an error. Both containers and their
+network are removed on exit, whichever way it exits, and nothing here touches
+either live stack: the containers are on a network of their own and publish no
+port.
+
+**Why a third key, not one of the two deploy keys.** Each deploy key is pinned
+to a command that deploys. Point the workflow at one and sshd runs that, ignores
+stdin, exits 0 and prints `deployed main @ <sha>` — and Actions reports a green
+smoke test that tested nothing.
+
+**Why a licence key of its own.** Without `sv_licenseKey` FXServer starts every
+resource and then quits, which proves the zip loads and nothing past that. With
+one the server stays up and gphone's asynchronous start — the oxmysql
+connection, the schema report, the orphan sweep's refusal on standalone — gets
+its window to fail in. It has to be a key registered for this box and **not the
+one either live stack uses**: two servers on one key will not both stay up, and
+the one that loses could be the live one. The wrapper refuses to run without a
+key; `MICA_SMOKE_KEYLESS=1` overrides that for a trial by hand and says so on
+every line it prints.
+
+### Installing it
+
+Once, and none of it updates itself — `smoke-release.sh` has no checkout to
+re-install from, unlike `deploy-<target>.sh`:
+
+```sh
+# the unprivileged half, as gphone
+install -m 755 scripts/deploy/smoke-release.sh ~gphone/bin/smoke-release.sh
+
+# the privileged half, root-owned so the deploy account cannot edit what it invokes
+sudo install -m 700 -o root -g root \
+  scripts/deploy/gphone-smoke-release.sh /usr/local/sbin/
+
+# let gphone invoke it by exact path, with a run directory as its one argument
+echo 'gphone ALL=(root) NOPASSWD: /usr/local/sbin/gphone-smoke-release.sh /home/gphone/smoke/*' |
+  sudo tee /etc/sudoers.d/gphone-smoke >/dev/null && sudo chmod 440 /etc/sudoers.d/gphone-smoke
+
+# the licence key, and anything the defaults get wrong for this box
+sudo install -m 600 -o root -g root /dev/null /etc/gphone-smoke.env
+sudo tee /etc/gphone-smoke.env >/dev/null <<'ENV'
+LICENSE_KEY=<a key registered for this box, distinct from both stacks'>
+# FX_IMAGE=fivem-server:latest
+# DB_IMAGE=mariadb:noble
+# OXMYSQL_DIR=/opt/fivem-main/server-data/vendor/oxmysql
+ENV
+```
+
+The wrapper reads that file one named key at a time rather than sourcing it.
+`FX_IMAGE` is the stack's own FXServer image (`docker images | grep server`; the
+compose project `fivem` builds `fivem-server`), so the smoke test runs the
+artifact the live servers run. Both images have to exist already; nothing here
+pulls or builds one.
+
+Then a key for the workflow, as `gphone`:
+
+```sh
+ssh-keygen -t ed25519 -C gphone-ci-smoke-release -f ~/.ssh/gphone-ci-smoke-release -N ''
+{ printf 'command="%s",no-port-forwarding,no-X11-forwarding,' "$HOME/bin/smoke-release.sh"
+  printf 'no-agent-forwarding,no-pty '
+  cat ~/.ssh/gphone-ci-smoke-release.pub
+} >> ~/.ssh/authorized_keys
+cat ~/.ssh/gphone-ci-smoke-release    # -> the DEPLOY_KEY_SMOKE secret, then shred the private half here
+```
+
+`DEPLOY_HOST` and `DEPLOY_KNOWN_HOSTS` are the ones the deploy already uses. A
+release with `DEPLOY_KEY_SMOKE` unset fails at the smoke step, by design: the
+zip is not attached untested, and the tag it already pushed gets its release
+when the run is re-run with the secret in place.
+
+### Trying it by hand
+
+From the repo, with a zip `pnpm pack:resource` produced, as any user who can run
+Docker — the trust root and the settings file can be pointed elsewhere only when
+the wrapper is not root:
+
+```sh
+mkdir -p /tmp/smoke/root && run=$(mktemp -d /tmp/smoke/root/XXXXXXXX)
+mkdir "$run/resources" && unzip -q dist/release/gphone-*.zip -d "$run/resources"
+printf 'OXMYSQL_DIR=/opt/fivem/server-data/vendor/oxmysql\n' > /tmp/smoke/settings
+MICA_SMOKE_KEYLESS=1 MICA_SMOKE_ROOT=/tmp/smoke/root MICA_SMOKE_ENV=/tmp/smoke/settings \
+  scripts/deploy/gphone-smoke-release.sh "$run"
+```
+
+On the box itself, the whole path as CI drives it:
+
+```sh
+ssh -i ~/.ssh/gphone-ci-smoke-release gphone@localhost < dist/release/gphone-*.zip
+```
 
 ## Never invoke two at once
 

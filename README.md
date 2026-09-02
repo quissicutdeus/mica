@@ -191,9 +191,8 @@ for players and seamless framework integration for server developers.
 Before installing, ensure your server environment meets the following
 requirements:
 
-- **Node.js**: 26.x — what CI builds on and what the development machine runs
-- **pnpm**: 11.x
-- **FiveM Artifacts**: Recommended recent server build
+- **FiveM Artifacts**: a recent recommended server build. The resource declares
+  `node_version '22'`, so the artifact has to be new enough to carry Node 22
 - **Dependencies**:
   - `oxmysql`
   - Framework: `qbx_core`, `qb-core`, or `es_extended` — see the note on ESX
@@ -203,12 +202,30 @@ requirements:
     mode costs you.
   - _(Optional)_ `ox_inventory`
 
+**No toolchain.** A release zip is prebuilt, and nothing on that list is Node or
+pnpm. Node.js 26 and pnpm 11 are needed only to build from source, under "From
+source" below, which is for changing the phone rather than running it.
+
 ---
 
 ## Installation & Setup
 
-1. **Clone Repository** Clone or download `gphone` into your server's
-   `resources` directory (e.g., `resources/[standalone]/gphone`).
+<!-- release-zip:start -->
+
+1. **Download the release.** Every GitHub release attaches
+   `gphone-<version>.zip`, built by CI from the tagged commit. Unpack it into
+   your server's `resources` directory: it unpacks to a single `gphone` folder
+   (for example `resources/[standalone]/gphone`) holding the manifest, the built
+   bundles, both schema files, the licence and a README.
+
+   The release also carries `SHA256SUMS` and a signed provenance attestation, so
+   you can check the zip is the one CI built rather than a copy something else
+   has touched:
+
+   ```sh
+   sha256sum -c --ignore-missing SHA256SUMS
+   gh attestation verify gphone-<version>.zip --repo quissicutdeus/gphone
+   ```
 
 2. **Database Setup — and there are two schema files, one per framework.** On
    qbx_core or qb-core import [`gphone.sql`](gphone.sql). On es_extended import
@@ -280,21 +297,34 @@ requirements:
    Development only, and never run against a live server. It is gitignored and
    is not produced by plain `pnpm generate:sql`.
 
-3. **Install Dependencies & Build** Navigate to the resource directory and
-   execute `pnpm` scripts:
-
-   ```sh
-   pnpm install
-   pnpm build
-   ```
-
-4. **Resource Manifest** Ensure `gphone` is started in your `server.cfg`:
+3. **Resource Manifest** Ensure `gphone` is started in your `server.cfg`:
 
    ```cfg
    ensure oxmysql
    ensure qbx_core # or qb-core, or es_extended; omit it to run standalone
    ensure gphone
    ```
+
+<!-- release-zip:end -->
+
+### From source
+
+`dist/` is not in the repository, so a clone is not yet a resource. Building one
+needs Node.js 26 and pnpm 11:
+
+```sh
+git clone https://github.com/quissicutdeus/gphone.git gphone
+cd gphone
+pnpm install --frozen-lockfile
+pnpm build
+```
+
+Then follow steps 2 and 3 above with that directory in `resources`. The build
+regenerates `fxmanifest.lua` and writes `dist/`; `pnpm generate:sql` regenerates
+both schema files after a change to a service declaration. The release zip is
+exactly this output, packed by `scripts/pack-resource.js` from the tagged
+commit, so building from source buys nothing unless you mean to change the
+phone.
 
 ### Housekeeping on ESX
 

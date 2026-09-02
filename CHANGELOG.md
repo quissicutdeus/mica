@@ -296,6 +296,18 @@ that sets none of them changes nothing for your players.
 
 ### Added
 
+**Every release now attaches the resource itself, prebuilt, as
+`gphone-<version>.zip` (MICA-220).** Unpack it into `resources` and
+`ensure gphone`: no Node, no pnpm, no build. It carries the manifest, stamped
+with the release version, the built bundles, both schema files, the licence and
+the installation section of README. `SHA256SUMS` and the provenance attestation
+on each release cover it exactly as they cover the SDK tarballs. Before it is
+attached, the release job unpacks it on a FiveM server beside a throwaway
+database, imports its own `gphone.esx.sql` and starts it; a zip that does not
+start is not released. An install built from source keeps working and the
+resource inside is the same build, so there is nothing to move to. No owner
+action.
+
 **The phone speaks the player's language (MICA-61).** Settings > Language
 lists every language any app provides, and `Automatic` follows a new convar,
 `gphone_locale`, then the player's own game language, then English. Set

@@ -34,6 +34,7 @@ jobs:
           count=$(echo "$dates" | grep -c "^$date\$")
           tag="v${date}.${count}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "calver=${date}.${count}" >> "$GITHUB_OUTPUT"
 
           if git rev-parse "$tag" >/dev/null 2>&1; then
             echo "skip=1" >> "$GITHUB_OUTPUT"
@@ -51,15 +52,12 @@ jobs:
       # add-on author a real version to pin without taking that one-way door. The reasoning
       # is on the ticket and in scripts/pack-release.js.
       #
-      # No `pnpm install` and no `cache: 'pnpm'`: `pnpm pack` reads a manifest and archives
-      # files, so nothing here needs node_modules and a cache would be restored for nothing.
-      #
-      # That held until `shared/` became a package. Resolving a `workspace:` dependency is
-      # the one thing pack cannot do from a manifest alone, and this job failed on the first
-      # release after it, with ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL. `pack-release.js`
-      # now rewrites those specs itself before packing, so the sentence above is true again
-      # rather than merely still written down. `server/__tests__/packRelease.test.ts` checks
-      # it on every push, because this workflow only runs on main and found out too late.
+      # MICA-220: the release is also where the resource itself is published, as a zip an
+      # owner unpacks into `resources/` with no toolchain. `dist/` is gitignored, so until
+      # this the repository alone was not a resource, and a clone plus `pnpm install` plus
+      # `pnpm build` on Node 26 was the price of admission. That is why this job installs
+      # and builds now, where it once ran `pnpm pack` from a manifest alone: the tarballs
+      # still need no node_modules, the zip needs the whole build.
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         if: steps.tag.outputs.skip == ''
         name: Install pnpm 11
@@ -71,16 +69,42 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 26
+          cache: 'pnpm'
+
+      # --ignore-scripts: same reason Verify and the Dockerfile use it -- the root
+      # "prepare" script installs dev git hooks, which a release has no use for.
+      - name: Install dependencies
+        if: steps.tag.outputs.skip == ''
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # `pnpm build`, with its typecheck, rather than `build:nocheck`. Verify runs on this
+      # same push and deploy.yml waits for it to be green; this job does not wait, and a
+      # zip is a thing an owner installs, so it gets the check the source build an owner
+      # would otherwise run gets. MICA_CALVER is the tag's own number, so the About
+      # screen, the tag and the zip name cannot disagree by a commit counted differently.
+      - name: Build the resource
+        if: steps.tag.outputs.skip == ''
+        env:
+          MICA_CALVER: ${{ steps.tag.outputs.calver }}
+        run: pnpm build
 
       # Both packages or neither: the SDK depends on @gphone/shared, so a consumer given
-      # only the first gets a 404 on a dependency it cannot see.
+      # only the first gets a 404 on a dependency it cannot see. This step clears
+      # dist/release, so it runs before the zip is packed into the same directory.
       - name: Pack the SDK and shared
         if: steps.tag.outputs.skip == ''
         run: node scripts/pack-release.js "${{ steps.tag.outputs.tag }}"
 
+      # The resource zip, from the build above. The packer refuses to build on its own, and
+      # refuses a build that leaves any manifest glob without a file behind it; see
+      # scripts/pack-resource.js.
+      - name: Pack the resource
+        if: steps.tag.outputs.skip == ''
+        run: pnpm pack:resource "${{ steps.tag.outputs.tag }}"
+
       # Lint both tarballs before anything is attached, so a broken `exports` map or a
       # `files` list that dropped a directory fails here rather than at an add-on author's
-      # first install. `pnpm dlx` because this job has no node_modules (see above).
+      # first install.
       #
       # publint only. @arethetypeswrong/cli was tried and reports an internal resolution
       # error on every JavaScript entrypoint: the SDK ships TypeScript and Svelte source
@@ -93,21 +117,58 @@ jobs:
           pnpm dlx publint dist/release/gphone-sdk-*.tgz
           pnpm dlx publint dist/release/gphone-shared-*.tgz
 
-      # A checksum file beside the tarballs, and a signed provenance attestation over them
-      # (`gh attestation verify <tgz> --repo <owner>/<repo>` checks it). Both cover the
-      # tarballs only: this job never builds the resource, so there is no resource zip to
-      # attest -- the built resource is what `deploy.yml` ships, not a release asset.
+      # The zip has to start as a resource before it is released as one. It is piped over
+      # SSH to the game server deploy.yml already reaches, where a forced command unpacks
+      # it and a root-owned wrapper starts a throwaway FXServer with it, against a throwaway
+      # MariaDB that has just imported the zip's own gphone.esx.sql. The console has to say
+      # `gphone started!` and stay clean; anything else is a non-zero exit here and no
+      # release. scripts/deploy/README.md has the server side, and why it is a third key
+      # rather than one of the two deploy keys: each of those is pinned to a forced command
+      # that deploys, and sshd would run that instead.
+      #
+      # A missing secret is a failure, not a skip. This is the one gate between a zip and
+      # the owners who will install it, and a gate that quietly stands down because it was
+      # not configured reads as a pass (AGENTS.md, §9).
+      - name: Smoke-test the zip on the FiveM box
+        if: steps.tag.outputs.skip == ''
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          SMOKE_KEY: ${{ secrets.DEPLOY_KEY_SMOKE }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          for name in DEPLOY_HOST SMOKE_KEY KNOWN_HOSTS; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=Release blocked::${name} is not set (secret DEPLOY_KEY_SMOKE, DEPLOY_HOST or DEPLOY_KNOWN_HOSTS), so the zip could not be smoke-tested and was not released. scripts/deploy/README.md has the setup."
+              exit 1
+            fi
+          done
+          set -- dist/release/gphone-*.zip
+          zip=$1
+          mkdir -p ~/.ssh
+          echo "$SMOKE_KEY" > ~/.ssh/smoke_key
+          chmod 600 ~/.ssh/smoke_key
+          echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          echo "smoke-testing $zip on the FiveM box"
+          ssh -i ~/.ssh/smoke_key -o UserKnownHostsFile=~/.ssh/known_hosts -o BatchMode=yes \
+            gphone@"$DEPLOY_HOST" < "$zip"
+
+      # A checksum file beside the assets, and a signed provenance attestation over them
+      # (`gh attestation verify <file> --repo <owner>/<repo>` checks it). Both cover the
+      # tarballs and the zip alike: an owner checking the zip and an add-on author checking
+      # the SDK read the same file and run the same command.
       - name: Generate SHA256SUMS
         if: steps.tag.outputs.skip == ''
         run: |
           cd dist/release
-          sha256sum *.tgz > SHA256SUMS
+          sha256sum *.tgz *.zip > SHA256SUMS
 
       - name: Attest build provenance
         if: steps.tag.outputs.skip == ''
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
-          subject-path: dist/release/*.tgz
+          subject-path: |
+            dist/release/*.tgz
+            dist/release/*.zip
 
       # Draft, then attach, then publish — and every part of that order is load-bearing.
       #
@@ -115,7 +176,7 @@ jobs:
       # asset afterwards. `gh release create ... file.tgz` does not help, because it creates
       # the release and *then* uploads to it, which is the same `HTTP 422` one step further
       # in. A draft is the exception — it is not sealed until it is published — so the
-      # tarballs go on while it is still a draft and publishing seals them in with it.
+      # assets go on while it is still a draft and publishing seals them in with it.
       #
       # v2026.08.31.41 and .42 are what this cost: both were published empty, both stamped
       # `immutable=true` at creation, and neither could be repaired afterwards even with the
@@ -132,6 +193,7 @@ jobs:
             --title "${{ steps.tag.outputs.tag }}" \
             --generate-notes \
             dist/release/*.tgz \
+            dist/release/*.zip \
             dist/release/SHA256SUMS
 
       # Separate step so a failure here is legible as "the assets are on, publishing failed"

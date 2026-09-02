@@ -194,6 +194,7 @@ const GATES = [
   'unit',
   'e2e',
   'build',
+  'pack',
   'deadcode'
 ];
 
@@ -326,6 +327,13 @@ const main = async () => {
   // unchanged: that esbuild and Vite can actually produce the bundles. `pnpm build` on
   // its own keeps its typecheck -- outside this script nothing else has run one.
   if (!stop()) await gate('build', 'pnpm', ['build:nocheck']);
+
+  // MICA-220: the release zip, from the build the gate above just made. `release.yml`
+  // runs on main alone, so without this the first place a README that lost its markers or
+  // a manifest glob with nothing behind it could fail was the release itself, after the
+  // tag was pushed. The packer archives; it never builds, which is why it follows `build`
+  // rather than running inside it -- a broken build is reported as one.
+  if (!stop()) await gate('pack', 'pnpm', ['pack:resource']);
   if (!stop()) await gate('deadcode', 'pnpm', ['deadcode']);
 
   // Derived from the plan rather than tracked as it goes, so a gate skipped by `--quick`
