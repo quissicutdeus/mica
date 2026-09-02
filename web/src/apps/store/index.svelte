@@ -19,12 +19,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     fetchCatalog,
     getRemoteCatalogUrl,
     onAppForeground,
+    useLocale,
+    registerMessages,
     type AppPermission
   } from '@gphone/sdk';
   import { addedPermissions, formatPermission, mergedCatalogApps } from './appInfo';
   import AppDetails from './components/AppDetails.svelte';
   import CatalogList from './components/CatalogList.svelte';
   import InstalledList from './components/InstalledList.svelte';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
+
+  // MICA-215: registered here, at the app's entry point, so every screen in the Store —
+  // the two lists and the details page — reads out of one catalog under `store.`.
+  registerMessages('store', { en, de });
+  const { t } = useLocale();
 
   let { onback }: AppProps = $props();
 
@@ -101,13 +110,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       void run(
         async () => {
           const catalogUrl = getRemoteCatalogUrl();
-          if (!catalogUrl) throw new Error('No add-on catalog is configured on this server.');
+          if (!catalogUrl) throw new Error($t('store.noCatalog'));
           const entries = await fetchCatalog(catalogUrl);
           const entry = entries.find((e) => e.id === target.id);
-          if (!entry) throw new Error(`'${target.name}' is no longer in the catalog.`);
+          if (!entry) throw new Error($t('store.notInCatalog', { name: target.name }));
           await installFromCatalog(entry);
         },
-        { title: 'Store', success: `${app.name} installed successfully!` }
+        {
+          title: $t('store.title'),
+          success: $t('store.installedToast', { name: app.name })
+        }
       );
       return;
     }
@@ -116,8 +128,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     // `getAddOnSource` the first time it is opened, not eagerly here — the shell never
     // `import()`s an add-on's code in-process (MICA-16 step 4).
     void run(() => registerAddOn(app), {
-      title: 'Store',
-      success: `${app.name} installed successfully!`
+      title: $t('store.title'),
+      success: $t('store.installedToast', { name: app.name })
     });
   }
 
@@ -154,8 +166,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   function applyUpdate(name: string, pending: AppUpdate) {
     void run(() => updateApp(pending.appId), {
-      title: 'Store',
-      success: `${name} updated to v${pending.availableVersion}`
+      title: $t('store.title'),
+      success: $t('store.updatedToast', { name, version: pending.availableVersion })
     });
   }
 
@@ -170,8 +182,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   async function handleUninstall(app: AppManifest) {
     const removed = await run(() => unregisterApp(app.id), {
-      title: 'Store',
-      success: `${app.name} uninstalled`
+      title: $t('store.title'),
+      success: $t('store.uninstalledToast', { name: app.name })
     });
     if (removed && selectedApp?.id === app.id) selectedApp = null;
   }
@@ -199,7 +211,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       onopen={openPhoneApp}
     />
   {:else}
-    <Screen title="Store" {onback}>
+    <Screen title={$t('store.title')} {onback}>
       <div class="space-y-4 p-4">
         <!--
           Shown on both tabs, because a player who opened the Store from the launcher badge
@@ -214,20 +226,24 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             class="bg-primary-container text-on-primary-container text-body-small duration-short ease-standard flex w-full items-center justify-between gap-2 rounded-box px-3 py-2 text-left transition active:scale-95"
           >
             <span>
-              {$updatesStore.length}
-              {$updatesStore.length === 1 ? 'add-on has' : 'add-ons have'} an update available
+              {$t(
+                $updatesStore.length === 1
+                  ? 'store.updatesAvailableOne'
+                  : 'store.updatesAvailableOther',
+                { count: $updatesStore.length }
+              )}
             </span>
             <span aria-hidden="true">›</span>
           </button>
         {/if}
 
         <SegmentedControl
-          aria-label="Store sections"
+          aria-label={$t('store.sections')}
           selected={activeTab}
           onchange={(id) => (activeTab = id as 'catalog' | 'installed')}
           options={[
-            { id: 'catalog', label: 'Store Catalog' },
-            { id: 'installed', label: `Installed (${$registryStore.length})` }
+            { id: 'catalog', label: $t('store.tabCatalog') },
+            { id: 'installed', label: $t('store.tabInstalled', { count: $registryStore.length }) }
           ]}
         />
 
@@ -258,10 +274,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {#if updateToAccept}
     {@const added = updateToAccept.added.map((p) => formatPermission(p).label).join(', ')}
     <ConfirmDialog
-      title="{updateToAccept.update.name} wants more access"
-      message="Version {updateToAccept.update.availableVersion} adds: {added}."
-      confirmText="Update anyway"
-      cancelText="Keep this version"
+      title={$t('store.moreAccessTitle', { name: updateToAccept.update.name })}
+      message={$t('store.moreAccessMessage', {
+        version: updateToAccept.update.availableVersion,
+        added
+      })}
+      confirmText={$t('store.updateAnyway')}
+      cancelText={$t('store.keepThisVersion')}
       onconfirm={confirmPermissionUpdate}
       oncancel={() => (updateToAccept = null)}
     />
@@ -270,10 +289,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <!-- Confirm Uninstall Modal -->
   {#if appToUninstall}
     <ConfirmDialog
-      title="Uninstall {appToUninstall.name}?"
-      message="Are you sure you want to uninstall {appToUninstall.name}? Application data will be removed."
-      confirmText="Uninstall"
-      cancelText="Cancel"
+      title={$t('store.uninstallTitle', { name: appToUninstall.name })}
+      message={$t('store.uninstallMessage', { name: appToUninstall.name })}
+      confirmText={$t('store.uninstall')}
+      cancelText={$t('store.cancel')}
       confirmVariant="danger"
       onconfirm={confirmUninstall}
       oncancel={() => (appToUninstall = null)}

@@ -10,9 +10,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     type AppManifest,
     type AppUpdate,
     formatDate,
-    formatRelativeTime
+    formatRelativeTime,
+    useLocale
   } from '@gphone/sdk';
   import { getAppStorageSize } from '../appInfo';
+
+  const { t } = useLocale();
 
   /**
    * The Store's installed tab — what is on the phone, filtered and sorted.
@@ -48,7 +51,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <div class="space-y-2">
   <div class="flex items-center justify-between gap-2">
     <span class="text-on-surface-variant text-body-small tracking-wider uppercase"
-      >Applications</span
+      >{$t('store.applications')}</span
     >
     <div class="text-label-small flex gap-1">
       <button
@@ -58,7 +61,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           ? 'bg-primary-container text-on-primary-container'
           : 'bg-surface-container text-on-surface-variant'}"
       >
-        All
+        {$t('store.filterAll')}
       </button>
       <button
         onclick={() => (filter = 'system')}
@@ -67,7 +70,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           ? 'bg-primary-container text-on-primary-container'
           : 'bg-surface-container text-on-surface-variant'}"
       >
-        System
+        {$t('store.filterSystem')}
       </button>
       <button
         onclick={() => (filter = 'addon')}
@@ -76,7 +79,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           ? 'bg-primary-container text-on-primary-container'
           : 'bg-surface-container text-on-surface-variant'}"
       >
-        Add-ons
+        {$t('store.filterAddons')}
       </button>
     </div>
   </div>
@@ -84,16 +87,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <div
     class="bg-surface-container border-outline-variant text-body-small flex items-center justify-between gap-2 rounded-box border px-2.5 py-1.5"
   >
-    <span class="text-on-surface-variant text-label-small">Sort Order</span>
+    <span class="text-on-surface-variant text-label-small">{$t('store.sortOrder')}</span>
     <select
       bind:value={sortOrder}
       class="bg-surface-container-low border-outline-variant text-on-surface text-label-small cursor-pointer rounded-chip border px-2 py-0.5 focus:outline-none"
-      aria-label="Sort Installed Apps"
+      aria-label={$t('store.sortInstalledApps')}
     >
-      <option value="newest">Newest Installed</option>
-      <option value="oldest">Oldest Installed</option>
-      <option value="updated">Recently Updated</option>
-      <option value="name">Name (A-Z)</option>
+      <option value="newest">{$t('store.sortNewest')}</option>
+      <option value="oldest">{$t('store.sortOldest')}</option>
+      <option value="updated">{$t('store.sortUpdated')}</option>
+      <option value="name">{$t('store.sortName')}</option>
     </select>
   </div>
 </div>
@@ -133,9 +136,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               class="bg-primary-container text-on-primary-container text-label-small mt-1 block truncate rounded-chip px-1.5 py-0.5"
             >
               {#if update.kind === 'newer'}
-                Update available · v{update.installedVersion} → v{update.availableVersion}
+                {$t('store.rowUpdateAvailable', {
+                  installed: update.installedVersion ?? '',
+                  available: update.availableVersion
+                })}
               {:else}
-                Version differs · catalog has v{update.availableVersion}
+                {$t('store.rowVersionDiffers', { available: update.availableVersion })}
               {/if}
             </span>
           {/if}
@@ -148,14 +154,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             onclick={() => onupdate(app)}
             class="bg-secondary text-on-secondary text-body-small duration-short ease-standard rounded-box px-3 py-1.5 transition active:scale-95"
           >
-            Update
+            {$t('store.update')}
           </button>
         {/if}
         <button
           onclick={() => onopen(app.id)}
           class="text-body-small duration-short ease-standard rounded-box bg-emerald-600 px-3 py-1.5 text-white transition hover:bg-emerald-500 active:scale-95"
         >
-          Open
+          {$t('store.open')}
         </button>
       </div>
     </div>

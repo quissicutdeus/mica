@@ -5,7 +5,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { AppIconTile, type AppManifest } from '@gphone/sdk';
+  import { AppIconTile, type AppManifest, useLocale } from '@gphone/sdk';
+
+  const { t } = useLocale();
 
   /**
    * The Store's catalog tab — every add-on on offer, installed or not.
@@ -31,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <!-- Catalog Overview Section -->
 <div class="space-y-3">
   <h2 class="text-on-surface-variant text-body-small tracking-wider uppercase">
-    Featured Add-on Apps
+    {$t('store.featured')}
   </h2>
   <div class="grid w-full gap-3">
     {#each apps as app (app.id)}
@@ -67,14 +69,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             onclick={() => onuninstall(app)}
             class="bg-error text-on-error hover:bg-error text-body-small duration-short ease-standard shrink-0 rounded-box px-3 py-1.5 transition active:scale-95"
           >
-            Uninstall
+            {$t('store.uninstall')}
           </button>
         {:else}
           <button
             onclick={() => oninstall(app)}
             class="bg-secondary text-on-secondary hover:bg-secondary text-body-small duration-short ease-standard shrink-0 rounded-box px-3 py-1.5 transition active:scale-95"
           >
-            Install
+            {$t('store.install')}
           </button>
         {/if}
       </div>

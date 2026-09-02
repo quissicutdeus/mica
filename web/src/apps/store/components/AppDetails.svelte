@@ -5,8 +5,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { AppIconTile, Screen, type AppManifest, type AppUpdate, formatDate } from '@gphone/sdk';
+  import {
+    AppIconTile,
+    Screen,
+    type AppManifest,
+    type AppUpdate,
+    formatDate,
+    useLocale
+  } from '@gphone/sdk';
   import { formatPermission, getAppStorageSize } from '../appInfo';
+
+  const { t } = useLocale();
 
   /**
    * One app's full details page — permissions, storage, install state.
@@ -76,12 +85,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               }}
               class="shadow-elevation-2 text-body-small duration-short ease-standard w-full rounded-box bg-emerald-600 py-2.5 text-white transition hover:bg-emerald-500 active:scale-95"
             >
-              Open Application
+              {$t('store.openApplication')}
             </button>
             <div
               class="bg-secondary text-secondary text-label-small flex items-center justify-center gap-1.5 rounded-box border border-indigo-500/20 px-3 py-1"
             >
-              <span>🔒</span> Core System App — protected from removal
+              <span>🔒</span>
+              {$t('store.coreProtected')}
             </div>
           </div>
         {:else if installed}
@@ -96,18 +106,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 class="bg-primary-container text-on-primary-container text-body-small rounded-box px-3 py-2"
               >
                 {#if update.kind === 'newer'}
-                  Version {update.availableVersion} is available. You have {update.installedVersion}.
+                  {$t('store.versionNewer', {
+                    available: update.availableVersion,
+                    installed: update.installedVersion ?? ''
+                  })}
                 {:else}
-                  The catalog offers version {update.availableVersion}, which cannot be ordered
-                  against the installed {update.installedVersion}. Updating installs the catalog's
-                  copy.
+                  {$t('store.versionUnordered', {
+                    available: update.availableVersion,
+                    installed: update.installedVersion ?? ''
+                  })}
                 {/if}
               </p>
               <button
                 onclick={() => onupdate(app)}
                 class="bg-secondary text-on-secondary shadow-elevation-2 text-body-small duration-short ease-standard w-full rounded-box py-2.5 transition active:scale-95"
               >
-                Update to v{update.availableVersion}
+                {$t('store.updateTo', { version: update.availableVersion })}
               </button>
             </div>
           {/if}
@@ -118,7 +132,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               }}
               class="shadow-elevation-2 text-body-small duration-short ease-standard flex-1 rounded-box bg-emerald-600 py-2.5 text-white transition hover:bg-emerald-500 active:scale-95"
             >
-              Open
+              {$t('store.open')}
             </button>
             <button
               onclick={() => {
@@ -126,7 +140,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               }}
               class="bg-error text-on-error hover:bg-error shadow-elevation-2 text-body-small duration-short ease-standard flex-1 rounded-box py-2.5 transition active:scale-95"
             >
-              Uninstall
+              {$t('store.uninstall')}
             </button>
           </div>
         {:else}
@@ -136,7 +150,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }}
             class="bg-secondary text-on-secondary hover:bg-secondary shadow-elevation-2 text-body-small duration-short ease-standard w-full rounded-box py-2.5 transition active:scale-95"
           >
-            Install Application
+            {$t('store.installApplication')}
           </button>
         {/if}
       </div>
@@ -144,34 +158,40 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <!-- Description Card -->
     <div class="space-y-1.5">
-      <h4 class="text-on-surface-variant text-body-small tracking-wider uppercase">About</h4>
+      <h4 class="text-on-surface-variant text-body-small tracking-wider uppercase">
+        {$t('store.about')}
+      </h4>
       <p
         class="border-outline-variant bg-surface-container text-on-surface text-body-small rounded-box border p-3 leading-relaxed"
       >
-        {app.description || 'No description provided for this application.'}
+        {app.description || $t('store.noDescription')}
       </p>
     </div>
 
     <!-- Technical Metadata Grid -->
     <div class="space-y-1.5">
-      <h4 class="text-on-surface-variant text-body-small tracking-wider uppercase">Information</h4>
+      <h4 class="text-on-surface-variant text-body-small tracking-wider uppercase">
+        {$t('store.information')}
+      </h4>
       <div class="text-body-small grid grid-cols-2 gap-2">
         <div class="border-outline-variant bg-surface-container rounded-box border p-3">
-          <span class="text-on-surface-variant text-label-small block uppercase">Type</span>
+          <span class="text-on-surface-variant text-label-small block uppercase"
+            >{$t('store.type')}</span
+          >
           <span class="text-on-surface font-semibold"
-            >{system ? 'System Application' : 'Add-on'}</span
+            >{system ? $t('store.typeSystem') : $t('store.typeAddon')}</span
           >
         </div>
         <div class="border-outline-variant bg-surface-container rounded-box border p-3">
           <span class="text-on-surface-variant text-label-small block uppercase"
-            >Storage Footprint</span
+            >{$t('store.storageFootprint')}</span
           >
           <span class="text-on-surface font-semibold">{getAppStorageSize(app)}</span>
         </div>
         {#if app.installedAt}
           <div class="border-outline-variant bg-surface-container rounded-box border p-3">
             <span class="text-on-surface-variant text-label-small block uppercase"
-              >Installed Date</span
+              >{$t('store.installedDate')}</span
             >
             <span class="text-on-surface font-semibold">{formatDate(app.installedAt)}</span>
           </div>
@@ -179,7 +199,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {#if app.updatedAt}
           <div class="border-outline-variant bg-surface-container rounded-box border p-3">
             <span class="text-on-surface-variant text-label-small block uppercase"
-              >Last Updated</span
+              >{$t('store.lastUpdated')}</span
             >
             <span class="text-on-surface font-semibold">{formatDate(app.updatedAt)}</span>
           </div>
@@ -190,7 +210,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Permissions Breakdown -->
     <div class="space-y-1.5 pb-4">
       <h4 class="text-on-surface-variant text-body-small tracking-wider uppercase">
-        Permissions Requested
+        {$t('store.permissionsRequested')}
       </h4>
       {#if (app.permissions && app.permissions.length > 0) || app.requiresNetwork}
         <div class="grid grid-cols-2 gap-2">
@@ -208,7 +228,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               class="border-outline-variant bg-surface-container text-on-surface text-body-small flex items-center gap-2 rounded-box border px-3 py-2"
             >
               <span>{'\u{1F310}'}</span>
-              <span>Network Access</span>
+              <span>{$t('store.networkAccess')}</span>
             </div>
           {/if}
         </div>
@@ -216,7 +236,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <p
           class="border-outline-variant bg-surface-container text-on-surface-variant text-body-small rounded-box border p-3 italic"
         >
-          No special permissions requested.
+          {$t('store.noPermissions')}
         </p>
       {/if}
     </div>
