@@ -11,12 +11,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ConfirmDialog,
     SegmentedControl,
     useAppAction,
+    useLocale,
+    registerMessages,
     useReports,
     onAppForeground,
     formatRelativeTime,
     type AppProps
   } from '@gphone/sdk';
   import type { Report } from '@gphone/shared/types';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
+
+  // MICA-215: the moderation queue reads its strings out of a catalog like every other
+  // app, so a server whose admins do not read English is not stuck with this screen.
+  registerMessages('admin', { en, de });
+  const { t } = useLocale();
 
   let { onback }: AppProps = $props();
 
@@ -34,19 +43,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let tab = $state<Tab>('pending');
   let confirming = $state<{ report: Report; action: 'moderate' | 'dismiss' } | null>(null);
 
-  const CATEGORY_LABELS: Record<string, string> = {
-    spam: 'Spam',
-    harassment: 'Harassment',
-    threats: 'Threats or violence',
-    sexual: 'Sexual content',
-    impersonation: 'Impersonation',
-    other: 'Other'
-  };
+  const CATEGORY_LABELS = $derived<Record<string, string>>({
+    spam: $t('admin.categorySpam'),
+    harassment: $t('admin.categoryHarassment'),
+    threats: $t('admin.categoryThreats'),
+    sexual: $t('admin.categorySexual'),
+    impersonation: $t('admin.categoryImpersonation'),
+    other: $t('admin.categoryOther')
+  });
 
-  const RESOLUTION_LABELS: Record<string, string> = {
-    actioned: 'Content removed',
-    dismissed: 'No action taken'
-  };
+  const RESOLUTION_LABELS = $derived<Record<string, string>>({
+    actioned: $t('admin.resolutionActioned'),
+    dismissed: $t('admin.resolutionDismissed')
+  });
 
   // Refreshed on every visit: reports are filed by other players and nothing pushes
   // them here, so a queue fetched once at open would be stale the moment it mattered.
@@ -65,25 +74,28 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const isImage = (preview?: string) => Boolean(preview?.startsWith('data:image'));
 </script>
 
-<Screen title="Admin" {onback}>
+<Screen title={$t('admin.title')} {onback}>
   <div class="p-4">
     <!-- Two tabs, matching Mail and Messages, so a decision can be reviewed and undone
          rather than being final the moment it is made. -->
     <div class="mb-4">
       <SegmentedControl
-        aria-label="Report queue"
+        aria-label={$t('admin.queue')}
         selected={tab}
         onchange={(id) => (tab = id as Tab)}
         options={[
-          { id: 'pending', label: 'Pending', badge: $pendingReports.length },
-          { id: 'history', label: 'History' }
+          { id: 'pending', label: $t('admin.pending'), badge: $pendingReports.length },
+          { id: 'history', label: $t('admin.history') }
         ]}
       />
     </div>
 
     {#if tab === 'pending'}
       {#if $pendingReports.length === 0}
-        <EmptyState title="Nothing to review" description="Reports from players appear here." />
+        <EmptyState
+          title={$t('admin.nothingToReview')}
+          description={$t('admin.nothingToReviewHint')}
+        />
       {:else}
         <div class="space-y-4">
           {#each $pendingReports as report (report.id)}
@@ -94,7 +106,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     {CATEGORY_LABELS[report.category] ?? report.category}
                   </p>
                   <p class="text-on-surface-variant text-body-small mt-0.5">
-                    reported {formatRelativeTime(report.created_at)}
+                    {$t('admin.reported', { when: formatRelativeTime(report.created_at) })}
                   </p>
                 </div>
                 <span
@@ -115,7 +127,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   />
                 {:else}
                   <p class="text-on-surface break-words whitespace-pre-wrap">
-                    {report.target_preview || '(content unavailable)'}
+                    {report.target_preview || $t('admin.contentUnavailable')}
                   </p>
                 {/if}
                 {#if report.note}
@@ -134,7 +146,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   onclick={() => (confirming = { report, action: 'dismiss' })}
                   class="bg-surface-container text-on-surface hover:bg-surface-container-high duration-short ease-standard cursor-pointer py-3 font-medium transition-colors disabled:opacity-50"
                 >
-                  Allow — no action
+                  {$t('admin.allow')}
                 </button>
                 <button
                   type="button"
@@ -142,7 +154,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   onclick={() => (confirming = { report, action: 'moderate' })}
                   class="bg-surface-container text-error hover:bg-surface-container-high duration-short ease-standard cursor-pointer py-3 font-medium transition-colors disabled:opacity-50"
                 >
-                  Remove for everyone
+                  {$t('admin.removeForEveryone')}
                 </button>
               </div>
             </div>
@@ -150,7 +162,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       {/if}
     {:else if $resolvedReports.length === 0}
-      <EmptyState title="No history yet" description="Decisions you make appear here." />
+      <EmptyState title={$t('admin.noHistory')} description={$t('admin.noHistoryHint')} />
     {:else}
       <div class="space-y-3">
         {#each $resolvedReports as report (report.id)}
@@ -174,17 +186,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 disabled={$busy}
                 onclick={() =>
                   run(() => reopenReport(report.id), {
-                    success: 'Reopened — content restored if it was removed'
+                    success: $t('admin.reopened')
                   })}
                 class="border-outline text-on-surface hover:bg-surface-container-high duration-short ease-standard text-body-small shrink-0 cursor-pointer rounded-box border px-3 py-1.5 transition-colors disabled:opacity-50"
               >
-                Undo
+                {$t('admin.undo')}
               </button>
             </div>
             <p
               class="border-outline-variant text-on-surface-variant text-body-small truncate border-t px-4 py-2"
             >
-              {isImage(report.target_preview) ? '(photo)' : report.target_preview || '—'}
+              {isImage(report.target_preview) ? $t('admin.photo') : report.target_preview || '—'}
             </p>
           </div>
         {/each}
@@ -195,17 +207,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#if confirming}
   <ConfirmDialog
-    title={confirming.action === 'moderate' ? 'Remove this content?' : 'Leave this content up?'}
+    title={confirming.action === 'moderate' ? $t('admin.removeTitle') : $t('admin.allowTitle')}
     message={confirming.action === 'moderate'
-      ? 'It disappears for everyone who could see it. You can undo this from History.'
-      : 'The content stays visible and the report is closed. You can undo this from History.'}
-    confirmText={confirming.action === 'moderate' ? 'Remove' : 'Allow'}
+      ? $t('admin.removeMessage')
+      : $t('admin.allowMessage')}
+    confirmText={confirming.action === 'moderate'
+      ? $t('admin.confirmRemove')
+      : $t('admin.confirmAllow')}
     confirmVariant={confirming.action === 'moderate' ? 'danger' : 'primary'}
     onconfirm={() =>
       confirming &&
       decide(
         () => resolveReport(confirming!.report.id, confirming!.action),
-        confirming.action === 'moderate' ? 'Content removed' : 'Report closed'
+        confirming.action === 'moderate' ? $t('admin.contentRemoved') : $t('admin.reportClosed')
       )}
     oncancel={() => (confirming = null)}
   />
