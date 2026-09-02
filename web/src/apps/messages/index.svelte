@@ -99,6 +99,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let isScrolled = $state(false);
   let showInChatSearch = $state(false);
   let inChatSearchQuery = $state('');
+  let loadingWholeThread = $state(false);
 
   // Derived values
   let conversations = $derived($conversationsStore);
@@ -139,9 +140,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * cursor and the store prepends what arrives. `hasMore` is what keeps the control
    * honest at the oldest message — without it the hook could only ask and find out.
    *
-   * In-chat search bypasses the window: a match is worth finding wherever it is, and a
-   * search that only looked at the loaded pages would be quietly wrong — which it still is
-   * for what has not been fetched yet; searching the rest of a long thread is server work.
+   * In-chat search bypasses the window: a match is worth finding wherever it is. What it
+   * cannot see is a page the server has not been asked for, and rather than a quiet wrong
+   * answer the search bar says so while older pages exist and offers to fetch the rest
+   * (`loadWholeThread`, MICA-218). A server-side search was the other option and was
+   * decided against: everything else in this screen — reply quotes, scroll-to, reactions,
+   * unsend — reads from the held thread, so a match that lives outside it would be a
+   * second rendering path with none of those; a `LIKE` over `message` has no index and
+   * costs the server a conversation scan per keystroke against the rate limiter, where
+   * fetching the pages costs that once and searches locally after; and it adds no
+   * reachable net event (§2.9). The trade is that a very long thread is fetched a page at
+   * a time, at the declared maximum, and the control shows progress while it does.
    */
   const page = usePagedList<UIMessage>({
     items: () => (inChatSearchQuery.trim() ? [] : filteredMessages),
@@ -156,6 +165,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const threadHasOlder = $derived(
     selectedConversationId ? !!$hasOlderMessages[selectedConversationId] : false
   );
+
+  /**
+   * Fetch every older page of the open thread, so a search covers all of it.
+   *
+   * Sequential, because each page's cursor is the previous page's answer. Stops on the
+   * first page that fails (the store rethrows a refused request, a rate-limited one
+   * included) or when the thread is switched underneath it, and leaves the note in place
+   * either way: what was fetched is searched, and the bar still says what it covers.
+   */
+  const loadWholeThread = async () => {
+    const conversationId = selectedConversationId;
+    if (!conversationId || loadingWholeThread) return;
+    loadingWholeThread = true;
+    try {
+      while (selectedConversationId === conversationId && $hasOlderMessages[conversationId]) {
+        if (!(await conversationsStore.loadOlderMessages(conversationId))) break;
+      }
+    } catch (error) {
+      console.warn('gPhone Messages: could not load the whole conversation', error);
+    } finally {
+      loadingWholeThread = false;
+    }
+  };
 
   const renderedMessages = $derived(inChatSearchQuery.trim() ? filteredMessages : page.visible);
   const renderIndexOffset = $derived(inChatSearchQuery.trim() ? 0 : page.offset);
@@ -660,6 +692,25 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             placeholder={$t('messages.searchInConversation')}
             focus={true}
           />
+          <!-- What the search covers, while it does not cover everything (MICA-218). -->
+          {#if inChatSearchQuery.trim() && threadHasOlder}
+            <div
+              class="text-on-surface-variant text-label-small flex items-center justify-between gap-2 px-1 pt-2"
+              role="status"
+            >
+              <span>{$t('messages.searchLoadedOnly')}</span>
+              <button
+                type="button"
+                class="text-primary cursor-pointer whitespace-nowrap"
+                disabled={loadingWholeThread}
+                onclick={loadWholeThread}
+              >
+                {loadingWholeThread
+                  ? $t('messages.loadingWholeConversation')
+                  : $t('messages.loadWholeConversation')}
+              </button>
+            </div>
+          {/if}
         </div>
       {/if}
 

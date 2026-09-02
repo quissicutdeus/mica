@@ -132,6 +132,39 @@ test.describe('Messages App E2E', () => {
   });
 
   /**
+   * In-chat search says what it covers, and can be made to cover everything (MICA-218).
+   *
+   * The thread is paged, so a search over the held pages misses older messages. Rather
+   * than a quiet wrong answer, the search bar names the limit while older pages exist and
+   * offers to fetch the rest; once the oldest page is in, the note goes and the same query
+   * matches the whole fixture. Trevor's thread cycles five prompts across 200 messages, so
+   * "machete" is in every fifth one: ten on the first page, forty in the whole thread.
+   */
+  test('in-chat search names what it covers and can load the whole thread', async ({ page }) => {
+    const convItem = page.locator('[role="button"]').filter({ hasText: 'Trevor' }).first();
+    await convItem.click({ force: true });
+    await expect(page.locator('button', { hasText: 'Trevor Philips' }).first()).toBeVisible();
+
+    await page.getByRole('button', { name: 'Search Messages' }).click();
+    await page.getByPlaceholder('Search in conversation...').fill('machete');
+
+    const messagesContainer = page.locator('#messages-container');
+    const bubbles = messagesContainer.locator('[id^="msg-"]');
+    const note = page.getByRole('status').filter({ hasText: 'Searching loaded messages only' });
+    const loadAll = page.getByRole('button', { name: 'Load the whole conversation' });
+
+    await expect(bubbles).toHaveCount(10);
+    await expect(note).toBeVisible();
+    await expect(loadAll).toBeVisible();
+
+    await loadAll.click();
+
+    await expect(bubbles).toHaveCount(40);
+    await expect(page.locator('#msg-3003')).toBeVisible();
+    await expect(note).toHaveCount(0);
+  });
+
+  /**
    * Archive, then unarchive, end to end (MICA-208). The second half is the one that
    * never worked: the server read a flag the web did not send and defaulted it to
    * "archive", so a thread put away could not be brought back. The browser mock always

@@ -69,6 +69,16 @@ export const messages = defineService<Message, typeof messagesContract>({
   indexes: [
     { name: 'citizenid', columns: ['citizenid'] },
     { name: 'conversation_status_created', columns: ['conversation_id', 'status', 'created_at'] },
+    /**
+     * The keyset a thread pages on (MICA-218). `findByConversation` walks
+     * `WHERE conversation_id = ? AND id < ? ORDER BY id DESC LIMIT n`, and the index above
+     * serves only the equality prefix of that: the range and the order are on `id`, so
+     * without this MariaDB read every row of the conversation and filesorted it on every
+     * page — the plan the schema harness now refuses. With `(conversation_id, id)` the
+     * page is one backward index range scan, stopping at `n` rows. Additive, so
+     * `gphoneschema apply` picks it up with no versioned migration.
+     */
+    { name: 'conversation_id_id', columns: ['conversation_id', 'id'] },
     { name: 'reply_to_id', columns: ['reply_to_id'] }
   ],
   childTables: [

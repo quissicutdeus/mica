@@ -47,6 +47,15 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**`gphone_messages` gains a `conversation_id_id` key on `(conversation_id, id)`
+— run `gphoneschema apply` from your server console after updating, or import
+the regenerated `gphone.sql` / `gphone.esx.sql` on a fresh install
+(MICA-218).** A thread is read one page at a time, newest first, and until now
+every page was a lookup on the conversation followed by a sort of everything in
+it. With the key it is a single backward index walk that stops at the page size.
+No data is rewritten and nothing else about the table changes; a server that
+skips the step keeps working and keeps paying the sort.
+
 **`gphone_messages` gains a `reply_to_id` column and a `reply_to_id` key — run
 `gphoneschema apply` from your server console after updating, or import the
 regenerated `gphone.sql` / `gphone.esx.sql` on a fresh install (MICA-209).**

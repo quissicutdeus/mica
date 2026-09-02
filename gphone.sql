@@ -504,6 +504,7 @@ CREATE TABLE IF NOT EXISTS `gphone_messages` (
     KEY `citizenid_status` (`citizenid`, `status`),
     KEY `citizenid` (`citizenid`),
     KEY `conversation_status_created` (`conversation_id`, `status`, `created_at`),
+    KEY `conversation_id_id` (`conversation_id`, `id`),
     KEY `reply_to_id` (`reply_to_id`),
     CONSTRAINT `fk_gphone_messages_conversation_id` FOREIGN KEY (`conversation_id`)
         REFERENCES `gphone_messages_conversations` (`id`) ON DELETE CASCADE,

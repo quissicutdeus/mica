@@ -39,7 +39,7 @@ const DB_PASSWORD = process.env.MICA_DB_PASSWORD;
 const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
 
 let checksRun = 0;
-const MINIMUM_CHECKS = 24;
+const MINIMUM_CHECKS = 40;
 
 const check = (label, actual, expected) => {
   checksRun += 1;
@@ -135,9 +135,22 @@ const connectWhenReady = async (port) => {
 
 /* ------------------------------------- the oxmysql shim, and the real module */
 
+/**
+ * The thread page statement `MessageRepository` issued through the shim, with its
+ * parameters — the one with a cursor, whose plan MICA-218 is about.
+ *
+ * `EXPLAIN` on a query the harness retyped would be a plan for a query nobody runs; this is
+ * the text the repository actually sent, so the plan checked below is the plan a player's
+ * page gets.
+ */
+let pagedThreadStatement = { sql: '', params: [] };
+
 const installOxmysql = (connection) => {
   const oxmysql = {
     query_async: async (sql, params = []) => {
+      if (/FROM gphone_messages m/.test(sql) && /AND m\.id < \?/.test(sql)) {
+        pagedThreadStatement = { sql, params };
+      }
       const [rows] = await connection.query(sql, params);
       return rows;
     },
@@ -168,6 +181,7 @@ const installOxmysql = (connection) => {
 const loadServerModule = async () => {
   const entry = [
     `export { ConversationRepository } from '${root}/server/repositories/ConversationRepository.ts';`,
+    `export { MessageRepository } from '${root}/server/repositories/MessageRepository.ts';`,
     `export { Database } from '${root}/server/lib/Database.ts';`,
     `export { FrameworkBridge, __setResourceLookup } from '${root}/server/lib/FrameworkBridge.ts';`,
     `export { resolveByPhone, resolveByPhoneMany } from '${root}/server/lib/PlayerDirectory.ts';`
@@ -292,6 +306,70 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
   );
 
   check(`${schemaFile} on ${framework}: tables created`, true, true);
+
+  /**
+   * A thread page is an index range scan, not a filesort (MICA-218).
+   *
+   * Enough rows for the optimizer to have a real choice: forty more threads of sixty
+   * messages, interleaved so no thread's ids are contiguous — the shape a server's table
+   * actually has — and the one under test in among them. On a table this size the plan
+   * before the `(conversation_id, id)` key was `ref` on `conversation_status_created`
+   * plus `Using filesort`; the check refuses that plan, so the key cannot be dropped
+   * from the declaration without this job going red.
+   */
+  step(`${schemaFile} — seeding interleaved threads for the paging plan`);
+  const THREADS = 40;
+  const PER_THREAD = 60;
+  const extraConversations = [];
+  for (let i = 0; i < THREADS; i++) {
+    const [r] = await connection.query(
+      'INSERT INTO gphone_messages_conversations (citizenid, is_group, status) VALUES (?, ?, ?)',
+      [ownerA, 0, 'active']
+    );
+    extraConversations.push(r.insertId);
+  }
+  const threadIds = [conversationId, ...extraConversations];
+  const seeded = [];
+  for (let i = 0; i < threadIds.length * PER_THREAD; i++) {
+    const conv = threadIds[i % threadIds.length];
+    seeded.push([conv, i % 2 ? ownerA : ownerB, `seed ${i}`, 'active']);
+  }
+  await connection.query(
+    'INSERT INTO gphone_messages (conversation_id, citizenid, message, status) VALUES ?',
+    [seeded]
+  );
+  await connection.query('ANALYZE TABLE gphone_messages');
+
+  step(`${schemaFile} — MessageRepository.findByConversation pages by index`);
+  const messageRepo = new modules.MessageRepository(database);
+  const firstPage = await messageRepo.findByConversation(conversationId, {
+    limit: 20,
+    cursor: null
+  });
+  check(`first page holds twenty rows`, firstPage.rows.length, 20);
+  check(`first page has a cursor behind it`, typeof firstPage.nextCursor, 'number');
+  const secondPage = await messageRepo.findByConversation(conversationId, {
+    limit: 20,
+    cursor: firstPage.nextCursor
+  });
+  check(`second page holds twenty older rows`, secondPage.rows.length, 20);
+  check(
+    `second page is entirely older than the first`,
+    secondPage.rows.every((m) => m.id < firstPage.nextCursor),
+    true
+  );
+  // The attachments lookup followed the page statement; the shim kept the page one by its
+  // cursor clause. Re-issue it under EXPLAIN with the same parameters.
+  const pageStatement = pagedThreadStatement;
+  check(`the page statement was captured`, /AND m\.id < \?/.test(pageStatement.sql), true);
+  const [plan] = await connection.query(`EXPLAIN ${pageStatement.sql}`, pageStatement.params);
+  const row = plan[0];
+  console.log(
+    `    plan: type=${row.type} key=${row.key} rows=${row.rows} Extra=${row.Extra ?? ''}`
+  );
+  check(`the page walks the conversation_id_id key`, row.key, 'conversation_id_id');
+  check(`the page is a range scan`, row.type, 'range');
+  check(`the page needs no filesort`, /filesort/i.test(row.Extra ?? ''), false);
 
   step(`${schemaFile} — ConversationRepository.findForCitizen`);
   const repo = new modules.ConversationRepository(database);
