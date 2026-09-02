@@ -17,21 +17,24 @@ import { citizenid, fetchCitizenId } from './account';
 import { contacts } from './contacts';
 
 /**
- * One server page of threads.
+ * One server page of threads — a screenful, since MICA-211.
  *
- * Matched to `conversations`' own `paging.pageSize` in `server/services/Conversations.ts`
- * (200, and `maxPageSize` is the same number, so the server would clamp anything larger).
- * Deliberately *not* smaller, which is the tempting change and the wrong one:
- * `ConversationRepository.findForCitizen` walks the keyset on `c.id DESC`, and the inbox is
- * ordered by *recency of the last message*, which is a different order. An old thread
- * someone still texts daily has a low id and a recent `lastMessageAt`, so with a page
- * smaller than the whole list it would be missing from the top of the inbox until enough
- * pages had been loaded to reach it. At 200 the cursor only engages past the point the
- * server already truncated at, so no player's inbox order changes and the >200 case goes
- * from "silently unreachable forever" to "one more page away". Lowering this needs the
- * server to page on last-message recency first.
+ * It was 200, matched to the server's `paging.pageSize`, and the note here used to explain why
+ * it could not be smaller: `ConversationRepository.findForCitizen` walked the keyset on
+ * `c.id DESC` while the inbox is ordered by *recency of the last message*, which is a different
+ * order. An old thread someone still texts daily has a low id and a recent `lastMessageAt`, so
+ * any page smaller than the whole list left it off the top of the inbox until enough pages had
+ * loaded to reach it. 200 hid that by being above any real list rather than by fixing it.
+ *
+ * **The server pages on that recency now**, keyset on `(last-message time, id)`, so the first
+ * page is genuinely the newest threads and this can be what it should have been all along: the
+ * number of rows a player can see before scrolling. Twenty-five, matched to the server's own
+ * default so a request that omits `limit` and one that sends it agree. The cursor is the
+ * server's — a `{ time, id }` pair the client passes back untouched, never one derived from a
+ * row — and `nextCursor: null` is the end of the list rather than something inferred from a
+ * short page.
  */
-const CONVERSATION_PAGE_SIZE = 200;
+const CONVERSATION_PAGE_SIZE = 25;
 
 /**
  * How many opened threads keep their messages in memory. Beyond this the least recently
@@ -100,14 +103,16 @@ const resolveDisplayInfo = (conv: Conversation, myId: string, currentContacts: C
  * factory or `server/__tests__/routes.test.ts` to read as a route — the contract is what the
  * suite holds the call site to instead.
  *
- * **The cursor is derived, because the server still answers a bare array.** MICA-197 made
- * `conversations:get` *accept* `{ limit, cursor }` (`pageBounds`, keyset on `c.id DESC`, the
- * cursor a bare row id) without changing the reply shape, so "is there another page" has to
- * be inferred: a page that came back short of the limit is the last one, and otherwise the
- * lowest id in it — the final row, in `id DESC` — is where the next page starts. The cost of
- * inferring rather than being told is one empty request when the list divides exactly by the
- * page size; `loadMore` sees zero rows, reports false and clears `hasMore`, so it
- * self-corrects rather than looping.
+ * **The cursor comes from the server, and is no longer derived.** It used to be: MICA-197
+ * made `conversations:get` accept `{ limit, cursor }` without changing its bare-array reply, so
+ * "is there another page" was inferred from a page that came back short. Two things ended that
+ * (MICA-211). The cursor is compound now — `{ time, id }`, because the server pages on
+ * last-message recency — and no single field of a returned row is it, so there is nothing to
+ * derive. And the inference cost one empty request whenever the list divided exactly by the
+ * page size, which was free at a page of 200 nobody reached and is not at a page of 25.
+ *
+ * So the reply is `{ rows, nextCursor }` and this reader passes both straight through, mapping
+ * only the rows. `nextCursor: null` is the server saying this is the last page.
  *
  * No `defaultValue`, following `createPagedStore`'s contract and `accounts.ts`'s note on the
  * same point: a transport failure throws so `load` can keep the window it is already
@@ -124,9 +129,13 @@ const readConversationPage: PageReader<UIConversation> = async (payload) => {
   const data = await call(
     conversationsContract,
     'get',
-    payload as { cursor?: number | null; limit?: number }
+    payload as { cursor?: { time: string; id: number } | null; limit?: number }
   );
-  const raw = Array.isArray(data) ? data : [];
+
+  // A bare array is what an older server (or a mock that has not caught up) answers; treat it
+  // as one full page rather than rendering nothing, the same way `createPagedStore` does.
+  const raw = Array.isArray(data) ? data : (data?.rows ?? []);
+  const nextCursor = Array.isArray(data) ? null : (data?.nextCursor ?? null);
 
   const rows: UIConversation[] = raw.map((c) => {
     const { target, targetName, targetAvatar } = resolveDisplayInfo(c, myId, currentContacts);
@@ -140,9 +149,6 @@ const readConversationPage: PageReader<UIConversation> = async (payload) => {
       unreadCount: c.unread_count || 0
     };
   });
-
-  const limit = typeof payload.limit === 'number' ? payload.limit : CONVERSATION_PAGE_SIZE;
-  const nextCursor = raw.length < limit ? null : (raw[raw.length - 1]?.id ?? null);
 
   return { rows, nextCursor };
 };
@@ -167,8 +173,12 @@ function createMessagesStore() {
    * stricter than what it replaces: `new Date(undefined).getTime()` is `NaN`, which makes a
    * row with no timestamp sort unpredictably, where `byNewest` floors it at the epoch.
    *
-   * Note that this is the *display* order and the server's paging order is `id DESC` — see
-   * `CONVERSATION_PAGE_SIZE` for why that difference is what pins the page size.
+   * Since MICA-211 this is the *same* order the server pages in — its keyset sort key is
+   * `COALESCE(last message's created_at, updated_at)`, which is exactly what `lastMessageAt`
+   * is built from — so a later page is always older than the window already held and this sort
+   * no longer reshuffles across page boundaries. It stays, because the paths that reorder the
+   * inbox locally (an optimistic bump after sending, a live arrival, a rename) do not go
+   * through the server at all.
    */
   const ordered = derived(list, ($rows) =>
     [...$rows].sort(byNewest<UIConversation>('lastMessageAt'))

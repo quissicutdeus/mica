@@ -119,24 +119,43 @@ vi.mock('../nui/fetchNui', () => ({
     if (method === 'getConversations') {
       server.pageRequests.push(data);
       /**
-       * `conversations:get` as MICA-197 left it: keyset on `id DESC`, `cursor` a bare row
-       * id and exclusive, `limit` clamped at the declared page size — and a **bare array**
-       * back, with no `nextCursor`. That last part is the whole reason the store has to
-       * infer the cursor, so the mock must keep answering that shape rather than the
-       * `{ rows, nextCursor }` a paged service would.
+       * `conversations:get` as MICA-211 shaped it: keyset on **last-message recency**, not
+       * on `id DESC` — the cursor a `{ time, id }` pair and exclusive on both halves, `limit`
+       * clamped at the declared maximum, and `{ rows, nextCursor }` back with `null` meaning
+       * the oldest thread is in this page. The store no longer infers anything.
+       *
+       * The sort key is the last message's `created_at` falling back to `updated_at`, which is
+       * the expression the server's SQL uses; paging by id here instead would agree with the
+       * server on a fixture whose ids ascend with time and disagree on every real inbox.
        */
-      const limit = Math.min(typeof data?.limit === 'number' ? data.limit : 200, 200);
-      const ordered = [...server.conversations].sort((a, b) => b.id - a.id);
-      const after = data?.cursor == null ? ordered : ordered.filter((c) => c.id < data.cursor);
-      return Promise.resolve(after.slice(0, limit));
+      const limit = Math.min(typeof data?.limit === 'number' ? data.limit : 25, 200);
+      const keyOf = (c: any) => String(c.last_message?.created_at ?? c.updated_at ?? '');
+      const ordered = [...server.conversations].sort((a, b) => {
+        const byTime = keyOf(b).localeCompare(keyOf(a));
+        return byTime !== 0 ? byTime : b.id - a.id;
+      });
+      const after =
+        data?.cursor == null
+          ? ordered
+          : ordered.filter(
+              (c) =>
+                keyOf(c) < data.cursor.time ||
+                (keyOf(c) === data.cursor.time && c.id < data.cursor.id)
+            );
+      const rows = after.slice(0, limit);
+      const last = rows[rows.length - 1];
+      return Promise.resolve({
+        rows,
+        nextCursor: after.length > limit && last ? { time: keyOf(last), id: last.id } : null
+      });
     }
     if (method === 'getMessages') {
       server.threadRequests.push(data);
       /**
        * `messages:get` as MICA-212 shaped it: keyset on `id DESC`, `cursor` a bare row id
        * and exclusive, `limit` clamped at fifty by default, and `{ rows, nextCursor }` back
-       * with the rows in reading order — unlike `conversations:get` above, which still
-       * answers a bare array.
+       * with the rows in reading order. `conversations:get` above answers the same shape now,
+       * over a compound cursor.
        */
       const long = server.threads[data.conversation_id];
       if (long) {
@@ -326,12 +345,18 @@ describe('messages store', () => {
 });
 
 /**
- * The inbox as a server-paged window (MICA-204).
+ * The inbox as a server-paged window (MICA-204, then MICA-211).
  *
  * The list was a hand-written `fetchNui` that asked for everything and held it. MICA-197
  * gave `conversations:get` a `limit` and a `cursor` and nothing on this side sent either,
  * so a player past the server's page size simply could not see the rest of their inbox —
  * the reply was silently truncated and nothing said so.
+ *
+ * MICA-204 sent them, pinned at the server's 200 because the server keyset was `id DESC`
+ * while the inbox is ordered by last-message recency; a smaller page would have dropped an
+ * old-but-active thread off the top. The server pages on that recency now, so the page here
+ * is a screenful and the cursor is the `{ time, id }` pair the server hands back rather than
+ * a row id this side derives.
  */
 describe('conversation paging', () => {
   /** More threads than one server page, so the second page is real rather than simulated. */
@@ -352,26 +377,54 @@ describe('conversation paging', () => {
       };
     });
 
-  it('asks for one page, then walks the cursor for the next', async () => {
-    server.conversations = overOnePage(201);
+  it('asks for one screenful, then walks the server cursor for the next', async () => {
+    server.conversations = overOnePage(26);
 
     await conversationsStore.loadConversations();
 
-    expect(get(conversationsStore)).toHaveLength(200);
+    expect(get(conversationsStore)).toHaveLength(25);
     expect(get(conversationsStore.hasMore)).toBe(true);
-    expect(server.pageRequests[0].limit).toBe(200);
+    expect(server.pageRequests[0].limit).toBe(25);
     expect(server.pageRequests[0].cursor).toBeUndefined();
 
     const arrived = await conversationsStore.loadMoreConversations();
 
     expect(arrived).toBe(true);
-    // The cursor is the lowest id of the page already held — row 200 in `id DESC`, which is
-    // thread 2 — and it is exclusive, so thread 1 is what comes back.
-    expect(server.pageRequests[1].cursor).toBe(2);
+    /**
+     * The cursor is the server's own, passed back untouched: the last row of the page already
+     * held, as a `{ time, id }` pair. Thread 2 is that row — the fixture's recency ascends
+     * with the id, so a page of 25 out of 26 holds threads 26 down to 2 — and both halves are
+     * exclusive, so thread 1 is what comes back.
+     */
+    expect(server.pageRequests[1].cursor).toEqual({
+      time: server.conversations[1].updated_at,
+      id: 2
+    });
     const rows = get(conversationsStore);
-    expect(rows).toHaveLength(201);
+    expect(rows).toHaveLength(26);
     expect(rows[rows.length - 1].id).toBe(1);
     expect(get(conversationsStore.hasMore)).toBe(false);
+  });
+
+  /**
+   * MICA-211, as the case the page size used to be pinned for.
+   *
+   * Thread 1 is the oldest row and the most recently messaged — somebody texts it daily — and
+   * it belongs at the top of the inbox. With the server paging by `id DESC` it was on the last
+   * page, so a page smaller than the whole list simply lost it; here it is first, on a page of
+   * a screenful, and the 25 quieter newer threads behind it are the ones that wait.
+   */
+  it('puts an old thread with a new message on the first page', async () => {
+    server.conversations = overOnePage(26).map((c) =>
+      c.id === 1 ? { ...c, updated_at: new Date(Date.UTC(2026, 5, 1)).toISOString() } : c
+    );
+
+    await conversationsStore.loadConversations();
+
+    const rows = get(conversationsStore);
+    expect(rows).toHaveLength(25);
+    expect(rows[0].id).toBe(1);
+    expect(rows.map((r) => r.id)).not.toContain(2);
   });
 
   it('reports no more pages when the first one comes back short', async () => {
@@ -384,19 +437,25 @@ describe('conversation paging', () => {
   });
 
   /**
-   * The cost of inferring the cursor from a bare array rather than being handed one: a list
-   * that divides exactly by the page size looks like it has another page, and only the empty
-   * reply settles it. It must settle it, rather than offering the button forever.
+   * What being *told* the end of the list buys, and the reason the reply stopped being a bare
+   * array (MICA-211).
+   *
+   * A list that divides exactly by the page size used to look like it had another page — the
+   * cursor was inferred from a full page, and only an empty reply settled it. That was one
+   * wasted request and a "load older" button that appeared and then vanished. It cost nothing
+   * while the page was 200 and nobody reached it; at a screenful every player with exactly 25,
+   * 50 or 75 threads would have paid it. Now the server answers `nextCursor: null` on the same
+   * page, so there is no second request and no button.
    */
-  it('self-corrects when the list divides exactly by the page size', async () => {
-    server.conversations = overOnePage(200);
+  it('reports the end of the list when it divides exactly by the page size', async () => {
+    server.conversations = overOnePage(25);
 
     await conversationsStore.loadConversations();
-    expect(get(conversationsStore.hasMore)).toBe(true);
 
-    expect(await conversationsStore.loadMoreConversations()).toBe(false);
+    expect(get(conversationsStore)).toHaveLength(25);
     expect(get(conversationsStore.hasMore)).toBe(false);
-    expect(get(conversationsStore)).toHaveLength(200);
+    expect(await conversationsStore.loadMoreConversations()).toBe(false);
+    expect(server.pageRequests).toHaveLength(1);
   });
 });
 

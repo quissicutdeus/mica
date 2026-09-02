@@ -34,13 +34,39 @@ const threadRef = {
 export const conversationsContract = defineContract({
   id: 'conversations',
   actions: {
-    /** The caller's threads, keyset-paged like every other paged read. */
+    /**
+     * The caller's threads, keyset-paged — but on **last-message recency**, not on `id DESC`
+     * like every other paged read here (MICA-211).
+     *
+     * That is why the cursor is a pair rather than a bare row id. The inbox is ordered by when
+     * a thread was last written in, and an old thread somebody texts daily has a low id and a
+     * recent last message, so an id cannot name a position in that order. `time` is the last
+     * message's timestamp (the thread's own `updated_at` for one nobody has written in yet)
+     * and `id` is the tiebreak between two threads that share a second. Both halves are
+     * required: a cursor missing either is not a position.
+     *
+     * The reply is `{ rows, nextCursor }` — the shape the generic paged read answers, and the
+     * shape `messages:get` moved to in MICA-212 — with `null` meaning the oldest thread is in
+     * this page. Not a bare array with the cursor inferred from the last row, as this action
+     * used to be: a compound cursor is not derivable from a row the client holds, and the
+     * inference also cost one empty request whenever the list divided exactly by the page size,
+     * which stopped being free when the page came down to a screenful.
+     */
     get: {
       input: s.object({
-        cursor: s.positiveInt().nullable().optional(),
+        cursor: s
+          .object({
+            time: s.string({ min: 1, max: 32 }),
+            id: s.positiveInt()
+          })
+          .nullable()
+          .optional(),
         limit: s.positiveInt().optional()
       }),
-      output: responseType<Conversation[]>()
+      output: responseType<{
+        rows: Conversation[];
+        nextCursor: { time: string; id: number } | null;
+      }>()
     },
 
     create: {

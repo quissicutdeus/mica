@@ -5,6 +5,7 @@
 import { SchemaRepository } from '../lib/defineService';
 import { Conversation, Participant } from '@gphone/shared/types';
 import { Database } from '../lib/Database';
+import { toSqlDateTime, type RecencyCursor } from '../lib/payload';
 
 /**
  * Bespoke queries for conversations. The schema and both allowlists come from the
@@ -184,13 +185,37 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
   }
 
   /**
-   * A page of the caller's own threads, newest id first.
+   * A page of the caller's own threads, **most recently messaged first**.
    *
    * **Bounded, where it never used to be.** There was no `LIMIT` at all, and every row
    * carried two correlated subqueries — so the cost of opening Messages grew with the number
-   * of threads a player had ever been in, forever. Keyset on `c.id DESC` rather than an
-   * offset, matching every other paged read in this repo: a conversation created while
-   * somebody is paging shifts an offset and would make them see a row twice or not at all.
+   * of threads a player had ever been in, forever. Keyset rather than an offset, matching
+   * every other paged read in this repo: a conversation created while somebody is paging
+   * shifts an offset and would make them see a row twice or not at all.
+   *
+   * **The keyset is compound, and that is MICA-211.** It used to be `c.id DESC`, which is a
+   * different order from the one the inbox is displayed in — an old thread somebody texts
+   * daily has a low id and a recent last message, so a page walked by id left it for a later
+   * page while quieter, newer threads came first. That was survivable only because the page
+   * was pinned at 200, above any real list, which is exactly the bound this removes. The sort
+   * key is `COALESCE(m.created_at, c.updated_at)` — the last message's time, falling back to
+   * the row's own for a thread nobody has written in yet, which is the same expression
+   * `web/src/services/conversations.ts` derives `lastMessageAt` from, so the server's paging
+   * order and the client's display order are the same order rather than two that agree by
+   * luck. `c.id DESC` is the tiebreak: two threads can share a timestamp to the second, and
+   * without it the boundary between one page and the next is not a position.
+   *
+   * **What it costs.** Ordering by an expression over a joined row cannot ride an index, so
+   * this filesorts — over the caller's *own* threads, because the `me` join has already
+   * narrowed the set to their membership before the sort. That is bounded by how many threads
+   * one player is in, not by the table, which is why this stays preferable to denormalising a
+   * `last_message_at` column onto the conversations table: that column would need maintaining
+   * on every send and a backfill on every existing install, to buy an index on a set that is
+   * already small.
+   *
+   * **One row more than the page is asked for and dropped**, the way `ServiceEndpoint` does
+   * it, so `nextCursor` is exact rather than a `COUNT` or an inference the client makes from a
+   * short page.
    *
    * **`participant_count` is gone from the SQL and is not lost.** It was the second
    * correlated subquery, counting exactly the rows `findParticipantsForConversations` now
@@ -202,14 +227,26 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
    */
   async findForCitizen(
     citizenid: string,
-    page: { limit: number; cursor: number | null } = { limit: 200, cursor: null }
-  ): Promise<Conversation[]> {
+    page: { limit: number; cursor: RecencyCursor | null }
+  ): Promise<{ rows: Conversation[]; nextCursor: RecencyCursor | null }> {
     const params: unknown[] = [citizenid];
 
-    // `c.id < ?`, not `<=`: the cursor is the last row the caller already holds.
-    const cursorClause = page.cursor === null ? '' : 'AND c.`id` < ?';
-    if (page.cursor !== null) params.push(page.cursor);
-    params.push(page.limit);
+    /**
+     * Written once and used three times — the projection, the cursor predicate and the sort —
+     * because the three disagreeing is the whole failure mode: a page boundary tested against
+     * one expression and drawn by another skips rows silently.
+     */
+    const sortKey = 'COALESCE(m.`created_at`, c.`updated_at`)';
+
+    /**
+     * Strictly past the last row the caller already holds, in the compound order: an earlier
+     * timestamp, or the same timestamp and a lower id. `<`, never `<=`, on both halves.
+     */
+    const cursorClause =
+      page.cursor === null ? '' : `AND (${sortKey} < ? OR (${sortKey} = ? AND c.\`id\` < ?))`;
+    if (page.cursor !== null) params.push(page.cursor.time, page.cursor.time, page.cursor.id);
+    // One more than the page, so "is there another" is answered by the read rather than guessed.
+    params.push(page.limit + 1);
 
     // Joined rather than EXISTS-filtered so the caller's own participant row
     // (`me`) is in scope — `me.last_read` is what makes unread_count computable.
@@ -236,13 +273,16 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
             )
             WHERE c.status = 'active'
             ${cursorClause}
-            ORDER BY c.id DESC
+            ORDER BY ${sortKey} DESC, c.\`id\` DESC
             LIMIT ?
         `;
     const results = await Database.query<any[]>(query, params);
 
+    const hasMore = results.length > page.limit;
+    const kept = hasMore ? results.slice(0, page.limit) : results;
+
     // Map flat results to Conversation objects with nested last_message
-    return results.map((row) => ({
+    const rows = kept.map((row) => ({
       ...row,
       last_message: row.last_message_text
         ? {
@@ -252,6 +292,21 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
           }
         : undefined
     }));
+
+    /**
+     * The last kept row's own position, which is where the next page starts.
+     *
+     * A timestamp this cannot read ends the list rather than emitting a cursor the predicate
+     * above would not match — see `toSqlDateTime`. `null` is also what a page shorter than the
+     * limit answers, so the client is told the end rather than inferring it from a short page
+     * and paying an empty request to find out.
+     */
+    const last = kept[kept.length - 1];
+    const lastTime = last ? toSqlDateTime(last.last_message_time ?? last.updated_at) : null;
+    const nextCursor =
+      hasMore && last && lastTime !== null ? { time: lastTime, id: Number(last.id) } : null;
+
+    return { rows, nextCursor };
   }
 
   /**

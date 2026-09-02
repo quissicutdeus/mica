@@ -35,9 +35,20 @@ export interface PagedStore<T> extends Readable<T[]> {
   remove(id: number): void;
 }
 
+/**
+ * Where the next page starts, as the server said it.
+ *
+ * Opaque here on purpose. Almost every paged read in the phone walks `id DESC` and a bare row
+ * id is the whole cursor, but the inbox does not: it is ordered by last-message recency, so its
+ * cursor is a `{ time, id }` pair (MICA-211). This store never reads inside a cursor — it
+ * takes what came back and sends it on the next request — so widening the type is the whole
+ * change, and a service that needs a third shape needs nothing here at all.
+ */
+export type PageCursor = number | string | Record<string, unknown>;
+
 interface PagedReply<T> {
   rows: T[];
-  nextCursor: number | null;
+  nextCursor: PageCursor | null;
 }
 
 /**
@@ -79,7 +90,7 @@ export function createPagedStore<T extends { id: number }>(
   const loaded = writable(false);
   const hasMore = writable(false);
 
-  let cursor: number | null = null;
+  let cursor: PageCursor | null = null;
   let filter: Record<string, unknown> = {};
   /** Guards against a scroll handler firing twice before the first reply lands. */
   let inFlight = false;
@@ -102,7 +113,7 @@ export function createPagedStore<T extends { id: number }>(
    * masked into a fake empty page — `load`/`loadMore` decide what a failure should do to
    * the window they're already holding, which "return an empty page" cannot express.
    */
-  const fetchPage = async (from: number | null): Promise<PagedReply<T>> => {
+  const fetchPage = async (from: PageCursor | null): Promise<PagedReply<T>> => {
     const payload = { ...filter, cursor: from ?? undefined, limit: options.pageSize };
     const reply =
       typeof action === 'function'
@@ -167,8 +178,9 @@ export function createPagedStore<T extends { id: number }>(
         cursor = page.nextCursor;
         hasMore.set(page.nextCursor !== null);
         if (page.rows.length === 0) return false;
-        // Appended, because the cursor walks backwards through `id DESC` — older rows belong
-        // at the tail.
+        // Appended, because the cursor walks backwards through whatever order the server sorts
+        // by — `id DESC` for most lists, last-message recency for the inbox — so a later page
+        // is always older than what is already held and belongs at the tail.
         rows.update((current) => [...current, ...page.rows]);
         return true;
       } catch (e) {

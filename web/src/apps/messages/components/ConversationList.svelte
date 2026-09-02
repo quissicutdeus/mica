@@ -145,19 +145,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <!--
     Older threads, a server page at a time.
 
-    **This is not the inbox's scroll affordance and must not become one.** A page is 200
-    threads — `CONVERSATION_PAGE_SIZE` in `services/conversations.ts`, matched to the
-    server's own `paging.pageSize` — so `hasMore` is false for very nearly every player and
-    this control never renders for them. It exists for the one past that line, whose
-    remaining threads were previously unreachable: the server truncated the reply at 200 and
-    nothing said so.
+    A page is a screenful — 25, `CONVERSATION_PAGE_SIZE` in `services/conversations.ts`,
+    matched to the server's own `paging.pageSize` — so this is an ordinary control that an
+    ordinary player with more than a screen of threads will see and use (MICA-211).
 
-    The page size is what keeps it rare, and lowering it to make paging feel livelier would
-    be a bug rather than a polish. `findForCitizen` walks the keyset on `c.id DESC` while
-    this list is ordered by recency of the last message, and those are different orders — an
-    old thread someone still texts daily has a low id and a recent `lastMessageAt`, so any
-    page smaller than the whole list would drop it out of the top of the inbox until enough
-    pages had loaded to reach it. The store's own note carries the full reasoning.
+    It used to be the opposite: the page was 200, above any real list, and this button
+    existed only for the player past that line whose remaining threads were otherwise
+    unreachable. The page had to be that large because `findForCitizen` walked the keyset on
+    `c.id DESC` while this list is ordered by recency of the last message, and those are
+    different orders — an old thread someone still texts daily has a low id and a recent
+    `lastMessageAt`, so a smaller page dropped it out of the top of the inbox until enough
+    pages had loaded to reach it. The server pages on that recency now, so the first page is
+    the newest threads and a later page is always older. The store's own note has the rest.
 
     Outside the block above rather than a fourth arm of it, because a filtered view can show
     nothing and still have pages behind it: the archive tab and the search box both narrow

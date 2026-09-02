@@ -1449,7 +1449,48 @@ const mockRegistry: Record<string, MockHandler> = {
   },
 
   // Messages
-  'conversations:get': () => mockConversations,
+  /**
+   * One page of the inbox, the way the server answers it (MICA-211): keyset on
+   * `(last-message time, id)` descending — not on `id DESC` — the cursor that same pair and
+   * exclusive, `limit` clamped to the service's declared page (25 by default, 200 at most),
+   * and `{ rows, nextCursor }` back with `null` once the oldest thread is in the page.
+   *
+   * The sort key is the last message's `created_at` falling back to the thread's `updated_at`,
+   * which is the expression the server's SQL uses and the one `lastMessageAt` is built from. A
+   * mock that paged by id instead would agree with the server on this fixture by accident —
+   * the fixture's ids happen to descend with recency — and disagree with it on any inbox where
+   * an old thread is still active, which is the entire case this ticket is about.
+   */
+  'conversations:get': ({
+    cursor,
+    limit
+  }: {
+    cursor?: { time: string; id: number } | null;
+    limit?: number;
+  } = {}) => {
+    const pageSize = Math.min(typeof limit === 'number' && limit > 0 ? limit : 25, 200);
+    const keyOf = (c: Conversation) => String(c.last_message?.created_at ?? c.updated_at ?? '');
+
+    const ordered = [...mockConversations].sort((a, b) => {
+      const byTime = keyOf(b).localeCompare(keyOf(a));
+      return byTime !== 0 ? byTime : b.id - a.id;
+    });
+
+    const after = cursor
+      ? ordered.filter((c) => {
+          const key = keyOf(c);
+          return key < cursor.time || (key === cursor.time && c.id < cursor.id);
+        })
+      : ordered;
+
+    const hasMore = after.length > pageSize;
+    const rows = after.slice(0, pageSize);
+    const last = rows[rows.length - 1];
+    return {
+      rows,
+      nextCursor: hasMore && last ? { time: keyOf(last), id: last.id } : null
+    };
+  },
   /**
    * One page of a thread, the way `messages:get` answers it (MICA-212): keyset on
    * `id DESC`, the cursor a bare row id and exclusive, `limit` clamped to the service's

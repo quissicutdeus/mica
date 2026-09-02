@@ -9,7 +9,7 @@ import { Conversation, Participant } from '@gphone/shared/types';
 import { AuditLogger } from '../lib/AuditLogger';
 import { resolveByPhone, resolveMany } from '../lib/PlayerDirectory';
 import { CITIZENID_MAX_LENGTH } from '@gphone/shared/framework';
-import { conversationIdFrom, pageBounds } from '../lib/payload';
+import { conversationIdFrom, pageBounds, recencyCursor } from '../lib/payload';
 import { conversationsContract } from '@gphone/shared/contracts/conversations';
 
 /**
@@ -127,12 +127,20 @@ export const conversations = defineService<Conversation, typeof conversationsCon
    * day a player used it. The generic `get` is disabled below, so nothing but the custom
    * handler ever consults this.
    *
-   * The default page is deliberately far above any real list rather than a screenful: the
-   * client has no "load more" for conversations yet, so a small page would be the silent
-   * truncation §2.9 warns about, where this is a bound nobody reaches. The cursor is
-   * accepted today so that adding one is a `web/` change alone.
+   * **A screenful, since MICA-211.** It used to be 200 — far above any real list — because
+   * `findForCitizen` walked the keyset on `c.id DESC` while the inbox is ordered by recency of
+   * the last message, and those are different orders: an old thread somebody texts daily has a
+   * low id and a recent last message, so any page smaller than the whole list dropped it out
+   * of the top of the inbox until enough pages had loaded to reach it. Pinning the page above
+   * the list hid that rather than fixing it. The keyset is compound now — last-message time,
+   * then id — so the first page really is the newest threads and a small one is honest.
+   *
+   * The cap stays at 200 rather than following the default down. The two numbers answer
+   * different questions: the default is what a client that asks for nothing should get, and
+   * the cap is the most anything may ask for. Clamping a larger request down to a screenful
+   * would refuse a legitimate one, where the cap only refuses asking for the whole history.
    */
-  paging: { pageSize: 200, maxPageSize: 200 },
+  paging: { pageSize: 25, maxPageSize: 200 },
   indexes: [
     { name: 'citizenid_status_updated', columns: ['citizenid', 'status', 'updated_at'] },
     { name: 'updated_at', columns: ['updated_at'] },
@@ -248,14 +256,21 @@ if (!CONVERSATION_PAGING) {
  *
  * `participant_count` used to be a correlated subquery on every returned row, counting
  * exactly the rows the membership query now returns. It is derived rather than asked for.
+ *
+ * **The reply is `{ rows, nextCursor }`, not a bare array** (MICA-211, following `messages:get`
+ * in MICA-212). The cursor is compound — last-message time, then id — so the client cannot
+ * derive it from a row the way it derived a bare id, and it should not have to: the server knows
+ * whether it truncated, and saying so costs nothing where inferring it from a short page costs an
+ * empty request every time the list divides exactly by the page size. That was free while the
+ * page was 200 and nobody reached it; at a screenful it is a request per player per session.
  */
 app.registerEvent('get', async (source, cbId, data, citizenid) => {
-  const page = pageBounds(data, CONVERSATION_PAGING);
+  const page = pageBounds(data, CONVERSATION_PAGING, recencyCursor);
 
   // Named `list`, not `conversations`: the module-level export of that name is the
   // app handle, and shadowing it here would be a trap for the next reader.
-  const list = await conversationRepo.findForCitizen(citizenid, page);
-  if (list.length === 0) return list;
+  const { rows: list, nextCursor } = await conversationRepo.findForCitizen(citizenid, page);
+  if (list.length === 0) return { rows: list, nextCursor };
 
   const rows = await conversationRepo.findParticipantsForConversations(list.map((c) => c.id));
 
@@ -303,7 +318,7 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
     });
   }
 
-  return list;
+  return { rows: list, nextCursor };
 });
 
 /**

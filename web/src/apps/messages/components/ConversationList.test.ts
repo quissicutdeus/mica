@@ -25,10 +25,12 @@ registerMessages('messages', { en, de });
 /**
  * The "load older conversations" control, which nothing else can reach (MICA-204).
  *
- * `hasMore` is true only past a 200-thread server page, and the browser mock answers with a
- * handful of fixtures, so the Playwright spec renders the inbox with the control absent
- * every time — a green e2e run is not evidence this works. That is precisely the shape of
- * bug AGENTS.md §8 warns about, so the control is pinned here instead.
+ * `hasMore` is true past one server page — 25 threads since MICA-211, where it used to be
+ * 200 — and the browser mock still holds only 21 fixtures, so the Playwright spec renders the
+ * inbox with the control absent every time and a green e2e run is not evidence this works.
+ * That is precisely the shape of bug AGENTS.md §8 warns about, so the control is pinned here
+ * instead. The threshold moving down does not change that: the fixture would have to grow
+ * past a page for e2e to reach it.
  */
 const conversation = (id: number): UIConversation => ({
   id,

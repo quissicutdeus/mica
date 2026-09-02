@@ -25,10 +25,12 @@ export const messagesContract = defineContract({
      * `limit` is clamped to the service's `paging` rather than refused. The reply is
      * `{ rows, nextCursor }` — the shape the generic paged read answers — with the rows in
      * reading order (oldest first within the page) and `nextCursor: null` meaning the
-     * oldest message in the thread is in this page. Not a bare array with the cursor
-     * inferred from the last row, as `conversations:get` still is: a thread's cursor
-     * engages on every long thread rather than past a bound nobody reaches, so the one
-     * empty round trip inference costs would be paid every time a thread divides by fifty.
+     * oldest message in the thread is in this page. Not a bare array with the cursor inferred
+     * from the last row, which is what this action and `conversations:get` both used to be:
+     * a thread's cursor engages on every long thread rather than past a bound nobody reaches,
+     * so the one empty round trip inference costs would be paid every time a thread divides by
+     * fifty. `conversations:get` answers the same shape since MICA-211, where the cursor is
+     * a `(time, id)` pair the client could not have derived from a row at all.
      */
     get: {
       input: s.object({

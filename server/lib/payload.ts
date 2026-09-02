@@ -98,16 +98,22 @@ export function flagUnlessFalse(raw: unknown): boolean {
  * service's custom actions.
  *
  * An over-large `limit` is clamped rather than refused (§10): the request is legitimate, only the
- * number is not. The cursor is a bare row id and never a column — the sort order comes from the
- * query, so a payload offering one is ignored rather than honored.
+ * number is not. The cursor is never a column — the sort order comes from the query, so a payload
+ * offering one is ignored rather than honored. It defaults to a bare row id, which is what every
+ * `id DESC` list pages by; `parseCursor` is how a list ordered by something else says so, and the
+ * inbox passes `recencyCursor` because it sorts by last-message time (MICA-211). Widening the
+ * parser rather than teaching this function a second cursor shape keeps the clamp, the default and
+ * the null handling in one place for both.
  *
  * `ServiceEndpoint` keeps its own private pair on the generic path deliberately, because its cursor
  * error names the service it was asked of; the numbers still come from one declaration either way.
  */
-export function pageBounds(
+export function pageBounds<C = number>(
   data: unknown,
-  paging: { pageSize: number; maxPageSize: number }
-): { limit: number; cursor: number | null } {
+  paging: { pageSize: number; maxPageSize: number },
+  parseCursor: (raw: unknown) => C = ((raw: unknown) =>
+    requirePositiveInt(raw, 'cursor')) as unknown as (raw: unknown) => C
+): { limit: number; cursor: C | null } {
   const body = fields(data);
   const rawLimit = body.limit;
   return {
@@ -115,9 +121,59 @@ export function pageBounds(
       typeof rawLimit === 'number' && Number.isInteger(rawLimit) && rawLimit > 0
         ? Math.min(rawLimit, paging.maxPageSize)
         : paging.pageSize,
-    cursor:
-      body.cursor === undefined || body.cursor === null
-        ? null
-        : requirePositiveInt(body.cursor, 'cursor')
+    cursor: body.cursor === undefined || body.cursor === null ? null : parseCursor(body.cursor)
   };
+}
+
+/**
+ * A keyset cursor over a list ordered by *time first, id second*.
+ *
+ * The inbox is the one paged read whose order is not `id DESC` (MICA-211): threads sort by
+ * recency of their last message, and an old thread somebody still texts daily has a low id and
+ * a recent timestamp. A bare row id cannot name a position in that order at all, and the id
+ * alone is not enough even alongside the time — two threads can share a timestamp to the
+ * second, so the id is the tiebreak that makes the position total and the page boundary exact
+ * rather than approximately right.
+ *
+ * `time` is a MySQL datetime string rather than a number because that is what the column
+ * holds, so a bound parameter compares against it with no conversion on either side. It is
+ * validated here rather than merely typed: a cursor is client-supplied like every other field
+ * (§2.9). It is bound and never interpolated, so this is about refusing nonsense early rather
+ * than about SQL safety — and about a bound, never authorization, which the query's own
+ * citizenid join supplies.
+ */
+export type RecencyCursor = { time: string; id: number };
+
+/** `YYYY-MM-DD HH:MM:SS`, the shape a `timestamp` column round-trips as. `T` accepted too. */
+const SQL_DATETIME = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/;
+
+/**
+ * Whatever the driver handed back for a timestamp, as the string a cursor can carry.
+ *
+ * oxmysql answers a `timestamp` as a string on some builds and as a `Date` on others, and a
+ * cursor has to be one thing on the wire. Anything this cannot read answers `null`, which the
+ * caller turns into "no further page": a list that stops one page early is visible and
+ * reportable, where a malformed cursor echoed back is a boundary that never advances and a
+ * "load more" that returns the same page forever.
+ */
+export function toSqlDateTime(raw: unknown): string | null {
+  if (raw instanceof Date) {
+    return Number.isNaN(raw.getTime()) ? null : raw.toISOString().slice(0, 19).replace('T', ' ');
+  }
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim().slice(0, 19);
+  return SQL_DATETIME.test(trimmed) ? trimmed.replace('T', ' ') : null;
+}
+
+/** A `RecencyCursor` out of a payload, or a refusal. Both halves are required. */
+export function recencyCursor(raw: unknown): RecencyCursor {
+  const body = fields(raw);
+  const time = toSqlDateTime(body.time);
+  if (time === null) {
+    throw new PlayerFacingError('A valid cursor is required.', {
+      key: 'server.payload.required',
+      params: { what: 'cursor' }
+    });
+  }
+  return { time, id: requirePositiveInt(body.id, 'cursor') };
 }
