@@ -5,7 +5,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { useAppLevels, useSound, Screen, BackspaceIcon, type AppProps } from '@gphone/sdk';
+  import {
+    useAppLevels,
+    useSound,
+    useLocale,
+    registerMessages,
+    Screen,
+    BackspaceIcon,
+    type AppProps
+  } from '@gphone/sdk';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
+
+  // MICA-215: the app owns its catalog, so a server running in German gets the keypad's
+  // spoken names too and not just the title.
+  registerMessages('calculator', { en, de });
+  const { t } = useLocale();
 
   let { onback }: AppProps = $props();
 
@@ -17,7 +32,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   // digit until there is nothing left to delete, and only then leaves.
   const app = useAppLevels({
     appId: 'calculator',
-    title: 'Calculator',
+    title: () => $t('calculator.title'),
     onback: () => onback(),
     levels: [{ open: () => display !== '0', close: () => handleBackspace() }]
   });
@@ -210,17 +225,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     '='
   ] as const;
 
-  const KEY_LABELS: Record<string, string> = {
-    C: 'Clear',
-    '±': 'Plus minus',
-    '%': 'Percent',
-    '÷': 'Divide',
-    '×': 'Multiply',
-    '-': 'Minus',
-    '+': 'Plus',
-    '⌫': 'Backspace',
-    '=': 'Equals'
-  };
+  const KEY_LABELS: Record<string, string> = $derived({
+    C: $t('calculator.keyClear'),
+    '±': $t('calculator.keyPlusMinus'),
+    '%': $t('calculator.keyPercent'),
+    '÷': $t('calculator.keyDivide'),
+    '×': $t('calculator.keyMultiply'),
+    '-': $t('calculator.keyMinus'),
+    '+': $t('calculator.keyPlus'),
+    '⌫': $t('calculator.keyBackspace'),
+    '=': $t('calculator.keyEquals')
+  });
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
