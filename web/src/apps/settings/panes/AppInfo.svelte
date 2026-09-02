@@ -95,12 +95,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const uninstall = async (): Promise<void> => {
     confirming = null;
+    // Read once, before anything is awaited. `app` is a prop the parent derives from the
+    // registry, and `unregisterApp` is what drops the app from the registry — so by the time
+    // it resolves the parent has already derived `null`, unmounted this pane, and the prop
+    // answers `null`. Reading `app.id` after the await threw on every uninstall (MICA-207).
+    const { id, name } = app;
     // `run` reports the failure for us — `unregisterApp` throws for a core app, and this button
     // is not rendered for one, so a throw here means something the player should be told about.
-    if (await run(() => unregisterApp(app.id), { title: app.name, success: 'Uninstalled' })) {
+    if (await run(() => unregisterApp(id), { title: name, success: 'Uninstalled' })) {
       // Forget the mutes along with the app, so a reinstall starts allowed rather than
       // inheriting a silence the player set months ago and has no reason to remember.
-      clearAppNotificationPolicy(app.id);
+      clearAppNotificationPolicy(id);
       onremoved();
     }
   };
