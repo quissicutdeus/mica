@@ -12,6 +12,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import type { ReportCategory } from '@gphone/shared/types';
   import { messageOf } from '../lib/errors';
   import { focusTrap } from '../lib/focusTrap';
+  import { t } from '../i18n';
+  import './messages';
 
   interface Props {
     /** The gPhone table the content lives in. Validated again server-side. */
@@ -40,13 +42,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { submit: submitReport } = useReport();
   const { toast } = usePhoneNotification();
 
-  const CATEGORIES: { id: ReportCategory; label: string }[] = [
-    { id: 'harassment', label: 'Harassment' },
-    { id: 'threats', label: 'Threats or violence' },
-    { id: 'sexual', label: 'Sexual content' },
-    { id: 'spam', label: 'Spam' },
-    { id: 'impersonation', label: 'Impersonation' },
-    { id: 'other', label: 'Something else' }
+  // The key, not the word: this list is module-level and would otherwise freeze whichever
+  // locale happened to be active when the component first ran.
+  const CATEGORIES: { id: ReportCategory; key: string }[] = [
+    { id: 'harassment', key: 'ui.reportHarassment' },
+    { id: 'threats', key: 'ui.reportThreats' },
+    { id: 'sexual', key: 'ui.reportSexual' },
+    { id: 'spam', key: 'ui.reportSpam' },
+    { id: 'impersonation', key: 'ui.reportImpersonation' },
+    { id: 'other', key: 'ui.reportOther' }
   ];
 
   let category = $state<ReportCategory>('harassment');
@@ -67,10 +71,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     sending = true;
     try {
       await submitReport({ targetTable, targetId, category, note: note.trim() || undefined });
-      toast.show({ type: 'success', app: appId, message: 'Report sent for review' });
+      toast.show({ type: 'success', app: appId, message: $t('ui.reportSent') });
       onclose();
     } catch (e) {
-      toast.show({ type: 'error', app: appId, message: messageOf(e, 'Could not send the report') });
+      toast.show({ type: 'error', app: appId, message: messageOf(e, $t('ui.reportFailed')) });
     } finally {
       sending = false;
     }
@@ -88,13 +92,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     use:focusTrap
     role="dialog"
     aria-modal="true"
-    aria-label="Report content"
+    aria-label={$t('ui.reportContent')}
     tabindex="-1"
     class="bg-surface max-h-full w-full overflow-y-auto rounded-t-xl p-5 outline-none"
   >
-    <h3 class="text-on-surface mb-1 text-lg font-bold">Report content</h3>
+    <h3 class="text-on-surface mb-1 text-lg font-bold">{$t('ui.reportContent')}</h3>
     <p class="text-on-surface-variant text-body-medium mb-4">
-      A moderator reviews this. The author is not told.
+      {$t('ui.reportContentNote')}
     </p>
 
     <div class="mb-4 space-y-1.5">
@@ -108,7 +112,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             ? 'border-error bg-error-container text-on-error-container'
             : 'border-outline-variant bg-surface-container text-on-surface hover:bg-surface-container-high'} duration-short ease-standard"
         >
-          {option.label}
+          {$t(option.key)}
           {#if category === option.id}
             <span class="text-error">●</span>
           {/if}
@@ -120,15 +124,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       bind:value={note}
       maxlength={MAX_NOTE}
       rows="3"
-      placeholder="Anything else the moderator should know (optional)"
+      placeholder={$t('ui.reportNotePlaceholder')}
       class="border-outline-variant bg-surface-container text-on-surface placeholder-on-surface-variant focus:border-error text-body-medium mb-4 w-full resize-none rounded-box border p-3 focus:outline-none"
     ></textarea>
 
     <div class="flex gap-3">
-      <Button class="flex-1" variant="secondary" onclick={onclose} disabled={sending}>Cancel</Button
+      <Button class="flex-1" variant="secondary" onclick={onclose} disabled={sending}
+        >{$t('ui.cancel')}</Button
       >
       <Button class="flex-1" variant="danger" onclick={submit} disabled={sending}>
-        {sending ? 'Sending…' : 'Report'}
+        {sending ? $t('ui.reportSending') : $t('ui.report')}
       </Button>
     </div>
   </div>

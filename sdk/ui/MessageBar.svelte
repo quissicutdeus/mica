@@ -7,6 +7,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import SendIcon from './icons/SendIcon.svelte';
+  import { t } from '../i18n';
+  import './messages';
 
   /**
    * The bottom-anchored input row every conversation surface ends in.
@@ -31,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    */
   let {
     value = $bindable(''),
-    placeholder = 'Message',
+    placeholder = undefined,
     maxlength,
     busy = false,
     canSend,
@@ -54,6 +56,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } = $props();
 
   const sendable = $derived(!busy && (canSend ?? value.trim().length > 0));
+
+  // A `$derived` fallback rather than a prop default: the default has to re-read when the
+  // locale changes, and a default is evaluated once.
+  const placeholderText = $derived(placeholder ?? $t('ui.messagePlaceholder'));
 </script>
 
 <!-- Two boxes so the inset is *clearance*, not a wider gap inside the row. The outer one
@@ -78,7 +84,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
              past the ceiling has to scroll and §5 forbids showing the bar for it. -->
         <textarea
           bind:value
-          {placeholder}
+          placeholder={placeholderText}
           {maxlength}
           rows="1"
           class="no-scrollbar text-on-surface placeholder-on-surface-variant text-body-medium h-[22px] max-h-32 min-h-[22px] w-full resize-none bg-transparent p-0 leading-normal focus:outline-none"
@@ -97,7 +103,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-elevation-2 duration-short ease-standard flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40"
         onclick={onsend}
         disabled={!sendable}
-        aria-label="Send"
+        aria-label={$t('ui.send')}
       >
         <SendIcon class="text-on-surface size-icon-sm" />
       </button>

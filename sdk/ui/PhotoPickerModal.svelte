@@ -14,9 +14,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import CheckCircleIcon from './icons/CheckCircleIcon.svelte';
   import Button from './Button.svelte';
   import { focusTrap } from '../lib/focusTrap';
+  import { t } from '../i18n';
+  import './messages';
 
   let {
-    title = 'Select Photo',
+    title = undefined,
     multiSelect = false,
     selectedIds = [],
     showRemove = false,
@@ -40,6 +42,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onmultichange?: (photoId: number, media: MediaPreview) => void;
     onclose: () => void;
   }>();
+
+  // A `$derived` fallback rather than a prop default, so the heading follows the locale.
+  const heading = $derived(title ?? $t('ui.selectPhoto'));
 
   const { media, fullMedia } = useMedia();
   const { toast } = usePhoneNotification();
@@ -79,7 +84,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       toast.show({
         type: 'error',
         app: 'media',
-        message: 'That photo could not be loaded. Try another.'
+        message: $t('ui.photoLoadFailed')
       });
     } finally {
       picking = null;
@@ -101,7 +106,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   use:focusTrap
   role="dialog"
   aria-modal="true"
-  aria-label={title}
+  aria-label={heading}
   tabindex="-1"
   class="animate-in fade-in bg-surface-container-high duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col outline-none backdrop-blur-md"
 >
@@ -109,12 +114,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <div class="border-outline-variant flex items-center justify-between border-b p-4">
     <h3 class="text-on-surface text-body-large flex items-center gap-2">
       <PhotoIcon class="text-primary size-icon-md" />
-      {title}
+      {heading}
     </h3>
     <button
       class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard rounded-full p-1 transition-colors"
       onclick={onclose}
-      aria-label="Close photo picker"
+      aria-label={$t('ui.closePhotoPicker')}
     >
       <CloseIcon class="size-icon-md" />
     </button>
@@ -161,7 +166,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class="text-on-surface-variant text-body-medium col-span-3 flex flex-col items-center py-12 text-center"
       >
         <PhotoIcon class="text-outline mb-2 h-10 w-10" />
-        No photos in gallery.
+        {$t('ui.noPhotos')}
       </div>
     {/if}
   </div>
@@ -181,20 +186,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }
           }}
         >
-          Clear Selection
+          {$t('ui.clearSelection')}
         </Button>
       {/if}
       <Button class="text-body-small flex-1 py-2" onclick={onclose}>
-        Done {selectedCount > 0 ? `(${selectedCount})` : ''}
+        {$t('ui.done')}
+        {selectedCount > 0 ? `(${selectedCount})` : ''}
       </Button>
     {:else}
       {#if showRemove}
         <Button variant="danger" class="text-body-small flex-1 py-2" onclick={() => onselect?.('')}>
-          Remove Photo
+          {$t('ui.removePhoto')}
         </Button>
       {/if}
       <Button variant="secondary" class="text-body-small flex-1 py-2" onclick={onclose}
-        >Cancel</Button
+        >{$t('ui.cancel')}</Button
       >
     {/if}
   </div>

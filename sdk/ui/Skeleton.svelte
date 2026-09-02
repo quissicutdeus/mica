@@ -5,6 +5,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from '../i18n';
+  import './messages';
+
   /**
    * A placeholder for content that has been asked for and has not arrived.
    *
@@ -39,7 +42,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </script>
 
 <div class="space-y-2" aria-busy="true" aria-live="polite">
-  <span class="sr-only">Loading</span>
+  <span class="sr-only">{$t('ui.loading')}</span>
   {#each { length: count } as _, i (i)}
     <div class="bg-surface-container animate-pulse {height} {rounded} {className}"></div>
   {/each}

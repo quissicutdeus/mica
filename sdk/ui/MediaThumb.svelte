@@ -11,6 +11,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import LocationIcon from './icons/LocationIcon.svelte';
   import MicrophoneIcon from './icons/MicrophoneIcon.svelte';
   import PlayIcon from './icons/PlayIcon.svelte';
+  import { t } from '../i18n';
+  import './messages';
 
   /**
    * One media row, drawn by its `kind`.
@@ -142,7 +144,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <span
       class="bg-media-overlay text-label-small pointer-events-none absolute top-1 left-1 rounded-chip px-1 text-white"
     >
-      GIF
+      {$t('ui.gif')}
     </span>
   {/if}
 

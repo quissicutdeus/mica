@@ -6,6 +6,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { useSound } from '../host/useSound';
+  import { t } from '../i18n';
+  import './messages';
 
   /**
    * An on/off switch, optionally as a full settings row.
@@ -93,7 +95,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     type="button"
     role="switch"
     aria-checked={checked}
-    aria-label="Toggle"
+    aria-label={$t('ui.toggle')}
     {disabled}
     onclick={toggle}
     class="disabled:text-disabled-content cursor-pointer focus:outline-none disabled:cursor-default"

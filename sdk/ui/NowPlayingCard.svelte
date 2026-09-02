@@ -71,6 +71,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } from '../vocabulary/music';
   import { thumbnailUrlFor } from '@gphone/shared/youtube';
   import { describeMusicError } from '../lib/musicErrors';
+  import { t } from '../i18n';
+  import './messages';
   import { formatDuration } from '../lib/formatters';
   import { buildSchemes, cssVarBlock } from '../lib/m3';
   import { dominantColorFrom } from '../lib/dominantColor';
@@ -169,14 +171,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    */
   const statusLabel = $derived(
     $musicStatus === 'error'
-      ? "Can't play"
+      ? $t('ui.musicCantPlay')
       : $musicStatus === 'loading'
-        ? 'Starting…'
+        ? $t('ui.musicStarting')
         : $musicStatus === 'playing'
-          ? 'Playing'
+          ? $t('ui.musicPlaying')
           : $musicStatus === 'paused'
-            ? 'Paused'
-            : 'Stopped'
+            ? $t('ui.musicPaused')
+            : $t('ui.musicStopped')
   );
 
   /**
@@ -194,7 +196,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     const source = $musicSource;
     if (!source) return '';
     if (source.videoId) return source.videoId;
-    return `Playlist ${source.playlistId ?? ''}`.trim();
+    return $t('ui.musicPlaylistNamed', { id: source.playlistId ?? '' }).trim();
   });
 
   /** A title is prose; an id is not, and reads back more easily in a monospace face. */
@@ -213,9 +215,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     if (!source?.playlistId) return null;
     const info = $musicNowPlaying;
     if (info && info.playlistIndex !== null && info.playlistCount !== null) {
-      return `Playlist · ${info.playlistIndex + 1} of ${info.playlistCount}`;
+      return $t('ui.musicPlaylistProgress', {
+        index: info.playlistIndex + 1,
+        count: info.playlistCount
+      });
     }
-    return `Playlist ${source.playlistId}`;
+    return $t('ui.musicPlaylistNamed', { id: source.playlistId });
   });
 
   /**
@@ -253,10 +258,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const repeatLabel = $derived(
     $musicRepeat === 'off'
-      ? 'Repeat off'
+      ? $t('ui.musicRepeatOff')
       : $musicRepeat === 'all'
-        ? 'Repeat queue'
-        : 'Repeat one track'
+        ? $t('ui.musicRepeatQueue')
+        : $t('ui.musicRepeatOne')
   );
 
   /**
@@ -349,7 +354,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                and is least likely to remember that a street can hear them. -->
           <span class="text-label-small text-on-surface-variant flex shrink-0 items-center gap-1">
             <UsersIcon class="size-icon-sm" />
-            Out loud
+            {$t('ui.musicOutLoud')}
           </span>
         {/if}
       </span>
@@ -358,7 +363,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
            a code and a title does not. Truncated either way — a YouTube title outruns this
            row far more often than it fits it. -->
       <span class="text-body-medium text-on-surface block truncate" class:font-mono={!labelIsTitle}
-        >{trackLabel || 'Nothing loaded'}</span
+        >{trackLabel || $t('ui.musicNothingLoaded')}</span
       >
 
       {#if $musicError}
@@ -370,7 +375,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
              nothing is happening, and half of it leaves somebody guessing. Truncated in
              the shade, where the row is one item in a list and the app is one tap away. -->
         <span class="text-label-small text-error block" class:truncate={compact}
-          >{describeMusicError($musicError.reason)}{compact ? '' : ' · skip or remove it'}</span
+          >{describeMusicError($musicError.reason)}{compact
+            ? ''
+            : ` · ${$t('ui.musicSkipOrRemove')}`}</span
         >
         {#if hiddenId}
           <span class="text-label-small text-on-surface-variant block truncate font-mono"
@@ -388,7 +395,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       type="button"
       class="hover:bg-surface-container duration-short ease-standard flex w-full min-w-0 items-center gap-3 rounded-box text-left transition-colors"
       onclick={onopen}
-      title="Open Music"
+      title={$t('ui.musicOpen')}
     >
       {@render identity()}
     </button>
@@ -413,7 +420,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         min="0"
         max={$musicPosition.duration}
         value={scrubAt}
-        aria-label="Seek"
+        aria-label={$t('ui.musicSeek')}
         aria-valuetext={formatDuration(scrubAt)}
         oninput={(e) => (scrub = Number(e.currentTarget.value))}
         onchange={(e) => {
@@ -444,7 +451,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         onclick={toggleShuffle}
         variant="icon"
         aria-pressed={$musicShuffle}
-        aria-label="Shuffle"
+        aria-label={$t('ui.musicShuffle')}
         class={$musicShuffle ? 'text-on-primary-container bg-primary-container' : ''}
       >
         <ShuffleIcon class="h-5 w-5" />
@@ -465,7 +472,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <div class="flex items-center gap-1">
       {#if $musicHasPrevious}
-        <Button onclick={previousTrack} variant="icon" aria-label="Previous track">
+        <Button onclick={previousTrack} variant="icon" aria-label={$t('ui.musicPrevious')}>
           <SkipPreviousIcon class="h-5 w-5" />
         </Button>
       {/if}
@@ -475,7 +482,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           onclick={() => (isPlaying ? pauseMusic() : resumeMusic())}
           variant="icon"
           class="bg-primary-container text-on-primary-container"
-          aria-label={isPlaying ? 'Pause' : 'Play'}
+          aria-label={isPlaying ? $t('ui.musicPause') : $t('ui.musicPlay')}
         >
           {#if isPlaying}
             <PauseIcon class="h-5 w-5" />
@@ -486,14 +493,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {/if}
 
       {#if $musicHasNext}
-        <Button onclick={nextTrack} variant="icon" aria-label="Next track">
+        <Button onclick={nextTrack} variant="icon" aria-label={$t('ui.musicNext')}>
           <SkipNextIcon class="h-5 w-5" />
         </Button>
       {/if}
 
       <!-- "Stop music", and it means exactly that: the audio stops and the queue is left
            alone. `clearQueue` is the Music app's own button, below the queue it empties. -->
-      <Button onclick={stopMusic} variant="icon" aria-label="Stop music">
+      <Button onclick={stopMusic} variant="icon" aria-label={$t('ui.musicStop')}>
         <StopIcon class="h-5 w-5" />
       </Button>
     </div>

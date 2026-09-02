@@ -7,6 +7,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import ChevronLeftIcon from './icons/ChevronLeftIcon.svelte';
+  import { t } from '../i18n';
+  import './messages';
 
   let {
     title,
@@ -26,7 +28,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <button
       class="bg-surface-container-high hover:bg-surface-container-high-hover active:bg-surface-container-high-pressed duration-short ease-standard -ml-2 rounded-full p-2 transition-colors"
       onclick={onback}
-      aria-label="Go back"
+      aria-label={$t('ui.goBack')}
     >
       <ChevronLeftIcon class="size-icon-lg" />
     </button>

@@ -8,6 +8,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { fade } from '../lib/motion';
   import Button from './Button.svelte';
   import { focusTrap } from '../lib/focusTrap';
+  import { t } from '../i18n';
+  import './messages';
 
   interface Props {
     title: string;
@@ -23,13 +25,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let {
     title,
     message,
-    confirmText = 'Confirm',
-    cancelText = 'Cancel',
+    // `= undefined` rather than the word: the real default is the `$derived` below, and
+    // the destructure still says what it said before — this prop may be omitted.
+    confirmText = undefined,
+    cancelText = undefined,
     confirmVariant = 'danger',
     isLoading = false,
     onconfirm,
     oncancel
   }: Props = $props();
+
+  // `$derived` fallbacks rather than prop defaults: a default is evaluated once, so it
+  // could not follow the locale, and keeping them props keeps the published surface the
+  // same for a caller that passes its own words.
+  const confirmLabel = $derived(confirmText ?? $t('ui.confirm'));
+  const cancelLabel = $derived(cancelText ?? $t('ui.cancel'));
 
   let dialogRef = $state<HTMLElement | null>(null);
 
@@ -66,10 +76,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <p class="text-on-surface-variant mb-6">{message}</p>
     <div class="flex gap-3">
       <Button class="flex-1" variant="secondary" onclick={oncancel} disabled={isLoading}>
-        {cancelText}
+        {cancelLabel}
       </Button>
       <Button class="flex-1" variant={confirmVariant} onclick={onconfirm} disabled={isLoading}>
-        {isLoading ? 'Processing...' : confirmText}
+        {isLoading ? $t('ui.processing') : confirmLabel}
       </Button>
     </div>
   </div>

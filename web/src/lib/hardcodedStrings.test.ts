@@ -92,21 +92,7 @@ const BASELINE: Record<string, number> = {
   'web/src/apps/settings/panes/Notifications.svelte': 18,
   'web/src/apps/settings/panes/Privacy.svelte': 1,
   'web/src/apps/settings/panes/Shortcuts.svelte': 4,
-  'web/src/apps/settings/panes/Sound.svelte': 16,
-
-  'sdk/ui/EmojiPicker.svelte': 4,
-  'sdk/ui/MediaThumb.svelte': 1,
-  'sdk/ui/MessageBar.svelte': 1,
-  'sdk/ui/NowPlayingCard.svelte': 7,
-  'sdk/ui/PhotoPickerModal.svelte': 7,
-  'sdk/ui/ReactionBar.svelte': 1,
-  'sdk/ui/RecentlyDeleted.svelte': 6,
-  'sdk/ui/ReportButton.svelte': 2,
-  'sdk/ui/ReportDialog.svelte': 12,
-  'sdk/ui/ScreenHeader.svelte': 1,
-  'sdk/ui/Skeleton.svelte': 1,
-  'sdk/ui/ToggleSwitch.svelte': 1,
-  'sdk/ui/icons/MessageStatusIcon.svelte': 2
+  'web/src/apps/settings/panes/Sound.svelte': 16
 };
 
 describe('hardcoded user-facing strings (MICA-61)', () => {

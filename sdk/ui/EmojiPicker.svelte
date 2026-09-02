@@ -8,6 +8,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { fly } from '../lib/motion';
   import CloseIcon from './icons/CloseIcon.svelte';
   import { EMOJI_PALETTE, EMOJI_CATALOG } from './emojiData';
+  import { t } from '../i18n';
+  import './messages';
 
   /**
    * The hybrid picker: a fixed palette row, always visible, plus a "+" that opens the full
@@ -38,7 +40,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         type="button"
         class="hover:bg-surface-container-high duration-short ease-standard flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-lg transition-colors"
         onclick={() => pick(emoji)}
-        aria-label="React with {emoji}"
+        aria-label={$t('ui.reactWith', { emoji })}
       >
         {emoji}
       </button>
@@ -47,7 +49,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       type="button"
       class="text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface duration-short ease-standard flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-lg transition-colors"
       onclick={() => (expanded = !expanded)}
-      aria-label={expanded ? 'Close emoji picker' : 'More emoji'}
+      aria-label={expanded ? $t('ui.closeEmojiPicker') : $t('ui.moreEmoji')}
       aria-expanded={expanded}
     >
       +
@@ -60,12 +62,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       transition:fly={{ y: 8, duration: 150 }}
     >
       <div class="mb-2 flex items-center justify-between">
-        <span class="text-on-surface-variant text-body-small">Emoji</span>
+        <span class="text-on-surface-variant text-body-small">{$t('ui.emoji')}</span>
         <button
           type="button"
           class="text-on-surface-variant hover:text-on-surface cursor-pointer"
           onclick={() => (expanded = false)}
-          aria-label="Close emoji picker"
+          aria-label={$t('ui.closeEmojiPicker')}
         >
           <CloseIcon class="size-icon-sm" />
         </button>
@@ -80,7 +82,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               type="button"
               class="hover:bg-surface-container text-body-large flex h-7 w-7 cursor-pointer items-center justify-center rounded-chip"
               onclick={() => pick(emoji)}
-              aria-label="React with {emoji}"
+              aria-label={$t('ui.reactWith', { emoji })}
             >
               {emoji}
             </button>

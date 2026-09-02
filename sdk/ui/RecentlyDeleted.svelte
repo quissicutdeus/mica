@@ -10,6 +10,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import EmptyState from './EmptyState.svelte';
   import TrashIcon from './icons/TrashIcon.svelte';
   import { formatRelativeTime } from '../lib/formatters';
+  import { t } from '../i18n';
+  import './messages';
 
   /**
    * One soft-deleted row, as any of Contacts, Notes or Media can describe it.
@@ -70,9 +72,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     items,
     onrestore,
     onpermanentdelete,
-    emptyTitle = 'Nothing here',
-    emptyDescription = 'Items you delete stick around here until you delete them for good.'
+    emptyTitle = undefined,
+    emptyDescription = undefined
   }: Props = $props();
+
+  // `$derived` fallbacks rather than prop defaults: a default is evaluated once and could
+  // not follow the locale. Both stay optional props, so a caller with its own words is
+  // unaffected.
+  const emptyHeading = $derived(emptyTitle ?? $t('ui.nothingHere'));
+  const emptyHint = $derived(emptyDescription ?? $t('ui.nothingHereHint'));
 
   let pending = $state<RecentlyDeletedItem | null>(null);
 
@@ -87,7 +95,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </script>
 
 {#if items.length === 0}
-  <EmptyState title={emptyTitle} description={emptyDescription} />
+  <EmptyState title={emptyHeading} description={emptyHint} />
 {:else}
   <div class="divide-outline-variant divide-y">
     {#each items as item (item.id)}
@@ -98,18 +106,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <p class="text-on-surface-variant text-body-small truncate">{item.preview}</p>
           {/if}
           <p class="text-on-surface-variant text-label-small mt-0.5">
-            Deleted {formatRelativeTime(asDate(item.deletedAt))}
+            {$t('ui.deletedAt', { when: formatRelativeTime(asDate(item.deletedAt)) })}
           </p>
         </div>
         <Button variant="secondary" class="shrink-0" onclick={() => onrestore(item.id)}>
-          Restore
+          {$t('ui.restore')}
         </Button>
         {#if onpermanentdelete}
           <button
             type="button"
             onclick={() => (pending = item)}
-            aria-label="Delete {item.label} permanently"
-            title="Delete permanently"
+            aria-label={$t('ui.deleteNamedPermanently', { label: item.label })}
+            title={$t('ui.deletePermanently')}
             class="text-on-surface-variant hover:text-error hover:bg-error-container focus-visible:ring-focus-ring flex shrink-0 cursor-pointer items-center justify-center rounded-full p-2 transition-colors focus-visible:ring-2 focus-visible:outline-none duration-short ease-standard"
           >
             <TrashIcon class="size-icon-md" />
@@ -122,9 +130,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#if pending}
   <ConfirmDialog
-    title="Delete permanently?"
-    message={`"${pending.label}" can't be recovered after this.`}
-    confirmText="Delete"
+    title={$t('ui.deletePermanentlyTitle')}
+    message={$t('ui.deletePermanentlyMessage', { label: pending.label })}
+    confirmText={$t('ui.delete')}
     confirmVariant="danger"
     onconfirm={confirmDelete}
     oncancel={() => (pending = null)}

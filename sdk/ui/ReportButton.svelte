@@ -6,6 +6,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import FlagIcon from './icons/FlagIcon.svelte';
+  import { t } from '../i18n';
+  import './messages';
 
   /**
    * The one way to offer "report this".
@@ -43,8 +45,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <button
   type="button"
   {onclick}
-  aria-label="Report {subject}"
-  title="Report {subject}"
+  aria-label={$t('ui.reportSubject', { subject })}
+  title={$t('ui.reportSubject', { subject })}
   class="text-on-surface-variant hover:text-error hover:bg-error-container focus-visible:ring-focus-ring flex cursor-pointer items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none {pad} {opacity} {className} duration-short ease-standard"
 >
   <FlagIcon class={glyph} />

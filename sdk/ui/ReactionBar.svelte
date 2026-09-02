@@ -8,6 +8,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import type { ReactionSummary } from '@gphone/shared/types';
   import EmojiPicker from './EmojiPicker.svelte';
   import { NO_REACTIONS } from '../kit/createReactionStore';
+  import { t } from '../i18n';
+  import './messages';
 
   /**
    * Grouped reaction counts for one target, plus an "add a reaction" trigger.
@@ -60,7 +62,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         : 'bg-surface-container border-outline-variant text-on-surface-variant hover:border-outline'} duration-short ease-standard"
       onclick={() => ontoggle(emoji)}
       aria-pressed={isMine}
-      aria-label="{emoji} reaction, {total}, {isMine ? 'tap to remove yours' : 'tap to add yours'}"
+      aria-label={$t('ui.reaction', {
+        emoji,
+        total,
+        action: isMine ? $t('ui.tapToRemoveReaction') : $t('ui.tapToAddReaction')
+      })}
     >
       <span>{emoji}</span>
       <span>{total}</span>

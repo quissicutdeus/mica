@@ -5,6 +5,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from '../../i18n';
+  import '../messages';
+
   let { status = 'delivered', class: className = 'w-3.5 h-3.5' } = $props<{
     status: 'delivered' | 'read';
     class?: string;
@@ -19,7 +22,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     fill="currentColor"
     class="{className} shrink-0 text-blue-500"
   >
-    <title>Read</title>
+    <title>{$t('ui.read')}</title>
     <path
       fill-rule="evenodd"
       d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
@@ -36,7 +39,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     stroke="currentColor"
     class="{className} shrink-0 text-gray-400"
   >
-    <title>Delivered</title>
+    <title>{$t('ui.delivered')}</title>
     <circle cx="12" cy="12" r="9" />
     <path stroke-linecap="round" stroke-linejoin="round" d="m9 12.75 2.25 2.25 4.5-4.5" />
   </svg>
