@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { requestEventFor, responseEventFor } from '@gphone/shared/rpc';
-import { ROUTES, serverEventFor } from '@gphone/shared/routes';
+import { ROUTES } from '@gphone/shared/routes';
 
 /**
  * Capture what the service registers, before the module graph loads.
@@ -96,10 +96,12 @@ describe('the registered net event', () => {
     expect(requestEventFor('shell', 'capabilities')).toBe(REQUEST_EVENT);
   });
 
-  it('is what the checkCapabilities route forwards to', () => {
-    const route = ROUTES.find((r) => r.action === 'checkCapabilities');
-    expect(route, 'the route entry is the layer that registers the NUI callback').toBeDefined();
-    expect(serverEventFor(route!)).toBe(REQUEST_EVENT);
+  it('is what the typed call in web/src/services/capabilities.ts reaches', () => {
+    // No route any more: the web reaches this with `call(shellContract, 'capabilities', …)`
+    // over the generic service action (MICA-213), and `routes.test.ts` holds that call
+    // site to this exact registered event and to a scoped browser mock.
+    expect(ROUTES.find((r) => r.action === 'checkCapabilities')).toBeUndefined();
+    expect(requestEventFor('shell', 'capabilities')).toBe(REQUEST_EVENT);
   });
 
   it('registers no generic CRUD on the shell service', () => {
