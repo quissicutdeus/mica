@@ -191,7 +191,6 @@ export const ROUTES: readonly Route[] = [
   // Location.ts` resolves a street-name label locally (a client-only native) before
   // forwarding, so it is excluded from `Relay.ts`'s generic per-route registration.
   // Declared here anyway, for `routes.test.ts`'s completeness checks.
-  route('shareLocation', 'media', 'shareLocation'),
 
   // Music — proximity broadcast (MICA-111 phase 2). The service holds ephemeral
   // now-playing state and nothing else: no table, no generic CRUD, and every action here is

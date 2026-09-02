@@ -2,36 +2,31 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Location: the one NUI action whose client relay is not a plain passthrough, plus the
-// purely local waypoint action. `shared/routes.ts` and `client/services/Relay.ts` explain
-// why `shareLocation` is not handled by the generic loop there.
-import { ServiceProxy } from '../lib/ServiceProxy';
-import { requestEventFor } from '@gphone/shared/rpc';
-
-const proxy = new ServiceProxy('media');
-
-// `relay()` only sends. The reply subscription is what `registerCallback` adds, and this
-// file bypasses `registerCallback` on purpose (see below), so it has to subscribe itself —
-// without this line nobody listens on `gphone:client:media:shareLocation`, every share
-// waits out the 15-second timeout and the UI reports a failure for a row that was written.
-proxy.ensureSubscribed('shareLocation');
+// Location: the one contracted action whose relay is not a plain passthrough, plus the
+// purely local waypoint action.
+import { registerClientHook } from '../lib/clientHooks';
 
 /**
  * Resolve a human-readable street name on the sender's own client — the only place it can
  * be resolved, since `GetStreetNameAtCoord`/`GetStreetNameFromHashKey` are client-only
- * natives — then relay to the server with that label attached.
+ * natives — and attach it to the payload before the generic relay forwards it.
+ *
+ * Registered as `media:shareLocation`'s client hook (MICA-213). The contract marks that
+ * action `clientPrepared`, so `client/services/Relay.ts` runs this before `emitNet` and
+ * owns the reply subscription; this file no longer registers a NUI callback or subscribes
+ * anything itself, which is how a subscription came to be forgotten once (e1edda1).
  *
  * The server never trusts this label as anything but display text, and independently
  * re-reads the sender's position itself rather than accepting coordinates from here
  * (`server/services/Media.ts`'s `shareLocation` action, `server/lib/playerCoords.ts`) —
  * this file supplies the one thing only the client can produce, nothing more.
  */
-RegisterNuiCallbackType('shareLocation');
-on('__cfx_nui:shareLocation', (_data: unknown, cb: Function) => {
+registerClientHook('media', 'shareLocation', (data) => {
   const coords = GetEntityCoords(PlayerPedId(), true);
   const [streetHash] = GetStreetNameAtCoord(coords[0], coords[1], coords[2]);
   const label = GetStreetNameFromHashKey(streetHash) || undefined;
-  proxy.relay('shareLocation', requestEventFor('media', 'shareLocation'), { label }, cb);
+  const sent = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+  return { ...sent, label };
 });
 
 /**

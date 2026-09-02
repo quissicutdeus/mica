@@ -84,6 +84,14 @@ export interface GenericServiceRequest {
 
 /** The shape a service or action segment must have — the same one event names require. */
 const SEGMENT = /^[a-z][a-z0-9_]*$/;
+/**
+ * An action may be camel-cased — `shareLocation`, `broadcastStart`, `reactionsFor` are the
+ * names the server registers — so the typed `call` in `web/` can reach a contracted action
+ * through this door (MICA-213). The service segment stays lowercase: it names a table and
+ * a manifest id, and `Journal` addressing `journal` is exactly the ambiguity the check
+ * refuses.
+ */
+const ACTION_SEGMENT = /^[a-z][a-zA-Z0-9_]*$/;
 
 /**
  * Narrow a generic request, or return null.
@@ -96,6 +104,6 @@ export function parseGenericRequest(raw: unknown): GenericServiceRequest | null 
   if (!raw || typeof raw !== 'object') return null;
   const { service, action, data } = raw as Record<string, unknown>;
   if (typeof service !== 'string' || !SEGMENT.test(service)) return null;
-  if (typeof action !== 'string' || !SEGMENT.test(action)) return null;
+  if (typeof action !== 'string' || !ACTION_SEGMENT.test(action)) return null;
   return { service, action, data };
 }

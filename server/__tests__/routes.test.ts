@@ -12,6 +12,7 @@ import {
   serverEventFor
 } from '@gphone/shared/routes';
 import { requestEventFor } from '@gphone/shared/rpc';
+import { allContracts } from '@gphone/shared/contract';
 
 /**
  * The NUI round trip has three layers — `web/` calls, `client/` relays, `server/`
@@ -239,7 +240,50 @@ const mockRegistryKeys = (): { named: Set<string>; scoped: Set<string> } => {
   return { named, scoped };
 };
 
+/**
+ * Every `call(<x>Contract, 'action', …)` / `callOr(…)` site in `web/src` (MICA-213).
+ *
+ * A typed call names its service by the contract object rather than by string, so the
+ * scanner maps the variable back to the id the way the barrel declares it: every file in
+ * `shared/contracts/` exports `const <name> = defineContract({ id: '<id>', … })`, and a
+ * name the scanner cannot map is reported rather than skipped — a call site nothing can
+ * check is the silent kind this file exists to outlaw.
+ */
+const contractVariableIds = (): Map<string, string> => {
+  const ids = new Map<string, string>();
+  for (const file of walk(join(ROOT, 'shared', 'contracts'), ['.ts'])) {
+    const text = readFileSync(file, 'utf8');
+    for (const m of text.matchAll(
+      /export const (\w+)\s*=\s*defineContract\s*\(\s*\{\s*id:\s*['"]([a-z][a-z0-9_]*)['"]/g
+    )) {
+      ids.set(m[1], m[2]);
+    }
+  }
+  return ids;
+};
+
+const collectTypedCalls = (): { service: string; action: string; file: string }[] => {
+  const ids = contractVariableIds();
+  const found: { service: string; action: string; file: string }[] = [];
+  for (const file of walk(join(ROOT, 'web', 'src'), ['.ts', '.svelte'])) {
+    if (file.includes('/mocks/') || file.endsWith('.test.ts')) continue;
+    const text = readFileSync(file, 'utf8');
+    for (const m of text.matchAll(/\bcall(?:Or)?\s*\(\s*(\w+)\s*,\s*['"]([a-zA-Z]\w*)['"]/g)) {
+      const service = ids.get(m[1]);
+      if (!service) {
+        throw new Error(
+          `${relative(ROOT, file)} calls '${m[2]}' on '${m[1]}', which is not a contract ` +
+            'exported from shared/contracts/ — a typed call has to name one'
+        );
+      }
+      found.push({ service, action: m[2], file: relative(ROOT, file) });
+    }
+  }
+  return found;
+};
+
 const FETCH_CALLS = [...collectFetchNuiCalls(), ...collectCrudStoreEvents()];
+const TYPED_CALLS = collectTypedCalls();
 const CRUD_EVENTS = collectCrudStoreEvents();
 const CLIENT_CALLBACKS = collectClientCallbacks();
 const { named: MOCKS, scoped: SCOPED_MOCKS } = mockRegistryKeys();
@@ -369,5 +413,78 @@ describe('no dead weight', () => {
         'an add-on that works in the browser times out in game — register the action, ' +
         'or delete the mock'
     ).toEqual([]);
+  });
+});
+
+/**
+ * The typed call path (MICA-213): `call(<x>Contract, 'action', input)` over the generic
+ * service action, in place of a string-named `fetchNui` plus a row in `shared/routes.ts`.
+ *
+ * A typed call has no route to check, so it is held to the two layers it does have: the
+ * server must have registered `gphone:server:<service>:<action>`, and the browser mock must
+ * answer the scoped key `'<service>:<action>'`. The two ratchets below are what makes the
+ * migration finish rather than stall: each number may only go down, and the ticket closes
+ * when both are zero.
+ */
+describe('typed calls over the generic service action (MICA-213)', () => {
+  const contracted = new Set(
+    allContracts().flatMap((c) => Object.keys(c.actions).map((a) => `${c.id}:${a}`))
+  );
+
+  it('found at least the first typed call site, so the checks below are not vacuous', () => {
+    expect(TYPED_CALLS.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('every typed call names an action its contract declares', () => {
+    const undeclared = TYPED_CALLS.filter(
+      ({ service, action }) => !contracted.has(`${service}:${action}`)
+    );
+    expect(undeclared.map((c) => `${c.service}:${c.action}  (${c.file})`).toSorted()).toEqual([]);
+  });
+
+  it('every typed call reaches a server event that is actually registered', () => {
+    const missing = TYPED_CALLS.filter(
+      ({ service, action }) => !registeredServerEvents.has(requestEventFor(service, action))
+    );
+    expect(
+      missing.map((c) => `${c.service}:${c.action}  (${c.file})`).toSorted(),
+      'the relay would forward this and the server would never answer'
+    ).toEqual([]);
+  });
+
+  it('every typed call has a scoped browser mock', () => {
+    const missing = TYPED_CALLS.filter(
+      ({ service, action }) => !SCOPED_MOCKS.has(`${service}:${action}`)
+    );
+    expect(
+      missing.map((c) => `'${c.service}:${c.action}'  (${c.file})`).toSorted(),
+      'no scoped mock answers this, so the feature is dead in pnpm dev and in Playwright — ' +
+        "add '<service>:<action>' to web/src/nui/mocks/registry.ts"
+    ).toEqual([]);
+  });
+
+  /**
+   * Ratchet one: routes that point at a contracted action. Each is a row `shared/routes.ts`
+   * keeps by hand for an action the contract already declares, and the typed call makes
+   * the row unnecessary. Lower the number as call sites migrate; never raise it.
+   */
+  const ROUTES_TO_CONTRACTED_ACTIONS = 67;
+  it(`no more than ${ROUTES_TO_CONTRACTED_ACTIONS} routes still point at a contracted action`, () => {
+    const remaining = ROUTES.filter((r) => contracted.has(`${r.service}:${r.serverAction}`));
+    expect(remaining.length).toBeLessThanOrEqual(ROUTES_TO_CONTRACTED_ACTIONS);
+  });
+
+  /**
+   * Ratchet two: string-named `fetchNui` calls in `web/src/services/` whose route points at
+   * a contracted action — the call sites the typed `call` replaces. Same rule.
+   */
+  const STRING_CALLS_TO_CONTRACTED_ACTIONS = 68;
+  it(`no more than ${STRING_CALLS_TO_CONTRACTED_ACTIONS} string-named calls in web/src/services/ reach a contracted action`, () => {
+    const byAction = new Map(ROUTES.map((r) => [r.action, `${r.service}:${r.serverAction}`]));
+    const remaining = collectFetchNuiCalls().filter(
+      ({ action, file }) =>
+        file.startsWith('web/src/services/') && contracted.has(byAction.get(action) ?? '')
+    );
+    expect(remaining.length).toBeLessThanOrEqual(STRING_CALLS_TO_CONTRACTED_ACTIONS);
   });
 });

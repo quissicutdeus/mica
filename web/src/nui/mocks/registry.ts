@@ -1871,7 +1871,9 @@ const mockRegistry: Record<string, MockHandler> = {
   // Location sharing. Fixed coordinates rather than anything real — the browser has no
   // ped position to read — matching the mock's job of exercising every layer above the
   // native call, not the native call itself.
-  shareLocation: async () => ({ id: mockLocationShare.id, media: mockLocationShare }),
+  // Scoped, because `web/` reaches it through the typed `call(mediaContract, 'shareLocation')`
+  // over the generic service action rather than a named route (MICA-213).
+  'media:shareLocation': async () => ({ id: mockLocationShare.id, media: mockLocationShare }),
   // Purely local in game (`SetNewWaypoint`); nothing for the browser to do but succeed.
   setWaypoint: async () => ({ ok: true }),
 

@@ -5,6 +5,8 @@
 import { get } from 'svelte/store';
 import { createPagedStore } from '../../../sdk/createPagedStore';
 import { fetchNui } from '../nui/fetchNui';
+import { call } from '../nui/call';
+import { mediaContract } from '@gphone/shared/contracts/media';
 import { makeThumbnail } from '@gphone/sdk';
 import type { MediaItem, MediaPreview } from '@gphone/shared/types';
 import type { DeletedMediaItem } from '../../../sdk/vocabulary/media';
@@ -288,7 +290,7 @@ export const media = {
    * attachment tray without a second fetch.
    */
   shareLocation: async (): Promise<{ id: number; media: MediaPreview }> =>
-    fetchNui('shareLocation', {}),
+    call(mediaContract, 'shareLocation', {}) as Promise<{ id: number; media: MediaPreview }>,
 
   /** Set a GPS waypoint from a location a message already carries. Purely local in game. */
   setWaypoint: async (x: number, y: number): Promise<void> => {

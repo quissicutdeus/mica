@@ -3,8 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { ServiceProxy } from '../lib/ServiceProxy';
+import { clientHookFor } from '../lib/clientHooks';
 import { ROUTES, serverEventFor } from '@gphone/shared/routes';
 import { GENERIC_SERVICE_ACTION, parseGenericRequest, requestEventFor } from '@gphone/shared/rpc';
+import { contractFor, isClientPrepared } from '@gphone/shared/contract';
+// Evaluating the barrel is what populates `contractFor` — the same registration-by-import
+// the server relies on. Without it every contract answers undefined here and no action
+// would ever be seen as `clientPrepared`.
+import '@gphone/shared/contracts';
 
 /**
  * Registers every declared route.
@@ -20,21 +26,7 @@ import { GENERIC_SERVICE_ACTION, parseGenericRequest, requestEventFor } from '@g
  */
 const proxies = new Map<string, ServiceProxy>();
 
-/**
- * Routes whose client relay is not a dumb passthrough of whatever `web/` sent — client-side
- * logic has to run *between* the NUI call and the server relay. `shareLocation` needs a
- * street name, and that can only be resolved by a client-only native
- * (`GetStreetNameAtCoord`/`GetStreetNameFromHashKey` do not exist server-side), so it
- * cannot be resolved in `web/` and handed down. Still declared in `ROUTES` for
- * completeness/mock checking; only the automatic `registerCallback` below is skipped. The
- * dedicated handler lives in `client/services/Location.ts`. Add here — and nowhere else —
- * the next time a route needs client-side work before it reaches the server.
- */
-const CUSTOM_CLIENT_RELAY = new Set(['shareLocation']);
-
 for (const route of ROUTES) {
-  if (CUSTOM_CLIENT_RELAY.has(route.action)) continue;
-
   let proxy = proxies.get(route.service);
   if (!proxy) {
     proxy = new ServiceProxy(route.service);
@@ -60,13 +52,34 @@ for (const route of ROUTES) {
  * only on events `registerEvent` created.
  */
 RegisterNuiCallbackType(GENERIC_SERVICE_ACTION);
-on(`__cfx_nui:${GENERIC_SERVICE_ACTION}`, (payload: unknown, cb: Function) => {
+on(`__cfx_nui:${GENERIC_SERVICE_ACTION}`, async (payload: unknown, cb: Function) => {
   const request = parseGenericRequest(payload);
   if (!request) {
     // Refused rather than relayed: both segments are interpolated into an event name, so
     // an unchecked one could address anything on the bus instead of a gphone service.
     cb({ error: 'Malformed service request' });
     return;
+  }
+
+  /**
+   * The contract's client-side step, where it declares one (MICA-213).
+   *
+   * `clientPrepared` on a contract action means the server expects something only this
+   * client can supply — a street name, today — and `client/lib/clientHooks.ts` is where the
+   * step is registered. Forwarding such an action with no hook would send a payload the
+   * server refuses for a missing field, so it is refused here instead, naming the gap.
+   * A contract that declares no such thing, or a service with no contract at all (an
+   * add-on's), forwards exactly as before.
+   */
+  let data = request.data;
+  const contract = contractFor(request.service);
+  if (contract && isClientPrepared(contract, request.action)) {
+    const hook = clientHookFor(request.service, request.action);
+    if (!hook) {
+      cb({ error: `No client hook registered for ${request.service}:${request.action}` });
+      return;
+    }
+    data = await hook(data);
   }
 
   let proxy = proxies.get(request.service);
@@ -78,5 +91,5 @@ on(`__cfx_nui:${GENERIC_SERVICE_ACTION}`, (payload: unknown, cb: Function) => {
   // Per request rather than at startup, because which replies this will need is not
   // knowable until one arrives. Deduped inside the proxy, so it is free after the first.
   proxy.ensureSubscribed(request.action);
-  proxy.relay(request.action, requestEventFor(request.service, request.action), request.data, cb);
+  proxy.relay(request.action, requestEventFor(request.service, request.action), data, cb);
 });

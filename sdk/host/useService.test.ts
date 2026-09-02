@@ -70,6 +70,14 @@ describe('the generic request contract', () => {
     });
   });
 
+  it('accepts a camel-cased action, which is how the server names most of its own', () => {
+    expect(parseGenericRequest({ service: 'media', action: 'shareLocation', data: {} })).toEqual({
+      service: 'media',
+      action: 'shareLocation',
+      data: {}
+    });
+  });
+
   it('refuses a segment that could address something other than a gphone service', () => {
     // Both segments are interpolated into an event name. Unvalidated, one could name any
     // event on the bus — `playerDropped`, another resource's — rather than a
