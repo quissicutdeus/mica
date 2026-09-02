@@ -19,8 +19,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     SpeakerIcon,
     ArrowUpRightIcon,
     ArrowDownLeftIcon,
+    registerMessages,
+    useLocale,
     type AppProps
   } from '@gphone/sdk';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
+
+  // MICA-215: this app's strings, registered by the app itself — the same shape an
+  // add-on outside this repository uses. `$t('phone.…')` reads them under the phone's
+  // locale.
+  registerMessages('phone', { en, de });
+  const { t } = useLocale();
 
   const { callStore, callLog, loadCallLog } = useCall();
   const { contactsStore, favoriteContacts } = useContacts();
@@ -92,12 +102,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       const now = new Date();
       const diffMs = now.getTime() - date.getTime();
       const diffMins = Math.floor(diffMs / 60000);
-      if (diffMins < 1) return 'Just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffMins < 1) return $t('phone.justNow');
+      if (diffMins < 60) return $t('phone.minutesAgo', { minutes: diffMins });
       const diffHours = Math.floor(diffMins / 60);
-      if (diffHours < 24) return `${diffHours}h ago`;
+      if (diffHours < 24) return $t('phone.hoursAgo', { hours: diffHours });
       const diffDays = Math.floor(diffHours / 24);
-      return `${diffDays}d ago`;
+      return $t('phone.daysAgo', { days: diffDays });
     } catch {
       return '';
     }
@@ -113,7 +123,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <div class="bg-surface text-on-surface relative flex h-full flex-col overflow-hidden">
   {#if $callStore.status === 'idle'}
     <!-- Keypad / Recents -->
-    <Screen title="Phone" {onback}>
+    <Screen title={$t('phone.title')} {onback}>
       <!-- `Screen`'s content box is `flex-1 overflow-y-auto` and *not* a flex column, so a
            child asking for `h-full` got the full height of that box rather than what was
            left under the tabs — tabs plus a full screen overflowed it, and the whole app
@@ -123,11 +133,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="px-4 pt-2">
           <SegmentedControl
             options={[
-              { id: 'keypad', label: 'Keypad' },
-              { id: 'recents', label: 'Recents' }
+              { id: 'keypad', label: $t('phone.keypad') },
+              { id: 'recents', label: $t('phone.recents') }
             ]}
             bind:selected={activeTab}
-            aria-label="Phone view"
+            aria-label={$t('phone.viewLabel')}
           />
         </div>
 
@@ -151,7 +161,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             {#if $favoriteContacts.length > 0}
               <div class="w-full">
                 <div class="text-on-surface-variant text-body-small mb-2 ml-1 uppercase">
-                  Favorites
+                  {$t('phone.favorites')}
                 </div>
                 <div class="no-scrollbar flex space-x-4 overflow-x-auto pb-2">
                   {#each $favoriteContacts as fav (fav.id)}
@@ -224,7 +234,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <!-- Call Button -->
                 <button
                   class="shadow-call-accept duration-short ease-standard mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-500 transition-colors hover:bg-green-400"
-                  aria-label="Call"
+                  aria-label={$t('phone.call')}
                   onclick={() => startCall(enteredNumber)}
                 >
                   <PhoneIcon class="text-on-surface h-8 w-8" />
@@ -236,7 +246,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     <button
                       class="text-on-surface-variant hover:text-on-surface duration-short ease-standard transition-colors"
                       onclick={handleBackspace}
-                      aria-label="Backspace"
+                      aria-label={$t('phone.backspace')}
                     >
                       <BackspaceIcon class="h-8 w-8" />
                     </button>
@@ -252,7 +262,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <div
                 class="text-on-surface-variant flex h-full flex-col items-center justify-center space-y-2 text-center"
               >
-                <p class="text-body-large">No recent calls</p>
+                <p class="text-body-large">{$t('phone.noRecentCalls')}</p>
               </div>
             {:else}
               <div class="space-y-2 pt-2">
@@ -318,11 +328,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </h2>
       <p class="text-on-surface-variant mb-12 text-lg">
         {#if $callStore.status === 'dialing'}
-          Dialing...
+          {$t('phone.dialing')}
         {:else if $callStore.status === 'connected'}
           {formatDuration($callStore.duration)}
         {:else if $callStore.status === 'incoming'}
-          Incoming Call...
+          {$t('phone.incomingCall')}
         {/if}
       </p>
 
@@ -355,7 +365,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="flex flex-col items-center space-y-2 transition-colors {$callStore.muted
             ? 'text-on-surface'
             : 'text-on-surface-variant hover:text-on-surface'} duration-short ease-standard"
-          aria-label="Mute"
+          aria-label={$t('phone.mute')}
         >
           <div
             class="rounded-full p-4 {$callStore.muted
@@ -364,7 +374,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           >
             <MicrophoneIcon />
           </div>
-          <span class="text-body-small">{$callStore.muted ? 'Unmute' : 'Mute'}</span>
+          <span class="text-body-small"
+            >{$callStore.muted ? $t('phone.unmute') : $t('phone.mute')}</span
+          >
         </button>
 
         <!-- Keypad: purely local, so the in-call DTMF pad needs no plumbing. -->
@@ -374,7 +386,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="flex flex-col items-center space-y-2 transition-colors {showInCallKeypad
             ? 'text-on-surface'
             : 'text-on-surface-variant hover:text-on-surface'} duration-short ease-standard"
-          aria-label="Keypad"
+          aria-label={$t('phone.keypad')}
         >
           <div
             class="rounded-full p-4 {showInCallKeypad
@@ -383,7 +395,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           >
             <KeypadIcon />
           </div>
-          <span class="text-body-small">Keypad</span>
+          <span class="text-body-small">{$t('phone.keypad')}</span>
         </button>
 
         <!-- Speaker -->
@@ -392,7 +404,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             ? 'text-on-surface'
             : 'text-on-surface-variant'} duration-short ease-standard"
           onclick={callStore.toggleSpeaker}
-          aria-label="Speaker"
+          aria-label={$t('phone.speaker')}
         >
           <div
             class="bg-surface-container rounded-full p-4 {$callStore.speaker
@@ -401,7 +413,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           >
             <SpeakerIcon />
           </div>
-          <span class="text-body-small">Speaker</span>
+          <span class="text-body-small">{$t('phone.speaker')}</span>
         </button>
       </div>
 
@@ -411,7 +423,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <button
             class="shadow-call-accept duration-short ease-standard flex h-16 w-16 items-center justify-center rounded-full bg-green-500 transition-colors hover:bg-green-400"
             onclick={() => callStore.answerCall()}
-            aria-label="Answer Call"
+            aria-label={$t('phone.answerCall')}
           >
             <PhoneIcon class="text-on-surface h-8 w-8" />
           </button>
@@ -425,7 +437,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             // way a call ends alike. It used to refetch here and nowhere else.
             void callStore.endCall();
           }}
-          aria-label="End Call"
+          aria-label={$t('phone.endCall')}
         >
           <PhoneIcon class="text-on-error h-8 w-8 rotate-135" />
         </button>

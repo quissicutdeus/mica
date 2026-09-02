@@ -1,0 +1,21 @@
+{
+  "title": "Phone",
+  "viewLabel": "Phone view",
+  "keypad": "Keypad",
+  "recents": "Recents",
+  "favorites": "Favorites",
+  "call": "Call",
+  "backspace": "Backspace",
+  "noRecentCalls": "No recent calls",
+  "dialing": "Dialing...",
+  "incomingCall": "Incoming Call...",
+  "mute": "Mute",
+  "unmute": "Unmute",
+  "speaker": "Speaker",
+  "answerCall": "Answer Call",
+  "endCall": "End Call",
+  "justNow": "Just now",
+  "minutesAgo": "{minutes}m ago",
+  "hoursAgo": "{hours}h ago",
+  "daysAgo": "{days}d ago"
+}
