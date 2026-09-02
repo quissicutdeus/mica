@@ -307,6 +307,55 @@ DDL.
   There is still no equality meaning "has a parent", which is why Blabber's
   profile tabs are a custom action.
 
+### Declaring the custom actions: `contract`
+
+Generic CRUD derives its allowlist from the columns. A custom action has no
+column to derive from, so since MICA-195 it declares its input once, in a
+contract, and `ServiceEndpoint` parses the payload against it before the handler
+runs:
+
+```ts
+// shared/contracts/media.ts
+import { defineContract } from '../contract';
+import { s } from '../schema';
+
+export const mediaContract = defineContract({
+  id: 'media',
+  actions: {
+    shareLocation: {
+      input: s.object({ label: s.string({ max: 255 }).optional() }),
+      clientPrepared: true
+    }
+  }
+});
+```
+
+`shared/schema.ts` is the DSL: `s.string`, `s.int`, `s.positiveInt`, `s.number`,
+`s.boolean`, `s.enum`, `s.array`, `s.object` (strict — an unknown key is
+refused, which is the point), plus `.optional()` and `.nullable()`. Every schema
+also carries a Standard Schema v1 `~standard`, and the contract accepts anything
+that does, so an add-on may bring zod, valibot or arktype for its own service.
+`shared/contracts/index.ts` is a generated barrel; add a file, never edit the
+index.
+
+The service links the two with
+`defineService({ ..., contract: mediaContract })`, and
+`registerEvent('shareLocation', handler)` then hands the handler the parsed,
+typed input. Registering an action the contract does not declare throws at
+start; declaring one nothing registers fails
+`server/__tests__/reachability.test.ts`. `clientPrepared: true` marks an action
+whose client relay must run a native first (today only `shareLocation`, for the
+street name).
+
+**An add-on declares its contract in its own server file**, not under
+`shared/contracts/`: `sdk/coreBoundary.test.ts` refuses an add-on id in a core
+directory, and an add-on outside this repo has no `shared/` to write into
+anyway. Notes, Blabber and Hodlr are the in-tree examples.
+
+What a schema cannot say, the handler still says: whose row it is, whether the
+caller is a member, whether an admin is asking. A schema states what a field is,
+never whose.
+
 ### Identity: one accounts table, shared
 
 `gphone_accounts` (`server/services/Accounts.ts`) is the identity every social

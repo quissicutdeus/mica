@@ -77,14 +77,28 @@ client-only actions that never reach the server. All of them land in
    make the server walk the framework's player table. Cleared on
    `playerDropped`, because FiveM reuses server ids.
 2. **Authentication** — no loaded character, no answer.
-3. **Payload reduction** — every key checked against the schema's
-   `clientWritable` set. `id`, `citizenid`, `created_at`, `updated_at` and
-   `status` are never client-writable.
-4. **Per-column validation** — length, enum, and `int` range rules derived from
+3. **Declared input, for a custom action** — the payload is parsed against the
+   action's contract (`shared/contracts/<service>.ts`, or the add-on's own
+   server file; MICA-195) before the handler sees it. Objects are strict, so
+   an unknown key is refused rather than ignored; a cap refuses rather than
+   truncates; an id must be a positive integer. A handler registered for an
+   action the contract does not declare fails the resource at start, and
+   `server/__tests__/reachability.test.ts` proves the two agree both ways.
+4. **Payload reduction, for generic CRUD** — every key checked against the
+   schema's `clientWritable` set. `id`, `citizenid`, `created_at`, `updated_at`
+   and `status` are never client-writable.
+5. **Per-column validation** — length, enum, and `int` range rules derived from
    the schema, because non-strict MySQL truncates or clamps silently: row
    written, success reported, data quietly wrong.
-5. **Ownership** — `update` and `delete` carry a `citizenid` predicate. A row id
+6. **Ownership** — `update` and `delete` carry a `citizenid` predicate. A row id
    is never authorisation. Shared rows check membership instead.
+
+What a player is told when any step refuses is bounded the same way. Only the
+message of a `PlayerFacingError` (`server/lib/errors.ts`) or a `SchemaError`
+reaches the `fetchNui` reply and therefore a toast; every other throw, a driver
+error with statement text or a `[Repository]` error naming a table, is logged
+with its stack on the server and answered with one generic sentence. A handler
+that means to tell the player something throws the player-facing kind.
 
 ### 2. Raw `onNet` handlers
 

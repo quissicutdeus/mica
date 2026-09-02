@@ -512,6 +512,14 @@ it), and `sdkContract` names the contract version it was built against, which
 the Store checks at install. Rebuild against this SDK, add both fields, and
 declare in `networkHosts` any host you fetch from.
 
+**A custom action on a service you declare now needs a contract, and the server
+refuses to start without one (MICA-195).** Declare it with `defineContract`
+from `@gphone/shared/contract` and pass it to `defineService` as `contract`.
+Objects are strict, so an undeclared field refuses the request rather than being
+dropped; a length cap refuses rather than truncates; a malformed id anywhere in
+a batch refuses the whole request. Generic CRUD is unchanged and needs no
+declaration. Notes, Blabber and Hodlr in this repo show the shape.
+
 **The contract this release publishes is `v1`.** That is `SDK_CONTRACT_VERSION`,
 exported from `@gphone/sdk`, and it is the number to branch on. It moves when
 the SDK's published surface moves and at no other time — the exported names of

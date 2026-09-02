@@ -70,6 +70,19 @@ None of these need the full suite:
 | Types, one target      | `pnpm typecheck:client` · `:server` · `:web`            |
 | Formatting             | `pnpm format`                                           |
 
+### When every e2e spec fails at once
+
+Since MICA-195, `web/e2e/support/test.ts` wraps Playwright's `test` for every
+spec and fails a test if a NUI failure reached the console during it: a
+`[MockRegistry] No handler found` throw, or
+`fetchNui('x') failed; using the default value`. A mock missing for a route the
+shell **preloads** at boot therefore fails every spec in the suite, not one.
+When two hundred tests go red together, read the first message rather than the
+count; it names the action, and the fix is one entry in
+`web/src/nui/mocks/registry.ts`. A spec that provokes a failure on purpose says
+so with `test.use({ allowNuiFailures: true })`. Other uncaught page errors are
+recorded as annotations, not failures, until MICA-206 and MICA-207 land.
+
 ## `pnpm check:fast` — the named middle ground
 
 Format, full typecheck (all three targets — this repo runs two different

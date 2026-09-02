@@ -216,9 +216,9 @@ not work around it.
    `columnRules` derived from the schema, so a write cannot silently truncate a
    `varchar` in non-strict mode. Two parts of that constrain what you write:
 
-   - `assertWritableValue`'s messages reach players as `fetchNui` /
-     `useAppAction` toasts, so they carry no `[Repository]` prefix and no table
-     name.
+   - Only a `PlayerFacingError` or a `SchemaError` message reaches a player's
+     toast; every other throw is logged and answered generically. A refusal
+     meant for a player is a `PlayerFacingError`, with no table name in it.
    - **No blanket read cap, deliberately.** A public read is bounded by
      mandatory `paging` (§10), an owner-scoped read by its citizenid predicate.
      A global `LIMIT` would silently truncate a player's own list.
@@ -492,17 +492,16 @@ one `@handle` tokenizer the UI renders from and the server notifies from.
 The single most common source of half-built features. A call from `web/` reaches
 the database only if every layer exists: **`fetchNui`** in `web/src/services/`,
 a **`route()` entry** in `shared/routes.ts` (core apps only — an add-on goes
-through the generic `useService(id).call(...)`), and a **`registerEvent`**
-handler or generic CRUD action in `server/services/`. Miss the middle one and
-the NUI callback is never registered: `fetchNui` swallows the failure and
-returns its `defaultValue`, so **the feature does nothing in game** while
-passing every suite.
+through the generic `useService(id).call(...)`), a **contract** in
+`shared/contracts/` for a custom action (no declared input fails the resource at
+start, MICA-195), and a **`registerEvent`** handler or generic CRUD action in
+`server/services/`. Miss the route and the callback is never registered:
+`fetchNui` returns its `defaultValue`, so **the feature does nothing in game**
+while passing the unit suites.
 
-**Mocks make a missing layer invisible.** `web/src/nui/mocks/registry.ts`
-answers by action name, so add all three layers _and_ the mock. When touching an
-existing endpoint, grep `client/` and `server/` for the action name before
-assuming it is wired. `server/__tests__/routes.test.ts` cross-references all
-four.
+**The mock is a layer too.** `web/src/nui/mocks/registry.ts` answers by action
+name; a missing one fails only the e2e spec that reaches it.
+`server/__tests__/routes.test.ts` cross-references all of them, both ways.
 
 **Response events are derived, never written by hand** — `shared/rpc.ts` owns
 them, and a hand-written reply name times out after 15s with no error.

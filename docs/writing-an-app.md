@@ -159,6 +159,15 @@ const entries = await journal.call<Entry[]>('get', {}, []);
 await journal.call('create', { title, body });
 ```
 
+A custom action on that service declares its input in a contract, in the same
+server file that registers it:
+`defineContract({ id: 'journal', actions: { … } })` from
+`@gphone/shared/contract`, with `s.object(…)` from `@gphone/shared/schema` or
+any Standard Schema validator, linked by `defineService({ contract })`. The
+server parses the payload before your handler runs and refuses to start if a
+registered action has no entry. `docs/schema-and-services.md` has the worked
+example.
+
 For a list, `createCrudStore` with `service` set gives you ordering, a `loaded`
 flag and the rule that the list follows the server rather than guessing ahead of
 it:
