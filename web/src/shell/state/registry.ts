@@ -8,12 +8,17 @@ import { get, writable } from 'svelte/store';
 // `./keybinds.ts`, which imports `appRegistryStore` from this file — going through the
 // barrel here would close that cycle and leave `appRegistryStore` unset when `keybinds.ts`
 // evaluates its module-level `derived(appRegistryStore, ...)`.
-import { type AppComponent, type AppManifest, defineApp } from '../../../../sdk/manifest';
+import {
+  type AppComponent,
+  type AppManifest,
+  type AppPermission,
+  defineApp
+} from '../../../../sdk/manifest';
 import { clearAppStorage } from '../../../../sdk/host/useStorage';
 import { isBrowser, messageOf } from '@gphone/sdk';
 import { capabilities, capabilitiesKnown } from '../../services/capabilities';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
-import { adoptExistingGrant, revokeConsent } from './addOnGrants';
+import { adoptExistingGrant, grantedPermissions, revokeConsent } from './addOnGrants';
 import { placeOnHomeGridIfAbsent } from './homeGrid';
 import {
   getTrustedRemoteAppHosts,
@@ -439,6 +444,38 @@ function removeSavedRemoteApp(url: string) {
 }
 
 const addOnIds = new Set(addOns.map((a) => a.id));
+
+/**
+ * What an add-on may actually exercise: the player's recorded grant, or — for an add-on
+ * this repository ships — the build's own vouching (MICA-201).
+ *
+ * The grant exists to stop a *manifest* standing in for a player's answer, and for a
+ * downloaded bundle that is the whole game: nobody in this repo has read it, so no grant,
+ * no permissioned call. A **bundled** add-on is a different claim. Its manifest is in this
+ * source tree, reviewed and shipped with the phone, and it is reachable without ever
+ * passing through the Store at all — a deep link (`/?app=blabber`, which `a11y.spec.ts`
+ * uses) or a dev registration opens one that was never installed, deliberately, with no
+ * install sheet and no player to ask. Refusing it means the app renders nothing.
+ *
+ * So the build's vouching stands as the grant for those, and only those. It is *recorded*
+ * as it is resolved — `adoptExistingGrant` is a no-op once any grant exists, so this can
+ * never widen a set a player narrowed — but the answer does not depend on that write
+ * having survived: the record rides `usePersisted`, which re-reads when the server's copy
+ * of settings arrives, and a bundled add-on must not lose what the build vouched for
+ * because a rehydrate landed between its frame's `hello` and its first call.
+ *
+ * `addOns` holds this build's bundled manifests only, so a remote add-on is never in it
+ * and keeps the strict rule: no recorded grant, no permissioned call.
+ */
+export function grantFor(appId: string): readonly AppPermission[] {
+  const recorded = grantedPermissions(appId);
+  if (recorded) return recorded;
+  const bundled = addOns.find((a) => a.id === appId);
+  if (!bundled) return [];
+  const vouched = bundled.permissions ?? [];
+  adoptExistingGrant(appId, vouched);
+  return vouched;
+}
 
 /** Drop anything that is not a string id this build actually ships as an add-on. */
 const sanitizeInstalledAddOnIds = (value: unknown): string[] =>

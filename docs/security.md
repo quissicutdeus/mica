@@ -433,13 +433,19 @@ by this list until someone re-weighs it.
   `AppPermissionError` an undeclared one gets, so an update that adds a
   permission does nothing at all until the player answers the Store's prompt —
   and the Store now compares against that grant rather than against a manifest
-  it could have written. Uninstalling revokes the grant. Two limits worth
-  stating: an add-on installed before this landed adopts its installed
-  manifest's permissions once, at the next boot, since there is nobody to ask at
-  rehydration time; and this is storage the shell owns, not storage it can prove
-  untampered — a player with the console open can edit it exactly as they can
-  edit the install list beside it. What it stops is a _code_ path standing in
-  for a player's answer.
+  it could have written. Uninstalling revokes the grant. One exception, and it
+  is narrow: an add-on that ships **in this repository** (`bundledAddOns`) is
+  vouched for by the build, so where no grant was ever recorded its manifest's
+  declared permissions stand as the grant and are recorded at that open
+  (`grantFor` in `registry.ts`) — a deep link (`/?app=blabber`) or a dev
+  registration reaches a bundled add-on with no install sheet and no player to
+  ask. A remote add-on is never in that list and keeps the strict rule. Two
+  limits worth stating: an add-on installed before this landed adopts its
+  installed manifest's permissions once, at the next boot, since there is nobody
+  to ask at rehydration time; and this is storage the shell owns, not storage it
+  can prove untampered — a player with the console open can edit it exactly as
+  they can edit the install list beside it. What it stops is a _code_ path
+  standing in for a player's answer.
 - **An add-on's code is trusted at build time, not at run time.** The Store
   installs a bundle that runs in that sandboxed frame, not in the shell's own
   context; the shell hash-verifies the bundle text it was handed before booting

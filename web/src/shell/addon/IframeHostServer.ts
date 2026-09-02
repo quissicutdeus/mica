@@ -16,7 +16,7 @@ import type {
   AddOnConstants
 } from '../../../../sdk/host/iframe/messages';
 import { isCallbackRef } from '../../../../sdk/host/iframe/messages';
-import { grantedPermissions } from '../state/addOnGrants';
+import { grantFor } from '../state/registry';
 import { themeStyleStore } from '../state/theme';
 import { is24Hour } from '../state/time';
 import { messageOf } from '@gphone/sdk';
@@ -314,7 +314,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     hookName: string
   ): void {
     if (needed === null) return;
-    const granted = grantedPermissions(host.appId) ?? [];
+    const granted = grantFor(host.appId);
     for (const permission of Array.isArray(needed) ? needed : [needed as AppPermission]) {
       if (!granted.includes(permission)) {
         throw new AppPermissionError(host.appId, permission, hookName);
@@ -522,7 +522,11 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       return;
     }
 
-    const granted = grantedPermissions(host.appId) ?? [];
+    // `grantFor`, not the raw record: an add-on shipped in this repository is vouched for
+    // by the build, so its declared permissions stand where no grant was ever recorded — a
+    // deep link or a dev registration reaches a bundled add-on with no install sheet and no
+    // player to ask. A remote add-on keeps the strict rule (MICA-201).
+    const granted = grantFor(host.appId);
     const payload: HydratePayload = {
       appId: host.appId,
       // `host.permissions` is a Svelte reactive array (a `$state` proxy) on an
