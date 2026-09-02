@@ -40,15 +40,17 @@ import { SDK_CONTRACT_VERSION } from './version';
  * eleven breaking SDK changes in this project's life, a name-level snapshot would have
  * caught six, and none of the three most recent.
  *
- * So this file captures five things, and only the first two are lists of names:
+ * So this file captures six things, and only the first two are lists of names:
  *
  *   1. the exported **values** of each entry point an app can actually call, read by
  *      importing the real modules,
  *   2. the exported **types** of each entry point, which compile to nothing and so are
  *      invisible to that import — read from the typechecker instead (MICA-182),
  *   3. the **props** of every exported Svelte component,
- *   4. the **members** of every exported string vocabulary (`ALL_PERMISSIONS`), and
- *   5. **parity between `index.ts` and `addon.ts`** — the two files `@gphone/sdk`
+ *   4. the **members** of every exported string vocabulary (`ALL_PERMISSIONS`),
+ *   5. the **members of the object every exported hook returns** (MICA-188), read off the
+ *      hook's call signature through the same typechecker, and
+ *   6. **parity between `index.ts` and `addon.ts`** — the two files `@gphone/sdk`
  *      resolves to depending on who is building. See that section for why.
  *
  * The first two are deliberately two arms and not one, because they answer different
@@ -68,7 +70,10 @@ import { SDK_CONTRACT_VERSION } from './version';
  *   - a prop in the baseline that is gone (a **rename** shows up as exactly this),
  *   - a prop that had a default and no longer does — a call site that omitted it now
  *     gets `undefined` where it used to get a value,
- *   - a member dropped from an exported vocabulary, and
+ *   - a member dropped from an exported vocabulary,
+ *   - a member dropped from what an exported hook returns — `useTheme()` going from
+ *     `{ theme, setTheme }` to `{ theme }` moves no name, no type and no prop, and breaks
+ *     every add-on that destructured it (MICA-127), and
  *   - a name that crosses one of the two `@gphone/sdk` barrels and not the other,
  *     without being declared as a deliberate difference.
  *
@@ -460,7 +465,65 @@ interface TypedEntry {
   values: string[];
   /** Exports that are types and nothing else — the names this arm exists for. */
   types: string[];
+  /**
+   * MICA-188. Every exported hook, and the members of the object it returns.
+   *
+   * A hook whose return type has no properties to read — `useTimer` returning `void`, a
+   * hook returning a bare function — is absent from this map rather than present with an
+   * empty list, so "nothing to freeze" and "the shape went blind" stay distinguishable.
+   */
+  hooks: Record<string, string[]>;
 }
+
+/**
+ * MICA-188. A hook by name — `use` followed by a capital, which is the whole convention
+ * in this tree and the one an add-on author reads a name by.
+ *
+ * Deliberately not "every exported function": `defineApp`, `bootAddOn` and `messageOf`
+ * return objects too, and freezing their shapes would put a per-member baseline in front
+ * of code that is not the thing MICA-127 broke. The hooks are the surface an app
+ * destructures, and destructuring is what turns a dropped member into a `TypeError` at the
+ * consumer rather than a compile error anybody in this tree would see.
+ */
+const HOOK_NAME = /^use[A-Z]/;
+
+/**
+ * The members of what a hook returns, or `null` when there is nothing to freeze.
+ *
+ * Read off the hook's **call signature** through the checker rather than off `Facets` in
+ * `sdk/host/facets.ts`. `Facets` is cheaper — one interface, already a type, no signature
+ * resolution — and it is the wrong source: a hook is free to reshape what its facet hands
+ * back before returning it (wrap it, add a member, drop one, return a projection), and any
+ * such hook would then be checked against a shape it does not publish. The checker answers
+ * for the function an add-on actually calls, which is the only shape that can break one.
+ *
+ * The **last** call signature is the one read, matching how an overloaded call resolves
+ * for the most general argument list; every hook in this tree has exactly one, so this is
+ * a rule for the day one does not.
+ *
+ * A union return type yields only the properties common to every branch, which is the
+ * conservative answer: a member an add-on cannot reach without narrowing is not one this
+ * gate should promise.
+ */
+const returnMembers = (checker: any, symbol: any): string[] | null => {
+  const declaration = symbol.valueDeclaration ?? (symbol.declarations ?? [])[0];
+  if (declaration === undefined) return null;
+
+  const type = checker.getTypeOfSymbolAtLocation(symbol, declaration);
+  const signatures = type.getCallSignatures();
+  if (signatures.length === 0) return null;
+
+  const returned = checker.getReturnTypeOfSignature(signatures[signatures.length - 1]);
+  const members: string[] = checker
+    .getPropertiesOfType(returned)
+    // A synthetic member the compiler invented (`__@iterator`, an index signature's
+    // placeholder) is not a name anybody writes, so it is not part of the contract.
+    .filter((member: any) => !member.name.startsWith('__'))
+    .map((member: any) => `${member.name}${member.flags & ts.SymbolFlags.Optional ? '?' : ''}`)
+    .sort();
+
+  return members.length === 0 ? null : members;
+};
 
 /**
  * Every entry point's exports as the typechecker resolves them, classified.
@@ -527,6 +590,7 @@ const typecheckerExports = (): Record<string, TypedEntry> => {
 
     const values: string[] = [];
     const types: string[] = [];
+    const hooks: Record<string, string[]> = {};
     for (const exported of checker.getExportsOfModule(symbol)) {
       if (exported.name === 'default') continue;
       const typeOnlySpecifier = (exported.declarations ?? []).some(
@@ -544,8 +608,13 @@ const typecheckerExports = (): Record<string, TypedEntry> => {
       const isValue =
         !typeOnlySpecifier && !unresolved && Boolean(resolved.flags & ts.SymbolFlags.Value);
       (isValue ? values : types).push(exported.name);
+
+      if (isValue && HOOK_NAME.test(exported.name)) {
+        const members = returnMembers(checker, resolved);
+        if (members !== null) hooks[exported.name] = members;
+      }
     }
-    out[id] = { values: values.sort(), types: types.sort() };
+    out[id] = { values: values.sort(), types: types.sort(), hooks };
   }
   return out;
 };
@@ -1352,13 +1421,312 @@ const BASELINE_VOCABULARIES: Record<string, string[]> = {
   ]
 };
 
+/**
+ * MICA-188. What every exported hook returns, member by member, frozen.
+ *
+ * The arm above the export list reads names at the module boundary; this one reads one
+ * level in. `useTheme()` returning `{ theme }` where it used to return `{ theme, setTheme }`
+ * keeps every other arm of this file green and breaks every add-on that destructured
+ * `setTheme` — MICA-127, and the reason this list exists.
+ *
+ * Captured off the **checker**, from the same program the type arm builds, over the hooks
+ * `@gphone/sdk` publishes — see `returnMembers` for why not off `Facets`, and the
+ * `freezes what every published hook returns` test for why `index.ts` and not `addon.ts`.
+ *
+ * Encoded like `BASELINE_PROPS`: a bare name, `name?` when the member is optional. Frozen
+ * on the same terms as everything else here — additions never need writing down, and the
+ * only reason to edit a line is a removal, which is a `SDK_CONTRACT_VERSION` bump.
+ */
+const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
+  useAccount: [
+    'bankBalance',
+    'citizenid',
+    'fetchBalance',
+    'fetchCitizenId',
+    'fetchPhoneNumber',
+    'fetchTransactions',
+    'myPhoneNumber',
+    'transactions',
+    'transactionsLoaded'
+  ],
+  useAccounts: [
+    'blockAccount',
+    'createAccount',
+    'followAccount',
+    'getAccounts',
+    'getFollowStats',
+    'getFollowers',
+    'getFollowing',
+    'getMyAccounts',
+    'getReactionsFor',
+    'reactToTarget',
+    'searchAccounts',
+    'unblockAccount',
+    'unfollowAccount',
+    'unreactToTarget',
+    'updateAccount'
+  ],
+  useAdmin: ['isAdmin', 'refreshAdmin'],
+  useAppAction: ['busy', 'notify', 'run'],
+  useAppEvents: ['clear', 'on', 'onAny'],
+  useAppLevels: ['back', 'release', 'title'],
+  useAppRegistry: [
+    'bundledAddOns',
+    'getFirstBootTime',
+    'registryStore',
+    'updateCount',
+    'updatesStore'
+  ],
+  useAppRegistryWrite: [
+    'installFromCatalog',
+    'refreshUpdates',
+    'registerAddOn',
+    'registerApp',
+    'unregisterApp',
+    'updateApp'
+  ],
+  useBank: ['sendMoney'],
+  useCall: [
+    'answerCall',
+    'callLog',
+    'callStore',
+    'endCall',
+    'loadCallLog',
+    'startCall',
+    'toggleSpeaker'
+  ],
+  useCamera: ['isPreviewingPhoto', 'isTakingPhoto'],
+  useClock: ['formattedTime', 'is24Hour', 'time'],
+  useClockWrite: ['setIs24Hour'],
+  useContacts: [
+    'addContact',
+    'contactsStore',
+    'favoriteContacts',
+    'getDeletedContacts',
+    'restoreContact',
+    'shareContact'
+  ],
+  useDevTools: ['devToolsUnlocked', 'lock', 'unlock'],
+  useDisplay: [
+    'displaySize',
+    'displaySizeDefault',
+    'homeGridColumns',
+    'homeGridColumnsDefault',
+    'homeGridColumnsMax',
+    'homeGridColumnsMin',
+    'homeGridRows',
+    'homeGridRowsDefault',
+    'homeGridRowsMax',
+    'homeGridRowsMin',
+    'isSizeLimited',
+    'motionPreference',
+    'motionPreferenceDefault',
+    'phoneBox',
+    'phoneScale',
+    'reducedMotion'
+  ],
+  useDisplayWrite: ['setDisplaySize', 'setHomeGridSize', 'setMotionPreference'],
+  useHighscores: ['getLeaderboard', 'submitScore'],
+  useKeybinds: ['bindings', 'findConflict', 'groups', 'onKeybind'],
+  useKeybindsWrite: ['resetBindings', 'setBinding'],
+  useLocale: ['availableLocales', 'locale', 'plural', 'setLocale', 't'],
+  useLocation: ['setWaypoint', 'shareLocation'],
+  useLockScreen: ['autoLockPolicy', 'autoLockPolicyChoices', 'hasPasscode'],
+  useLockScreenWrite: ['clearPasscode', 'setAutoLockPolicy', 'setPasscode'],
+  useMail: [
+    'addReceivedMail',
+    'archiveMail',
+    'deleteMail',
+    'mailStore',
+    'markAsRead',
+    'unreadMailCount'
+  ],
+  useMarketplace: [
+    'feedStore',
+    'loadFeed',
+    'loadMine',
+    'markSold',
+    'mineStore',
+    'postListing',
+    'removeListing',
+    'searchListings',
+    'viewListing'
+  ],
+  useMedia: [
+    'capturePhoto',
+    'deletePhoto',
+    'dropNearby',
+    'fullMedia',
+    'getDeletedMedia',
+    'media',
+    'restoreMedia'
+  ],
+  useMessages: [
+    'addReceivedMessage',
+    'conversationsStore',
+    'loadMessageReactions',
+    'messageReactions',
+    'sendMessage',
+    'startText',
+    'toggleMessageReaction',
+    'unreadMessagesCount'
+  ],
+  useMusic: [
+    'audibleBroadcasts',
+    'canPlay',
+    'clearMutedBroadcasters',
+    'clearQueue',
+    'cycleRepeat',
+    'describeMusicError',
+    'enqueue',
+    'maxAudibleBroadcasts',
+    'musicError',
+    'musicHasNext',
+    'musicHasPrevious',
+    'musicIndex',
+    'musicMuted',
+    'musicNowPlaying',
+    'musicPosition',
+    'musicQueue',
+    'musicRepeat',
+    'musicShuffle',
+    'musicSource',
+    'musicStatus',
+    'musicVolume',
+    'muteAllNearby',
+    'muteBroadcaster',
+    'mutedBroadcasters',
+    'nearbyBroadcasts',
+    'nextTrack',
+    'pauseMusic',
+    'playQueueIndex',
+    'playSource',
+    'previousTrack',
+    'removeFromQueue',
+    'resumeMusic',
+    'seekMusic',
+    'setMusicMuted',
+    'setMusicVolume',
+    'setMuteAllNearby',
+    'setRepeat',
+    'stopMusic',
+    'thumbnailUrlFor',
+    'toggleBroadcasterMute',
+    'toggleMusicMute',
+    'toggleMuteAllNearby',
+    'toggleShuffle',
+    'unmuteBroadcaster'
+  ],
+  useNavigation: ['closePhone', 'currentApp', 'goHome', 'openApp'],
+  useNotificationSettings: [
+    'appNotificationPolicies',
+    'appPolicyStore',
+    'badgesEnabled',
+    'customisedNotificationApps',
+    'dndEnabled',
+    'notificationSoundEnabled',
+    'toastsEnabled'
+  ],
+  useNotificationSettingsWrite: [
+    'clearAppNotificationPolicy',
+    'setAppNotificationPolicy',
+    'setBadgesEnabled',
+    'setDndEnabled',
+    'setNotificationSoundEnabled',
+    'setToastsEnabled'
+  ],
+  useNotifications: [
+    'clear',
+    'clearAll',
+    'load',
+    'loaded',
+    'markRead',
+    'notificationsStore',
+    'totalUnread',
+    'unreadCount'
+  ],
+  usePagedList: ['hiddenCount', 'loadMore', 'loading', 'offset', 'onScroll', 'reset', 'visible'],
+  usePersisted: ['set', 'subscribe', 'update'],
+  usePhoneNotification: ['dismissNotification', 'sendNotification', 'toast'],
+  useReport: ['submit'],
+  useReports: [
+    'loadPendingReports',
+    'loadReportHistory',
+    'pendingReportCount',
+    'pendingReports',
+    'reopenReport',
+    'resolveReport',
+    'resolvedReports'
+  ],
+  useService: ['call', 'id'],
+  useSound: ['play'],
+  useSourceUrl: ['refreshSourceUrl', 'sourceUrl'],
+  useStorage: ['clear', 'getItem', 'markUnsynced', 'removeItem', 'setItem'],
+  useSystemHardware: [
+    'bluetoothEnabled',
+    'cellServiceEnabled',
+    'charge',
+    'isBluetoothDiscoverable',
+    'ringMode',
+    'ringModeChoices',
+    'ringtone',
+    'ringtoneChoices',
+    'signalLevel',
+    'soundMuted',
+    'soundVolume',
+    'volumeStep',
+    'volumeStepChoices'
+  ],
+  useSystemHardwareWrite: [
+    'previewRingtone',
+    'setCharge',
+    'setRingMode',
+    'setRingtone',
+    'setSignal',
+    'setVolume',
+    'setVolumeStep',
+    'toggleBluetooth',
+    'toggleCellService',
+    'toggleMute'
+  ],
+  useTheme: [
+    'defaultTheme',
+    'isLightMode',
+    'sanitizeSeed',
+    'schemeStore',
+    'seedFromRgbString',
+    'themeStore'
+  ],
+  useThemeWrite: ['resetTheme', 'setThemeMode', 'setThemeSeed'],
+  useTimer: ['after', 'clearAll', 'every'],
+  useWallpaper: [
+    'activeSeed',
+    'backgroundForSeed',
+    'defaultWallpaper',
+    'presets',
+    'seedFromImage',
+    'wallpaperBackground',
+    'wallpaperNeedsContrast',
+    'wallpaperStore'
+  ],
+  useWallpaperWrite: [
+    'resetWallpaper',
+    'setPresetWallpaper',
+    'setWallpaperImage',
+    'setWallpaperSeed'
+  ]
+};
+
 // ---------------------------------------------------------------------------
 // The difference that matters
 // ---------------------------------------------------------------------------
 
 /** One way the live surface would break something already written against the baseline. */
 interface Break {
-  /** `'@gphone/sdk'` for an export or a type, the component name for a prop. */
+  /**
+   * `'@gphone/sdk'` for an export or a type, the component name for a prop, the hook name
+   * for a return member.
+   */
   where: string;
   what: string;
   kind:
@@ -1367,7 +1735,8 @@ interface Break {
     | 'prop removed'
     | 'prop lost its default'
     | 'shape could not be read'
-    | 'vocabulary member removed';
+    | 'vocabulary member removed'
+    | 'hook return member removed';
 }
 
 /**
@@ -1391,6 +1760,8 @@ interface Surface {
   vocabularies?: Record<string, string[]>;
   /** Type-only exports, keyed by entry point. Optional on the same terms. */
   types?: Record<string, string[]>;
+  /** What each exported hook returns, keyed by hook name. Optional on the same terms. */
+  hooks?: Record<string, string[]>;
 }
 
 const breakingChanges = (live: Surface, baseline: Surface): Break[] => {
@@ -1454,6 +1825,42 @@ const breakingChanges = (live: Surface, baseline: Surface): Break[] => {
     }
   }
 
+  // MICA-188. Every arm above this one reads the surface at the module boundary and
+  // stops: a name is there or it is not, a prop is there or it is not. `useTheme()` going
+  // from `{ theme, setTheme }` to `{ theme }` moves no name, no type and no prop — the
+  // hook is still exported, still a function, still returns an object — and every add-on
+  // that destructured `setTheme` gets `undefined` and calls it. MICA-127 was that,
+  // exactly, and nothing in this file would have said a word.
+  //
+  // Removal-only, like every other arm: an added member breaks nobody, and this gate is on
+  // record (see the header) that a gate demanding paperwork for a widening is a gate
+  // somebody switches off. Two things it therefore does not see, said plainly: a member
+  // that stays but changes type, and one that goes from required to optional — the second
+  // is a real narrowing, and reporting it wants the `defaults()` treatment the prop arm
+  // gets. The optionality is captured in the baseline so that is a differ change and not a
+  // re-freeze when somebody wants it.
+  for (const [hook, members] of Object.entries(baseline.hooks ?? {})) {
+    if (!(hook in (live.hooks ?? {}))) {
+      // Same shape as the props arm: a hook that is gone entirely is already an
+      // `export removed` line, but one still exported whose return shape came back
+      // unreadable is a parse that went blind, and skipping it is the fail-open AGENTS.md
+      // names. `returnMembers` returns `null` for a hook with nothing to freeze, so this
+      // fires when a hook stops returning an object at all — which is itself a break.
+      const stillExported = Object.values(live.exports).some((names) => names.includes(hook));
+      if (stillExported) {
+        breaks.push({ where: hook, what: 'what it returns', kind: 'shape could not be read' });
+      }
+      continue;
+    }
+    const now = new Set((live.hooks?.[hook] ?? []).map((m) => m.replace(/\?$/, '')));
+    for (const member of members) {
+      const name = member.replace(/\?$/, '');
+      if (!now.has(name)) {
+        breaks.push({ where: hook, what: member, kind: 'hook return member removed' });
+      }
+    }
+  }
+
   return breaks;
 };
 
@@ -1494,9 +1901,10 @@ interface Addition {
  * nobody makes. It exempts additions only — an icon that *disappears* is still a removal,
  * and `breakingChanges` still sees it.
  *
- * Props are deliberately out of scope. A new prop is a widening too, but an optional one
- * breaks nobody and the arm above already treats it that way; this exists for names
- * entering the surface, which is what the barrel glob does silently.
+ * Props are deliberately out of scope, and so are hook return members. A new prop or a new
+ * member is a widening too, but an optional one breaks nobody and the arms above already
+ * treat it that way; this exists for names entering the surface, which is what the barrel
+ * glob does silently.
  *
  * Pure, like its neighbour, so the probes at the bottom can drive it with input this repo
  * does not have.
@@ -1787,6 +2195,9 @@ describe('the SDK public surface (MICA-125)', () => {
   const typesNow = Object.fromEntries(
     Object.entries(typedNow).map(([id, entry]) => [id, entry.types])
   );
+  // Read off `@gphone/sdk` alone, and not off all four entry points merged. See
+  // `freezes what every published hook returns` below for why that is the whole scope.
+  const hooksNow = typedNow['@gphone/sdk'].hooks;
 
   describe('the gate can actually run', () => {
     // Every assertion below compares two lists. If either side comes back empty — a
@@ -1913,6 +2324,20 @@ describe('the SDK public surface (MICA-125)', () => {
       expect(BASELINE_TYPE_EXPORTS['@gphone/sdk (add-on bundle)'].length).toBeGreaterThanOrEqual(
         59
       );
+      // MICA-188. The hook arm is the one that goes quiet most cheaply: if the checker
+      // stopped resolving call signatures — an ambient declaration lost, a hook re-exported
+      // through something the program cannot see — `returnMembers` returns `null` for every
+      // hook, `hooksNow` comes back `{}`, and `breakingChanges` would then report every
+      // frozen hook as `shape could not be read` rather than silently. These floors make the
+      // *baseline* side just as loud, and catch a half-deleted list.
+      expect(
+        Object.keys(BASELINE_HOOK_RETURNS).length,
+        'the frozen hook-return baseline is missing — restore it rather than letting the ' +
+          'gate go quiet'
+      ).toBeGreaterThanOrEqual(45);
+      expect(Object.values(BASELINE_HOOK_RETURNS).flat().length).toBeGreaterThanOrEqual(250);
+      expect(Object.keys(hooksNow).length).toBeGreaterThanOrEqual(45);
+      expect(Object.values(hooksNow).flat().length).toBeGreaterThanOrEqual(250);
     });
   });
 
@@ -1933,12 +2358,19 @@ describe('the SDK public surface (MICA-125)', () => {
       Object.entries(propsNow).map(([name, list]) => [name, list ?? []])
     );
     const found = breakingChanges(
-      { exports: exportsNow, props, vocabularies: vocabulariesNow, types: typesNow },
+      {
+        exports: exportsNow,
+        props,
+        vocabularies: vocabulariesNow,
+        types: typesNow,
+        hooks: hooksNow
+      },
       {
         exports: BASELINE_EXPORTS,
         props: BASELINE_PROPS,
         vocabularies: BASELINE_VOCABULARIES,
-        types: BASELINE_TYPE_EXPORTS
+        types: BASELINE_TYPE_EXPORTS,
+        hooks: BASELINE_HOOK_RETURNS
       }
     ).map(describeBreak);
 
@@ -2406,6 +2838,87 @@ describe('the SDK public surface (MICA-125)', () => {
           { ...surface(entry), vocabularies: { ALL_PERMISSIONS: ['media', 'music'] } },
           { ...surface(entry), vocabularies: { ALL_PERMISSIONS: ['media'] } }
         )
+      ).toEqual([]);
+    });
+
+    it("sees a member dropped from a hook's return object", () => {
+      // MICA-127, and the whole of MICA-188. `useTheme` is still exported, still a
+      // function, still returns an object — every other arm of this file is satisfied — and
+      // an add-on that wrote `const { setTheme } = useTheme()` now calls `undefined`.
+      const entry = { '@gphone/sdk': ['useTheme'] };
+      expect(
+        breakingChanges(
+          { ...surface(entry), hooks: { useTheme: ['theme'] } },
+          { ...surface(entry), hooks: { useTheme: ['setTheme', 'theme'] } }
+        ).map(describeBreak)
+      ).toEqual(['useTheme: setTheme (hook return member removed)']);
+    });
+
+    it("lets a member added to a hook's return object through", () => {
+      // Additions pass on this axis for the same reason they pass on every other one. A
+      // hook that starts returning something extra breaks nobody, and a gate that demanded
+      // a version bump for it would be a gate somebody switches off.
+      const entry = { '@gphone/sdk': ['useTheme'] };
+      expect(
+        breakingChanges(
+          { ...surface(entry), hooks: { useTheme: ['setTheme', 'seed', 'theme'] } },
+          { ...surface(entry), hooks: { useTheme: ['setTheme', 'theme'] } }
+        )
+      ).toEqual([]);
+    });
+
+    it('does not report an optional member that became required, or the reverse', () => {
+      // A member gaining a default-like optionality is a narrowing this arm deliberately
+      // does not see (see the differ). Stated as a test rather than only as a comment, so
+      // the day somebody wants it, this is the line that has to change and the blind spot
+      // is not discovered by an add-on.
+      const entry = { '@gphone/sdk': ['useTheme'] };
+      expect(
+        breakingChanges(
+          { ...surface(entry), hooks: { useTheme: ['setTheme?'] } },
+          { ...surface(entry), hooks: { useTheme: ['setTheme'] } }
+        )
+      ).toEqual([]);
+    });
+
+    it('reports a hook whose return shape stopped being readable', () => {
+      // The fail-open shape: a hook still exported whose return type no longer has members
+      // the checker can enumerate. Skipping it would leave a frozen shape unchecked with
+      // nothing said, which is the failure AGENTS.md names.
+      expect(
+        breakingChanges(
+          { ...surface({ '@gphone/sdk': ['useTheme'] }), hooks: {} },
+          { ...surface({ '@gphone/sdk': ['useTheme'] }), hooks: { useTheme: ['theme'] } }
+        ).map(describeBreak)
+      ).toEqual(['useTheme: what it returns (shape could not be read)']);
+    });
+
+    it('freezes what every published hook returns', () => {
+      // The other half, as with props and vocabularies: the literals above are driven
+      // through a pure differ, so something has to assert that the encoding they are
+      // written in is what the live checker actually produces.
+      expect(hooksNow.useTheme).toContain('themeStore');
+      expect(hooksNow.useAppLevels).toContain('back');
+      expect(hooksNow.useService).toEqual(['call', 'id']);
+      // `useTimer` returns an object of three functions, so it is here; a hook returning
+      // nothing to enumerate would be absent rather than present-and-empty.
+      expect(hooksNow.useTimer).toContain('every');
+      const empty = Object.entries(hooksNow).filter(([, members]) => members.length === 0);
+      expect(empty, 'a hook was frozen with no members, which checks nothing').toEqual([]);
+
+      // **Scope**: every hook `@gphone/sdk` publishes, not only the ones on `addon.ts`.
+      // The add-on barrel is the smaller list — it is what an outside author reaches, and
+      // freezing only that would leave every `core: true` app's hooks ungated for no gain,
+      // since both barrels re-export the same `host/index.ts` and the parity block above
+      // already keeps the two name lists together. `index.ts` is the superset, so scoping
+      // to it covers `addon.ts` and costs nothing extra.
+      const addonHooks = Object.keys(typedNow['@gphone/sdk (add-on bundle)'].hooks);
+      expect(addonHooks.length).toBeGreaterThan(0);
+      const missing = addonHooks.filter((hook) => !(hook in hooksNow));
+      expect(
+        missing,
+        'a hook reaches the add-on barrel and not `index.ts`, so scoping this arm to ' +
+          '`index.ts` no longer covers what an add-on can call'
       ).toEqual([]);
     });
 
