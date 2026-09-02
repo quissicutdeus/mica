@@ -13,6 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ReportDialog,
     Skeleton,
     useCall,
+    useLocale,
     useMarketplace,
     useMessages
   } from '@gphone/sdk';
@@ -23,6 +24,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { viewListing } = useMarketplace();
   const { startCall } = useCall();
   const { startText } = useMessages();
+  const { t } = useLocale();
 
   let listing = $state<(Listing & { contactPhone: string | null; isOwn: boolean }) | null>(null);
   let reporting = $state(false);
@@ -33,7 +35,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </script>
 
 <div class="flex items-center gap-2 p-4">
-  <button type="button" onclick={onback} aria-label="Back" class="text-on-surface-variant">
+  <button
+    type="button"
+    onclick={onback}
+    aria-label={$t('marketplace.back')}
+    class="text-on-surface-variant"
+  >
     ←
   </button>
 </div>
@@ -55,8 +62,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <div class="mt-2 flex items-center gap-2">
       {#if listing.contactPhone}
-        <Button onclick={() => startCall(listing!.contactPhone!)}>Call</Button>
-        <Button variant="secondary" onclick={() => startText(listing!.contactPhone!)}>Text</Button>
+        <Button onclick={() => startCall(listing!.contactPhone!)}>{$t('marketplace.call')}</Button>
+        <Button variant="secondary" onclick={() => startText(listing!.contactPhone!)}
+          >{$t('marketplace.text')}</Button
+        >
       {/if}
       {#if !listing.isOwn}
         <ReportButton subject="listing" size="header" onclick={() => (reporting = true)} />

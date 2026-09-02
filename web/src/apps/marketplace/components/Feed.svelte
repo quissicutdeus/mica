@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { EmptyState, Skeleton, MediaThumb, useMarketplace } from '@gphone/sdk';
+  import { EmptyState, Skeleton, MediaThumb, useLocale, useMarketplace } from '@gphone/sdk';
   import type { Listing } from '@gphone/shared/types';
 
   let {
@@ -20,6 +20,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } = $props();
 
   const { feedStore, loadFeed, searchListings } = useMarketplace();
+  const { t } = useLocale();
 
   let loaded = $state(false);
   let query = $state('');
@@ -49,7 +50,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <div class="flex items-center gap-2 p-4 pb-2">
   <input
     type="search"
-    placeholder="Search listings"
+    placeholder={$t('marketplace.searchPlaceholder')}
     value={query}
     oninput={onSearchInput}
     class="bg-surface-container text-on-surface placeholder:text-on-surface-variant text-body-medium flex-1 rounded-box px-4 py-2"
@@ -59,12 +60,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onclick={onMyListings}
     class="text-on-surface-variant hover:text-primary text-label-large"
   >
-    My Listings
+    {$t('marketplace.myListings')}
   </button>
   <button
     type="button"
     onclick={onCreate}
-    aria-label="Create listing"
+    aria-label={$t('marketplace.createListing')}
     class="bg-primary text-on-primary text-title-medium flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
   >
     +
@@ -75,7 +76,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {#if !loaded}
     <Skeleton count={4} height="h-20" />
   {:else if rows.length === 0}
-    <EmptyState title="No listings" description="Nothing matches yet." />
+    <EmptyState
+      title={$t('marketplace.feedEmptyTitle')}
+      description={$t('marketplace.feedEmptyDescription')}
+    />
   {:else}
     {#each rows as listing (listing.id)}
       <button

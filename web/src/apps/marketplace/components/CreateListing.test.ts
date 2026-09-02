@@ -21,6 +21,15 @@ vi.mock('@gphone/sdk', async (importOriginal) => ({
 
 import CreateListing from './CreateListing.svelte';
 
+import { registerMessages } from '@gphone/sdk';
+import en from '../locales/en.json';
+import de from '../locales/de.json';
+
+// MICA-215: `index.svelte` registers the `marketplace` namespace for the running app.
+// This test renders one screen on its own, so it stands in for the entry point —
+// otherwise every `$t` here resolves to its own key.
+registerMessages('marketplace', { en, de });
+
 describe('CreateListing', () => {
   beforeEach(() => vi.clearAllMocks());
 

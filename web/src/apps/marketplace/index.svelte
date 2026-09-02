@@ -5,11 +5,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Screen, useAppLevels, type AppProps } from '@gphone/sdk';
+  import { Screen, registerMessages, useAppLevels, useLocale, type AppProps } from '@gphone/sdk';
   import Feed from './components/Feed.svelte';
   import ListingDetail from './components/ListingDetail.svelte';
   import CreateListing from './components/CreateListing.svelte';
   import MyListings from './components/MyListings.svelte';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
+
+  // MICA-215: Snatchr's own catalog, registered once for every screen under it.
+  registerMessages('marketplace', { en, de });
+  const { t } = useLocale();
 
   let { onback }: AppProps = $props();
 
@@ -20,7 +26,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const app = useAppLevels({
     appId: 'marketplace',
-    title: 'Snatchr',
+    title: () => $t('marketplace.title'),
     onback: () => onback(),
     levels: [
       {

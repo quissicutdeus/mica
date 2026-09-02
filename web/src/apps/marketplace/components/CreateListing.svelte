@@ -6,12 +6,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { MAX_ATTACHMENTS } from '@gphone/shared/attachments';
-  import { Button, PhotoPickerModal, useMarketplace } from '@gphone/sdk';
+  import { Button, PhotoPickerModal, useLocale, useMarketplace } from '@gphone/sdk';
   import type { MediaPreview } from '@gphone/shared/types';
 
   let { onposted, oncancel }: { onposted: (id: number) => void; oncancel: () => void } = $props();
 
   const { postListing } = useMarketplace();
+  const { t } = useLocale();
 
   let title = $state('');
   // `type="number"` binds a `number` (or `''` when empty), not a string — Svelte coerces it.
@@ -48,19 +49,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <div class="flex flex-col gap-3 p-4">
   <input
-    placeholder="Title"
+    placeholder={$t('marketplace.titlePlaceholder')}
     bind:value={title}
     class="bg-surface-container text-on-surface rounded-box px-3 py-2"
   />
   <input
-    placeholder="Price"
+    placeholder={$t('marketplace.pricePlaceholder')}
     type="number"
     min="0"
     bind:value={price}
     class="bg-surface-container text-on-surface rounded-box px-3 py-2"
   />
   <textarea
-    placeholder="Description"
+    placeholder={$t('marketplace.descriptionPlaceholder')}
     bind:value={description}
     class="bg-surface-container text-on-surface rounded-box px-3 py-2"></textarea>
 
@@ -69,18 +70,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onclick={() => (showPicker = true)}
     class="text-primary text-label-large self-start"
   >
-    Add photos ({attachments.length}/{MAX_ATTACHMENTS})
+    {$t('marketplace.addPhotos', { count: attachments.length, max: MAX_ATTACHMENTS })}
   </button>
 
   <div class="flex justify-end gap-2">
-    <Button variant="secondary" onclick={oncancel}>Cancel</Button>
-    <Button disabled={!canPost} onclick={submit}>Post</Button>
+    <Button variant="secondary" onclick={oncancel}>{$t('marketplace.cancel')}</Button>
+    <Button disabled={!canPost} onclick={submit}>{$t('marketplace.post')}</Button>
   </div>
 </div>
 
 {#if showPicker}
   <PhotoPickerModal
-    title="Select Photos"
+    title={$t('marketplace.selectPhotos')}
     multiSelect={true}
     selectedIds={attachments.map((a) => a.photo_id)}
     onmultichange={(photoId: number, media: MediaPreview) => {
