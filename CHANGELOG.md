@@ -300,6 +300,13 @@ is MICA-216. Dates, times and currency format under the chosen language. A
 translator who wants to add a language edits the `locales/*.json` files beside
 each app; nothing else is needed.
 
+**What the server says is translated too (MICA-216).** A refusal a service
+raises and a toast the server pushes now carry a message key beside their
+English, and the phone resolves the key in the player's language; the English
+stays as the fallback and as what the server log shows. Three toasts keep their
+text as the admin typed it (`gphonecall`, `gphoneseed` and the battery command
+echo), since it is not fixed prose. No owner action.
+
 - The lock screen passcode is stored with **scrypt** rather than a single salted
   SHA-256 pass, and wrong guesses are now rate limited on the server rather than
   only in the UI. Two new convars come with it: `gphone_lockscreen_scrypt_cost`
@@ -558,6 +565,20 @@ read-only for an add-on. `formatDate`, `formatTime` and `formatCurrency` now
 format under that locale rather than `en-US`, which changes their output for a
 player in another language — if you parse what they return, stop. Both names are
 additive; the contract stays `v1`.
+
+**An error reply may carry a message key (MICA-216).** `fetchNui` and
+`useService(id).call()` still throw an `Error` whose message is what the server
+sent; when the reply also carries `key` and the shell's catalog knows it, the
+message is the translation instead. Your own server half is unaffected: send
+`{ error }` as before and the English shows, or send `{ error, key, params }`
+with keys under a namespace you register from your bundle and it translates.
+`notifyPlayer` on the server takes `key`, `titleKey` and `params` the same way.
+
+**`useMessages()` gains `hasOlderMessages` and `loadOlderMessages`
+(MICA-212).** A thread is read one page at a time now — fifty newest first,
+older pages through a cursor — and `messages:get` answers `{ rows, nextCursor }`
+rather than a bare array. Both names are additive; nothing an add-on already
+calls changed shape except that read, which no add-on reaches through the SDK.
 
 **`hostRuntime()` is new beside `isBrowser()` (MICA-177).** It answers
 `'browser'`, `'cef'` or `'headless'`, and `isBrowser()` now answers `false`
