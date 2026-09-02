@@ -292,10 +292,13 @@ lists every language any app provides, and `Automatic` follows a new convar,
 `gphone_locale`, then the player's own game language, then English. Set
 `gphone_locale "de"` (a BCP 47 tag; a value that is not one is ignored with a
 console warning) to give a community a default without each player choosing.
-This release ships the mechanism with Notes and the Language pane translated
-into German as the worked example; the rest of the phone follows in MICA-214
-and MICA-215, and text the server itself composes in MICA-216. Dates, times
-and currency now format under the chosen language.
+Every screen the phone draws — the shell, Settings, the shared dialogs and all
+sixteen apps — reads its strings from a catalog, and every one ships German
+alongside English (MICA-214, MICA-215). What is still English on a German
+phone is the text the server itself composes, such as a refusal in a toast; that
+is MICA-216. Dates, times and currency format under the chosen language. A
+translator who wants to add a language edits the `locales/*.json` files beside
+each app; nothing else is needed.
 
 - The lock screen passcode is stored with **scrypt** rather than a single salted
   SHA-256 pass, and wrong guesses are now rate limited on the server rather than
