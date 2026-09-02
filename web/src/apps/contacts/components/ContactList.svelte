@@ -5,7 +5,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Avatar, EmptyState, ListItem, Skeleton, StarIcon, type Contact } from '@gphone/sdk';
+  import {
+    Avatar,
+    EmptyState,
+    ListItem,
+    Skeleton,
+    StarIcon,
+    useLocale,
+    type Contact
+  } from '@gphone/sdk';
+
+  const { t } = useLocale();
 
   /**
    * The contact list: favourites first, then everyone else.
@@ -62,7 +72,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div
         class="bg-surface-container border-outline-variant text-on-surface-variant text-body-small sticky top-0 z-10 border-b px-4 py-1 tracking-wider uppercase backdrop-blur"
       >
-        Favorites
+        {$t('contacts.favorites')}
       </div>
       <div class="divide-outline-variant divide-y">
         {#each favorites as contact (contact.id)}
@@ -77,7 +87,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div
         class="bg-surface-container border-outline-variant text-on-surface-variant text-body-small sticky top-0 z-10 border-b px-4 py-1 tracking-wider uppercase backdrop-blur"
       >
-        Contacts
+        {$t('contacts.title')}
       </div>
       <div class="divide-outline-variant divide-y">
         {#each others as contact (contact.id)}
@@ -92,6 +102,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <Skeleton count={6} height="h-14" />
     </div>
   {:else if total === 0}
-    <EmptyState title={query.trim() ? 'No matching contacts' : 'No contacts yet'} />
+    <EmptyState title={query.trim() ? $t('contacts.noMatching') : $t('contacts.empty')} />
   {/if}
 </div>

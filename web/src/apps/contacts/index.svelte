@@ -28,8 +28,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useScrollDetect,
     useAppLevels,
     useDeepLink,
+    registerMessages,
+    useLocale,
     type AppProps
   } from '@gphone/sdk';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
+
+  // MICA-215: this app's strings, registered by the app itself — the same shape an
+  // add-on outside this repository uses. `$t('contacts.…')` reads them under the phone's
+  // locale, here and in the three components below.
+  registerMessages('contacts', { en, de });
+  const { t } = useLocale();
+
   import ContactDetails from './components/ContactDetails.svelte';
   import ContactForm from './components/ContactForm.svelte';
   import ContactList from './components/ContactList.svelte';
@@ -128,7 +139,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const app = useAppLevels({
     appId: 'contacts',
-    title: 'Contacts',
+    title: () => $t('contacts.title'),
     onback: () => onback(),
     levels: [
       { open: () => showPhotoPicker, close: () => (showPhotoPicker = false) },
@@ -136,13 +147,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {
         open: () => !!selectedContact,
         close: () => (selectedContact = null),
-        title: 'Contact Details'
+        title: () => $t('contacts.contactDetails')
       },
-      { open: () => isAdding, close: () => (isAdding = false), title: 'New Contact' },
+      {
+        open: () => isAdding,
+        close: () => (isAdding = false),
+        title: () => $t('contacts.newContact')
+      },
       {
         open: () => showRecentlyDeleted,
         close: () => (showRecentlyDeleted = false),
-        title: 'Recently Deleted'
+        title: () => $t('contacts.recentlyDeleted')
       },
       {
         open: () => showSearch,
@@ -185,8 +200,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       type: 'error',
       app: 'contacts',
       message: forSharing
-        ? 'First name and phone number are required to share contact.'
-        : 'First name and phone number are required.'
+        ? $t('contacts.requireNameAndPhoneShare')
+        : $t('contacts.requireNameAndPhone')
     });
     return false;
   };
@@ -203,7 +218,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           avatar: newContact.avatar,
           favorite: newContact.favorite
         }),
-      { success: 'Contact added successfully' }
+      { success: $t('contacts.added') }
     );
     if (!added) return;
 
@@ -235,7 +250,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     };
 
     const saved = await run(() => contactsStore.update(payload), {
-      success: 'Contact updated successfully'
+      success: $t('contacts.updated')
     });
     if (saved) isEditing = false;
     return saved;
@@ -255,7 +270,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     if (!selectedContact) return;
     // This one used to swallow both toasts, so a refused delete looked like a real one.
     const deleted = await run(() => contactsStore.delete(selectedContact!.id), {
-      success: 'Contact deleted'
+      success: $t('contacts.deleted')
     });
     if (deleted) selectedContact = null;
   };
@@ -271,10 +286,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     deletedContacts = await getDeletedContacts();
   };
 
+  const fullName = (c: Pick<Contact, 'firstname' | 'lastname'>) =>
+    `${c.firstname} ${c.lastname || ''}`.trim();
+
   const recentlyDeletedItems = $derived<RecentlyDeletedItem[]>(
     deletedContacts.map((c) => ({
       id: c.id,
-      label: `${c.firstname} ${c.lastname || ''}`.trim(),
+      // Composed above rather than inline: a player's name is not a translatable string,
+      // but a template literal in this position reads as one to the MICA-61 scanner.
+      label: fullName(c),
       preview: c.phone,
       deletedAt: c.updated_at
     }))
@@ -287,10 +307,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     const restored = await run(
       async () => {
         if (!(await restoreContact(Number(id)))) {
-          throw new Error('This can no longer be restored.');
+          throw new Error($t('contacts.restoreFailed'));
         }
       },
-      { success: 'Contact restored' }
+      { success: $t('contacts.restored') }
     );
     if (restored) deletedContacts = deletedContacts.filter((c) => c.id !== id);
   };
@@ -334,16 +354,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         showSearch = !showSearch;
         if (!showSearch) searchQuery = '';
       }}
-      title="Search Contacts"
-      aria-label="Search Contacts"
+      title={$t('contacts.searchContacts')}
+      aria-label={$t('contacts.searchContacts')}
     >
       <SearchIcon class="size-icon-md" />
     </button>
     <button
       class="hover:bg-surface-container-high text-on-surface rounded-full p-2 transition-colors duration-short ease-standard"
       onclick={openRecentlyDeleted}
-      title="Recently Deleted"
-      aria-label="Recently Deleted"
+      title={$t('contacts.recentlyDeleted')}
+      aria-label={$t('contacts.recentlyDeleted')}
     >
       <TrashIcon class="size-icon-md" />
     </button>
@@ -353,7 +373,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 {#snippet fabOverlay()}
   {#if !selectedContact && !isAdding}
     <FloatingActionButton
-      label="Add Contact"
+      label={$t('contacts.addContact')}
       collapsed={isScrolled}
       onclick={() => (isAdding = true)}
     >
@@ -371,8 +391,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <RecentlyDeleted
       items={recentlyDeletedItems}
       onrestore={restoreDeletedContact}
-      emptyTitle="No deleted contacts"
-      emptyDescription="Contacts you delete stick around here until the restore window closes."
+      emptyTitle={$t('contacts.noDeleted')}
+      emptyDescription={$t('contacts.noDeletedHint')}
     />
   {:else if !selectedContact}
     {#if isAdding}
@@ -389,7 +409,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div
         class="animate-in slide-in-from-top border-outline-variant bg-surface duration-medium ease-emphasized sticky top-0 z-20 border-b p-3 backdrop-blur-md"
       >
-        <SearchBar bind:value={searchQuery} placeholder="Search contacts..." focus={true} />
+        <SearchBar
+          bind:value={searchQuery}
+          placeholder={$t('contacts.searchPlaceholder')}
+          focus={true}
+        />
       </div>
     {/if}
 
@@ -422,7 +446,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <!-- Photo Gallery Picker Modal -->
   {#if showPhotoPicker}
     <PhotoPickerModal
-      title="Select Contact Photo"
+      title={$t('contacts.selectPhoto')}
       showRemove={(photoPickerTarget === 'new' && !!newContact.avatar) ||
         (photoPickerTarget === 'edit' && !!selectedContact?.avatar)}
       onselect={selectPhoto}

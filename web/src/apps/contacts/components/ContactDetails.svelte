@@ -16,9 +16,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     StarIcon,
     TrashIcon,
     formatRelativeTime,
+    useLocale,
     type Contact,
     type UIMessage
   } from '@gphone/sdk';
+
+  const { t } = useLocale();
 
   /**
    * One contact: the header, the action row, and either the details or the edit form.
@@ -75,8 +78,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       type="button"
       class="border-surface bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-elevation-3 duration-short ease-standard absolute right-0 bottom-0 flex items-center justify-center rounded-full border-2 p-2 transition-transform active:scale-95"
       onclick={() => onpickphoto()}
-      aria-label="Select photo from gallery"
-      title="Select photo from gallery"
+      aria-label={$t('contacts.selectPhotoFromGallery')}
+      title={$t('contacts.selectPhotoFromGallery')}
     >
       <EditIcon class="size-icon-sm" />
     </button>
@@ -92,8 +95,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       type="button"
       class="duration-short ease-standard rounded-full p-1 transition-transform hover:scale-110 active:scale-95"
       onclick={ontogglefavorite}
-      aria-label="Toggle favorite"
-      title={contact.favorite ? 'Remove from favorites' : 'Add to favorites'}
+      aria-label={$t('contacts.toggleFavorite')}
+      title={contact.favorite ? $t('contacts.removeFromFavorites') : $t('contacts.addToFavorites')}
     >
       <StarIcon
         filled={contact.favorite}
@@ -110,7 +113,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       variant="icon"
       class="bg-green-600 text-white hover:bg-green-500 hover:text-white"
       onclick={oncall}
-      aria-label="Call"
+      aria-label={$t('contacts.call')}
     >
       <!-- Call Icon -->
       <PhoneIcon />
@@ -119,7 +122,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       variant="icon"
       class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover hover:text-on-primary"
       onclick={onmessage}
-      aria-label="Message"
+      aria-label={$t('contacts.message')}
     >
       <!-- Message Icon -->
       <MessageIcon />
@@ -130,7 +133,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       class="bg-surface-container-high text-on-surface hover:bg-surface-container-highest hover:text-on-surface"
       onclick={onshare}
       disabled={busy || !contact?.firstname?.trim() || !contact?.phone?.trim()}
-      aria-label="Share"
+      aria-label={$t('contacts.share')}
     >
       <!-- Share Icon -->
       <ShareIcon />
@@ -139,7 +142,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       variant="icon"
       class="bg-surface-container-high text-on-surface hover:bg-surface-container-highest hover:text-on-surface"
       onclick={() => onedit()}
-      aria-label="Edit"
+      aria-label={$t('contacts.edit')}
     >
       <!-- Edit Icon -->
       <EditIcon />
@@ -149,7 +152,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       class="text-error hover:text-error bg-red-900/50 hover:bg-red-900/80"
       onclick={ondelete}
       disabled={busy}
-      aria-label="Delete"
+      aria-label={$t('contacts.delete')}
     >
       <!-- Trash Icon -->
       <TrashIcon />
@@ -164,34 +167,36 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="bg-surface-container-high w-full rounded-chip p-2"
           maxlength="50"
           bind:value={contact.firstname}
-          placeholder="First Name *"
+          placeholder={$t('contacts.firstName')}
         />
         <input
           class="bg-surface-container-high w-full rounded-chip p-2"
           maxlength="50"
           bind:value={contact.lastname}
-          placeholder="Last Name"
+          placeholder={$t('contacts.lastName')}
         />
         <input
           class="bg-surface-container-high w-full rounded-chip p-2"
           bind:value={contact.phone}
-          placeholder="Phone *"
+          placeholder={$t('contacts.phoneRequired')}
         />
         <label class="flex items-center space-x-2">
           <input type="checkbox" bind:checked={contact.favorite} />
-          <span>Favorite</span>
+          <span>{$t('contacts.favorite')}</span>
         </label>
         <Button
           class="w-full"
           onclick={onsave}
           disabled={busy || !contact.firstname.trim() || !contact.phone.trim()}
         >
-          {busy ? 'Saving...' : 'Save Changes'}
+          {busy ? $t('contacts.saving') : $t('contacts.saveChanges')}
         </Button>
       </div>
     {:else}
       <div class="flex flex-col">
-        <span class="text-on-surface-variant text-body-small tracking-wider uppercase">Phone</span>
+        <span class="text-on-surface-variant text-body-small tracking-wider uppercase"
+          >{$t('contacts.phone')}</span
+        >
         <span class="text-lg">{contact.phone}</span>
       </div>
     {/if}
@@ -207,7 +212,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="flex items-center gap-2">
         <MessageIcon class="text-primary size-icon-sm" />
         <h4 class="text-on-surface text-body-small tracking-wider uppercase">
-          Recent Text Messages
+          {$t('contacts.recentTextMessages')}
         </h4>
       </div>
       {#if messageCount > 0}
@@ -216,7 +221,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="text-primary hover:text-primary duration-short ease-standard text-body-small cursor-pointer transition-colors"
           onclick={onmessage}
         >
-          View All ({messageCount})
+          {$t('contacts.viewAll', { count: messageCount })}
         </button>
       {/if}
     </div>
@@ -234,7 +239,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <span
                   class="text-body-small {msg.sender === 'me' ? 'text-primary' : 'text-on-surface'}"
                 >
-                  {msg.sender === 'me' ? 'You' : contact.firstname}
+                  {msg.sender === 'me' ? $t('contacts.you') : contact.firstname}
                 </span>
                 <span class="text-on-surface-variant text-label-small">•</span>
                 <span class="text-on-surface-variant text-label-small">
@@ -256,13 +261,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class="text-on-surface-variant text-body-small flex flex-col items-center gap-2 p-6 text-center"
       >
         <MessageIcon class="text-outline mb-1 h-8 w-8" />
-        <span>No recent messages with {contact.firstname}.</span>
+        <span>{$t('contacts.noRecentMessages', { name: contact.firstname })}</span>
         <button
           type="button"
           class="border-primary bg-primary-container text-on-primary-container hover:bg-primary-container-hover duration-short ease-standard text-body-small mt-1 cursor-pointer rounded-box border px-3 py-1 transition-all"
           onclick={onmessage}
         >
-          Send Text Message
+          {$t('contacts.sendTextMessage')}
         </button>
       </div>
     {/if}

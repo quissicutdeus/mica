@@ -50,11 +50,6 @@ const counts = (): Map<string, { count: number; sample: string[] }> => {
 
 /** Frozen on 2026-09-01 when the mechanism landed. Lower a number; never raise one. */
 const BASELINE: Record<string, number> = {
-  'web/src/apps/contacts/components/ContactDetails.svelte': 17,
-  'web/src/apps/contacts/components/ContactForm.svelte': 9,
-  'web/src/apps/contacts/components/ContactList.svelte': 2,
-  'web/src/apps/contacts/index.svelte': 16,
-
   'web/src/apps/messages/components/ConversationDetailsModal.svelte': 8,
   'web/src/apps/messages/components/ConversationList.svelte': 3,
   'web/src/apps/messages/components/MessageBubble.svelte': 15,
