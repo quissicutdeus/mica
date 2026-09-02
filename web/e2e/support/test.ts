@@ -37,12 +37,13 @@ export { expect };
  * Every other uncaught page error is recorded on the test as a `pageerror` annotation, so
  * it stays in the report, and does not fail it. The first integrated run of this fixture
  * failed 100 specs on two errors that were already there and have nothing to do with a
- * mock: every add-on spec throws `Failed to read the 'localStorage' property from
- * 'Window': The document is sandboxed and lacks the 'allow-same-origin' flag`, and the
- * registry's uninstall path in `settings.spec.ts` throws `Cannot read properties of null
- * (reading 'id')`. Both are real, both are ticketed, and a fixture that fails the whole
- * suite on them is the fixture people would opt out of — which is worse than one that
- * reports them and stays narrow.
+ * mock, and a fixture that fails the whole suite on them is the fixture people would opt
+ * out of — which is worse than one that reports them and stays narrow. One of the two was
+ * this suite's own: every add-on spec threw `Failed to read the 'localStorage' property
+ * from 'Window'`, and the thrower was `seedHomeGrid`'s init script running inside the
+ * sandboxed frame, not the phone (MICA-206). The other, the registry's uninstall path
+ * in `settings.spec.ts` throwing `Cannot read properties of null (reading 'id')`, is
+ * MICA-207.
  *
  * `allowNuiFailures` is the opt-out, for a spec that provokes one on purpose and asserts on
  * it. It is a `test.use` option so the exemption sits in the spec, in the open, scoped to a

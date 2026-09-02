@@ -32,6 +32,12 @@ const currentScale = async (page: Page) => (await frameBox(page)).width / PHONE_
  */
 export async function seedHomeGrid(page: Page, appIds: string[]): Promise<void> {
   await page.addInitScript((ids: string[]) => {
+    // An init script runs in every frame the page creates, and a `core: false` add-on runs
+    // in a sandboxed frame with an opaque origin, where reading `window.localStorage` throws
+    // a SecurityError — 155 uncaught page errors across one suite run, every one of them
+    // this line, none of them the phone's (MICA-206). The seed is for the shell's own
+    // document and nothing else, so it stops at the top window.
+    if (window !== window.top) return;
     const items = ids.map((appId, position) => ({ position, kind: 'app', appId }));
     window.localStorage.setItem('gphone:settings:homeGridItems', JSON.stringify(items));
   }, appIds);
