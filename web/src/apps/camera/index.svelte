@@ -21,6 +21,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     usePhoneNotification,
     useTimer,
     onAppForeground,
+    registerMessages,
+    useLocale,
     CloseIcon,
     FlipCameraIcon,
     MediaThumb,
@@ -31,6 +33,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     type AppProps
   } from '@gphone/sdk';
   import { useNuiBridge, useCaptureZoomBoost } from '@gphone/sdk/core';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
+
+  // MICA-215: the camera's own strings, registered by the app itself, read as
+  // `$t('camera.…')` under whatever locale the phone is set to.
+  registerMessages('camera', { en, de });
+  const { t } = useLocale();
 
   const { isTakingPhoto, isPreviewingPhoto } = useCamera();
   const { capturePhoto, media } = useMedia();
@@ -148,7 +157,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   /** `' '` renders as nothing, and a bare letter reads better capitalised. */
   const keyLabel = (key: string) =>
-    key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key;
+    key === ' ' ? $t('camera.spaceKey') : key.length === 1 ? key.toUpperCase() : key;
 
   // The thumbnail shows the newest photo, which may have arrived from anywhere.
   //
@@ -184,7 +193,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         });
         supported = res?.supported !== false;
       },
-      { error: 'Could not switch camera' }
+      { error: $t('camera.switchFailed') }
     );
     if (!flipped) return;
 
@@ -331,7 +340,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         // Reported rather than swallowed: a shutter press that saves nothing looked
         // identical to one that worked, because the viewfinder is unchanged either way.
         console.error('Failed to take photo', err);
-        toast.show({ type: 'error', app: 'camera', message: 'Could not save that photo' });
+        toast.show({ type: 'error', app: 'camera', message: $t('camera.saveFailed') });
       } finally {
         if (boostedZoom) captureZoomBoost.set(false);
         isTakingPhoto.set(false);
@@ -373,7 +382,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {#if isBrowser()}
       <img
         src={currentViewfinderImage}
-        alt="Camera Viewfinder Mock"
+        alt={$t('camera.viewfinderMock')}
         class="duration-medium ease-standard pointer-events-none absolute inset-0 h-full w-full object-cover opacity-85 transition-opacity"
       />
     {/if}
@@ -397,7 +406,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class="text-on-surface text-label-small duration-short ease-standard pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center gap-2 transition-opacity"
         class:opacity-0={$isTakingPhoto}
       >
-        {#each [['shutter', 'Shoot'], ['back', 'Close'], ['freelook', 'Cursor']] as [id, label] (id)}
+        {#each [['shutter', $t('camera.hintShoot')], ['back', $t('camera.hintClose')], ['freelook', $t('camera.hintCursor')]] as [id, label] (id)}
           <span class="rounded-chip bg-black/50 px-1.5 py-0.5 backdrop-blur-sm">
             <span class="text-on-surface font-mono">{keyLabel($bindings[id])}</span>
             {label}
@@ -414,7 +423,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <button
         onclick={onback}
         class="text-on-surface shadow-elevation-3 duration-short ease-standard cursor-pointer rounded-full border border-white/10 bg-black/40 p-2.5 backdrop-blur-md transition-colors hover:bg-black/60"
-        aria-label="Go back"
+        aria-label={$t('camera.back')}
       >
         <CloseIcon class="size-icon-md" />
       </button>
@@ -485,7 +494,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <button
             type="button"
             disabled={mode === 'VIDEO'}
-            title={mode === 'VIDEO' ? 'Coming soon' : undefined}
+            title={mode === 'VIDEO' ? $t('camera.comingSoon') : undefined}
             onclick={() => (cameraMode = mode as 'PHOTO' | 'VIDEO' | 'LANDSCAPE')}
             class="text-body-small duration-medium ease-standard rounded-chip px-3.5 py-1 tracking-wider uppercase transition-all {cameraMode ===
             mode
@@ -517,7 +526,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="group shadow-elevation-3 duration-medium ease-standard flex h-12 w-12 cursor-pointer items-center justify-center overflow-hidden rounded-box border border-white/30 bg-black/40 transition-all {isThumbnailBouncing
             ? 'shadow-elevation-4 scale-110 border-yellow-400 ring-2 shadow-yellow-400/30 ring-yellow-400/60'
             : 'hover:scale-105'}"
-          aria-label="Open Media Gallery"
+          aria-label={$t('camera.openGallery')}
         >
           {#if $media.length > 0}
             <!-- `MediaThumb` rather than an `<img src={photo.data}>`: it prefers the small
@@ -526,7 +535,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                  the list read drops it from its projection (MICA-110). -->
             <MediaThumb
               item={$media[0]}
-              alt="Recent capture"
+              alt={$t('camera.recentCapture')}
               class="duration-short ease-standard transition-opacity group-hover:opacity-90"
             />
           {:else}
@@ -538,7 +547,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <button
           onclick={takePhoto}
           class="shadow-elevation-5 duration-short ease-standard flex h-20 w-20 cursor-pointer items-center justify-center rounded-full border-4 border-white p-1 transition-transform hover:scale-105 active:scale-95"
-          aria-label="Take photo"
+          aria-label={$t('camera.takePhoto')}
         >
           <div
             class="duration-medium ease-standard h-full w-full rounded-full transition-all {cameraMode ===
@@ -555,7 +564,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="button"
             onclick={toggleFlipCamera}
             class="text-on-surface shadow-elevation-3 duration-short ease-standard flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-white/20 bg-white/20 backdrop-blur-md transition-transform hover:bg-white/30 active:rotate-180"
-            aria-label="Flip camera"
+            aria-label={$t('camera.flipCamera')}
           >
             <FlipCameraIcon class="size-icon-lg" />
           </button>

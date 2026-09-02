@@ -1,0 +1,15 @@
+{
+  "switchFailed": "Could not switch camera",
+  "saveFailed": "Could not save that photo",
+  "viewfinderMock": "Camera Viewfinder Mock",
+  "back": "Go back",
+  "openGallery": "Open Media Gallery",
+  "recentCapture": "Recent capture",
+  "takePhoto": "Take photo",
+  "flipCamera": "Flip camera",
+  "spaceKey": "Space",
+  "hintShoot": "Shoot",
+  "hintClose": "Close",
+  "hintCursor": "Cursor",
+  "comingSoon": "Coming soon"
+}

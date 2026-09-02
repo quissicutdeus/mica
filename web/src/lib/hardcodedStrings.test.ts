@@ -68,7 +68,6 @@ const BASELINE: Record<string, number> = {
   'web/src/apps/blabber/components/TaggedFeed.svelte': 2,
   'web/src/apps/blabber/index.svelte': 24,
   'web/src/apps/calculator/index.svelte': 1,
-  'web/src/apps/camera/index.svelte': 8,
   'web/src/apps/contacts/components/ContactDetails.svelte': 17,
   'web/src/apps/contacts/components/ContactForm.svelte': 9,
   'web/src/apps/contacts/components/ContactList.svelte': 2,
