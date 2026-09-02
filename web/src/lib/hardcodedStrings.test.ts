@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findHardcodedStrings } from './hardcodedStrings';
+import { findHardcodedStrings } from './phone/hardcodedStrings';
 
 /**
  * The localization ratchet (MICA-61).

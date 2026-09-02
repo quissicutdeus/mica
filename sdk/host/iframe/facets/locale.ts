@@ -24,8 +24,8 @@ export function locale(): Twin {
   }
   return {
     locale: remote,
-    setLocale: fn('locale', [], 'setLocale') as unknown as Twin['setLocale']
+    setLocale: fn('locale', [], 'setLocale')
   };
 }
 
-registerFacet('locale', locale as unknown as Facets['locale']);
+registerFacet('locale', locale);

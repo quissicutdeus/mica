@@ -50,7 +50,7 @@ export function registerMessages(namespace: string, catalog: Catalog): void {
   const existing = catalogs.get(namespace) ?? {};
   const merged: Record<string, Messages> = { ...existing };
   for (const [locale, messages] of Object.entries(catalog)) {
-    merged[locale] = { ...(existing[locale] ?? {}), ...messages };
+    merged[locale] = { ...existing[locale], ...messages };
   }
   catalogs.set(namespace, merged);
   revision.update((n) => n + 1);

@@ -66,12 +66,12 @@ export function findHardcodedStrings(source: string): HardcodedString[] {
   const scripts = [...source.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
   for (const script of scripts) {
     const body = script[1];
-    const offset = script.index! + script[0].indexOf(body);
+    const offset = script.index + script[0].indexOf(body);
     const keys = SCRIPT_KEYS.join('|');
     for (const m of body.matchAll(
       new RegExp(`\\b(?:${keys})\\s*:\\s*(['"\`])((?:(?!\\1)[^\\\\]|\\\\.)*)\\1`, 'g')
     )) {
-      push(offset + m.index!, m[2]);
+      push(offset + m.index, m[2]);
     }
   }
 
@@ -84,11 +84,11 @@ export function findHardcodedStrings(source: string): HardcodedString[] {
 
   const attrs = READ_ATTRIBUTES.join('|');
   for (const m of template.matchAll(new RegExp(`\\b(?:${attrs})=(["'])([^"']*)\\1`, 'g'))) {
-    push(m.index!, m[2]);
+    push(m.index, m[2]);
   }
   // Text nodes: whatever sits between a `>` and the next `<`.
   for (const m of template.matchAll(/>([^<>]+)</g)) {
-    push(m.index! + 1, m[1]);
+    push(m.index + 1, m[1]);
   }
   return found;
 }

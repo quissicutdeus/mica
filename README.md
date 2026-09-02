@@ -440,6 +440,7 @@ set gphone_rate_limit 60
 set gphone_lockscreen_scrypt_cost 16384
 set gphone_lockscreen_max_attempts 5
 set gphone_source_url "https://github.com/quissicutdeus/gPhone"
+set gphone_locale "en"
 set gphone_bank_transfer_max 50000
 set gphone_hodlr_trade_max 50000
 set gphone_hodlr_spread_pct 2
@@ -468,6 +469,7 @@ setr gphone_addon_catalog ""
 | `gphone_lockscreen_scrypt_cost`  | power of two         | `16384`                | Lock screen passcode hashing cost — lower on weak hardware |
 | `gphone_lockscreen_max_attempts` | integer              | `5`                    | Wrong passcodes before a one-minute lockout                |
 | `gphone_source_url`              | https:// URL         | this repository        | Where Settings > About > License says your source lives    |
+| `gphone_locale`                  | BCP 47 language tag  | unset                  | The phone's default language; players can override it      |
 | `gphone_bank_transfer_max`       | integer              | `50000`                | Ceiling on one player-to-player send                       |
 | `gphone_hodlr_trade_max`         | integer              | `50000`                | Ceiling on what one Hodlr buy or sell is worth             |
 | `gphone_hodlr_spread_pct`        | number, percent      | `2`                    | Gap between Hodlr's buy and sell quotes, around mid        |
