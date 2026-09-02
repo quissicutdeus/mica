@@ -28,12 +28,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     renderMarkdown,
     useAppAction,
     useAppLevels,
+    useLocale,
+    registerMessages,
     useScrollDetect,
     useTimer,
     type AppProps,
     type RecentlyDeletedItem,
     fade
   } from '@gphone/sdk';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
+
+  // MICA-61: this app's strings, registered by the app itself — the same shape an add-on
+  // outside this repository uses, which is the point of it being here and not in a
+  // central file. `$t('notes.…')` reads them under the phone's locale.
+  registerMessages('notes', { en, de });
+  const { t } = useLocale();
   import { useNotes } from './store';
 
   const { notesStore: notes, getDeletedNotes, restoreNote } = useNotes();
@@ -63,7 +73,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const app = useAppLevels({
     appId: 'notes',
-    title: 'Notes',
+    title: () => $t('notes.title'),
     onback: () => onback(),
     levels: [
       {
@@ -73,12 +83,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {
         open: () => isEditing,
         close: () => (isEditing = false),
-        title: 'Edit Note'
+        title: () => $t('notes.editNote')
       },
       {
         open: () => !!isAdding,
         close: () => (isAdding = false),
-        title: 'New Note'
+        title: () => $t('notes.newNote')
       },
       {
         open: () => !!selectedNote,
@@ -86,12 +96,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           selectedNote = null;
           draftNote = null;
         },
-        title: () => selectedNote?.title || 'Untitled'
+        title: () => selectedNote?.title || $t('notes.untitled')
       },
       {
         open: () => showRecentlyDeleted,
         close: () => (showRecentlyDeleted = false),
-        title: 'Recently Deleted'
+        title: () => $t('notes.recentlyDeleted')
       }
     ]
   });
@@ -109,7 +119,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const recentlyDeletedItems = $derived<RecentlyDeletedItem[]>(
     deletedNotes.map((n) => ({
       id: n.id,
-      label: n.title || 'Untitled',
+      label: n.title || $t('notes.untitled'),
       preview: n.content,
       deletedAt: n.updated_at
     }))
@@ -122,10 +132,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     const restored = await run(
       async () => {
         if (!(await restoreNote(Number(id)))) {
-          throw new Error('This can no longer be restored.');
+          throw new Error($t('notes.restoreFailed'));
         }
       },
-      { success: 'Note restored' }
+      { success: $t('notes.restored') }
     );
     if (restored) deletedNotes = deletedNotes.filter((n) => n.id !== id);
   };
@@ -138,11 +148,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       () =>
         notes.add({
           ...newNote,
-          title: newNote.title || 'Untitled',
+          title: newNote.title || $t('notes.untitled'),
           created_at: now,
           updated_at: now
         }),
-      { success: 'Note saved' }
+      { success: $t('notes.saved') }
     );
     if (!added) return;
 
@@ -154,7 +164,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     if (!draftNote) return;
     const updated = { ...draftNote, updated_at: new Date().toISOString() };
 
-    if (!(await run(() => notes.update(updated), { success: 'Note saved' }))) return;
+    if (!(await run(() => notes.update(updated), { success: $t('notes.saved') }))) return;
 
     selectedNote = updated; // Show the saved copy, and the rendered markdown with it
     isEditing = false;
@@ -162,7 +172,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const deleteNote = async () => {
     if (!selectedNote) return;
-    if (!(await run(() => notes.delete(selectedNote!.id), { success: 'Note deleted' }))) return;
+    if (!(await run(() => notes.delete(selectedNote!.id), { success: $t('notes.deleted') })))
+      return;
 
     selectedNote = null;
     draftNote = null;
@@ -238,7 +249,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <button
       class="hover:bg-surface-container-high duration-short ease-standard ml-auto rounded-full p-2 transition-colors"
       onclick={startEditing}
-      aria-label="Edit note"
+      aria-label={$t('notes.edit')}
     >
       <EditIcon />
     </button>
@@ -246,8 +257,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <button
       class="hover:bg-surface-container-high duration-short ease-standard ml-auto rounded-full p-2 transition-colors"
       onclick={openRecentlyDeleted}
-      title="Recently Deleted"
-      aria-label="Recently Deleted"
+      title={$t('notes.recentlyDeleted')}
+      aria-label={$t('notes.recentlyDeleted')}
     >
       <TrashIcon class="size-icon-md" />
     </button>
@@ -256,7 +267,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#snippet fabOverlay()}
   {#if !selectedNote && !isAdding && !showRecentlyDeleted}
-    <FloatingActionButton label="New Note" collapsed={isScrolled} onclick={() => (isAdding = true)}>
+    <FloatingActionButton
+      label={$t('notes.newNote')}
+      collapsed={isScrolled}
+      onclick={() => (isAdding = true)}
+    >
       {#snippet icon()}
         <AddIcon class="text-on-surface size-icon-sm shrink-0" />
       {/snippet}
@@ -271,8 +286,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <RecentlyDeleted
       items={recentlyDeletedItems}
       onrestore={restoreDeletedNote}
-      emptyTitle="No deleted notes"
-      emptyDescription="Notes you delete stick around here until the restore window closes."
+      emptyTitle={$t('notes.noDeleted')}
+      emptyDescription={$t('notes.noDeletedHint')}
     />
   {:else if !selectedNote}
     {#if isAdding}
@@ -281,7 +296,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       >
         <input
           class="bg-surface-container-high placeholder-on-surface-variant w-full rounded-chip p-2 text-lg font-bold"
-          placeholder="Title"
+          placeholder={$t('notes.titlePlaceholder')}
           bind:value={newNote.title}
           use:focus
           disabled={$busy}
@@ -289,7 +304,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="relative min-h-0 flex-1">
           <textarea
             class="no-scrollbar bg-surface-container-high placeholder-on-surface-variant h-full w-full resize-none rounded-chip p-2 pb-12"
-            placeholder="Content (Markdown supported)"
+            placeholder={$t('notes.contentPlaceholder')}
             bind:this={textAreaRef}
             bind:value={newNote.content}
             disabled={$busy}></textarea>
@@ -300,24 +315,24 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <button
               class="text-on-surface hover:bg-surface-container-high rounded-chip p-2 font-bold"
               onclick={() => insertMarkdown('**', '**', 'bold')}
-              title="Bold">B</button
+              title={$t('notes.bold')}>B</button
             >
             <button
               class="text-on-surface hover:bg-surface-container-high rounded-chip p-2 font-serif italic"
               onclick={() => insertMarkdown('*', '*', 'italic')}
-              title="Italic">I</button
+              title={$t('notes.italic')}>I</button
             >
             <button
               class="text-on-surface hover:bg-surface-container-high rounded-chip p-2"
               onclick={() => insertMarkdown('- ', '', 'item')}
-              title="Insert List Item"
+              title={$t('notes.insertList')}
             >
               <ListBulletIcon />
             </button>
             <button
               class="text-on-surface hover:bg-surface-container-high rounded-chip p-2"
               onclick={() => insertMarkdown('- [ ] ', '', 'task')}
-              title="Insert Task Item"
+              title={$t('notes.insertTask')}
             >
               <CheckCircleIcon />
             </button>
@@ -325,7 +340,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <button
                 class="text-on-surface hover:bg-surface-container-high rounded-chip p-2 font-bold"
                 onclick={() => (showHeadingDropdown = !showHeadingDropdown)}
-                title="Insert Heading">H</button
+                title={$t('notes.insertHeading')}>H</button
               >
               {#if showHeadingDropdown}
                 <div
@@ -339,7 +354,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         insertMarkdown('#'.repeat(level) + ' ', '', `Heading ${level}`);
                         showHeadingDropdown = false;
                       }}
-                      title="Insert Heading {level}"
+                      title={$t('notes.insertHeadingLevel', { level })}
                     >
                       H{level}
                     </button>
@@ -354,12 +369,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             class="flex-1"
             variant="secondary"
             onclick={() => (isAdding = false)}
-            disabled={$busy}
+            disabled={$busy}>{$t('notes.cancel')}</Button
           >
-            Cancel
-          </Button>
           <Button class="flex-1" onclick={addNote} disabled={$busy}>
-            {$busy ? 'Saving...' : 'Save'}
+            {$busy ? $t('notes.saving') : $t('notes.save')}
           </Button>
         </div>
       </div>
@@ -369,7 +382,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <div class="mb-2">
             <SearchBar
               bind:value={searchQuery}
-              placeholder="Search notes..."
+              placeholder={$t('notes.search')}
               focusRingClass="focus:ring-yellow-500"
             />
           </div>
@@ -382,7 +395,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           >
             <div class="flex w-full flex-col">
               <h2 class="text-on-surface truncate text-lg font-bold">
-                {note.title || 'Untitled'}
+                {note.title || $t('notes.untitled')}
               </h2>
               <p class="text-on-surface-variant text-body-medium mt-1 line-clamp-2">
                 {note.content}
@@ -396,7 +409,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {#if !$notesLoaded}
           <Skeleton count={4} height="h-20" />
         {:else if filteredNotes.length === 0}
-          <EmptyState title={searchQuery ? 'No matching notes' : 'No notes yet'}>
+          <EmptyState title={searchQuery ? $t('notes.noMatching') : $t('notes.empty')}>
             {#snippet icon()}
               <DocumentIcon class="h-12 w-12" />
             {/snippet}
@@ -412,7 +425,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <input
             class="border-outline-variant bg-surface-container placeholder-on-surface-variant w-full rounded-chip border p-2 text-xl font-bold focus:border-yellow-500 focus:outline-none"
             bind:value={draftNote.title}
-            placeholder="Title"
+            placeholder={$t('notes.titlePlaceholder')}
             disabled={$busy}
           />
           <div class="relative min-h-0 flex-1">
@@ -420,7 +433,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               class="no-scrollbar border-outline-variant bg-surface-container placeholder-on-surface-variant text-body-medium h-full w-full resize-none rounded-chip border p-2 pb-12 font-mono focus:border-yellow-500 focus:outline-none"
               bind:this={textAreaRef}
               bind:value={draftNote.content}
-              placeholder="Markdown content..."
+              placeholder={$t('notes.markdownPlaceholder')}
               disabled={$busy}></textarea>
             <!-- Markdown Toolbar -->
             <div
@@ -429,24 +442,24 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <button
                 class="text-on-surface hover:bg-surface-container-highest rounded-chip p-2 font-bold"
                 onclick={() => insertMarkdown('**', '**', 'bold')}
-                title="Bold">B</button
+                title={$t('notes.bold')}>B</button
               >
               <button
                 class="text-on-surface hover:bg-surface-container-highest rounded-chip p-2 font-serif italic"
                 onclick={() => insertMarkdown('*', '*', 'italic')}
-                title="Italic">I</button
+                title={$t('notes.italic')}>I</button
               >
               <button
                 class="text-on-surface hover:bg-surface-container-highest rounded-chip p-2"
                 onclick={() => insertMarkdown('- ', '', 'item')}
-                title="Insert List Item"
+                title={$t('notes.insertList')}
               >
                 <ListBulletIcon />
               </button>
               <button
                 class="text-on-surface hover:bg-surface-container-highest rounded-chip p-2"
                 onclick={() => insertMarkdown('- [ ] ', '', 'task')}
-                title="Insert Task Item"
+                title={$t('notes.insertTask')}
               >
                 <CheckCircleIcon />
               </button>
@@ -454,7 +467,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <button
                   class="text-on-surface hover:bg-surface-container-highest rounded-chip p-2 font-bold"
                   onclick={() => (showHeadingDropdown = !showHeadingDropdown)}
-                  title="Insert Heading">H</button
+                  title={$t('notes.insertHeading')}>H</button
                 >
                 {#if showHeadingDropdown}
                   <div
@@ -468,7 +481,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                           insertMarkdown('#'.repeat(level) + ' ', '', `Heading ${level}`);
                           showHeadingDropdown = false;
                         }}
-                        title="Insert Heading {level}"
+                        title={$t('notes.insertHeadingLevel', { level })}
                       >
                         H{level}
                       </button>
@@ -484,12 +497,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               class="flex-1"
               variant="danger"
               onclick={() => (showDeleteConfirm = true)}
-              disabled={$busy}
+              disabled={$busy}>{$t('notes.delete')}</Button
             >
-              Delete
-            </Button>
             <Button class="flex-1" onclick={updateNote} disabled={$busy}>
-              {$busy ? 'Saving...' : 'Save'}
+              {$busy ? $t('notes.saving') : $t('notes.save')}
             </Button>
           </div>
         </div>
@@ -504,9 +515,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       {#if showDeleteConfirm}
         <ConfirmDialog
-          title="Delete Note?"
-          message={`Are you sure you want to delete "${selectedNote.title || 'Untitled'}"? This action cannot be undone.`}
-          confirmText="Delete"
+          title={$t('notes.deleteTitle')}
+          message={$t('notes.deleteMessage', { title: selectedNote.title || $t('notes.untitled') })}
+          confirmText={$t('notes.delete')}
           isLoading={$busy}
           oncancel={() => (showDeleteConfirm = false)}
           onconfirm={deleteNote}
