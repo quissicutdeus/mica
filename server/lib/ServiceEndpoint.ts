@@ -194,7 +194,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
   private requireId(data: unknown): number {
     const raw = data && typeof data === 'object' ? (data as Record<string, unknown>).id : data;
     try {
-      return requirePositiveInt(raw, 'numeric id');
+      return requirePositiveInt(raw, 'id');
     } catch {
       throw new PlayerFacingError(
         `A valid numeric id is required for this ${this.serviceName} operation.`,

@@ -2,6 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { get } from 'svelte/store';
+import { t, type Translate } from '../i18n';
+import '../ui/messages';
+
 /**
  * Why a track will not play, and what to call that in front of a person. MICA-111.
  *
@@ -62,14 +66,28 @@ const ERROR_REASONS: Readonly<Record<number, MusicErrorReason>> = {
 export const reasonForCode = (code: number): MusicErrorReason =>
   ERROR_REASONS[code] ?? 'unplayable';
 
-/** What to tell a person about a failure, in one phrase that fits a row and a card alike. */
-export function describeMusicError(reason: MusicErrorReason): string {
-  switch (reason) {
-    case 'embed-blocked':
-      return "Can't be played outside YouTube";
-    case 'unavailable':
-      return 'Unavailable — removed or private';
-    default:
-      return "Can't be played";
-  }
+/** The catalog entry for each reason, in the `ui` namespace `sdk/ui/messages.ts` registers. */
+const MESSAGE_KEYS: Readonly<Record<MusicErrorReason, string>> = {
+  'embed-blocked': 'ui.musicEmbedBlocked',
+  unavailable: 'ui.musicUnavailable',
+  unplayable: 'ui.musicUnplayable'
+};
+
+/**
+ * What to tell a person about a failure, in one phrase that fits a row and a card alike.
+ *
+ * The phrase comes from the `ui` catalog (MICA-217) — this was the one line under a
+ * music failure that stayed English on a phone set to another language, because it was
+ * composed here rather than in a component and the scanner reads components. `translate`
+ * is the caller's `$t` where the caller has one, so a rendered row re-derives on a locale
+ * change; the default reads the store once, which is what a non-reactive caller (the
+ * facet's own typing, a test) gets. The `ui` registration is imported for its side
+ * effect, the same way every primitive does it, so an add-on that reaches this through
+ * `useMusic` in a sandbox has the namespace regardless of which primitive loaded first.
+ */
+export function describeMusicError(
+  reason: MusicErrorReason,
+  translate: Translate = get(t)
+): string {
+  return translate(MESSAGE_KEYS[reason] ?? MESSAGE_KEYS.unplayable);
 }

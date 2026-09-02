@@ -14,17 +14,43 @@ import { describe, it, expect } from 'vitest';
 import { ALL_PERMISSIONS, type AppPermission } from '../../../../sdk/manifest';
 import { addedPermissions, formatPermission } from './appInfo';
 
+import en from './locales/en.json';
+import de from './locales/de.json';
+
 /**
  * Manual-check substitute for Step 8 of task-8: rather than opening the Store in dev and
  * clicking through every add-on's details, prove no permission name falls through to the
  * `formatPermission` fallback (which returns the raw name and the gear icon) by checking
- * every name in the vocabulary gets an actual label.
+ * every name in the vocabulary has a label in the catalog.
+ *
+ * MICA-217 moved the labels out of a TypeScript table and into the Store's catalog, so
+ * the check is against **every locale the Store ships**, not just English: a locale missing
+ * one falls back to English silently through `t`, which is exactly the leftover this ticket
+ * was about. `formatPermission` itself is exercised with a real translator to prove the key
+ * it builds is the one the catalog holds.
  */
 describe('formatPermission', () => {
-  it('gives every permission in the vocabulary a real label, never the raw name', () => {
-    for (const perm of ALL_PERMISSIONS) {
-      expect(formatPermission(perm).label, `${perm} fell through to the default`).not.toBe(perm);
+  const catalogs: Record<string, Record<string, string>> = { en, de };
+
+  it.each(Object.keys(catalogs))(
+    'gives every permission in the vocabulary a %s label, never the raw name',
+    (locale) => {
+      const missing = ALL_PERMISSIONS.filter((perm) => !catalogs[locale][`permission.${perm}`]);
+      expect(missing, `no store.permission.* entry in ${locale}.json`).toEqual([]);
     }
+  );
+
+  it('reads the label through the translator it is handed', () => {
+    const translate = (key: string) => (key === 'store.permission.camera' ? 'Kamera' : key);
+    expect(formatPermission('camera', translate)).toEqual({ label: 'Kamera', icon: '\u{1F4F7}' });
+  });
+
+  it('falls through to the raw name and a gear for a permission the catalog has no word for', () => {
+    const untranslated = (key: string) => key;
+    expect(formatPermission('unheard-of' as AppPermission, untranslated)).toEqual({
+      label: 'unheard-of',
+      icon: '\u{2699}\u{FE0F}'
+    });
   });
 });
 

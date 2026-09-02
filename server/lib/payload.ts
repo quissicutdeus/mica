@@ -36,24 +36,68 @@ import { PlayerFacingError } from './errors';
 export type CallbackId = string | number;
 
 /**
+ * The things a handler asks `requirePositiveInt` for, by name.
+ *
+ * A **key into the catalog**, not a word to interpolate (MICA-217). The refusal used to be
+ * one sentence, `A valid {what} is required.`, with an English noun dropped into it — so a
+ * German phone read „Ein gültiger Wert für ‚photo id' ist erforderlich", translated around a
+ * word it could not translate. One entry per noun puts the whole sentence in the catalog,
+ * and the union is what stops a caller inventing a noun the catalog has no entry for: a new
+ * one is a new member here, a new `REQUIRED` line, and a new line in `server.en.json`,
+ * and `serverMessages.test.ts` refuses the second without the third.
+ */
+export type PayloadNoun =
+  'id' | 'cursor' | 'conversation' | 'photo' | 'account' | 'blab' | 'replyTarget' | 'mouthTarget';
+
+/**
+ * One literal site per noun, rather than a key built from a template, because the scanner
+ * that holds every `PlayerFacingError` to the catalog reads the key as a string literal —
+ * a computed one would count as keyless, and this file has no keyless baseline to hide in.
+ */
+const REQUIRED: Readonly<Record<PayloadNoun, () => PlayerFacingError>> = {
+  id: () =>
+    new PlayerFacingError('A valid numeric id is required.', {
+      key: 'server.payload.required.id'
+    }),
+  cursor: () =>
+    new PlayerFacingError('A valid cursor is required.', {
+      key: 'server.payload.required.cursor'
+    }),
+  conversation: () =>
+    new PlayerFacingError('A valid conversation id is required.', {
+      key: 'server.payload.required.conversation'
+    }),
+  photo: () =>
+    new PlayerFacingError('A valid photo id is required.', {
+      key: 'server.payload.required.photo'
+    }),
+  account: () =>
+    new PlayerFacingError('A valid account id is required.', {
+      key: 'server.payload.required.account'
+    }),
+  blab: () =>
+    new PlayerFacingError('A valid Blab id is required.', {
+      key: 'server.payload.required.blab'
+    }),
+  replyTarget: () =>
+    new PlayerFacingError('A valid reply target is required.', {
+      key: 'server.payload.required.replyTarget'
+    }),
+  mouthTarget: () =>
+    new PlayerFacingError('A valid mouth target is required.', {
+      key: 'server.payload.required.mouthTarget'
+    })
+};
+
+/**
  * Coerce to a positive integer or throw. Rejects '', null, NaN, 0, negatives and
  * fractions — and rejects non-scalars up front, because `Number([7])` is `7`, so a
  * bare `Number()` coercion would quietly accept `{ id: [7] }` from a client.
  */
-export function requirePositiveInt(raw: unknown, what: string): number {
-  if (typeof raw !== 'number' && typeof raw !== 'string') {
-    throw new PlayerFacingError(`A valid ${what} is required.`, {
-      key: 'server.payload.required',
-      params: { what }
-    });
-  }
+export function requirePositiveInt(raw: unknown, what: PayloadNoun): number {
+  if (typeof raw !== 'number' && typeof raw !== 'string') throw REQUIRED[what]();
   const value = Number(raw);
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new PlayerFacingError(`A valid ${what} is required.`, {
-      key: 'server.payload.required',
-      params: { what }
-    });
-  }
+  if (!Number.isInteger(value) || value <= 0) throw REQUIRED[what]();
   return value;
 }
 
@@ -63,7 +107,7 @@ export function requirePositiveInt(raw: unknown, what: string): number {
  */
 export function conversationIdFrom(data: unknown): number {
   const raw = isRecord(data) ? (data.conversation_id ?? data.id) : data;
-  return requirePositiveInt(raw, 'conversation_id');
+  return requirePositiveInt(raw, 'conversation');
 }
 
 /**
@@ -169,11 +213,6 @@ export function toSqlDateTime(raw: unknown): string | null {
 export function recencyCursor(raw: unknown): RecencyCursor {
   const body = fields(raw);
   const time = toSqlDateTime(body.time);
-  if (time === null) {
-    throw new PlayerFacingError('A valid cursor is required.', {
-      key: 'server.payload.required',
-      params: { what: 'cursor' }
-    });
-  }
+  if (time === null) throw REQUIRED.cursor();
   return { time, id: requirePositiveInt(body.id, 'cursor') };
 }

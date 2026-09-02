@@ -301,7 +301,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   <!-- MICA-196: an update asking for more than the installed version was granted -->
   {#if updateToAccept}
-    {@const added = updateToAccept.added.map((p) => formatPermission(p).label).join(', ')}
+    {@const added = updateToAccept.added.map((p) => formatPermission(p, $t).label).join(', ')}
     <ConfirmDialog
       title={$t('store.moreAccessTitle', { name: updateToAccept.update.name })}
       message={$t('store.moreAccessMessage', {

@@ -9,7 +9,7 @@ import { ownedAccount, accountHasBlocked, accountsByHandle, accountsOwnedBy } fr
 // the attachment-ownership check runs against the same allowlist Messages already uses.
 import { media } from './Media';
 import { Blab } from '@gphone/shared/types';
-import { pageBounds, requirePositiveInt } from '../lib/payload';
+import { pageBounds, requirePositiveInt, type PayloadNoun } from '../lib/payload';
 import { defineContract } from '@gphone/shared/contract';
 import { s } from '@gphone/shared/schema';
 import { resolveOwnedAttachments } from '../lib/attachments';
@@ -435,7 +435,7 @@ const notifyMentions = async (
  * if unchecked — attaching to a moderated Blab would resurrect removed content inside a thread
  * or a timeline.
  */
-const visibleTarget = async (raw: unknown, what: string): Promise<Blab> => {
+const visibleTarget = async (raw: unknown, what: PayloadNoun): Promise<Blab> => {
   const id = requirePositiveInt(raw, what);
   const target = await repo.findById(id);
   if (!target || target.status !== 'active') {
@@ -465,7 +465,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   const replyParent =
     data.reply_to === undefined || data.reply_to === null
       ? null
-      : await visibleTarget(data.reply_to, 'reply target');
+      : await visibleTarget(data.reply_to, 'replyTarget');
   const replyTo = replyParent?.id ?? null;
   // Inherited, never walked: the parent is either top-level (root_id null, so it becomes the
   // root) or itself a reply (root_id already the true top-level ancestor, so it passes through
@@ -475,7 +475,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   const mouthOf =
     data.mouth_of === undefined || data.mouth_of === null
       ? null
-      : (await visibleTarget(data.mouth_of, 'mouth target')).id;
+      : (await visibleTarget(data.mouth_of, 'mouthTarget')).id;
 
   const attachments = await resolveOwnedAttachments(data.attachments, citizenid, mediaRepo);
 
@@ -606,7 +606,7 @@ app.registerEvent('ear', async (source, cbId, data, citizenid) => {
   if (!account)
     throw new PlayerFacingError('That account is not yours.', { key: 'server.blabber.notYours' });
 
-  const target = await visibleTarget(data.blab_id, 'blab id');
+  const target = await visibleTarget(data.blab_id, 'blab');
 
   try {
     await Database.insert(

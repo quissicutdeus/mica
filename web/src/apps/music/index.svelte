@@ -293,7 +293,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 >
                 {#if entry.error}
                   <span class="text-label-small text-error block truncate"
-                    >{describeMusicError(entry.error.reason)}</span
+                    >{describeMusicError(entry.error.reason, $t)}</span
                   >
                   {#if hiddenId(entry)}
                     <span class="text-label-small text-on-surface-variant block truncate font-mono"

@@ -68,5 +68,8 @@
   "musicNothingLoaded": "Nothing loaded",
   "musicSkipOrRemove": "skip or remove it",
   "musicPlaylistNamed": "Playlist {id}",
-  "musicPlaylistProgress": "Playlist · {index} of {count}"
+  "musicPlaylistProgress": "Playlist · {index} of {count}",
+  "musicEmbedBlocked": "Can't be played outside YouTube",
+  "musicUnavailable": "Unavailable — removed or private",
+  "musicUnplayable": "Can't be played"
 }

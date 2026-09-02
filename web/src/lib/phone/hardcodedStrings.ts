@@ -37,6 +37,12 @@ const SCRIPT_KEYS = ['success', 'error', 'title', 'message', 'label'];
 
 const looksLikeProse = (text: string): boolean => /[A-Za-z]{2,}/.test(text);
 
+/** The `label: 'Text'` shape, for the keys a player reads, over a stretch of script. */
+const SCRIPT_LITERALS = new RegExp(
+  `\\b(?:${SCRIPT_KEYS.join('|')})\\s*:\\s*(['"\`])((?:(?!\\1)[^\\\\]|\\\\.)*)\\1`,
+  'g'
+);
+
 /** Replace every `{…}` expression (nesting-aware) with spaces, keeping line numbers. */
 const blankExpressions = (text: string): string => {
   let depth = 0;
@@ -67,10 +73,7 @@ export function findHardcodedStrings(source: string): HardcodedString[] {
   for (const script of scripts) {
     const body = script[1];
     const offset = script.index + script[0].indexOf(body);
-    const keys = SCRIPT_KEYS.join('|');
-    for (const m of body.matchAll(
-      new RegExp(`\\b(?:${keys})\\s*:\\s*(['"\`])((?:(?!\\1)[^\\\\]|\\\\.)*)\\1`, 'g')
-    )) {
+    for (const m of body.matchAll(SCRIPT_LITERALS)) {
       push(offset + m.index, m[2]);
     }
   }
@@ -89,6 +92,23 @@ export function findHardcodedStrings(source: string): HardcodedString[] {
   // Text nodes: whatever sits between a `>` and the next `<`.
   for (const m of template.matchAll(/>([^<>]+)</g)) {
     push(m.index + 1, m[1]);
+  }
+  return found;
+}
+
+/**
+ * The script half of the scan, over a plain `.ts` file (MICA-217).
+ *
+ * The Store's permission labels sat in a TypeScript table for the whole of MICA-214 and
+ * -215 because this scanner only ever opened `.svelte` files, and a `label: 'Camera Access'`
+ * in a `.ts` module is invisible to a rule about templates. Same keys, same regex, same
+ * honesty about coverage: a string in any other position is still not seen.
+ */
+export function findHardcodedScriptStrings(source: string): HardcodedString[] {
+  const found: HardcodedString[] = [];
+  for (const m of source.matchAll(SCRIPT_LITERALS)) {
+    const trimmed = m[2].replace(/\s+/g, ' ').trim();
+    if (looksLikeProse(trimmed)) found.push({ line: lineOf(source, m.index), text: trimmed });
   }
   return found;
 }

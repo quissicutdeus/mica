@@ -26,8 +26,8 @@ describe('requirePositiveInt', () => {
     ['NaN', NaN],
     ['Infinity', Infinity]
   ])('rejects %s', (_label, input) => {
-    expect(() => requirePositiveInt(input, 'conversation_id')).toThrow(
-      /A valid conversation_id is required/
+    expect(() => requirePositiveInt(input, 'conversation')).toThrow(
+      /A valid conversation id is required/
     );
   });
 });
@@ -54,7 +54,7 @@ describe('conversationIdFrom', () => {
     ['null', null],
     ['a payload whose id is a string', { conversation_id: 'abc' }]
   ])('rejects %s', (_label, input) => {
-    expect(() => conversationIdFrom(input)).toThrow(/A valid conversation_id is required/);
+    expect(() => conversationIdFrom(input)).toThrow(/A valid conversation id is required/);
   });
 });
 

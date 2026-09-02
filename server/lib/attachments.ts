@@ -58,7 +58,7 @@ export const resolveOwnedAttachments = async (
   for (const attachment of raw) {
     let photoId: number;
     try {
-      photoId = requirePositiveInt((attachment as { photo_id?: unknown })?.photo_id, 'photo id');
+      photoId = requirePositiveInt((attachment as { photo_id?: unknown })?.photo_id, 'photo');
     } catch {
       continue;
     }

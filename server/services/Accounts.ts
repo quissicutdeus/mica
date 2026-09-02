@@ -908,7 +908,7 @@ export async function ownedAccount(
 ): Promise<Account | null> {
   let id: number;
   try {
-    id = requirePositiveInt(accountId, 'account id');
+    id = requirePositiveInt(accountId, 'account');
   } catch {
     return null;
   }

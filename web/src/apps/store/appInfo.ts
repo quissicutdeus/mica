@@ -9,7 +9,8 @@ import {
   tileFromColorClasses,
   type AppManifest,
   type AppPermission,
-  type CatalogEntry
+  type CatalogEntry,
+  type Translate
 } from '@gphone/sdk';
 
 /**
@@ -148,53 +149,75 @@ export function getAppStorageSize(app: AppManifest): string {
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
-const LABELS: Record<AppPermission, { label: string; icon: string }> = {
-  account: { label: 'Phone Number & Bank Balance', icon: '\u{1F4B3}' },
-  admin: { label: 'Moderation Tools', icon: '\u{1F6E1}\u{FE0F}' },
-  bank: { label: 'Send Money', icon: '\u{1F4B8}' },
-  call: { label: 'Phone Calls', icon: '\u{1F4DE}' },
-  camera: { label: 'Camera Access', icon: '\u{1F4F7}' },
-  contacts: { label: 'Contacts Access', icon: '\u{1F4C7}' },
-  highscores: { label: 'Leaderboards', icon: '\u{1F3C6}' },
-  location: { label: 'Location Services', icon: '\u{1F4CD}' },
-  mail: { label: 'Mail', icon: '\u{2709}\u{FE0F}' },
-  marketplace: { label: 'Marketplace Listings', icon: '\u{1F6D2}' },
-  media: { label: 'Photos & Media', icon: '\u{1F5BC}\u{FE0F}' },
-  messages: { label: 'Messages', icon: '\u{1F4AC}' },
-  notifications: { label: 'Notifications', icon: '\u{1F514}' },
-  reports: { label: 'Report Content', icon: '\u{1F6A9}' },
-  social: { label: 'Social Profiles', icon: '\u{1F465}' },
-  storage: { label: 'Local Storage', icon: '\u{1F4BE}' },
-  'app-events': { label: 'Background Updates', icon: '\u{1F4E1}' },
-  'app-registry': { label: 'Installed Apps (Read)', icon: '\u{1F4E6}' },
-  'app-registry-write': { label: 'Install & Remove Apps', icon: '\u{1F4E6}' },
-  clock: { label: '12/24-Hour Setting (Read)', icon: '\u{1F552}' },
-  'clock-write': { label: 'Change 12/24-Hour Setting', icon: '\u{1F552}' },
-  devtools: { label: 'Developer Tools', icon: '\u{1F6E0}\u{FE0F}' },
-  display: { label: 'Display Size & Layout (Read)', icon: '\u{1F4F1}' },
-  'display-write': { label: 'Resize the Phone & Home Screen', icon: '\u{1F4F1}' },
-  keybinds: { label: 'Keyboard Shortcuts', icon: '\u{2328}\u{FE0F}' },
-  'keybinds-write': { label: 'Rebind Phone Shortcuts', icon: '\u{2328}\u{FE0F}' },
-  'lock-screen': { label: 'Lock Screen Status (Read)', icon: '\u{1F512}' },
-  'lock-screen-write': { label: 'Set the Passcode & Lock Policy', icon: '\u{1F512}' },
-  music: { label: 'Play Music Out Loud', icon: '\u{1F3B5}' },
-  navigation: { label: 'Open Other Apps', icon: '\u{21AA}\u{FE0F}' },
-  'notification-settings': { label: 'Notification Mute Status (Read)', icon: '\u{1F515}' },
-  'notification-settings-write': { label: 'Change Notification Settings', icon: '\u{1F515}' },
-  'system-hardware': { label: 'Battery, Signal & Bluetooth (Read)', icon: '\u{1F50B}' },
-  'system-hardware-write': {
-    label: 'Change Battery, Signal, Bluetooth & Volume',
-    icon: '\u{1F50B}'
-  },
-  theme: { label: 'Theme (Read)', icon: '\u{1F3A8}' },
-  'theme-write': { label: "Change the Phone's Theme", icon: '\u{1F3A8}' },
-  wallpaper: { label: 'Wallpaper (Read)', icon: '\u{1F5BC}\u{FE0F}' },
-  'wallpaper-write': { label: 'Change the Wallpaper', icon: '\u{1F5BC}\u{FE0F}' }
+/**
+ * The glyph beside each permission. The **label** is not here any more (MICA-217): it lives
+ * in the Store's catalog under `store.permission.<name>`, in every locale the Store ships,
+ * and is read through `$t` at render time like every other string the Store shows. A label
+ * table in a `.ts` file was the one place a player's language could not reach — the scanner
+ * in `lib/hardcodedStrings.test.ts` reads `.svelte` files, so forty English strings sat
+ * here unseen while every `.svelte` around them was extracted. That test now reads the
+ * `.ts` files under `apps/` too, so the table cannot come back.
+ *
+ * The icon stays, because an emoji is not prose and a catalog of them per locale would be
+ * thirty-eight copies of the same characters.
+ */
+const ICONS: Record<AppPermission, string> = {
+  account: '\u{1F4B3}',
+  admin: '\u{1F6E1}\u{FE0F}',
+  bank: '\u{1F4B8}',
+  call: '\u{1F4DE}',
+  camera: '\u{1F4F7}',
+  contacts: '\u{1F4C7}',
+  highscores: '\u{1F3C6}',
+  location: '\u{1F4CD}',
+  mail: '\u{2709}\u{FE0F}',
+  marketplace: '\u{1F6D2}',
+  media: '\u{1F5BC}\u{FE0F}',
+  messages: '\u{1F4AC}',
+  notifications: '\u{1F514}',
+  reports: '\u{1F6A9}',
+  social: '\u{1F465}',
+  storage: '\u{1F4BE}',
+  'app-events': '\u{1F4E1}',
+  'app-registry': '\u{1F4E6}',
+  'app-registry-write': '\u{1F4E6}',
+  clock: '\u{1F552}',
+  'clock-write': '\u{1F552}',
+  devtools: '\u{1F6E0}\u{FE0F}',
+  display: '\u{1F4F1}',
+  'display-write': '\u{1F4F1}',
+  keybinds: '\u{2328}\u{FE0F}',
+  'keybinds-write': '\u{2328}\u{FE0F}',
+  'lock-screen': '\u{1F512}',
+  'lock-screen-write': '\u{1F512}',
+  music: '\u{1F3B5}',
+  navigation: '\u{21AA}\u{FE0F}',
+  'notification-settings': '\u{1F515}',
+  'notification-settings-write': '\u{1F515}',
+  'system-hardware': '\u{1F50B}',
+  'system-hardware-write': '\u{1F50B}',
+  theme: '\u{1F3A8}',
+  'theme-write': '\u{1F3A8}',
+  wallpaper: '\u{1F5BC}\u{FE0F}',
+  'wallpaper-write': '\u{1F5BC}\u{FE0F}'
 };
 
-/** A permission as a player should read it. */
-export function formatPermission(perm: AppPermission): { label: string; icon: string } {
-  return LABELS[perm] ?? { label: perm, icon: '\u{2699}\u{FE0F}' };
+/**
+ * A permission as a player should read it, in the phone's language.
+ *
+ * `translate` is the caller's `$t`, passed in rather than read here through `get(t)`, so a
+ * rendered label re-derives when the locale changes — a module-scope read would be right
+ * once and stale after Settings > Language. A name the catalog does not know (an add-on
+ * declaring a permission this build has no word for) falls through to the raw name and a
+ * gear, the same as before; the test proves nothing in the vocabulary does.
+ */
+export function formatPermission(
+  perm: AppPermission,
+  translate: Translate
+): { label: string; icon: string } {
+  const key = `store.permission.${perm}`;
+  const label = translate(key);
+  return { label: label === key ? perm : label, icon: ICONS[perm] ?? '\u{2699}\u{FE0F}' };
 }
 
 /**

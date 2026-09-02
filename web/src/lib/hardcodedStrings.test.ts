@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findHardcodedStrings } from './phone/hardcodedStrings';
+import { findHardcodedScriptStrings, findHardcodedStrings } from './phone/hardcodedStrings';
 
 /**
  * No user-facing string is hardcoded English (MICA-61).
@@ -23,12 +23,26 @@ import { findHardcodedStrings } from './phone/hardcodedStrings';
  */
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const SCANNED = ['web/src/apps', 'web/src/shell', 'sdk/ui'];
+/**
+ * Where a `.ts` file is read too (MICA-217). Only the apps: the Store kept forty
+ * permission labels in a `label:` table in `appInfo.ts`, which a rule about `.svelte`
+ * files could not see. The shell's own `.ts` state (`audio.ts`'s ringtone names,
+ * `toast.ts`'s call actions) still carries literals of the same shape and is not gated
+ * here — widening the root is the way to take that on, and the failure list is the
+ * ticket.
+ */
+const SCANNED_TS = ['web/src/apps'];
 
-function walk(dir: string, out: string[] = []): string[] {
+function walk(dir: string, ext: string, out: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) walk(full, out);
-    else if (entry.name.endsWith('.svelte') && !full.includes('__fixtures__')) out.push(full);
+    if (entry.isDirectory()) walk(full, ext, out);
+    else if (
+      entry.name.endsWith(ext) &&
+      !entry.name.endsWith(`.test${ext}`) &&
+      !full.includes('__fixtures__')
+    )
+      out.push(full);
   }
   return out;
 }
@@ -37,15 +51,22 @@ let scannedFiles = 0;
 
 const counts = (): Map<string, { count: number; sample: string[] }> => {
   const result = new Map<string, { count: number; sample: string[] }>();
+  const record = (file: string, found: { line: number; text: string }[]) => {
+    scannedFiles += 1;
+    if (found.length === 0) return;
+    result.set(path.relative(ROOT, file), {
+      count: found.length,
+      sample: found.slice(0, 5).map((f) => `${f.line}: ${f.text}`)
+    });
+  };
   for (const root of SCANNED) {
-    for (const file of walk(path.join(ROOT, root))) {
-      scannedFiles += 1;
-      const found = findHardcodedStrings(fs.readFileSync(file, 'utf8'));
-      if (found.length === 0) continue;
-      result.set(path.relative(ROOT, file), {
-        count: found.length,
-        sample: found.slice(0, 5).map((f) => `${f.line}: ${f.text}`)
-      });
+    for (const file of walk(path.join(ROOT, root), '.svelte')) {
+      record(file, findHardcodedStrings(fs.readFileSync(file, 'utf8')));
+    }
+  }
+  for (const root of SCANNED_TS) {
+    for (const file of walk(path.join(ROOT, root), '.ts')) {
+      record(file, findHardcodedScriptStrings(fs.readFileSync(file, 'utf8')));
     }
   }
   return result;
@@ -58,6 +79,12 @@ describe('hardcoded user-facing strings (MICA-61)', () => {
     // Files scanned, not files with findings: the whole point is for the second number to
     // reach zero, and a guard on it would fail the day the extraction finished.
     expect(scannedFiles).toBeGreaterThan(150);
+  });
+
+  it('reads the .ts files under apps/, where the Store kept its label table', () => {
+    // A guard on the widening itself: if the `.ts` walk found nothing, the rule for the
+    // table that started MICA-217 is not running, and the assertion below is vacuous.
+    expect(walk(path.join(ROOT, 'web/src/apps'), '.ts').length).toBeGreaterThan(20);
   });
 
   it('no file has a hardcoded user-facing string', () => {

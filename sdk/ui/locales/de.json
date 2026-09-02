@@ -68,5 +68,8 @@
   "musicNothingLoaded": "Nichts geladen",
   "musicSkipOrRemove": "überspring ihn oder entferne ihn",
   "musicPlaylistNamed": "Playlist {id}",
-  "musicPlaylistProgress": "Playlist · {index} von {count}"
+  "musicPlaylistProgress": "Playlist · {index} von {count}",
+  "musicEmbedBlocked": "Kann außerhalb von YouTube nicht abgespielt werden",
+  "musicUnavailable": "Nicht verfügbar — entfernt oder privat",
+  "musicUnplayable": "Kann nicht abgespielt werden"
 }

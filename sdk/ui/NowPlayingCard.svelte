@@ -375,7 +375,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
              nothing is happening, and half of it leaves somebody guessing. Truncated in
              the shade, where the row is one item in a list and the app is one tap away. -->
         <span class="text-label-small text-error block" class:truncate={compact}
-          >{describeMusicError($musicError.reason)}{compact
+          >{describeMusicError($musicError.reason, $t)}{compact
             ? ''
             : ` · ${$t('ui.musicSkipOrRemove')}`}</span
         >
