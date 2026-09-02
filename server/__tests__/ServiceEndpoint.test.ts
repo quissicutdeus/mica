@@ -290,7 +290,10 @@ describe('ServiceEndpoint — authentication and registration', () => {
     await call('update', { id: 7, title: 'renamed' });
 
     expect(dbMock.update).not.toHaveBeenCalled();
-    expect(lastReply()).toEqual({ error: 'Player not authenticated' });
+    expect(lastReply()).toEqual({
+      error: 'Player not authenticated',
+      key: 'server.notAuthenticated'
+    });
   });
 
   it('registers exactly the CRUD events that are not disabled', () => {
@@ -435,6 +438,25 @@ describe('ServiceEndpoint — what an error discloses', () => {
     expect(lastReply()).toEqual({ error: 'You cannot do that yet.' });
   });
 
+  it('forwards the key and params a player-facing error carries (MICA-216)', async () => {
+    const app = mountContract();
+    app.registerEvent('refuse', async () => {
+      throw new PlayerFacingError('No, Trevor.', {
+        key: 'server.probe.refused',
+        params: { name: 'Trevor' }
+      });
+    });
+
+    await callContract('refuse', undefined);
+
+    // The English rides with the key: a client whose catalog lacks the key shows it.
+    expect(lastReply()).toEqual({
+      error: 'No, Trevor.',
+      key: 'server.probe.refused',
+      params: { name: 'Trevor' }
+    });
+  });
+
   it('forwards a SchemaError, which names a field and nothing else', async () => {
     const app = mountContract();
     app.registerEvent('rename', async () => true);
@@ -454,7 +476,9 @@ describe('ServiceEndpoint — what an error discloses', () => {
 
     await callContract('refuse', undefined);
 
-    expect(lastReply()).toEqual({ error: GENERIC_ERROR_MESSAGE });
+    // MICA-216: the generic sentence carries its own key so the shell can say it in the
+    // player's language; a driver error never gets a key of its own, or it would be one.
+    expect(lastReply()).toEqual({ error: GENERIC_ERROR_MESSAGE, key: 'server.generic' });
     // The whole error object, so the stack goes to the log rather than to the player.
     expect(logged).toHaveBeenCalled();
     expect(String(JSON.stringify(lastReply()))).not.toContain('SELECT');

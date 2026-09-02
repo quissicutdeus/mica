@@ -100,6 +100,15 @@ error with statement text or a `[Repository]` error naming a table, is logged
 with its stack on the server and answered with one generic sentence. A handler
 that means to tell the player something throws the player-facing kind.
 
+Since MICA-216 that reply also carries a **message key** beside the English
+text (`{ error, key, params }`), and the shell resolves the key through its
+`server` catalog so the refusal reads in the player's language. The key widens
+nothing: it names a catalog entry, never a table or a statement, and a key the
+catalog lacks falls back to the English beside it. `params` are the values the
+handler chose to interpolate, and they are bounded on the way in (`parseNotify`
+keeps short scalars only). What a player learns from a refusal is exactly what
+the handler wrote, in either language.
+
 ### 2. Raw `onNet` handlers
 
 **Ten, across five files**, and they fall into two categories that need
