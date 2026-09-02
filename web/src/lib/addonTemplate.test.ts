@@ -97,7 +97,24 @@ const SHARED_DECISIONS: [name: string, pattern: RegExp][] = [
   // that sheet exists for builds out of tree. A build with the check and a build without it
   // are the same bundle right up until an author omits a permission.
   ['the permission scan runs as a build plugin', /name:\s*'gphone-addon-permissions'/],
-  ['a shortfall against the permission table fails the build', /permissionShortfall\(/]
+  ['a shortfall against the permission table fails the build', /permissionShortfall\(/],
+  /**
+   * MICA-190. A manifest property is read from comment-stripped text, on both sides.
+   *
+   * Both builds classify a manifest by reading its source, because neither can evaluate one
+   * — a manifest imports a Svelte component. A doc comment is exactly where the word `core`
+   * gets discussed, so a raw grep answers from the prose. The template hit that loudly on
+   * its own sample manifest; the phone had it silently and pointing the other way, where a
+   * `core: true` app whose comment contains `core: false` is emitted as an installable
+   * add-on and §2.7's gate on `@gphone/sdk/core` rests on a comment.
+   *
+   * The alternation is the decision showing up under two names rather than a weakened
+   * check: the template strips inline, while the phone's config delegates the whole of
+   * discovery to `web/scripts/addon-ids.js` (which strips, and which `build-addons.mjs`
+   * shares). Either spelling here means the text was cleaned before a property was read;
+   * neither means it was not.
+   */
+  ['a manifest property is read from comment-stripped text', /withoutComments|addon-ids\.js/]
 ];
 
 describe('the out-of-tree add-on template', () => {
