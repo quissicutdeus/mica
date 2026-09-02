@@ -5,6 +5,7 @@
 import { fetchCitizenId, fetchBalance } from '../../services/account';
 import { refreshAdmin } from '../../services/admin';
 import { refreshCapabilities } from '../../services/capabilities';
+import { refreshLocale } from './locale';
 import { loadUnreadCounts } from '../../services/notifications';
 import { bundledAddOns, registeredApps } from './registry';
 
@@ -51,6 +52,8 @@ export async function bootstrapStores(force: boolean = false): Promise<void> {
         // icons exist. `Shell.svelte` also asks at mount so the answer is usually already
         // in hand by the time the phone is first opened; the two share one request.
         refreshCapabilities(),
+        // MICA-61: the owner's default language, before the first screen renders.
+        refreshLocale(),
         fetchCitizenId(),
         fetchBalance(),
         loadUnreadCounts(),

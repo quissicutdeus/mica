@@ -67,3 +67,29 @@ const app = new ServiceEndpoint<never, typeof shellContract>('shell', null, {
 // No payload is read. The answer is a property of the server, identical for every caller,
 // so there is nothing here for §2.9 to sanitize and nothing a client could steer.
 app.registerEvent('sourceUrl', async () => ({ url: sourceUrl() }));
+
+/**
+ * The owner's default language for the phone (MICA-61), from the `gphone_locale` convar.
+ *
+ * A BCP 47 tag such as `de` or `pt-BR`, answered as '' when the convar is unset or not a
+ * tag, so the client falls through to the player's own browser language and then English.
+ * The player's own choice in Settings > Language always wins over this; it is a default
+ * for a community, not a lock.
+ */
+const LOCALE_CONVAR = 'gphone_locale';
+const LOCALE_TAG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
+
+export const serverLocale = (): string => {
+  const configured = GetConvar(LOCALE_CONVAR, '').trim();
+  if (!configured) return '';
+  if (!LOCALE_TAG.test(configured)) {
+    console.warn(
+      `[gPhone] ${LOCALE_CONVAR} is '${configured}', which is not a language tag such as ` +
+        "'de' or 'pt-BR'. Ignoring it; players fall back to their own language."
+    );
+    return '';
+  }
+  return configured;
+};
+
+app.registerEvent('locale', async () => ({ locale: serverLocale() }));

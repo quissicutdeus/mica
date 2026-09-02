@@ -23,6 +23,7 @@ export * from './useDisplayWrite';
 export * from './useHighscores';
 export * from './useKeybinds';
 export * from './useKeybindsWrite';
+export * from './useLocale';
 export * from './useLocation';
 export * from './useLockScreen';
 export * from './useLockScreenWrite';

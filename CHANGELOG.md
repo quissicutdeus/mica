@@ -287,6 +287,16 @@ that sets none of them changes nothing for your players.
 
 ### Added
 
+**The phone speaks the player's language (MICA-61).** Settings > Language
+lists every language any app provides, and `Automatic` follows a new convar,
+`gphone_locale`, then the player's own game language, then English. Set
+`gphone_locale "de"` (a BCP 47 tag; a value that is not one is ignored with a
+console warning) to give a community a default without each player choosing.
+This release ships the mechanism with Notes and the Language pane translated
+into German as the worked example; the rest of the phone follows in MICA-214
+and MICA-215, and text the server itself composes in MICA-216. Dates, times
+and currency now format under the chosen language.
+
 - The lock screen passcode is stored with **scrypt** rather than a single salted
   SHA-256 pass, and wrong guesses are now rate limited on the server rather than
   only in the UI. Two new convars come with it: `gphone_lockscreen_scrypt_cost`
@@ -537,6 +547,14 @@ fine. Nothing changes at run time: the shell already refused an undeclared call,
 and still does; this moves the refusal to where you can read it. Rebuild against
 the current template to pick it up; a bundle built without the plugin still
 installs.
+
+**`registerMessages` and `useLocale` are new (MICA-61).** An add-on registers
+its own catalog under its app id and reads every string through `$t`; nothing on
+the phone translates on its behalf. `useLocale().locale` is the active tag,
+read-only for an add-on. `formatDate`, `formatTime` and `formatCurrency` now
+format under that locale rather than `en-US`, which changes their output for a
+player in another language — if you parse what they return, stop. Both names are
+additive; the contract stays `v1`.
 
 **`hostRuntime()` is new beside `isBrowser()` (MICA-177).** It answers
 `'browser'`, `'cef'` or `'headless'`, and `isBrowser()` now answers `false`

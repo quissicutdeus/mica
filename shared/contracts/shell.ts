@@ -28,6 +28,8 @@ export const shellContract = defineContract({
      * boolean is not worth moving a type for, but the authority is there and not here.
      */
     capabilities: { input: s.none(), output: responseType<{ money: boolean }>() },
-    sourceUrl: { input: s.none(), output: responseType<{ url: string }>() }
+    sourceUrl: { input: s.none(), output: responseType<{ url: string }>() },
+    /** MICA-61: the owner's default language (`gphone_locale`), or '' when unset. */
+    locale: { input: s.none(), output: responseType<{ locale: string }>() }
   }
 });

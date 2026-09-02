@@ -60,6 +60,8 @@ export type { AppUpdate, AppUpdateKind } from './vocabulary/shell';
 export { placeholderAvatar, placeholderPhoto, placeholderPhotos } from './lib/placeholderImage';
 export * from './types';
 export * from './version';
+export { registerMessages, t, plural, availableLocales, FALLBACK_LOCALE } from './i18n';
+export type { Messages, Catalog, TranslateParams, Translate } from './i18n';
 /**
  * @public
  * MICA-70's privacy-disclosure string — plain, state-free text, so it bundles into a

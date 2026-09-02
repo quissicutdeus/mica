@@ -1,0 +1,8 @@
+{
+  "language.title": "Sprache",
+  "language.subtitle": "Die Sprache, die das Telefon spricht",
+  "language.automatic": "Automatisch",
+  "language.automaticHint": "Folgt der Voreinstellung des Servers, dann deiner eigenen Sprache ({locale})",
+  "language.section": "Sprache",
+  "language.footer": "Apps übersetzen sich selbst; eine ohne Übersetzung für eine Sprache zeigt Englisch."
+}

@@ -2,17 +2,26 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { get } from 'svelte/store';
 import { is24HourNow } from '../host/seam/clockPreference';
+import { locale } from '../i18n';
+
+/**
+ * Every `Intl` call below formats under the phone's locale (MICA-61), read at call time so
+ * a component that re-renders on a locale change re-formats too. Before this, currency was
+ * pinned to `en-US` and dates fell back to whatever the CEF process reported.
+ */
+const activeLocale = (): string => get(locale);
 
 export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
+  return new Intl.NumberFormat(activeLocale(), {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(amount);
 }
 
 export function formatTimestamp(timestamp: number): string {
-  return new Date(timestamp * 1000).toLocaleDateString();
+  return new Date(timestamp * 1000).toLocaleDateString(activeLocale());
 }
 
 export function formatTime(isoString?: string | number | Date, override24Hour?: boolean): string {
@@ -28,7 +37,7 @@ export function formatTime(isoString?: string | number | Date, override24Hour?: 
     return `${hours}:${minutes}`;
   }
 
-  return date.toLocaleTimeString([], {
+  return date.toLocaleTimeString(activeLocale(), {
     hour: 'numeric',
     minute: '2-digit'
   });
@@ -47,14 +56,14 @@ export function formatRelativeTime(dateStr: Date | string): string {
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays === 1) return 'Yesterday';
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString(activeLocale(), { month: 'short', day: 'numeric' });
 }
 
 export function formatDate(isoString?: string | number | Date): string {
   if (!isoString) return '';
   const date = isoString instanceof Date ? isoString : new Date(isoString);
   if (isNaN(date.getTime())) return '';
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(activeLocale(), {
     month: 'short',
     day: 'numeric',
     year: 'numeric'

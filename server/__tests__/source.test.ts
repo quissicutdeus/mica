@@ -20,7 +20,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
   }
 }));
 
-import { sourceUrl } from '../services/Source';
+import { serverLocale, sourceUrl } from '../services/Source';
 import { __resetRateLimits } from '../lib/rateLimit';
 
 const UPSTREAM = 'https://github.com/quissicutdeus/gPhone';
@@ -110,5 +110,49 @@ describe('the source address a server reports', () => {
     expect((globalThis.emitNet as any).mock.calls[0]?.[3]).toMatchObject({
       error: expect.any(String)
     });
+  });
+});
+
+/**
+ * The owner's default language (MICA-61), the same shape as the source address above: a
+ * convar, validated, answered over NUI with nothing read from the payload.
+ */
+describe('the default locale a server reports', () => {
+  const withLocale = (value: string | null) => {
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'gphone_locale' && value !== null ? value : fallback;
+  };
+
+  beforeEach(() => {
+    __resetRateLimits();
+    withLocale(null);
+  });
+
+  it("answers '' when the operator has set nothing, so the player's own language decides", () => {
+    expect(serverLocale()).toBe('');
+  });
+
+  it('answers a language tag, with or without a region', () => {
+    withLocale('de');
+    expect(serverLocale()).toBe('de');
+    withLocale(' pt-BR ');
+    expect(serverLocale()).toBe('pt-BR');
+  });
+
+  it('ignores a value that is not a tag, and says so once', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    withLocale('German please');
+    expect(serverLocale()).toBe('');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('gphone_locale'));
+  });
+
+  it('answers over NUI without reading anything from the payload', async () => {
+    withLocale('fr');
+    const handler = handlers.get('gphone:server:shell:locale');
+    expect(handler).toBeDefined();
+    (globalThis as any).source = 5;
+    (globalThis as any).emitNet = vi.fn();
+    await handler!('cb-1', undefined);
+    expect((globalThis.emitNet as any).mock.calls.at(-1)?.[3]).toEqual({ locale: 'fr' });
   });
 });

@@ -272,6 +272,14 @@ export interface Facets {
     sourceUrl: Writable<string>;
     refreshSourceUrl: () => Promise<void>;
   };
+  /**
+   * MICA-61: the active locale, and the one way to change it. `setLocale` is for
+   * Settings; an add-on may read the locale and never set it (`MEMBER_ALLOWLIST`).
+   */
+  locale: () => {
+    locale: Readable<string>;
+    setLocale: (next: string) => void;
+  };
   appAction: (appId?: string) => {
     busy: Writable<boolean>;
     run: (work: () => unknown, options?: AppActionOptions) => Promise<boolean>;

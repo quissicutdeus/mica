@@ -30,6 +30,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import DeveloperTools from './panes/DeveloperTools.svelte';
   import Shortcuts from './panes/Shortcuts.svelte';
   import Sound from './panes/Sound.svelte';
+  import Language from './panes/Language.svelte';
+  import { registerMessages } from '@gphone/sdk';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
+
+  // MICA-61: Settings' own strings. The Language pane is the first extracted; the rest
+  // of this app follows in MICA-214.
+  registerMessages('settings', { en, de });
 
   let { onback }: AppProps = $props();
 
@@ -52,6 +60,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     | 'apps'
     | 'display'
     | 'sound'
+    | 'language'
     | 'lockscreen'
     | 'shortcuts'
     | 'devtools'
@@ -67,6 +76,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     apps: 'Apps',
     display: 'Display',
     sound: 'Sound',
+    language: 'Language',
     lockscreen: 'Lock Screen & Passcode',
     shortcuts: 'Shortcuts',
     devtools: 'Developer Tools',
@@ -221,6 +231,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <Display />
   {:else if pane === 'sound'}
     <Sound />
+  {:else if pane === 'language'}
+    <Language />
   {:else if pane === 'lockscreen'}
     <LockScreen />
   {:else if pane === 'shortcuts'}
@@ -303,6 +315,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <span class="text-on-surface font-medium">Sound</span>
             <span class="text-on-surface-variant text-body-small"
               >Volume, mute, and button step size</span
+            >
+          </div>
+          <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
+        </button>
+        <button
+          type="button"
+          onclick={() => (pane = 'language')}
+          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+        >
+          <div class="flex flex-col">
+            <span class="text-on-surface font-medium">Language</span>
+            <span class="text-on-surface-variant text-body-small"
+              >The language the phone speaks</span
             >
           </div>
           <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />

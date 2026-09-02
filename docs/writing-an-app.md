@@ -156,6 +156,52 @@ fetched there would show whatever was true when it was first opened. If a badge
 has to be right _before_ the launcher draws, declare `preload` in the manifest —
 `onAppForeground` is too late by definition.
 
+## Strings
+
+Every label, placeholder, toast and empty state an app shows goes through the
+phone's translator (MICA-61), and the app owns its own catalog — an add-on is
+not in this repository, so there is no central file it could add to. Register
+once at module scope, under your app id, and read with `$t`:
+
+```ts
+import { registerMessages, useLocale } from '@gphone/sdk';
+import en from './locales/en.json';
+import de from './locales/de.json';
+
+registerMessages('journal', { en, de });
+const { t } = useLocale();
+```
+
+```svelte
+<EmptyState title={$t('journal.empty')} />
+<Button onclick={save}
+  >{$busy ? $t('journal.saving') : $t('journal.save')}</Button
+>
+```
+
+A catalog is a flat object of strings, one entry per key:
+
+```json
+{
+  "empty": "No entries yet",
+  "count.one": "{count} entry",
+  "count.other": "{count} entries"
+}
+```
+
+`{name}` interpolates a param; `plural('journal.count', n)` picks the category
+`Intl.PluralRules` says the language needs. A missing key falls back to the
+language, then English, then the key itself, and warns once, so a
+half-translated locale shows its gaps without breaking the screen. The player
+picks the language in Settings > Language, the owner sets a default with the
+`gphone_locale` convar, and `useLocale().locale` is the active tag if you need
+it; `formatDate`, `formatTime` and `formatCurrency` already follow it. An add-on
+reads the locale and cannot set it.
+
+`web/src/lib/hardcodedStrings.test.ts` freezes the number of English literals
+per `.svelte` file and only lets it fall — a new file must have none. Notes is
+the extracted example to copy from.
+
 ## If your app has a server half
 
 The hooks above — `useNotes`, `useContacts` — are core code, and so are the rows

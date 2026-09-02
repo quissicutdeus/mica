@@ -2111,6 +2111,8 @@ const mockRegistry: Record<string, MockHandler> = {
    * stands in for a server running an unmodified copy — which is what a browser session is.
    */
   'shell:sourceUrl': () => ({ url: 'https://github.com/quissicutdeus/gPhone' }),
+  // MICA-61: no owner default in the browser, so the player's own language decides.
+  'shell:locale': () => ({ locale: '' }),
 
   /**
    * Broadcasting to people nearby (MICA-111 phase 2), which in a browser means nobody.

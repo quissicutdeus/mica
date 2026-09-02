@@ -70,6 +70,10 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   // licence notice behind a declared permission would mean an add-on could be refused the
   // ability to tell somebody what licence it is under, which is the opposite of the point.
   useSourceUrl: null,
+  // MICA-61: which language the phone is in. Public for the same reason the source
+  // address is — every app needs it to render at all, it carries no player data, and the
+  // only member an add-on could steer is withheld by `MEMBER_ALLOWLIST`.
+  useLocale: null,
   // data
   useAccount: 'account',
   useAdmin: 'admin',
@@ -131,6 +135,7 @@ export const HOOK_OF_FACET = {
   accounts: 'useAccounts',
   admin: 'useAdmin',
   sourceUrl: 'useSourceUrl',
+  locale: 'useLocale',
   bank: 'useBank',
   call: 'useCall',
   camera: 'useCamera',
@@ -241,7 +246,10 @@ export const SAFE_IMPLICIT_FACETS: ReadonlySet<string> = new Set([
   // release page already publish. It carries no player data, takes no app id and has no
   // member an add-on could steer — reachable implicitly is the correct answer, not an
   // oversight, and refusing it would mean an add-on cannot state the licence it is under.
-  'sourceUrl'
+  'sourceUrl',
+  // MICA-61. The locale is one string every app needs to render; `setLocale` is not on
+  // the allowlist, so a frame can read the language and cannot change the player's.
+  'locale'
 ]);
 
 /**
@@ -500,6 +508,7 @@ export const FACET_MEMBERS: Readonly<Record<string, readonly string[]>> = {
   service: ['call'],
   sound: ['play'],
   sourceUrl: ['sourceUrl', 'refreshSourceUrl'],
+  locale: ['locale'],
   systemHardware: [
     'charge',
     'signalLevel',
