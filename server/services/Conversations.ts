@@ -9,7 +9,7 @@ import { Conversation, Participant } from '@gphone/shared/types';
 import { AuditLogger } from '../lib/AuditLogger';
 import { resolveByPhone, resolveMany } from '../lib/PlayerDirectory';
 import { CITIZENID_MAX_LENGTH } from '@gphone/shared/framework';
-import { conversationIdFrom, flagUnlessFalse, pageBounds } from '../lib/payload';
+import { conversationIdFrom, pageBounds } from '../lib/payload';
 import { conversationsContract } from '@gphone/shared/contracts/conversations';
 
 /**
@@ -550,8 +550,9 @@ app.registerEvent('read', async (source, cbId, data, citizenid) => {
  */
 app.registerEvent('archive', async (source, cbId, data, citizenid) => {
   const id = conversationIdFrom(data);
-  const archive = flagUnlessFalse(data.archive);
-  return await conversationRepo.setArchived(id, citizenid, archive);
+  // `status` is a required enum in the contract, so there is no absent case to default —
+  // the old `flagUnlessFalse(data.archive)` read a flag the web never sent (MICA-208).
+  return await conversationRepo.setArchived(id, citizenid, data.status === 'archived');
 });
 
 // Delete/Leave

@@ -91,13 +91,13 @@ export const conversationsContract = defineContract({
     archive: {
       input: s.object({
         ...threadRef,
-        /** Absent means archive — the shape a toggle sends when it names only its direction. */
-        archive: s.boolean().optional(),
         /**
-         * Sent by the web, read by nothing: the handler takes the direction from `archive`.
-         * Declared so the current client's request is not refused for carrying it.
+         * The state the caller wants, named in full. Required, because the field this
+         * replaced was an optional `archive` flag that the web never sent and the handler
+         * defaulted to `true`, so every call archived and nothing ever came back
+         * (MICA-208). A required enum has no absent case to default.
          */
-        status: s.enum(['archived', 'active']).optional()
+        status: s.enum(['archived', 'active'])
       }),
       output: responseType<boolean>()
     },

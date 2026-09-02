@@ -498,3 +498,40 @@ describe('conversations:create — participant_a/participant_b and the unique-in
     logged.mockRestore();
   });
 });
+
+/**
+ * Archive and unarchive both work, and the direction comes from `status` (MICA-208).
+ *
+ * The handler used to read `flagUnlessFalse(data.archive)`, a flag the web never sent, so
+ * every call archived and nothing ever came back. The contract now requires `status`, so
+ * a request naming neither direction is refused before the handler runs rather than
+ * defaulted into the one that always won.
+ */
+describe('conversations:archive — the direction is the status the caller names', () => {
+  const archiveSql = () => dbMock.update.mock.calls.at(-1)?.[0] as string;
+
+  it('archives when the caller asks for archived', async () => {
+    const reply = await call('archive', { conversation_id: 7, status: 'archived' });
+    expect(reply).toBe(true);
+    expect(archiveSql()).toContain('SET archived_at = CURRENT_TIMESTAMP');
+    expect(dbMock.update.mock.calls.at(-1)?.[1]).toEqual([7, 'CIT_A']);
+  });
+
+  it('unarchives when the caller asks for active', async () => {
+    const reply = await call('archive', { conversation_id: 7, status: 'active' });
+    expect(reply).toBe(true);
+    expect(archiveSql()).toContain('SET archived_at = NULL');
+  });
+
+  it('refuses a request that names no direction, before touching the table', async () => {
+    const reply = await call('archive', { conversation_id: 7 });
+    expect(reply).toMatchObject({ error: expect.stringContaining('status') });
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses the flag the handler used to default on', async () => {
+    const reply = await call('archive', { conversation_id: 7, archive: false });
+    expect(reply).toMatchObject({ error: expect.any(String) });
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+});

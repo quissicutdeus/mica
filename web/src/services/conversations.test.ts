@@ -110,7 +110,7 @@ vi.mock('../nui/fetchNui', () => ({
         created_at: new Date().toISOString()
       });
     }
-    if (method === 'readConversation') {
+    if (method === 'readConversation' || method === 'archiveConversation') {
       return Promise.resolve(true);
     }
     // Shaped like the real `edit` action: it echoes the saved body, and only claims
@@ -211,6 +211,28 @@ describe('messages store', () => {
 
     await conversationsStore.markAsRead(1);
     expect(get(conversationsStore)[1].unreadCount).toBe(0);
+  });
+
+  /**
+   * Both directions, and the payload names the direction as `status` (MICA-208): the
+   * server's contract requires that field, so a store sending anything else is refused.
+   */
+  it('archives a conversation and brings it back, naming the status each time', async () => {
+    const { fetchNui } = await import('../nui/fetchNui');
+    const lastSent = () => {
+      const calls = vi
+        .mocked(fetchNui)
+        .mock.calls.filter(([method]) => method === 'archiveConversation');
+      return calls[calls.length - 1]?.[1];
+    };
+
+    await conversationsStore.archiveConversation(1, true);
+    expect(get(conversationsStore).find((c) => c.id === 1)?.status).toBe('archived');
+    expect(lastSent()).toEqual({ conversation_id: 1, status: 'archived' });
+
+    await conversationsStore.archiveConversation(1, false);
+    expect(get(conversationsStore).find((c) => c.id === 1)?.status).toBe('active');
+    expect(lastSent()).toEqual({ conversation_id: 1, status: 'active' });
   });
 });
 

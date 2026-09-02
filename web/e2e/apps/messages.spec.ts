@@ -120,6 +120,43 @@ test.describe('Messages App E2E', () => {
     ).not.toBeVisible();
   });
 
+  /**
+   * Archive, then unarchive, end to end (MICA-208). The second half is the one that
+   * never worked: the server read a flag the web did not send and defaulted it to
+   * "archive", so a thread put away could not be brought back. The browser mock always
+   * honoured `status`, which is exactly why no spec noticed — this one asserts the round
+   * trip through the same store the game uses, and the contract now refuses a request
+   * that does not name its direction.
+   */
+  test('archives a thread and brings it back to the inbox', async ({ page }) => {
+    const inboxRow = () => page.locator('[role="button"]').filter({ hasText: 'Trevor' }).first();
+    const archiveButton = () => page.getByRole('button', { name: 'Archive Conversation' });
+    const toggleArchive = () => page.getByRole('button', { name: 'Toggle Archive' });
+
+    await inboxRow().click({ force: true });
+    await expect(archiveButton()).toHaveAttribute('title', 'Archive');
+    await archiveButton().click();
+
+    // Back on the inbox, and Trevor is no longer in it.
+    await expect(page.locator('h1', { hasText: 'Messages' })).toBeVisible();
+    await expect(inboxRow()).toHaveCount(0);
+
+    await toggleArchive().click();
+    await expect(page.locator('h1', { hasText: 'Archived Messages' })).toBeVisible();
+    await expect(inboxRow()).toBeVisible();
+
+    await inboxRow().click({ force: true });
+    await expect(archiveButton()).toHaveAttribute('title', 'Unarchive');
+    await archiveButton().click();
+
+    // The archive is empty again, and the inbox has Trevor back.
+    await expect(page.locator('h1', { hasText: 'Archived Messages' })).toBeVisible();
+    await expect(inboxRow()).toHaveCount(0);
+    await toggleArchive().click();
+    await expect(page.locator('h1', { hasText: 'Messages' })).toBeVisible();
+    await expect(inboxRow()).toBeVisible();
+  });
+
   test('shares a location and sets a waypoint from it', async ({ page }) => {
     const convItem = page.locator('[role="button"]').filter({ hasText: 'Trevor' }).first();
     await expect(convItem).toBeVisible();
