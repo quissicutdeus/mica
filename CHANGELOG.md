@@ -307,6 +307,20 @@ stays as the fallback and as what the server log shows. Three toasts keep their
 text as the admin typed it (`gphonecall`, `gphoneseed` and the battery command
 echo), since it is not fixed prose. No owner action.
 
+**The phone itself now holds what a player consented to when installing an
+add-on (MICA-201).** The Store used to be the only witness; the shell now
+keeps the accepted permission set per add-on and refuses any call the grant does
+not cover, the same way it refuses an undeclared one. Existing installs adopt
+their installed manifest as the grant once, at the first boot after updating. An
+add-on you push from the server with the `installApp` NUI message is granted its
+declared permissions at push time, since you, not the player, are the one
+choosing it. No owner action.
+
+**The Messages inbox pages by last-message recency, twenty-five threads at a
+time (MICA-211).** It used to walk thread ids two hundred at a time, which
+could push an old thread with a fresh message onto a later page. No schema
+change and no owner action.
+
 - The lock screen passcode is stored with **scrypt** rather than a single salted
   SHA-256 pass, and wrong guesses are now rate limited on the server rather than
   only in the UI. Two new convars come with it: `gphone_lockscreen_scrypt_cost`
@@ -579,6 +593,17 @@ with keys under a namespace you register from your bundle and it translates.
 older pages through a cursor — and `messages:get` answers `{ rows, nextCursor }`
 rather than a bare array. Both names are additive; nothing an add-on already
 calls changed shape except that read, which no add-on reaches through the SDK.
+
+**Consent is checked by the shell, not the Store (MICA-201).** A permission
+your manifest declares but the player never granted is refused at call time with
+the same `AppPermissionError` an undeclared one gets, and an update that widens
+`permissions` is refused until the player accepts the wider set. The
+`appRegistryWrite` facet gains `recordConsent` and `grantedPermissions`, both
+refused to a sandboxed frame. Additive; the contract stays `v1`.
+
+**`createPagedStore` passes an opaque `PageCursor` through untouched
+(MICA-211)**, so a paged service may hand back a compound cursor rather than a
+row id. A store built on a bare-id cursor is unaffected. Additive.
 
 **`hostRuntime()` is new beside `isBrowser()` (MICA-177).** It answers
 `'browser'`, `'cef'` or `'headless'`, and `isBrowser()` now answers `false`
