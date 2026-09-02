@@ -6,6 +6,7 @@ import { debugData } from '../lib/phone/debug';
 import { placeholderAvatar } from '@gphone/sdk';
 import { appRegistryStore } from './state/registry';
 import { openApp } from './state/navigation';
+import { fetchNui } from '../nui/fetchNui';
 import {
   MUSIC_BROADCASTS_NUI_ACTION,
   MUSIC_BROADCAST_VOLUMES_NUI_ACTION
@@ -190,6 +191,13 @@ export function installDevHarness(): void {
   // it would appear on every player's home screen. The spec has always read this
   // property; nothing ever assigned it, so its assertions never ran.
   window.appRegistryStore = appRegistryStore;
+
+  // So a spec can make a NUI call by name, without a UI path to it. `nui.spec.ts` uses
+  // it to call an action no mock answers and prove that the fixture in
+  // `web/e2e/support/test.ts` fails the spec that did it (MICA-195) — the one spec in
+  // the suite that must go red, and that nothing on the phone's own surface can provoke,
+  // because every action the phone reaches has a mock by construction.
+  window.fetchNui = fetchNui;
 
   openDeepLinkedApp();
 }

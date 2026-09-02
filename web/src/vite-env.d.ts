@@ -74,6 +74,11 @@ interface Window {
    */
   appRegistryStore?: typeof import('./shell/state/registry').appRegistryStore;
   /**
+   * `fetchNui` by name, so a spec can call an action nothing mocks and prove the e2e
+   * fixture fails on it. `nui.spec.ts` is the only reader.
+   */
+  fetchNui?: typeof import('./nui/fetchNui').fetchNui;
+  /**
    * Every call the browser mock has answered this session, in order — see `MockCall` in
    * `nui/transport.ts`.
    *
