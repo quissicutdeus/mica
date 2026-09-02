@@ -643,6 +643,19 @@ export interface Facets {
       loaded: {
         subscribe: (this: void, run: Subscriber<boolean>, invalidate?: () => void) => Unsubscriber;
       };
+      /**
+       * Whether the server said there is another page of threads behind the one held
+       * (MICA-204).
+       *
+       * Declared beside `loaded` because they answer adjacent questions and a list that has
+       * one without the other cannot render honestly: `loaded` separates "still arriving"
+       * from "there is nothing here", and this separates "that is all of it" from "there is
+       * more, ask". Without it the inbox could only ever show its first page and would look
+       * complete doing it.
+       */
+      hasMore: {
+        subscribe: (this: void, run: Subscriber<boolean>, invalidate?: () => void) => Unsubscriber;
+      };
       messages: {
         subscribe: (
           this: void,
@@ -659,6 +672,15 @@ export interface Facets {
       };
       setActiveConversationId: (id: number | null) => void;
       loadConversations: () => Promise<void>;
+      /**
+       * Append the next page of threads, walking the cursor `conversations:get` accepts
+       * (MICA-197/MICA-204). Resolves to whether anything arrived.
+       *
+       * Paired with `hasMore` rather than usable on its own: it is a no-op once the cursor
+       * has run out, so a caller with no way to ask whether a page exists can only find out
+       * by asking for one.
+       */
+      loadMoreConversations: () => Promise<boolean>;
       loadMessages: (conversationId: number) => Promise<void>;
       sendMessage: (
         conversationId: number,

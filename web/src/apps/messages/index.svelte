@@ -38,6 +38,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { conversationsStore, messageReactions, loadMessageReactions, toggleMessageReaction } =
     useMessages();
   const conversationsLoaded = conversationsStore.loaded;
+  const conversationsHasMore = conversationsStore.hasMore;
   const { busy, run } = useAppAction('messages');
   const { contactsStore: contacts } = useContacts();
   const { media } = useMedia();
@@ -411,7 +412,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     if (el) el.scrollTop = el.scrollHeight;
   };
 
-  // Load conversations on mount; deep-link navigation is handled by the $effect below
+  /**
+   * Ask for the next page of the inbox.
+   *
+   * The busy flag is here rather than read off the store because it is a statement about
+   * this button: `createPagedStore.loadMore` already refuses to overlap itself, but a second
+   * click that quietly resolved `false` would just look broken.
+   */
+  let loadingMoreConversations = $state(false);
+  const loadMoreConversations = async () => {
+    if (loadingMoreConversations) return;
+    loadingMoreConversations = true;
+    try {
+      await conversationsStore.loadMoreConversations();
+    } finally {
+      loadingMoreConversations = false;
+    }
+  };
+
+  // Load conversations on mount; deep-link navigation is handled by the $effect below.
+  // The refetch is also what gives back every held thread but the one on screen — see
+  // `MAX_CACHED_THREADS` in `services/conversations.ts` for why the release rides here.
   onAppForeground('messages', () => {
     void conversationsStore.loadConversations();
   });
@@ -649,12 +670,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <ConversationList
       conversations={filteredConversations}
       loaded={$conversationsLoaded}
+      hasMore={$conversationsHasMore}
+      loadingMore={loadingMoreConversations}
       bind:query={searchQuery}
       {showSearch}
       {viewingArchive}
       myCitizenId={$citizenid}
       isLastMsgReadByOther={isConvLastMsgReadByOther}
       onselect={handleSelectConversation}
+      onloadmore={loadMoreConversations}
     />
   {/if}
 

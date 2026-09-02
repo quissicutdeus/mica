@@ -21,21 +21,34 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let {
     conversations,
     loaded,
+    hasMore,
+    loadingMore,
     query = $bindable(''),
     showSearch,
     viewingArchive,
     myCitizenId,
     isLastMsgReadByOther,
-    onselect
+    onselect,
+    onloadmore
   }: {
     conversations: UIConversation[];
     loaded: boolean;
+    /**
+     * The server said there are older threads behind this page.
+     *
+     * False for very nearly everyone — see the note on the control below — so this is an
+     * affordance that appears only when it has something to do, rather than a permanent
+     * fixture at the end of the inbox.
+     */
+    hasMore: boolean;
+    loadingMore: boolean;
     query: string;
     showSearch: boolean;
     viewingArchive: boolean;
     myCitizenId: string;
     isLastMsgReadByOther: (conv: UIConversation) => boolean;
     onselect: (id: number) => void;
+    onloadmore: () => void;
   } = $props();
 </script>
 
@@ -123,6 +136,54 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             ? 'No archived conversations'
             : 'No active conversations'}
       />
+    </div>
+  {/if}
+
+  <!--
+    Older threads, a server page at a time.
+
+    **This is not the inbox's scroll affordance and must not become one.** A page is 200
+    threads — `CONVERSATION_PAGE_SIZE` in `services/conversations.ts`, matched to the
+    server's own `paging.pageSize` — so `hasMore` is false for very nearly every player and
+    this control never renders for them. It exists for the one past that line, whose
+    remaining threads were previously unreachable: the server truncated the reply at 200 and
+    nothing said so.
+
+    The page size is what keeps it rare, and lowering it to make paging feel livelier would
+    be a bug rather than a polish. `findForCitizen` walks the keyset on `c.id DESC` while
+    this list is ordered by recency of the last message, and those are different orders — an
+    old thread someone still texts daily has a low id and a recent `lastMessageAt`, so any
+    page smaller than the whole list would drop it out of the top of the inbox until enough
+    pages had loaded to reach it. The store's own note carries the full reasoning.
+
+    Outside the block above rather than a fourth arm of it, because a filtered view can show
+    nothing and still have pages behind it: the archive tab and the search box both narrow
+    what has already been fetched, so hiding this whenever the visible list is empty would
+    strand the rest of the inbox behind an empty state.
+
+    `pb-home-indicator` because this is the last thing in the scroller, and `PhoneFrame`
+    paints its gesture bar over the bottom of the screen — without the shared inset the
+    button's lower third is inside a control that goes home.
+  -->
+  {#if loaded && hasMore}
+    <div class="pb-home-indicator flex justify-center py-4">
+      <button
+        type="button"
+        class="border-primary bg-surface-container text-primary hover:bg-surface-container shadow-elevation-1 duration-short ease-standard text-body-small flex cursor-pointer items-center gap-2 rounded-box border px-3.5 py-1.5 transition-colors"
+        onclick={onloadmore}
+      >
+        {#if loadingMore}
+          <span class="relative flex h-2 w-2">
+            <span
+              class="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75"
+            ></span>
+            <span class="bg-primary relative inline-flex h-2 w-2 rounded-full"></span>
+          </span>
+          <span>Loading older conversations...</span>
+        {:else}
+          <span>Load older conversations</span>
+        {/if}
+      </button>
     </div>
   {/if}
 </div>
