@@ -16,6 +16,10 @@
 -- has — which is also why the orphan sweep skips there rather than guessing.
 
 
+-- SPDX-FileCopyrightText: 2025 quissicutdeus
+--
+-- SPDX-License-Identifier: AGPL-3.0-or-later
+
 -- Central moderation and accountability ledger.
 --
 -- Every destructive or state-changing action a player takes on their own content is
@@ -465,6 +469,7 @@ CREATE TABLE IF NOT EXISTS `gphone_messages` (
     `citizenid` varchar(50) NOT NULL,
     `conversation_id` int(11) NOT NULL,
     `message` text NOT NULL,
+    `reply_to_id` int(11) DEFAULT NULL,
     `status` ENUM('active', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -473,6 +478,7 @@ CREATE TABLE IF NOT EXISTS `gphone_messages` (
     KEY `citizenid_status` (`citizenid`, `status`),
     KEY `citizenid` (`citizenid`),
     KEY `conversation_status_created` (`conversation_id`, `status`, `created_at`),
+    KEY `reply_to_id` (`reply_to_id`),
     CONSTRAINT `fk_gphone_messages_conversation_id` FOREIGN KEY (`conversation_id`)
         REFERENCES `gphone_messages_conversations` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;

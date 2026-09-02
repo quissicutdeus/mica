@@ -15,7 +15,9 @@ import { conversationsStore } from './conversations';
 const server = vi.hoisted(() => ({
   conversations: [] as any[],
   /** Every `getConversations` payload the store sent, in order. */
-  pageRequests: [] as any[]
+  pageRequests: [] as any[],
+  /** When set, `getMessages` answers a second row that quotes the first (MICA-209). */
+  threadHasReply: false
 }));
 
 const DEFAULT_CONVERSATIONS = [
@@ -98,7 +100,21 @@ vi.mock('../nui/fetchNui', () => ({
           citizenid: 'my-id',
           message: 'Stash is secure.',
           created_at: '2026-07-24T21:00:00Z'
-        }
+        },
+        // A reply as the row now carries it (MICA-209): the quote is resolved from the
+        // stored id on every load, not only from the live push that first delivered it.
+        ...(server.threadHasReply
+          ? [
+              {
+                id: 202,
+                conversation_id: data.conversation_id,
+                citizenid: 'gta-trevor',
+                message: 'Good.',
+                reply_to_id: 201,
+                created_at: '2026-07-24T21:05:00Z'
+              }
+            ]
+          : [])
       ]);
     }
     if (method === 'sendMessage') {
@@ -127,6 +143,7 @@ vi.mock('../nui/fetchNui', () => ({
 
 beforeEach(async () => {
   server.conversations = DEFAULT_CONVERSATIONS.map((c) => ({ ...c }));
+  server.threadHasReply = false;
   conversationsStore.setActiveConversationId(null);
   // The store is a module singleton, so its window, cursor and thread cache outlive a case.
   // One refetch with no active thread resets all three — which is itself the eviction rule
@@ -145,6 +162,13 @@ describe('messages store', () => {
     expect(convs[0].name).toBe('Trevor Philips');
     expect(convs[1].name).toBe('Ursula (Crazy Ex)');
     expect(convs[1].unreadCount).toBe(25);
+  });
+
+  it('resolves a stored reply target into the quoted message on load', async () => {
+    server.threadHasReply = true;
+    await conversationsStore.loadMessages(2);
+    const reply = get(conversationsStore.messages)[2].find((m) => m.id === 202);
+    expect(reply?.replyToMsg).toMatchObject({ id: 201, message: 'Stash is secure.', sender: 'me' });
   });
 
   it('loads messages for a conversation and assigns sender tags', async () => {

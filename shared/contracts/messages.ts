@@ -56,10 +56,8 @@ export const messagesContract = defineContract({
           )
           .optional(),
         /**
-         * Sent by the web and read by nothing — `gphone_messages` has no `reply_to_id`
-         * column, so a reply's target is web-side state that never reaches the row. Declared
-         * so today's client is not refused; whether replies should persist is a schema
-         * question and a separate ticket.
+         * The message this one quotes. Persisted on the row (MICA-209) and refused if it
+         * does not sit in the same conversation, so a reply cannot quote across threads.
          */
         reply_to_id: s.positiveInt().nullable().optional()
       }),

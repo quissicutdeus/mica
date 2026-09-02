@@ -1454,6 +1454,7 @@ const mockRegistry: Record<string, MockHandler> = {
     conversation_id: number;
     message: string;
     attachments?: { photo_id: number; attachment?: string }[];
+    reply_to_id?: number | null;
   }) => {
     await delay(200);
     const convId = payload.conversation_id;
@@ -1463,6 +1464,9 @@ const mockRegistry: Record<string, MockHandler> = {
       citizenid: 'my-id',
       status: 'active',
       message: payload.message,
+      // Kept on the row as the server keeps it now (MICA-209), so a thread re-read in the
+      // browser still quotes what it quoted when it was sent.
+      reply_to_id: payload.reply_to_id ?? null,
       // Hydrated the same way the real server does: `photo_id` resolves to the owning
       // row's full media, not just echoed back bare. Without this a freshly-sent
       // attachment rendered nothing until the next fetch re-hydrated it — invisible for

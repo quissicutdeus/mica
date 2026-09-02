@@ -400,3 +400,78 @@ describe('reactions on Messages (MICA-143)', () => {
     });
   });
 });
+
+/**
+ * A reply's target reaches the row (MICA-209). `send` accepted `reply_to_id`, the live
+ * push carried it and the bubble rendered it, and the table had no column for it, so the
+ * quote lived exactly as long as the recipient's session. It is a column now, written by
+ * `send` only after the target is confirmed to sit in the same conversation — a row id is
+ * never authorization on its own, and a reply could otherwise quote across threads.
+ */
+describe('send persists reply_to_id (MICA-209)', () => {
+  afterEach(() => {
+    (globalThis as any).emitNet = (event: string, target: number, payload: any) => {
+      emitted.push({ event, target, payload });
+    };
+  });
+
+  /** `isMember` confirms the caller is in the thread; nothing else is answered. */
+  const asParticipant = () => {
+    dbMock.single.mockImplementation(async (sql: string) => {
+      if (sql.includes('gphone_messages_participants')) return { placeholder: 1 };
+      throw new Error(`unexpected single(): ${sql}`);
+    });
+    dbMock.insert.mockResolvedValue(99);
+  };
+
+  const messageInsert = () =>
+    dbMock.insert.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO `gphone_messages`'));
+
+  it('writes the target when it sits in the same conversation', async () => {
+    asParticipant();
+    dbMock.scalar.mockResolvedValueOnce(1);
+
+    const reply = await call('send', 5, 'SENDER', {
+      conversation_id: 7,
+      message: 'yes',
+      reply_to_id: 41
+    });
+
+    expect(reply).toMatchObject({ id: 99, reply_to_id: 41 });
+    expect(dbMock.scalar).toHaveBeenCalledWith(
+      expect.stringContaining('`conversation_id` = ?'),
+      [41, 7]
+    );
+    const [sql, params] = messageInsert()!;
+    expect(sql).toContain('`reply_to_id`');
+    expect(params).toContain(41);
+  });
+
+  it('refuses a target from another conversation, before writing anything', async () => {
+    asParticipant();
+    dbMock.scalar.mockResolvedValueOnce(null);
+
+    const reply = await call('send', 5, 'SENDER', {
+      conversation_id: 7,
+      message: 'yes',
+      reply_to_id: 41
+    });
+
+    expect(reply).toMatchObject({ error: 'That message is not in this conversation.' });
+    expect(messageInsert()).toBeUndefined();
+  });
+
+  it('writes NULL, and asks nothing, for a message that is not a reply', async () => {
+    asParticipant();
+
+    const reply = await call('send', 5, 'SENDER', { conversation_id: 7, message: 'plain' });
+
+    expect(reply).toMatchObject({ id: 99, reply_to_id: null });
+    expect(dbMock.scalar).not.toHaveBeenCalledWith(
+      expect.stringContaining('`conversation_id` = ?'),
+      expect.anything()
+    );
+    const [, params] = messageInsert()!;
+    expect(params).not.toContain(41);
+  });
+});

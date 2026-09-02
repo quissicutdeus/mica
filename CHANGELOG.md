@@ -47,6 +47,14 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**`gphone_messages` gains a `reply_to_id` column and a `reply_to_id` key — run
+`gphoneschema apply` from your server console after updating, or import the
+regenerated `gphone.sql` / `gphone.esx.sql` on a fresh install (MICA-209).**
+Until now a reply's quote was carried only in the live push, so it looked right
+to whoever was online when it arrived and vanished on the next open. It is
+stored on the row now. Existing replies have no target on record and render as
+plain messages; nothing else about the table changes and no data is rewritten.
+
 **The resource now declares `node_version '22'` in `fxmanifest.lua`, so its
 server half runs on FXServer's Node 22 runtime rather than the default Node 16 —
 check that your artifact is recent enough to carry Node 22 before updating.**

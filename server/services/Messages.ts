@@ -57,11 +57,19 @@ export const messages = defineService<Message, typeof messagesContract>({
       notNull: true,
       references: { table: 'gphone_messages_conversations', column: 'id' }
     },
-    message: { type: 'text', notNull: true }
+    message: { type: 'text', notNull: true },
+    /**
+     * The message this one quotes, or NULL (MICA-209). Nullable and unreferenced on
+     * purpose: a quoted message can be unsent (soft-deleted, never removed), and a foreign
+     * key across that boundary would either refuse the unsend or cascade the reply away.
+     * Written only by `send`, which checks the target sits in the same conversation.
+     */
+    reply_to_id: { type: 'int', clientWritable: false }
   },
   indexes: [
     { name: 'citizenid', columns: ['citizenid'] },
-    { name: 'conversation_status_created', columns: ['conversation_id', 'status', 'created_at'] }
+    { name: 'conversation_status_created', columns: ['conversation_id', 'status', 'created_at'] },
+    { name: 'reply_to_id', columns: ['reply_to_id'] }
   ],
   childTables: [
     {
@@ -490,10 +498,19 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
     throw new PlayerFacingError('A message body or an attachment is required.');
   }
 
+  // A reply names a row id, and a row id is never authorization (§2.9): the quoted message
+  // has to sit in the thread the caller was just confirmed a participant of, or a reply
+  // could quote a message from a conversation the caller cannot read.
+  const replyToId = data.reply_to_id ?? null;
+  if (replyToId !== null && !(await messageRepo.inConversation(replyToId, conversationId))) {
+    throw new PlayerFacingError('That message is not in this conversation.');
+  }
+
   const newMessage: Partial<Message> = {
     conversation_id: conversationId,
     citizenid: citizenid,
     message,
+    reply_to_id: replyToId,
     attachments, // Array of { photo_id }
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),

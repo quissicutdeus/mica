@@ -18,7 +18,8 @@ export class MessageRepository extends SchemaRepository<Message> {
     const messageId = await super.create({
       conversation_id: data.conversation_id,
       citizenid: data.citizenid,
-      message: data.message
+      message: data.message,
+      reply_to_id: data.reply_to_id ?? null
     });
 
     // 2. Insert Attachments if any
@@ -40,6 +41,20 @@ export class MessageRepository extends SchemaRepository<Message> {
     );
 
     return messageId;
+  }
+
+  /**
+   * Whether a message row belongs to a conversation, by id alone — the caller has already
+   * been confirmed a participant of that conversation, which is what makes the id safe to
+   * act on (MICA-209). Status is not consulted: a reply to a message that was unsent
+   * afterwards keeps its pointer, and the UI shows nothing for a target it cannot find.
+   */
+  async inConversation(messageId: number, conversationId: number): Promise<boolean> {
+    const found = await Database.scalar<number | null>(
+      'SELECT 1 FROM `gphone_messages` WHERE `id` = ? AND `conversation_id` = ? LIMIT 1',
+      [messageId, conversationId]
+    );
+    return found !== null && found !== undefined;
   }
 
   async findByConversation(conversationId: number): Promise<Message[]> {
