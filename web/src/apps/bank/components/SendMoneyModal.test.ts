@@ -30,7 +30,15 @@ vi.mock('@gphone/sdk', async (importOriginal) => ({
   useBank: () => bankMock
 }));
 
+import { registerMessages } from '@gphone/sdk';
 import SendMoneyModal from './SendMoneyModal.svelte';
+import en from '../locales/en.json';
+import de from '../locales/de.json';
+
+// MICA-215: `index.svelte` registers the `bank` namespace for the running phone. This
+// test renders the modal on its own, so it stands in for the app entry point and
+// registers the same catalog — otherwise every `$t` here resolves to its own key.
+registerMessages('bank', { en, de });
 
 describe('SendMoneyModal', () => {
   beforeEach(() => vi.clearAllMocks());

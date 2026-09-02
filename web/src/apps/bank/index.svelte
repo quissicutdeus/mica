@@ -11,13 +11,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     Screen,
     Skeleton,
     onAppForeground,
+    registerMessages,
     useAccount,
+    useLocale,
     usePhoneNotification,
     type AppProps
   } from '@gphone/sdk';
   import CreditCard from './components/CreditCard.svelte';
   import TransactionItem from './components/TransactionItem.svelte';
   import SendMoneyModal from './components/SendMoneyModal.svelte';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
+
+  // MICA-215: registered here, at the app's entry point, so every Bank component reads
+  // the same `bank.*` namespace whichever screen loads first.
+  registerMessages('bank', { en, de });
+  const { t } = useLocale();
 
   let { onback }: AppProps = $props();
 
@@ -47,7 +56,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const handleSent = (amount: number) => {
     showSendMoney = false;
-    toast.show({ type: 'success', app: 'bank', message: `Sent $${amount}.` });
+    toast.show({ type: 'success', app: 'bank', message: $t('bank.sent', { amount }) });
     // The framework's own money functions moved the balance; re-read rather than
     // subtract locally, so this can never drift from what the server actually applied.
     void fetchBalance();
@@ -55,15 +64,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   };
 </script>
 
-<Screen title="Bank" {onback}>
+<Screen title={$t('bank.title')} {onback}>
   <div class="p-4">
     <!-- Card -->
     <CreditCard balance={$bankBalance} citizenid={$citizenid} />
 
-    <Button class="mb-6 w-full" onclick={() => (showSendMoney = true)}>Send Money</Button>
+    <Button class="mb-6 w-full" onclick={() => (showSendMoney = true)}
+      >{$t('bank.sendMoney')}</Button
+    >
 
     <!-- Transactions -->
-    <h2 class="mb-4 text-lg font-semibold">Recent Transactions</h2>
+    <h2 class="mb-4 text-lg font-semibold">{$t('bank.recentTransactions')}</h2>
     <div class="space-y-4">
       {#if !$transactionsLoaded}
         <Skeleton count={3} height="h-14" />
@@ -72,8 +83,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <TransactionItem {transaction} />
         {:else}
           <EmptyState
-            title="No transactions"
-            description="Nothing has moved through this account yet."
+            title={$t('bank.noTransactions')}
+            description={$t('bank.noTransactionsHint')}
           />
         {/each}
       {/if}

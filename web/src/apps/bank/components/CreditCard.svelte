@@ -5,8 +5,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { formatCurrency } from '@gphone/sdk';
+  import { formatCurrency, useLocale } from '@gphone/sdk';
+
   import { hashStringToCardNumber } from '../cardUtils';
+
+  const { t } = useLocale();
 
   let { balance, citizenid }: { balance: number; citizenid: string } = $props();
 </script>
@@ -22,7 +25,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   class="bg-gradient-to-br from-purple-600 to-blue-600 text-on-surface shadow-elevation-3 mb-8 rounded-box p-6"
 >
   <div class="mb-8 flex items-start justify-between">
-    <span class="text-on-surface font-medium">Total Balance</span>
+    <span class="text-on-surface font-medium">{$t('bank.totalBalance')}</span>
     <svg
       xmlns="http://www.w3.org/2000/svg"
       class="text-on-surface h-8 w-8"

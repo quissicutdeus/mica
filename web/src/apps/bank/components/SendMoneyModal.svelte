@@ -10,9 +10,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     CloseIcon,
     formatCurrency,
     useBank,
+    useLocale,
     type SendMoneyOutcome,
     fade
   } from '@gphone/sdk';
+
+  const { t } = useLocale();
 
   interface Props {
     balance: number;
@@ -44,17 +47,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   // One line per reason, rather than one generic failure message — the whole point of
   // `sendMoney` returning a discriminated outcome instead of a boolean.
-  const REFUSAL_MESSAGE: Record<Exclude<SendMoneyOutcome, { ok: true }>['reason'], string> = {
-    invalid_amount: 'Enter a whole-dollar amount greater than zero.',
-    exceeds_limit: 'That is more than this phone can send in a single transfer.',
-    same_player: 'You cannot send money to your own number.',
-    payer_offline: 'Your account could not be reached. Try again in a moment.',
-    recipient_offline: 'No one is reachable at that number right now.',
-    insufficient_funds: 'Your balance is too low for this transfer.',
-    debit_failed: 'Your bank refused the charge. Nothing was sent.',
-    credit_failed: 'The transfer could not be completed and was refunded to you.',
-    stranded: 'Something went wrong. Contact an admin — this needs to be looked at.'
-  };
+  const REFUSAL_MESSAGE: Record<Exclude<SendMoneyOutcome, { ok: true }>['reason'], string> =
+    $derived({
+      invalid_amount: $t('bank.refusalInvalidAmount'),
+      exceeds_limit: $t('bank.refusalExceedsLimit'),
+      same_player: $t('bank.refusalSamePlayer'),
+      payer_offline: $t('bank.refusalPayerOffline'),
+      recipient_offline: $t('bank.refusalRecipientOffline'),
+      insufficient_funds: $t('bank.refusalInsufficientFunds'),
+      debit_failed: $t('bank.refusalDebitFailed'),
+      credit_failed: $t('bank.refusalCreditFailed'),
+      stranded: $t('bank.refusalStranded')
+    });
 
   const submit = async () => {
     if (!canSend) return;
@@ -73,7 +77,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         refusal = outcome;
       }
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Could not reach the server. Try again.';
+      error = e instanceof Error ? e.message : $t('bank.networkError');
     } finally {
       busy = false;
     }
@@ -86,11 +90,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 >
   <div class="bg-surface-container shadow-elevation-5 w-full rounded-box p-6">
     <div class="mb-4 flex items-center justify-between">
-      <h3 class="text-on-surface text-xl font-bold">Send Money</h3>
+      <h3 class="text-on-surface text-xl font-bold">{$t('bank.sendMoney')}</h3>
       <button
         type="button"
         onclick={onclose}
-        aria-label="Close"
+        aria-label={$t('bank.close')}
         class="text-on-surface-variant hover:text-on-surface cursor-pointer rounded-full p-1"
       >
         <CloseIcon class="size-icon-md" />
@@ -98,13 +102,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
 
     <p class="text-on-surface-variant text-body-small mb-4">
-      Available balance: ${formatCurrency(balance)}
+      {$t('bank.availableBalance', { balance: formatCurrency(balance) })}
     </p>
 
     <div class="flex flex-col gap-3">
       <input
         type="tel"
-        placeholder="Recipient's phone number"
+        placeholder={$t('bank.phonePlaceholder')}
         bind:value={phone}
         disabled={busy}
         class="bg-surface text-on-surface placeholder-on-surface-variant rounded-box px-3 py-2"
@@ -113,14 +117,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         type="number"
         min="1"
         step="1"
-        placeholder="Amount"
+        placeholder={$t('bank.amountPlaceholder')}
         bind:value={amount}
         disabled={busy}
         class="bg-surface text-on-surface placeholder-on-surface-variant rounded-box px-3 py-2"
       />
       <input
         type="text"
-        placeholder="Note (optional)"
+        placeholder={$t('bank.notePlaceholder')}
         maxlength="140"
         bind:value={note}
         disabled={busy}
@@ -138,9 +142,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {/if}
 
     <div class="mt-4 flex gap-3">
-      <Button class="flex-1" variant="secondary" onclick={onclose} disabled={busy}>Cancel</Button>
+      <Button class="flex-1" variant="secondary" onclick={onclose} disabled={busy}
+        >{$t('bank.cancel')}</Button
+      >
       <Button class="flex-1" onclick={submit} disabled={!canSend}>
-        {busy ? 'Sending…' : 'Send'}
+        {busy ? $t('bank.sending') : $t('bank.send')}
       </Button>
     </div>
   </div>
