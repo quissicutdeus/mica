@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { fetchNui } from '../nui/fetchNui';
+import { call, callOr } from '../nui/call';
+import { accountsContract } from '@gphone/shared/contracts/accounts';
 import type { Account, FollowStats, ReactionSummary } from '@gphone/shared/types';
 import type { AccountSearchQuery, FollowListQuery, FollowPage, ReactionTarget } from '@gphone/sdk';
 
@@ -17,17 +19,13 @@ import type { AccountSearchQuery, FollowListQuery, FollowPage, ReactionTarget } 
  */
 
 export const getMyAccounts = (app: string) =>
-  fetchNui<{ rows: Account[]; limit: number }>(
-    'getMyAccounts',
-    { app },
-    { defaultValue: { rows: [], limit: 3 } }
-  );
+  callOr(accountsContract, 'mine', { app }, { rows: [] as Account[], limit: 3 });
 
 export const getAccounts = (query: { app: string; handle?: string; limit?: number }) =>
   fetchNui<{ rows: Account[] }>('getAccounts', query, { defaultValue: { rows: [] } });
 
 export const createAccount = (input: { app: string; handle: string; display_name?: string }) =>
-  fetchNui<Account>('createAccount', input, undefined);
+  call(accountsContract, 'create', input);
 
 export const updateAccount = (input: { id: number } & Partial<Account>) =>
   fetchNui('updateAccount', input, undefined);
@@ -37,19 +35,17 @@ export const getFollowStats = (input: {
   account_id: number;
   viewer_account_id?: number;
 }) =>
-  fetchNui<FollowStats>('getFollowStats', input, {
-    defaultValue: {
-      followers: 0,
-      following: 0,
-      followedByMe: false,
-      blockedByMe: false
-    }
-  });
+  callOr(accountsContract, 'follows', input, {
+    followers: 0,
+    following: 0,
+    followedByMe: false,
+    blockedByMe: false
+  } satisfies FollowStats);
 
 /**
  * The two lists behind those counts, paged.
  *
- * Here rather than as a bare `createPagedStore('getFollowers')` inside Blabber, because
+ * Here rather than as a bare paged store named for the action inside Blabber, because
  * Blabber is an add-on now: `sdk/host/iframe/fetchNui.ts` refuses a named NUI action from
  * inside the sandbox, and the generic service route is pinned to the app's own namespace
  * (`IframeHostServer`'s `serviceAllowed`) — so the only door an add-on has to a *shared*
@@ -57,8 +53,8 @@ export const getFollowStats = (input: {
  * viewer identity is sent, because these read the same whoever is looking.
  */
 // Two literal calls rather than one helper taking the action name, for the reason
-// `toggleFollow` gives: `server/__tests__/routes.test.ts` scans for the action name as a
-// string literal at the call site, and a route it cannot see is reported as dead weight.
+// `toggleFollow` gives: `server/__tests__/routes.test.ts` scans for the contract's action
+// name as a string literal at the call site, and one it cannot see goes unchecked.
 //
 // No `defaultValue`, deliberately — unlike every read above. These two feed a
 // `createPagedStore`, whose own contract is that a failure throws so `load`/`loadMore` can
@@ -66,17 +62,17 @@ export const getFollowStats = (input: {
 // page and warn). An empty page handed back on a transport failure is indistinguishable
 // from a real empty list, which is precisely the "nobody follows this account" lie that
 // hid the sandbox refusal this pair was written to fix.
-export const getFollowers = (query: FollowListQuery) =>
-  fetchNui<FollowPage>('getFollowers', query, undefined);
+export const getFollowers = (query: FollowListQuery): Promise<FollowPage> =>
+  call(accountsContract, 'followers', query);
 
-export const getFollowing = (query: FollowListQuery) =>
-  fetchNui<FollowPage>('getFollowing', query, undefined);
+export const getFollowing = (query: FollowListQuery): Promise<FollowPage> =>
+  call(accountsContract, 'following', query);
 
 /**
  * Handle / display-name search within one app, paged the same way.
  *
- * Here for the reason the pair above is: Blabber's Search › People segment used to page
- * `createPagedStore('search', { service: 'accounts' })`, and `accounts` is not Blabber's
+ * Here for the reason the pair above is: Blabber's Search › People segment used to page a
+ * store pointed straight at the `accounts` service, and `accounts` is not Blabber's
  * own service — `IframeHostServer`'s `serviceAllowed` refuses a foreign namespace, so
  * inside the frame that segment answered "No people found" for every query. The facet is
  * the only door an add-on has to a shared service.
@@ -87,34 +83,34 @@ export const getFollowing = (query: FollowListQuery) =>
  * same lie that hid the sandbox refusal.
  */
 export const searchAccounts = (query: AccountSearchQuery) =>
-  fetchNui<{ rows: Account[]; nextCursor: number | null }>('searchAccounts', query, undefined);
+  call(accountsContract, 'search', query);
 
 export const followAccount = (input: {
   app: string;
   follower_account_id: number;
   followee_account_id: number;
-}) => fetchNui('followAccount', input, undefined);
+}) => call(accountsContract, 'follow', input);
 
 export const unfollowAccount = (input: {
   app: string;
   follower_account_id: number;
   followee_account_id: number;
-}) => fetchNui('unfollowAccount', input, undefined);
+}) => call(accountsContract, 'unfollow', input);
 
 export const blockAccount = (input: {
   app: string;
   blocker_account_id: number;
   blocked_account_id: number;
-}) => fetchNui('blockAccount', input, undefined);
+}) => call(accountsContract, 'block', input);
 
 export const unblockAccount = (input: {
   app: string;
   blocker_account_id: number;
   blocked_account_id: number;
-}) => fetchNui('unblockAccount', input, undefined);
+}) => call(accountsContract, 'unblock', input);
 
 export const getReactionsFor = (target: ReactionTarget) =>
-  fetchNui<Record<number, ReactionSummary>>('getReactionsFor', target, { defaultValue: {} });
+  callOr(accountsContract, 'reactionsFor', target, {} as Record<number, ReactionSummary>);
 
 export const reactToTarget = (payload: {
   app: string;
@@ -122,7 +118,7 @@ export const reactToTarget = (payload: {
   target_table: string;
   target_id: number;
   emoji: string;
-}) => fetchNui('reactToTarget', payload, undefined);
+}) => call(accountsContract, 'react', payload);
 
 export const unreactToTarget = (payload: {
   app: string;
@@ -130,4 +126,4 @@ export const unreactToTarget = (payload: {
   target_table: string;
   target_id: number;
   emoji: string;
-}) => fetchNui('unreactToTarget', payload, undefined);
+}) => call(accountsContract, 'unreact', payload);

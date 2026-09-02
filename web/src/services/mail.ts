@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { derived, get } from 'svelte/store';
-import { fetchNui } from '../nui/fetchNui';
+import { call } from '../nui/call';
+import { mailContract } from '@gphone/shared/contracts/mail';
 import { createCrudStore } from '../../../sdk/createCrudStore';
 import type { Mail } from '@gphone/shared/types';
 
@@ -22,12 +23,12 @@ export const mailStore = {
    * message hidden until the next reload put it back.
    */
   markAsRead: async (id: number) => {
-    await fetchNui('markAsRead', { id });
+    await call(mailContract, 'markAsRead', { id });
     store.patch(id, { read: true });
   },
 
   archive: async (id: number, archive: boolean = true) => {
-    await fetchNui('archiveMail', { id, archive });
+    await call(mailContract, 'archiveMail', { id, archive });
     store.patch(id, { status: archive ? 'archived' : 'active' });
   },
 

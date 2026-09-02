@@ -4,6 +4,8 @@
 
 import { derived } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
+import { callOr } from '../nui/call';
+import { contactsContract } from '@gphone/shared/contracts/contacts';
 import { createCrudStore } from '../../../sdk/createCrudStore';
 import type { Contact } from '@gphone/shared/types';
 
@@ -56,18 +58,14 @@ export const contacts = {
    * list to keep in sync with the first.
    */
   getDeleted: (): Promise<Contact[]> =>
-    fetchNui<Contact[]>('getDeletedContacts', {}, { defaultValue: [] }),
+    callOr(contactsContract, 'getDeleted', undefined, [] as Contact[]),
 
   /**
    * Undo a delete. Refreshes the main list on success so the restored contact reappears
    * in it without waiting for the next foreground reload.
    */
   restore: async (id: number): Promise<boolean> => {
-    const { ok } = await fetchNui<{ ok: boolean }>(
-      'restoreContact',
-      { id },
-      { defaultValue: { ok: false } }
-    );
+    const { ok } = await callOr(contactsContract, 'restore', { id }, { ok: false });
     if (ok) await store.load();
     return ok;
   }

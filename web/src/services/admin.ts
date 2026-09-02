@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { writable } from 'svelte/store';
-import { fetchNui } from '../nui/fetchNui';
+import { call } from '../nui/call';
+import { adminContract } from '@gphone/shared/contracts/admin';
 import { isBrowser } from '@gphone/sdk';
 
 /**
@@ -43,7 +44,7 @@ export const refreshAdmin = async (): Promise<void> => {
   if (inFlight) return inFlight;
   inFlight = (async () => {
     try {
-      const res = await fetchNui<{ isAdmin?: boolean }>('checkAdmin');
+      const res = await call(adminContract, 'check', undefined);
       isAdmin.set(res?.isAdmin === true);
     } catch {
       isAdmin.set(false);

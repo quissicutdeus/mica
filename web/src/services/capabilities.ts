@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { writable } from 'svelte/store';
-import { fetchNui } from '../nui/fetchNui';
+import { call } from '../nui/call';
+import { shellContract } from '@gphone/shared/contracts/shell';
 import { isBrowser } from '@gphone/sdk';
 import { ALL_CAPABILITIES, type AppCapability } from '../../../sdk/manifest';
 import type { CapabilitySet } from '../lib/phone/appVisibility';
@@ -89,7 +90,9 @@ export const refreshCapabilities = async (): Promise<void> => {
   if (inFlight) return inFlight;
   inFlight = (async () => {
     try {
-      const res = await fetchNui<Partial<Record<AppCapability, boolean>>>('checkCapabilities');
+      const res = (await call(shellContract, 'capabilities', undefined)) as Partial<
+        Record<AppCapability, boolean>
+      >;
       // Read through `ALL_CAPABILITIES` rather than trusting the reply's own keys: anything
       // short of an explicit `true` is a no, the same way `admin.ts` refuses to read
       // `'yes'` as a grant, and a capability the reply omits is simply absent.

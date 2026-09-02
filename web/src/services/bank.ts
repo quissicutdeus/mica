@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fetchNui } from '../nui/fetchNui';
+import { call } from '../nui/call';
+import { bankContract } from '@gphone/shared/contracts/bank';
 import type { SendMoneyInput, SendMoneyOutcome } from '@gphone/sdk';
 
 /**
@@ -24,5 +25,5 @@ import type { SendMoneyInput, SendMoneyOutcome } from '@gphone/sdk';
  * needs to render the specific reason, not catch a generic error.
  */
 export const sendMoney = async (input: SendMoneyInput): Promise<SendMoneyOutcome> => {
-  return await fetchNui<SendMoneyOutcome>('sendMoney', input);
+  return (await call(bankContract, 'sendMoney', input)) as SendMoneyOutcome;
 };

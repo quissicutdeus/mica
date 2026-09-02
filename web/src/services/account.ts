@@ -4,6 +4,8 @@
 
 import { writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
+import { callOr } from '../nui/call';
+import { bankContract } from '@gphone/shared/contracts/bank';
 import type { Transaction } from '@gphone/shared/types';
 
 // Was a second, divergent Transaction interface declared here. `shared/types.ts` is
@@ -59,9 +61,7 @@ export const fetchBalance = async () => {
 
 export const fetchTransactions = async () => {
   try {
-    const data = await fetchNui<Transaction[]>('getTransactions', null, {
-      defaultValue: []
-    });
+    const data = await callOr(bankContract, 'getTransactions', undefined, [] as Transaction[]);
     transactions.set(data);
   } catch (error) {
     console.error('Failed to fetch transactions:', error);

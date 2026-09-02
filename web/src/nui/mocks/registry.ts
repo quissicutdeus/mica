@@ -559,11 +559,11 @@ const mockRegistry: Record<string, MockHandler> = {
   // Accounts. `limit` is the per-app cap the server reports from a convar — matched here
   // because a mock that omitted it would hide the Claim button in `pnpm dev` and show it
   // in game, or the reverse.
-  getMyAccounts: () => ({
+  'accounts:mine': () => ({
     rows: mockAccounts.filter((a) => a.app === 'blabber' && mockOwnedAccountIds.has(a.id)),
     limit: MOCK_ACCOUNT_LIMIT
   }),
-  createAccount: ({ handle, display_name }: { handle: string; display_name?: string }) => {
+  'accounts:create': ({ handle, display_name }: { handle: string; display_name?: string }) => {
     if (mockAccounts.some((a) => a.handle === handle)) throw new Error(`@${handle} is taken.`);
     if (mockOwnedAccountIds.size >= MOCK_ACCOUNT_LIMIT) {
       throw new Error(`You already hold ${MOCK_ACCOUNT_LIMIT} accounts here.`);
@@ -623,7 +623,7 @@ const mockRegistry: Record<string, MockHandler> = {
    * this is read through `useAccounts().searchAccounts`. Keyset-paged like every other reader
    * here, `citizenid` withheld by construction: the fixture rows never carried one.
    */
-  searchAccounts: ({
+  'accounts:search': ({
     app,
     q,
     cursor,
@@ -657,7 +657,7 @@ const mockRegistry: Record<string, MockHandler> = {
    * has never followed anybody, which hides the empty state — the screen a real player sees
    * first, and the one most likely to be wrong.
    */
-  followAccount: ({
+  'accounts:follow': ({
     follower_account_id,
     followee_account_id
   }: {
@@ -680,7 +680,7 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     return true;
   },
-  unfollowAccount: ({
+  'accounts:unfollow': ({
     follower_account_id,
     followee_account_id
   }: {
@@ -696,7 +696,7 @@ const mockRegistry: Record<string, MockHandler> = {
     if (at >= 0) mockFollows.splice(at, 1);
     return true;
   },
-  blockAccount: ({
+  'accounts:block': ({
     blocker_account_id,
     blocked_account_id
   }: {
@@ -726,7 +726,7 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     return true;
   },
-  unblockAccount: ({
+  'accounts:unblock': ({
     blocker_account_id,
     blocked_account_id
   }: {
@@ -752,19 +752,19 @@ const mockRegistry: Record<string, MockHandler> = {
    * have no follow-row ids to hand. It is opaque to the client either way — the store only ever
    * hands it back — which is the property that lets a mock differ here at all.
    */
-  getFollowers: ({ account_id, cursor, limit = 30 }: FollowListArgs) =>
+  'accounts:followers': ({ account_id, cursor, limit = 30 }: FollowListArgs) =>
     mockFollowPage(
       mockFollows.filter((f) => f.followee === account_id).map((f) => f.follower),
       cursor,
       limit
     ),
-  getFollowing: ({ account_id, cursor, limit = 30 }: FollowListArgs) =>
+  'accounts:following': ({ account_id, cursor, limit = 30 }: FollowListArgs) =>
     mockFollowPage(
       mockFollows.filter((f) => f.follower === account_id).map((f) => f.followee),
       cursor,
       limit
     ),
-  getFollowStats: ({
+  'accounts:follows': ({
     account_id,
     viewer_account_id
   }: {
@@ -790,7 +790,7 @@ const mockRegistry: Record<string, MockHandler> = {
    * session has created, keyed by the same `(account_id, target_table, target_id, emoji)` tuple
    * the server's unique index enforces.
    */
-  reactToTarget: ({
+  'accounts:react': ({
     account_id,
     target_table,
     target_id,
@@ -815,7 +815,7 @@ const mockRegistry: Record<string, MockHandler> = {
     }
     return true;
   },
-  unreactToTarget: ({
+  'accounts:unreact': ({
     account_id,
     target_table,
     target_id,
@@ -837,7 +837,7 @@ const mockRegistry: Record<string, MockHandler> = {
     if (at >= 0) mockReactions.splice(at, 1);
     return true;
   },
-  getReactionsFor: ({
+  'accounts:reactionsFor': ({
     target_table,
     target_ids
   }: {
@@ -1394,8 +1394,8 @@ const mockRegistry: Record<string, MockHandler> = {
     note.status = 'active';
     return { ok: true };
   },
-  getDeletedContacts: () => mockContacts.filter((c) => c.status === 'deleted'),
-  restoreContact: (data: { id?: number }) => {
+  'contacts:getDeleted': () => mockContacts.filter((c) => c.status === 'deleted'),
+  'contacts:restore': (data: { id?: number }) => {
     const contact = mockContacts.find((c) => c.id === data?.id && c.status === 'deleted');
     if (!contact) return { ok: false };
     contact.status = 'active';
@@ -1643,14 +1643,18 @@ const mockRegistry: Record<string, MockHandler> = {
   // Shaped exactly like BankingBridge output: positive magnitudes with an explicit
   // direction. The previous mock used signed amounts, which no banking resource
   // produces — so red/green rendering worked here and was wrong in game.
-  getTransactions: (): Transaction[] => mockBankTransactions,
+  'bank:getTransactions': (): Transaction[] => mockBankTransactions,
   /**
    * Mirrors `server/services/Bank.ts`'s `sendMoney` refusal reasons, so the same UI
    * copy in `SendMoneyModal.svelte` is exercised in a browser as in game. `867-5309` is
    * this mock's own `getPhoneNumber` — dialing it is a self-transfer, same as the real
    * `same_player` check. `000-0000` is the one number nobody is ever reachable at.
    */
-  sendMoney: (payload?: { phone?: string; amount?: number; note?: string }): SendMoneyOutcome => {
+  'bank:sendMoney': (payload?: {
+    phone?: string;
+    amount?: number;
+    note?: string;
+  }): SendMoneyOutcome => {
     const phone = typeof payload?.phone === 'string' ? payload.phone.trim() : '';
     const amount = Number(payload?.amount);
 
@@ -1905,12 +1909,12 @@ const mockRegistry: Record<string, MockHandler> = {
     { list: 'getMail', remove: 'deleteMail' },
     { remove: 'soft', visible: (e) => e.status !== 'deleted' }
   ),
-  markAsRead: async (data: { id: number }) => {
+  'mail:markAsRead': async (data: { id: number }) => {
     const item = mockEmails.find((e) => e.id === data.id);
     if (item) item.read = true;
     return true;
   },
-  archiveMail: async (data: { id: number; archive?: boolean }) => {
+  'mail:archiveMail': async (data: { id: number; archive?: boolean }) => {
     const item = mockEmails.find((e) => e.id === data.id);
     if (item) item.status = data.archive === false ? 'active' : 'archived';
     return true;
@@ -1935,8 +1939,8 @@ const mockRegistry: Record<string, MockHandler> = {
 
   // Highscores — shared leaderboard. Stateless mock: `pnpm dev` cannot stand in for a real
   // server per docs/writing-an-app.md, so this is just enough to exercise the UI.
-  submitHighscore: async () => ({ ok: true }),
-  getHighscoreLeaderboard: async () => [
+  'highscores:submit': async () => ({ ok: true }),
+  'highscores:top': async () => [
     { citizenid: 'MOCK1', score: 42, displayName: 'Ada' },
     { citizenid: 'MOCK2', score: 17, displayName: 'Dez' }
   ],
@@ -1993,15 +1997,15 @@ const mockRegistry: Record<string, MockHandler> = {
   // stored in plain text here only because the mock has no server to hash on, and this
   // module never persists across a reload anyway.
   // PENDING (Cody): no `registerEvent` handler exists yet for any of these four.
-  getPasscodeStatus: async () => ({ hasPasscode: mockPasscodeValue !== null }),
-  setPasscode: async (data?: { passcode?: string }) => {
+  'lockscreen:status': async () => ({ hasPasscode: mockPasscodeValue !== null }),
+  'lockscreen:set': async (data?: { passcode?: string }) => {
     mockPasscodeValue = typeof data?.passcode === 'string' ? data.passcode : null;
     return { ok: true };
   },
-  checkPasscode: async (data?: { passcode?: string }) => ({
+  'lockscreen:check': async (data?: { passcode?: string }) => ({
     ok: mockPasscodeValue !== null && data?.passcode === mockPasscodeValue
   }),
-  clearPasscode: async () => {
+  'lockscreen:clear': async () => {
     mockPasscodeValue = null;
     return { ok: true };
   },
@@ -2086,7 +2090,7 @@ const mockRegistry: Record<string, MockHandler> = {
   setTyping: () => true,
   setBatteryLevel: () => true,
   // The browser has no ace list; the panel is unconditional there anyway.
-  checkAdmin: () => ({ isAdmin: true }),
+  'admin:check': () => ({ isAdmin: true }),
 
   /**
    * What a server behind this phone can do (`services/capabilities.ts`).
@@ -2100,13 +2104,13 @@ const mockRegistry: Record<string, MockHandler> = {
    * transport in a browser too, instead of short-circuiting on `isBrowser()`, so a mock
    * that goes missing here shows up as two apps disappearing rather than as nothing at all.
    */
-  checkCapabilities: () => ({ money: true }),
+  'shell:capabilities': () => ({ money: true }),
 
   /**
    * The AGPL §13 source address (`services/sourceUrl.ts`). Upstream here, because the mock
    * stands in for a server running an unmodified copy — which is what a browser session is.
    */
-  getSourceUrl: () => ({ url: 'https://github.com/quissicutdeus/gPhone' }),
+  'shell:sourceUrl': () => ({ url: 'https://github.com/quissicutdeus/gPhone' }),
 
   /**
    * Broadcasting to people nearby (MICA-111 phase 2), which in a browser means nobody.

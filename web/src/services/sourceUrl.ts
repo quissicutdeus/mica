@@ -4,7 +4,8 @@
 
 import { writable } from 'svelte/store';
 import { MICA_SOURCE_URL } from '@gphone/sdk';
-import { fetchNui } from '../nui/fetchNui';
+import { callOr } from '../nui/call';
+import { shellContract } from '@gphone/shared/contracts/shell';
 
 /**
  * Where this server says its source lives (MICA-192, AGPL §13).
@@ -29,9 +30,7 @@ export const sourceUrl = writable<string>(MICA_SOURCE_URL);
  * cannot be acted on, which is worse than one naming the wrong repository.
  */
 export async function refreshSourceUrl(): Promise<void> {
-  const res = await fetchNui<{ url?: string }>('getSourceUrl', undefined, {
-    defaultValue: { url: '' }
-  });
+  const res = await callOr(shellContract, 'sourceUrl', undefined, { url: '' });
   const url = typeof res?.url === 'string' ? res.url.trim() : '';
   if (url) sourceUrl.set(url);
 }

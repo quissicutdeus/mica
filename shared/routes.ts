@@ -36,78 +36,21 @@ const route = (action: string, service: string, serverAction: string): Route => 
 });
 
 export const ROUTES: readonly Route[] = [
-  // Admin
-  route('checkAdmin', 'admin', 'check'),
-
-  // Capabilities — what this server can do, so the launcher can hide what it cannot. The
-  // same shape as `checkAdmin` above and for the same reason: a server-known fact the UI
-  // reads to decide what to *show*, never a boundary. `money: false` only in standalone,
-  // where `FrameworkBridge` has no framework to move money through; Bank and Hodlr have
-  // nothing behind them there. On the `shell` service because it is a question about the
-  // phone rather than about any app on it.
-  route('checkCapabilities', 'shell', 'capabilities'),
-
-  // MICA-192: where this server says its source lives, for the AGPL §13 offer in
-  // Settings > About > License. On `shell` for the same reason as the line above — a
-  // question about the phone rather than about any app on it — and answered from a convar
-  // so an operator running a fork can point it at their own source, which is what §13
-  // actually asks of them.
-  route('getSourceUrl', 'shell', 'sourceUrl'),
-
-  // Bank — read-only history backed by the banking resource's export rather than a table,
-  // plus one write: a player-to-player transfer resolved by phone number server-side.
-  route('getTransactions', 'bank', 'getTransactions'),
-  route('sendMoney', 'bank', 'sendMoney'),
-
-  // Accounts — social identities, shared by every social app. `mine` is a custom action
-  // scoped server-side; making citizenid client-filterable would let anyone list anyone's.
-  route('getMyAccounts', 'accounts', 'mine'),
-  route('createAccount', 'accounts', 'create'),
+  // Accounts — social identities, shared by every social app. Every custom action here is
+  // declared in `shared/contracts/accounts.ts` and reached by the typed `call`, so the two
+  // rows left are the generic ones.
   // Editing the display half of an identity — `display_name`, `avatar`, `bio`. The generic
   // owner-scoped update, which is safe to expose because `app` and `handle` are
   // `clientWritable: false`: a renamed handle would break every mention of it.
   route('updateAccount', 'accounts', 'update'),
   // Public handle lookup, paged. Used by a profile page to resolve @handle -> account.
   route('getAccounts', 'accounts', 'get'),
-  // The follow graph, shared by every social app rather than owned by Blabber. Counts are read
-  // rather than denormalised onto the account row, which would be a second copy free to drift.
-  route('followAccount', 'accounts', 'follow'),
-  route('unfollowAccount', 'accounts', 'unfollow'),
-  route('getFollowStats', 'accounts', 'follows'),
-  // The two lists behind those counts, each keyset paged on the follow row's own id so the order
-  // is most-recently-followed first. Public, like the counts: they answer a question about a
-  // stranger's profile, not about the caller. Read by an add-on through the `accounts` *facet*
-  // (`useAccounts().getFollowers`), never by calling this action from inside the sandbox.
-  route('getFollowers', 'accounts', 'followers'),
-  route('getFollowing', 'accounts', 'following'),
-  // Handle / display-name search within one app, keyset paged. On `accounts` rather than on a
-  // social app's own service for the same reason the follow lists are: identity is shared, so a
-  // second social app gets this search for free. Read from an add-on through the `accounts`
-  // facet (`useAccounts().searchAccounts`) — Blabber's Search > People segment — never by naming
-  // this action from inside the sandbox.
-  route('searchAccounts', 'accounts', 'search'),
-  // The block graph, alongside the follow one. One-directional: it hides the blocked account
-  // from the blocker's own feeds and notifications and refuses a DM between the two, and does
-  // not tell the blocked account anything happened.
-  route('blockAccount', 'accounts', 'block'),
-  route('unblockAccount', 'accounts', 'unblock'),
-  // Reactions, on any table that opted in via `defineService`'s `reactable`. Shared by every
-  // social app for the same reason follows and blocks are.
-  route('reactToTarget', 'accounts', 'react'),
-  route('unreactToTarget', 'accounts', 'unreact'),
-  route('getReactionsFor', 'accounts', 'reactionsFor'),
-
   // Contacts
   route('getContacts', 'contacts', 'get'),
   route('getCallLog', 'phone_call_log', 'get'),
   route('createContact', 'contacts', 'create'),
   route('updateContact', 'contacts', 'update'),
   route('deleteContact', 'contacts', 'delete'),
-  // Recently Deleted (MICA-75-wiring) — `status` is never client-filterable
-  // (`Repository.ts`), so both of these are named actions rather than the generic `get`.
-  route('getDeletedContacts', 'contacts', 'getDeleted'),
-  route('restoreContact', 'contacts', 'restore'),
-
   // Conversations. `get`, `create`, `read`, `archive` and `delete` are contracted, so
   // `web/` reaches them with the typed `call` over the generic service action and they
   // need no row here (MICA-213).
@@ -119,8 +62,6 @@ export const ROUTES: readonly Route[] = [
 
   // Mail
   route('getMail', 'mail', 'getMail'),
-  route('markAsRead', 'mail', 'markAsRead'),
-  route('archiveMail', 'mail', 'archiveMail'),
   route('deleteMail', 'mail', 'deleteMail'),
 
   // Messages. Every action is custom — `access.write: 'members'` registers no generic CRUD
@@ -136,11 +77,6 @@ export const ROUTES: readonly Route[] = [
   // Reports. `queue` and `resolve` are admin-only, enforced server-side rather than by
   // hiding the Administration app — hiding the app hides the button, not the capability.
   // All five are contracted and reached with the typed `call` (MICA-213).
-
-  // Highscores — shared leaderboard table, one row per (citizenid, app). Core, not
-  // owned by any one game, so a future game reuses it instead of shipping its own table.
-  route('submitHighscore', 'highscores', 'submit'),
-  route('getHighscoreLeaderboard', 'highscores', 'top'),
 
   // Media — no `updateMedia`: a stored row has no mutable fields, and the server does
   // not register the endpoint.
@@ -159,19 +95,6 @@ export const ROUTES: readonly Route[] = [
   // shell-scoped push in `shared/musicBroadcast.ts`, rather than as a reply to any of them.
   // All three are contracted (`shared/contracts/music.ts`) and reached by the typed call,
   // so `music` has no rows here at all.
-
-  // Lock screen passcode (MICA-60) — display state, not a security boundary (the
-  // ticket's own item 4): nothing behind the lock is authority-bearing, so a modified
-  // client that answers its own `checkPasscode` gains nothing it did not already have.
-  // The passcode itself never touches `settings`/`useStorage` — only this dedicated,
-  // presumably-hashed service does.
-  //
-  // PENDING (Cody): no `registerEvent` handler exists for any of these four yet —
-  // `web/src/nui/mocks/registry.ts` is what answers them today.
-  route('getPasscodeStatus', 'lockscreen', 'status'),
-  route('setPasscode', 'lockscreen', 'set'),
-  route('checkPasscode', 'lockscreen', 'check'),
-  route('clearPasscode', 'lockscreen', 'clear'),
 
   // Notifications — persistent OS notification service. All seven are contracted and
   // reached with the typed `call` (MICA-213).

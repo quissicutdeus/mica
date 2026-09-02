@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { writable } from 'svelte/store';
-import { fetchNui } from '../nui/fetchNui';
+import { call, callOr } from '../nui/call';
+import { lockscreenContract } from '@gphone/shared/contracts/lockscreen';
 
 /**
  * The lock screen's passcode, entirely server-side (MICA-60).
@@ -17,19 +18,18 @@ import { fetchNui } from '../nui/fetchNui';
  * cache is a convenience for the Settings UI, not a source of truth Chrome's dev tools could
  * read a passcode out of.
  *
- * PENDING (Cody): none of the four routes below (`shared/routes.ts`) have a server
- * `registerEvent` handler yet — no hashing, no `gphone_*` table. `web/src/nui/mocks/
- * registry.ts` is what answers them today.
+ * All four actions are declared in `shared/contracts/lockscreen.ts` and reached through the
+ * typed `call` over the generic service action (MICA-213), so none of them needs a row in
+ * `shared/routes.ts`; `server/services/Lockscreen.ts` answers them, and
+ * `web/src/nui/mocks/registry.ts` answers them under `'lockscreen:<action>'` in a browser.
  */
 export const hasPasscode = writable(false);
 
 export const refreshPasscodeStatus = async (): Promise<void> => {
   try {
-    const reply = await fetchNui<{ hasPasscode?: boolean }>(
-      'getPasscodeStatus',
-      {},
-      { defaultValue: { hasPasscode: false } }
-    );
+    const reply = await callOr(lockscreenContract, 'status', undefined, {
+      hasPasscode: false
+    });
     hasPasscode.set(reply?.hasPasscode === true);
   } catch (e) {
     console.warn('Could not read passcode status; leaving the last known answer.', e);
@@ -38,17 +38,17 @@ export const refreshPasscodeStatus = async (): Promise<void> => {
 
 /** Set or replace the passcode. `digits` is 4 or 6 characters, `0`-`9` only. */
 export const setPasscodeRemote = async (digits: string): Promise<void> => {
-  await fetchNui('setPasscode', { passcode: digits });
+  await call(lockscreenContract, 'set', { passcode: digits });
   hasPasscode.set(true);
 };
 
 export const clearPasscodeRemote = async (): Promise<void> => {
-  await fetchNui('clearPasscode', {});
+  await call(lockscreenContract, 'clear', undefined);
   hasPasscode.set(false);
 };
 
 /** The one question the lock screen asks. Never throws on a wrong guess — only on a dead transport. */
 export const checkPasscodeRemote = async (digits: string): Promise<boolean> => {
-  const reply = await fetchNui<{ ok?: boolean }>('checkPasscode', { passcode: digits });
+  const reply = await call(lockscreenContract, 'check', { passcode: digits });
   return reply?.ok === true;
 };
