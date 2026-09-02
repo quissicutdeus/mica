@@ -22,6 +22,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     messages,
     offset,
     hiddenCount,
+    hasOlder,
     loadingMore,
     unreadDividerIndex,
     currentConv,
@@ -41,6 +42,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     messages: UIMessage[];
     offset: number;
     hiddenCount: number;
+    /** Whether the server holds an older page behind the loaded thread (MICA-212). */
+    hasOlder: boolean;
     loadingMore: boolean;
     unreadDividerIndex: number;
     currentConv: UIConversation | null | undefined;
@@ -66,7 +69,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <!-- Messages List -->
 <div id="messages-container" class="no-scrollbar flex-1 space-y-4 overflow-y-auto p-4" {onscroll}>
-  {#if hiddenCount > 0}
+  <!--
+    The control shows while there is anything older to reveal: rows the window is hiding
+    locally, or a page the server has not been asked for yet. The label counts only what is
+    hidden locally — a number the phone knows; how long the thread is server-side, it does not.
+  -->
+  {#if hiddenCount > 0 || hasOlder}
     <div class="my-2 flex justify-center">
       <button
         type="button"
@@ -81,8 +89,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <span class="bg-primary relative inline-flex h-2 w-2 rounded-full"></span>
           </span>
           <span>{$t('messages.loadingOlderMessages')}</span>
-        {:else}
+        {:else if hiddenCount > 0}
           <span>{$t('messages.loadOlderMessages', { count: hiddenCount })}</span>
+        {:else}
+          <span>{$t('messages.loadOlderMessagesPage')}</span>
         {/if}
       </button>
     </div>

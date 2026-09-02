@@ -17,7 +17,15 @@ const server = vi.hoisted(() => ({
   /** Every `getConversations` payload the store sent, in order. */
   pageRequests: [] as any[],
   /** When set, `getMessages` answers a second row that quotes the first (MICA-209). */
-  threadHasReply: false
+  threadHasReply: false,
+  /**
+   * A long thread for the paging cases (MICA-212), keyed by conversation id. When a
+   * thread is listed here `getMessages` pages it the way the server does; otherwise it
+   * answers the one- or two-row fixture below.
+   */
+  threads: {} as Record<number, any[]>,
+  /** Every `getMessages` payload the store sent, in order. */
+  threadRequests: [] as any[]
 }));
 
 const DEFAULT_CONVERSATIONS = [
@@ -123,7 +131,26 @@ vi.mock('../nui/fetchNui', () => ({
       return Promise.resolve(after.slice(0, limit));
     }
     if (method === 'getMessages') {
-      return Promise.resolve([
+      server.threadRequests.push(data);
+      /**
+       * `messages:get` as MICA-212 shaped it: keyset on `id DESC`, `cursor` a bare row id
+       * and exclusive, `limit` clamped at fifty by default, and `{ rows, nextCursor }` back
+       * with the rows in reading order — unlike `conversations:get` above, which still
+       * answers a bare array.
+       */
+      const long = server.threads[data.conversation_id];
+      if (long) {
+        const limit = Math.min(typeof data?.limit === 'number' ? data.limit : 50, 100);
+        const newestFirst = [...long].sort((a, b) => b.id - a.id);
+        const after =
+          data?.cursor == null ? newestFirst : newestFirst.filter((m) => m.id < data.cursor);
+        const pageRows = after.slice(0, limit);
+        return Promise.resolve({
+          rows: [...pageRows].reverse(),
+          nextCursor: after.length > limit ? pageRows[pageRows.length - 1].id : null
+        });
+      }
+      const rows = [
         {
           id: 201,
           conversation_id: data.conversation_id,
@@ -145,7 +172,8 @@ vi.mock('../nui/fetchNui', () => ({
               }
             ]
           : [])
-      ]);
+      ];
+      return Promise.resolve({ rows, nextCursor: null });
     }
     if (method === 'sendMessage') {
       return Promise.resolve({
@@ -174,12 +202,14 @@ vi.mock('../nui/fetchNui', () => ({
 beforeEach(async () => {
   server.conversations = DEFAULT_CONVERSATIONS.map((c) => ({ ...c }));
   server.threadHasReply = false;
+  server.threads = {};
   conversationsStore.setActiveConversationId(null);
   // The store is a module singleton, so its window, cursor and thread cache outlive a case.
   // One refetch with no active thread resets all three — which is itself the eviction rule
   // under test further down.
   await conversationsStore.loadConversations();
   server.pageRequests = [];
+  server.threadRequests = [];
 });
 
 describe('messages store', () => {
@@ -367,6 +397,112 @@ describe('conversation paging', () => {
     expect(await conversationsStore.loadMoreConversations()).toBe(false);
     expect(get(conversationsStore.hasMore)).toBe(false);
     expect(get(conversationsStore)).toHaveLength(200);
+  });
+});
+
+/**
+ * A thread arrives one page at a time (MICA-212).
+ *
+ * `messages:get` answers fifty rows and a cursor; the store holds the pages loaded so far,
+ * prepends an older one on request, and says whether there is another behind it.
+ */
+describe('thread paging', () => {
+  /** `count` messages in thread 2, ids ascending with time, sender alternating. */
+  const longThread = (count: number) =>
+    Array.from({ length: count }, (_, i) => {
+      const id = 2000 + i + 1;
+      return {
+        id,
+        conversation_id: 2,
+        citizenid: i % 2 === 0 ? 'gta-trevor' : 'my-id',
+        message: `msg ${id}`,
+        created_at: new Date(Date.UTC(2026, 0, 1) + i * 60_000).toISOString()
+      };
+    });
+
+  it('opens on the newest page and knows an older one exists', async () => {
+    server.threads[2] = longThread(120);
+
+    await conversationsStore.loadMessages(2);
+
+    const held = get(conversationsStore.messages)[2];
+    expect(held).toHaveLength(50);
+    // Reading order: the newest message is last, the oldest of the page first.
+    expect(held[0].id).toBe(2071);
+    expect(held[held.length - 1].id).toBe(2120);
+    expect(held[held.length - 1].sender).toBe('me');
+    expect(get(conversationsStore.hasOlderMessages)[2]).toBe(true);
+    expect(server.threadRequests[0]).toEqual({ conversation_id: 2 });
+  });
+
+  it('prepends the older page through the cursor, and stops at the oldest message', async () => {
+    server.threads[2] = longThread(120);
+    await conversationsStore.loadMessages(2);
+
+    expect(await conversationsStore.loadOlderMessages(2)).toBe(true);
+    // The cursor is the lowest id already held and it is exclusive.
+    expect(server.threadRequests[1]).toEqual({ conversation_id: 2, cursor: 2071 });
+    let held = get(conversationsStore.messages)[2];
+    expect(held).toHaveLength(100);
+    expect(held[0].id).toBe(2021);
+    expect(held[held.length - 1].id).toBe(2120);
+    expect(get(conversationsStore.hasOlderMessages)[2]).toBe(true);
+
+    expect(await conversationsStore.loadOlderMessages(2)).toBe(true);
+    held = get(conversationsStore.messages)[2];
+    expect(held).toHaveLength(120);
+    expect(held[0].id).toBe(2001);
+    expect(get(conversationsStore.hasOlderMessages)[2]).toBe(false);
+
+    // Nothing left: no request is made.
+    expect(await conversationsStore.loadOlderMessages(2)).toBe(false);
+    expect(server.threadRequests).toHaveLength(3);
+  });
+
+  it('is a no-op for a thread that is not held', async () => {
+    expect(await conversationsStore.loadOlderMessages(2)).toBe(false);
+    expect(server.threadRequests).toHaveLength(0);
+  });
+
+  it('reports no older page when the thread fits in one', async () => {
+    await conversationsStore.loadMessages(2);
+    expect(get(conversationsStore.hasOlderMessages)[2]).toBe(false);
+  });
+
+  it('resolves a reply whose target arrives on an older page', async () => {
+    const rows = longThread(60);
+    // The newest message quotes the oldest, which is on the second page.
+    rows[59] = { ...rows[59], reply_to_id: 2001 } as any;
+    server.threads[2] = rows;
+
+    await conversationsStore.loadMessages(2);
+    let newest = get(conversationsStore.messages)[2].find((m) => m.id === 2060);
+    expect(newest?.replyToMsg).toBeNull();
+
+    await conversationsStore.loadOlderMessages(2);
+    newest = get(conversationsStore.messages)[2].find((m) => m.id === 2060);
+    expect(newest?.replyToMsg).toMatchObject({ id: 2001, sender: 'other' });
+  });
+
+  it('reopening a thread starts again from the newest page', async () => {
+    server.threads[2] = longThread(120);
+    await conversationsStore.loadMessages(2);
+    await conversationsStore.loadOlderMessages(2);
+    expect(get(conversationsStore.messages)[2]).toHaveLength(100);
+
+    await conversationsStore.loadMessages(2);
+    expect(get(conversationsStore.messages)[2]).toHaveLength(50);
+    expect(get(conversationsStore.hasOlderMessages)[2]).toBe(true);
+  });
+
+  it('forgets the cursor with the thread when it is evicted', async () => {
+    server.threads[2] = longThread(120);
+    await conversationsStore.loadMessages(2);
+    conversationsStore.setActiveConversationId(null);
+    await conversationsStore.loadConversations();
+
+    expect(get(conversationsStore.hasOlderMessages)[2]).toBeUndefined();
+    expect(await conversationsStore.loadOlderMessages(2)).toBe(false);
   });
 });
 

@@ -9,7 +9,7 @@ import { conversations, type ConversationRepo } from './Conversations';
 // instance, so the attachment-ownership check runs against the same allowlist.
 import { media } from './Media';
 import { defineService } from '../lib/defineService';
-import { conversationIdFrom } from '../lib/payload';
+import { conversationIdFrom, pageBounds } from '../lib/payload';
 import { messagesContract } from '@gphone/shared/contracts/messages';
 import { resolveOwnedAttachments } from '../lib/attachments';
 import { Message } from '@gphone/shared/types';
@@ -140,6 +140,21 @@ export const messages = defineService<Message, typeof messagesContract>({
       ]
     }
   ],
+  /**
+   * A thread is read one page at a time, newest first (MICA-212).
+   *
+   * Declared on a `members` read, which registers no generic `get` and so never consults
+   * this itself — the custom handler below reads it through `pageBounds`, the same way
+   * `Conversations.ts` does, so the numbers live in the declaration and a change here cannot
+   * silently miss the handler. Before this, `get` handed back the whole thread, and a long
+   * one cost its full weight on every open while the app rendered fifty of it.
+   *
+   * Fifty, because that is the window `usePagedList` already reveals per "load older" and
+   * the size the app has been rendering by since the window was written: one server page
+   * is one revealed page, so the control the player taps maps to exactly one fetch. The
+   * cap is twice that — a client may ask for a larger page but not for the thread.
+   */
+  paging: { pageSize: 50, maxPageSize: 100 },
   options: { disableGet: true },
   repositoryFactory: (resolved) => new MessageRepository(resolved)
 });
@@ -148,6 +163,12 @@ const app = messages.app;
 const messageRepo = messages.repo as MessageRepository;
 const conversationRepo = conversations.repo as ConversationRepo;
 const mediaRepo = media.repo;
+
+/** Read once, so the handler and the declaration cannot disagree about the page size. */
+const MESSAGE_PAGING = messages.resolved.paging;
+if (!MESSAGE_PAGING) {
+  throw new Error("defineService('messages'): a thread read must declare paging.");
+}
 
 /**
  * Messages live in a table shared between players, so ownership by `citizenid` is
@@ -196,11 +217,23 @@ const requireOwnMessage = async (data: { id: number }, citizenid: string): Promi
   return row;
 };
 
+/**
+ * One page of a thread, newest first, in a constant number of statements (MICA-212).
+ *
+ * Three at most — the membership check, the page, and that page's attachments — whatever
+ * the thread holds; `server/__tests__/messagePaging.test.ts` counts them. The cursor is a
+ * bare row id and exclusive, clamped by `pageBounds` rather than refused, and it is **never
+ * authorization**: the page is selected by the caller's own `conversation_id` first, so a
+ * cursor lifted from another thread bounds this one's ids and reads nothing across. The
+ * reply is `{ rows, nextCursor }`, the shape the generic paged read already answers, with
+ * `null` meaning the oldest message is in this page.
+ */
 app.registerEvent('get', async (source, cbId, data, citizenid) => {
   const conversationId = conversationIdFrom(data);
+  const page = pageBounds(data, MESSAGE_PAGING);
   await requireParticipant(conversationId, citizenid);
 
-  return await messageRepo.findByConversation(conversationId);
+  return await messageRepo.findByConversation(conversationId, page);
 });
 
 /**

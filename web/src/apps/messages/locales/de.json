@@ -32,6 +32,7 @@
   "loadOlderConversations": "Ältere Unterhaltungen laden",
   "loadingOlderMessages": "Ältere Nachrichten werden geladen...",
   "loadOlderMessages": "Ältere Nachrichten laden ({count} ausgeblendet)",
+  "loadOlderMessagesPage": "Ältere Nachrichten laden",
   "unreadMessages": "Ungelesene Nachrichten ({count})",
   "noMatchingInChat": "Keine passenden Nachrichten in diesem Chat",
   "noMessagesYet": "Noch keine Nachrichten",

@@ -32,6 +32,7 @@
   "loadOlderConversations": "Load older conversations",
   "loadingOlderMessages": "Loading older messages...",
   "loadOlderMessages": "Load older messages ({count} hidden)",
+  "loadOlderMessagesPage": "Load older messages",
   "unreadMessages": "Unread Messages ({count})",
   "noMatchingInChat": "No matching messages found in this chat",
   "noMessagesYet": "No messages yet",

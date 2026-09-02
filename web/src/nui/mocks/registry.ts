@@ -1450,8 +1450,33 @@ const mockRegistry: Record<string, MockHandler> = {
 
   // Messages
   'conversations:get': () => mockConversations,
-  'messages:get': ({ conversation_id }: { conversation_id: number }) => {
-    return mockMessages[conversation_id] || [];
+  /**
+   * One page of a thread, the way `messages:get` answers it (MICA-212): keyset on
+   * `id DESC`, the cursor a bare row id and exclusive, `limit` clamped to the service's
+   * declared page — fifty by default, a hundred at most — and `{ rows, nextCursor }` back,
+   * the rows in reading order and `nextCursor` null once the oldest message is in the page.
+   * The e2e specs walk a 200-message fixture through this in four pages.
+   */
+  'messages:get': ({
+    conversation_id,
+    cursor,
+    limit
+  }: {
+    conversation_id: number;
+    cursor?: number | null;
+    limit?: number;
+  }) => {
+    const pageSize = Math.min(typeof limit === 'number' && limit > 0 ? limit : 50, 100);
+    const newestFirst = [...(mockMessages[conversation_id] || [])]
+      .sort((a, b) => b.id - a.id)
+      .filter((m) => (cursor == null ? true : m.id < cursor));
+    const hasMore = newestFirst.length > pageSize;
+    const page = newestFirst.slice(0, pageSize);
+    const oldest = page[page.length - 1];
+    return {
+      rows: [...page].reverse(),
+      nextCursor: hasMore && oldest ? oldest.id : null
+    };
   },
   'messages:send': async (payload: {
     conversation_id: number;

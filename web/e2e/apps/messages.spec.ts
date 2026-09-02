@@ -38,10 +38,10 @@ test.describe('Messages App E2E', () => {
     const messagesContainer = page.locator('#messages-container');
     await expect(messagesContainer).toBeVisible();
 
-    // Attachments sit on every twenty-fifth message, so the default fifty-message window is
+    // Attachments sit on every twenty-fifth message, so the first fifty-message page is
     // not guaranteed to hold one. Driving the same "Load older messages" button the
-    // virtualization test uses, rather than scrolling, keeps this off scroll physics
-    // entirely — three clicks empties the thread's 150 hidden messages deterministically.
+    // paging test uses, rather than scrolling, keeps this off scroll physics entirely —
+    // three clicks fetches the thread's remaining 150 messages deterministically.
     for (let i = 0; i < 3; i += 1) {
       await messagesContainer
         .locator('button', { hasText: 'Load older messages' })
@@ -79,9 +79,20 @@ test.describe('Messages App E2E', () => {
       .toBe(0);
   });
 
-  test('virtualizes message list and lazy-loads older messages on multiple scroll-ups', async ({
-    page
-  }) => {
+  /**
+   * A thread arrives one page at a time and grows upward as older pages are asked for
+   * (MICA-212). The mock answers `messages:get` the way the server does — fifty rows,
+   * newest first, and a cursor for the page behind them — so the 200-message fixture is
+   * four fetches, not one fetch and three local reveals. What is asserted is what the
+   * player sees: fifty bubbles, then a hundred, and the control gone once the oldest
+   * message is in the DOM.
+   *
+   * The label carries no "hidden" count here, deliberately: nothing is hidden locally when
+   * every loaded row is rendered, and the phone does not know how long the thread is on the
+   * server. That number was the old suite's proof of a client-side window; the bubble count
+   * is this one's proof of a server-side one.
+   */
+  test('loads a thread one page at a time, older pages on demand', async ({ page }) => {
     // Select first conversation ListItem by role="button" with force click
     const convItem = page.locator('[role="button"]').filter({ hasText: 'Trevor' }).first();
     await expect(convItem).toBeVisible();
@@ -94,30 +105,30 @@ test.describe('Messages App E2E', () => {
     const messagesContainer = page.locator('#messages-container');
     await expect(messagesContainer).toBeVisible();
 
-    // Verify initially only 50 messages are rendered in DOM out of 200 (150 hidden)
-    await expect(
-      messagesContainer.locator('button', { hasText: 'Load older messages' })
-    ).toBeVisible();
-    await expect(messagesContainer.locator('button', { hasText: '150 hidden' })).toBeVisible();
+    const bubbles = messagesContainer.locator('[id^="msg-"]');
+    const loadOlder = messagesContainer.locator('button', { hasText: 'Load older messages' });
 
-    // --- First Scroll Up / Load Older Batch ---
-    const loadBtn1 = messagesContainer.locator('button', { hasText: 'Load older messages' });
-    await loadBtn1.dispatchEvent('click');
-    await expect(messagesContainer.locator('button', { hasText: '100 hidden' })).toBeVisible();
+    // The newest page only, and the newest message of the fixture is in it.
+    await expect(bubbles).toHaveCount(50);
+    await expect(page.locator('#msg-3200')).toBeVisible();
+    await expect(page.locator('#msg-3150')).toHaveCount(0);
+    await expect(loadOlder).toBeVisible();
+    await expect(messagesContainer.locator('button', { hasText: 'hidden' })).toHaveCount(0);
 
-    // --- Second Scroll Up / Load Older Batch ---
-    const loadBtn2 = messagesContainer.locator('button', { hasText: 'Load older messages' });
-    await loadBtn2.dispatchEvent('click');
-    await expect(messagesContainer.locator('button', { hasText: '50 hidden' })).toBeVisible();
+    // --- First page back ---
+    await loadOlder.dispatchEvent('click');
+    await expect(bubbles).toHaveCount(100);
+    await expect(page.locator('#msg-3150')).toBeVisible();
 
-    // --- Third Scroll Up / Load Remaining Batch ---
-    const loadBtn3 = messagesContainer.locator('button', { hasText: 'Load older messages' });
-    await loadBtn3.dispatchEvent('click');
+    // --- Second ---
+    await loadOlder.dispatchEvent('click');
+    await expect(bubbles).toHaveCount(150);
 
-    // Now all 200 messages are loaded and hidden count button is gone
-    await expect(
-      messagesContainer.locator('button', { hasText: 'Load older messages' })
-    ).not.toBeVisible();
+    // --- Third: the oldest message arrives and the control goes with it ---
+    await loadOlder.dispatchEvent('click');
+    await expect(bubbles).toHaveCount(200);
+    await expect(page.locator('#msg-3001')).toBeVisible();
+    await expect(loadOlder).not.toBeVisible();
   });
 
   /**

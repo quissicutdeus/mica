@@ -115,7 +115,9 @@ describe('the media table rename', () => {
           duration_ms: 12000
         }
       ]);
-      const [message] = await (messages.repo as MessageRepository).findByConversation(4);
+      const {
+        rows: [message]
+      } = await (messages.repo as MessageRepository).findByConversation(4);
 
       expect(message.attachments?.[0].media).toMatchObject({
         id: 3,

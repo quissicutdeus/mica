@@ -176,6 +176,18 @@ function createMessagesStore() {
 
   /** Messages of the threads currently held, keyed by conversation id. */
   const messagesByConversation = writable<Record<number, UIMessage[]>>({});
+  /**
+   * Where the next older page of each held thread starts, keyed by conversation id
+   * (MICA-212). `null` means the oldest message is already held; a thread absent here
+   * has never been loaded. Kept beside the cache rather than inside it so the message
+   * list stays a plain array for everything that renders or appends to it.
+   */
+  const threadCursors = writable<Record<number, number | null>>({});
+  const hasOlderMessages = derived(threadCursors, ($cursors) => {
+    const out: Record<number, boolean> = {};
+    for (const [key, cursor] of Object.entries($cursors)) out[Number(key)] = cursor !== null;
+    return out;
+  });
   const activeConversationId = writable<number | null>(null);
 
   /**
@@ -196,6 +208,60 @@ function createMessagesStore() {
         if (!doomed.has(Number(key))) kept[Number(key)] = value;
       }
       return kept;
+    });
+    threadCursors.update((cursors) => {
+      const kept: Record<number, number | null> = {};
+      for (const [key, value] of Object.entries(cursors)) {
+        if (!doomed.has(Number(key))) kept[Number(key)] = value;
+      }
+      return kept;
+    });
+  };
+
+  /**
+   * One server page of a thread, mapped for display.
+   *
+   * A quoted message is resolved against the page it arrives with; `withReplies` below
+   * re-resolves the whole held thread once pages are joined, because a reply on the newest
+   * page may quote a message on an older one that only arrives later.
+   */
+  const fetchThreadPage = async (conversationId: number, cursor: number | null, myId: string) => {
+    const page = await callOr(
+      messagesContract,
+      'get',
+      cursor === null
+        ? { conversation_id: conversationId }
+        : { conversation_id: conversationId, cursor },
+      { rows: [], nextCursor: null }
+    );
+    const rows = Array.isArray(page?.rows) ? page.rows : [];
+    const mapped: UIMessage[] = rows.map((m) => ({
+      ...m,
+      sender: m.citizenid === myId ? 'me' : 'other',
+      replyToMsg: null
+    }));
+    return {
+      rows: mapped,
+      nextCursor: typeof page?.nextCursor === 'number' ? page.nextCursor : null
+    };
+  };
+
+  /**
+   * Every reply in a thread pointed at the message it quotes, as far as the held pages reach.
+   *
+   * Resolved over the whole held thread rather than per page, and re-run whenever a page is
+   * prepended: the quote a reply carries is a row id, and the row may sit on a page that was
+   * not loaded when the reply was. A target that is not held renders no banner, the same as
+   * a target that was unsent.
+   */
+  const withReplies = (held: UIMessage[]): UIMessage[] => {
+    const byId = new Map<number, UIMessage>();
+    for (const m of held) byId.set(m.id, m);
+    return held.map((m) => {
+      if (!m.reply_to_id) return m;
+      const target = byId.get(m.reply_to_id);
+      const replyToMsg = target ? { ...target, replyToMsg: null } : null;
+      return m.replyToMsg?.id === replyToMsg?.id ? m : { ...m, replyToMsg };
     });
   };
 
@@ -291,49 +357,63 @@ function createMessagesStore() {
      */
     loadMoreConversations: () => list.loadMore(),
 
+    /**
+     * Open a thread: its newest page, replacing whatever was held (MICA-212).
+     *
+     * `messages:get` answers one page of fifty, newest first, with the cursor for the page
+     * behind it — `paging` on the `messages` service and `pageBounds` in the handler, the
+     * way MICA-197 did it for conversations. The rest of the thread arrives through
+     * `loadOlderMessages` as the player scrolls up; `MAX_CACHED_THREADS` bounds how many
+     * threads are held, and the cursor bounds how much of each one is.
+     */
     loadMessages: async (conversationId: number) => {
       activeConversationId.set(conversationId);
       let myId = get(citizenid);
       if (!myId) myId = await fetchCitizenId();
 
-      const data = await callOr(messagesContract, 'get', { conversation_id: conversationId }, []);
-      const rawList = data || [];
-      const mapped: UIMessage[] = rawList.map((m) => {
-        const replyToRaw = m.reply_to_id ? rawList.find((r) => r.id === m.reply_to_id) : null;
-        return {
-          ...m,
-          sender: m.citizenid === myId ? 'me' : 'other',
-          replyToMsg: replyToRaw
-            ? {
-                ...replyToRaw,
-                sender: replyToRaw.citizenid === myId ? 'me' : 'other'
-              }
-            : null
-        };
-      });
+      const { rows, nextCursor } = await fetchThreadPage(conversationId, null, myId);
 
-      /**
-       * The whole thread, still — there is no cursor to ask for less.
-       *
-       * `messages:get` (`server/services/Messages.ts`) reads only `conversationIdFrom(data)`
-       * and hands back `findByConversation`'s entire result; it declares no `paging`, so
-       * unlike `conversations:get` there is nothing here to page against. The Messages app
-       * windows the *rendering* with `usePagedList`, which keeps the DOM bounded but not the
-       * transfer or this cache, and `MAX_CACHED_THREADS` bounds how many whole threads are
-       * held at once rather than how large any one of them is.
-       *
-       * Paging inside a thread therefore needs the server half first: `paging` on the
-       * `messages` service and `pageBounds` in that handler, the way MICA-197 did it for
-       * conversations, after which this becomes a second `createPagedStore` with the cursor
-       * walking `id DESC` from the newest message backwards. That is a `server/` change and
-       * is deliberately out of MICA-204's scope — it is the follow-up to file, not an
-       * oversight here.
-       */
       touchThread(conversationId);
       messagesByConversation.update((msgs) => ({
         ...msgs,
-        [conversationId]: mapped
+        [conversationId]: withReplies(rows)
       }));
+      threadCursors.update((cursors) => ({ ...cursors, [conversationId]: nextCursor }));
+    },
+
+    /** Whether an older page exists behind what is held, per thread. */
+    hasOlderMessages: { subscribe: hasOlderMessages.subscribe },
+
+    /**
+     * Prepend the next older page of a held thread. Returns whether anything arrived.
+     *
+     * A thread that is not held, or whose oldest message is already in memory, is a no-op:
+     * `usePagedList` asks through `hasMore` first, but a second caller has no such guard and
+     * must not be able to re-fetch the newest page into the middle of the thread. Prepends,
+     * because the page is older than everything held; the scroll compensation that keeps the
+     * reader in place is `usePagedList`'s, around the call.
+     */
+    loadOlderMessages: async (conversationId: number) => {
+      const cursor = get(threadCursors)[conversationId];
+      if (cursor === undefined || cursor === null) return false;
+      let myId = get(citizenid);
+      if (!myId) myId = await fetchCitizenId();
+
+      const { rows, nextCursor } = await fetchThreadPage(conversationId, cursor, myId);
+
+      // The thread may have been evicted while the page was in flight; a page for a thread
+      // nobody holds is dropped rather than resurrecting the cache entry.
+      if (!(conversationId in get(messagesByConversation))) return false;
+
+      messagesByConversation.update((msgs) => ({
+        ...msgs,
+        [conversationId]: withReplies([...rows, ...(msgs[conversationId] || [])])
+      }));
+      threadCursors.update((cursors) => ({
+        ...cursors,
+        [conversationId]: rows.length === 0 ? null : nextCursor
+      }));
+      return rows.length > 0;
     },
 
     sendMessage: async (

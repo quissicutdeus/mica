@@ -690,6 +690,24 @@ export interface Facets {
        */
       loadMoreConversations: () => Promise<boolean>;
       loadMessages: (conversationId: number) => Promise<void>;
+      /**
+       * Whether an older page of a held thread exists behind what is loaded, keyed by
+       * conversation id (MICA-212). Absent means nothing is known, which the app reads
+       * as false.
+       */
+      hasOlderMessages: {
+        subscribe: (
+          this: void,
+          run: Subscriber<Record<number, boolean>>,
+          invalidate?: () => void
+        ) => Unsubscriber;
+      };
+      /**
+       * Prepend the next older page of a held thread, walking the cursor `messages:get`
+       * hands back (MICA-212). Resolves to whether anything arrived, and is a no-op for a
+       * thread that is not held or has no page left — pair it with `hasOlderMessages`.
+       */
+      loadOlderMessages: (conversationId: number) => Promise<boolean>;
       sendMessage: (
         conversationId: number,
         message: string,

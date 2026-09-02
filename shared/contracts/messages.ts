@@ -18,13 +18,26 @@ import type { Message, ReactionSummary } from '../types';
 export const messagesContract = defineContract({
   id: 'messages',
   actions: {
-    /** Every message in one thread the caller is a live participant of. */
+    /**
+     * One page of a thread the caller is a live participant of, newest first (MICA-212).
+     *
+     * Keyset-paged like every other paged read: `cursor` is a bare row id, exclusive, and
+     * `limit` is clamped to the service's `paging` rather than refused. The reply is
+     * `{ rows, nextCursor }` — the shape the generic paged read answers — with the rows in
+     * reading order (oldest first within the page) and `nextCursor: null` meaning the
+     * oldest message in the thread is in this page. Not a bare array with the cursor
+     * inferred from the last row, as `conversations:get` still is: a thread's cursor
+     * engages on every long thread rather than past a bound nobody reaches, so the one
+     * empty round trip inference costs would be paid every time a thread divides by fifty.
+     */
     get: {
       input: s.object({
         conversation_id: s.positiveInt().optional(),
-        id: s.positiveInt().optional()
+        id: s.positiveInt().optional(),
+        cursor: s.positiveInt().nullable().optional(),
+        limit: s.positiveInt().optional()
       }),
-      output: responseType<Message[]>()
+      output: responseType<{ rows: Message[]; nextCursor: number | null }>()
     },
 
     send: {

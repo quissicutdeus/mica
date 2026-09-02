@@ -57,7 +57,30 @@ export class MessageRepository extends SchemaRepository<Message> {
     return found !== null && found !== undefined;
   }
 
-  async findByConversation(conversationId: number): Promise<Message[]> {
+  /**
+   * One page of a thread, newest first, handed back in reading order (MICA-212).
+   *
+   * Keyset on `id DESC`: the cursor is the lowest id the caller already holds and is
+   * exclusive (`m.id < ?`), so the next page starts strictly below it and an insert at the
+   * head of the thread shifts nothing — the reason paging here is a cursor and not an
+   * offset. One row more than the page is asked for, and its existence is the answer to
+   * "is there more", exactly as `ServiceEndpoint`'s generic paged read does it; the extra
+   * row is dropped rather than returned.
+   *
+   * The page is selected by `conversation_id` **first**. A cursor is a row id off a payload
+   * and therefore attacker-controlled (§2.9); one lifted from another thread only bounds this
+   * thread's ids, and can read nothing across. Membership is the caller's to check before
+   * this is reached.
+   *
+   * Rows come back oldest-first within the page — the order a thread renders in and the
+   * order the client prepends in — rather than the `DESC` the keyset walks. `nextCursor` is
+   * explicit, so nobody downstream needs the last row's id to know where the next page
+   * starts, and nobody has to remember which end of the page is the old one.
+   */
+  async findByConversation(
+    conversationId: number,
+    page: { limit: number; cursor: number | null } = { limit: 50, cursor: null }
+  ): Promise<{ rows: Message[]; nextCursor: number | null }> {
     /**
      * Messages, plus the one derived column the thread cannot render without.
      *
@@ -76,15 +99,28 @@ export class MessageRepository extends SchemaRepository<Message> {
      * unsending is a withdrawal from the conversation, and the soft delete is what keeps the
      * row available to moderation afterwards.
      */
-    const messages = await Database.query<Message[]>(
+    const cursorClause = page.cursor === null ? '' : 'AND m.id < ?';
+    const params: unknown[] = [conversationId];
+    if (page.cursor !== null) params.push(page.cursor);
+    params.push(page.limit + 1);
+
+    const fetched = await Database.query<Message[]>(
       `SELECT m.*, (m.updated_at > m.created_at) AS edited
          FROM gphone_messages m
         WHERE m.conversation_id = ? AND m.status != 'deleted'
-        ORDER BY m.created_at ASC`,
-      [conversationId]
+          ${cursorClause}
+        ORDER BY m.id DESC
+        LIMIT ?`,
+      params
     );
 
-    if (messages.length === 0) return [];
+    const hasMore = fetched.length > page.limit;
+    const newestFirst = hasMore ? fetched.slice(0, page.limit) : fetched;
+    const oldest = newestFirst[newestFirst.length - 1];
+    const nextCursor = hasMore && typeof oldest?.id === 'number' ? oldest.id : null;
+    const messages = [...newestFirst].reverse();
+
+    if (messages.length === 0) return { rows: [], nextCursor: null };
 
     /**
      * Attachments, joined to `gphone_media`.
@@ -100,15 +136,19 @@ export class MessageRepository extends SchemaRepository<Message> {
      * badge. Selecting only `data`, as this did, made every attachment a photo by
      * construction.
      */
+    // This page's attachments and nothing more: bound to the ids just selected rather than
+    // to the conversation, or every page would re-hydrate the whole thread's pictures and
+    // the cost the cursor bounds above would come straight back here.
+    const messageIds = messages.map((msg) => msg.id);
+    const placeholders = messageIds.map(() => '?').join(', ');
     const attachments = await Database.query<any[]>(
       `SELECT a.id, a.message_id,
               p.id AS media_id, p.kind, p.data, p.url, p.thumbnail,
               p.mime_type, p.duration_ms, p.alt_text
          FROM gphone_messages_attachments a
-         JOIN gphone_messages m ON a.message_id = m.id
          JOIN gphone_media p ON a.photo_id = p.id
-        WHERE m.conversation_id = ?`,
-      [conversationId]
+        WHERE a.message_id IN (${placeholders})`,
+      messageIds
     );
 
     // Map attachments to messages
@@ -144,6 +184,6 @@ export class MessageRepository extends SchemaRepository<Message> {
       msg.edited = Boolean(msg.edited);
     }
 
-    return messages;
+    return { rows: messages, nextCursor };
   }
 }

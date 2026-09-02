@@ -247,16 +247,20 @@ describe('the edited marker is derived, not stored', () => {
   });
 
   it('normalises MySQL 1/0 to a real boolean', async () => {
+    // As the page SELECT answers: newest first. The page comes back in reading order.
     dbMock.query
       .mockResolvedValueOnce([
-        { id: 1, conversation_id: 7, message: 'a', edited: 1 },
-        { id: 2, conversation_id: 7, message: 'b', edited: 0 }
+        { id: 2, conversation_id: 7, message: 'b', edited: 1 },
+        { id: 1, conversation_id: 7, message: 'a', edited: 0 }
       ])
       .mockResolvedValueOnce([]);
 
-    const rows = await repo().findByConversation(7);
+    const { rows } = await repo().findByConversation(7);
 
-    expect(rows.map((r) => r.edited)).toEqual([true, false]);
+    expect(rows.map((r) => [r.id, r.edited])).toEqual([
+      [1, false],
+      [2, true]
+    ]);
   });
 
   it('still hides an unsent message from every participant', async () => {

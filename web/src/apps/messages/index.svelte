@@ -49,6 +49,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useMessages();
   const conversationsLoaded = conversationsStore.loaded;
   const conversationsHasMore = conversationsStore.hasMore;
+  const hasOlderMessages = conversationsStore.hasOlderMessages;
   const { busy, run } = useAppAction('messages');
   const { contactsStore: contacts } = useContacts();
   const { media } = useMedia();
@@ -133,14 +134,28 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * The thread is revealed a page at a time, newest first, with the scroll anchoring
    * that stops the view jumping when older messages appear above the fold.
    *
+   * Since MICA-212 the window is over a server page too: `messages:get` hands back
+   * fifty at a time, so once nothing is hidden locally `loadOlder` walks the thread's
+   * cursor and the store prepends what arrives. `hasMore` is what keeps the control
+   * honest at the oldest message — without it the hook could only ask and find out.
+   *
    * In-chat search bypasses the window: a match is worth finding wherever it is, and a
-   * search that only looked at the last fifty messages would be quietly wrong.
+   * search that only looked at the loaded pages would be quietly wrong — which it still is
+   * for what has not been fetched yet; searching the rest of a long thread is server work.
    */
   const page = usePagedList<UIMessage>({
     items: () => (inChatSearchQuery.trim() ? [] : filteredMessages),
     olderAt: 'start',
-    container: () => document.getElementById('messages-container')
+    container: () => document.getElementById('messages-container'),
+    loadOlder: () =>
+      selectedConversationId
+        ? conversationsStore.loadOlderMessages(selectedConversationId)
+        : Promise.resolve(false),
+    hasMore: () => (selectedConversationId ? !!$hasOlderMessages[selectedConversationId] : false)
   });
+  const threadHasOlder = $derived(
+    selectedConversationId ? !!$hasOlderMessages[selectedConversationId] : false
+  );
 
   const renderedMessages = $derived(inChatSearchQuery.trim() ? filteredMessages : page.visible);
   const renderIndexOffset = $derived(inChatSearchQuery.trim() ? 0 : page.offset);
@@ -652,6 +667,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         messages={renderedMessages}
         offset={renderIndexOffset}
         hiddenCount={page.hiddenCount}
+        hasOlder={threadHasOlder}
         loadingMore={page.loading}
         {unreadDividerIndex}
         {currentConv}
