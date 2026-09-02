@@ -244,7 +244,7 @@ describe('shipped repositories — inherited guarantees', () => {
     dbMock.query.mockResolvedValue([]);
     dbMock.query.mockClear();
 
-    await (conversations.repo as any).findForCitizen('CIT_A');
+    await (conversations.repo as any).findForCitizen('CIT_A', { limit: 25, cursor: null });
 
     const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
     // Joins the caller's own participant row so last_read is in scope...
@@ -255,29 +255,55 @@ describe('shipped repositories — inherited guarantees', () => {
     expect(sql).toContain('unread.created_at > me.last_read');
     expect(sql).toContain('unread.citizenid <> me.citizenid');
     expect(sql).toContain("unread.status != 'deleted'");
-    // The trailing bound parameter is the page size (MICA-197): this read had no `LIMIT`
-    // at all, so opening Messages cost more every day a player used it.
-    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', 200]);
+    /**
+     * The trailing bound parameter is the page size (MICA-197): this read had no `LIMIT` at
+     * all, so opening Messages cost more every day a player used it. One *more* than the page
+     * asked for since MICA-211 — the probe row that makes `nextCursor` exact rather than
+     * inferred from a short page — so 25 is asked for as 26 and the extra is dropped.
+     */
+    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', 26]);
   });
 
   /**
-   * MICA-197. `findForCitizen` returned every thread a player had ever been in, and each
-   * returned row carried correlated subqueries — so the cost of the list grew without bound.
-   * Keyset on `c.id DESC` rather than an offset, matching every other paged read here: a
-   * thread created while somebody is paging shifts an offset and makes them see a row twice
-   * or not at all.
+   * MICA-197 bounded this read: `findForCitizen` returned every thread a player had ever
+   * been in, and each returned row carried correlated subqueries, so the cost of the list grew
+   * without bound. Keyset rather than an offset, matching every other paged read here — a
+   * thread created while somebody is paging shifts an offset and makes them see a row twice or
+   * not at all.
+   *
+   * MICA-211 changed *what* it is keyed on. It was `c.id DESC`, which is not the order the
+   * inbox is displayed in: threads sort by recency of their last message, and an old thread
+   * somebody texts daily has a low id and a recent last message, so a page walked by id left
+   * it for a later page. The key is now the pair — `COALESCE(m.created_at, c.updated_at)` for
+   * the recency, `c.id` as the tiebreak between two threads sharing a second — and the cursor
+   * carries both halves. `server/__tests__/conversationPaging.test.ts` holds the order itself;
+   * what is held here is that both halves are **bound parameters** and never interpolated
+   * (§2.9), which is the property that survives every future change to the ordering.
    */
-  it('findForCitizen is keyset-paged on id, and the cursor is a bound parameter', async () => {
+  it('findForCitizen is keyset-paged on recency then id, both cursor halves bound', async () => {
     dbMock.query.mockResolvedValue([]);
     dbMock.query.mockClear();
 
-    await (conversations.repo as any).findForCitizen('CIT_A', { limit: 25, cursor: 900 });
+    await (conversations.repo as any).findForCitizen('CIT_A', {
+      limit: 25,
+      cursor: { time: '2026-05-05 05:05:05', id: 900 }
+    });
 
     const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
-    expect(sql).toContain('AND c.`id` < ?');
-    expect(sql).toContain('ORDER BY c.id DESC');
+    expect(sql).toContain('COALESCE(m.`created_at`, c.`updated_at`) < ?');
+    expect(sql).toContain('COALESCE(m.`created_at`, c.`updated_at`) = ? AND c.`id` < ?');
+    expect(sql).toContain('ORDER BY COALESCE(m.`created_at`, c.`updated_at`) DESC, c.`id` DESC');
     expect(sql).toContain('LIMIT ?');
-    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', 900, 25]);
+    // The caller's citizenid first — the join that makes this their inbox — then the cursor's
+    // time twice (once per arm) and its id, then the page plus the probe row. No value from
+    // the cursor reaches the SQL text.
+    expect(dbMock.query.mock.calls[0][1]).toEqual([
+      'CIT_A',
+      '2026-05-05 05:05:05',
+      '2026-05-05 05:05:05',
+      900,
+      26
+    ]);
   });
 
   it('findForCitizen omits the cursor clause entirely on the first page', async () => {
@@ -287,8 +313,11 @@ describe('shipped repositories — inherited guarantees', () => {
     await (conversations.repo as any).findForCitizen('CIT_A', { limit: 25, cursor: null });
 
     const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
+    // No predicate at all rather than a sentinel date compared against — the `ORDER BY` still
+    // names the sort key, so the assertion is about the comparison, not the expression.
     expect(sql).not.toContain('c.`id` < ?');
-    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', 25]);
+    expect(sql).not.toContain('COALESCE(m.`created_at`, c.`updated_at`) < ?');
+    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', 26]);
   });
 
   /**

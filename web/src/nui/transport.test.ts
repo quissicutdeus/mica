@@ -78,8 +78,17 @@ describe('Transport Abstraction Module', () => {
 
   describe('MockTransportAdapter', () => {
     it('answers a mocked action through the registry', async () => {
+      // `conversations:get` answers the paged shape since MICA-211 — `{ rows, nextCursor }`,
+      // the cursor a `{ time, id }` pair — rather than the bare array it used to. What is under
+      // test here is that the registry answered at all, so the paging itself is left to
+      // `services/conversations.test.ts`.
+      //
+      // Matched whole rather than reached into: `send` answers `any`, so a property access here
+      // would be an unchecked one and a cast to make it checked is an assertion ESLint reads as
+      // redundant. The fixture is 21 threads against a page of 25, so the mock's cursor is
+      // `null`, and the end of the list is part of what came back.
       const reply = await new MockTransportAdapter().send('conversations:get');
-      expect(Array.isArray(reply)).toBe(true);
+      expect(reply).toEqual({ rows: expect.any(Array), nextCursor: null });
     });
 
     it('rejects an action with no mock rather than answering null', async () => {

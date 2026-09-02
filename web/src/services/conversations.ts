@@ -132,10 +132,18 @@ const readConversationPage: PageReader<UIConversation> = async (payload) => {
     payload as { cursor?: { time: string; id: number } | null; limit?: number }
   );
 
-  // A bare array is what an older server (or a mock that has not caught up) answers; treat it
-  // as one full page rather than rendering nothing, the same way `createPagedStore` does.
-  const raw = Array.isArray(data) ? data : (data?.rows ?? []);
-  const nextCursor = Array.isArray(data) ? null : (data?.nextCursor ?? null);
+  /**
+   * Named with its type rather than narrowed out of the reply.
+   *
+   * This read used to tolerate a bare array as well, the way `createPagedStore` does for a
+   * mock that has not caught up. That tolerance is what leaked `any` through the rest of the
+   * mapping: `Array.isArray` on a type that is not an array narrows the other branch to
+   * `any[]`, so every `c.last_message` below became an unchecked property access. There is
+   * nothing left to tolerate — the contract declares one reply shape and the mock answers it
+   * — so the shape is asserted once, here, and the rows are `Conversation[]` from this line on.
+   */
+  const raw: Conversation[] = data?.rows ?? [];
+  const nextCursor = data?.nextCursor ?? null;
 
   const rows: UIConversation[] = raw.map((c) => {
     const { target, targetName, targetAvatar } = resolveDisplayInfo(c, myId, currentContacts);
