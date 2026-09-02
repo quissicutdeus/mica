@@ -61,3 +61,33 @@ test.describe('a NUI call with no browser mock', () => {
     expect(reply).toBe('default');
   });
 });
+
+/**
+ * A server refusal reaches the player in the phone's language (MICA-216). The browser
+ * mock answers the self-follow refusal in the wire shape the server uses — the English
+ * text plus a catalog key — and with the locale seeded to German before boot, the error
+ * `fetchNui` throws is the catalog's German, not the English that was sent.
+ */
+test.describe('a keyed server refusal', () => {
+  test.use({ allowNuiFailures: true });
+
+  test("is said in the phone's language", async ({ page }) => {
+    await page.addInitScript(() => {
+      if (window !== window.top) return;
+      window.localStorage.setItem('gphone:settings:locale', JSON.stringify('de'));
+    });
+    await page.goto('/');
+    await expect(page.getByTestId('phone-frame')).toBeVisible();
+
+    const message = await page.evaluate(() =>
+      window.fetchNui!('svc', {
+        service: 'accounts',
+        action: 'follow',
+        data: { follower_account_id: 1, followee_account_id: 1 }
+      })
+        .then(() => 'resolved')
+        .catch((error: Error) => error.message)
+    );
+    expect(message).toBe('Du kannst dir nicht selbst folgen.');
+  });
+});

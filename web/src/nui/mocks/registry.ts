@@ -664,8 +664,11 @@ const mockRegistry: Record<string, MockHandler> = {
     follower_account_id: number;
     followee_account_id: number;
   }) => {
+    // The wire shape a real refusal has since MICA-216: the English plus a catalog key,
+    // which `fetchNui` resolves in the phone's language. Returned, not thrown, because a
+    // thrown Error has no key — and this is the mock's one proof that the key path works.
     if (follower_account_id === followee_account_id) {
-      throw new Error('You cannot follow yourself.');
+      return { error: 'You cannot follow yourself.', key: 'server.accounts.cannotFollowSelf' };
     }
     if (!mockOwnedAccountIds.has(follower_account_id)) {
       throw new Error('That account is not yours.');
@@ -704,7 +707,7 @@ const mockRegistry: Record<string, MockHandler> = {
     blocked_account_id: number;
   }) => {
     if (blocker_account_id === blocked_account_id) {
-      throw new Error('You cannot block yourself.');
+      return { error: 'You cannot block yourself.', key: 'server.accounts.cannotBlockSelf' };
     }
     if (!mockOwnedAccountIds.has(blocker_account_id)) {
       throw new Error('That account is not yours.');
