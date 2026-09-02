@@ -387,15 +387,17 @@ describe('blabber service', () => {
 
       expect(get(followStats)[42].followedByMe).toBe(true);
       expect(get(followStats)[42].followers).toBe(11);
-      expect(spy).toHaveBeenCalledWith(
-        'followAccount',
-        {
+      // The typed `call` rides the generic service action, so the transport sees one
+      // envelope naming the contract's own action (MICA-213).
+      expect(spy).toHaveBeenCalledWith('svc', {
+        service: 'accounts',
+        action: 'follow',
+        data: {
           app: 'blabber',
           follower_account_id: 1,
           followee_account_id: 42
-        },
-        undefined
-      );
+        }
+      });
     });
   });
 
@@ -560,8 +562,12 @@ describe('blabber service', () => {
         await loadDmReactions([10, 11]);
 
         expect(spy).toHaveBeenCalledWith(
-          'getReactionsFor',
-          { app: 'blabber', target_table: 'gphone_blabber_dms', target_ids: [10, 11] },
+          'svc',
+          {
+            service: 'accounts',
+            action: 'reactionsFor',
+            data: { app: 'blabber', target_table: 'gphone_blabber_dms', target_ids: [10, 11] }
+          },
           { defaultValue: {} }
         );
       });
@@ -573,17 +579,17 @@ describe('blabber service', () => {
 
         await toggleDmReaction(10, '\u{1F525}');
 
-        expect(spy).toHaveBeenCalledWith(
-          'reactToTarget',
-          {
+        expect(spy).toHaveBeenCalledWith('svc', {
+          service: 'accounts',
+          action: 'react',
+          data: {
             app: 'blabber',
             account_id: 4,
             target_table: 'gphone_blabber_dms',
             target_id: 10,
             emoji: '\u{1F525}'
-          },
-          undefined
-        );
+          }
+        });
         expect(get(dmReactions)[10]).toEqual({ counts: { '\u{1F525}': 1 }, mine: ['\u{1F525}'] });
       });
 
@@ -665,17 +671,19 @@ describe('blabber service', () => {
 
       await searchAccounts('ad');
 
-      // The `searchAccounts` *route*, not the generic service route. `accounts` is not
-      // Blabber's own namespace, so `IframeHostServer`'s `serviceAllowed` refused the
-      // generic form once Blabber became an add-on, and the segment answered "No people
-      // found" for every query. `app` is stated here; `cursor`/`limit` come from
+      // The `accounts` facet, not a generic service call made from inside the frame.
+      // `accounts` is not Blabber's own namespace, so `IframeHostServer`'s `serviceAllowed`
+      // refuses one an add-on names for itself, and the segment answered "No people found"
+      // for every query. The phone makes this call on the add-on's behalf, and since
+      // MICA-213 it makes it as a typed `call` over the generic service action — one
+      // envelope naming `accounts:search`. `app` is stated here; `cursor`/`limit` come from
       // `createPagedStore`'s own `fetchPage`. No `defaultValue`, so a failure throws and
       // `load`/`loadMore` decide whether to keep the existing page.
-      expect(spy).toHaveBeenCalledWith(
-        'searchAccounts',
-        { app: 'blabber', q: 'ad', cursor: undefined, limit: undefined },
-        undefined
-      );
+      expect(spy).toHaveBeenCalledWith('svc', {
+        service: 'accounts',
+        action: 'search',
+        data: { app: 'blabber', q: 'ad', cursor: undefined, limit: undefined }
+      });
       expect(get(accountResults)).toHaveLength(1);
     });
 

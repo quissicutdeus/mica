@@ -46,7 +46,11 @@ describe('capabilities store', () => {
     const { capabilities, refreshCapabilities, fetchNui } = await loadCapabilities(false, hasMoney);
     await refreshCapabilities();
 
-    expect(fetchNui).toHaveBeenCalledWith('checkCapabilities');
+    expect(fetchNui).toHaveBeenCalledWith('svc', {
+      service: 'shell',
+      action: 'capabilities',
+      data: undefined
+    });
     expect(get(capabilities).money).toBe(true);
   });
 

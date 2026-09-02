@@ -14,10 +14,16 @@ beforeEach(() => {
 });
 
 describe('submitScore', () => {
-  it('calls submitHighscore with the app and score', async () => {
+  // The typed `call` rides the generic service action, so the transport sees one envelope
+  // rather than a named route (MICA-213).
+  it('names the highscores contract action and carries the app and score', async () => {
     fetchNuiMock.mockResolvedValue({ ok: true });
     await submitScore('snek', 42);
-    expect(fetchNuiMock).toHaveBeenCalledWith('submitHighscore', { app: 'snek', score: 42 });
+    expect(fetchNuiMock).toHaveBeenCalledWith('svc', {
+      service: 'highscores',
+      action: 'submit',
+      data: { app: 'snek', score: 42 }
+    });
   });
 
   it('swallows a server error rather than throwing', async () => {
