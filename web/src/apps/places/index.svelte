@@ -22,10 +22,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useLocation,
     useMedia,
     onAppForeground,
+    registerMessages,
+    useLocale,
     type AppProps
   } from '@gphone/sdk';
   import type { SavedPlace, MediaPreview } from '@gphone/shared/types';
   import { useSavedPlaces } from './store';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
+
+  // MICA-215: Places' own catalog, registered by the app.
+  registerMessages('places', { en, de });
+  const { t } = useLocale();
 
   let { onback }: AppProps = $props();
 
@@ -55,7 +63,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const app = useAppLevels({
     appId: 'places',
-    title: 'Places',
+    title: () => $t('places.title'),
     onback: () => onback(),
     levels: [
       {
@@ -65,12 +73,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {
         open: () => !!renamingPlace,
         close: () => (renamingPlace = null),
-        title: 'Rename Place'
+        title: () => $t('places.renamePlace')
       },
       {
         open: () => isAdding,
         close: () => (isAdding = false),
-        title: 'Save This Place'
+        title: () => $t('places.saveThisPlace')
       }
     ]
   });
@@ -97,8 +105,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const handleSetWaypointFrom = async (x: number, y: number) => {
     await run(() => setWaypoint(x, y), {
-      success: 'Waypoint set',
-      error: 'Could not set waypoint'
+      success: $t('places.waypointSet'),
+      error: $t('places.waypointFailed')
     });
   };
 
@@ -109,7 +117,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         await shareLocation();
         await media.load();
       },
-      { success: 'Location shared', error: 'Could not share your location' }
+      { success: $t('places.locationShared'), error: $t('places.shareFailed') }
     );
   };
 
@@ -133,7 +141,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         shared = row;
         await media.load();
       },
-      { error: 'Could not read your current location' }
+      { error: $t('places.readLocationFailed') }
     );
     if (!ok || !shared) return;
 
@@ -161,7 +169,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           y: draft.y,
           z: draft.z
         }),
-      { success: 'Place saved' }
+      { success: $t('places.placeSaved') }
     );
     if (!ok) return;
     isAdding = false;
@@ -177,14 +185,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const confirmRename = async () => {
     if (!renamingPlace || !renameDraft.trim()) return;
     const ok = await run(() => renameSavedPlace(renamingPlace!, renameDraft.trim()), {
-      success: 'Place renamed'
+      success: $t('places.placeRenamed')
     });
     if (ok) renamingPlace = null;
   };
 
   const confirmDelete = async () => {
     if (!deletingPlace) return;
-    await run(() => deleteSavedPlace(deletingPlace!.id), { success: 'Place deleted' });
+    await run(() => deleteSavedPlace(deletingPlace!.id), { success: $t('places.placeDeleted') });
     deletingPlace = null;
   };
 
@@ -200,8 +208,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary duration-short ease-standard ml-auto rounded-full p-2 transition-colors"
     onclick={handleShareCurrentLocation}
     disabled={$busy}
-    title="Share my current location"
-    aria-label="Share my current location"
+    title={$t('places.shareCurrent')}
+    aria-label={$t('places.shareCurrent')}
   >
     <LocationIcon class="size-icon-sm" />
   </button>
@@ -209,7 +217,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#snippet fabOverlay()}
   {#if !isAdding && !renamingPlace && !deletingPlace}
-    <FloatingActionButton label="Save Place" onclick={openAddPlace}>
+    <FloatingActionButton label={$t('places.savePlace')} onclick={openAddPlace}>
       {#snippet icon()}
         <AddIcon class="text-on-surface size-icon-sm shrink-0" />
       {/snippet}
@@ -223,19 +231,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       class="animate-in fade-in slide-in-from-right bg-surface-container m-2 flex flex-col space-y-3 rounded-box p-4"
     >
       <p class="text-on-surface-variant text-body-small">
-        Saved from your current position. Give it a name — the street below is only a starting
-        guess.
+        {$t('places.addHint')}
       </p>
       <input
         class="bg-surface-container-high placeholder-on-surface-variant text-on-surface w-full rounded-chip p-2 text-lg font-bold"
-        placeholder="Name (e.g. Home, The Garage)"
+        placeholder={$t('places.namePlaceholder')}
         maxlength="50"
         bind:value={draft.name}
         disabled={$busy}
       />
       <input
         class="bg-surface-container-high placeholder-on-surface-variant text-on-surface text-body-medium w-full rounded-chip p-2"
-        placeholder="Street label"
+        placeholder={$t('places.streetPlaceholder')}
         maxlength="255"
         bind:value={draft.street_label}
         disabled={$busy}
@@ -247,10 +254,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           onclick={() => (isAdding = false)}
           disabled={$busy}
         >
-          Cancel
+          {$t('places.cancel')}
         </Button>
         <Button class="flex-1" onclick={saveNewPlace} disabled={$busy || !draft.name.trim()}>
-          {$busy ? 'Saving...' : 'Save'}
+          {$busy ? $t('places.saving') : $t('places.save')}
         </Button>
       </div>
     </div>
@@ -260,7 +267,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     >
       <input
         class="bg-surface-container-high placeholder-on-surface-variant text-on-surface w-full rounded-chip p-2 text-lg font-bold"
-        placeholder="Name"
+        placeholder={$t('places.renamePlaceholder')}
         maxlength="50"
         bind:value={renameDraft}
         disabled={$busy}
@@ -272,10 +279,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           onclick={() => (renamingPlace = null)}
           disabled={$busy}
         >
-          Cancel
+          {$t('places.cancel')}
         </Button>
         <Button class="flex-1" onclick={confirmRename} disabled={$busy || !renameDraft.trim()}>
-          {$busy ? 'Saving...' : 'Save'}
+          {$busy ? $t('places.saving') : $t('places.save')}
         </Button>
       </div>
     </div>
@@ -283,12 +290,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="no-scrollbar flex min-h-0 flex-1 flex-col space-y-4 overflow-y-auto p-3">
       <section>
         <h2 class="text-on-surface-variant text-body-small mb-1.5 px-1 tracking-wide uppercase">
-          Saved Places
+          {$t('places.savedPlaces')}
         </h2>
         {#if !$placesLoaded}
           <Skeleton count={2} height="h-16" />
         {:else if $places.length === 0}
-          <EmptyState title="No saved places yet">
+          <EmptyState title={$t('places.noPlaces')}>
             {#snippet icon()}
               <LocationIcon class="h-10 w-10" />
             {/snippet}
@@ -313,8 +320,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary duration-short ease-standard rounded-full p-1.5 transition-colors"
                       onclick={() => handleSetWaypointFrom(place.x, place.y)}
                       disabled={$busy}
-                      title="Set waypoint"
-                      aria-label={`Set waypoint to ${place.name}`}
+                      title={$t('places.setWaypoint')}
+                      aria-label={$t('places.setWaypointTo', { name: place.name })}
                     >
                       <LocationIcon class="size-icon-sm" />
                     </button>
@@ -323,8 +330,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       class="text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface duration-short ease-standard rounded-full p-1.5 transition-colors"
                       onclick={() => startRename(place)}
                       disabled={$busy}
-                      title="Rename"
-                      aria-label={`Rename ${place.name}`}
+                      title={$t('places.rename')}
+                      aria-label={$t('places.renameNamed', { name: place.name })}
                     >
                       <EditIcon class="size-icon-sm" />
                     </button>
@@ -333,8 +340,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       class="text-on-surface-variant hover:bg-surface-container-high hover:text-error duration-short ease-standard rounded-full p-1.5 transition-colors"
                       onclick={() => (deletingPlace = place)}
                       disabled={$busy}
-                      title="Delete"
-                      aria-label={`Delete ${place.name}`}
+                      title={$t('places.delete')}
+                      aria-label={$t('places.deleteNamed', { name: place.name })}
                     >
                       <TrashIcon class="size-icon-sm" />
                     </button>
@@ -348,10 +355,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <section>
         <h2 class="text-on-surface-variant text-body-small mb-1.5 px-1 tracking-wide uppercase">
-          Recently Shared
+          {$t('places.recentlyShared')}
         </h2>
         {#if recentLocations.length === 0}
-          <EmptyState title="No shared locations yet">
+          <EmptyState title={$t('places.noShared')}>
             {#snippet icon()}
               <LocationIcon class="h-10 w-10" />
             {/snippet}
@@ -365,7 +372,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <LocationIcon class="text-on-surface-variant size-icon-md shrink-0" />
                   <div class="min-w-0 flex-1">
                     <h3 class="text-on-surface truncate font-bold">
-                      {item.alt_text || 'Shared location'}
+                      {item.alt_text || $t('places.sharedLocation')}
                     </h3>
                     <p class="text-on-surface-variant text-body-small">
                       {formatDate(item.created_at)}
@@ -376,8 +383,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary duration-short ease-standard shrink-0 rounded-full p-1.5 transition-colors disabled:opacity-40"
                     onclick={() => at && handleSetWaypointFrom(at.x, at.y)}
                     disabled={$busy || !at}
-                    title="Set waypoint"
-                    aria-label={`Set waypoint to ${item.alt_text || 'shared location'}`}
+                    title={$t('places.setWaypoint')}
+                    aria-label={$t('places.setWaypointTo', {
+                      name: item.alt_text || $t('places.sharedLocationLower')
+                    })}
                   >
                     <LocationIcon class="size-icon-sm" />
                   </button>
@@ -392,9 +401,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   {#if deletingPlace}
     <ConfirmDialog
-      title="Delete place?"
-      message={`Remove "${deletingPlace.name}" from your saved places? This cannot be undone.`}
-      confirmText="Delete"
+      title={$t('places.deleteTitle')}
+      message={$t('places.deleteMessage', { name: deletingPlace.name })}
+      confirmText={$t('places.delete')}
       isLoading={$busy}
       oncancel={() => (deletingPlace = null)}
       onconfirm={confirmDelete}

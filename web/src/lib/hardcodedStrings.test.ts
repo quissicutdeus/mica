@@ -73,7 +73,6 @@ const BASELINE: Record<string, number> = {
   'web/src/apps/messages/components/MessageThread.svelte': 3,
   'web/src/apps/messages/index.svelte': 19,
   'web/src/apps/phone/index.svelte': 14,
-  'web/src/apps/places/index.svelte': 30,
   'web/src/apps/settings/components/ColorWheelPicker.svelte': 2,
   'web/src/apps/settings/components/ThemeAndWallpaper.svelte': 18,
   'web/src/apps/settings/index.svelte': 25,
