@@ -28,6 +28,7 @@ import {
   membersOfFacet,
   validateManifestPermissions
 } from './permissions';
+import { declaredPermissions, permissionShortfall, sdkImportNames } from './lib/permissionScan';
 import { bundledAddOns, registeredApps } from '../web/src/shell/state/registry';
 
 /**
@@ -64,22 +65,15 @@ const walk = (dir: string): string[] =>
 /**
  * What an app imports from `@gphone/sdk`, across every file it owns.
  *
- * Read from the import lists rather than by searching the text for hook names: a hook
- * mentioned in a comment is not a hook used, and to call one you must import it.
+ * The per-file reading is `lib/permissionScan.ts` since MICA-205, and this walk is the
+ * only part left here. The scanner moved because the two add-on builds have to run the same
+ * derivation over a bundle nobody in this repo can see — an add-on built outside it declares
+ * its own permissions, and until that ticket nothing but this test ever checked one.
  */
 const sdkImportsOf = (appId: string): Set<string> => {
   const names = new Set<string>();
   for (const file of walk(join(APPS_DIR, appId))) {
-    const source = readFileSync(file, 'utf8');
-    for (const [, list] of source.matchAll(/import\s*\{([^}]*)\}\s*from\s*'@gphone\/sdk'/g)) {
-      for (const raw of list.split(',')) {
-        const name = raw
-          .replace(/^\s*type\s+/, '')
-          .trim()
-          .split(/\s+as\s+/)[0];
-        if (name) names.add(name);
-      }
-    }
+    for (const name of sdkImportNames(readFileSync(file, 'utf8'))) names.add(name);
   }
   return names;
 };
@@ -92,19 +86,45 @@ describe('declared permissions', () => {
   });
 
   it('covers every capability the app actually reaches for', () => {
-    const understated = APPS.flatMap((app) => {
-      const declared = new Set(app.permissions ?? []);
-      const imported = sdkImportsOf(app.id);
-      return [...imported].flatMap((name) => {
-        const row = PERMISSION_OF[name];
-        if (!row) return [];
-        const perms = Array.isArray(row) ? row : [row];
-        return perms
-          .filter((p) => !declared.has(p))
-          .map((p) => `${app.id}: uses ${name}, does not declare '${p}'`);
-      });
-    });
+    const understated = APPS.flatMap((app) =>
+      permissionShortfall(sdkImportsOf(app.id), app.permissions ?? [], PERMISSION_OF).map(
+        (need) => `${app.id}: uses ${need.hook}, does not declare '${need.permission}'`
+      )
+    );
     expect([...new Set(understated)].sort()).toEqual([]);
+  });
+
+  /**
+   * The add-on builds read a manifest as **text**, and this is what says that reading is
+   * right.
+   *
+   * `web/vite.addon.config.ts` and `tools/addon-template/vite.config.ts` both derive the
+   * declared list with `declaredPermissions`, because neither can evaluate a manifest: one
+   * runs while Vite is still reading its own config, the other in a Node process that cannot
+   * compile the Svelte component a manifest imports. A parser that quietly read one manifest
+   * shape and not another would not fail either build — it would report an empty list, and
+   * an empty list understates nothing it was not already asked about, so the build would go
+   * green on precisely the manifest it should have refused.
+   *
+   * So the text answer is held against the evaluated one, for every app in the tree. These
+   * are the manifests the registry actually loaded, so a shape no fixture thought of is
+   * covered the moment somebody writes one.
+   */
+  it('reads the same permissions out of a manifest as evaluating it does', () => {
+    const disagreements = APPS.flatMap((app) => {
+      const source = readFileSync(join(APPS_DIR, app.id, 'manifest.ts'), 'utf8');
+      const read = declaredPermissions(source);
+      if (!read.ok) return [`${app.id}: could not be read as text — ${read.reason}`];
+      const evaluated = [...(app.permissions ?? [])].sort();
+      const asText = [...read.permissions].sort();
+      return asText.join(',') === evaluated.join(',')
+        ? []
+        : [
+            `${app.id}: text says [${asText.join(', ')}], the manifest evaluates to ` +
+              `[${evaluated.join(', ')}]`
+          ];
+    });
+    expect(disagreements).toEqual([]);
   });
 
   it('declares only names in the vocabulary', () => {

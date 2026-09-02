@@ -23,6 +23,10 @@ export default defineApp({
    * its own table before answering a call, so declaring less than you use does not buy
    * access — it only misleads the player reading the install prompt. Declaring more than
    * you use is merely untidy.
+   *
+   * `vite.config.ts` derives this from your `@gphone/sdk` imports and refuses to build a
+   * list that is short, naming the import and the permission it needs. It is read from this
+   * file as **text**, so keep it a literal array of quoted names.
    */
   permissions: [],
   author: 'you',

@@ -90,7 +90,14 @@ const SHARED_DECISIONS: [name: string, pattern: RegExp][] = [
   ['resolution prefers the browser condition', /conditions:\s*\['browser'\]/],
   // AGENTS.md §2.7. The one divergence that would be a privilege-escalation route rather
   // than a rendering bug.
-  ['@gphone/sdk/core is refused', /@gphone\\\/sdk\\\/core\(\\\/\.\*\)\?\$/]
+  ['@gphone/sdk/core is refused', /@gphone\\\/sdk\\\/core\(\\\/\.\*\)\?\$/],
+  // MICA-205. A bundle may not declare fewer permissions than its imports reach for.
+  // Understating buys no access — the shell re-checks every permission against
+  // `HOOK_OF_FACET` — but it makes the Store's install sheet untrue, and the population
+  // that sheet exists for builds out of tree. A build with the check and a build without it
+  // are the same bundle right up until an author omits a permission.
+  ['the permission scan runs as a build plugin', /name:\s*'gphone-addon-permissions'/],
+  ['a shortfall against the permission table fails the build', /permissionShortfall\(/]
 ];
 
 describe('the out-of-tree add-on template', () => {

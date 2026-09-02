@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /**
  * The add-on build, out of tree.
@@ -234,6 +235,203 @@ function requireIframeFacets(): Plugin {
   };
 }
 
+/** One capability your code reaches for, and the `@gphone/sdk` import that discloses it. */
+interface PermissionShortfall {
+  hook: string;
+  permission: string;
+}
+
+/**
+ * The part of gPhone's `sdk/lib/permissionScan.ts` this build uses, plus the table it needs.
+ *
+ * Described here rather than imported as types: the SDK publishes no subpath for its build
+ * helpers, so these files are reached by path (below) and TypeScript has nothing to follow.
+ * Nothing rests on this description being right — the values are the SDK's own, and
+ * `loadPermissionScan` refuses to continue if any of them is missing.
+ */
+interface SdkPermissionScan {
+  table: Record<string, string | readonly string[] | null>;
+  sdkImportNames: (source: string) => string[];
+  declaredPermissions: (
+    manifestSource: string
+  ) => { ok: true; permissions: string[] } | { ok: false; reason: string };
+  permissionShortfall: (
+    imported: Iterable<string>,
+    declared: Iterable<string>,
+    table: Record<string, string | readonly string[] | null>
+  ) => PermissionShortfall[];
+  shortfallMessage: (
+    appId: string,
+    manifestPath: string,
+    shortfall: readonly PermissionShortfall[]
+  ) => string;
+}
+
+/**
+ * gPhone's own permission derivation, loaded out of the `@gphone/sdk` you installed.
+ *
+ * The package is located through the one specifier it publishes, so this holds wherever your
+ * package manager put it. Everything below that point is a plain file read of a package that
+ * is consumed as source anyway — the same `.ts` files Vite is about to compile into your
+ * bundle — and is loaded with `import()` of a `file://` URL because Node, which reads this
+ * config, resolves a `.ts` file but not a bare deep specifier the SDK does not publish.
+ *
+ * Every failure here throws. There is no path through this function that returns a scanner
+ * which checks nothing.
+ */
+async function loadPermissionScan(): Promise<SdkPermissionScan> {
+  // `await` because Vite substitutes its own `import.meta.resolve` in a config file; Node's
+  // returns a string, and awaiting one costs nothing either way.
+  const entry = await Promise.resolve(import.meta.resolve('@gphone/sdk'));
+  const sdkRoot = path.dirname(fileURLToPath(entry));
+
+  const load = async (relative: string): Promise<Record<string, unknown>> => {
+    const file = path.join(sdkRoot, relative);
+    if (!fs.existsSync(file)) {
+      throw new Error(
+        `[gphone-addon] cannot check this add-on's permissions: ${file} is not there. That ` +
+          `file is part of @gphone/sdk and this build reads it to learn which imports need ` +
+          `which permission. If your SDK is newer than this template, the file has moved — ` +
+          `take the current template rather than deleting the check, which would let a ` +
+          `manifest understate what your add-on does with nothing to notice.`
+      );
+    }
+    return (await import(pathToFileURL(file).href)) as Record<string, unknown>;
+  };
+
+  const table = (await load('permissions.ts')).PERMISSION_OF as SdkPermissionScan['table'];
+  if (!table || Object.keys(table).length === 0) {
+    throw new Error(
+      `[gphone-addon] @gphone/sdk's permission table came back empty. Comparing against it ` +
+        `would pass every manifest, so this build stops instead.`
+    );
+  }
+
+  const scan = await load('lib/permissionScan.ts');
+  const required = [
+    'sdkImportNames',
+    'declaredPermissions',
+    'permissionShortfall',
+    'shortfallMessage'
+  ];
+  for (const name of required) {
+    if (typeof scan[name] !== 'function') {
+      throw new Error(
+        `[gphone-addon] @gphone/sdk's lib/permissionScan.ts does not export ${name}. This ` +
+          `template is out of step with the SDK you installed; take the current one.`
+      );
+    }
+  }
+
+  return {
+    table,
+    sdkImportNames: scan.sdkImportNames as SdkPermissionScan['sdkImportNames'],
+    declaredPermissions: scan.declaredPermissions as SdkPermissionScan['declaredPermissions'],
+    permissionShortfall: scan.permissionShortfall as SdkPermissionScan['permissionShortfall'],
+    shortfallMessage: scan.shortfallMessage as SdkPermissionScan['shortfallMessage']
+  };
+}
+
+/**
+ * Your manifest must not claim less than your code reaches for.
+ *
+ * `permissions` is what the Store shows a player before they install your add-on, and gPhone
+ * asks them again when an update *widens* it. Declaring less than you use does not buy you
+ * anything — the shell re-checks every permission against its own table before answering a
+ * call, so an undeclared hook throws either way — it makes that disclosure untrue, and the
+ * player meets the refusal as a toast in an app that told them it wanted nothing.
+ *
+ * gPhone's own add-on build runs this same check (MICA-205), and its test suite runs it
+ * over every app in that repo. Neither of those can see your bundle, so it runs here too.
+ * Declaring *more* than you use is fine, always — this only ever fails on less.
+ *
+ * ## Where the answer comes from
+ *
+ * The mapping from an `@gphone/sdk` import to the permission it discloses is the SDK's, not
+ * this file's: a copy of it here would be wrong the first time gPhone adds a hook. So the two
+ * source files behind it are loaded out of the installed `@gphone/sdk` at build time —
+ * `permissions.ts` for the table and `lib/permissionScan.ts` for the derivation, which is the
+ * very code gPhone's own build and test suite use.
+ *
+ * They are loaded **by path**, and by dynamic `import()` of a `file://` URL, because a Vite
+ * config is read by Node rather than by Vite's own pipeline: every bare specifier in it is
+ * handed to Node, and Node loads a `.ts` file but will not resolve an extensionless relative
+ * specifier inside one. Both files are written with no relative import at all so that this
+ * works, and gPhone's `sdk/lib/permissionScan.test.ts` starts a real Node and imports each of
+ * them, so the day that stops being true it fails there rather than here.
+ *
+ * If gPhone ever moves either file, this build stops with the path it looked for. That is the
+ * intended failure: a permission check that quietly does nothing is worse than none, because
+ * a green build reads as a checked one.
+ */
+function requireDeclaredPermissions(): Plugin {
+  /** Every name your source imports from `@gphone/sdk`, and how many files were scanned. */
+  const imported = new Set<string>();
+  let scanned = 0;
+  let sdk: SdkPermissionScan | undefined;
+
+  /** Yours, as opposed to the SDK's or a dependency's: a real file under this project. */
+  const isYours = (id: string): boolean => {
+    const file = id.split('?')[0].replaceAll('\\', '/');
+    const root = here.replaceAll('\\', '/');
+    return file.startsWith(`${root}/`) && !file.includes('/node_modules/');
+  };
+
+  return {
+    name: 'gphone-addon-permissions',
+    async buildStart() {
+      imported.clear();
+      scanned = 0;
+      sdk = await loadPermissionScan();
+    },
+    transform: {
+      // `pre`, so this reads each file's own source before the Svelte compiler rewrites it
+      // and long before anything is minified. What it needs is the *names* you imported, and
+      // by the time a bundle exists those are gone.
+      order: 'pre',
+      handler(code, id) {
+        if (!isYours(id)) return null;
+        scanned++;
+        for (const name of sdk?.sdkImportNames(code) ?? []) imported.add(name);
+        return null;
+      }
+    },
+    generateBundle: {
+      order: 'post',
+      handler() {
+        if (!sdk) {
+          this.error(`[gphone-addon] the permission scan did not load. This is a bug.`);
+        }
+        if (scanned === 0) {
+          // The failure mode of a scanner is silence: if nothing matched, every manifest
+          // "covers" an empty import list and this reports success on a bundle it never
+          // looked at. Your entry imports src/manifest.ts and src/index.svelte, so zero
+          // files means the matching is broken, not that your app is small.
+          this.error(
+            `[gphone-addon] the permission scan saw none of your source files, so it checked ` +
+              `nothing. Refusing to report a pass it did not earn.`
+          );
+        }
+
+        const declared = sdk.declaredPermissions(fs.readFileSync(MANIFEST, 'utf8'));
+        if (!declared.ok) {
+          this.error(
+            `[gphone-addon] ${path.relative(here, MANIFEST)}: ${declared.reason} This build ` +
+              `refuses to guess what your add-on discloses.`
+          );
+        }
+
+        const shortfall = sdk.permissionShortfall(imported, declared.permissions, sdk.table);
+        if (shortfall.length > 0) {
+          this.error(
+            `[gphone-addon] ${sdk.shortfallMessage(id, path.relative(here, MANIFEST), shortfall)}`
+          );
+        }
+      }
+    }
+  };
+}
+
 /**
  * Inline the CSS into the entry chunk.
  *
@@ -315,6 +513,9 @@ export default defineConfig({
     refuseCoreEntry(),
     svelte(),
     requireIframeFacets(),
+    // Its hook orders place it, not this line: `transform` at `pre` to read your source
+    // before the Svelte compiler, `generateBundle` at `post` to judge a finished graph.
+    requireDeclaredPermissions(),
     inlineCss(),
     // Last, deliberately — it reads the finished chunk text, including what `inlineCss()`
     // has prepended by then.

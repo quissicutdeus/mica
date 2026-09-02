@@ -226,11 +226,25 @@ runs in a sandboxed `<iframe sandbox="allow-scripts" srcdoc>` with an opaque
 origin, whose only route to the shell is `postMessage`, so the access
 `core: true` claims is not access this bundle can have.
 
-Both refusals are conveniences that fail early and say why. **The enforcing
-boundary is the shell**, which re-checks every permission your manifest declares
-against its own table before answering a call, and the sandbox, which gives an
-add-on no NUI at all. Editing the refusals out of this file buys nothing except
-a bundle that fails later and less clearly.
+A third refusal reads your own code: `vite.config.ts` derives the permissions
+your `@gphone/sdk` imports need and fails the build if `permissions` in
+`src/manifest.ts` names fewer. Declaring **more** than you use is always fine.
+The mapping is the SDK's own, loaded out of the `@gphone/sdk` you installed
+rather than copied here, so it is the same one gPhone holds its own apps to.
+
+Understating costs you nothing and costs the player something, which is why it
+is a build error rather than a lint: your permission list is what the Store
+shows before they install, and what it asks them about again when an update
+widens it. An undeclared hook still throws — the shell refuses it — so the only
+thing the short list changes is that the person who agreed to it was told the
+wrong thing.
+
+The first two refusals are conveniences that fail early and say why. **The
+enforcing boundary is the shell**, which re-checks every permission your
+manifest declares against its own table before answering a call, and the
+sandbox, which gives an add-on no NUI at all. Editing the refusals out of this
+file buys nothing except a bundle that fails later and less clearly — and, for
+the third, a permission sheet nothing checks.
 
 Reach your own server through `useService(id).call(...)`.
 

@@ -1,12 +1,25 @@
 import { defineConfig, type Plugin } from 'vite';
 import { licenseBanner } from '../scripts/license-banner.js';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import fs from 'node:fs';
 import path from 'path';
+import { pathToFileURL } from 'node:url';
 // MICA-190: one discovery, shared with `scripts/build-addons.mjs`, that strips comments
 // before reading `core`. The old copy here grepped raw text, which a doc comment can fool.
 import { addOnIds } from './scripts/addon-ids.js';
+// MICA-205: the one derivation of "what does this code need declared", shared with
+// `sdk/permissions.test.ts` and with the out-of-tree template's own copy of this build.
+// It imports nothing itself, which is what lets both this config and the template's load it.
+import {
+  declaredPermissions,
+  permissionShortfall,
+  sdkImportNames,
+  shortfallMessage,
+  type PermissionTable
+} from '../sdk/lib/permissionScan';
 
 const here = import.meta.dirname;
+const repoRoot = path.resolve(here, '..');
 const appsDir = path.resolve(here, 'src/apps');
 
 const VIRTUAL = '\0addon-entry:';
@@ -78,6 +91,146 @@ function refuseCoreEntry(): Plugin {
             `reserved for core: true apps (boundary.test.ts already refuses this at the ` +
             `source level). Reach your own server actions through useService(id) instead.`
         );
+      }
+    }
+  };
+}
+
+/**
+ * MICA-205. A bundle may not claim less than it reaches for.
+ *
+ * `permissions` is self-declared, and `sdk/permissions.test.ts` only ever held *this repo's*
+ * apps to it: it walks `web/src/apps/<id>`, reads what each file imports from `@gphone/sdk`,
+ * and fails on a manifest that declares less. An add-on built anywhere else went through no
+ * such check, and the consequence is not that it gains access — the shell re-checks every
+ * permission against `HOOK_OF_FACET` before answering a call — it is that the Store shows a
+ * player a permission sheet that is not true, and MICA-196's re-prompt on a *widened* list
+ * is only as honest as the field it compares. The player then meets the refusal as a toast
+ * they cannot act on, in an app that told them it wanted nothing.
+ *
+ * So the same derivation runs here, over the modules that actually entered this bundle, and
+ * fails the build instead of shipping the bundle.
+ *
+ * ## Why `transform` and not the finished chunk
+ *
+ * The names matter, not the text: which `@gphone/sdk` exports this app imports is what
+ * `PERMISSION_OF` is keyed by, and the chunk is minified by the time `generateBundle` sees
+ * it — every local is renamed and the import statements are gone. `noUnsubstitutedDefines`
+ * below reads the final chunk because it is looking for a literal that survives minification;
+ * this is the other case, and the other case is why that one's comment says a regex over the
+ * final chunk is a last resort. A `transform` hook at `order: 'pre'` sees each module's own
+ * source as it enters the graph, before the Svelte compiler and before any minifier, and only
+ * modules that are genuinely in the graph reach it — a file the tree-shaker dropped never
+ * discloses anything, and never gets scanned.
+ *
+ * Attribution is by path rather than by entry chunk: a module under `src/apps/<id>/` belongs
+ * to `<id>`. AGENTS.md §2.7 forbids an app importing sideways out of its own directory and
+ * `sdk/boundary.test.ts` enforces it, so that is exhaustive; everything else on the graph is
+ * the SDK, which discloses nothing on its own behalf.
+ *
+ * ## Why it counts the files it saw
+ *
+ * The failure mode of a scanner is silence. If the path matching broke — a rename, a
+ * platform separator, a virtual id shape nobody expected — every app would come back with an
+ * empty import set, every manifest would "cover" it, and this plugin would report success on
+ * a bundle it never looked at. That is the shape AGENTS.md §9 names, so the count is checked:
+ * the virtual entry imports each app's `manifest.ts` and `index.svelte`, so an app that
+ * contributed no scanned file at all is a broken check, not a small app.
+ */
+function requireDeclaredPermissions(): Plugin {
+  /** `@gphone/sdk` names imported by each app's own files, and how many of those were seen. */
+  const imported = new Map<string, Set<string>>();
+  const scanned = new Map<string, number>();
+  let table: PermissionTable | undefined;
+
+  /**
+   * The one table, loaded by path rather than imported by specifier — and the same way the
+   * out-of-tree template has to load it, so this repo's own build exercises that route.
+   *
+   * A plain `import { PERMISSION_OF } from '../sdk/permissions'` reads better and does not
+   * typecheck: `tsconfig.node.json` covers this config and the two files behind that import
+   * — `manifest.ts` and `version.ts` — reach for `import.meta.env` and the `__MICA_*__`
+   * defines, whose ambient declarations live in `sdk/env.d.ts`, which that program does not
+   * include. The template has a harder version of the same problem: a Vite config is loaded
+   * by **Node**, which resolves a `.ts` file but not an extensionless relative specifier
+   * inside one, so an add-on author can only reach the SDK's source this way at all.
+   * `sdk/lib/permissionScan.test.ts` runs a real Node against both files to keep that true.
+   */
+  const loadTable = async (): Promise<PermissionTable> => {
+    const file = path.resolve(here, '../sdk/permissions.ts');
+    const module = (await import(pathToFileURL(file).href)) as {
+      PERMISSION_OF?: PermissionTable;
+    };
+    if (!module.PERMISSION_OF) {
+      throw new Error(
+        `[gPhone] ${path.relative(repoRoot, file)} did not export PERMISSION_OF. The permission ` +
+          `table is what every add-on's declaration is checked against, so this refuses to ` +
+          `build rather than pass every bundle by comparing against nothing.`
+      );
+    }
+    return module.PERMISSION_OF;
+  };
+
+  /** The app a module belongs to, or `undefined` for the SDK, a dependency, a virtual id. */
+  const appIdOf = (id: string): string | undefined => {
+    const file = id.split('?')[0].replaceAll('\\', '/');
+    const prefix = `${appsDir.replaceAll('\\', '/')}/`;
+    if (!file.startsWith(prefix)) return undefined;
+    return file.slice(prefix.length).split('/')[0] || undefined;
+  };
+
+  return {
+    name: 'gphone-addon-permissions',
+    async buildStart() {
+      imported.clear();
+      scanned.clear();
+      table = await loadTable();
+    },
+    transform: {
+      order: 'pre',
+      handler(code, id) {
+        const app = appIdOf(id);
+        if (!app) return null;
+        scanned.set(app, (scanned.get(app) ?? 0) + 1);
+        const names = imported.get(app) ?? new Set<string>();
+        for (const name of sdkImportNames(code)) names.add(name);
+        imported.set(app, names);
+        return null;
+      }
+    },
+    generateBundle: {
+      order: 'post',
+      handler() {
+        for (const app of ids) {
+          if ((scanned.get(app) ?? 0) === 0) {
+            this.error(
+              `[gPhone] the permission scan saw no source file belonging to '${app}', so it ` +
+                `checked nothing. That is this plugin being broken, not the add-on: every ` +
+                `bundle's entry imports its own manifest.ts and index.svelte. Fix the path ` +
+                `matching in gphone-addon-permissions rather than removing this check.`
+            );
+          }
+
+          const manifest = path.join(appsDir, app, 'manifest.ts');
+          const declared = declaredPermissions(fs.readFileSync(manifest, 'utf8'));
+          if (!declared.ok) {
+            this.error(
+              `[gPhone] ${path.relative(repoRoot, manifest)}: ${declared.reason} This build ` +
+                `refuses to guess what an add-on discloses.`
+            );
+          }
+
+          const shortfall = permissionShortfall(
+            imported.get(app) ?? [],
+            declared.permissions,
+            table ?? {}
+          );
+          if (shortfall.length > 0) {
+            this.error(
+              `[gPhone] ${shortfallMessage(app, path.relative(repoRoot, manifest), shortfall)}`
+            );
+          }
+        }
       }
     }
   };
@@ -193,6 +346,10 @@ export default defineConfig({
     addOnEntries(),
     refuseCoreEntry(),
     svelte(),
+    // Its own hook orders decide when it runs, not this position: `transform` at `pre` to
+    // read each module's source before the Svelte compiler, `generateBundle` at `post` to
+    // judge a graph that is finished.
+    requireDeclaredPermissions(),
     inlineCss(),
     // An add-on bundle inlines the SDK, so it carries gPhone's own code and the notice goes
     // with it — see the README's "If you are writing an add-on": there is no linking
