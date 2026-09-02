@@ -76,8 +76,6 @@ const sites = (): Site[] => {
 /** Keyless sites per file, frozen on 2026-09-02. Lower a number; never raise one. */
 const KEYLESS_BASELINE: Record<string, number> = {
   'server/services/Battery.ts': 1,
-  'server/services/Conversations.ts': 2,
-  'server/services/Messages.ts': 9,
   'server/services/Phone.ts': 1,
 
   'server/services/Seed.ts': 1

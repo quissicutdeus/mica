@@ -67,5 +67,15 @@
   "repository.outOfRange": "'{column}' must be between {min} and {max}.",
   "settings.notSaved": "That setting could not be saved.",
   "settings.tooLarge": "That setting is too large to save.",
-  "settings.appNotCleared": "That app could not be cleared."
+  "settings.appNotCleared": "That app could not be cleared.",
+  "conversations.notParticipant": "Not a participant",
+  "conversations.tooManyMembers": "A conversation can hold at most {max} people.",
+  "messages.bodyRequired": "A message body or an attachment is required.",
+  "messages.editFailed": "That message could not be edited.",
+  "messages.emptyEdit": "A message needs some text. Unsend it instead of emptying it.",
+  "messages.noLongerAvailable": "That message is no longer available.",
+  "messages.notAvailable": "That message is not available.",
+  "messages.notParticipant": "Not a participant in this conversation.",
+  "messages.notYours": "That message is not yours to change.",
+  "messages.replyNotInConversation": "That message is not in this conversation."
 }

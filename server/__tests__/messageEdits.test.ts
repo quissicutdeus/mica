@@ -107,7 +107,10 @@ describe('messages:edit — who may rewrite what', () => {
 
     const reply = await call('edit', { id: 42, message: 'not mine' });
 
-    expect(reply).toEqual({ error: 'That message is not yours to change.' });
+    expect(reply).toMatchObject({
+      error: 'That message is not yours to change.',
+      key: 'server.messages.notYours'
+    });
     expect(messageUpdates()).toEqual([]);
   });
 
@@ -116,7 +119,10 @@ describe('messages:edit — who may rewrite what', () => {
 
     const reply = await call('edit', { id: 42, message: 'still here?' });
 
-    expect(reply).toEqual({ error: 'Not a participant in this conversation.' });
+    expect(reply).toMatchObject({
+      error: 'Not a participant in this conversation.',
+      key: 'server.messages.notParticipant'
+    });
     expect(messageUpdates()).toEqual([]);
   });
 
@@ -143,8 +149,9 @@ describe('messages:edit — who may rewrite what', () => {
   it('refuses an empty body rather than emptying the message', async () => {
     const reply = await call('edit', { id: 42, message: '   ' });
 
-    expect(reply).toEqual({
-      error: 'A message needs some text. Unsend it instead of emptying it.'
+    expect(reply).toMatchObject({
+      error: 'A message needs some text. Unsend it instead of emptying it.',
+      key: 'server.messages.emptyEdit'
     });
     expect(messageUpdates()).toEqual([]);
   });
@@ -154,7 +161,10 @@ describe('messages:edit — who may rewrite what', () => {
 
     const reply = await call('edit', { id: 42, message: 'sneaking it back' });
 
-    expect(reply).toEqual({ error: 'That message is no longer available.' });
+    expect(reply).toMatchObject({
+      error: 'That message is no longer available.',
+      key: 'server.messages.noLongerAvailable'
+    });
     expect(messageUpdates()).toEqual([]);
   });
 
@@ -206,7 +216,10 @@ describe('messages:delete — an unsend, soft in the schema', () => {
 
     const reply = await call('delete', { id: 42 });
 
-    expect(reply).toEqual({ error: 'That message is not yours to change.' });
+    expect(reply).toMatchObject({
+      error: 'That message is not yours to change.',
+      key: 'server.messages.notYours'
+    });
     expect(messageUpdates()).toEqual([]);
   });
 
@@ -215,7 +228,10 @@ describe('messages:delete — an unsend, soft in the schema', () => {
 
     const reply = await call('delete', { id: 42 });
 
-    expect(reply).toEqual({ error: 'Not a participant in this conversation.' });
+    expect(reply).toMatchObject({
+      error: 'Not a participant in this conversation.',
+      key: 'server.messages.notParticipant'
+    });
     expect(messageUpdates()).toEqual([]);
   });
 

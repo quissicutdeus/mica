@@ -318,7 +318,10 @@ describe('reactions on Messages (MICA-143)', () => {
 
       const reply = await call('react', 5, 'STRANGER', { message_id: 42, emoji: '👍' });
 
-      expect(reply).toEqual({ error: 'Not a participant in this conversation.' });
+      expect(reply).toMatchObject({
+        error: 'Not a participant in this conversation.',
+        key: 'server.messages.notParticipant'
+      });
       expect(dbMock.insert).not.toHaveBeenCalled();
     });
 
@@ -327,7 +330,10 @@ describe('reactions on Messages (MICA-143)', () => {
 
       const reply = await call('react', 5, 'OTHER', { message_id: 42, emoji: '👍' });
 
-      expect(reply).toEqual({ error: 'That message is no longer available.' });
+      expect(reply).toMatchObject({
+        error: 'That message is no longer available.',
+        key: 'server.messages.noLongerAvailable'
+      });
       expect(dbMock.insert).not.toHaveBeenCalled();
     });
 

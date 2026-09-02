@@ -182,7 +182,9 @@ if (!MESSAGE_PAGING) {
  */
 const requireParticipant = async (conversationId: number, citizenid: string): Promise<void> => {
   if (!(await messageRepo.isMember(conversationId, citizenid))) {
-    throw new PlayerFacingError('Not a participant in this conversation.');
+    throw new PlayerFacingError('Not a participant in this conversation.', {
+      key: 'server.messages.notParticipant'
+    });
   }
 };
 
@@ -209,9 +211,15 @@ const requireParticipant = async (conversationId: number, citizenid: string): Pr
  */
 const requireOwnMessage = async (data: { id: number }, citizenid: string): Promise<Message> => {
   const row = await messageRepo.findById(data.id, citizenid);
-  if (!row) throw new PlayerFacingError('That message is not yours to change.');
+  if (!row) {
+    throw new PlayerFacingError('That message is not yours to change.', {
+      key: 'server.messages.notYours'
+    });
+  }
   if ((row.status ?? 'active') !== 'active') {
-    throw new PlayerFacingError('That message is no longer available.');
+    throw new PlayerFacingError('That message is no longer available.', {
+      key: 'server.messages.noLongerAvailable'
+    });
   }
   await requireParticipant(row.conversation_id, citizenid);
   return row;
@@ -266,7 +274,9 @@ app.registerEvent('edit', async (source, cbId, data, citizenid) => {
 
   const message = data.message.trim();
   if (!message) {
-    throw new PlayerFacingError('A message needs some text. Unsend it instead of emptying it.');
+    throw new PlayerFacingError('A message needs some text. Unsend it instead of emptying it.', {
+      key: 'server.messages.emptyEdit'
+    });
   }
   // The generic write path validates against `columnRules` inside `ServiceEndpoint`; a
   // custom action reaches the repository directly, so it asks for itself.
@@ -286,7 +296,11 @@ app.registerEvent('edit', async (source, cbId, data, citizenid) => {
   }
 
   const success = await messageRepo.update(row.id, { message } as Partial<Message>, citizenid);
-  if (!success) throw new PlayerFacingError('That message could not be edited.');
+  if (!success) {
+    throw new PlayerFacingError('That message could not be edited.', {
+      key: 'server.messages.editFailed'
+    });
+  }
 
   return { id: row.id, conversation_id: row.conversation_id, message, edited: true };
 });
@@ -367,10 +381,16 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
  */
 const requireReactableMessage = async (messageId: number, citizenid: string): Promise<Message> => {
   const row = await messageRepo.findById(messageId);
-  if (!row) throw new PlayerFacingError('That message is not available.');
+  if (!row) {
+    throw new PlayerFacingError('That message is not available.', {
+      key: 'server.messages.notAvailable'
+    });
+  }
   await requireParticipant(row.conversation_id, citizenid);
   if ((row.status ?? 'active') !== 'active') {
-    throw new PlayerFacingError('That message is no longer available.');
+    throw new PlayerFacingError('That message is no longer available.', {
+      key: 'server.messages.noLongerAvailable'
+    });
   }
   return row;
 };
@@ -528,7 +548,9 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
   const message = data.message;
   const attachments = await resolveOwnedAttachments(data.attachments, citizenid, mediaRepo);
   if (!message.trim() && attachments.length === 0) {
-    throw new PlayerFacingError('A message body or an attachment is required.');
+    throw new PlayerFacingError('A message body or an attachment is required.', {
+      key: 'server.messages.bodyRequired'
+    });
   }
 
   // A reply names a row id, and a row id is never authorization (§2.9): the quoted message
@@ -536,7 +558,9 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
   // could quote a message from a conversation the caller cannot read.
   const replyToId = data.reply_to_id ?? null;
   if (replyToId !== null && !(await messageRepo.inConversation(replyToId, conversationId))) {
-    throw new PlayerFacingError('That message is not in this conversation.');
+    throw new PlayerFacingError('That message is not in this conversation.', {
+      key: 'server.messages.replyNotInConversation'
+    });
   }
 
   const newMessage: Partial<Message> = {

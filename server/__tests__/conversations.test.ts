@@ -223,7 +223,10 @@ describe('conversations:create — the participant list is deduplicated and boun
 
     const result = await call('create', { participants: phones });
 
-    expect(result).toEqual({ error: 'A conversation can hold at most 32 people.' });
+    expect(result).toMatchObject({
+      error: 'A conversation can hold at most 32 people.',
+      key: 'server.conversations.tooManyMembers'
+    });
     // Refused outright rather than silently truncated: nothing was written, and the cap
     // bounds the work, not just the result — an oversized list never buys 100 directory
     // queries or 32 wasted ones.

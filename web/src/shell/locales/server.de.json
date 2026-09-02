@@ -67,5 +67,15 @@
   "repository.outOfRange": "„{column}“ muss zwischen {min} und {max} liegen.",
   "settings.notSaved": "Diese Einstellung konnte nicht gespeichert werden.",
   "settings.tooLarge": "Diese Einstellung ist zu groß zum Speichern.",
-  "settings.appNotCleared": "Diese App konnte nicht zurückgesetzt werden."
+  "settings.appNotCleared": "Diese App konnte nicht zurückgesetzt werden.",
+  "conversations.notParticipant": "Kein Teilnehmer",
+  "conversations.tooManyMembers": "Eine Unterhaltung kann höchstens {max} Personen umfassen.",
+  "messages.bodyRequired": "Eine Nachricht braucht Text oder einen Anhang.",
+  "messages.editFailed": "Diese Nachricht konnte nicht bearbeitet werden.",
+  "messages.emptyEdit": "Eine Nachricht braucht Text. Nimm sie zurück, statt sie zu leeren.",
+  "messages.noLongerAvailable": "Diese Nachricht ist nicht mehr verfügbar.",
+  "messages.notAvailable": "Diese Nachricht ist nicht verfügbar.",
+  "messages.notParticipant": "Kein Teilnehmer dieser Unterhaltung.",
+  "messages.notYours": "Diese Nachricht kannst du nicht ändern.",
+  "messages.replyNotInConversation": "Diese Nachricht gehört nicht zu dieser Unterhaltung."
 }

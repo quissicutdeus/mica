@@ -416,7 +416,8 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
    */
   if (uniquePhones.length + members.size > MAX_CONVERSATION_MEMBERS) {
     throw new PlayerFacingError(
-      `A conversation can hold at most ${MAX_CONVERSATION_MEMBERS} people.`
+      `A conversation can hold at most ${MAX_CONVERSATION_MEMBERS} people.`,
+      { key: 'server.conversations.tooManyMembers', params: { max: MAX_CONVERSATION_MEMBERS } }
     );
   }
 
@@ -563,7 +564,11 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
   const participants = await conversationRepo.findParticipants(id);
   const self = participants.find((p) => p.citizenid === citizenid);
 
-  if (!self) throw new PlayerFacingError('Not a participant');
+  if (!self) {
+    throw new PlayerFacingError('Not a participant', {
+      key: 'server.conversations.notParticipant'
+    });
+  }
 
   if (self.role === 'admin') {
     // Admin deletes (soft delete) on behalf of the whole thread, so this is a
