@@ -13,7 +13,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     SpeakerOffIcon,
     TrashIcon,
     UsersIcon,
+    registerMessages,
     useAppLevels,
+    useLocale,
     useMusic,
     useTheme,
     type AppProps,
@@ -24,6 +26,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   // player, which is the same reason this app is `core: true`. `shell/NowPlaying.svelte`
   // draws the identical component in its compact mode; see the component for why.
   import { NowPlayingCard } from '@gphone/sdk/core';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
+
+  // MICA-215: Music's own catalog, registered by the app.
+  registerMessages('music', { en, de });
+  const { t } = useLocale();
 
   /**
    * MICA-111 phase 3 — a controller over the shell's queue, and nothing more.
@@ -95,7 +103,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   // would silently stop being so the moment a second level was added.
   const app = useAppLevels({
     appId: 'music',
-    title: 'Music',
+    title: () => $t('music.title'),
     onback: () => onback(),
     levels: []
   });
@@ -111,7 +119,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * (`shared/youtube.ts`), and it is what a person would paste back to reach the track.
    */
   const rowTitle = (entry: QueueEntry): string =>
-    entry.title ?? entry.videoId ?? `Playlist ${entry.playlistId ?? ''}`.trim();
+    entry.title ?? entry.videoId ?? $t('music.playlist', { id: entry.playlistId ?? '' }).trim();
 
   /**
    * The line under the name, and mostly there is not one.
@@ -131,7 +139,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * advances inside it and no single video names it.
    */
   const rowSub = (entry: QueueEntry): string | null =>
-    entry.playlistId ? `Playlist ${entry.playlistId}` : null;
+    entry.playlistId ? $t('music.playlist', { id: entry.playlistId }) : null;
 
   /**
    * The id, for the one case that still wants it: a row that failed.
@@ -150,7 +158,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     const pasted = link.trim();
     if (!pasted) return;
     if (!canPlay(pasted)) {
-      error = "That doesn't look like a YouTube link.";
+      error = $t('music.notALink');
       return;
     }
     add(pasted);
@@ -182,7 +190,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * session. Printing either would be offering an identity the phone does not have.
    * "Someone nearby" is less useful and true.
    */
-  const who = (b: NearbyBroadcast) => b.label ?? 'Someone nearby';
+  const who = (b: NearbyBroadcast) => b.label ?? $t('music.someoneNearby');
 
   /**
    * The one line under a nearby row, and it has three jobs.
@@ -193,13 +201,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * is the cap (`maxAudibleBroadcasts`) and is a rule rather than a fault.
    */
   const nearbyStatus = (b: NearbyBroadcast): string => {
-    if ($muteAllNearby) return 'All nearby music muted';
-    if (mutedTokens.has(b.token)) return 'Muted';
-    if (audibleTokens.has(b.token)) return 'Playing';
+    if ($muteAllNearby) return $t('music.statusAllMuted');
+    if (mutedTokens.has(b.token)) return $t('music.muted');
+    if (audibleTokens.has(b.token)) return $t('music.statusPlaying');
     if ($audibleBroadcasts.length >= maxAudibleBroadcasts) {
-      return `Not playing — closest ${maxAudibleBroadcasts} only`;
+      return $t('music.statusCapped', { max: maxAudibleBroadcasts });
     }
-    return 'Out of range';
+    return $t('music.statusOutOfRange');
   };
 </script>
 
@@ -213,21 +221,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         onkeydown={(e) => {
           if (e.key === 'Enter') take(playSource);
         }}
-        placeholder="Paste a video or playlist link"
-        aria-label="YouTube link"
+        placeholder={$t('music.linkPlaceholder')}
+        aria-label={$t('music.linkLabel')}
         class="bg-surface-container text-on-surface border-outline-variant text-body-medium w-full rounded-box border p-3"
       />
       {#if error}
         <p class="text-body-small text-error">{error}</p>
       {/if}
       <div class="flex gap-2">
-        <Button onclick={() => take(playSource)} disabled={!link.trim()} class="flex-1">Play</Button
+        <Button onclick={() => take(playSource)} disabled={!link.trim()} class="flex-1"
+          >{$t('music.play')}</Button
         >
         <Button
           onclick={() => take(enqueue)}
           disabled={!link.trim()}
           variant="secondary"
-          class="flex-1">Queue</Button
+          class="flex-1">{$t('music.queue')}</Button
         >
       </div>
     </div>
@@ -243,10 +252,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
 
       <div class="mt-3 flex items-center justify-between px-4">
-        <span class="text-label-small text-on-surface-variant">Queue · {$musicQueue.length}</span>
+        <span class="text-label-small text-on-surface-variant"
+          >{$t('music.queueCount', { count: $musicQueue.length })}</span
+        >
         <button
           onclick={clearQueue}
-          class="text-label-small text-on-surface-variant rounded-box p-1">Clear</button
+          class="text-label-small text-on-surface-variant rounded-box p-1"
+          >{$t('music.clear')}</button
         >
       </div>
 
@@ -298,7 +310,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <Button
               onclick={() => removeFromQueue(entry.key)}
               variant="icon"
-              aria-label="Remove {rowTitle(entry)} from the queue"
+              aria-label={$t('music.removeFromQueue', { title: rowTitle(entry) })}
             >
               <TrashIcon class="h-5 w-5" />
             </Button>
@@ -306,10 +318,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {/each}
       </div>
     {:else}
-      <EmptyState
-        title="Nothing queued"
-        description="Paste a YouTube video or playlist link to start."
-      />
+      <EmptyState title={$t('music.emptyTitle')} description={$t('music.emptyDescription')} />
     {/if}
 
     <!-- Nearby, and only when there is somebody to list.
@@ -324,7 +333,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="flex items-center justify-between">
           <span class="text-label-small text-on-surface-variant flex items-center gap-1">
             <UsersIcon class="size-icon-sm" />
-            Nearby · {$nearbyBroadcasts.length}
+            {$t('music.nearbyCount', { count: $nearbyBroadcasts.length })}
           </span>
           <!-- The global switch, and the same one the notification shade offers. Two places
                for one setting is deliberate: this is where you find it, and the shade is
@@ -333,7 +342,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             onclick={() => setMuteAllNearby(!$muteAllNearby)}
             variant="icon"
             aria-pressed={$muteAllNearby}
-            aria-label={$muteAllNearby ? 'Unmute all nearby music' : 'Mute all nearby music'}
+            aria-label={$muteAllNearby ? $t('music.unmuteAll') : $t('music.muteAll')}
             class={$muteAllNearby ? 'text-on-primary-container bg-primary-container' : ''}
           >
             {#if $muteAllNearby}
@@ -382,8 +391,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 disabled={$muteAllNearby}
                 aria-pressed={mutedTokens.has(person.token)}
                 aria-label={mutedTokens.has(person.token)
-                  ? `Unmute ${who(person)}`
-                  : `Mute ${who(person)}`}
+                  ? $t('music.unmutePerson', { name: who(person) })
+                  : $t('music.mutePerson', { name: who(person) })}
               >
                 {#if mutedTokens.has(person.token)}
                   <SpeakerOffIcon class="h-5 w-5" />
@@ -399,7 +408,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <div class="pb-home-indicator space-y-2 px-4 pt-3">
       <div class="text-body-medium flex items-center justify-between">
-        <span class="text-on-surface font-medium">Volume</span>
+        <span class="text-on-surface font-medium">{$t('music.volume')}</span>
         <!-- Muted wins over the number, exactly as Settings > Sound reads its own two
              sliders (`apps/settings/panes/Sound.svelte`) — one wording for one store,
              rather than this screen inventing a second way to say the channel is off.
@@ -408,7 +417,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
              where a person left it and dragging it — which unmutes, the same coupling
              Settings' slider has — lands back on a number that was always true. -->
         <span class="text-on-surface font-mono">
-          {$musicMuted ? 'Muted' : `${Math.round($musicVolume * 100)}%`}
+          {$musicMuted ? $t('music.muted') : `${Math.round($musicVolume * 100)}%`}
         </span>
       </div>
       <input
@@ -416,7 +425,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         min="0"
         max="100"
         value={Math.round($musicVolume * 100)}
-        aria-label="Music volume"
+        aria-label={$t('music.volumeLabel')}
         oninput={(e) => setMusicVolume(Number(e.currentTarget.value) / 100)}
         class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-box accent-blue-500"
       />
@@ -424,7 +433,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
            that changed in phase 2. A music app that plays out loud without telling you it
            does is how somebody gets shouted at in a bank they thought they were alone in. -->
       <p class="text-body-small text-on-surface-variant">
-        People nearby can hear this while it plays.
+        {$t('music.nearbyWarning')}
       </p>
     </div>
   </div>
