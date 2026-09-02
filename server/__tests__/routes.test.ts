@@ -315,7 +315,13 @@ describe('route table', () => {
     // is a `createPagedStore` now and its three CRUD names are no longer declared in the
     // shape this collector reads. They are still routed, still called, and still checked —
     // by `collectFetchNuiCalls` and the paged-store scanner below.
-    expect(CRUD_EVENTS.length).toBeGreaterThan(7);
+    // Down again for MICA-213: Mail and Places set `service:` so their contracted actions
+    // ride the generic service action, and a store with `service:` declares no NUI name
+    // for this collector to find. Contacts and Media are what is left on named routes.
+    expect(CRUD_EVENTS.length).toBeGreaterThan(4);
+    // The typed half is most of the surface now, so a scanner that found none of it would
+    // make the MICA-213 block below vacuous.
+    expect(TYPED_CALLS.length).toBeGreaterThan(50);
   });
 
   it('declares no duplicate NUI action names', () => {
@@ -468,7 +474,7 @@ describe('typed calls over the generic service action (MICA-213)', () => {
    * keeps by hand for an action the contract already declares, and the typed call makes
    * the row unnecessary. Lower the number as call sites migrate; never raise it.
    */
-  const ROUTES_TO_CONTRACTED_ACTIONS = 67;
+  const ROUTES_TO_CONTRACTED_ACTIONS = 0;
   it(`no more than ${ROUTES_TO_CONTRACTED_ACTIONS} routes still point at a contracted action`, () => {
     const remaining = ROUTES.filter((r) => contracted.has(`${r.service}:${r.serverAction}`));
     expect(remaining.length).toBeLessThanOrEqual(ROUTES_TO_CONTRACTED_ACTIONS);
@@ -478,7 +484,7 @@ describe('typed calls over the generic service action (MICA-213)', () => {
    * Ratchet two: string-named `fetchNui` calls in `web/src/services/` whose route points at
    * a contracted action — the call sites the typed `call` replaces. Same rule.
    */
-  const STRING_CALLS_TO_CONTRACTED_ACTIONS = 68;
+  const STRING_CALLS_TO_CONTRACTED_ACTIONS = 0;
   it(`no more than ${STRING_CALLS_TO_CONTRACTED_ACTIONS} string-named calls in web/src/services/ reach a contracted action`, () => {
     const byAction = new Map(ROUTES.map((r) => [r.action, `${r.service}:${r.serverAction}`]));
     const remaining = collectFetchNuiCalls().filter(

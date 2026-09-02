@@ -61,8 +61,6 @@ export const ROUTES: readonly Route[] = [
   route('renameConversation', 'conversations', 'update'),
 
   // Mail
-  route('getMail', 'mail', 'getMail'),
-  route('deleteMail', 'mail', 'deleteMail'),
 
   // Messages. Every action is custom — `access.write: 'members'` registers no generic CRUD
   // at all, because a membership check needs the parent conversation id and that is not
@@ -82,7 +80,7 @@ export const ROUTES: readonly Route[] = [
   // not register the endpoint.
   route('getMedia', 'media', 'get'),
   route('createMedia', 'media', 'create'),
-  route('deleteMedia', 'media', 'delete'),
+  route('deleteMedia', 'media', 'delete')
   // The rest of `media` is contracted, so it needs no row here (MICA-213): `item`,
   // `thumbnail`, `getDeleted`, `restore`, `drop` and `shareLocation` are reached by the
   // typed `call(mediaContract, …)` over the generic service action, which the relay
@@ -99,21 +97,8 @@ export const ROUTES: readonly Route[] = [
   // Notifications — persistent OS notification service. All seven are contracted and
   // reached with the typed `call` (MICA-213).
 
-  // Places (MICA-65) — saved places only. Recently-shared locations reuse `media`'s own
-  // routes above rather than a second read; sharing the player's current position and
-  // setting a waypoint reuse `shareLocation`/`setWaypoint` too. `places` is `core: true`,
-  // so it keeps named routes rather than the generic per-service route Notes uses.
-  //
-  // PENDING (Cody): no `registerEvent` handler exists yet for any of these four — the web
-  // half is wired against `web/src/nui/mocks/registry.ts` only. `defineService({ id:
-  // 'places', ... })` is expected to produce exactly these four action names (`get`,
-  // `create`, `update`, `delete`), matching the convention `createCrudStore` already
-  // assumes for a generic-service app; declared here instead because a core app keeps
-  // named routes (`routes.test.ts` cross-references them).
-  route('getSavedPlaces', 'places', 'get'),
-  route('createSavedPlace', 'places', 'create'),
-  route('updateSavedPlace', 'places', 'update'),
-  route('deleteSavedPlace', 'places', 'delete')
+  // Places (MICA-65) rides the generic service action through `createCrudStore`'s
+  // `service` option, so it has no rows here (MICA-213).
 
   // Settings — every stored preference, owned by a citizenid rather than a browser
   // profile. Not an app: `settings` is a service the shell reads on behalf of every

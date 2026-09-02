@@ -42,9 +42,9 @@ export interface CrudOptions<T, TDraft> {
    * app installed from the Store, which cannot add a route to a table shipping inside
    * gPhone.
    *
-   * Core services leave it unset and keep their named routes, which `routes.test.ts`
-   * cross-references against the server and the mock — a check worth keeping for the apps
-   * that ship in-tree.
+   * A core service sets it too whenever an action it lists is contracted (MICA-213):
+   * `routes.test.ts` then holds each scoped mock to a registered server event, the same
+   * check a named route got. Named routes remain only for generic CRUD reached by NUI name.
    */
   service?: string;
 }

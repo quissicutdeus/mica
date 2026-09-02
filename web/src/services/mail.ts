@@ -8,10 +8,13 @@ import { mailContract } from '@gphone/shared/contracts/mail';
 import { createCrudStore } from '../../../sdk/createCrudStore';
 import type { Mail } from '@gphone/shared/types';
 
-const store = createCrudStore<Mail>('Mail', {
-  list: 'getMail',
-  remove: 'deleteMail'
-});
+// `service` set, so both actions ride the generic service action by their contracted
+// names and need no row in `shared/routes.ts` (MICA-213).
+const store = createCrudStore<Mail>(
+  'Mail',
+  { list: 'getMail', remove: 'deleteMail' },
+  { service: 'mail' }
+);
 
 export const mailStore = {
   ...store,

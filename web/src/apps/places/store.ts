@@ -8,24 +8,16 @@ import type { SavedPlace } from '@gphone/shared/types';
 /**
  * Saved places' own data layer, inside the app — same shape as `apps/notes/store.ts`.
  *
- * Unlike Notes, this stays on **named routes** rather than `service: 'places'`: Places is
- * `core: true` (MICA-65), so it keeps the same wiring every other in-tree service uses
- * (`shared/routes.ts`'s `getSavedPlaces`/`createSavedPlace`/`updateSavedPlace`/
- * `deleteSavedPlace`), which `routes.test.ts` cross-references against the server and the
- * browser mock.
- *
- * PENDING (Cody): no `defineService({ id: 'places', ... })` exists on the server yet — this
- * reaches only `web/src/nui/mocks/registry.ts` today. Every read/write below will throw in
- * game until that lands; the browser mock is what stands in for it in the meantime.
+ * `service: 'places'`, so the four actions ride the generic service action by their server
+ * names — `create` is contracted (`shared/contracts/places.ts`), the other three are the
+ * generic CRUD `server/services/Places.ts` derives — and none of them needs a row in
+ * `shared/routes.ts` (MICA-213). `routes.test.ts` still holds each to a registered server
+ * event and a scoped browser mock.
  */
 export const savedPlaces = createCrudStore<SavedPlace, Omit<SavedPlace, 'id' | 'citizenid'>>(
   'Saved Places',
-  {
-    list: 'getSavedPlaces',
-    create: 'createSavedPlace',
-    update: 'updateSavedPlace',
-    remove: 'deleteSavedPlace'
-  }
+  { list: 'get', create: 'create', update: 'update', remove: 'delete' },
+  { service: 'places' }
 );
 
 export function useSavedPlaces() {

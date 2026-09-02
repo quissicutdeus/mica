@@ -1887,10 +1887,10 @@ const mockRegistry: Record<string, MockHandler> = {
   // for `defineService({ id: 'places', ... })`, whose real `registerEvent` handlers
   // (Cody's server slice) exist alongside this mock now — kept for `pnpm dev`/Playwright.
   ...defineMockCrud<SavedPlace>(mockSavedPlaces, {
-    list: 'getSavedPlaces',
-    create: 'createSavedPlace',
-    update: 'updateSavedPlace',
-    remove: 'deleteSavedPlace'
+    list: 'places:get',
+    create: 'places:create',
+    update: 'places:update',
+    remove: 'places:delete'
   }),
 
   // Recently Deleted (MICA-75-wiring). Scoped keys: both are contracted actions the web
@@ -1906,7 +1906,7 @@ const mockRegistry: Record<string, MockHandler> = {
   // Mail
   ...defineMockCrud<Mail>(
     mockEmails,
-    { list: 'getMail', remove: 'deleteMail' },
+    { list: 'mail:getMail', remove: 'mail:deleteMail' },
     { remove: 'soft', visible: (e) => e.status !== 'deleted' }
   ),
   'mail:markAsRead': async (data: { id: number }) => {

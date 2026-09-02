@@ -5,7 +5,7 @@
 import { fetchNui } from '../nui/fetchNui';
 import { call, callOr } from '../nui/call';
 import { accountsContract } from '@gphone/shared/contracts/accounts';
-import type { Account, FollowStats, ReactionSummary } from '@gphone/shared/types';
+import type { Account, FollowStats } from '@gphone/shared/types';
 import type { AccountSearchQuery, FollowListQuery, FollowPage, ReactionTarget } from '@gphone/sdk';
 
 /**
@@ -110,7 +110,7 @@ export const unblockAccount = (input: {
 }) => call(accountsContract, 'unblock', input);
 
 export const getReactionsFor = (target: ReactionTarget) =>
-  callOr(accountsContract, 'reactionsFor', target, {} as Record<number, ReactionSummary>);
+  callOr(accountsContract, 'reactionsFor', target, {});
 
 export const reactToTarget = (payload: {
   app: string;
