@@ -12,9 +12,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ShareSquareIcon,
     TrashIcon,
     fade,
+    useLocale,
     useMedia
   } from '@gphone/sdk';
   import type { MediaItem } from '@gphone/shared/types';
+
+  const { t } = useLocale();
 
   /**
    * One photo, full size.
@@ -109,7 +112,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- `prefer="original"` is load-bearing: without it `MediaThumb` reaches for the
          thumbnail first and draws the grid's small still upscaled, so the fetch above pays
          a round trip whose bytes are then thrown away. -->
-    <MediaThumb item={full ?? photo} fit="contain" prefer="original" alt="Photo {photo.id}" />
+    <MediaThumb
+      item={full ?? photo}
+      fit="contain"
+      prefer="original"
+      alt={$t('media.photoAlt', { id: photo.id })}
+    />
   </div>
 
   {#if loading}
@@ -119,14 +127,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       class="text-label-small pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-chip bg-media-overlay px-3 py-1 text-white"
       aria-live="polite"
     >
-      Loading full size…
+      {$t('media.loadingFullSize')}
     </p>
   {:else if failed}
     <p
       class="text-label-small pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-chip bg-media-overlay px-3 py-1 text-white"
       role="status"
     >
-      Showing a preview — the full-size photo could not be loaded.
+      {$t('media.previewOnly')}
     </p>
   {/if}
 
@@ -135,7 +143,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   >
     <button
       class="text-primary hover:text-primary duration-short ease-standard p-2 transition-colors"
-      aria-label="Send to nearby devices"
+      aria-label={$t('media.sendNearby')}
       disabled={busy}
       onclick={onsend}
     >
@@ -144,7 +152,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <ReportButton subject="photo" size="header" onclick={onreport} />
     <button
       class="text-error hover:text-error duration-short ease-standard p-2 transition-colors"
-      aria-label="Delete photo"
+      aria-label={$t('media.deletePhoto')}
       onclick={ondeleterequest}
     >
       <TrashIcon class="size-icon-lg" />
@@ -153,9 +161,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   {#if showDeleteConfirm}
     <ConfirmDialog
-      title="Delete Photo?"
-      message="Are you sure you want to delete this photo?"
-      confirmText="Delete"
+      title={$t('media.deletePhotoTitle')}
+      message={$t('media.deletePhotoMessage')}
+      confirmText={$t('media.delete')}
       isLoading={busy}
       oncancel={ondeletecancel}
       onconfirm={ondeleteconfirm}

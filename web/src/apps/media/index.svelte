@@ -17,8 +17,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useAppEvents,
     useAppLevels,
     useDeepLink,
+    useLocale,
     useMedia,
     usePhoneNotification,
+    registerMessages,
     type AppProps,
     type RecentlyDeletedItem,
     fade
@@ -26,8 +28,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import type { MediaItem } from '@gphone/shared/types';
   import PhotoGrid from './components/PhotoGrid.svelte';
   import PhotoDetail from './components/PhotoDetail.svelte';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
 
   import { SvelteSet } from 'svelte/reactivity';
+
+  // MICA-215: Media's own catalog, registered by the app for every component under it.
+  registerMessages('media', { en, de });
+  const { t, plural } = useLocale();
 
   let {
     onback,
@@ -115,7 +123,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       async () => {
         for (const id of Array.from(selectedIds)) await deletePhoto(id);
       },
-      { success: `${count} ${count === 1 ? 'photo' : 'photos'} deleted` }
+      { success: plural('media.deletedCount', count) }
     );
     if (!deleted) return;
 
@@ -163,8 +171,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         app: 'media',
         message:
           sent > 0
-            ? `${sent} of ${total} photos sent to ${recipientCount} nearby ${recipientCount === 1 ? 'phone' : 'phones'}. ${failed} failed.`
-            : `Could not send ${failed === 1 ? 'the photo' : 'the photos'}. Try again.`
+            ? $t('media.sharePartial', {
+                sent,
+                total,
+                phones: plural('media.nearbyPhones', recipientCount),
+                failed
+              })
+            : plural('media.shareFailed', failed)
       });
       return;
     }
@@ -174,8 +187,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       app: 'media',
       message:
         sent > 0
-          ? `${sent} ${sent === 1 ? 'photo' : 'photos'} sent to ${recipientCount} nearby ${recipientCount === 1 ? 'phone' : 'phones'}.`
-          : 'No Bluetooth-visible players are in range.'
+          ? plural('media.photosSent', sent, {
+              phones: plural('media.nearbyPhones', recipientCount)
+            })
+          : $t('media.noNearby')
     });
   };
 
@@ -193,16 +208,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     toast.show({
       type: count > 0 ? 'success' : 'info',
       app: 'media',
-      message:
-        count > 0
-          ? `Sent to ${count} nearby ${count === 1 ? 'phone' : 'phones'}.`
-          : 'No Bluetooth-visible players are in range.'
+      message: count > 0 ? plural('media.sentToNearby', count) : $t('media.noNearby')
     });
   };
 
   const deleteSingle = async () => {
     if (!selectedPhoto) return;
-    if (!(await run(() => deletePhoto(selectedPhoto!.id), { success: 'Photo deleted' }))) return;
+    if (!(await run(() => deletePhoto(selectedPhoto!.id), { success: $t('media.photoDeleted') })))
+      return;
 
     selectedPhoto = null;
     showDeleteConfirm = false;
@@ -221,7 +234,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const recentlyDeletedItems = $derived<RecentlyDeletedItem[]>(
     deletedMedia.map((m) => ({
       id: m.id,
-      label: m.alt_text || (m.kind === 'photo' ? 'Photo' : m.kind),
+      label: m.alt_text || (m.kind === 'photo' ? $t('media.photo') : m.kind),
       deletedAt: m.updated_at
     }))
   );
@@ -233,22 +246,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     const restored = await run(
       async () => {
         if (!(await restoreMedia(Number(id)))) {
-          throw new Error('This can no longer be restored.');
+          throw new Error($t('media.restoreFailed'));
         }
       },
-      { success: 'Restored' }
+      { success: $t('media.restored') }
     );
     if (restored) deletedMedia = deletedMedia.filter((m) => m.id !== id);
   };
 
   const app = useAppLevels({
     appId: 'media',
-    title: 'Media',
+    title: () => $t('media.title'),
     onback: () => onback(),
     levels: [
       { open: () => reporting, close: () => (reporting = false) },
       { open: () => showDeleteConfirm, close: () => (showDeleteConfirm = false) },
-      { open: () => !!selectedPhoto, close: () => (selectedPhoto = null), title: 'Photo' },
+      {
+        open: () => !!selectedPhoto,
+        close: () => (selectedPhoto = null),
+        title: () => $t('media.photo')
+      },
       {
         open: () => isSelectionMode,
         close: () => {
@@ -259,7 +276,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {
         open: () => showRecentlyDeleted,
         close: () => (showRecentlyDeleted = false),
-        title: 'Recently Deleted'
+        title: () => $t('media.recentlyDeleted')
       }
     ]
   });
@@ -271,14 +288,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       class="text-primary hover:bg-surface-container-high duration-short ease-standard ml-auto rounded-full p-2 font-semibold transition-colors"
       onclick={toggleSelectionMode}
     >
-      {isSelectionMode ? 'Cancel' : 'Select'}
+      {isSelectionMode ? $t('media.cancel') : $t('media.select')}
     </button>
     {#if !isSelectionMode}
       <button
         class="text-on-surface hover:bg-surface-container-high duration-short ease-standard rounded-full p-2 transition-colors"
         onclick={openRecentlyDeleted}
-        title="Recently Deleted"
-        aria-label="Recently Deleted"
+        title={$t('media.recentlyDeleted')}
+        aria-label={$t('media.recentlyDeleted')}
       >
         <TrashIcon class="size-icon-md" />
       </button>
@@ -293,8 +310,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <RecentlyDeleted
       items={recentlyDeletedItems}
       onrestore={restoreDeletedMedia}
-      emptyTitle="No deleted photos"
-      emptyDescription="Photos you delete stick around here until the restore window closes."
+      emptyTitle={$t('media.noDeleted')}
+      emptyDescription={$t('media.noDeletedHint')}
     />
   {:else if selectedPhoto}
     <PhotoDetail
@@ -323,18 +340,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             class="border-outline-variant bg-surface-container shadow-elevation-5 pointer-events-auto flex items-center justify-between rounded-box border p-4 backdrop-blur-md"
             transition:fade
           >
-            <span class="text-on-surface font-medium">{selectedIds.size} Selected</span>
+            <span class="text-on-surface font-medium"
+              >{$t('media.selectedCount', { count: selectedIds.size })}</span
+            >
             <div class="flex gap-4">
               <button
                 class="text-primary hover:text-primary"
-                aria-label="Share selected"
+                aria-label={$t('media.shareSelected')}
                 onclick={shareSelected}
               >
                 <ShareSquareIcon class="size-icon-md" />
               </button>
               <button
                 class="text-error hover:text-error"
-                aria-label="Delete selected"
+                aria-label={$t('media.deleteSelected')}
                 onclick={() => (showDeleteConfirm = true)}
               >
                 <TrashIcon class="size-icon-md" />
@@ -346,9 +365,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       {#if showDeleteConfirm && isSelectionMode}
         <ConfirmDialog
-          title="Delete {selectedIds.size} Photos?"
-          message="Are you sure you want to delete these photos? This cannot be undone."
-          confirmText="Delete"
+          title={$t('media.deletePhotosTitle', { count: selectedIds.size })}
+          message={$t('media.deletePhotosMessage')}
+          confirmText={$t('media.delete')}
           isLoading={$busy}
           oncancel={() => (showDeleteConfirm = false)}
           onconfirm={deleteSelected}

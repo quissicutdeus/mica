@@ -12,9 +12,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     MediaThumb,
     Skeleton,
     usePagedList,
+    useLocale,
     useMedia
   } from '@gphone/sdk';
   import type { MediaItem } from '@gphone/shared/types';
+
+  const { t } = useLocale();
 
   /**
    * The gallery grid — three columns of 123px tiles, a page at a time.
@@ -81,7 +84,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {#if !$mediaLoaded}
     <Skeleton count={4} height="h-24" rounded="rounded-none" />
   {:else if $media.length === 0}
-    <EmptyState title="No photos yet">
+    <EmptyState title={$t('media.noPhotos')}>
       {#snippet icon()}
         <EmptyPhotoIcon class="h-16 w-16" />
       {/snippet}
@@ -96,11 +99,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="group bg-surface-container relative aspect-square cursor-pointer"
           onclick={() => onphotoclick(photo)}
           aria-pressed={isSelectionMode ? selectedIds.has(photo.id) : undefined}
-          aria-label={isSelectionMode ? `Select photo ${photo.id}` : `Open photo ${photo.id}`}
+          aria-label={isSelectionMode
+            ? $t('media.selectPhoto', { id: photo.id })
+            : $t('media.openPhoto', { id: photo.id })}
         >
           <MediaThumb
             item={photo}
-            alt="Capture {photo.id}"
+            alt={$t('media.captureAlt', { id: photo.id })}
             class="transition-opacity {isSelectionMode && selectedIds.has(photo.id)
               ? 'opacity-50'
               : 'group-hover:opacity-80'} duration-short ease-standard"
