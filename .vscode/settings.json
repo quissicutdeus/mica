@@ -4,6 +4,11 @@
   "editor.defaultFormatter": "esbenp.prettier-vscode",
   "editor.formatOnSave": true,
   "[svelte]": { "editor.defaultFormatter": "svelte.svelte-vscode" },
+  // Shell goes through shfmt with the flags the house rule names (`shfmt -i 4 -ci`),
+  // stated here as well as in .editorconfig because the extension passes its own flags
+  // and shfmt only reads .editorconfig when given none.
+  "[shellscript]": { "editor.defaultFormatter": "foxundermoon.shell-format" },
+  "shellformat.flag": "-i 4 -ci",
 
   // The class strings in this codebase are long and conditional. Wrapping them makes
   // the ternaries readable instead of a horizontal scroll.

@@ -10,3 +10,11 @@ insert_final_newline = true
 
 [*.md]
 trim_trailing_whitespace = false
+
+# Shell is the one exception to two spaces. `shfmt -i 4 -ci` is the house layout
+# (~/.claude/CLAUDE.md, "Shell"), and shfmt reads this file when it is run with no
+# flags, so an editor that formats through shfmt and a bare `shfmt -w` both land on
+# the same bytes as the CI invocation.
+[*.sh]
+indent_size = 4
+switch_case_indent = true

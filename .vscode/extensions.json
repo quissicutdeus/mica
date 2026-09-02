@@ -6,6 +6,7 @@
     "svelte.svelte-vscode",
     "esbenp.prettier-vscode",
     "vitest.explorer",
-    "ms-playwright.playwright"
+    "ms-playwright.playwright",
+    "foxundermoon.shell-format"
   ]
 }
