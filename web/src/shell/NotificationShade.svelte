@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from './messages';
   import { parseDeepLink } from '@gphone/shared/deepLink';
   import type { NotificationItem } from '@gphone/shared/types';
   import { onMount } from 'svelte';
@@ -62,21 +63,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   let quickToggles = $derived<QuickToggle[]>([
     {
-      label: 'Network',
+      label: $t('shell.toggleNetwork'),
       icon: SignalIcon,
       enabled: $cellServiceEnabled,
       disabled: $airplaneModeEnabled,
       onToggle: toggleCellService
     },
     {
-      label: 'Bluetooth',
+      label: $t('shell.toggleBluetooth'),
       icon: BluetoothIcon,
       enabled: $bluetoothEnabled,
       disabled: $airplaneModeEnabled,
       onToggle: toggleBluetooth
     },
     {
-      label: 'Airplane',
+      label: $t('shell.toggleAirplane'),
       icon: AirplaneIcon,
       enabled: $airplaneModeEnabled,
       onToggle: toggleAirplaneMode
@@ -86,14 +87,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       // not the same thing: airplane mode takes the phone off the network so nothing
       // arrives, while this delivers everything and interrupts about none of it
       // (`state/notificationPolicy.ts`). Abbreviated because five tiles share one row.
-      label: 'DND',
-      name: 'Do Not Disturb',
+      label: $t('shell.toggleDnd'),
+      name: $t('shell.toggleDndName'),
       icon: MoonIcon,
       enabled: $dndEnabled,
       onToggle: () => dndEnabled.update((on) => !on)
     },
     {
-      label: 'Flashlight',
+      label: $t('shell.toggleFlashlight'),
       icon: FlashlightIcon,
       enabled: $flashlightEnabled,
       onToggle: toggleFlashlight
@@ -421,14 +422,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     use:focusTrap
     role="dialog"
     aria-modal="true"
-    aria-label="Notification Shade"
+    aria-label={$t('shell.notificationShade')}
   >
     <!-- Header Bar -->
     <div class="mb-4 flex items-center justify-between px-6">
       <div class="flex items-baseline gap-2">
-        <h2 class="text-on-surface text-lg font-bold tracking-tight">Notifications</h2>
+        <h2 class="text-on-surface text-lg font-bold tracking-tight">
+          {$t('shell.notifications')}
+        </h2>
         <span class="text-primary text-body-small tracking-wider uppercase">
-          {showHistory ? 'Archive' : 'Active'}
+          {showHistory ? $t('shell.shadeArchive') : $t('shell.shadeActive')}
         </span>
       </div>
 
@@ -439,8 +442,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               type="button"
               class="bg-surface text-on-surface-variant hover:bg-surface-container hover:text-error duration-short ease-standard rounded-full p-2 transition-colors"
               onclick={handleClearAll}
-              title="Clear all notifications"
-              aria-label="Clear all notifications"
+              title={$t('shell.clearAllNotifications')}
+              aria-label={$t('shell.clearAllNotifications')}
             >
               <TrashIcon class="size-icon-sm" />
             </button>
@@ -450,8 +453,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="button"
             class="bg-surface text-on-surface-variant hover:bg-surface-container hover:text-primary duration-short ease-standard rounded-full p-2 transition-colors"
             onclick={openHistory}
-            title="Notification Archive"
-            aria-label="Notification Archive"
+            title={$t('shell.notificationArchive')}
+            aria-label={$t('shell.notificationArchive')}
           >
             <ArchiveIcon class="size-icon-sm" />
           </button>
@@ -460,8 +463,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="button"
             class="bg-surface-container text-primary ring-primary hover:bg-surface-container-high hover:text-primary duration-short ease-standard rounded-full p-2 ring-1 transition-colors"
             onclick={closeHistory}
-            title="Back to Active Notifications"
-            aria-label="Back to Active Notifications"
+            title={$t('shell.backToActiveNotifications')}
+            aria-label={$t('shell.backToActiveNotifications')}
           >
             <ArchiveIcon class="size-icon-sm" />
           </button>
@@ -471,8 +474,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           type="button"
           class="bg-surface text-on-surface-variant hover:bg-surface-container hover:text-primary duration-short ease-standard rounded-full p-2 transition-colors"
           onclick={openSettings}
-          title="Settings"
-          aria-label="Open Settings"
+          title={$t('shell.settings')}
+          aria-label={$t('shell.openSettings')}
         >
           <SettingsIcon class="size-icon-sm" />
         </button>
@@ -481,8 +484,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           type="button"
           class="bg-surface text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard rounded-full p-2 transition-colors"
           onclick={closeShade}
-          title="Close"
-          aria-label="Close notification shade"
+          title={$t('shell.close')}
+          aria-label={$t('shell.closeShade')}
         >
           <CloseIcon class="size-icon-sm" />
         </button>
@@ -531,7 +534,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <div
             class="text-on-surface-variant flex h-full flex-col items-center justify-center space-y-2"
           >
-            <p class="text-body-medium">Loading archive...</p>
+            <p class="text-body-medium">{$t('shell.loadingArchive')}</p>
           </div>
         {:else if historyItems.length === 0}
           <div
@@ -543,9 +546,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <ArchiveIcon class="text-on-surface-variant h-7 w-7" />
             </div>
             <div>
-              <p class="text-on-surface text-body-medium">No Archive Yet</p>
+              <p class="text-on-surface text-body-medium">{$t('shell.noArchive')}</p>
               <p class="text-on-surface-variant text-body-small">
-                Cleared notifications will appear here
+                {$t('shell.noArchiveHint')}
               </p>
             </div>
           </div>
@@ -593,8 +596,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                             type="button"
                             class="text-error hover:bg-surface-container hover:text-on-surface duration-short ease-standard shrink-0 rounded-full p-1 transition-all"
                             onclick={(e) => handleRestoreSingle(e, item.id)}
-                            title="Restore to Active notifications"
-                            aria-label="Restore to Active notifications"
+                            title={$t('shell.restoreToActive')}
+                            aria-label={$t('shell.restoreToActive')}
                           >
                             <TrashIcon class="h-3.5 w-3.5" />
                           </button>
@@ -648,7 +651,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                             <span
                               class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex items-center rounded-chip px-2 py-0.5 ring-1"
                             >
-                              {group.items.length} notifications
+                              {$t(
+                                group.items.length === 1
+                                  ? 'shell.notificationCountOne'
+                                  : 'shell.notificationCountOther',
+                                { count: group.items.length }
+                              )}
                             </span>
                           </div>
                           <div class="flex items-center gap-1.5">
@@ -730,8 +738,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                                     type="button"
                                     class="text-error hover:text-on-surface duration-short ease-standard rounded-full p-0.5 transition-colors"
                                     onclick={(e) => handleRestoreConversation(e, convo)}
-                                    title="Restore to Active notifications"
-                                    aria-label="Restore to Active notifications"
+                                    title={$t('shell.restoreToActive')}
+                                    aria-label={$t('shell.restoreToActive')}
                                   >
                                     <TrashIcon class="h-3 w-3" />
                                   </button>
@@ -766,7 +774,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <CheckIcon class="h-8 w-8 text-emerald-400" />
             </div>
             <div>
-              <p class="text-on-surface text-body-large">No New Notifications</p>
+              <p class="text-on-surface text-body-large">{$t('shell.noNewNotifications')}</p>
             </div>
           </div>
         {:else}
@@ -813,8 +821,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                             type="button"
                             class="text-on-surface-variant hover:bg-surface-container hover:text-error duration-short ease-standard shrink-0 rounded-full p-1 opacity-0 transition-all group-hover:opacity-100"
                             onclick={(e) => handleClearSingle(e, item.id)}
-                            title="Clear notification"
-                            aria-label="Clear notification"
+                            title={$t('shell.clearNotification')}
+                            aria-label={$t('shell.clearNotification')}
                           >
                             <TrashIcon class="h-3.5 w-3.5" />
                           </button>
@@ -868,7 +876,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                             <span
                               class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex items-center rounded-chip px-2 py-0.5 ring-1"
                             >
-                              {group.items.length} notifications
+                              {$t(
+                                group.items.length === 1
+                                  ? 'shell.notificationCountOne'
+                                  : 'shell.notificationCountOther',
+                                { count: group.items.length }
+                              )}
                             </span>
                           </div>
                           <div class="flex items-center gap-1.5">
@@ -948,8 +961,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                                     type="button"
                                     class="text-on-surface-variant hover:text-error duration-short ease-standard rounded-full p-0.5 opacity-0 transition-opacity group-hover/item:opacity-100"
                                     onclick={(e) => handleClearConversation(e, convo)}
-                                    title="Clear conversation"
-                                    aria-label="Clear conversation"
+                                    title={$t('shell.clearConversation')}
+                                    aria-label={$t('shell.clearConversation')}
                                   >
                                     <TrashIcon class="h-3 w-3" />
                                   </button>

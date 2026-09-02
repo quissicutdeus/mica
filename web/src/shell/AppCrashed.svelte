@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from './messages';
   /**
    * The crash fallback's markup, lifted out of `ErrorBoundary.svelte`'s `failed` snippet
    * so `AddOnFrame.svelte` can show the same screen for an add-on that crashed inside its
@@ -52,10 +53,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       />
     </svg>
   </div>
-  <h2 class="text-on-surface mb-1 text-xl font-bold">App Stopped Working</h2>
+  <h2 class="text-on-surface mb-1 text-xl font-bold">{$t('shell.appCrashedTitle')}</h2>
   <p class="text-on-surface-variant text-body-medium mb-6">
-    The <span class="text-on-surface font-semibold capitalize">{appName}</span> app encountered an unexpected
-    error.
+    {$t('shell.appCrashedBefore')}
+    <span class="text-on-surface font-semibold capitalize">{appName}</span>
+    {$t('shell.appCrashedAfter')}
   </p>
 
   <div class="flex w-full max-w-xs flex-col gap-3">
@@ -64,14 +66,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       onclick={onRestart}
       class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover duration-short ease-standard w-full cursor-pointer rounded-box px-4 py-2.5 font-medium transition-colors"
     >
-      Restart App
+      {$t('shell.restartApp')}
     </button>
     <button
       type="button"
       onclick={onHome}
       class="border-outline-variant bg-surface-container text-on-surface hover:bg-surface-container-high duration-short ease-standard w-full cursor-pointer rounded-box border px-4 py-2.5 font-medium transition-colors"
     >
-      Return to Home Screen
+      {$t('shell.returnHome')}
     </button>
   </div>
 

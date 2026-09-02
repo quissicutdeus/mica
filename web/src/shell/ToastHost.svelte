@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t as translate } from './messages';
   import { toast } from './state/toast';
   import type { ToastAction, ToastMessage } from '../../../sdk/vocabulary/shell';
   import { fly } from '@gphone/sdk';
@@ -87,7 +88,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       toast.show({
         type: 'success',
         app: 'messages',
-        message: 'Reply sent',
+        message: $translate('shell.replySent'),
         duration: 2500
       });
     } catch (e) {
@@ -241,7 +242,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               e.stopPropagation();
               toast.dismiss(t.id);
             }}
-            aria-label="Dismiss notification"
+            aria-label={$translate('shell.dismissNotification')}
           >
             <CloseIcon class="size-icon-sm" />
           </button>
@@ -273,7 +274,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover shadow-elevation-2 duration-short ease-standard shrink-0 cursor-pointer rounded-box p-1.5 transition-colors disabled:bg-disabled-container disabled:text-disabled-content"
               disabled={!replyInputs[t.id]?.trim()}
               onclick={(e) => handleSendReply(t, e)}
-              aria-label="Send reply"
+              aria-label={$translate('shell.sendReply')}
             >
               <SendIcon class="h-3.5 w-3.5" />
             </button>

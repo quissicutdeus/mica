@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from './messages';
   /**
    * The one control for playing music that does not require opening the Music app.
    * MICA-111 phase 4, shell half.
@@ -148,7 +149,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 {#if $musicSource}
   <!-- `px-6` to sit on the same gutter as the header and the tiles above; the list below
        is `px-5`, which is a scroller and indents its own rows. -->
-  <div class="mb-4 px-6" data-testid="now-playing" role="group" aria-label="Now playing">
+  <div class="mb-4 px-6" data-testid="now-playing" role="group" aria-label={$t('shell.nowPlaying')}>
     <NowPlayingCard {music} mode={$themeStore.mode} compact onopen={openMusicApp} />
   </div>
 {/if}

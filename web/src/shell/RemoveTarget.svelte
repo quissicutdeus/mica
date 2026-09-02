@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from './messages';
   import TrashIcon from '../../../sdk/ui/icons/TrashIcon.svelte';
   import { iconDragState, isRemovableOrigin } from './state/iconDrag';
 
@@ -78,6 +79,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     class:text-on-surface={!armed}
   >
     <TrashIcon class="size-icon-sm" />
-    <span class="text-label-large">Remove</span>
+    <span class="text-label-large">{$t('shell.remove')}</span>
   </div>
 {/if}

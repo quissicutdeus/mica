@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from './messages';
   import { anySheetOpen } from './state/sheets';
   import { badgeAllowed } from './state/notificationPolicy';
   import { get } from 'svelte/store';
@@ -213,7 +214,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <div
   bind:this={homeScreenRef}
   role="region"
-  aria-label="Home Screen"
+  aria-label={$t('shell.homeScreen')}
   class="pt-safe-top text-on-surface flex h-full flex-col bg-transparent px-4 select-none"
 >
   <!-- The "we are home" signal a large number of e2e specs already key off — kept as a
@@ -232,7 +233,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
          3px `surface`-coloured stroke, so what it is really read against is `surface` —
          16.28:1 in light and 14.30:1 in dark, whatever is behind it. -->
     <h1 class="text-4xl font-bold tracking-tight" class:text-on-wallpaper={$wallpaperNeedsContrast}>
-      gPhone
+      {$t('shell.brand')}
     </h1>
   </div>
 

@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from './messages';
   import { badgeAllowed } from './state/notificationPolicy';
   import { get } from 'svelte/store';
   import { fade, fly, focusTrap } from '@gphone/sdk';
@@ -72,11 +73,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * `searchEverything` already guarantees apps-then-contacts-then-messages, so a header
    * belongs exactly where a result's kind differs from its predecessor's.
    */
-  const GROUP_LABEL: Record<SearchResult['kind'], string> = {
-    app: 'Apps',
-    contact: 'Contacts',
-    message: 'Messages'
-  };
+  const GROUP_LABEL = $derived<Record<SearchResult['kind'], string>>({
+    app: $t('shell.groupApps'),
+    contact: $t('shell.groupContacts'),
+    message: $t('shell.groupMessages')
+  });
 
   function launch(result: SearchResult) {
     closeDrawer();
@@ -207,7 +208,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     use:focusTrap
     role="dialog"
     aria-modal="true"
-    aria-label="App Drawer"
+    aria-label={$t('shell.appDrawer')}
   >
     <!-- Top pill — the one grab handle this drawer has, at the edge it travels away
          from on close. There is no matching one at the bottom; see the note by the
@@ -244,8 +245,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           bind:value={$searchQuery}
           type="text"
           class="text-body-medium placeholder:text-on-surface-variant w-full bg-transparent outline-none"
-          placeholder="Search apps, contacts and messages"
-          aria-label="Search apps, contacts and messages"
+          placeholder={$t('shell.searchEverything')}
+          aria-label={$t('shell.searchEverything')}
         />
       </div>
     </div>
@@ -279,7 +280,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       {:else if results.length === 0}
         <p class="text-on-surface-variant text-body-medium px-2 py-6 text-center">
-          No results for "{$searchQuery.trim()}"
+          {$t('shell.noResults', { query: $searchQuery.trim() })}
         </p>
       {:else}
         {#each results as result, index (result.key)}

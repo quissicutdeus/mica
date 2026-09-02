@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from './messages';
   import { badgeAllowed } from './state/notificationPolicy';
   import { fade, focusTrap } from '@gphone/sdk';
   import { get } from 'svelte/store';
@@ -111,7 +112,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
            has room for one: `p-5` on the card clears the 2px offset. -->
       <input
         type="text"
-        placeholder="Unnamed"
+        placeholder={$t('shell.folderUnnamed')}
         value={folder.name}
         onblur={(e) => folder && renameFolder(folder.folderId, e.currentTarget.value)}
         class="text-on-surface placeholder:text-on-surface-variant text-title-medium mb-4 w-full bg-transparent text-center"

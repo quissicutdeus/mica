@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from './messages';
   import { anySheetOpen } from './state/sheets';
   import { onMount, type Snippet } from 'svelte';
   import { get } from 'svelte/store';
@@ -243,8 +244,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <button
     class="duration-short ease-standard absolute top-[180px] -right-[13px] h-12 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600"
     onclick={onClose}
-    title="Power / Screen Off"
-    aria-label="Power / Screen Off"
+    title={$t('shell.power')}
+    aria-label={$t('shell.power')}
   ></button>
 
   <!-- Volume Buttons -->
@@ -253,15 +254,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       class="duration-short ease-standard h-10 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-800 disabled:active:bg-gray-800"
       onclick={() => stepVolume(1)}
       disabled={$isBatteryDead}
-      title="Volume Up"
-      aria-label="Volume Up"
+      title={$t('shell.volumeUp')}
+      aria-label={$t('shell.volumeUp')}
     ></button>
     <button
       class="duration-short ease-standard h-10 w-[5px] cursor-pointer rounded-r-md bg-gray-800 transition-colors hover:bg-gray-700 active:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-800 disabled:active:bg-gray-800"
       onclick={() => stepVolume(-1)}
       disabled={$isBatteryDead}
-      title="Volume Down"
-      aria-label="Volume Down"
+      title={$t('shell.volumeDown')}
+      aria-label={$t('shell.volumeDown')}
     ></button>
   </div>
 
@@ -331,8 +332,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </div>
           </div>
           <div class="flex flex-col items-center gap-1.5 text-center">
-            <span class="text-body-small tracking-wider text-red-400 uppercase">Battery Low</span>
-            <span class="text-[11px] font-light text-gray-400">Connect Battery Bank</span>
+            <span class="text-body-small tracking-wider text-red-400 uppercase"
+              >{$t('shell.batteryLow')}</span
+            >
+            <span class="text-[11px] font-light text-gray-400"
+              >{$t('shell.connectBatteryBank')}</span
+            >
           </div>
         </div>
       </div>

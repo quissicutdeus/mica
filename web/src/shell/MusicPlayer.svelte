@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from './messages';
   /**
    * The phone's *own* music. MICA-111 phase 1, and still only that.
    *
@@ -244,7 +245,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     bind:ready
     {url}
     volume={$musicOutputVolume}
-    title="gPhone music player"
+    title={$t('shell.musicPlayerFrame')}
     onmessage={onMessage}
   />
 {/if}

@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from './messages';
   /**
    * The off switch for everybody else's music. MICA-111 phase 2, shell half.
    *
@@ -89,13 +90,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       data-testid="nearby-music"
       class="bg-surface flex items-center gap-2 rounded-box p-2"
       role="group"
-      aria-label="Nearby music"
+      aria-label={$t('shell.nearbyMusic')}
     >
       <button
         type="button"
         class="hover:bg-surface-container duration-short ease-standard flex min-w-0 flex-1 items-center gap-2 rounded-box p-1 text-left transition-colors"
         onclick={openMusicApp}
-        title="Open Music"
+        title={$t('shell.openMusic')}
       >
         <!-- Muted is drawn in the muted role rather than the accent: the colour has to say
              the same thing as the word, or a silenced street still reads as normal. -->
@@ -108,7 +109,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <span
             class="text-label-small {$muteAllNearby
               ? 'text-on-surface-variant'
-              : 'text-primary'} block tracking-wider uppercase">Nearby music</span
+              : 'text-primary'} block tracking-wider uppercase">{$t('shell.nearbyMusic')}</span
           >
           <span class="text-body-small text-on-surface block truncate">{detail}</span>
         </span>

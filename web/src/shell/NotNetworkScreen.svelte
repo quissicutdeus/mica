@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from './messages';
   import { EmptyState, Screen } from '@gphone/sdk';
 
   let { title, onback }: { title: string; onback: () => void } = $props();
@@ -12,9 +13,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <Screen {title} {onback}>
   <div class="flex min-h-0 flex-1 items-center justify-center p-6">
-    <EmptyState
-      title="No Signal"
-      description="This app needs a cellular connection. Reconnect to service to continue."
-    />
+    <EmptyState title={$t('shell.noSignal')} description={$t('shell.noSignalHint')} />
   </div>
 </Screen>

@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from './messages';
   import { get } from 'svelte/store';
   import { attachDragGesture } from '../lib/phone/pointerDrag';
   import { createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/phone/sheetDrag';
@@ -46,10 +47,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       type="button"
       onclick={openDrawer}
       class="bg-surface-container-high text-on-surface-variant text-body-medium shadow-elevation-2 duration-short ease-standard flex h-11 w-full cursor-pointer items-center gap-2 rounded-box px-4 backdrop-blur-md transition-colors hover:brightness-110"
-      aria-label="Search"
+      aria-label={$t('shell.search')}
     >
       <SearchIcon class="h-4 w-4" />
-      <span>Search</span>
+      <span>{$t('shell.search')}</span>
     </button>
   </div>
 {/if}

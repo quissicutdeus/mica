@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from './messages';
   import { anySheetOpen } from './state/sheets';
   import { badgeAllowed } from './state/notificationPolicy';
   import { get } from 'svelte/store';
@@ -120,7 +121,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <div
   bind:this={dockElement}
   role="toolbar"
-  aria-label="Dock"
+  aria-label={$t('shell.dock')}
   class="absolute inset-x-0 bottom-20 z-20 grid cursor-pointer px-4 pt-4 pb-0 select-none"
   style="grid-template-columns: repeat({DOCK_SLOT_COUNT}, 1fr);"
 >
@@ -154,6 +155,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <p
     class="text-on-surface-variant text-label-small pointer-events-none absolute inset-x-0 bottom-44 z-20 text-center select-none"
   >
-    Swipe up for apps
+    {$t('shell.swipeUpForApps')}
   </p>
 {/if}

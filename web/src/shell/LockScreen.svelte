@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from './messages';
   /**
    * The lock screen (MICA-60), scoped exactly as the ticket's own item 4 reads it: a
    * display state, not a security boundary. Nothing rendered here is authority-bearing —
@@ -97,7 +98,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   class="bg-scrim absolute inset-0 z-40 flex flex-col items-center backdrop-blur-md"
   role="dialog"
   aria-modal="true"
-  aria-label="Lock screen"
+  aria-label={$t('shell.lockScreen')}
 >
   <div class="flex flex-col items-center pt-14 pb-4">
     <span class="text-on-surface text-lock-clock font-light">{$formattedTime}</span>
@@ -133,7 +134,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
     {#if error}
       <p class="text-error text-body-small" transition:fade={{ duration: 150 }}>
-        Incorrect passcode
+        {$t('shell.incorrectPasscode')}
       </p>
     {/if}
 
@@ -162,9 +163,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class="text-on-surface-variant hover:text-on-surface duration-short ease-standard flex h-14 w-14 items-center justify-center justify-self-center rounded-full text-body-small font-medium transition-colors disabled:opacity-40"
         onclick={backspace}
         disabled={checking || digits.length === 0}
-        aria-label="Backspace"
+        aria-label={$t('shell.backspace')}
       >
-        Del
+        {$t('shell.backspaceShort')}
       </button>
     </div>
 
@@ -174,7 +175,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       onclick={submit}
       disabled={checking || digits.length < MIN_DIGITS}
     >
-      {checking ? 'Checking...' : 'Unlock'}
+      {checking ? $t('shell.checking') : $t('shell.unlock')}
     </button>
   </div>
 
@@ -184,6 +185,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onclick={handleEmergencyCall}
   >
     <PhoneIcon class="size-icon-sm" />
-    Emergency Call
+    {$t('shell.emergencyCall')}
   </button>
 </div>

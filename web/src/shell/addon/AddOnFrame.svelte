@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from '../messages';
   import { onMount, untrack } from 'svelte';
   import type { AppManifest } from '../../../../sdk/manifest';
   import type { Host } from '../../../../sdk/host/protocol';
@@ -91,7 +92,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     );
     server?.dispose();
     crashed = {
-      message: 'This add-on tried to navigate away from its own code and has been stopped.',
+      message: $t('shell.addOnNavigatedAway'),
       stack: null
     };
   }

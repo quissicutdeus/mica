@@ -6,6 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { t } from './messages';
   import { hydrateSettings } from '../../../sdk/host/useStorage';
   import { migrateAppDrawerHintForExistingSaves } from './state/onboarding';
   import { appRegistryStore } from './state/registry';
@@ -595,7 +596,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       ></span>
       <span class="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
     </span>
-    Open gPhone
+    {$t('shell.openPhone')}
   </button>
 {/if}
 
