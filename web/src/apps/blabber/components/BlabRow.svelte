@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Avatar, formatDate, MediaThumb, ReportDialog } from '@gphone/sdk';
+  import { Avatar, formatDate, MediaThumb, ReportDialog, useLocale } from '@gphone/sdk';
   import type { Blab, BlabEngagement } from '@gphone/shared/types';
   import BlabBody from './BlabBody.svelte';
   import BlabActions from './BlabActions.svelte';
@@ -54,6 +54,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * it differently or forget one. `editable` already means "this is mine", so the row
    * knows both whether to offer it and what to report.
    */
+  const { t } = useLocale();
+
   let reporting = $state(false);
 
   /** Whether this row's "•••" menu is open. */
@@ -104,7 +106,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       type="button"
       class="duration-short ease-standard shrink-0 cursor-pointer rounded-full transition-transform hover:scale-105"
       onclick={() => blab.handle && onhandle(blab.handle)}
-      aria-label="{blab.display_name || blab.handle}'s profile"
+      aria-label={$t('blabber.profileOf', { name: blab.display_name || blab.handle })}
     >
       {@render avatar()}
     </button>
@@ -125,7 +127,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <span class="text-on-surface-variant">·</span>
       <span class="text-on-surface-variant shrink-0">{formatDate(blab.created_at)}</span>
       {#if edited}
-        <span class="text-on-surface-variant shrink-0 italic">edited</span>
+        <span class="text-on-surface-variant shrink-0 italic">{$t('blabber.edited')}</span>
       {/if}
 
       {#if hasOverflow}
@@ -147,8 +149,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface focus-visible:ring-focus-ring duration-short ease-standard flex h-7 w-7 cursor-pointer items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none"
             aria-haspopup="menu"
             aria-expanded={overflowOpen}
-            aria-label="More actions"
-            title="More actions"
+            aria-label={$t('blabber.moreActions')}
+            title={$t('blabber.moreActions')}
             onclick={() => (overflowOpen = !overflowOpen)}
           >
             <!-- Drawn here rather than added to `sdk/ui/icons`: the three action glyphs in
@@ -175,7 +177,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   reporting = true;
                 }}
               >
-                Report post
+                {$t('blabber.reportPost')}
               </button>
             </div>
           {/if}
@@ -185,7 +187,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     {#if blab.mouth_of != null}
       <p class="text-label-small mt-0.5 flex items-center gap-1 text-emerald-400">
-        Mouthed{#if blab.mouthed?.handle}&nbsp;@{blab.mouthed.handle}{/if}
+        {#if blab.mouthed?.handle}{$t('blabber.mouthedHandle', {
+            handle: blab.mouthed.handle
+          })}{:else}{$t('blabber.mouthed')}{/if}
       </p>
     {/if}
 
@@ -200,7 +204,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {#each blab.attachments as attach (attach.id)}
           {#if attach.media}
             <div class="max-w-full overflow-hidden rounded-box">
-              <MediaThumb item={attach.media} fit="contain" alt="Attachment" />
+              <MediaThumb item={attach.media} fit="contain" alt={$t('blabber.attachment')} />
             </div>
           {/if}
         {/each}
@@ -235,17 +239,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class="text-primary text-body-small mt-1 hover:underline"
         onclick={() => onopen?.(blab)}
       >
-        View thread
+        {$t('blabber.viewThread')}
       </button>
     {/if}
 
     {#if editable}
       <div class="text-body-small mt-2 flex gap-3">
         <button type="button" class="text-primary hover:underline" onclick={() => onedit?.(blab)}>
-          Edit
+          {$t('blabber.edit')}
         </button>
         <button type="button" class="text-error hover:underline" onclick={() => ondelete?.(blab)}>
-          Delete
+          {$t('blabber.delete')}
         </button>
       </div>
     {/if}

@@ -16,6 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     Skeleton,
     useAccounts,
     useAppAction,
+    useLocale,
     useService
   } from '@gphone/sdk';
   import { useBlabber } from '../store';
@@ -55,6 +56,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { myAccounts, followStats, loadFollowStats, toggleFollow, toggleBlock, activeAccount } =
     useBlabber();
   const { getAccounts } = useAccounts();
+  const { t } = useLocale();
   const { run, busy } = useAppAction('blabber');
 
   let account = $state<Account | null>(null);
@@ -91,8 +93,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const counts = $derived(
     stats
       ? ([
-          { kind: 'followers', count: stats.followers, label: 'followers' },
-          { kind: 'following', count: stats.following, label: 'following' }
+          { kind: 'followers', count: stats.followers, label: $t('blabber.followersLabel') },
+          { kind: 'following', count: stats.following, label: $t('blabber.followingLabel') }
         ] as const)
       : []
   );
@@ -101,7 +103,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const follow = () => {
     const target = account;
     if (!target) return;
-    void run(() => toggleFollow(target.id), { title: 'Blabber' });
+    void run(() => toggleFollow(target.id), { title: $t('blabber.title') });
   };
 
   /**
@@ -111,7 +113,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const block = () => {
     const target = account;
     if (!target) return;
-    void run(() => toggleBlock(target.id), { title: 'Blabber' }).then(() => loadPage(null));
+    void run(() => toggleBlock(target.id), { title: $t('blabber.title') }).then(() =>
+      loadPage(null)
+    );
   };
 
   const loadPage = async (from: number | null) => {
@@ -179,7 +183,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {account?.display_name || handle}
       </p>
       <p class="text-on-surface-variant text-body-small truncate">
-        @{handle}{mine ? ' · you' : ''}
+        @{handle}{mine ? $t('blabber.youSuffix') : ''}
       </p>
       {#if account?.bio}
         <p class="text-on-surface text-body-small mt-1">{account.bio}</p>
@@ -221,7 +225,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             disabled={$busy}
             onclick={follow}
           >
-            {stats?.followedByMe ? 'Following' : 'Follow'}
+            {stats?.followedByMe ? $t('blabber.following') : $t('blabber.follow')}
           </Button>
           <Button
             variant="secondary"
@@ -229,7 +233,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             disabled={$busy}
             onclick={block}
           >
-            {stats?.blockedByMe ? 'Unblock' : 'Block'}
+            {stats?.blockedByMe ? $t('blabber.unblock') : $t('blabber.block')}
           </Button>
         {/if}
         {#if onmessage}
@@ -237,8 +241,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="button"
             class="bg-primary-container text-on-primary-container hover:bg-primary-container-hover duration-short ease-standard rounded-full p-2 transition-colors"
             onclick={() => account && onmessage(account)}
-            title="Message @{handle}"
-            aria-label="Message @{handle}"
+            title={$t('blabber.messageHandle', { handle })}
+            aria-label={$t('blabber.messageHandle', { handle })}
           >
             <MessageIcon class="size-icon-sm" />
           </button>
@@ -254,16 +258,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   </div>
 
   {#if !account && !loading}
-    <EmptyState title="No such handle" description="Nobody here goes by @{handle}." />
+    <EmptyState
+      title={$t('blabber.noHandle')}
+      description={$t('blabber.noHandleHint', { handle })}
+    />
   {:else}
     <div class="border-outline-variant border-b p-2">
       <SegmentedControl
-        aria-label="Profile sections"
+        aria-label={$t('blabber.profileSections')}
         selected={tab}
         onchange={(id) => (tab = id as 'blabs' | 'replies')}
         options={[
-          { id: 'blabs', label: 'Blabs' },
-          { id: 'replies', label: 'Replies' }
+          { id: 'blabs', label: $t('blabber.blabs') },
+          { id: 'replies', label: $t('blabber.replies') }
         ]}
       />
     </div>
@@ -273,10 +280,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="p-4"><Skeleton count={3} height="h-16" /></div>
       {:else if rows.length === 0}
         <EmptyState
-          title={tab === 'replies' ? 'No replies yet' : 'No Blabs yet'}
+          title={tab === 'replies' ? $t('blabber.noReplies') : $t('blabber.noBlabsYet')}
           description={tab === 'replies'
-            ? 'Replies to other people will show up here.'
-            : 'Posts will show up here.'}
+            ? $t('blabber.profileRepliesHint')
+            : $t('blabber.profileBlabsHint')}
         />
       {:else}
         {#each rows as blab (blab.id)}

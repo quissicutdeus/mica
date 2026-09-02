@@ -12,7 +12,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ReportButton,
     ReportDialog,
     Skeleton,
-    formatDate
+    formatDate,
+    useLocale
   } from '@gphone/sdk';
   import { useBlabber } from '../store';
   import type { Account } from '@gphone/shared/types';
@@ -58,6 +59,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onhandle?: (handle: string) => void;
     ontag?: (tag: string) => void;
   } = $props();
+
+  const { t } = useLocale();
 
   const {
     dmThreads,
@@ -119,7 +122,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {#if loading && $dmThreads.length === 0}
       <div class="p-4"><Skeleton count={3} height="h-16" /></div>
     {:else if $dmThreads.length === 0}
-      <EmptyState title="No messages" description="Tap a handle to start a conversation." />
+      <EmptyState title={$t('blabber.noMessages')} description={$t('blabber.noMessagesHint')} />
     {:else}
       {#each $dmThreads as thread (thread.peer_account_id)}
         <button
@@ -173,7 +176,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         onclick={() => active?.handle && onhandle?.(active.handle)}
       >
         <span class="text-on-surface text-body-medium block truncate">
-          {active?.display_name || (active?.handle ? `@${active.handle}` : 'Message')}
+          {active?.display_name || (active?.handle ? `@${active.handle}` : $t('blabber.message'))}
         </span>
         {#if active?.display_name && active.handle}
           <span class="text-on-surface-variant text-body-small block truncate"
@@ -191,7 +194,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {#if loading && $dmMessages.length === 0}
         <div class="p-4"><Skeleton count={3} height="h-12" /></div>
       {:else if $dmMessages.length === 0}
-        <EmptyState title="Nothing yet" description="Say hello." />
+        <EmptyState title={$t('blabber.nothingYet')} description={$t('blabber.nothingYetHint')} />
       {:else}
         {#each $dmMessages as message (message.id)}
           {@const mine = message.to_account === peer}

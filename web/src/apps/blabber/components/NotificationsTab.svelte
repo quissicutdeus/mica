@@ -13,7 +13,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     BellIcon,
     UsersIcon,
     MessageIcon,
-    formatTime
+    formatTime,
+    useLocale
   } from '@gphone/sdk';
   import type { NotificationItem } from '@gphone/shared/types';
   import { parseDeepLink } from '@gphone/shared/deepLink';
@@ -25,6 +26,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   let { onopenblab, onopenhandle }: Props = $props();
 
+  const { t } = useLocale();
   const { notificationsStore, loaded, markRead } = useNotifications('blabber');
 
   let notifications = $derived($notificationsStore);
@@ -63,10 +65,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {#if !$loaded}
     <div class="p-4"><Skeleton count={4} height="h-16" /></div>
   {:else if notifications.length === 0}
-    <EmptyState
-      title="No Activity Yet"
-      description="When people mention you, follow your profile, or reply to your Blabs, you will see it here."
-    />
+    <EmptyState title={$t('blabber.noActivity')} description={$t('blabber.noActivityHint')} />
   {:else}
     <div class="divide-outline-variant divide-y">
       {#each notifications as item (item.id)}

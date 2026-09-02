@@ -12,8 +12,15 @@
 import '../../../host/registerFacets';
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent, screen } from '@testing-library/svelte';
+import { registerMessages } from '@gphone/sdk';
 
 import Composer from './Composer.svelte';
+import en from '../locales/en.json';
+import de from '../locales/de.json';
+
+// MICA-215: the catalog is registered by `index.svelte`, which a component test does not
+// mount — so this file registers it itself, or every label renders as its own key.
+registerMessages('blabber', { en, de });
 
 /**
  * MICA-100.

@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Avatar, CheckIcon } from '@gphone/sdk';
+  import { Avatar, CheckIcon, useLocale } from '@gphone/sdk';
   import type { Account } from '@gphone/shared/types';
 
   /**
@@ -47,6 +47,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onedit: () => void;
     onclose: () => void;
   } = $props();
+
+  const { t } = useLocale();
 </script>
 
 <!-- A sibling rather than a wrapper: a full-bleed `<button>` cannot contain the panel's own
@@ -54,7 +56,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <button
   type="button"
   class="bg-scrim animate-in fade-in duration-short ease-standard absolute inset-0 z-40"
-  aria-label="Close menu"
+  aria-label={$t('blabber.closeMenu')}
   onclick={onclose}
 ></button>
 
@@ -64,7 +66,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   class="animate-in fade-in border-outline-variant bg-surface shadow-elevation-4 duration-short ease-standard absolute top-20 right-2 z-40 w-56 overflow-hidden rounded-box border"
 >
   <p class="text-on-surface-variant text-label-small px-3 pt-3 pb-1 tracking-wide uppercase">
-    Posting as · {accounts.length} of {limit}
+    {$t('blabber.postingAsCount', { count: accounts.length, limit })}
   </p>
 
   {#each accounts as account (account.id)}
@@ -102,7 +104,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       class="text-on-surface hover:bg-surface-container duration-short ease-standard text-body-small w-full cursor-pointer px-3 py-2.5 text-left transition-colors"
       onclick={onedit}
     >
-      Edit profile
+      {$t('blabber.editProfile')}
     </button>
     {#if canClaim}
       <button
@@ -110,7 +112,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class="text-on-surface hover:bg-surface-container duration-short ease-standard text-body-small w-full cursor-pointer px-3 py-2.5 text-left transition-colors"
         onclick={onclaim}
       >
-        Claim another handle
+        {$t('blabber.claimAnother')}
       </button>
     {/if}
   </div>

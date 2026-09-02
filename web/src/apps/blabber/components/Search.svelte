@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { SearchBar, SegmentedControl, EmptyState, Skeleton } from '@gphone/sdk';
+  import { SearchBar, SegmentedControl, EmptyState, Skeleton, useLocale } from '@gphone/sdk';
   import { useBlabber } from '../store';
   import BlabRow from './BlabRow.svelte';
 
@@ -23,6 +23,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
      */
     onopen?: (id: number, anchorId?: number) => void;
   } = $props();
+
+  const { t } = useLocale();
 
   const {
     accountResults,
@@ -73,14 +75,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <div class="flex min-h-0 flex-1 flex-col">
   <div class="border-outline-variant space-y-2 border-b p-3">
-    <SearchBar bind:value={query} placeholder="Search Blabber" focus={true} />
+    <SearchBar bind:value={query} placeholder={$t('blabber.searchBlabber')} focus={true} />
     <SegmentedControl
       selected={segment}
       onchange={(id) => (segment = id as typeof segment)}
       options={[
-        { id: 'people', label: 'People' },
-        { id: 'blabs', label: 'Blabs' },
-        { id: 'tags', label: 'Tags' }
+        { id: 'people', label: $t('blabber.people') },
+        { id: 'blabs', label: $t('blabber.blabs') },
+        { id: 'tags', label: $t('blabber.tags') }
       ]}
     />
   </div>
@@ -89,18 +91,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {#if showingTrending}
       {#if $trendingTags.length === 0}
         <EmptyState
-          title="Nothing trending yet"
-          description="Check back once people start posting."
+          title={$t('blabber.nothingTrending')}
+          description={$t('blabber.nothingTrendingHint')}
         />
       {:else}
         <div class="flex flex-wrap gap-2 p-3">
-          {#each $trendingTags as t (t.tag)}
+          {#each $trendingTags as trend (trend.tag)}
             <button
               type="button"
               class="bg-surface-container text-on-surface text-body-small rounded-box px-3 py-1.5"
-              onclick={() => ontag?.(t.tag)}
+              onclick={() => ontag?.(trend.tag)}
             >
-              #{t.tag} · {t.uses}
+              #{trend.tag} · {trend.uses}
             </button>
           {/each}
         </div>
@@ -109,7 +111,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {#if !$accountsLoaded}
         <div class="p-4"><Skeleton count={4} height="h-14" /></div>
       {:else if $accountResults.length === 0}
-        <EmptyState title="No people found" description="Try a different handle or name." />
+        <EmptyState title={$t('blabber.noPeople')} description={$t('blabber.noPeopleHint')} />
       {:else}
         {#each $accountResults as account (account.id)}
           <button
@@ -128,7 +130,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {#if !$blabsLoaded}
         <div class="p-4"><Skeleton count={4} height="h-16" /></div>
       {:else if $blabResults.length === 0}
-        <EmptyState title="No Blabs found" description="Try different words." />
+        <EmptyState title={$t('blabber.noBlabs')} description={$t('blabber.noBlabsHint')} />
       {:else}
         {#each $blabResults as blab (blab.id)}
           <BlabRow
@@ -141,16 +143,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {/each}
       {/if}
     {:else if $tagResults.length === 0}
-      <EmptyState title="No tags found" description="Try a shorter search." />
+      <EmptyState title={$t('blabber.noTags')} description={$t('blabber.noTagsHint')} />
     {:else}
-      {#each $tagResults as t (t.tag)}
+      {#each $tagResults as tagRow (tagRow.tag)}
         <button
           type="button"
           class="hover:bg-surface-container flex w-full items-center justify-between px-4 py-3 text-left"
-          onclick={() => ontag?.(t.tag)}
+          onclick={() => ontag?.(tagRow.tag)}
         >
-          <span class="text-on-surface text-body-medium">#{t.tag}</span>
-          <span class="text-on-surface-variant text-body-small">{t.uses} Blabs</span>
+          <span class="text-on-surface text-body-medium">#{tagRow.tag}</span>
+          <span class="text-on-surface-variant text-body-small"
+            >{$t('blabber.tagUses', { uses: tagRow.uses })}</span
+          >
         </button>
       {/each}
     {/if}

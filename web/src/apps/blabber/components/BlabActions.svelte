@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { useLocale } from '@gphone/sdk';
   import type { BlabEngagement } from '@gphone/shared/types';
 
   /**
@@ -32,6 +33,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onear?: () => void;
   } = $props();
 
+  const { t } = useLocale();
+
   const count = (n?: number) => (n && n > 0 ? String(n) : '');
 </script>
 
@@ -39,7 +42,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <button
     type="button"
     class="hover:text-primary duration-short ease-standard flex items-center gap-1.5 transition-colors"
-    aria-label="Reply"
+    aria-label={$t('blabber.reply')}
     onclick={onreply}
   >
     <svg
@@ -62,7 +65,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     type="button"
     class="duration-short ease-standard flex items-center gap-1.5 transition-colors hover:text-emerald-400"
     class:text-emerald-400={stats?.mouthedByMe}
-    aria-label={stats?.mouthedByMe ? 'Mouthed' : 'Mouth'}
+    aria-label={stats?.mouthedByMe ? $t('blabber.mouthed') : $t('blabber.mouth')}
     aria-pressed={stats?.mouthedByMe ?? false}
     onclick={onmouth}
   >
@@ -86,7 +89,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     type="button"
     class="hover:text-error duration-short ease-standard flex items-center gap-1.5 transition-colors"
     class:text-error={stats?.earedByMe}
-    aria-label={stats?.earedByMe ? 'Unear' : 'Ear'}
+    aria-label={stats?.earedByMe ? $t('blabber.unear') : $t('blabber.ear')}
     aria-pressed={stats?.earedByMe ?? false}
     onclick={onear}
   >

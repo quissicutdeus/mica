@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Button } from '@gphone/sdk';
+  import { Button, useLocale } from '@gphone/sdk';
 
   /**
    * `oncancel` is optional, and its absence is the point.
@@ -26,6 +26,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     oncancel
   }: { busy?: boolean; onclaim: (handle: string) => void; oncancel?: () => void } = $props();
 
+  const { t } = useLocale();
+
   let handle = $state('');
 
   /** Mirrors `HANDLE_PATTERN` on the server. The server is the boundary; this is the courtesy. */
@@ -33,9 +35,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </script>
 
 <div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-  <h2 class="text-on-surface text-lg font-bold">Pick a handle</h2>
+  <h2 class="text-on-surface text-lg font-bold">{$t('blabber.pickHandle')}</h2>
   <p class="text-on-surface-variant text-body-small">
-    This is how people find you. Lowercase letters, numbers and underscores, 3–32 characters.
+    {$t('blabber.pickHandleHint')}
   </p>
 
   <div class="bg-surface-container flex w-full items-center gap-1 rounded-box px-3">
@@ -43,7 +45,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <input
       bind:value={handle}
       maxlength="32"
-      placeholder="handle"
+      placeholder={$t('blabber.handlePlaceholder')}
       autocapitalize="none"
       class="text-on-surface placeholder-on-surface-variant text-body-medium w-full bg-transparent py-2.5 focus:outline-none"
       oninput={() => (handle = handle.toLowerCase())}
@@ -52,10 +54,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   <div class="flex w-full gap-2">
     {#if oncancel}
-      <Button variant="secondary" class="flex-1" disabled={busy} onclick={oncancel}>Cancel</Button>
+      <Button variant="secondary" class="flex-1" disabled={busy} onclick={oncancel}
+        >{$t('blabber.cancel')}</Button
+      >
     {/if}
     <Button disabled={!valid || busy} class="flex-1" onclick={() => onclaim(handle)}>
-      {busy ? '…' : 'Claim'}
+      {busy ? '…' : $t('blabber.claim')}
     </Button>
   </div>
 </div>

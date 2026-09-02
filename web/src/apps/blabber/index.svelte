@@ -22,9 +22,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useAppAction,
     useAppEvents,
     useAppLevels,
+    useLocale,
     useNotifications,
     usePagedList,
     useDeepLink,
+    registerMessages,
     type AppProps
   } from '@gphone/sdk';
   import { useBlabber } from './store';
@@ -41,6 +43,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import NotificationsTab from './components/NotificationsTab.svelte';
   import TaggedFeed from './components/TaggedFeed.svelte';
   import Search from './components/Search.svelte';
+  import en from './locales/en.json';
+  import de from './locales/de.json';
+
+  // MICA-215: Blabber is a `core: false` add-on, so it ships its own catalog and reads
+  // every label through `$t('blabber.…')` rather than out of anything central.
+  registerMessages('blabber', { en, de });
+  const { t } = useLocale();
 
   let {
     onback,
@@ -258,12 +267,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    */
   const dmTitle = (): string => {
     if (dmPeerAccount) return dmPeerAccount.display_name || `@${dmPeerAccount.handle}`;
-    return dmThreadName ?? 'Message';
+    return dmThreadName ?? $t('blabber.message');
   };
 
   const app = useAppLevels({
     appId: 'blabber',
-    title: 'Blabber',
+    title: () => $t('blabber.title'),
     onback: () => onback(),
     levels: [
       /**
@@ -274,15 +283,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {
         open: () => composing || editing !== null,
         close: closeComposer,
-        title: () => (editing ? 'Edit' : 'New Blab')
+        title: () => (editing ? $t('blabber.edit') : $t('blabber.newBlab'))
       },
       {
         open: () => editingProfile,
         close: () => (editingProfile = false),
-        title: () => 'Edit profile'
+        title: () => $t('blabber.editProfile')
       },
-      { open: () => claiming, close: () => (claiming = false), title: () => 'New handle' },
-      { open: () => menu, close: () => (menu = false), title: () => 'Posting as' },
+      {
+        open: () => claiming,
+        close: () => (claiming = false),
+        title: () => $t('blabber.newHandle')
+      },
+      { open: () => menu, close: () => (menu = false), title: () => $t('blabber.postingAs') },
       // Back leaves the thread view, then the profile, and only then leaves the app.
       {
         open: () => view === 'thread',
@@ -291,7 +304,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           activeAnchorId = undefined;
           view = 'feed';
         },
-        title: () => 'Blab'
+        title: () => $t('blabber.blab')
       },
       /**
        * One rung for both lists, with the title telling you which — the shape Settings' panes use.
@@ -304,9 +317,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {
         open: () => view === 'follows',
         close: () => (view = 'profile'),
-        title: () => (follows?.kind === 'following' ? 'Following' : 'Followers')
+        title: () =>
+          follows?.kind === 'following' ? $t('blabber.following') : $t('blabber.followers')
       },
-      { open: () => view === 'profile', close: () => (view = 'feed'), title: () => 'Profile' },
+      {
+        open: () => view === 'profile',
+        close: () => (view = 'feed'),
+        title: () => $t('blabber.profile')
+      },
       { open: () => view === 'tag', close: () => (view = 'feed'), title: () => `#${activeTag}` },
       {
         open: () => view === 'dms' && dmPeer !== null,
@@ -317,7 +335,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         // The peer, not the literal `Message` this used to be.
         title: dmTitle
       },
-      { open: () => view === 'dms', close: () => (view = 'feed'), title: () => 'Messages' },
+      {
+        open: () => view === 'dms',
+        close: () => (view = 'feed'),
+        title: () => $t('blabber.messages')
+      },
       // A non-default tab is the last rung before leaving: Back returns to the public feed rather
       // than sending the player home from Following. The title names the tab you are actually on —
       // hardcoding one of them titled the Notifications tab "Following".
@@ -325,7 +347,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         open: () => tab !== 'feed',
         close: () => (tab = 'feed'),
         title: () =>
-          tab === 'notifications' ? 'Notifications' : tab === 'search' ? 'Search' : 'Following'
+          tab === 'notifications'
+            ? $t('blabber.notifications')
+            : tab === 'search'
+              ? $t('blabber.search')
+              : $t('blabber.following')
       }
     ]
   });
@@ -392,10 +418,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     view = 'thread';
   };
 
-  const ear = (blab: Blab) => void run(() => toggleEar(blab.id), { title: 'Blabber' });
+  const ear = (blab: Blab) => void run(() => toggleEar(blab.id), { title: $t('blabber.title') });
 
   const mouth = (blab: Blab) =>
-    void run(() => mouthBlab(blab.id), { title: 'Blabber', success: 'Mouthed' });
+    void run(() => mouthBlab(blab.id), {
+      title: $t('blabber.title'),
+      success: $t('blabber.mouthed')
+    });
 
   /**
    * Counts for whatever is on screen, refreshed when the window grows.
@@ -412,21 +441,35 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const post = (body: string, attachments?: { photo_id: number }[]) => {
     composing = false;
-    void run(() => postBlab(body, undefined, attachments), { title: 'Blabber', success: 'Posted' });
+    void run(() => postBlab(body, undefined, attachments), {
+      title: $t('blabber.title'),
+      success: $t('blabber.posted')
+    });
   };
 
   const saveEdit = (body: string) => {
     const target = editing;
     if (!target) return;
     editing = null;
-    void run(() => editBlab(target.id, body), { title: 'Blabber', success: 'Updated' });
+    void run(() => editBlab(target.id, body), {
+      title: $t('blabber.title'),
+      success: $t('blabber.updated')
+    });
   };
 
   const remove = (blab: Blab) =>
-    void run(() => deleteBlab(blab.id), { title: 'Blabber', success: 'Deleted' });
+    void run(() => deleteBlab(blab.id), {
+      title: $t('blabber.title'),
+      success: $t('blabber.deleted')
+    });
 
   const claim = async (handle: string): Promise<void> => {
-    if (await run(() => claimAccount(handle), { title: 'Blabber', success: 'Handle claimed' })) {
+    if (
+      await run(() => claimAccount(handle), {
+        title: $t('blabber.title'),
+        success: $t('blabber.handleClaimed')
+      })
+    ) {
       claiming = false;
     }
   };
@@ -439,8 +482,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     if (!account) return;
     if (
       await run(() => updateAccount(account.id, patch), {
-        title: 'Blabber',
-        success: 'Profile updated'
+        title: $t('blabber.title'),
+        success: $t('blabber.profileUpdated')
       })
     ) {
       editingProfile = false;
@@ -477,8 +520,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         type="button"
         class="text-on-surface hover:bg-surface-container-high duration-short ease-standard relative rounded-full p-2 transition-colors"
         onclick={() => openDms(null)}
-        title="Messages"
-        aria-label="Messages"
+        title={$t('blabber.messages')}
+        aria-label={$t('blabber.messages')}
       >
         <MessageIcon class="size-icon-md" />
         {#if $unreadDms > 0}
@@ -495,8 +538,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         type="button"
         class="duration-short ease-standard rounded-full transition-transform hover:scale-105"
         onclick={() => (menu = true)}
-        title="Posting as @{$activeAccount?.handle ?? ''}"
-        aria-label="Posting as @{$activeAccount?.handle ?? ''}"
+        title={$t('blabber.postingAsHandle', { handle: $activeAccount?.handle ?? '' })}
+        aria-label={$t('blabber.postingAsHandle', { handle: $activeAccount?.handle ?? '' })}
       >
         <Avatar
           initials={($activeAccount?.handle ?? '?').slice(0, 2).toUpperCase()}
@@ -579,21 +622,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   {#if onTabs}
     <!-- `raised` so it clears the nav they share this snippet with. -->
-    <FloatingActionButton label="Blab" collapsed raised onclick={() => (composing = true)}>
+    <FloatingActionButton
+      label={$t('blabber.blab')}
+      collapsed
+      raised
+      onclick={() => (composing = true)}
+    >
       {#snippet icon()}
         <AddIcon class="text-on-surface size-icon-sm shrink-0" />
       {/snippet}
     </FloatingActionButton>
 
     <TabBar
-      aria-label="Blabber sections"
+      aria-label={$t('blabber.sections')}
       selected={tab}
       onchange={selectTab}
       options={[
-        { id: 'feed', label: 'Feed', icon: HomeIcon },
-        { id: 'following', label: 'Following', icon: UsersIcon },
-        { id: 'notifications', label: 'Notifications', icon: BellIcon },
-        { id: 'search', label: 'Search', icon: SearchIcon }
+        { id: 'feed', label: $t('blabber.feed'), icon: HomeIcon },
+        { id: 'following', label: $t('blabber.following'), icon: UsersIcon },
+        { id: 'notifications', label: $t('blabber.notifications'), icon: BellIcon },
+        { id: 'search', label: $t('blabber.search'), icon: SearchIcon }
       ]}
     />
   {/if}
@@ -669,8 +717,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Two different statements, and the app has to pick the right one: nobody followed yet
              versus followed people who have not posted. -->
         <EmptyState
-          title="Nothing from anyone yet"
-          description="Follow somebody from their profile and their Blabs turn up here."
+          title={$t('blabber.followingEmpty')}
+          description={$t('blabber.followingEmptyHint')}
         />
       {:else}
         {#each followingPage.visible as blab (blab.id)}
@@ -700,7 +748,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
              making it before the server has answered is a claim the app cannot support. -->
         <div class="p-4"><Skeleton count={4} height="h-16" /></div>
       {:else if $feed.length === 0}
-        <EmptyState title="Nothing here yet" description="Be the first to say something." />
+        <EmptyState title={$t('blabber.feedEmpty')} description={$t('blabber.feedEmptyHint')} />
       {:else}
         {#each page.visible as blab (blab.id)}
           <BlabRow

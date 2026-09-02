@@ -7,11 +7,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import { MAX_ATTACHMENTS } from '@gphone/shared/attachments';
   import { untrack } from 'svelte';
-  import { Button, CloseIcon, MediaThumb, PhotoIcon, PhotoPickerModal } from '@gphone/sdk';
+  import {
+    Button,
+    CloseIcon,
+    MediaThumb,
+    PhotoIcon,
+    PhotoPickerModal,
+    useLocale
+  } from '@gphone/sdk';
   import type { MediaPreview } from '@gphone/shared/types';
 
   /** 280, matching `gphone_blabber.body`. The server enforces it from the same declaration. */
   const LIMIT = 280;
+
+  const { t } = useLocale();
 
   /**
    * `placeholder` varies the prompt between the three things this composer does — post, reply,
@@ -22,7 +31,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    */
   let {
     handle,
-    placeholder = "What's happening?",
+    placeholder = '',
     busy = false,
     initial = '',
     /**
@@ -109,7 +118,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <div class="border-outline-variant border-b p-3">
   {#if handle}
     <p class="text-on-surface-variant text-body-small mb-1.5">
-      Posting as <span class="text-primary">@{handle}</span>
+      {$t('blabber.postingAs')} <span class="text-primary">@{handle}</span>
     </p>
   {/if}
 
@@ -117,7 +126,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
        should meet the limit while typing rather than after tapping Post. -->
   <textarea
     bind:value={text}
-    {placeholder}
+    placeholder={placeholder || $t('blabber.whatsHappening')}
     maxlength={LIMIT}
     rows="3"
     class="bg-surface-container text-on-surface placeholder-on-surface-variant text-body-medium w-full resize-none rounded-box p-2.5 focus:outline-none"
@@ -129,12 +138,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div
           class="border-outline shadow-elevation-2 relative h-14 w-14 shrink-0 overflow-hidden rounded-box border"
         >
-          <MediaThumb item={att.media} alt="Attachment" />
+          <MediaThumb item={att.media} alt={$t('blabber.attachment')} />
           <button
             type="button"
             class="text-on-surface bg-media-overlay absolute top-0 right-0 cursor-pointer rounded-bl-lg p-0.5 hover:bg-black"
             onclick={() => (attachments = attachments.filter((a) => a.photo_id !== att.photo_id))}
-            aria-label="Remove attachment"
+            aria-label={$t('blabber.removeAttachment')}
           >
             <CloseIcon class="h-3 w-3" />
           </button>
@@ -150,7 +159,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           type="button"
           class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary duration-short ease-standard flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors"
           onclick={() => (showPicker = true)}
-          aria-label="Attach photo"
+          aria-label={$t('blabber.attachPhoto')}
         >
           <PhotoIcon class="size-icon-md" />
         </button>
@@ -165,10 +174,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
     <div class="flex gap-2">
       {#if oncancel}
-        <Button variant="secondary" onclick={oncancel}>Cancel</Button>
+        <Button variant="secondary" onclick={oncancel}>{$t('blabber.cancel')}</Button>
       {/if}
       <Button disabled={!canPost} onclick={() => void submit()}>
-        {busy || submitting ? '…' : 'Post'}
+        {busy || submitting ? '…' : $t('blabber.post')}
       </Button>
     </div>
   </div>
@@ -176,7 +185,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#if showPicker}
   <PhotoPickerModal
-    title="Select Photos"
+    title={$t('blabber.selectPhotos')}
     multiSelect={true}
     selectedIds={attachments.map((a) => a.photo_id)}
     onmultichange={(photoId: number, media: MediaPreview) => {

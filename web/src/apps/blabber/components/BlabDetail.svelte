@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { EmptyState, Skeleton, usePagedList } from '@gphone/sdk';
+  import { EmptyState, Skeleton, useLocale, usePagedList } from '@gphone/sdk';
   import { useBlabber } from '../store';
   import type { Blab } from '@gphone/shared/types';
   import BlabRow from './BlabRow.svelte';
@@ -41,6 +41,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onmouth?: (blab: Blab) => void;
     onear?: (blab: Blab) => void;
   } = $props();
+
+  const { t } = useLocale();
 
   const { viewBlab, loadMoreReplies, engagement, loadEngagement, postBlab } = useBlabber();
 
@@ -140,8 +142,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <div class="flex min-h-0 flex-1 flex-col">
   {#if missing}
     <EmptyState
-      title="Blab unavailable"
-      description="This post has been deleted or is no longer visible."
+      title={$t('blabber.blabUnavailable')}
+      description={$t('blabber.blabUnavailableHint')}
     />
   {:else}
     <div class="border-outline-variant border-b">
@@ -166,8 +168,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <Composer
       {handle}
       placeholder={replyTarget && root && replyTarget.id !== root.id
-        ? `Reply to @${replyTarget.handle ?? ''}`
-        : 'Post your reply'}
+        ? $t('blabber.replyTo', { handle: replyTarget.handle ?? '' })
+        : $t('blabber.postYourReply')}
       {busy}
       onsubmit={submitReply}
     />
@@ -176,7 +178,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {#if loading && replies.length === 0}
         <div class="p-4"><Skeleton count={2} height="h-16" /></div>
       {:else if replies.length === 0}
-        <EmptyState title="No replies yet" description="Say something back." />
+        <EmptyState title={$t('blabber.noReplies')} description={$t('blabber.noRepliesHint')} />
       {:else}
         {#each page.visible as reply (reply.id)}
           <div data-blab-id={reply.id}>

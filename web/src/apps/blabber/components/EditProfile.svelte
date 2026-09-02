@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { Button } from '@gphone/sdk';
+  import { Button, useLocale } from '@gphone/sdk';
   import type { Account } from '@gphone/shared/types';
 
   /**
@@ -42,6 +42,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * to guess, and the same reasoning as `Composer`'s `initial`: tracking the prop would let a
    * store refresh overwrite what the player is halfway through typing.
    */
+  const { t } = useLocale();
+
   let displayName = $state(untrack(() => account.display_name ?? ''));
   let bio = $state(untrack(() => account.bio ?? ''));
 
@@ -56,13 +58,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <div
   class="pt-safe-top animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col p-5"
 >
-  <h3 class="text-on-surface mb-1 text-lg font-bold">Edit profile</h3>
+  <h3 class="text-on-surface mb-1 text-lg font-bold">{$t('blabber.editProfile')}</h3>
   <p class="text-on-surface-variant text-body-small mb-4">
-    @{account.handle} — a handle is claimed once and cannot be changed.
+    {$t('blabber.handleFixed', { handle: account.handle })}
   </p>
 
   <label class="text-on-surface-variant text-body-small mb-1 block" for="blabber-display-name">
-    Display name
+    {$t('blabber.displayName')}
   </label>
   <input
     id="blabber-display-name"
@@ -72,13 +74,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     class="bg-surface-container text-on-surface placeholder-on-surface-variant text-body-medium mb-4 w-full rounded-box px-3 py-2.5 focus:outline-none"
   />
 
-  <label class="text-on-surface-variant text-body-small mb-1 block" for="blabber-bio">Bio</label>
+  <label class="text-on-surface-variant text-body-small mb-1 block" for="blabber-bio"
+    >{$t('blabber.bio')}</label
+  >
   <textarea
     id="blabber-bio"
     bind:value={bio}
     maxlength="160"
     rows="3"
-    placeholder="Something about you"
+    placeholder={$t('blabber.bioPlaceholder')}
     class="bg-surface-container text-on-surface placeholder-on-surface-variant text-body-medium w-full resize-none rounded-box p-2.5 focus:outline-none"
   ></textarea>
   <span class="text-on-surface-variant text-body-small mt-1 mb-4 text-right"
@@ -86,9 +90,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   >
 
   <div class="flex gap-2">
-    <Button class="flex-1" variant="secondary" onclick={oncancel} disabled={busy}>Cancel</Button>
+    <Button class="flex-1" variant="secondary" onclick={oncancel} disabled={busy}
+      >{$t('blabber.cancel')}</Button
+    >
     <Button class="flex-1" disabled={!dirty || busy} onclick={save}>
-      {busy ? '…' : 'Save'}
+      {busy ? '…' : $t('blabber.save')}
     </Button>
   </div>
 </div>

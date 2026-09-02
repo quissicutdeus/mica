@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { EmptyState, Skeleton, usePagedList } from '@gphone/sdk';
+  import { EmptyState, Skeleton, useLocale, usePagedList } from '@gphone/sdk';
   import { useBlabber } from '../store';
   import type { Blab } from '@gphone/shared/types';
   import BlabRow from './BlabRow.svelte';
@@ -29,6 +29,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onmouth?: (blab: Blab) => void;
     onear?: (blab: Blab) => void;
   } = $props();
+
+  const { t } = useLocale();
 
   const { taggedBlabs, loadTaggedBlabs, engagement, loadEngagement } = useBlabber();
   const loaded = taggedBlabs.loaded;
@@ -59,7 +61,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {#if !$loaded}
     <div class="p-4"><Skeleton count={4} height="h-16" /></div>
   {:else if $taggedBlabs.length === 0}
-    <EmptyState title="Nothing tagged yet" description="No Blabs carry #{tag} yet." />
+    <EmptyState
+      title={$t('blabber.nothingTagged')}
+      description={$t('blabber.nothingTaggedHint', { tag })}
+    />
   {:else}
     {#each page.visible as blab (blab.id)}
       <BlabRow
