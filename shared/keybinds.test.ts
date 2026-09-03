@@ -3,7 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'vitest';
-import { conflictsWith, findAction, PHONE_SCOPE_ACTIONS, type KeybindAction } from './keybinds';
+import { DEVICES } from './devices';
+import {
+  conflictsWith,
+  findAction,
+  GAME_SCOPE_ACTIONS,
+  PHONE_SCOPE_ACTIONS,
+  type KeybindAction
+} from './keybinds';
 
 describe('conflictsWith', () => {
   it('finds a conflict against the default core action list when no candidates are given', () => {
@@ -86,5 +93,30 @@ describe('conflictsWith', () => {
       cameraPause
     ]);
     expect(conflict).toBeUndefined();
+  });
+});
+
+/**
+ * MICA-258: a device names the game-scope action that opens it, and the table has to hold
+ * one for every device -- a tablet with no key is a tablet nobody can open, and the client
+ * registers its commands from the same descriptor.
+ */
+describe('devices and their game-scope actions', () => {
+  it.each(Object.values(DEVICES))('$id names its game-scope action and its command', (device) => {
+    const action = findAction(device.keybind.id);
+    expect(action).toBeDefined();
+    expect(action!.scope).toBe('game');
+    expect(action!.command).toBe(device.keybind.command);
+    expect(action!.defaultKey).toBe(device.keybind.defaultKey);
+  });
+
+  it('gives every device a key of its own, so one press cannot mean two devices', () => {
+    const keys = Object.values(DEVICES).map((d) => d.keybind.defaultKey);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("has no game-scope action that is not some device's", () => {
+    const claimed = new Set(Object.values(DEVICES).map((d) => d.keybind.id));
+    expect(GAME_SCOPE_ACTIONS.map((a) => a.id).filter((id) => !claimed.has(id))).toEqual([]);
   });
 });

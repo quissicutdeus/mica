@@ -56,8 +56,16 @@ RegisterCommand(
  * Shortcuts instead. Registering these through `RegisterKeyMapping` is what puts them
  * in FiveM's own Key Bindings menu.
  */
+//
+// Only the actions whose command this file registers. `openTablet` joined the table with
+// MICA-258 and its command arrives with MICA-262; a mapping for a command nobody has
+// registered would put "Open Tablet" in FiveM's menu as a key that does nothing.
+const REGISTERED_COMMANDS = new Set(['togglePhone']);
+
 for (const action of GAME_SCOPE_ACTIONS) {
-  RegisterKeyMapping(action.command ?? action.id, action.label, 'keyboard', action.defaultKey);
+  const command = action.command ?? action.id;
+  if (!REGISTERED_COMMANDS.has(command)) continue;
+  RegisterKeyMapping(command, action.label, 'keyboard', action.defaultKey);
 }
 
 // NUI Callback to toggle freelook

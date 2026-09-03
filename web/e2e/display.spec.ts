@@ -1,6 +1,7 @@
 import { test, expect, type Page } from './support/test';
 import { seedHomeGrid } from './support/homeGrid';
 import { settlePhoneOpen } from './support/phoneOpen';
+import { DEVICES } from '@gphone/shared/devices';
 
 /**
  * The phone is one shape drawn at many sizes.
@@ -11,8 +12,9 @@ import { settlePhoneOpen } from './support/phoneOpen';
  * deliberately rather than trusting the default.
  */
 
-const DESIGN_WIDTH = 400;
-const DESIGN_HEIGHT = 850;
+// From the device table, not restated: see `support/homeGrid.ts` for why a spec may import it.
+const DESIGN_WIDTH = DEVICES.phone.frame.width;
+const DESIGN_HEIGHT = DEVICES.phone.frame.height;
 const DESIGN_RATIO = DESIGN_WIDTH / DESIGN_HEIGHT;
 
 /**

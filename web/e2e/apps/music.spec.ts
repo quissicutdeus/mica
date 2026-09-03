@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '../support/test';
+import { DEVICES } from '@gphone/shared/devices';
 
 /**
  * Music, end to end — against a stand-in for YouTube, never YouTube. MICA-111 phase 1.
@@ -42,12 +43,8 @@ const PLAYLIST = 'PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI';
 
 const PLAYER = 'iframe[title="gPhone music player"]';
 
-/**
- * Mirrors `state/display.ts` rather than importing it — a Playwright spec drives the built
- * page rather than app source, and `display.spec.ts` and `notifications.spec.ts` both
- * establish the same convention for this number.
- */
-const PHONE_WIDTH = 400;
+/** `state/display.ts`'s `PHONE_WIDTH`, from the device table; `support/homeGrid.ts` says why. */
+const PHONE_WIDTH = DEVICES.phone.frame.width;
 
 /**
  * A document that speaks the player's half of the IFrame API wire format, and nothing else.

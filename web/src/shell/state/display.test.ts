@@ -29,8 +29,11 @@ import {
   MAX_SCALE,
   MIN_SCALE,
   PHONE_HEIGHT,
-  PHONE_WIDTH
+  PHONE_WIDTH,
+  STATUS_BAR_MAX_NOTIFICATION_ICONS,
+  statusBarIconCap
 } from './display';
+import { DEVICES } from '@gphone/shared/devices';
 
 describe('the phone is one ratio at many sizes', () => {
   beforeEach(() => {
@@ -198,5 +201,32 @@ describe('following the window', () => {
     input.blur();
     resize(390, 800);
     expect(get(viewportSize)).toEqual({ width: 390, height: 800 });
+  });
+});
+
+/**
+ * MICA-258: the phone's numbers come from the device table, and the status-bar cap is
+ * derived from them rather than restated. The cap's value is pinned because the arithmetic
+ * behind it was measured in a browser: a change that moves 3 is a change to the bar, not to
+ * the function.
+ */
+describe('the phone is one device of the table', () => {
+  it('draws the frame the device table declares', () => {
+    expect(PHONE_WIDTH).toBe(DEVICES.phone.frame.width);
+    expect(PHONE_HEIGHT).toBe(DEVICES.phone.frame.height);
+  });
+
+  it('caps the status-bar icons at three on the phone, as measured', () => {
+    expect(STATUS_BAR_MAX_NOTIFICATION_ICONS).toBe(3);
+    expect(statusBarIconCap(400, true)).toBe(3);
+  });
+
+  it('gives a frame with no hole-punch more room, up to the readable ceiling', () => {
+    const tablet = DEVICES.tablet;
+    const cap = statusBarIconCap(tablet.frame.width, tablet.chrome.holePunch);
+    expect(cap).toBeGreaterThan(STATUS_BAR_MAX_NOTIFICATION_ICONS);
+    expect(cap).toBeLessThanOrEqual(8);
+    // Narrow enough that nothing fits still answers a number, never a negative one.
+    expect(statusBarIconCap(100, false)).toBe(0);
   });
 });

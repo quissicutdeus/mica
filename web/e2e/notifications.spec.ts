@@ -1,15 +1,15 @@
 import { test, expect, type Page, type Locator } from './support/test';
 import { installAddOn } from './support/addon';
 import { seedHomeGrid } from './support/homeGrid';
+import { DEVICES } from '@gphone/shared/devices';
 
 /**
- * Mirrors `web/src/shell/state/display.ts`'s `PHONE_WIDTH`/`SHADE_DRAG_REVEAL_DISTANCE`
- * rather than importing them — `display.spec.ts` establishes the same convention for
- * `PHONE_WIDTH`/`PHONE_HEIGHT`, since a Playwright spec drives the built page rather than
- * importing app source.
+ * `display.ts`'s `PHONE_WIDTH` and `SHADE_DRAG_REVEAL_DISTANCE`, read from the device table
+ * rather than restated. The reveal distance is the frame's height by that module's own
+ * definition, and `support/homeGrid.ts` says why a spec may import the table.
  */
-const PHONE_WIDTH = 400;
-const SHADE_DRAG_REVEAL_DISTANCE = 850;
+const PHONE_WIDTH = DEVICES.phone.frame.width;
+const SHADE_DRAG_REVEAL_DISTANCE = DEVICES.phone.frame.height;
 
 /** The frame's rendered rectangle, after the entrance fly-in has landed. See `display.spec.ts`. */
 const frameBox = async (page: Page) => {

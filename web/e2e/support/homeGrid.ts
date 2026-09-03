@@ -1,7 +1,13 @@
 import { expect, type Page, type Locator } from '@playwright/test';
+import { DEVICES } from '@gphone/shared/devices';
 
-/** Mirrors `web/src/shell/state/display.ts`'s `PHONE_WIDTH` — see `notifications.spec.ts`. */
-const PHONE_WIDTH = 400;
+/**
+ * The phone's design width, from the device table rather than restated. A spec drives the
+ * built page rather than app source, and that rule still holds: `shared/devices.ts` is a
+ * table of numbers with no runtime behind it, and importing it is what stops this file and
+ * `display.ts` from disagreeing (MICA-258).
+ */
+const PHONE_WIDTH = DEVICES.phone.frame.width;
 
 /** The frame's rendered rectangle, after the entrance fly-in has landed. */
 const frameBox = async (page: Page) => {

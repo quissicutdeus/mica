@@ -55,6 +55,15 @@ export const KEYBIND_ACTIONS: readonly KeybindAction[] = [
     command: 'togglePhone'
   },
   {
+    id: 'openTablet',
+    label: 'Open Tablet',
+    // The tablet's own key (MICA-252). F2 is what most tablet resources bind, and the
+    // mapping is FiveM's, so a server whose inventory already sits on F2 rebinds it there.
+    defaultKey: 'F2',
+    scope: 'game',
+    command: 'toggleTablet'
+  },
+  {
     id: 'answerCall',
     label: 'Answer Call',
     defaultKey: 'Enter',

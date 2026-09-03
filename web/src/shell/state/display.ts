@@ -4,6 +4,7 @@
 
 import { captureZoomBoost } from '../../../../sdk/host/seam/captureZoom';
 import { derived, get, writable } from 'svelte/store';
+import { DEVICES } from '@gphone/shared/devices';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { isTypingTarget } from './keybinds';
 
@@ -23,8 +24,13 @@ import { isTypingTarget } from './keybinds';
  * an outer height of 848, a two-pixel change nobody can see that trades an exact outer
  * ratio for an inexact one.
  */
-export const PHONE_WIDTH = 400;
-const PHONE_DESIGN_HEIGHT = 850;
+//
+// The numbers themselves live in `shared/devices.ts` (MICA-258): the phone is one device of
+// two, and the tablet's frame has to be stated in the same place as this one, by the same
+// name, for the client and server halves to read. This module stays the one place the
+// phone's *zoom* is decided.
+export const PHONE_WIDTH = DEVICES.phone.frame.width;
+const PHONE_DESIGN_HEIGHT = DEVICES.phone.frame.height;
 export const PHONE_HEIGHT = PHONE_DESIGN_HEIGHT;
 
 /**
@@ -78,8 +84,35 @@ export const SHADE_DRAG_REVEAL_DISTANCE = PHONE_DESIGN_HEIGHT;
  * end at exactly 188px, which is why the fifth was reported half-swallowed by the cutout.
  * A fourth icon would fit on its own, but not alongside the chip that has to sit after it,
  * and a cap that changes with the count is a rule nobody can check by looking at the bar.
+ *
+ * Written as a function of the frame (MICA-258), so a wider device gets the cap its own bar
+ * has room for from the same arithmetic rather than a second hand-derived number. The
+ * terms are the ones measured above: the fixed part of the row (the `px-8` start, the
+ * widest clock, the two gaps, a two-glyph chip) and 18px per icon. With a hole-punch the row
+ * stops at the cutout's left edge; without one it has the bar minus the right-hand cluster,
+ * capped where a longer row stops being a glance. The phone's answer is still 3, and
+ * `display.test.ts` holds it there.
  */
-export const STATUS_BAR_MAX_NOTIFICATION_ICONS = 3;
+const STATUS_BAR_ROW_FIXED_PX = 32 + 62 + 8 + 4 + 18;
+const STATUS_BAR_ICON_STEP_PX = 18;
+const STATUS_BAR_CUTOUT_HALF_PX = 12;
+const STATUS_BAR_RIGHT_CLUSTER_PX = 32 + 90;
+const STATUS_BAR_ICON_CAP_WITHOUT_CUTOUT = 8;
+
+export const statusBarIconCap = (frameWidth: number, holePunch: boolean): number => {
+  const roomFor = (rightEdge: number) =>
+    Math.max(0, Math.floor((rightEdge - STATUS_BAR_ROW_FIXED_PX) / STATUS_BAR_ICON_STEP_PX));
+  if (holePunch) return roomFor(frameWidth / 2 - STATUS_BAR_CUTOUT_HALF_PX);
+  return Math.min(
+    STATUS_BAR_ICON_CAP_WITHOUT_CUTOUT,
+    roomFor(frameWidth - STATUS_BAR_RIGHT_CLUSTER_PX)
+  );
+};
+
+export const STATUS_BAR_MAX_NOTIFICATION_ICONS = statusBarIconCap(
+  PHONE_WIDTH,
+  DEVICES.phone.chrome.holePunch
+);
 
 /**
  * Breathing room between the phone and the edge of the window, in CSS pixels.
