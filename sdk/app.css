@@ -207,6 +207,10 @@
      concentric when the inner radius is the outer radius minus that inset — using the
      same radius for both leaves a visible sliver of gap at each corner. */
   --radius-frame-inner: calc(var(--radius-frame-outer) - 8px);
+  /* The tablet's own pair (MICA-259): a slab with a 12px bezel wants a tighter corner
+     than a handset, and its inner curve is inset by its own bezel for the reason above. */
+  --radius-frame-outer-tablet: 1.5rem;
+  --radius-frame-inner-tablet: calc(var(--radius-frame-outer-tablet) - 12px);
 
   /**
    * M3 elevation: real drop-shadow for elements that float above the surface stack

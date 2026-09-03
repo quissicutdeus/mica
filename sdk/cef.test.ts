@@ -78,7 +78,9 @@ const GRANDFATHERED: Record<string, number> = {
   'web/src/apps/media/components/PhotoDetail.svelte': 1,
   'web/src/apps/media/components/PhotoGrid.svelte': 1,
   'web/src/apps/store/components/AppDetails.svelte': 1,
-  'web/src/shell/PhoneFrame.svelte': 3,
+  // MICA-259 moved `PhoneFrame`'s three into the pieces the tablet frame shares.
+  'web/src/shell/frame/DeadBatteryScreen.svelte': 2,
+  'web/src/shell/frame/HomeIndicator.svelte': 1,
   'web/src/shell/Shell.svelte': 1,
   'web/src/shell/ToastHost.svelte': 6,
   'web/src/shell/VolumeHud.svelte': 5

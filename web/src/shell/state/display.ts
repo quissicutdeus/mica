@@ -4,8 +4,9 @@
 
 import { captureZoomBoost } from '../../../../sdk/host/seam/captureZoom';
 import { derived, get, writable } from 'svelte/store';
-import { DEVICES } from '@gphone/shared/devices';
+import { DEVICES, type DeviceFrame } from '@gphone/shared/devices';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
+import { frame } from './device';
 import { isTypingTarget } from './keybinds';
 
 /**
@@ -27,23 +28,28 @@ import { isTypingTarget } from './keybinds';
 //
 // The numbers themselves live in `shared/devices.ts` (MICA-258): the phone is one device of
 // two, and the tablet's frame has to be stated in the same place as this one, by the same
-// name, for the client and server halves to read. This module stays the one place the
-// phone's *zoom* is decided.
+// name, for the client and server halves to read. This module stays the one place a
+// device's *zoom* is decided.
+//
+// Since MICA-259 the shell draws whichever device `state/device.ts` names, and everything
+// below that used to read these two constants reads the `frame` store instead. They stay
+// exported as the phone's numbers — for the places that are about the phone specifically,
+// and for the tests that pin it to the table.
 export const PHONE_WIDTH = DEVICES.phone.frame.width;
-const PHONE_DESIGN_HEIGHT = DEVICES.phone.frame.height;
-export const PHONE_HEIGHT = PHONE_DESIGN_HEIGHT;
+export const PHONE_HEIGHT = DEVICES.phone.frame.height;
 
 /**
- * How far, in phone-design px, a finger has to travel to fully reveal or dismiss the
+ * How far, in design px, a finger has to travel to fully reveal or dismiss the
  * notification shade by drag. Shared by the status-bar open-drag and the shade's own
- * grab-handle close-drag so the two gestures feel symmetric — equal to `PHONE_HEIGHT`
- * (850px) so the panel tracks the finger 1:1 with zero offset across the full screen.
+ * grab-handle close-drag so the two gestures feel symmetric — equal to the frame's
+ * height so the panel tracks the finger 1:1 with zero offset across the full screen.
  *
- * Sourced from the same private constant as `PHONE_HEIGHT` rather than from that export
- * directly, so the two read as independently-named quantities that happen to coincide
- * (per the paragraph above) instead of one export aliasing another.
+ * A store rather than a constant since MICA-259: the number is the active device's
+ * height, 850 on the phone and 800 on the tablet, and the sheets that map this progress
+ * onto a `translateY` (`NotificationShade`, `AppDrawer`) read the same store, so the
+ * sheet never outruns the finger on either.
  */
-export const SHADE_DRAG_REVEAL_DISTANCE = PHONE_DESIGN_HEIGHT;
+export const shadeDragRevealDistance = derived(frame, ($frame) => $frame.height);
 
 /**
  * How many per-app notification icons the status bar will draw before collapsing the rest
@@ -133,7 +139,11 @@ const SMALL_VIEWPORT = 640;
  * difference between reaching design size and not. Generous spacing is a nicety; drawing
  * the phone at the size the player asked for is the point, so the margin gives way first.
  */
-export const marginFor = (width: number, height: number): number => {
+export const marginFor = (
+  width: number,
+  height: number,
+  design: DeviceFrame = DEVICES.phone.frame
+): number => {
   const base = Math.min(width, height) < SMALL_VIEWPORT ? MARGIN_SMALL : MARGIN_LARGE;
 
   // The largest margin that still leaves the phone its design height, never below the
@@ -143,7 +153,7 @@ export const marginFor = (width: number, height: number): number => {
   // Continuous rather than a step down from large to small, and that matters: a two-step
   // rule made a 900px window allow a *larger* phone than a 950px one, because the smaller
   // window crossed the threshold and got 32px back while the larger one kept paying 96.
-  const spare = Math.floor((height - PHONE_HEIGHT) / 2);
+  const spare = Math.floor((height - design.height) / 2);
   return Math.min(base, Math.max(MARGIN_SMALL, spare));
 };
 
@@ -244,19 +254,30 @@ export function observeViewport(): () => void {
  *
  * An unmeasured viewport must not clamp anything — jsdom and a pre-mount render both
  * report zero, and a fit of zero is an invisible phone.
+ *
+ * `design` defaults to the phone so every existing caller and test reads as before; the
+ * store below passes the active device's frame, which is how a 1280px-wide tablet ends up
+ * size-limited on a window the phone fits in with room to spare.
  */
-export const fitScaleFor = ({ width, height }: ViewportSize): number => {
-  const margin = marginFor(width, height);
+export const fitScaleFor = (
+  { width, height }: ViewportSize,
+  design: DeviceFrame = DEVICES.phone.frame
+): number => {
+  const margin = marginFor(width, height, design);
   const available = { width: width - margin * 2, height: height - margin * 2 };
   if (available.width <= 0 || available.height <= 0) return MAX_SCALE;
-  return Math.min(available.width / PHONE_WIDTH, available.height / PHONE_HEIGHT);
+  return Math.min(available.width / design.width, available.height / design.height);
 };
 
 /** Likewise internal; `fitScaleFor` is the exported, testable half. */
-const fitScale = derived(viewportSize, fitScaleFor);
+const fitScale = derived([viewportSize, frame], ([$viewport, $frame]) =>
+  fitScaleFor($viewport, $frame)
+);
 
 /** The margin actually in use, so `Shell` pads by exactly what the fit assumed. */
-export const frameMargin = derived(viewportSize, ({ width, height }) => marginFor(width, height));
+export const frameMargin = derived([viewportSize, frame], ([{ width, height }, $frame]) =>
+  marginFor(width, height, $frame)
+);
 
 /**
  * Set by the camera around a capture, to draw the phone at its largest normal size
@@ -292,9 +313,9 @@ export const phoneScale = derived(
 );
 
 /** The scaled box, which is what the flex layout has to reserve — a transform does not. */
-export const phoneBox = derived(phoneScale, ($scale) => ({
-  width: PHONE_WIDTH * $scale,
-  height: PHONE_HEIGHT * $scale
+export const phoneBox = derived([phoneScale, frame], ([$scale, $frame]) => ({
+  width: $frame.width * $scale,
+  height: $frame.height * $scale
 }));
 
 /**

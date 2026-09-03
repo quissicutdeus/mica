@@ -27,7 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } from './state/iconDrag';
   import { openDrawer, isDrawerOpen, drawerDragProgress, drawerDragPhase } from './state/appDrawer';
   import { openShade, isShadeOpen, shadeDragProgress, shadeDragPhase } from './state/shade';
-  import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
+  import { shadeDragRevealDistance } from './state/display';
   import FolderPopup from './FolderPopup.svelte';
 
   let { openApp } = $props<{ openApp: (id: string) => void }>();
@@ -152,11 +152,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     if (swipeTarget === 'shade') {
       if (get(isShadeOpen)) return;
       shadeDragPhase.set('dragging');
-      shadeDragProgress.set(clampProgress(deltaY / SHADE_DRAG_REVEAL_DISTANCE));
+      shadeDragProgress.set(clampProgress(deltaY / $shadeDragRevealDistance));
     } else {
       if (get(isDrawerOpen)) return;
       drawerDragPhase.set('dragging');
-      drawerDragProgress.set(clampProgress(-deltaY / SHADE_DRAG_REVEAL_DISTANCE));
+      drawerDragProgress.set(clampProgress(-deltaY / $shadeDragRevealDistance));
     }
   }
 

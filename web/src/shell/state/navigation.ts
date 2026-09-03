@@ -3,7 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { get, writable } from 'svelte/store';
+import type { DeviceId } from '@gphone/shared/devices';
 import { fetchNui } from '../../nui/fetchNui';
+import { activeDevice } from './device';
 import { appRegistryStore } from './registry';
 
 /**
@@ -46,6 +48,41 @@ let recency: string[] = [];
 
 /** Whatever is on screen. `home` is the shell, not an app, and is never resident. */
 export const currentApp = writable<RunningApp>({ id: 'home', props: {} });
+
+/**
+ * Each device keeps its own navigation (MICA-259).
+ *
+ * The three pieces above are the *active* device's. When `activeDevice` moves, they are
+ * stashed under the device being left and the other device's are put back — or fresh ones
+ * if it has never been opened — so a tablet set down on its Notes editor is still on it
+ * when the phone has been used in between, and the phone's resident apps are not the
+ * tablet's.
+ *
+ * Only ids and props are stored, never components. The frame already unmounts on close
+ * (`Shell.svelte`'s `{#if visible}`), so two resident DOM trees never coexist; a swap is
+ * a close and an open in one tick, and what an app kept in its own DOM — scroll offset,
+ * a half-typed field — is lost across a device swap the way it is across a character
+ * switch. That is also what keeps Chromium 103's hidden-frame relayout problem out of
+ * this design entirely: there is never a hidden frame.
+ */
+interface NavSnapshot {
+  running: RunningApp[];
+  current: RunningApp;
+  recency: string[];
+}
+
+const snapshots = new Map<DeviceId, NavSnapshot>();
+let device: DeviceId = get(activeDevice);
+
+activeDevice.subscribe((next) => {
+  if (next === device) return;
+  snapshots.set(device, { running: get(runningApps), current: get(currentApp), recency });
+  const restored = snapshots.get(next);
+  device = next;
+  recency = restored?.recency ?? [];
+  runningApps.set(restored?.running ?? []);
+  currentApp.set(restored?.current ?? { id: 'home', props: {} });
+});
 
 export const openApp = (appName: string, props: Record<string, unknown> = {}) => {
   const id = appName.toLowerCase();
@@ -158,7 +195,9 @@ export const closeApp = (appName: string) => {
   if (get(currentApp).id === id) goHome();
 };
 
+/** Every device's, not just the active one — a character switch owns no tablet either. */
 export const closeAllApps = () => {
+  snapshots.clear();
   recency = [];
   runningApps.set([]);
   goHome();

@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 import ClosedPhoneNotification from './ClosedPhoneNotification.svelte';
 import { closedPhoneToast } from './state/toast';
-import { isPhoneOpen } from './state/phoneOpen';
+import { openDevice } from './state/phoneOpen';
 
 // jsdom has no Web Animations API and this component's `transition:fly` calls it on mount.
 if (!Element.prototype.animate) {
@@ -30,7 +30,7 @@ if (!Element.prototype.animate) {
 describe('ClosedPhoneNotification (MICA-141)', () => {
   beforeEach(() => {
     closedPhoneToast.set(null);
-    isPhoneOpen.set(false);
+    openDevice.set(null);
   });
 
   it('renders nothing when no closed-phone toast is pending', () => {

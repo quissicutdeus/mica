@@ -27,6 +27,16 @@ export const ALL_DEVICES = ['phone', 'tablet'] as const;
 
 export type DeviceId = (typeof ALL_DEVICES)[number];
 
+/**
+ * The device the shell is until something says otherwise, and the one a payload with no
+ * `device` field means -- the client sent a bare `setVisible: true` for years before the
+ * tablet existed, and that message still has to open the phone.
+ */
+export const DEFAULT_DEVICE: DeviceId = 'phone';
+
+export const isDeviceId = (value: unknown): value is DeviceId =>
+  typeof value === 'string' && (ALL_DEVICES as readonly string[]).includes(value);
+
 export interface DeviceFrame {
   /** Design CSS pixels: what every screen is laid out against, before the zoom. */
   width: number;

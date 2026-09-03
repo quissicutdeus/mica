@@ -339,6 +339,10 @@
   border-width: 8px;
   border-style: solid;
 }
+.border-\[12px\] {
+  border-width: 12px;
+  border-style: solid;
+}
 .border-amber-500\/40 {
   border-color: rgba(245, 158, 11, 0.4);
 }
@@ -1678,6 +1682,12 @@
 }
 .rounded-frame-outer {
   border-radius: var(--radius-frame-outer);
+}
+.rounded-frame-inner-tablet {
+  border-radius: var(--radius-frame-inner-tablet);
+}
+.rounded-frame-outer-tablet {
+  border-radius: var(--radius-frame-outer-tablet);
 }
 .rounded-box {
   border-radius: var(--radius-box);

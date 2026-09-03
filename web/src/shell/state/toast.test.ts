@@ -17,7 +17,7 @@ import { shadeNotifications } from '../../services/notifications';
 import { appNotificationPolicies, dndEnabled } from './notificationPolicy';
 import { toastsEnabled } from './notificationSettings';
 import { audio } from './audio';
-import { isPhoneOpen } from './phoneOpen';
+import { openDevice } from './phoneOpen';
 
 describe('toast store interactive notifications', () => {
   beforeEach(() => {
@@ -394,13 +394,13 @@ describe('closed-phone peek (MICA-141)', () => {
     dndEnabled.set(false);
     appNotificationPolicies.set({});
     toastsEnabled.set(true);
-    isPhoneOpen.set(false);
+    openDevice.set(null);
     closedPhoneToast.set(null);
     vi.useFakeTimers();
   });
 
   afterEach(() => {
-    isPhoneOpen.set(false);
+    openDevice.set(null);
     closedPhoneToast.set(null);
     vi.useRealTimers();
   });
@@ -424,7 +424,7 @@ describe('closed-phone peek (MICA-141)', () => {
   });
 
   it('does nothing when the phone is already open — ToastHost owns that case', () => {
-    isPhoneOpen.set(true);
+    openDevice.set('phone');
     const play = vi.spyOn(audio, 'play');
 
     toast.show({ source: 'app', app: 'blabber', message: 'hi' });
@@ -438,7 +438,7 @@ describe('closed-phone peek (MICA-141)', () => {
     toast.show({ source: 'app', app: 'blabber', message: 'hi' });
     expect(get(closedPhoneToast)).not.toBeNull();
 
-    isPhoneOpen.set(true);
+    openDevice.set('phone');
     expect(get(closedPhoneToast)).toBeNull();
   });
 

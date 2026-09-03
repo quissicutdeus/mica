@@ -15,6 +15,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { appRegistryStore } from './state/registry';
   import { appVisible } from './state/appVisibility';
   import { homeGridItems, openFolderId, renameFolder, type HomeGridFolder } from './state/homeGrid';
+  import { descriptor } from './state/device';
   import {
     iconDragState,
     resolveDropAtPoint,
@@ -118,7 +119,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class="text-on-surface placeholder:text-on-surface-variant text-title-medium mb-4 w-full bg-transparent text-center"
       />
 
-      <div class="grid grid-cols-4 gap-y-5">
+      <div
+        class="grid gap-y-5"
+        style="grid-template-columns: repeat({$descriptor.launcher.drawerColumns}, 1fr);"
+      >
         {#each visibleApps as app (app.id)}
           <div use:attachIcon={app.id}>
             <AppIcon

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { debugData } from '../lib/phone/debug';
+import type { DeviceId } from '@gphone/shared/devices';
 import { placeholderAvatar } from '@gphone/sdk';
 import { appRegistryStore } from './state/registry';
 import { openApp } from './state/navigation';
@@ -77,10 +78,13 @@ const FIXTURES: Record<TestToast, { action: string; data: unknown }> = {
  * seed reopening the phone. `nui.spec.ts` dispatches its own `setVisible` and could
  * have been clobbered the same way.
  */
-export function seedBrowserPhone(now: Date): void {
+export function seedBrowserPhone(now: Date, device: DeviceId): void {
   debugData(
     [
-      { action: 'setVisible', data: true },
+      // The device the shell already chose (`?device=`, MICA-259), never a bare `true`:
+      // that spelling means the phone, and would put a tablet session back on the phone
+      // through the one path this seed exists to exercise.
+      { action: 'setVisible', data: { device, visible: true } },
       { action: 'setTime', data: { hours: now.getHours(), minutes: now.getMinutes() } }
     ],
     0

@@ -73,7 +73,8 @@ Native CSS nesting **is** fine — postcss handles it.
 
 ## Sizing
 
-**The screen is always 400×850 and an app must not try to be responsive.** Those
+**The screen is a fixed size per device — 400×850 on the phone, 1280×800 on the
+tablet (`shared/devices.ts`) — and an app must not try to be responsive.** Those
 numbers live in `shell/state/display.ts` and nowhere else. Settings > Display
 resizes the phone with one `transform: scale()` on a wrapper in `Shell.svelte` —
 a zoom, so the layout is identical at every size. Breakpoints (`sm:`, `md:`) and

@@ -21,7 +21,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { contacts } from '../services/contacts';
   import { conversationsStore } from '../services/conversations';
   import { appRegistryStore } from './state/registry';
-  import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
+  import { shadeDragRevealDistance } from './state/display';
+  import { descriptor } from './state/device';
   import {
     closeDrawer,
     isDrawerOpen,
@@ -113,7 +114,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     direction: 'down',
     progress: drawerDragProgress,
     phase: drawerDragPhase,
-    revealDistance: SHADE_DRAG_REVEAL_DISTANCE,
+    revealDistance: $shadeDragRevealDistance,
     close: closeDrawer,
     scrollContainer: () => scrollContainerRef
   });
@@ -190,12 +191,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
        where `inset-0` had no exposed corner to round. -->
   <div
     bind:this={drawerElement}
-    transition:fly={{ y: 850, duration: $drawerDragPhase === 'idle' ? 300 : 0 }}
+    transition:fly={{
+      y: $shadeDragRevealDistance,
+      duration: $drawerDragPhase === 'idle' ? 300 : 0
+    }}
     class="bg-surface-container-high text-on-surface shadow-elevation-5 rounded-t-xl absolute inset-x-0 top-10 bottom-0 z-55 flex flex-col pt-10 pb-2 backdrop-blur-3xl {$drawerDragPhase ===
     'settling'
       ? 'duration-medium ease-emphasized transition-transform'
       : ''}"
-    style="transform: translateY({(1 - effectiveProgress) * 850}px)"
+    style="transform: translateY({(1 - effectiveProgress) * $shadeDragRevealDistance}px)"
     ontransitionend={(e) => {
       if (
         e.target === e.currentTarget &&
@@ -261,7 +265,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       class="flex-1 scrollbar-none overflow-y-auto px-4 pt-2 pb-10"
     >
       {#if !$searchQuery.trim()}
-        <div class="grid grid-cols-4 gap-y-6">
+        <!-- Column count from the device (MICA-259): 4 across a phone, 8 across a tablet. -->
+        <div
+          class="grid gap-y-6"
+          style="grid-template-columns: repeat({$descriptor.launcher.drawerColumns}, 1fr);"
+        >
           {#each visibleApps as app (app.id)}
             <div use:attachIcon={app.id} class="flex items-center justify-center">
               <AppIcon

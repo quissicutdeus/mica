@@ -104,7 +104,8 @@ for players and seamless framework integration for server developers.
   sandboxed `<iframe sandbox="allow-scripts" srcdoc>`, opaque-origin and talking
   to the shell only over `postMessage`.
 - **Written for app authors**: `pnpm new:app <id>` scaffolds a working app,
-  `localhost:5173/?app=<id>` boots straight into one, and `renderApp` from
+  `localhost:5173/?app=<id>` boots straight into one (`?device=tablet` boots the
+  1280x800 tablet frame instead of the phone), and `renderApp` from
   `@gphone/sdk/testing` unit-tests one. See
   [docs/writing-an-app.md](docs/writing-an-app.md).
 - **Client & NUI Transport Safety**: Deterministic ID generation and 15-second

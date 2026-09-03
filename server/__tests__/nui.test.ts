@@ -13,7 +13,8 @@ import {
   parseReceiveMail,
   parseReceiveMessage,
   parseContactShare,
-  parseCallStatus
+  parseCallStatus,
+  parseSetVisible
 } from '@gphone/shared/nui';
 
 describe('Shared NUI Payload Validation', () => {
@@ -58,6 +59,41 @@ describe('Shared NUI Payload Validation', () => {
       props: { id: 1 }
     });
     expect(parseOpenApp({ appId: '' })).toBeNull();
+  });
+
+  /**
+   * `openApp` may name a device (MICA-259). An unknown one is dropped rather than
+   * refusing the whole message: the app still opens, on whatever the shell has up.
+   */
+  it('carries a known device on openApp and drops an unknown one', () => {
+    expect(parseOpenApp({ appId: 'admin', device: 'tablet' })).toEqual({
+      appId: 'admin',
+      props: undefined,
+      device: 'tablet'
+    });
+    expect(parseOpenApp({ appId: 'admin', device: 'watch' })).toEqual({
+      appId: 'admin',
+      props: undefined
+    });
+  });
+
+  /**
+   * `setVisible` is `{ device, visible }` since MICA-259, and the bare boolean the
+   * client sent before that still means the phone. An object naming a device the table
+   * does not know is a version mismatch and is refused whole.
+   */
+  it('reads setVisible as a device and a flag, with a bare boolean meaning the phone', () => {
+    expect(parseSetVisible(true)).toEqual({ device: 'phone', visible: true });
+    expect(parseSetVisible(false)).toEqual({ device: 'phone', visible: false });
+    expect(parseSetVisible({ device: 'tablet', visible: true })).toEqual({
+      device: 'tablet',
+      visible: true
+    });
+    expect(parseSetVisible({ visible: false })).toEqual({ device: 'phone', visible: false });
+    expect(parseSetVisible({ device: 'watch', visible: true })).toBeNull();
+    expect(parseSetVisible({ device: 'tablet', visible: 'yes' })).toBeNull();
+    expect(parseSetVisible('true')).toBeNull();
+    expect(parseSetVisible(null)).toBeNull();
 
     expect(parseUninstallApp({ appId: 'notes' })).toEqual({ appId: 'notes' });
   });

@@ -15,7 +15,8 @@ import { render, fireEvent, screen } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import Search from './Search.svelte';
 import { closeDrawer, isDrawerOpen } from './state/appDrawer';
-import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
+// The reveal distance is the frame's height, and this renders on the phone (MICA-259).
+import { PHONE_HEIGHT as SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
 
 if (!Element.prototype.animate) {
   Element.prototype.animate = vi.fn().mockReturnValue({

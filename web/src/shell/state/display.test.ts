@@ -221,6 +221,16 @@ describe('the phone is one device of the table', () => {
     expect(statusBarIconCap(400, true)).toBe(3);
   });
 
+  it('fits a second frame by its own size, on the same window (MICA-259)', () => {
+    const window = { width: 1280, height: 960 };
+    // The phone fits at design size here with room to spare; the tablet does not.
+    expect(fitScaleFor(window)).toBeGreaterThan(1);
+    expect(fitScaleFor(window, DEVICES.tablet.frame)).toBeLessThan(1);
+    // And the margin yields for the tablet's height, not the phone's.
+    expect(marginFor(1920, 900, DEVICES.tablet.frame)).toBe(MARGIN_LARGE);
+    expect(marginFor(1920, 900, DEVICES.phone.frame)).toBe(Math.floor((900 - 850) / 2));
+  });
+
   it('gives a frame with no hole-punch more room, up to the readable ceiling', () => {
     const tablet = DEVICES.tablet;
     const cap = statusBarIconCap(tablet.frame.width, tablet.chrome.holePunch);

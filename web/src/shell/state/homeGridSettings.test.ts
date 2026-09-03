@@ -15,6 +15,7 @@
  */
 import '../../host/registerFacets';
 import { describe, it, expect } from 'vitest';
+import { DEVICES } from '@gphone/shared/devices';
 import {
   clampColumns,
   clampRows,
@@ -37,6 +38,15 @@ describe('Home grid settings clamping', () => {
     expect(clampRows(1)).toBe(HOME_GRID_ROWS_MIN);
     expect(clampRows(99)).toBe(HOME_GRID_ROWS_MAX);
     expect(clampRows(5)).toBe(5);
+  });
+
+  it("clamps into the tablet's own range when handed its descriptor (MICA-259)", () => {
+    const tablet = DEVICES.tablet;
+    expect(clampColumns(4, tablet)).toBe(tablet.launcher.columnRange[0]);
+    expect(clampColumns(99, tablet)).toBe(tablet.launcher.columnRange[1]);
+    expect(clampColumns('x', tablet)).toBe(tablet.launcher.columns);
+    expect(clampRows(1, tablet)).toBe(tablet.launcher.rowRange[0]);
+    expect(clampRows(99, tablet)).toBe(tablet.launcher.rowRange[1]);
   });
 
   it('falls back to the default for non-numeric garbage', () => {

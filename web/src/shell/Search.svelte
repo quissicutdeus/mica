@@ -10,7 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { attachDragGesture } from '../lib/phone/pointerDrag';
   import { createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/phone/sheetDrag';
   import { isDrawerOpen, openDrawer, drawerDragProgress, drawerDragPhase } from './state/appDrawer';
-  import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
+  import { shadeDragRevealDistance } from './state/display';
   import SearchIcon from '../../../sdk/ui/icons/SearchIcon.svelte';
 
   /** Just the pill that opens the (now-merged) App Drawer, always focused there. */
@@ -20,7 +20,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     direction: 'up',
     progress: drawerDragProgress,
     phase: drawerDragPhase,
-    revealDistance: SHADE_DRAG_REVEAL_DISTANCE,
+    revealDistance: $shadeDragRevealDistance,
     guard: () => !get(isDrawerOpen),
     open: openDrawer,
     commit: DRAWER_OPEN_COMMIT

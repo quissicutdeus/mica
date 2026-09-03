@@ -14,7 +14,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import AppIcon from '../../../sdk/ui/AppIcon.svelte';
   import { appRegistryStore } from './state/registry';
   import { appVisible } from './state/appVisibility';
-  import { dockAppIds, DOCK_SLOT_COUNT } from './state/dock';
+  import { dockAppIds, dockSlotCount } from './state/dock';
   import {
     openDrawer,
     isDrawerOpen,
@@ -22,7 +22,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     drawerDragPhase,
     closeDrawer
   } from './state/appDrawer';
-  import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
+  import { shadeDragRevealDistance } from './state/display';
   import { appDrawerHintSeen } from './state/onboarding';
 
   let { openApp } = $props<{ openApp: (id: string) => void }>();
@@ -36,11 +36,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * the only surface that could have said so out loud. Pinning is a placement, not an
    * exemption: a slot whose app is not visible falls back to the same empty placeholder an
    * unconfigured or unresolvable slot already gets, so the dock never collapses to fewer
-   * than `DOCK_SLOT_COUNT` cells and the player's own pin survives in `dockAppIds` for
+   * than `dockSlotCount` cells and the player's own pin survives in `dockAppIds` for
    * whenever the app is honourable again.
    */
   const slots = $derived(
-    Array.from({ length: DOCK_SLOT_COUNT }, (_, index) => {
+    Array.from({ length: $dockSlotCount }, (_, index) => {
       const appId = $dockAppIds[index] ?? '';
       const resolved = appId ? appRegistryStore.getManifest(appId) : undefined;
       const manifest = $appVisible(resolved) ? resolved : undefined;
@@ -53,7 +53,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     direction: 'up',
     progress: drawerDragProgress,
     phase: drawerDragPhase,
-    revealDistance: SHADE_DRAG_REVEAL_DISTANCE,
+    revealDistance: $shadeDragRevealDistance,
     guard: () => !anySheetOpen(),
     open: openDrawer,
     commit: DRAWER_OPEN_COMMIT
@@ -70,7 +70,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   });
 </script>
 
-<!-- Fixed 4-slot dock, always at the bottom of the home screen, above the phone frame's
+<!-- Fixed dock — 4 slots on the phone, 6 on the tablet (`shared/devices.ts`) — always at
+     the bottom of the home screen, above the frame's
      own home-indicator gesture bar and the collapsed home-screen search bar.
 
      `bottom-20`. It was `bottom-10`, itself raised from a `bottom-6` that shared the
@@ -123,7 +124,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   role="toolbar"
   aria-label={$t('shell.dock')}
   class="absolute inset-x-0 bottom-20 z-20 grid cursor-pointer px-4 pt-4 pb-0 select-none"
-  style="grid-template-columns: repeat({DOCK_SLOT_COUNT}, 1fr);"
+  style="grid-template-columns: repeat({$dockSlotCount}, 1fr);"
 >
   {#each slots as slot (slot.index)}
     <div data-dock-index={slot.index} class="flex items-center justify-center">

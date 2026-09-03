@@ -366,10 +366,10 @@ utility layer, one class per call site, each resolving to a token).
   than an inline `style=`. A component `<style>` block is for what a utility
   genuinely can't express — keyframes, a pseudo-element.
 - **No visible scrollbars anywhere in the phone**, enforced in `app.css`.
-- **The screen is always 400x850 and an app must not try to be responsive.**
-  Breakpoints (`sm:`, `md:`) and viewport units (`vh`, `vw`, `dvh`) respond to
-  the _window_, which is not the phone. Size against the frame — `h-full`,
-  `flex-1`, and the `safe-top`/`safe-bottom` insets.
+- **The screen is a fixed size per device and an app must not try to be
+  responsive.** Breakpoints (`sm:`, `md:`) and viewport units (`vh`, `vw`,
+  `dvh`) respond to the _window_, which is not the phone. Size against the frame
+  — `h-full`, `flex-1`, and the `safe-top`/`safe-bottom` insets.
 - **Inside `Screen`, fill with `min-h-0 flex-1` — never `h-full`, and never
   `flex-1` on its own.** Both fail silently and only under enough content
   (MICA-89); a box declaring `overflow-y-auto` is exempt.

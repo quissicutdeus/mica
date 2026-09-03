@@ -24,7 +24,8 @@ read that before this.
 | `server/__tests__/`            | Vitest/node  | Excluded from `tsc`; see AGENTS.md §1                                        |
 | `shared/types.ts`              | both         | `@shared/types` path alias, not a workspace package (AGENTS.md §3)           |
 | `shared/richText.ts`           | both         | One tokenizer for `@handle` — the UI renders and the server notifies from it |
-| `web/src/shell/`               | CEF+browser  | The OS: `Shell.svelte`, `PhoneFrame`, `Launcher`, `ToastHost`                |
+| `web/src/shell/`               | CEF+browser  | The OS: `Shell.svelte`, `PhoneFrame`/`TabletFrame`, `Launcher`, `ToastHost`  |
+| `web/src/shell/frame/`         | CEF+browser  | What both frames share: status bar, home indicator, their gestures           |
 | `web/src/shell/state/`         | CEF+browser  | State the phone itself owns: navigation, keybinds, hardware, size            |
 | `web/src/services/`            | CEF+browser  | Client-side cache of each server service. Reached via the SDK                |
 | `sdk/`                         | CEF+browser  | `@gphone/sdk` — the public surface for apps (AGENTS.md §2.7)                 |

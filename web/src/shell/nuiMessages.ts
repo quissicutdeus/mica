@@ -24,6 +24,7 @@ import {
 } from '@gphone/shared/musicBroadcast';
 import { deliverAppEvent } from './state/appEvents';
 import { parseDeepLink } from '@gphone/shared/deepLink';
+import type { DeviceId } from '@gphone/shared/devices';
 import { receiveNearbyBroadcasts, receiveNearbyVolumes } from './state/nearbyMusic';
 import {
   parseContactShare,
@@ -41,8 +42,11 @@ import {
 
 /** The little the router needs from the shell, rather than the whole component. */
 export interface NotificationBridge {
-  /** Raise the phone and open an app. Used by notification click-throughs. */
-  openFromNotification(appName: string, props?: Record<string, unknown>): void;
+  /**
+   * Raise a device and open an app. Used by notification click-throughs, which name no
+   * device, and by the client's `openApp`, which may (MICA-259).
+   */
+  openFromNotification(appName: string, props?: Record<string, unknown>, device?: DeviceId): void;
 }
 
 /**
@@ -319,7 +323,7 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     openApp: (data) => {
       const parsed = parseOpenApp(data);
       if (!parsed) return;
-      bridge.openFromNotification(parsed.appId, parsed.props);
+      bridge.openFromNotification(parsed.appId, parsed.props, parsed.device);
     },
     /**
      * Who nearby is playing what, from the server. MICA-111 phase 2.

@@ -208,7 +208,7 @@ describe('PhoneFrame transparency', () => {
     // silently did nothing.
     const { isDrawerOpen } = await import('./state/appDrawer');
     const { isShadeOpen } = await import('./state/shade');
-    const { SHADE_DRAG_REVEAL_DISTANCE } = await import('./state/display');
+    const { PHONE_HEIGHT: SHADE_DRAG_REVEAL_DISTANCE } = await import('./state/display');
     const { get } = await import('svelte/store');
 
     isDrawerOpen.set(false);
@@ -260,7 +260,7 @@ describe('PhoneFrame transparency', () => {
      */
     const { isDrawerOpen } = await import('./state/appDrawer');
     const { isShadeOpen } = await import('./state/shade');
-    const { SHADE_DRAG_REVEAL_DISTANCE } = await import('./state/display');
+    const { PHONE_HEIGHT: SHADE_DRAG_REVEAL_DISTANCE } = await import('./state/display');
     const { get } = await import('svelte/store');
 
     isShadeOpen.set(false);
@@ -299,7 +299,7 @@ describe('PhoneFrame transparency', () => {
     // The other side of the guard: it must refuse a second sheet, not the first one.
     const { isDrawerOpen } = await import('./state/appDrawer');
     const { isShadeOpen } = await import('./state/shade');
-    const { SHADE_DRAG_REVEAL_DISTANCE } = await import('./state/display');
+    const { PHONE_HEIGHT: SHADE_DRAG_REVEAL_DISTANCE } = await import('./state/display');
     const { get } = await import('svelte/store');
 
     isShadeOpen.set(false);

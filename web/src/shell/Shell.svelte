@@ -18,22 +18,24 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { currentApp, runningApps, openApp, goHome, closePhone } from './state/navigation';
   import { dispatchKey, isTypingTarget, registerHandler } from './state/keybinds';
   import { findAction } from '@gphone/shared/keybinds';
+  import { ALL_DEVICES, DEVICES, isDeviceId } from '@gphone/shared/devices';
+  import { parseSetVisible } from '@gphone/shared/nui';
   import { lockDevTools } from './state/devtools';
   import {
     frameMargin,
     observeViewport,
     phoneBox,
     phoneScale,
-    viewportSize,
-    PHONE_HEIGHT,
-    PHONE_WIDTH
+    viewportSize
   } from './state/display';
+  import { activeDevice, descriptor, frame, setActiveDevice } from './state/device';
   import { get } from 'svelte/store';
   import { callStore } from '../services/call';
   import type { CallStatus } from '../../../sdk/vocabulary/call';
   import { contacts } from '../services/contacts';
   import { isPreviewingPhoto } from '../services/camera';
   import PhoneFrame from './PhoneFrame.svelte';
+  import TabletFrame from './TabletFrame.svelte';
   import Home from './Launcher.svelte';
   import Dock from './Dock.svelte';
   import AppDrawer from './AppDrawer.svelte';
@@ -50,7 +52,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { installSystemHost } from '../../../sdk/host/inProcess/system';
   import { clampedSignalLevel } from './state/signal';
   import { audio } from './state/audio';
-  import { isPhoneOpen } from './state/phoneOpen';
+  import { openDevice } from './state/phoneOpen';
   import { isLightMode } from './state/theme';
   import { observeReducedMotion } from './state/motion';
   import AddOnFrame from './addon/AddOnFrame.svelte';
@@ -122,11 +124,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * `toast.ts` cannot see this component's own `visible` rune — it is not a module — so
    * this is the one line that keeps `state/phoneOpen.ts`'s mirror honest. MICA-141's
    * closed-phone peek is the one thing today that needs to know open/closed from outside
-   * `Shell.svelte` at all.
+   * `Shell.svelte` at all. Which device is up rides along (MICA-259).
    */
   $effect(() => {
-    isPhoneOpen.set(visible);
+    openDevice.set(visible ? $activeDevice : null);
   });
+
+  /**
+   * Which frame the window centres and which it tucks into a corner.
+   *
+   * The phone sits bottom-right, where a handset held up in front of the player would
+   * be, and only the camera — which needs the world behind it — moves to the centre. A
+   * tablet is the MDT laid on the dash: centred, like every tablet resource a player has
+   * used, and there is no corner a 1280px frame could plausibly tuck into.
+   */
+  const centred = $derived($currentApp.id === 'camera' || $descriptor.id === 'tablet');
 
   /**
    * MICA-60: whether the lock screen greets the next open, decided fresh every time
@@ -150,7 +162,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * would be more coupling rather than less.
    */
   const routeNuiMessage = createNuiMessageRouter({
-    openFromNotification: (appName, props) => {
+    openFromNotification: (appName, props, device) => {
+      // A push that names a device is obeyed; one that does not lands on whatever is
+      // already up, or the phone if nothing is (MICA-259). Once an app can say which
+      // devices it supports (MICA-260) the absent case resolves against that instead.
+      if (device) setActiveDevice(device);
       visible = true;
       openApp(appName, props);
     }
@@ -166,7 +182,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     const { action, data } = (event.data ?? {}) as { action?: string; data?: unknown };
 
     if (action === 'setVisible') {
-      visible = data as boolean;
+      // `{ device, visible }`, or the bare boolean the client has always sent, which
+      // means the phone (`shared/nui.ts`). A close addressed to a device that is not the
+      // one on screen is nothing to act on: the client only ever has one open, so the
+      // frame it wants down is already down.
+      const parsed = parseSetVisible(data);
+      if (!parsed) return;
+      if (!parsed.visible && visible && parsed.device !== $activeDevice) return;
+      if (parsed.visible) setActiveDevice(parsed.device);
+      visible = parsed.visible;
       if (visible) audio.warm();
       if (!visible && isFreelook) isFreelook = false;
       // Developer Tools are earned per session, so closing the phone puts them back
@@ -364,9 +388,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    *
    * `mount()` is synchronous and `onMount` callbacks run inside it, so this lands before
    * the browser's first paint; the button above is never visibly on screen.
+   *
+   * `?device=tablet` picks the device first (MICA-259). Here, in the browser-only boot,
+   * and deliberately not in the DEV-only harness: the demo container serves a production
+   * build, and MICA-252 wants that demo to boot the tablet by query parameter. In game
+   * the page URL carries no query and `setVisible` decides. Reading `window.location` is
+   * fine — the ban (§6) is on *navigating* it, which reloads the CEF instance.
    */
   onMount(() => {
-    if (isBrowser()) visible = true;
+    if (!isBrowser()) return;
+    const requested = new URLSearchParams(window.location.search).get('device');
+    if (isDeviceId(requested)) setActiveDevice(requested);
+    visible = true;
   });
 
   /**
@@ -383,10 +416,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     if (event.repeat) return;
 
     /**
-     * Browser only: honor the Open Phone binding here.
+     * Browser only: honor each device's open binding here.
      *
-     * That action is `scope: 'game'`, so in game it is a `RegisterKeyMapping` the
-     * client owns and the web never sees it. There is no FiveM in a browser, so
+     * Those actions are `scope: 'game'`, so in game they are `RegisterKeyMapping`s the
+     * client owns and the web never sees them. There is no FiveM in a browser, so
      * nothing was listening at all and a collapsed phone could only be reopened with
      * the mouse.
      *
@@ -398,15 +431,24 @@ SPDX-License-Identifier: AGPL-3.0-or-later
      * store: `bindings` only resolves phone-scope actions (see keybinds.ts), and
      * `openPhone` is game-scope — its rebind path is FiveM's own Key Bindings menu,
      * never this store, so there is no override to look up here.
+     *
+     * Every device's key, not `openPhone` alone (MICA-259): `F2` raises the tablet in
+     * a browser exactly as `m` raises the phone. The key of the device already on screen
+     * puts it down; the other device's key swaps to it, which is one close and one open
+     * in the same tick — the client enforces the same one-frame rule in game.
      */
     if (isBrowser() && !typing) {
-      const openKey = findAction('openPhone')?.defaultKey;
-      if (openKey && event.key.toLowerCase() === openKey.toLowerCase()) {
+      const pressed = event.key.toLowerCase();
+      const device = ALL_DEVICES.find(
+        (id) => findAction(DEVICES[id].keybind.id)?.defaultKey.toLowerCase() === pressed
+      );
+      if (device) {
         event.preventDefault();
-        if (visible) {
+        if (visible && device === $activeDevice) {
           visible = false;
           closePhone();
         } else {
+          setActiveDevice(device);
           visible = true;
         }
         return;
@@ -499,7 +541,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     // where the player's own setting is the only reliable answer (`state/motion.ts`).
     const stopObservingMotion = observeReducedMotion();
 
-    seedBrowserPhone(new Date());
+    seedBrowserPhone(new Date(), get(activeDevice));
     installDevHarness();
 
     return () => {
@@ -611,34 +653,51 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <main
     class="flex overflow-hidden"
     style="width: {$viewportSize.width}px; height: {$viewportSize.height}px; padding: {$frameMargin}px;"
-    class:items-center={$currentApp.id === 'camera'}
-    class:justify-center={$currentApp.id === 'camera'}
-    class:items-end={$currentApp.id !== 'camera'}
-    class:justify-end={$currentApp.id !== 'camera'}
+    class:items-center={centred}
+    class:justify-center={centred}
+    class:items-end={!centred}
+    class:justify-end={!centred}
     class:bg-transparent={true}
   >
     <!-- Two elements, because a transform is invisible to layout: the outer box is the
-         size the phone actually occupies so the flex anchoring is right, and the inner one
-         stays at the design size and is scaled from its top-left corner into it. -->
+         size the device actually occupies so the flex anchoring is right, and the inner
+         one stays at the design size and is scaled from its top-left corner into it.
+
+         One frame at a time, by descriptor (MICA-259). Not a prop on one component:
+         CEF is Chromium 103, so the tablet is a second set of fixed constants and its own
+         scale, and a frame that reflowed to fit would be the responsive phone §5 forbids.
+         Everything inside the frame — the toasts, the launcher, every resident app — is
+         the one `screen` snippet below, rendered into whichever body is up. -->
     <div
       class="relative shrink-0"
       style="width: {$phoneBox.width}px; height: {$phoneBox.height}px;"
     >
       <div
         class="absolute top-0 left-0 origin-top-left"
-        style="width: {PHONE_WIDTH}px; height: {PHONE_HEIGHT}px; transform: scale({$phoneScale});"
+        style="width: {$frame.width}px; height: {$frame.height}px; transform: scale({$phoneScale});"
       >
-        <PhoneFrame
-          transparent={$currentApp.id === 'camera' && !$isPreviewingPhoto}
-          onClose={() => {
-            if (isBrowser()) {
-              visible = false;
-            }
-            closePhone();
-          }}
-        >
-          <ToastContainer />
-          <!-- Every resident app is mounted; only the active one is visible.
+        {#if $descriptor.id === 'tablet'}
+          <TabletFrame children={screen} />
+        {:else}
+          <PhoneFrame
+            transparent={$currentApp.id === 'camera' && !$isPreviewingPhoto}
+            onClose={() => {
+              if (isBrowser()) {
+                visible = false;
+              }
+              closePhone();
+            }}
+            children={screen}
+          />
+        {/if}
+      </div>
+    </div>
+  </main>
+{/if}
+
+{#snippet screen()}
+  <ToastContainer />
+  <!-- Every resident app is mounted; only the active one is visible.
 
                Keyed by name so Svelte reuses the instance instead of tearing it down —
                that reuse *is* the state preservation.
@@ -663,22 +722,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                Back leaves focus on the app's own back button, and Chrome refuses to hide a
                subtree containing the focused element. The console said so on every trip
                home. -->
-          <div class="relative h-full w-full">
-            {#if $currentApp.id === 'home'}
-              <Home {openApp} />
-              <Dock {openApp} />
-              <Search />
-              <AppDrawer {openApp} />
-            {/if}
+  <div class="relative h-full w-full">
+    {#if $currentApp.id === 'home'}
+      <Home {openApp} />
+      <Dock {openApp} />
+      <Search />
+      <AppDrawer {openApp} />
+    {/if}
 
-            {#each $runningApps as instance (instance.id)}
-              {@const AppComponent = appRegistryStore.getComponent(instance.id)}
-              {@const isActive = $currentApp.id === instance.id}
-              {@const manifest = appRegistryStore.getManifest(instance.id)}
-              {@const isNetworkBlocked =
-                (manifest?.requiresNetwork ?? false) && $clampedSignalLevel === 0}
-              {@const isAddOn = !!manifest && !manifest.core && !AppComponent}
-              <!-- Backgrounded in-process apps get `display:none`; add-on frames must not.
+    {#each $runningApps as instance (instance.id)}
+      {@const AppComponent = appRegistryStore.getComponent(instance.id)}
+      {@const isActive = $currentApp.id === instance.id}
+      {@const manifest = appRegistryStore.getManifest(instance.id)}
+      {@const isNetworkBlocked = (manifest?.requiresNetwork ?? false) && $clampedSignalLevel === 0}
+      {@const isAddOn = !!manifest && !manifest.core && !AppComponent}
+      <!-- Backgrounded in-process apps get `display:none`; add-on frames must not.
                    An iframe with no box has a 0x0 viewport, and the sandbox document is a
                    `height:100%` chain (`srcdoc.ts`) — so `display:none` collapses the whole
                    add-on to nothing, and CEF's Chromium 103 does not reliably lay it back
@@ -691,65 +749,61 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                    leaking over the home screen; an add-on is one replaced element, and a
                    hidden iframe paints nothing. `pointer-events-none` because a hidden box
                    is still a hit-testing target where `display:none` was not. -->
-              <div
-                class="absolute inset-0"
-                class:hidden={!isActive && !isAddOn}
-                class:invisible={!isActive && isAddOn}
-                class:pointer-events-none={!isActive && isAddOn}
-                inert={!isActive}
-              >
-                {#if manifest && !manifest.core && !AppComponent}
-                  <!-- A shipped or Store-installed add-on: source text, a frame, a wall.
+      <div
+        class="absolute inset-0"
+        class:hidden={!isActive && !isAddOn}
+        class:invisible={!isActive && isAddOn}
+        class:pointer-events-none={!isActive && isAddOn}
+        inert={!isActive}
+      >
+        {#if manifest && !manifest.core && !AppComponent}
+          <!-- A shipped or Store-installed add-on: source text, a frame, a wall.
                        A `core:false` app that *has* a component is a DEV-only runtime
                        registration (see `registry.ts` and `error_boundary.spec.ts`) and
                        stays on the in-process path below. -->
-                  <div class="h-full w-full" inert={isNetworkBlocked}>
-                    <AddOnFrame
-                      appId={instance.id}
-                      {manifest}
-                      host={hostForApp(instance.id, manifest)}
-                      props={instance.props}
-                      active={isActive}
-                      onKey={handleFrameKey}
-                      onTyping={(t: boolean) => reportTyping(t)}
-                    />
-                  </div>
-                  {#if isNetworkBlocked}
-                    <div class="absolute inset-0 z-30">
-                      <NotNetworkScreen title={manifest?.name ?? instance.id} onback={goHome} />
-                    </div>
-                  {/if}
-                {:else if AppComponent}
-                  <ErrorBoundary appName={manifest?.name ?? instance.id}>
-                    <HostProvider host={hostForApp(instance.id, manifest)}>
-                      <div class="h-full w-full" inert={isNetworkBlocked}>
-                        <AppComponent onback={goHome} {...instance.props} />
-                      </div>
-                    </HostProvider>
-                  </ErrorBoundary>
-                  {#if isNetworkBlocked}
-                    <div class="absolute inset-0 z-30">
-                      <NotNetworkScreen title={manifest?.name ?? instance.id} onback={goHome} />
-                    </div>
-                  {/if}
-                {:else}
-                  <!-- The app's chunk is still arriving. Components load on demand now, so
+          <div class="h-full w-full" inert={isNetworkBlocked}>
+            <AddOnFrame
+              appId={instance.id}
+              {manifest}
+              host={hostForApp(instance.id, manifest)}
+              props={instance.props}
+              active={isActive}
+              onKey={handleFrameKey}
+              onTyping={(t: boolean) => reportTyping(t)}
+            />
+          </div>
+          {#if isNetworkBlocked}
+            <div class="absolute inset-0 z-30">
+              <NotNetworkScreen title={manifest?.name ?? instance.id} onback={goHome} />
+            </div>
+          {/if}
+        {:else if AppComponent}
+          <ErrorBoundary appName={manifest?.name ?? instance.id}>
+            <HostProvider host={hostForApp(instance.id, manifest)}>
+              <div class="h-full w-full" inert={isNetworkBlocked}>
+                <AppComponent onback={goHome} {...instance.props} />
+              </div>
+            </HostProvider>
+          </ErrorBoundary>
+          {#if isNetworkBlocked}
+            <div class="absolute inset-0 z-30">
+              <NotNetworkScreen title={manifest?.name ?? instance.id} onback={goHome} />
+            </div>
+          {/if}
+        {:else}
+          <!-- The app's chunk is still arriving. Components load on demand now, so
                        there is a moment between opening an app and having its code — and
                        without something here the phone would be blank, with `<Home>` also
                        skipped because the current app is not home. That is the exact
                        failure the `openApp` guard exists to prevent, arriving by a
                        different door. -->
-                  <div class="bg-surface flex h-full w-full items-center justify-center">
-                    <div
-                      class="border-outline-variant border-t-primary h-8 w-8 animate-spin rounded-full border-2"
-                    ></div>
-                  </div>
-                {/if}
-              </div>
-            {/each}
+          <div class="bg-surface flex h-full w-full items-center justify-center">
+            <div
+              class="border-outline-variant border-t-primary h-8 w-8 animate-spin rounded-full border-2"
+            ></div>
           </div>
-        </PhoneFrame>
+        {/if}
       </div>
-    </div>
-  </main>
-{/if}
+    {/each}
+  </div>
+{/snippet}

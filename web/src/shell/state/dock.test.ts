@@ -16,6 +16,7 @@
 import '../../host/registerFacets';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
+import { DEVICES } from '@gphone/shared/devices';
 import { DEFAULT_DOCK_APP_IDS, dockAppIds, sanitizeDockAppIds, setDockSlot } from './dock';
 
 describe('Dock state', () => {
@@ -42,6 +43,19 @@ describe('Dock state', () => {
     it('drops non-string entries and blanks duplicates rather than collapsing the array', () => {
       expect(sanitizeDockAppIds(['a', 5, 'b'])).toEqual(['a', 'b', '', '']);
       expect(sanitizeDockAppIds(['a', 'a', 'b'])).toEqual(['a', '', 'b', '']);
+    });
+
+    it('sizes and defaults by device: six slots on the tablet, Admin and Settings first', () => {
+      const tablet = DEVICES.tablet;
+      expect(sanitizeDockAppIds(null, tablet)).toEqual(['admin', 'settings', '', '', '', '']);
+      expect(sanitizeDockAppIds(['a', 'b', 'c', 'd', 'e', 'f', 'g'], tablet)).toEqual([
+        'a',
+        'b',
+        'c',
+        'd',
+        'e',
+        'f'
+      ]);
     });
 
     it('tolerates an id the registry has not confirmed yet — it is not filtered out', () => {

@@ -10,6 +10,8 @@
  * DOM XSS, prototype pollution, component crashes, or data corruption.
  */
 
+import { DEFAULT_DEVICE, isDeviceId, type DeviceId } from './devices';
+
 export interface SetTimePayload {
   hours: number;
   minutes: number;
@@ -28,6 +30,23 @@ export interface NotifyPayload {
 export interface OpenAppPayload {
   appId: string;
   props?: Record<string, unknown>;
+  /**
+   * Which frame to open it in. Absent means the shell decides (MICA-259): the device
+   * already on screen if one is, otherwise the phone.
+   */
+  device?: DeviceId;
+}
+
+/**
+ * `setVisible` names a device now (MICA-259). The client sent a bare boolean until the
+ * tablet existed and still does until MICA-262 teaches it the field, so `true` and
+ * `false` on their own are the phone -- the only device that message could ever have
+ * meant. An object with an unknown `device` is refused rather than defaulted: a payload
+ * that names a device it does not know is a version mismatch, not a phone.
+ */
+export interface SetVisiblePayload {
+  device: DeviceId;
+  visible: boolean;
 }
 
 export interface UninstallAppPayload {
@@ -192,7 +211,16 @@ export function parseOpenApp(data: unknown): OpenAppPayload | null {
   const appId = safeString(obj.appId, 64);
   if (!appId) return null;
   const props = safeObject(obj.props) ?? undefined;
-  return { appId, props };
+  const device = isDeviceId(obj.device) ? obj.device : undefined;
+  return { appId, props, ...(device ? { device } : {}) };
+}
+
+export function parseSetVisible(data: unknown): SetVisiblePayload | null {
+  if (typeof data === 'boolean') return { device: DEFAULT_DEVICE, visible: data };
+  const obj = safeObject(data);
+  if (!obj || typeof obj.visible !== 'boolean') return null;
+  if (obj.device !== undefined && !isDeviceId(obj.device)) return null;
+  return { device: isDeviceId(obj.device) ? obj.device : DEFAULT_DEVICE, visible: obj.visible };
 }
 
 export function parseUninstallApp(data: unknown): UninstallAppPayload | null {

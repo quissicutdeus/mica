@@ -41,7 +41,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } from '../services/notifications';
   import { airplaneModeEnabled, toggleAirplaneMode } from './state/airplane';
   import { bluetoothEnabled, toggleBluetooth } from './state/bluetooth';
-  import { SHADE_DRAG_REVEAL_DISTANCE } from './state/display';
+  import { shadeDragRevealDistance } from './state/display';
   import { flashlightEnabled, toggleFlashlight } from './state/flashlight';
   import { dndEnabled } from './state/notificationPolicy';
   import { openApp } from './state/navigation';
@@ -331,7 +331,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     direction: 'up',
     progress: shadeDragProgress,
     phase: shadeDragPhase,
-    revealDistance: SHADE_DRAG_REVEAL_DISTANCE,
+    revealDistance: $shadeDragRevealDistance,
     close: closeShade,
     scrollContainer: () => scrollContainerRef
   });
@@ -404,12 +404,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
        unobservable. -->
   <div
     bind:this={shadeElement}
-    transition:fly={{ y: -850, duration: $shadeDragPhase === 'idle' ? 300 : 0 }}
+    transition:fly={{
+      y: -$shadeDragRevealDistance,
+      duration: $shadeDragPhase === 'idle' ? 300 : 0
+    }}
     class="bg-surface-container-high text-on-surface shadow-elevation-5 absolute inset-0 z-55 flex h-full w-full flex-col pt-14 pb-2 backdrop-blur-3xl {$shadeDragPhase ===
     'settling'
       ? 'duration-medium ease-emphasized transition-transform'
       : ''}"
-    style="transform: translateY({(1 - effectiveProgress) * -850}px)"
+    style="transform: translateY({(1 - effectiveProgress) * -$shadeDragRevealDistance}px)"
     ontransitionend={(e) => {
       if (
         e.target === e.currentTarget &&

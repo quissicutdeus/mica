@@ -7,7 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import AppIcon from '../../../sdk/ui/AppIcon.svelte';
   import { iconDragState } from './state/iconDrag';
-  import { PHONE_WIDTH } from './state/display';
+  import { frame } from './state/device';
 
   let state = $derived($iconDragState);
 
@@ -23,15 +23,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * `phoneScale`/`phoneBox` and reasoning about layout math — sidesteps having to track
    * every offset (bezel border, flex centering) that separates it from the transformed
    * wrapper: whatever the real screen position and size of that element are, dividing by
-   * `PHONE_WIDTH` recovers the effective scale directly from what's actually on screen.
+   * the frame's design width recovers the effective scale directly from what's actually
+   * on screen. `[data-device-frame]` rather than a test id, so it finds whichever of the
+   * two frames is up (MICA-259).
    */
   function toLocalPoint(clientX: number, clientY: number): { x: number; y: number } {
     if (typeof document === 'undefined') return { x: clientX, y: clientY };
-    const frame = document.querySelector('[data-testid="phone-frame"]');
-    if (!frame) return { x: clientX, y: clientY };
-    const rect = frame.getBoundingClientRect();
+    const element = document.querySelector('[data-device-frame]');
+    if (!element) return { x: clientX, y: clientY };
+    const rect = element.getBoundingClientRect();
     if (rect.width === 0) return { x: clientX, y: clientY };
-    const scale = rect.width / PHONE_WIDTH;
+    const scale = rect.width / $frame.width;
     return { x: (clientX - rect.left) / scale, y: (clientY - rect.top) / scale };
   }
 

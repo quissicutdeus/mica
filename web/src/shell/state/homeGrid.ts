@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { get, writable } from 'svelte/store';
-import { usePersisted } from '../../../../sdk/host/usePersisted';
+import { perDevice } from './device';
 import { homeGridColumns, homeGridRows } from './homeGridSettings';
 
 /** Which folder's popup is open, if any — shell-owned UI state, not persisted. */
@@ -84,9 +84,16 @@ export function sanitizeHomeGridItems(value: unknown): HomeGridItem[] {
   return result;
 }
 
-export const homeGridItems = usePersisted<HomeGridItem[]>('settings', 'homeGridItems', [], {
-  sanitize: sanitizeHomeGridItems
-});
+/**
+ * One grid per device, following `activeDevice` (MICA-259) — see `perDevice`. The
+ * phone's key is `homeGridItems`, exactly as before, so an existing layout and every e2e
+ * seed still mean the phone; the tablet's lives under `homeGridItems:tablet`.
+ */
+export const homeGridItems = perDevice<HomeGridItem[]>(
+  'homeGridItems',
+  () => [],
+  sanitizeHomeGridItems
+);
 
 export const isGridCellOccupied = (position: number, items: HomeGridItem[]): boolean =>
   items.some((item) => item.position === position);
