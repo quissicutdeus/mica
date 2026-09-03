@@ -1331,6 +1331,9 @@
 .normal-case {
   text-transform: none;
 }
+.no-underline {
+  text-decoration-line: none;
+}
 .object-contain {
   object-fit: contain;
 }
@@ -2345,6 +2348,9 @@
 }
 .z-80 {
   z-index: 80;
+}
+.z-\[9998\] {
+  z-index: 9998;
 }
 .z-\[9999\] {
   z-index: 9999;

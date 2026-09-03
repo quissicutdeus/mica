@@ -18,7 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { currentApp, runningApps, openApp, goHome, closePhone } from './state/navigation';
   import { dispatchKey, isTypingTarget, registerHandler } from './state/keybinds';
   import { findAction } from '@gphone/shared/keybinds';
-  import { ALL_DEVICES, DEVICES, isDeviceId } from '@gphone/shared/devices';
+  import { ALL_DEVICES, DEVICES, isDeviceId, type DeviceId } from '@gphone/shared/devices';
   import { parseSetVisible } from '@gphone/shared/nui';
   import { lockDevTools } from './state/devtools';
   import {
@@ -36,6 +36,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { isPreviewingPhoto } from '../services/camera';
   import PhoneFrame from './PhoneFrame.svelte';
   import TabletFrame from './TabletFrame.svelte';
+  import PreviewHeader from './PreviewHeader.svelte';
   import Home from './Launcher.svelte';
   import Dock from './Dock.svelte';
   import AppDrawer from './AppDrawer.svelte';
@@ -696,6 +697,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
     </div>
   </main>
+{/if}
+
+<!-- The preview's own chrome, outside the device and browser-only — never in CEF, where
+     anything drawn outside the frame lands on the player's game. After `<main>` on
+     purpose as well as behind `isBrowser()`: several specs reach for the first button
+     matching a name, and the device's own controls should keep winning that. -->
+{#if isBrowser()}
+  <PreviewHeader
+    onopen={(device: DeviceId) => {
+      setActiveDevice(device);
+      visible = true;
+    }}
+  />
 {/if}
 
 {#snippet screen()}
